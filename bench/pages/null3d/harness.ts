@@ -71,6 +71,11 @@ export interface Null3dPageOptions {
  * with `coatSheen=coat` or `coatSheen=sheen`, `particles` adds two particle systems over it, one of
  * them soft, `passes` adds a full-screen pass whose texture a custom effect adds to S1,
  * `batchShadows` makes the rows of S1 and S1-static cast and receive
+ * lets light through under it, `weighted` puts a column of smoke of the weighted blending over it,
+ * and `weighted=sorted` the same smoke of the normal blending, `batchShadows` makes the rows of S1 and S1-static cast and receive
+ * lets light through under it, `particles` adds two particle systems over it, one of them soft,
+ * `passes` adds a full-screen pass whose texture a custom effect adds to S1, `batchShadows`
+ * makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
  * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
  * hemisphere lights to S1, `areaLights` adds rectangle and tube lights to S1 that circle it and
@@ -107,6 +112,7 @@ const SKETCH_SWITCHES = [
 	'reflection',
 	'transmission',
 	'coatSheen',
+	'weighted',
 	'particles',
 	'passes',
 	'still',

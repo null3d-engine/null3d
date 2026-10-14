@@ -287,6 +287,11 @@ pub mod feature {
     /// a layered material, the map slots of the light map and the specular maps hold the layers'
     /// maps ([`LayerMap`]).
     pub const COAT_SHEEN: u32 = 65536;
+    /// With [`BLEND`] and normal blending, the surface blends with the other such surfaces in any
+    /// order, by a weighted average, in the camera's weighted layer (see [`crate::weighted`]).
+    /// Elsewhere it draws back to front with the blended surfaces. A surface that lets light
+    /// through sorts, so [`TRANSMISSION`] wins over it.
+    pub const WEIGHTED: u32 = 524288;
     /// The material is a decal's: each object with it projects the material onto the surfaces
     /// inside the object's box, in the decal pass after the camera's opaque pass, and draws no
     /// mesh of its own. Only the standard material has it. It blends, and wins over every other
@@ -308,12 +313,21 @@ pub mod feature {
         | SINGLE_PASS
         | TRANSMISSION
         | COAT_SHEEN
+        | WEIGHTED
         | DECAL;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
     pub const fn masks(features: u32) -> bool {
         features & ALPHA_MASK != 0 && features & (BLEND | TRANSMISSION) == 0
+    }
+
+    /// True for features that draw in the camera's weighted layer: [`WEIGHTED`] with normal
+    /// blending, on a surface that does not let light through.
+    pub const fn weighs(features: u32) -> bool {
+        features & WEIGHTED != 0
+            && features & BLEND != 0
+            && features & (ADDITIVE | MULTIPLY | TRANSMISSION) == 0
     }
 }
 

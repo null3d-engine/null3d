@@ -91,6 +91,14 @@ At 1,024 draws the indirect cost rose from 9.8 ms at one pass to 54.4 ms at thre
 
 So the pass count, not the triangle count, sets the path's ceiling. At 1,024 draws and three passes the saving is 50 ms. Battle now draws 261 times a frame across several passes at 23.2 ms of GPU time, so it could recover several milliseconds. The remaining slices and the iPhone run measure that number, which is the one the owner needs.
 
+## Battle's own passes
+
+Battle draws its buckets indirectly in six passes. Its render graph on main 8c1e39af6 holds 34 passes. Five are compute (LightClusters, Culling and ShadowCulling0 to 2). Three are shadow cascades at 2048 by 2048, and three are scene passes (DepthPrepass, Opaque and Transparent). The other 23 are fullscreen, three for ambient occlusion, 19 for bloom and the final pass. The six that draw the buckets with `drawIndexedIndirect` are ShadowCascade0, ShadowCascade1, ShadowCascade2, DepthPrepass, Opaque and Transparent.
+
+The engine's pass timer lumps every pass after the fifth into its last bucket, so it cannot separate those six. On the Mac in Safari, a Battle frame at High drew 324.6 times and took 12.68 ms of GPU time. Its timer gave copies 0.004 ms and compute 0.096 ms. Render 1 to 6 took 0.641, 0.657, 0.602, 0.569, 0.080 and 10.461 ms. Render 6 holds every pass from the sixth on. Chrome, over a larger canvas, drew 335.7 times in 5.51 ms. The page is `compare=battle&r34probe=1`, and both runs were marked at a load above 8.
+
+Those six passes are what the direct path would change. The probe's one-pass cost on the Mac is 9.6 us per draw. So 324.6 draws come to about 3.1 ms, a quarter of the 12.68 ms. The iPhone 17's cost is 2.5 us per draw, so the same draws come to about 0.8 ms of its 23.2 ms. So on the phone the prize is near a millisecond, and its frames are dominated by other work.
+
 ## Options
 
 1. Build the direct-draw path now. Its measured ceiling reaches several milliseconds of Battle's GPU time, which its several passes may make worth a dedicated session.

@@ -212,10 +212,10 @@ describe('the names and budgets that the list names', () => {
 
 	it('names permutation bits and mesh templates that the engine builds', () => {
 		const names = read('crates/null3d-gpu/src/drawlist.rs')
-			.split('pub const NAMES: [(&str, u32); 27] = [')[1]
+			.split('pub const NAMES: [(&str, u32); 28] = [')[1]
 			?.split('];')[0];
 		const bits = [...String(names).matchAll(/\("([A-Z_]+)", [A-Z_]+\)/g)].map((m) => m[1]);
-		expect(bits.length).toBe(27);
+		expect(bits.length).toBe(28);
 		for (const bit of ASSET_PERMUTATIONS) expect(bits).toContain(bit);
 		const shaders = [
 			...read('crates/null3d-shaders/shaders.toml').matchAll(/^\[shaders\.([a-z_0-9]+)\]/gm),

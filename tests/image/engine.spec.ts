@@ -326,6 +326,7 @@ const FIRST_USE_SHADER_SKETCHES = [
 	{ feature: 'background', sketch: 'tests/pages/sketches/texture-background-sketch.ts' },
 	{ feature: 'transmission', sketch: 'tests/pages/sketches/transmission-sketch.ts' },
 	{ feature: 'coat_sheen', sketch: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv' },
+	{ feature: 'weighted', sketch: 'tests/pages/sketches/weighted-sketch.ts' },
 	{ feature: 'decals', sketch: 'tests/pages/sketches/decal-first-use-sketch.ts' },
 ] as const;
 

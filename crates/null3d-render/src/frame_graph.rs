@@ -171,6 +171,7 @@ use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
+use crate::weighted::{self, WeightedIds, WeightedLayer};
 
 /// The format of the scene's depth targets.
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
@@ -192,6 +193,8 @@ pub(crate) struct GraphIds {
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
     pub(crate) transmission: TransmissionIds,
+    /// The composite and the depth copy of the camera's weighted layer.
+    pub(crate) weighted: WeightedIds,
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub(crate) particle_depth: u32,
 }
@@ -315,6 +318,14 @@ const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
 /// a mip chain that it creates, which the camera's transparent pass reads.
 const TRANSMISSION_PASS: &str = "Transmission";
 const TRANSMISSION_COLOR: &str = "transmissionColor";
+/// The camera's weighted layer (see [`crate::weighted`]): the pass that draws the weighted
+/// surfaces into its two sums, and with a multisampled scene the one-sample depth target that it
+/// copies first, and the composite, which blends the sums over the scene color.
+const WEIGHTED_DEPTH: &str = "weightedDepth";
+const WEIGHTED_PASS: &str = "Weighted";
+const WEIGHTED_SUM: &str = "weightedSum";
+const WEIGHTED_COVER: &str = "weightedCover";
+const WEIGHTED_COMPOSITE_PASS: &str = "WeightedComposite";
 /// The pass that draws decals over the camera's opaque objects, from the scene's depth so far.
 const DECALS_PASS: &str = "Decals";
 /// The pass that draws the objects that decals skip again, after the decal pass.
@@ -426,6 +437,11 @@ pub(crate) enum Role {
     /// Copies the camera's opaque color into the first level of the target that surfaces which
     /// let light through sample. The graph records it, and the mip levels after its render pass.
     TransmissionCopy,
+    /// Draws the camera's weighted surfaces into the weighted layer's two sums. The builder
+    /// records it, after the graph's copy of a multisampled scene depth.
+    Weighted,
+    /// Blends the camera's weighted layer over its scene color. The graph records it itself.
+    WeightedComposite,
     /// Copies the camera's opaque depth into the target that soft particles read. The graph
     /// records it itself.
     ParticleDepthCopy,
@@ -663,6 +679,20 @@ pub(crate) struct FrameGraph {
     /// The textures that the copy reads and draws into, found once for each compile of the graph,
     /// which the count says.
     transmission_target: Option<(u32, u32, u32)>,
+    /// The composite and the depth copy of the camera's weighted layer.
+    weighted: WeightedLayer,
+    /// True when the device draws into the weighted layer's targets of 16-bit floats.
+    weighted_targets: bool,
+    /// True while some sorted bucket has a pipeline of the weighted layer.
+    weighted_wanted: bool,
+    /// True once the composite's pipeline and the depth copy's, where the scene needs it, are
+    /// built.
+    weighted_built: bool,
+    /// True when the declared passes hold the weighted layer.
+    weighted_declared: bool,
+    /// The textures that the layer's composite and depth copy read, found once for each compile
+    /// of the graph, which the count says: the two sums, and the scene depth or 0.
+    weighted_textures: Option<(u32, [u32; 3])>,
     /// True while some object is a decal.
     decals_wanted: bool,
     /// True while objects on the layers that decals skip draw again after them.
@@ -822,6 +852,12 @@ impl FrameGraph {
             transmission_built: false,
             transmission_declared: false,
             transmission_target: None,
+            weighted: WeightedLayer::new(ids.weighted),
+            weighted_targets: true,
+            weighted_wanted: false,
+            weighted_built: false,
+            weighted_declared: false,
+            weighted_textures: None,
             decals_wanted: false,
             redraws_wanted: false,
             decals_declared: false,
@@ -1610,6 +1646,36 @@ impl FrameGraph {
             .unwrap_or_else(|| self.transmission.blank())
     }
 
+    /// Says whether the device draws into one-sample targets of 16-bit floats, which the camera's
+    /// weighted layer needs. Without them, weighted surfaces draw back to front in the transparent
+    /// pass, as surfaces of normal blending.
+    pub(crate) fn set_weighted_targets(&mut self, supported: bool) {
+        self.weighted_targets = supported;
+    }
+
+    /// The targets of the camera's weighted layer, for the pipelines of a pass whose targets are
+    /// `scene`, or `None` where the device cannot draw the layer.
+    pub(crate) fn weighted_targets(&self, scene: PassTargets) -> Option<PassTargets> {
+        self.weighted_targets.then_some(PassTargets {
+            color_format: weighted::SUM_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: 1,
+            ..scene
+        })
+    }
+
+    /// Turns the camera's weighted layer on while some sorted bucket has its pipeline, and off
+    /// otherwise, for the next frames. The passes are declared again only when the layer starts or
+    /// stops drawing. Call it before [`FrameGraph::request_pipelines`], which asks for the layer's
+    /// own pipelines.
+    pub(crate) fn set_weighted(&mut self, on: bool) {
+        let was = self.weighted_draws();
+        self.weighted_wanted = on && self.weighted_targets;
+        if self.weighted_draws() != was {
+            self.declared = false;
+        }
+    }
+
     /// Turns the copy of the camera's opaque depth on while a particle system fades near the
     /// surfaces behind it, and off otherwise, as [`FrameGraph::set_transmission`] turns its copy.
     pub(crate) fn set_soft_particles(&mut self, on: bool) {
@@ -1618,6 +1684,25 @@ impl FrameGraph {
         if self.particle_depth_draws() != was {
             self.declared = false;
         }
+    }
+
+    /// True while the camera's weighted layer draws: some sorted bucket has its pipeline, and the
+    /// layer's own pipelines are built. Until then weighted surfaces draw back to front in the
+    /// transparent pass.
+    pub(crate) fn weighted_draws(&self) -> bool {
+        self.weighted_wanted && self.weighted_built
+    }
+
+    /// True when the declared passes hold the camera's weighted layer, so the camera's
+    /// transparent pass leaves weighted buckets to the weighted pass.
+    pub(crate) fn weighted_declared(&self) -> bool {
+        self.weighted_declared
+    }
+
+    /// True when the camera's weighted layer copies one sample of a multisampled scene depth,
+    /// which it then tests against.
+    fn weighted_copies_depth(&self) -> bool {
+        self.samples > 1
     }
 
     /// True while the copy of the camera's opaque depth draws: a particle system wants it, and its
@@ -1954,6 +2039,10 @@ impl FrameGraph {
             let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
             self.transparent.push((index as u16, pass));
         }
+        self.weighted_declared = self.weighted_draws() && !views.is_empty();
+        if self.weighted_declared {
+            self.declare_weighted(views, &named);
+        }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
                 if self.fullscreen_views & (1 << index) != 0 {
@@ -2245,6 +2334,39 @@ impl FrameGraph {
         }
     }
 
+    /// Declares the camera's weighted layer after its transparent pass (see [`crate::weighted`]).
+    /// The weighted pass draws into its two sums with the scene's depth as its depth target. A
+    /// scene of one sample lends its own depth. A multisampled scene's pass creates a depth target
+    /// of one sample, and its first draw copies the scene depth into it, as the transparent pass
+    /// leaves it. The composite then blends the sums over the scene color.
+    fn declare_weighted(&mut self, views: &[View], named: &[ViewPassNames]) {
+        let camera = &views[ViewId::CAMERA.index()];
+        let size = view_size(camera);
+        let mut layer = Pass::new(WEIGHTED_PASS, PassKind::Scene)
+            .size(size)
+            .layers(camera.layers())
+            .creates(WEIGHTED_SUM, Target::color(weighted::SUM_FORMAT))
+            .creates(WEIGHTED_COVER, Target::color(weighted::COVER_FORMAT));
+        layer = if self.weighted_copies_depth() {
+            layer
+                .reads_so_far(SCENE_DEPTH)
+                .creates(WEIGHTED_DEPTH, Target::depth(DEPTH_FORMAT))
+        } else {
+            layer.writes(SCENE_DEPTH)
+        };
+        if self.skins() {
+            layer = layer.reads(SKINNED);
+        }
+        let layer = reads_targets(layer, views, named, ViewId::CAMERA.index());
+        self.add(layer, Role::Weighted);
+        let composite = Pass::new(WEIGHTED_COMPOSITE_PASS, PassKind::Scene)
+            .size(size)
+            .reads(WEIGHTED_SUM)
+            .reads(WEIGHTED_COVER)
+            .writes(SCENE_COLOR);
+        self.add(composite, Role::WeightedComposite);
+    }
+
     /// Declares the steps of ambient occlusion: the depth copy reads the scene depth as the
     /// prepass leaves it, the horizon search reads the copy, and the denoise reads both.
     fn declare_ao(&mut self) {
@@ -2486,6 +2608,23 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        let weighted_built = self.weighted_wanted && {
+            let composite =
+                self.weighted
+                    .request_composite(pipelines, self.scene_color.format(), self.samples);
+            let depth = self
+                .weighted_copies_depth()
+                .then(|| self.weighted.request_depth(pipelines, DEPTH_FORMAT));
+            pipelines.built(composite, pipelines_built)
+                && depth.is_none_or(|id| pipelines.built(id, pipelines_built))
+        };
+        if weighted_built != self.weighted_built {
+            let was = self.weighted_draws();
+            self.weighted_built = weighted_built;
+            if self.weighted_draws() != was {
+                self.declared = false;
+            }
+        }
         // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
         let samples = if self.gpu_culling { self.samples } else { 1 };
         let particle_depth_built = self.particle_depth_wanted && {
@@ -2580,6 +2719,7 @@ impl FrameGraph {
         self.upload_fog(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
+        self.bind_weighted(list)?;
         self.bind_particle_depth(list)?;
         if !self.final_runs() {
             return Ok(());
@@ -2922,6 +3062,41 @@ impl FrameGraph {
         self.transmission.prepare(list, source, self.textures_made)
     }
 
+    /// Binds the composite of the camera's weighted layer to its two sums, and the depth copy to
+    /// the scene depth, while the layer is declared. It finds their textures once for each compile
+    /// of the graph.
+    fn bind_weighted(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if !self.weighted_declared {
+            return Ok(());
+        }
+        let compiles = self.graph.compiles();
+        let [sum, cover, depth] = match self.weighted_textures {
+            Some((at, textures)) if at == compiles => textures,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("the weighted layer reads planned textures")
+                };
+                let depth = if self.weighted_copies_depth() {
+                    id(SCENE_DEPTH)
+                } else {
+                    0
+                };
+                let textures = [id(WEIGHTED_SUM), id(WEIGHTED_COVER), depth];
+                self.weighted_textures = Some((compiles, textures));
+                textures
+            }
+        };
+        let made = self.textures_made;
+        self.weighted.prepare_composite(list, sum, cover, made)?;
+        if depth != 0 {
+            // WebGL2's backend binds a copy of one sample of a multisampled depth in its place.
+            self.weighted
+                .prepare_depth(list, depth, self.gpu_culling, made)?;
+        }
+        Ok(())
+    }
+
     /// Binds the copy of the camera's opaque depth to the scene depth while it is declared, and
     /// finds the texture of its target, once for each compile of the graph.
     fn bind_particle_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
@@ -3110,9 +3285,10 @@ impl FrameGraph {
                     if finals && let Some(meter) = self.exposure_pass.as_ref() {
                         meter.record(list)?;
                     }
-                    let masks = passes
-                        .iter()
-                        .any(|&pass| self.roles[pass.index()] == Role::OutlineMask);
+                    // The outline mask and the weighted layer's sums start from nothing.
+                    let masks = passes.iter().any(|&pass| {
+                        matches!(self.roles[pass.index()], Role::OutlineMask | Role::Weighted)
+                    });
                     let clear = if masks {
                         [0.0; 4]
                     } else {
@@ -3175,6 +3351,13 @@ impl FrameGraph {
                                 }
                             }
                             Role::TransmissionCopy => self.transmission.record(list)?,
+                            Role::Weighted => {
+                                if self.weighted_copies_depth() {
+                                    self.weighted.record_depth(list)?;
+                                }
+                                record(list, Role::Weighted)?;
+                            }
+                            Role::WeightedComposite => self.weighted.record_composite(list)?,
                             Role::ParticleDepthCopy => self.particle_depth.record(list)?,
                             role => record(list, role)?,
                         }
@@ -3211,16 +3394,22 @@ impl FrameGraph {
         clear: [f32; 4],
     ) -> Result<(), RecordError> {
         let (mut color, mut resolve, mut depth) = (NO_TARGET, NO_TARGET, NO_TARGET);
+        let mut second = NO_TARGET;
         let mut flags = 0;
         for attachment in plan.attachments(step) {
             let (clears, stores) = if attachment.depth {
                 depth = self.attachment_id(attachment.texture, attachment.layer);
                 (pass_flags::CLEAR_DEPTH, pass_flags::STORE_DEPTH)
-            } else {
+            } else if color != NO_TARGET {
+                // Only the weighted layer draws into a second color target: its two sums, which
+                // both clear and both store.
                 debug_assert!(
-                    color == NO_TARGET,
-                    "a render pass draws into one color target"
+                    second == NO_TARGET && attachment.resolve.is_none(),
+                    "a render pass draws into at most two color targets, the second of one sample"
                 );
+                second = self.attachment_id(attachment.texture, attachment.layer);
+                (pass_flags::CLEAR_COLOR, pass_flags::STORE_COLOR)
+            } else {
                 color = self.attachment_id(attachment.texture, attachment.layer);
                 resolve = attachment
                     .resolve
@@ -3235,20 +3424,20 @@ impl FrameGraph {
             }
         }
         let [r, g, b, a] = clear;
-        list.push(
-            Op::BeginRenderPass,
-            &[
-                color,
-                resolve,
-                depth,
-                r.to_bits(),
-                g.to_bits(),
-                b.to_bits(),
-                a.to_bits(),
-                0f32.to_bits(),
-                flags,
-            ],
-        )?;
+        let operands = [
+            color,
+            resolve,
+            depth,
+            r.to_bits(),
+            g.to_bits(),
+            b.to_bits(),
+            a.to_bits(),
+            0f32.to_bits(),
+            flags,
+            second,
+        ];
+        let count = if second == NO_TARGET { 9 } else { 10 };
+        list.push(Op::BeginRenderPass, &operands[..count])?;
         Ok(())
     }
 
@@ -3386,6 +3575,7 @@ impl FrameGraph {
             copies.reset_gpu();
         }
         self.transmission.reset_gpu();
+        self.weighted.reset_gpu();
         self.particle_depth.reset_gpu();
     }
 }
@@ -3814,6 +4004,7 @@ mod tests {
             group: 60,
             blank: 903,
         },
+        weighted: WeightedIds { first_group: 70 },
         particle_depth: 61,
     };
 
@@ -5349,6 +5540,129 @@ mod tests {
 
     /// Turns transmission on in `frames` and builds the copy's pipeline, as a builder's frames do:
     /// the first frame asks for it, and a later one finds it built.
+    #[test]
+    fn the_weighted_layer_draws_after_the_transparent_pass_only_while_it_is_used() {
+        let canvas = (320, 180);
+        for (format, antialias) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa),
+            (format::CANVAS, Antialias::Msaa),
+            (format::RGBA16_FLOAT, Antialias::Fxaa),
+        ] {
+            let multisampled = antialias == Antialias::Msaa;
+            let mut frames = frame_graph(format, antialias, true, false);
+            frames.sync(&[View::default(), shown()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let keys = pipelines.keys().len();
+
+            // A device without targets of 16-bit floats never draws the layer, and asks for none
+            // of its pipelines.
+            frames.set_weighted_targets(false);
+            assert!(frames.weighted_targets(frames.scene_targets()).is_none());
+            frames.set_weighted(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.weighted_draws());
+            assert_eq!(pipelines.keys().len(), keys);
+
+            // The layer waits for its own pipelines.
+            frames.set_weighted_targets(true);
+            frames.set_weighted(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(
+                !frames.weighted_draws(),
+                "the layer waits for its pipelines"
+            );
+            assert_eq!(
+                pipelines.keys().len(),
+                keys + if multisampled { 2 } else { 1 },
+                "the layer asks for the depth copy only for a multisampled scene"
+            );
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.weighted_draws());
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(frames.weighted_declared());
+            let with: Vec<String> = steps(&frames).into_iter().flatten().collect();
+            let at = |name: &str| with.iter().position(|n| n == name);
+            let transparent = at("Transparent").unwrap();
+            let layer = at(WEIGHTED_PASS).unwrap();
+            let composite = at(WEIGHTED_COMPOSITE_PASS).unwrap();
+            assert!(transparent < layer && layer < composite);
+            // Other views keep their own passes and draw no layer.
+            assert!(at("Transparent1").is_some());
+
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let groups: Vec<(u32, u32)> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .map(|group| (group[0], group[1]))
+                .filter(|&(id, _)| id >= IDS.weighted.first_group)
+                .collect();
+            let mut expected = vec![(IDS.weighted.first_group, bind_layout::WEIGHTED_COMPOSITE)];
+            if multisampled {
+                expected.push((IDS.weighted.first_group + 1, bind_layout::WEIGHTED_DEPTH_MS));
+            }
+            assert_eq!(groups, expected);
+
+            // The layer's pass clears both sums to nothing and stores them for the composite.
+            list.clear();
+            frames
+                .record(&mut list, |_| [0.5; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
+                .into_iter()
+                .filter(|pass| pass.len() == 10)
+                .collect();
+            assert_eq!(
+                pairs.len(),
+                1,
+                "one render pass draws into two color targets"
+            );
+            let pair = &pairs[0];
+            assert_ne!(pair[9], null3d_gpu::drawlist::NO_TARGET);
+            assert_eq!(
+                pair[1],
+                null3d_gpu::drawlist::NO_TARGET,
+                "the sums have one sample"
+            );
+            assert_eq!(&pair[3..7], &[0f32.to_bits(); 4]);
+            let flags = pair[8];
+            assert_eq!(
+                flags & (pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR),
+                pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR
+            );
+            // A multisampled scene's pass starts its own depth, which it copies first; another
+            // tests the scene's depth.
+            assert_eq!(flags & pass_flags::CLEAR_DEPTH != 0, multisampled);
+            let copies = operands(&list, Op::SetBindGroup)
+                .iter()
+                .filter(|group| group[1] == IDS.weighted.first_group + 1)
+                .count();
+            assert_eq!(copies, usize::from(multisampled));
+
+            // Unused again, the layer and its targets are gone.
+            frames.set_weighted(false);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+        }
+    }
+
     fn build_transmission(frames: &mut FrameGraph, pipelines: &mut PipelineCache) {
         let mut list = DrawList::with_capacity(1024);
         frames.set_transmission(true);
