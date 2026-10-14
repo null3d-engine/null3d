@@ -163,7 +163,9 @@ export class FrameReplay {
 	 */
 	private restOf(frame: number): number {
 		const parity = frame & 1;
-		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
+		// The address is stored in the shared Int32 slots, so it reads signed above 2 GiB. The
+		// page may raise the memory's maximum to 4096 MiB (hard rule 31).
+		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
 		if (frameAfter(frame, this.prepared)) {
 			this.rests[parity] = this.backend.prepare(this.views.heap(Uint32Array), start, this.end);
