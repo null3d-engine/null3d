@@ -247,6 +247,17 @@
       "detect": "\\bFogExp2\\b"
     },
     {
+      "id": "volumetric-fog",
+      "category": "Scene graph",
+      "three": "VolumeNodeMaterial (webgpu_volume_lighting) / GodRaysEffect",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })",
+      "notes": "three.js has no lit fog in its core. Its webgpu_volume_lighting example marches rays through a box with VolumeNodeMaterial, lit by point and spot lights with shadows. null3D lights the scene's own fog instead, in a grid that follows the camera's view, with the sun's shadow cascades and the point and spot lights' shadows. Drop the box: the fog's density and heightFalloff say where the air holds haze, and its scattering intensity becomes intensity. The god rays effects of add-on libraries blur a mask of the sky toward the sun on the screen. null3D's rays also come from lamps and from shadows off the screen. It draws where the quality setting fogSlices is above 0: Medium and up. On Low the fog keeps its sunGlow.",
+      "docs": "api/scene",
+      "detect": "\\bVolumeNodeMaterial\\b|\\bGodRays(Effect|Pass)?\\b"
+    },
+    {
       "id": "group",
       "category": "Scene graph",
       "three": "new Group() / new Object3D()",
@@ -561,7 +572,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -1364,7 +1375,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.play('walk', { time: 0.4, weight: 0.7 }); anim.setWeight('walk', 0.5); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
-      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. startAt has no counterpart: call play at that time.",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. crossFadeTo and crossFadeFrom map to crossFade, which keeps the weighted blend that three.js shows; it never uses an inertial transition, which samples only the new clip. startAt has no counterpart: call play at that time.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
@@ -1741,6 +1752,17 @@
       "notes": "three.js has no particle system. A port replaces the loop that moves Points or InstancedMesh rows with an emitter whose particles the GPU moves in closed form: gravity, drag toward the wind, turbulence and a ground that bounces them. Write the effect's look as curves over life in place of per-frame color and size code. AdditiveBlending becomes blending 'additive'; particles never write depth. A sprite atlas becomes map with flipbook. three.quarks's sub-emitters become subEmitters on 'death' or 'ground'. A system does not sort its own particles, cast shadows or take light.",
       "docs": "api/particles",
       "detect": "\\b(ParticleSystem|BatchedRenderer|ParticleEmitter)\\b|three\\.quarks|three-nebula"
+    },
+    {
+      "id": "terrain",
+      "category": "Geometry",
+      "three": "A displaced PlaneGeometry, or three.js's TerrainGenerator over a height map",
+      "status": "changed",
+      "since": "0.2",
+      "target": "await createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
+      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centred quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
+      "docs": "api/terrain",
+      "detect": "\\bTerrainGenerator\\b|\\bgetHeightAt\\b"
     },
     {
       "id": "css-renderers",
