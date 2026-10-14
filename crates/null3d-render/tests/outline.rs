@@ -137,9 +137,11 @@ fn check_outlines<B: FrameBuilder>(mut world: World<B>, culls_on_gpu: bool) {
         .into_iter()
         .find(|o| o[1] == layout::FINAL)
         .expect("the final pass binds the mask");
+    // The mask's binding alone: binding 12 is the automatic exposure's texel, which every build
+    // binds whether or not the meter runs.
     let textures: Vec<u32> = group[3..]
         .chunks(5)
-        .filter(|e| e[0] >= MASK_BINDING)
+        .filter(|e| e[0] == MASK_BINDING)
         .map(|e| e[2])
         .collect();
     assert_eq!(

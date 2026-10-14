@@ -1,6 +1,9 @@
 // The showcase scenes' controls HUD. A translucent chevron sits at the bottom of the panel; pressing
-// it slides a full panel of grouped buttons up over glass. The sketch posts the model, this shell
-// draws it, and a pick goes back to the sketch as a message. The CSS lives with the examples' styles.
+// it slides a full panel of controls up over glass. The panel is tabbed: one tab per group of the
+// model, and only the selected group's buttons show, so the panel stays short on any screen, a phone
+// included. The tab bar scrolls across, the selected group scrolls inside a bounded panel, and the
+// selected tab is remembered while the panel is open. The sketch posts the model, this shell draws
+// it, and a pick goes back to the sketch as a message. The CSS lives with the examples' styles.
 //
 // A button's tip describes what it does alone, with no input device named. The tip shows on hover,
 // keyboard focus and a press, and hides on a leave, a blur, a tap elsewhere, a scroll or after a
@@ -42,10 +45,14 @@ export function createHud(
 	element.replaceChildren();
 	element.classList.add('hud');
 	const panel = node('div', 'hud__panel');
+	panel.id = 'hud-panel';
 	panel.setAttribute('role', 'region');
 	panel.setAttribute('aria-label', 'Scene controls');
+	const tabs = node('div', 'hud__tabs');
+	tabs.setAttribute('role', 'tablist');
+	tabs.setAttribute('aria-label', 'Scene control groups');
 	const body = node('div', 'hud__body');
-	panel.append(body);
+	panel.append(tabs, body);
 	const chevron = node('button', 'hud__chevron');
 	chevron.type = 'button';
 	chevron.setAttribute('aria-expanded', 'false');
@@ -126,7 +133,35 @@ export function createHud(
 
 	/** The buttons drawn now, by their group and id, so a render only turns them on and off. */
 	let drawn = new Map<string, HTMLButtonElement>();
+	/** The tab and the panel drawn for each group, by the group's name. */
+	let tabButtons = new Map<string, HTMLButtonElement>();
+	let tabPanels = new Map<string, HTMLElement>();
+	/** The selected tab's group name. Camera, the first group, until a tab picks another. */
+	let active = 'camera';
 	let signature = '';
+	/** Shows one group: its tab is selected and only its panel is visible. */
+	const selectTab = (name: string, focus = false): void => {
+		active = name;
+		for (const [group, tab] of tabButtons) {
+			const on = group === name;
+			tab.setAttribute('aria-selected', String(on));
+			tab.tabIndex = on ? 0 : -1;
+			tab.classList.toggle('hud__tab--on', on);
+		}
+		for (const [group, section] of tabPanels) section.hidden = group !== name;
+		if (focus) tabButtons.get(name)?.focus();
+	};
+	/** Moves the selection along the tab bar with the arrow keys, as a tablist does. */
+	const moveTab = (names: readonly string[], from: string, key: string): void => {
+		const index = names.indexOf(from);
+		let to = -1;
+		if (key === 'ArrowRight') to = (index + 1) % names.length;
+		else if (key === 'ArrowLeft') to = (index - 1 + names.length) % names.length;
+		else if (key === 'Home') to = 0;
+		else if (key === 'End') to = names.length - 1;
+		const name = names[to];
+		if (to >= 0 && name !== undefined) selectTab(name, true);
+	};
 	const draw = (model: HudModel): void => {
 		const next = model.groups
 			.map(
@@ -137,10 +172,34 @@ export function createHud(
 		if (next !== signature) {
 			signature = next;
 			drawn = new Map();
+			tabButtons = new Map();
+			tabPanels = new Map();
+			const names = model.groups.map((group) => group.name);
+			tabs.replaceChildren(
+				...model.groups.map((group) => {
+					const tab = node('button', 'hud__tab');
+					tab.type = 'button';
+					tab.id = `hud-tab-${group.name}`;
+					tab.setAttribute('role', 'tab');
+					tab.setAttribute('aria-controls', `hud-panel-${group.name}`);
+					tab.textContent = group.title;
+					tab.addEventListener('click', () => selectTab(group.name));
+					tab.addEventListener('keydown', (event) => {
+						if (!event.key.startsWith('Arrow') && event.key !== 'Home' && event.key !== 'End')
+							return;
+						event.preventDefault();
+						moveTab(names, group.name, event.key);
+					});
+					tabButtons.set(group.name, tab);
+					return tab;
+				}),
+			);
 			body.replaceChildren(
 				...model.groups.map((group) => {
 					const section = node('section', 'hud__group');
-					section.append(node('h3', undefined, group.title));
+					section.id = `hud-panel-${group.name}`;
+					section.setAttribute('role', 'tabpanel');
+					section.setAttribute('aria-labelledby', `hud-tab-${group.name}`);
 					const buttons = node('div', 'hud__buttons');
 					for (const button of group.buttons) {
 						const el = node('button', `hud__btn${group.radio ? '' : ' hud__btn--toggle'}`);
@@ -156,9 +215,12 @@ export function createHud(
 						drawn.set(`${group.name}\u0000${button.id}`, el);
 					}
 					section.append(buttons);
+					tabPanels.set(group.name, section);
 					return section;
 				}),
 			);
+			if (!tabButtons.has(active)) active = model.groups[0]?.name ?? '';
+			selectTab(active);
 		}
 		for (const group of model.groups)
 			for (const button of group.buttons) {
@@ -179,8 +241,9 @@ export function createHud(
 		toast.classList.add('show');
 		toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
 	};
-	/** Each button's state at the last render, so a change can name itself. */
-	let shown = new Map<string, boolean>();
+	/** Each button's state at the last render, so a change can name itself. It is undefined before
+	 * the first render, so the first state that arrives does not toast. */
+	let shown: Map<string, boolean> | undefined;
 	/** Names a change in the controls, as a toast: a mode's new value, or a toggle's on and off. */
 	const toastChanges = (model: HudModel): void => {
 		const next = new Map<string, boolean>();
@@ -188,15 +251,15 @@ export function createHud(
 			for (const button of group.buttons) {
 				const key = `${group.name}\u0000${button.id}`;
 				next.set(key, button.active);
-				const before = shown.get(key);
-				if (before === undefined || before === button.active) continue;
+				const before = shown?.get(key);
+				if (shown === undefined || before === undefined || before === button.active) continue;
 				if (button.active)
 					showToast(
-						group.radio ? `${group.title}: ${button.label}`.toLowerCase() : `${button.label}: on`,
+						(group.radio ? `${group.title}: ${button.label}` : `${button.label}: on`).toLowerCase(),
 					);
-				else if (!group.radio) showToast(`${button.label}: off`);
+				else if (!group.radio) showToast(`${button.label}: off`.toLowerCase());
 			}
-		if (shown.size > 0) shown = next;
+		shown = next;
 	};
 	return {
 		render(model, visible) {

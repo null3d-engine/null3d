@@ -5,10 +5,10 @@
 // touch the page. The camera group of the controls is a row of buttons, so a touch screen, which has
 // no `c` key, can switch the mode too.
 //
-// Switching Auto to Manual is instant: the user takes the camera at once, exactly where it is, and
-// the controls take their view from the pose they find. Switching Manual back to Auto does not
-// snap: the camera finds the nearest point of the route, then glides to it over a short interval,
-// easing in and out, and the route carries on from there.
+// Switching Auto to Manual is instant: the route's motion stops at once, and the user takes the
+// camera exactly where it is, holding that pose, with the controls taking their view from it.
+// Switching Manual back to Auto does not snap: the camera finds the nearest point of the route,
+// then glides to it over a short interval, easing in and out, and the route carries on from there.
 //
 // The route is a function of the sketch time, so a held frame (the image tests' `?hold`) lands on a
 // fixed pose and never drifts. A scene whose held frame must not change puts the pose of that frame
@@ -71,8 +71,6 @@ export interface Cinematic {
 const smooth = (t: number) => t * t * (3 - 2 * t);
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
-/** Seconds that the route's motion eases to a halt, when the user takes the camera. */
-const TAKEOVER = 0.22;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
 const SAMPLES = 240;
 /** How much the look-at target counts against the camera's position, in the search. */
@@ -113,11 +111,6 @@ export function createCinematic(
 	let glide = 1;
 	/** The phase that a glide resumes from. */
 	let glideFrom = 0;
-	/** The route's pose and the pose it eases to when the user takes the camera, and how far that has gone. */
-	const handStart = new Float32Array(6);
-	const handEnd = new Float32Array(6);
-	const scratch = new Float32Array(6);
-	let hand = 1;
 	let announced = false;
 
 	// The manual camera: the engine's orbit controls. A left drag or one finger turns the camera
@@ -248,22 +241,21 @@ export function createCinematic(
 	/** Switches the camera between the route and the user, as the `c` key and the button do. */
 	const toggleMode = (): void => {
 		if (mode === 'auto') {
-			// The user takes the camera where the route is this moment, and the route's motion eases
-			// to a halt over a moment, so the takeover is smooth and never jumps to a shot's pose.
-			routePose(time.now + phaseShift, handStart);
-			routePose(time.now + phaseShift + 0.05, scratch);
-			for (let c = 0; c < 6; c++)
-				handEnd[c] =
-					(handStart[c] as number) +
-					(((scratch[c] as number) - (handStart[c] as number)) / 0.05) * (TAKEOVER / 2);
-			hand = 0;
+			// The route's motion stops at once, and the user takes the camera exactly where it is:
+			// the pose is the route's own this moment, never a snap to a shot. The controls take
+			// their target from what the shot was looking at, so the camera holds still until the
+			// user moves it.
+			routePose(time.now + phaseShift, pose);
+			apply(pose);
+			controls.target[0] = pose[3] as number;
+			controls.target[1] = pose[4] as number;
+			controls.target[2] = pose[5] as number;
 			mode = 'manual';
 			glide = 1;
-			controls.enabled = false;
+			controls.enabled = true;
 		} else {
 			// Auto glides: find the nearest point of the route, then ease onto it.
 			mode = 'auto';
-			hand = 1;
 			controls.enabled = false;
 			primed = false;
 			camera.getPosition(from);
@@ -303,25 +295,6 @@ export function createCinematic(
 			}
 			if (input.wasPressed('KeyC')) toggleMode();
 			if (mode === 'manual') {
-				// The route's last motion eases to a halt before the user's controls take over.
-				if (hand < 1) {
-					hand = Math.min(1, hand + dt / TAKEOVER);
-					const b = smooth(hand);
-					for (let c = 0; c < 6; c++)
-						pose[c] =
-							(handStart[c] as number) + ((handEnd[c] as number) - (handStart[c] as number)) * b;
-					apply(pose);
-					if (hand >= 1) {
-						controls.target[0] = handEnd[3] as number;
-						controls.target[1] = handEnd[4] as number;
-						controls.target[2] = handEnd[5] as number;
-						controls.enabled = true;
-					}
-					options.target[0] = pose[3] as number;
-					options.target[1] = pose[4] as number;
-					options.target[2] = pose[5] as number;
-					return;
-				}
 				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
 				// fall. The controls take screen pixels, so the frame's step scales the speed.
 				const step = (options.speed ?? 420) * dt;
