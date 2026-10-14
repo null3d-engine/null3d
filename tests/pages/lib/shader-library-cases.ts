@@ -85,6 +85,11 @@ export interface LibraryFunction {
 /** The tolerance of most float results. */
 export const DEFAULT_TOLERANCE = 1e-4;
 /**
+ * The tolerance of results that pass through a struct, which some WebGL2 drivers keep at half
+ * precision: half precision's rounding, 2^-11, with room for the GPU's own.
+ */
+const HALF_TOLERANCE = 1e-3;
+/**
  * The tolerance of results that go through `sin` and `cos`, which WGSL lets a GPU compute to within
  * 2^-11 of the exact value.
  */
@@ -1543,6 +1548,40 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return floats(...[0, 1, 2].map((k) => inverseTranspose.map((r) => r[k]!)));
 		},
 	},
+	// null3d::atmosphere: the values of the whole sky, as three.js's sky shader finds them, with
+	// the scattering coefficients per million metres. The first case is the sky of the
+	// background-sky image test. Some WebGL2 drivers keep a struct's floats at half precision, so
+	// the tolerance allows half precision's rounding, and a coefficient that such a driver turns
+	// to zero still fails.
+	{
+		name: 'atmosphere::sky_whole',
+		cases: (random) => [
+			new Inputs().setF(0, sunPosition(4, 180)).setF(1, [10, 3, 0.005, 0.7]),
+			...samples((r) =>
+				new Inputs()
+					.setF(0, normalize([between(r, -1, 1), between(r, -0.3, 1), between(r, -1, 1)]))
+					.setF(1, [between(r, 1, 20), between(r, 0.5, 4), between(r, 0.001, 0.1), 0.8]),
+			)(random),
+		],
+		expected: (i) => {
+			const position = xyz(i.f(0));
+			const [turbidity, rayleigh, mie] = i.f(1);
+			const direction = normalize(position);
+			const height = Math.min(Math.max(direction[1], -1), 1);
+			const sunE =
+				1000 * Math.max(0, 1 - Math.E ** -((SKY_CUTOFF_ANGLE - Math.acos(height)) / 1.5));
+			const lowSun = Math.min(Math.max((1 - direction[1]) ** 5, 0), 1);
+			const sunFade = 1 - Math.min(Math.max(1 - Math.exp(position[1] / 450000), 0), 1);
+			const perMillion = 1e6;
+			const betaR = scale(SKY_TOTAL_RAYLEIGH, (rayleigh - (1 - sunFade)) * perMillion);
+			const betaM = scale(
+				SKY_MIE_CONST,
+				SKY_MIE_FACTOR * (0.2 * turbidity * 10e-18) * mie * perMillion,
+			);
+			return floats(direction, betaR, betaM, [sunE, lowSun, smoothstep(direction[1], -0.08, 0.3)]);
+		},
+		tolerance: HALF_TOLERANCE,
+	},
 	{
 		name: 'color::tone_map_agx_punchy',
 		cases: uniform(3, 0.01, 8),
@@ -1574,6 +1613,22 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		},
 	},
 ];
+
+/** three.js's sky: its Rayleigh coefficients per metre, and its Mie constant. */
+const SKY_TOTAL_RAYLEIGH: V3 = [5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5];
+const SKY_MIE_CONST: V3 = [1.8399918514433978e14, 2.7798023919660528e14, 4.0790479543861094e14];
+/** three.js's factor of the Mie coefficients, which is not log10(e). */
+// biome-ignore lint/suspicious/noApproximativeNumericConstant: three.js's own constant
+const SKY_MIE_FACTOR = 0.434;
+/** The earth's shadow in three.js's sky: pi / 1.95. */
+const SKY_CUTOFF_ANGLE = 1.6110731556870734;
+
+/** A point toward the sun at an elevation and an azimuth in degrees, as three.js's sky example places it. */
+function sunPosition(elevation: number, azimuth: number): V3 {
+	const phi = ((90 - elevation) * Math.PI) / 180;
+	const theta = (azimuth * Math.PI) / 180;
+	return [Math.sin(phi) * Math.sin(theta), Math.cos(phi), Math.sin(phi) * Math.cos(theta)];
+}
 
 /** The largest exponent of the fog's height terms, as `null3d::fog` limits it. */
 const FOG_HEIGHT_EXPONENT_LIMIT = 40;
