@@ -875,6 +875,11 @@ Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows
 
 Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that returns a value waits until that process has run every call before it. `fenceSync` is such a call. The completion tracker places a fence at the end of each frame, so the render worker waits there until Safari has run the frame's calls. Any wait inside Safari then shows in the render worker's time per frame. [WebGL call times](benchmarks.md#webgl-call-times) finds the call that waits.
 
+- A render pass that draws into a colour target with no depth attachment need not invalidate the depth. Each fullscreen step of an effect is such a pass. `endPass` now names only the attachments the pass has. Safari runs the invalidate on the thread that draws before it draws the pass, so a wasted call costs it. The iOS call profile put three such calls in ambient occlusion's frame.
+- On Safari 26.6 and 27.0, ambient occlusion costs the WebGL2 render worker about 3.6 ms a frame on an iPhone 18 Pro. It costs 0.8 ms without it, at render scales 1 and 0.5 alike. Safari 26.5 pays only 0.2 ms, and the WebGPU path is unchanged.
+- The cost is the three passes' GPU time surfacing at the frame's fence. The sync profile puts it in the passes' `clear` calls, about 0.95 ms each against 0.035 ms on 26.5. The WebGL2 delta matches the WebGPU GPU time of about 3 ms.
+- Bloom's clears stay cheap on the same device, so a clear of a depth-less float target is not slow on its own. No engine change took the cost away (13 October 2026).
+
 - ANGLE lays out a uniform block by Metal's rules, where a `vec3` takes 16 bytes. WGSL lets a scalar follow a `vec3f` at byte 12. Where the two layouts differ, ANGLE converts the block on the CPU before a draw that reads changed data.
 - ANGLE writes a buffer that the GPU still reads with a GPU copy. The conversion then reads the buffer on the CPU, so it waits for the GPU to finish every frame queued before. Until 2 October 2026, the frame's fog held a `vec3f` before a scalar. On the iPad, S3 then spent 22 ms of each WebGL2 frame in `fenceSync`.
 - The shader build therefore fails when a uniform block lays out differently by ANGLE's Metal rules (`metal_layout` in `crates/null3d-shaders/src/glsl.rs`). Fill each `vec3f` with a scalar into a `vec4f`.
