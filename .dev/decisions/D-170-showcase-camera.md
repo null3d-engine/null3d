@@ -94,6 +94,15 @@ still the moment the mode switches. The pose is still the route's own, never a s
 `examples/lib/takeover.test.ts` checks that the camera holds within a millimetre of the route's pose
 from the first frame after the switch and does not move over the second that follows.
 
+## Addendum: the camera starts moving soon after the page loads (owner, 14 October 2026)
+
+The owner ruled that a showcase scene must not stand still for long when its page loads: the camera
+starts moving quickly. Each route therefore opens on a **brief** hold of the establishing view, about
+half a second to a second, and then moves off it. A route whose first two shots repeat one pose reads
+as a pause, so the second shot must set the camera moving. Night town's opening hold is 0.8 s, and
+the demo's `hold` time is 0.5 s, which lands the image test's held frame on that hold. The held frame
+changes with the hold time, so the scene's references are remade in the same change.
+
 ## Addendum: a demo's geometry must not overlap (owner, 14 October 2026)
 
 The owner ruled that a demo's and a showcase scene's own geometry must not overlap: two pieces that

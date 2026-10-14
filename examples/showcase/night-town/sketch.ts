@@ -52,7 +52,8 @@ const TARGET = [0, 1.4, 0] as const;
  * enters a house. The first shot holds still, so a held frame lands on the opening view.
  */
 export const SHOTS: readonly Shot[] = [
-	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 5, move: 'hold' },
+	// The opening view holds only briefly, so the camera starts moving soon after the page loads.
+	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 0.8, move: 'hold' },
 	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 3 },
 	{ position: [26, 14, -8], target: [8, 4, 2], seconds: 9 },
 	{ position: [26, 6, -1.2], target: [12.6, 8, 8.4], seconds: 8 },

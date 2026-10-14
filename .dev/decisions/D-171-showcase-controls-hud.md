@@ -44,7 +44,7 @@ How the data was produced: the owner's review of the mockup on 14 October 2026, 
 The owner added two things to the controls on 14 October 2026.
 
 - **A toast names each change.** When a mode or an effect changes, the page shows a short translucent
-  toast at the top centre of the view, such as `camera: manual`, `bloom: on` or `time of day: night`.
+  toast at the top centre of the view, such as `camera: manual`, `Bloom: on` or `time of day: night`.
   It fades in and out over about 2 s, one replaces the old, it never takes a click, and its text names
   no input device. It comes from the same control model the HUD draws, so every group has it.
   `prefers-reduced-motion` shows it with no slide.
