@@ -520,6 +520,8 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/lights.html?scene=hemisphere`,
 		sketchSwitches: NO_TONE,
 	},
+	// Rectangle lights against three.js's RectAreaLight, with the same fitted tables and formulas.
+	{ test: 'lights-rect', twin: `${TWINS}/lights.html?scene=rect`, sketchSwitches: NO_TONE },
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
 	{ test: 'fog-exp2', twin: `${TWINS}/fog.html?fog=exp2` },
 	...TONE_MAPPINGS.flatMap((tone) =>

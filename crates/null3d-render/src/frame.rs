@@ -18,6 +18,7 @@ use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
+use null3d_core::layers::ALL_LAYERS;
 use null3d_core::levels::{FADE_BAND, LevelRule};
 use null3d_core::lights::{
     AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
@@ -31,6 +32,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao, Contact};
+use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4, multiply};
@@ -46,6 +48,8 @@ use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale};
 use crate::levels::{LevelError, Levels};
+use crate::light_grid::DEFAULT_AREA_LIGHT_CAP;
+use crate::light_tables::LightTables;
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
@@ -764,6 +768,17 @@ pub struct SceneSettings {
     /// How many times the targets of mirror views without a size of their own halve the render
     /// size, which the quality settings set.
     mirror_halvings: u8,
+    /// The area lights' tables and the lights' images, and their texture's state.
+    light_tables: LightTables,
+    /// The most area lights that one frame shades, which the quality settings set.
+    area_light_cap: u32,
+    /// Whether the lit templates draw with their builds that shade area lights.
+    area_shading: AreaShading,
+    /// True when the last gather found an area light whose tables have arrived.
+    area_wanted: bool,
+    /// The layers whose objects decals mark. An object on another layer too draws again after the
+    /// decals, over its own pixels.
+    decal_layers: u32,
     /// The particle systems of the particles add-on.
     particles: ParticleTable,
     /// The meshes with levels of detail.
@@ -863,12 +878,39 @@ impl SceneSettings {
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
             shadow_camera: None,
+            decal_layers: ALL_LAYERS,
             mirror_halvings: 1,
+            light_tables: LightTables::default(),
+            area_light_cap: DEFAULT_AREA_LIGHT_CAP,
+            area_shading: AreaShading::default(),
+            area_wanted: false,
             particles: ParticleTable::default(),
             levels: Levels::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
         }
+    }
+
+    /// The area lights' tables and the lights' images.
+    pub fn light_tables(&self) -> &LightTables {
+        &self.light_tables
+    }
+
+    /// The area lights' tables and the lights' images, for the sketch thread to fill and the frame
+    /// builders to upload.
+    pub fn light_tables_mut(&mut self) -> &mut LightTables {
+        &mut self.light_tables
+    }
+
+    /// The most area lights that one frame shades: the ones that give the camera the most light
+    /// when more are visible, as the light grid ranks them.
+    pub fn area_light_cap(&self) -> u32 {
+        self.area_light_cap
+    }
+
+    /// Sets the most area lights that one frame shades, from the next frame on.
+    pub fn set_area_light_cap(&mut self, cap: u32) {
+        self.area_light_cap = cap;
     }
 
     /// Makes the standard material's maps share the first `units` bindings of their bind group,
@@ -1816,7 +1858,10 @@ impl SceneSettings {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
-            maps if maps == template::INSTANCED_STANDARD_MAPS || maps >= template::CUSTOM_FIRST => {
+            maps if maps == template::INSTANCED_STANDARD_MAPS
+                || maps == template::DECAL_MAPS
+                || maps >= template::CUSTOM_FIRST =>
+            {
                 self.map_groups
                     .get(material as usize - 1)
                     .copied()
@@ -2160,6 +2205,10 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
+        // Area lights join the visible list only while the lit templates draw with their builds
+        // that shade them, so no build meets a light whose code it lacks.
+        self.area_wanted = self.light_tables.ready() && lights.has_area_lights();
+        lights.set_area_ready(self.light_tables.ready() && self.area_shading.on());
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
@@ -2197,6 +2246,26 @@ impl SceneSettings {
     /// shadows. A builder calls it when it makes its GPU objects again.
     pub fn forget_shadow_maps(&mut self) {
         self.shadow_schedule.reset();
+        self.area_shading.forget_gpu();
+    }
+
+    /// Turns area shading on or off for the frame (see [`AreaShading::update`]): on once the last
+    /// gather found an area light whose tables have arrived and the lit pipelines in use have their
+    /// builds that shade area lights. Returns true when it changes, so the layouts take their keys
+    /// again.
+    pub(crate) fn update_area_shading(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) -> bool {
+        self.area_shading
+            .update(self.area_wanted, pipelines, pipelines_built)
+    }
+
+    /// The key that a pair draws with in the scene's passes, from its shading key: with the bit
+    /// that shades area lights while area shading is on (see [`AreaShading::key`]).
+    pub fn area_key(&self, pipeline: DrawKey) -> DrawKey {
+        self.area_shading.key(pipeline)
     }
 
     /// The main directional light's shadows in the next frame, whose targets have the canvas's
@@ -2369,6 +2438,18 @@ impl SceneSettings {
         }
     }
 
+    /// Sets the layers whose objects decals mark. An object that is also on a layer outside `mask`
+    /// shows no decals: it draws again after them, over its own pixels. The default is every layer.
+    pub fn set_decal_layers(&mut self, mask: u32) {
+        self.decal_layers = mask;
+    }
+
+    /// The layers on which objects draw again after the decals, so they show none: every layer
+    /// that decals do not mark.
+    pub fn decal_skipped_layers(&self) -> u32 {
+        !self.decal_layers
+    }
+
     /// The linear color behind every object. Exposure and tone mapping change it as they change
     /// the objects: the clear color takes the exposure of each frame.
     pub fn set_background(&mut self, color: [f32; 3]) {
@@ -2447,6 +2528,9 @@ impl SceneSettings {
         let format = self.meshes.mesh(mesh - 1)?.format;
         let id = material - 1;
         let mut shading = self.materials.shading(id).ok()?;
+        if self.materials.features(id) & feature::DECAL != 0 {
+            return self.decal_key(id, shading, format, row_values);
+        }
         let uv0 = format & vertex::UV0 != 0;
         let live = |slot: MapSlot| self.textures.is_live(self.materials.map(id, slot));
         if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
@@ -2495,6 +2579,42 @@ impl SceneSettings {
             bias: self.materials.depth_bias(id),
         });
         key.map(|key| self.debug_view.draw_key(key))
+    }
+
+    /// What a decal's pair asks of its pipeline: the decal template of its shading, with maps where
+    /// the material has a live one, whatever texture coordinates the mesh has, since the box gives
+    /// them. Each decal draws the back faces of its box with no depth test, so it draws with the
+    /// camera inside the box too, and blends its premultiplied color over the scene's. A debug
+    /// view draws no decals.
+    fn decal_key(
+        &self,
+        id: u32,
+        shading: Shading,
+        format: u32,
+        row_values: bool,
+    ) -> Option<DrawKey> {
+        if self.debug_view.is_debug() {
+            return None;
+        }
+        let shading = if shading == Shading::Lit && self.has_live_map(id) {
+            Shading::StandardMaps
+        } else {
+            shading
+        };
+        Some(DrawKey {
+            template: shading.decal_template()?,
+            permutation: if row_values {
+                permutation::ROW_VALUES
+            } else {
+                0
+            },
+            vertex_format: format,
+            state: state_flags::CULL_FRONT
+                | state_flags::NO_DEPTH_TEST
+                | state_flags::NO_DEPTH_WRITE
+                | state_flags::BLEND_NORMAL,
+            bias: DepthBias::NONE,
+        })
     }
 
     /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
