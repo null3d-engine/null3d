@@ -321,6 +321,10 @@ impl Layout {
                       object: u32,
                       skinned: Option<usize>| {
             let pipeline = pipeline?;
+            // A decal draws in the decal pass alone: no shadow, depth or outline.
+            if pipeline.decal() {
+                return None;
+            }
             let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             match drawn {
                 Drawn::Casters => {
@@ -349,6 +353,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
             Some((
                 skin(pipeline, skinned),
@@ -576,13 +581,13 @@ fn picks_any(scene_buckets: &[u32], links: &[LevelLink]) -> bool {
 }
 
 impl Layout {
-    /// Makes room in each ring slot of draw records for `bytes` bytes of the transparent pass's
-    /// records, after the opaque draws' records, and marks the scene slots in `sorted` as rows
-    /// that draw.
-    pub(super) fn add_sorted(&mut self, bytes: u32, sorted: &[u32]) {
+    /// Makes room in each ring slot of draw records for `bytes` bytes of the transparent and decal
+    /// passes' records, after the opaque draws' records, and marks the scene slots in `sorted` and
+    /// `decals` as rows that draw.
+    pub(super) fn add_sorted(&mut self, bytes: u32, sorted: &[u32], decals: &[u32]) {
         self.draws_slot_bytes = self.sorted_records_at + bytes;
         self.drawn_slots.clone_from(&self.scene_buckets);
-        for &slot in sorted {
+        for &slot in sorted.iter().chain(decals) {
             self.drawn_slots[slot as usize] = 0;
         }
     }

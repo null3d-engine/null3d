@@ -189,8 +189,9 @@ Animated characters also cost skinning work and memory:
 - On WebGPU, the skinning pass skins morphed characters once per frame instead, and each one draws on its own. It skips a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
 - Each copy that the skinning pass skins keeps its own skinned vertices in GPU memory, even when copies share a mesh. A knight of the S5 benchmark takes 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
 - The skinning pass holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
+- The job workers sample and blend each character's clips in every frame. Give a far character more frames between its updates with [`animator.setUpdateInterval`](../api/animation.md#crowds), and hold the ones near the camera at 1. The `farAnimationInterval` quality setting gives the interval for far characters, and the governor raises it when frames take too long.
 
-For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
+For a large crowd, use models with fewer vertices, give far characters a longer update interval, and draw fewer shadow cascades on phones.
 
 ## See-through objects
 
@@ -234,6 +235,8 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 - A frame uploads its lights when the lights or the camera moved: 64 bytes for each light. On WebGL2 it also uploads the lists: 14 KB for the clusters, and 4 bytes for each light in each cluster. A still scene seen from a still camera uploads nothing.
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
+
+Rectangle and tube lights join the same clusters, and cost a pixel several times what a point light costs. Each takes two integrals over the light's outline, and the first area light of a pixel's cluster reads their tables. A light with an image adds two more reads. The quality preset's `areaLights` caps how many shade in a frame, the ones that give the camera the most light first. The caps are 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. A light that crosses the cap fades over 8 frames, and while it fades, it shades beside the lights that the cap keeps. Give area lights short ranges, as for point lights. A pixel whose cluster holds no area light pays nothing for them. A scene without area lights draws with shaders that leave their code out.
 
 The S3 benchmark lights 20,000 still boxes with 256 moving point lights. In Chrome on a MacBook Pro, the engine's own work took 0.07 ms per frame on WebGPU, where the GPU lists the lights. The compute pass that lists them took about 0.2 ms of GPU time. three.js's WebGL renderer cannot draw this scene on that Mac. Its shader for 256 point lights needs more uniforms than the GPU gives a fragment shader.
 

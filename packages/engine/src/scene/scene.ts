@@ -34,10 +34,12 @@ import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
 import type { Animator, SceneAnimations } from './animation';
+import type { AreaLightTables } from './area-light-tables';
 import {
 	type BackgroundOptions,
 	type BackgroundSource,
 	Cubemap,
+	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
 } from './background';
@@ -70,6 +72,7 @@ import {
 	orthographicView,
 	setViewHeight,
 } from './lens';
+import type { LightImagePixels } from './light-images';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { ParticleBuffer, ParticleBufferOptions } from './particles';
@@ -405,11 +408,15 @@ export interface DirectionalShadowOptions {
 	 */
 	normalBias?: number;
 	/**
-	 * The distance from the camera in meters, along its view, out to which shadows fall, above 0.
-	 * Shadows fade out over the last tenth of it. The camera's far plane ends them sooner. The
-	 * default is 200.
+	 * The distance from the camera in meters, along its view, out to which shadows fall, above 0,
+	 * or `'auto'`, the default. `'auto'` follows the farthest visible receiver: the engine finds the
+	 * farthest surface that receives shadows in the camera's view each frame and rounds it up on a
+	 * ladder of 1.25 times per step, so shadows in a small scene get much finer texels. A number
+	 * fixes the distance. On WebGPU the farthest receiver comes back from the GPU two frames late.
+	 * The camera's far plane ends the shadows sooner, and they fade out over the last tenth of the
+	 * distance.
 	 */
-	distance?: number;
+	distance?: number | 'auto';
 	/**
 	 * How far contact shadows reach from each surface toward the light, in meters, at least 0. They
 	 * are short shadows found in the camera's depth, which show where small objects touch the
@@ -522,9 +529,70 @@ export interface HemisphereLightOptions extends NodeOptions {
 	intensityUnit?: 'lux';
 }
 
+/**
+ * Options for `scene.createRectAreaLight`.
+ *
+ * @category api/lights
+ */
+export interface RectAreaLightOptions extends LightOptions {
+	/**
+	 * The width in meters, along the light's X axis, above 0. The default is 1. The light's scale
+	 * does not change it.
+	 */
+	width?: number;
+	/** The height in meters, along the light's Y axis, above 0. The default is 1. */
+	height?: number;
+	/**
+	 * The distance in meters from the light's middle where its light ends, above 0. Every area light
+	 * needs one, because the engine finds the lights near each surface by their ranges.
+	 */
+	range: number;
+	/**
+	 * The direction the light leaves the rectangle in, relative to the parent: its -Z axis. The
+	 * default, (0, -1, 0), points straight down. It sets the light's rotation, so it wins over
+	 * `rotation`.
+	 */
+	direction?: Vec3;
+	/** A point the light faces. It wins over `direction`. */
+	target?: Vec3;
+	/**
+	 * A picture that the light shows over its area, such as a shop window or a screen, as
+	 * `setImage` takes it. Without it, the light has one color.
+	 */
+	image?: LightImagePixels;
+}
+
+/**
+ * Options for `scene.createTubeLight`.
+ *
+ * @category api/lights
+ */
+export interface TubeLightOptions extends LightOptions {
+	/**
+	 * The tube's length in meters, along the light's -Z axis, above 0. The default is 1. The
+	 * light's scale does not change it.
+	 */
+	length?: number;
+	/** The tube's radius in meters, above 0. The default is 0.025, a thin neon tube. */
+	radius?: number;
+	/**
+	 * The distance in meters from the tube's middle where its light ends, above 0. Every area light
+	 * needs one, because the engine finds the lights near each surface by their ranges.
+	 */
+	range: number;
+	/**
+	 * The direction the tube runs along, relative to the parent: its -Z axis. The default,
+	 * (0, -1, 0), stands the tube upright. It sets the light's rotation, so it wins over `rotation`.
+	 */
+	direction?: Vec3;
+	/** A point the tube points toward. It wins over `direction`. */
+	target?: Vec3;
+}
+
 /** The options of any light, as the scene's shared create path reads them. */
 type AnyLightOptions = LightOptions &
 	Partial<Omit<SpotLightOptions, keyof LightOptions | 'intensityUnit'>> &
+	Partial<Omit<RectAreaLightOptions & TubeLightOptions, keyof LightOptions>> &
 	Pick<DirectionalLightOptions, 'shadow'> & { intensityUnit?: 'lumen' | 'lux' };
 
 /**
@@ -561,6 +629,10 @@ const LIGHT_NUMBERS = [
 	['decay', C.LIGHT_VALUE_DECAY],
 	['angle', C.LIGHT_VALUE_ANGLE],
 	['penumbra', C.LIGHT_VALUE_PENUMBRA],
+	['width', C.LIGHT_VALUE_WIDTH],
+	['height', C.LIGHT_VALUE_HEIGHT],
+	['length', C.LIGHT_VALUE_WIDTH],
+	['radius', C.LIGHT_VALUE_RADIUS],
 ] as const;
 
 /**
@@ -589,6 +661,9 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		'above 0',
 	],
 	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_WIDTH]: ['width or length', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
+	[C.LIGHT_VALUE_HEIGHT]: ['height', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
+	[C.LIGHT_VALUE_RADIUS]: ['radius', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 };
 
 /** The options of a directional light's shadows, and their codes in the light table. */
@@ -1687,9 +1762,8 @@ export class Light extends Object3D {
 
 	/** Sets the factor that scales the color, in the unit that the light was created with. */
 	setIntensity(intensity: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = intensity * (this.unitScale[0] as number);
-		this.writeNumber('setIntensity', C.LIGHT_VALUE_INTENSITY);
+		this.scene.core.callValues()[0] = intensity * (this.unitScale[0] as number);
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY);
 	}
 
 	/** Removes the light at the next frame. Its children become roots. */
@@ -1720,52 +1794,54 @@ export class Light extends Object3D {
 	shadow(call: string, shadow: DirectionalShadowOptions | LightShadowOptions): void {
 		for (const [key, which] of SHADOW_NUMBERS) {
 			const value = (shadow as DirectionalShadowOptions)[key];
-			if (value !== undefined) this.write(call, which, value);
+			if (value === undefined) continue;
+			// The light table's 0 means 'auto', the automatic distance.
+			if (
+				DEV &&
+				key === 'distance' &&
+				typeof value === 'number' &&
+				Number.isFinite(value) &&
+				!(value > 0)
+			)
+				throw new EngineError(
+					'E1108',
+					`${call}() got the shadow distance ${value} on ${this.describe()}, which must be above 0 or 'auto'.`,
+				);
+			this.write(call, which, value === 'auto' ? 0 : value);
 		}
 	}
 
 	/**
-	 * @internal Sets one of the light's numbers, by its code in the light table, to `value`. Used
-	 * where a light is made or its shadow settings change, which is not in a frame, so it takes the
-	 * number itself. A per-frame setter writes its number into the call values in its own small
-	 * body and calls `writeNumber` instead, so no fraction crosses a call that the browser may not
-	 * inline.
+	 * @internal Sets one of the light's numbers, by its code in the light table. A per-frame setter
+	 * writes the number into the call values in its own small body and calls this with no number,
+	 * so no fraction crosses a call that the browser may not inline. Making a light, and its shadow
+	 * settings, pass the number itself.
 	 */
-	write(call: string, which: number, value: number | undefined): void {
-		if (DEV) this.checkLightNumber(call, which, value);
+	write(call: string, which: number, value?: number): void {
 		const { core } = this.scene;
-		core.callValues()[0] = value as number;
+		// A per-frame setter writes the call value itself and passes no number; a light's creation
+		// and its shadow settings pass the number, which may be undefined for a required setting.
+		if (arguments.length < 3) value = core.callValues()[0] as number;
+		else core.callValues()[0] = value as number;
+		if (DEV) {
+			checkLive(call, this);
+			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
+			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
+			// The shadow distance 0 is 'auto', and it stands in for the default.
+			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
+			// Cascades are whole, and map sizes are powers of two.
+			const number = value as number;
+			const whole =
+				which === C.LIGHT_VALUE_SHADOW_CASCADES
+					? Number.isInteger(number)
+					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
+			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
+				throw new EngineError(
+					'E1108',
+					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
+				);
+		}
 		core.glue.setLightValue(this.id, which);
-	}
-
-	/**
-	 * @internal Sets one of the light's numbers to the first call value, which the caller wrote in
-	 * its own small body. A development build reads that value back to check it; a release build
-	 * reads nothing, so no number crosses the call.
-	 */
-	writeNumber(call: string, which: number): void {
-		const { core } = this.scene;
-		if (DEV) this.checkLightNumber(call, which, core.callValues()[0] as number);
-		core.glue.setLightValue(this.id, which);
-	}
-
-	/** @internal The development checks for one of the light's numbers. */
-	private checkLightNumber(call: string, which: number, value: number | undefined): void {
-		if (!DEV) return;
-		checkLive(call, this);
-		const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
-		if (typeof value === 'number') checkNumber(call, limits[0], value, this);
-		// Cascades are whole, and map sizes are powers of two.
-		const number = value as number;
-		const whole =
-			which === C.LIGHT_VALUE_SHADOW_CASCADES
-				? Number.isInteger(number)
-				: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
-		if (!(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
-			throw new EngineError(
-				'E1108',
-				`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
-			);
 	}
 
 	/**
@@ -1830,16 +1906,14 @@ export class DirectionalLight extends Light {
 export class PointLight extends Light {
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = range;
-		this.writeNumber('setRange', C.LIGHT_VALUE_RANGE);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
 	setDecay(decay: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = decay;
-		this.writeNumber('setDecay', C.LIGHT_VALUE_DECAY);
+		this.scene.core.callValues()[0] = decay;
+		this.write('setDecay', C.LIGHT_VALUE_DECAY);
 	}
 
 	/**
@@ -1865,30 +1939,26 @@ export class PointLight extends Light {
 export class SpotLight extends Light {
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = range;
-		this.writeNumber('setRange', C.LIGHT_VALUE_RANGE);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
 	setDecay(decay: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = decay;
-		this.writeNumber('setDecay', C.LIGHT_VALUE_DECAY);
+		this.scene.core.callValues()[0] = decay;
+		this.write('setDecay', C.LIGHT_VALUE_DECAY);
 	}
 
 	/** Sets the angle in radians from the light's direction to the edge of its cone: up to π/2. */
 	setAngle(angle: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = angle;
-		this.writeNumber('setAngle', C.LIGHT_VALUE_ANGLE);
+		this.scene.core.callValues()[0] = angle;
+		this.write('setAngle', C.LIGHT_VALUE_ANGLE);
 	}
 
 	/** Sets the part of the cone, from 0 to 1, over which the light fades out toward the edge. */
 	setPenumbra(penumbra: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = penumbra;
-		this.writeNumber('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
+		this.scene.core.callValues()[0] = penumbra;
+		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
 	}
 
 	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
@@ -1930,6 +2000,119 @@ export class HemisphereLight extends Light {
  * @category api/lights
  */
 export class AmbientLight extends Light {}
+
+/**
+ * Light from a rectangle of even brightness, such as a window, a screen or a studio panel. Its
+ * light leaves the side that its -Z axis points to, and ends at its range. Surfaces show its whole
+ * shape in their highlights, and soft light near it, as three.js's `RectAreaLight` gives. Its
+ * intensity is the rectangle's brightness in nits, three.js's unit. It casts no shadows.
+ *
+ * @category api/lights
+ */
+export class RectAreaLight extends Light {
+	/** Sets the distance in meters from the light's middle where its light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets the width along the light's X axis and the height along its Y axis, in meters. */
+	setSize(width: number, height: number): void {
+		this.write('setSize', C.LIGHT_VALUE_WIDTH, width);
+		this.write('setSize', C.LIGHT_VALUE_HEIGHT, height);
+	}
+
+	/** Turns the light so that its light leaves along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
+	}
+
+	/**
+	 * Shows a picture over the light's area, such as a shop window or a screen, or `null` to go back
+	 * to one color. The color and intensity tint it. The light gives out its intensity times the
+	 * picture's average color, so a mostly dark picture lights little around it. The picture's top
+	 * row lies along the light's +Y axis, and it reads the right way round from the lit side. The
+	 * engine resamples it to 128 x 128 texels, so shiny surfaces show it sharp and rough ones
+	 * blurred. Up to 32 lights show pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
+	 * now and then, not in every frame.
+	 */
+	setImage(image: LightImagePixels | null): void {
+		const call = 'setImage';
+		if (DEV) checkLive(call, this);
+		const { scene } = this;
+		const { core } = scene;
+		if (image === null) {
+			this.pendingImage = null;
+			core.check(core.glue.removeAreaLightImage(this.id), call, this.label, true);
+			return;
+		}
+		if (DEV) checkLightImage(call, image, this);
+		// The resampler loads on first use, so a page that sets no picture downloads none of it.
+		// The light keeps the pixels; a task writes them, which `imagesSettled` waits for.
+		this.pendingImage = image;
+		const id = this.id;
+		scene.queueImage(
+			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
+				if (this.id !== id || this.pendingImage !== image) return;
+				const at = core.check(core.glue.areaLightImage(id), call, this.label);
+				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
+				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
+			}),
+		);
+	}
+
+	/** The picture that `setImage` set and that is not written yet, if any. */
+	private pendingImage: LightImagePixels | null = null;
+
+	/** @internal A copy starts without the picture, which `setImage` gives it. */
+	override twin(handle: number): Object3D {
+		const twin = super.twin(handle) as RectAreaLight;
+		twin.write('twin', C.LIGHT_VALUE_IMAGE, 0);
+		return twin;
+	}
+
+	/** Removes the light at the next frame, and frees its picture's place. */
+	override destroy(): void {
+		this.pendingImage = null;
+		if (this.id !== 0) this.scene.core.glue.removeAreaLightImage(this.id);
+		super.destroy();
+	}
+}
+
+/** Throws E1108 for pixels whose size or data a light's image cannot take. */
+function checkLightImage(call: string, image: LightImagePixels, light: Light): void {
+	const { width, height, data } = image;
+	const whole = (n: number) => Number.isInteger(n) && n > 0;
+	if (!whole(width) || !whole(height) || !data || data.length < width * height * 4)
+		throw new EngineError(
+			'E1108',
+			`${call}() got an image of ${width} x ${height} pixels with ${data?.length ?? 0} bytes on ${light.describe()}, which needs a whole width and height above 0 and 4 bytes per pixel.`,
+		);
+}
+
+/**
+ * Light from a glowing tube, such as a neon or fluorescent tube, in every direction around it,
+ * out to its range. The tube runs along the light's -Z axis. Its intensity is the tube's
+ * brightness in nits, as for a rectangle light. It casts no shadows.
+ *
+ * @category api/lights
+ */
+export class TubeLight extends Light {
+	/** Sets the distance in meters from the tube's middle where its light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets the tube's length along the light's -Z axis and its radius, in meters. */
+	setSize(length: number, radius: number): void {
+		this.write('setSize', C.LIGHT_VALUE_WIDTH, length);
+		this.write('setSize', C.LIGHT_VALUE_RADIUS, radius);
+	}
+
+	/** Turns the tube so that it runs along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
+	}
+}
 
 /**
  * Many copies of one mesh and material. Write rows straight into the typed arrays; a dynamic batch
@@ -2228,6 +2411,8 @@ const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
 	[C.LIGHT_KIND_DIRECTIONAL]: DirectionalLight,
 	[C.LIGHT_KIND_POINT]: PointLight,
 	[C.LIGHT_KIND_SPOT]: SpotLight,
+	[C.LIGHT_KIND_RECT]: RectAreaLight,
+	[C.LIGHT_KIND_TUBE]: TubeLight,
 };
 
 /** Imports the sprite code, which a page downloads with its first sprite batch, or throws E1406. */
@@ -2421,6 +2606,71 @@ export class Scene implements ViewHolder {
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
+	/** @internal The area lights' tables, which load with the first rectangle or tube light. */
+	private areaTables: AreaLightTables | undefined;
+	/** @internal The load of the area lights' tables' code and their download, once started. */
+	private areaTablesLoad: Promise<AreaLightTables> | undefined;
+	/** @internal The area lights' tables' failure before the code arrived, once: the frame loop reports it. */
+	private areaTablesFailure: EngineError | undefined;
+	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` set. */
+	private readonly imageTasks = new Set<Promise<void>>();
+	/** @internal The picture that failed to write, once: the frame loop reports it. */
+	private imageFailure: unknown;
+
+	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
+	private loadAreaTables(): void {
+		this.areaTablesLoad ??= import('./area-light-tables').then(({ AreaLightTables }) => {
+			const tables = new AreaLightTables(this.core);
+			this.areaTables = tables;
+			tables.load();
+			return tables;
+		});
+	}
+
+	/** @internal Settles when the area lights' tables have loaded, or at once when none started. */
+	async areaTablesSettled(): Promise<void> {
+		const load = this.areaTablesLoad;
+		if (!load) return;
+		const tables = await load.catch((error: unknown) => {
+			this.areaTablesFailure =
+				error instanceof EngineError ? error : new EngineError('E1431', String(error));
+			return undefined;
+		});
+		await tables?.settled();
+	}
+
+	/** @internal The area lights' tables' failure, once: the frame loop reports it. */
+	takeAreaTablesFailure(): EngineError | undefined {
+		const failure = this.areaTablesFailure ?? this.areaTables?.takeFailure();
+		this.areaTablesFailure = undefined;
+		if (failure === undefined) return undefined;
+		if (failure instanceof EngineError) return failure;
+		return new EngineError(
+			'E1431',
+			`the area lights' tables did not load from ${failure.url}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`,
+		);
+	}
+
+	/** @internal Settles when every picture that `setImage` set has been written to engine memory. */
+	async imagesSettled(): Promise<void> {
+		while (this.imageTasks.size > 0) await Promise.all(this.imageTasks);
+	}
+
+	/** @internal Queues a picture's write, which loads its resampler on first use. */
+	queueImage(task: Promise<void>): void {
+		const settled = task.catch((error: unknown) => {
+			this.imageFailure = error;
+		});
+		this.imageTasks.add(settled);
+		void settled.finally(() => this.imageTasks.delete(settled));
+	}
+
+	/** @internal The picture that failed to write, once: the frame loop reports it. */
+	takeImageFailure(): unknown {
+		const failure = this.imageFailure;
+		this.imageFailure = undefined;
+		return failure;
+	}
 	/**
 	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or
 	 * undefined to follow the camera's.
@@ -2462,6 +2712,8 @@ export class Scene implements ViewHolder {
 	private sceneEnvironment: SceneEnvironment | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
+	/** True while the fog is volumetric. */
+	private fogVolume = false;
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -3644,7 +3896,9 @@ export class Scene implements ViewHolder {
 		}
 		light.unitScale[0] = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
-		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
+		const area = type === C.LIGHT_KIND_RECT || type === C.LIGHT_KIND_TUBE;
+		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT || area;
+		if (area) this.loadAreaTables();
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {
@@ -3655,7 +3909,7 @@ export class Scene implements ViewHolder {
 				light.write(call, which, value as number);
 		}
 		if (options.shadow) light.shadow(call, options.shadow);
-		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT) {
+		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT || area) {
 			if (options.target) light.lookAt(...options.target);
 			else if (options.direction || !options.rotation)
 				light.aim(call, ...(options.direction ?? DOWN));
@@ -3683,6 +3937,26 @@ export class Scene implements ViewHolder {
 		return this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
 	}
 
+	/**
+	 * Light from a rectangle, `width` by `height` meters, out to `range` meters, which it needs. Its
+	 * light leaves along `direction`.
+	 */
+	createRectAreaLight(options: RectAreaLightOptions): RectAreaLight {
+		const light = this.createLight(
+			RectAreaLight,
+			C.LIGHT_KIND_RECT,
+			options,
+			'createRectAreaLight',
+		);
+		if (options.image) light.setImage(options.image);
+		return light;
+	}
+
+	/** Light from a tube, `length` meters along `direction`, out to `range` meters, which it needs. */
+	createTubeLight(options: TubeLightOptions): TubeLight {
+		return this.createLight(TubeLight, C.LIGHT_KIND_TUBE, options, 'createTubeLight');
+	}
+
 	/** Light from the sky above and the ground below. */
 	createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight {
 		const call = 'createHemisphereLight';
@@ -3705,7 +3979,8 @@ export class Scene implements ViewHolder {
 	/**
 	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
 	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
-	 * map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture
+	 * map from `assets.loadCubemap`, three.js's sky with `{ sky: { sunPosition } }`, or the physical
+	 * sky with `{ atmosphere: { sunPosition } }`, whose air also hazes distant objects. A texture
 	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
 	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
 	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
@@ -3725,7 +4000,8 @@ export class Scene implements ViewHolder {
 			background instanceof Texture ||
 			background instanceof Environment ||
 			background instanceof Cubemap ||
-			isSkyBackground(background)
+			isSkyBackground(background) ||
+			isAtmosphereBackground(background)
 		) {
 			this.sceneBackground.set(background, options);
 			return;
@@ -3733,6 +4009,17 @@ export class Scene implements ViewHolder {
 		writeLinearColor(this.core.callValues(), background, 'setBackground');
 		this.core.glue.setBackground();
 		this.sceneBackground.clear();
+	}
+
+	/**
+	 * Sets the layers whose objects decals mark, as a 32-bit mask as `setLayers` takes. An object
+	 * that is also on a layer outside the mask shows no decals, so a character on a layer of its own
+	 * walks through a puddle clean. Such objects draw a second time after the decals, over their own
+	 * pixels, in each frame that has decals. The default is every layer.
+	 */
+	setDecalLayers(mask: number): void {
+		if (DEV) checkLayers('setDecalLayers', mask);
+		this.core.glue.setDecalLayers(mask >>> 0);
 	}
 
 	/**
@@ -3754,13 +4041,20 @@ export class Scene implements ViewHolder {
 	/**
 	 * Fog over every object, by each object's straight-line distance from the camera along a curve:
 	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
-	 * toward the main directional light. Null removes the fog. The background takes no fog, and a
+	 * toward the main directional light. With `volumetric`, the sun and the point and spot lights
+	 * light the fog through their shadows. Null removes the fog. The background takes no fog, and a
 	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
 	 * value out of its range, and E1203 for a value that is not finite. The call allocates nothing,
 	 * so a sketch can change the fog in every frame.
 	 */
 	setFog(fog: FogOptions | null): void {
-		setSceneFog(this.core, fog);
+		this.fogVolume = setSceneFog(this.core, fog);
+		if (this.fogVolume) this.makers?.materials.shaders.need('fog_volume');
+	}
+
+	/** @internal True while the scene's fog is volumetric, which needs HDR color. */
+	get needsHdr(): boolean {
+		return this.fogVolume;
 	}
 
 	/** The raycasts and overlap queries, made on the first call. */

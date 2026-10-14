@@ -41,7 +41,7 @@ import null3d from '@null3d/vite-plugin';
 export default defineConfig({ plugins: [null3d()] });
 ```
 
-Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
+Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. It caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build is fast. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 
@@ -87,7 +87,7 @@ return {
 };
 ```
 
-For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`. To aim a walking character, turn its spine chain toward the target with `anim.lookAt(target, AIM, weight)`, where `AIM` is a frozen `{ joints: ['Spine', 'Chest', 'Neck'], limit }`. Do not turn the whole object to aim. `anim.setJointRotation(joint, q, weight)` and `anim.addJointRotation(joint, q, weight)` turn one joint on top of the clips, as setting `bone.quaternion` after `mixer.update` does in three.js. They hold until `anim.clearJoint(joint)`, and calling them every frame allocates nothing.
+For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. Give the copies the camera sees from far a longer pose interval with `copy.animator().setUpdateInterval(quality.governor.farAnimationInterval)`, and hold the near ones at 1. The job workers then sample and blend the far copies less often. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. To switch a walk and a run without sliding the feet through a mix of both gaits, give the play `transition: 'inertial'`. It samples only the new clip, and the pose that the layer leaves eases into it at its own speed. It needs a fade above 0. A new scene should use it for `play` with a fade. `crossFade` keeps the blend that three.js's `crossFadeTo` shows. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`. To aim a walking character, turn its spine chain toward the target with `anim.lookAt(target, AIM, weight)`, where `AIM` is a frozen `{ joints: ['Spine', 'Chest', 'Neck'], limit }`. Do not turn the whole object to aim. `anim.setJointRotation(joint, q, weight)` and `anim.addJointRotation(joint, q, weight)` turn one joint on top of the clips, as setting `bone.quaternion` after `mixer.update` does in three.js. They hold until `anim.clearJoint(joint)`, and calling them every frame allocates nothing.
 
 The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
@@ -339,7 +339,16 @@ return {
 };
 ```
 
-`timeOfDay` returns a new object, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. Then the sunset's sky fades into a navy night sky lit from the moon, whose disc the sky draws. Copy every field of `day.sky` each time: it holds the moon's sky as a second sky while night falls. The sky lights nothing by itself, so the sun light and the sky's environment light the scene. Docs: `concepts/lighting`, `api/scene`.
+`timeOfDay` returns a new object, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. Then the sunset's sky fades into a navy night sky lit from the moon, whose disc the sky draws. Copy every field of `day.sky` each time: it holds the moon's sky as a second sky while night falls. The sky lights nothing by itself, so the sun light and the sky's environment light the scene.
+
+For a landscape, use the physical sky instead. Its air hazes far hills blue and pale, its twilight lasts after sunset, and at night it shows the moon's phase and the stars. Pass `{ model: 'physical' }`, then in place of the two `setBackground` and `setEnvironment` lines and the fog:
+
+```ts
+const day = timeOfDay(hours, { model: 'physical' });
+scene.setBackground({ atmosphere: { ...day.atmosphere, cloudCoverage: 0.3, aerialPerspective: 2 } });
+```
+
+Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometres, so a small scene takes more. Set `metersPerUnit` when the scene's units are not metres. Docs: `concepts/lighting`, `api/scene`.
 
 ## 11. Physics with a library in the sketch worker
 
@@ -661,3 +670,60 @@ export default defineSketch(async (ctx) => {
 ```
 
 Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
+
+## 21. Terrain from a height field (0.2)
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createTerrain, terrainTextures } from '@null3d/terrain';
+
+/** Hills with a valley that runs along z, in meters. */
+const ground = (x: number, z: number) =>
+  30 * Math.sin(x * 0.012) * Math.cos(z * 0.01) + 8 * Math.sin(x * 0.05 + z * 0.03) +
+  -20 * Math.exp(-(z * z) / (2 * 220 * 220));
+
+export default defineSketch((ctx) => {
+  const { scene, textures } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 55, near: 0.5, far: 4000, position: [0, 60, 320] });
+  camera.lookAt(0, 10, 0);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 3, castShadows: true, shadow: { distance: 260 } });
+  scene.createAmbientLight({ intensity: 0.5 });
+
+  const layers = terrainTextures(textures, { size: 128, seed: 7 });
+  const terrain = createTerrain(ctx, {
+    size: 1000,
+    height: ground,
+    resolution: 256,
+    layers: [
+      { map: layers.grass, tile: 6, roughness: 1 },
+      { map: layers.soil, tile: 10, roughness: 1 },
+      { map: layers.rock, tile: 7, roughness: 0.85 },
+      { map: layers.snow, tile: 12, roughness: 0.7 },
+    ],
+    maxLevel: 6,
+    split: 2.1,
+  });
+
+  // Seat an object on the ground with heightAt, since the terrain carries no collision.
+  const at = [120, 0, -60];
+  scene.createMesh({
+    mesh: ctx.geometry.sphere({ radius: 3, widthSegments: 10, heightSegments: 6 }),
+    material: ctx.materials.standard({ color: '#6d6559', roughness: 0.95, flatShading: true }),
+    position: [at[0], terrain.heightAt(at[0], at[2]) + 3, at[2]],
+    castShadows: true,
+    receiveShadows: true,
+  });
+
+  const eye = [0, 0, 0];
+  return {
+    onUpdate() {
+      // The ground follows the camera: fine blocks near it, coarse blocks far away.
+      camera.getWorldPosition(eye);
+      terrain.update(eye[0], eye[2]);
+    },
+  };
+});
+```
+
+The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.

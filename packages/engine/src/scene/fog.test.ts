@@ -18,13 +18,21 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 
 /**
  * A core that records each fog it gets: the curve, the linear color, the density, near, far, the
- * height, the height falloff, the sun glow and its exponent.
+ * height, the height falloff, the sun glow and its exponent. It records each volumetric fog apart:
+ * whether it is on, its intensity, anisotropy and distance, and the fog's density.
  */
 function fakeCore() {
 	const calls: number[][] = [];
+	const volumes: (number | boolean)[][] = [];
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const glue = withCallValues({ setFog: (...values: number[]) => calls.push(values) }, memory);
-	return { calls, core: new CoreMemory(glue as unknown as CoreGlue, memory) };
+	const glue = withCallValues(
+		{
+			setFog: (...values: number[]) => calls.push(values),
+			setFogVolume: (...values: (number | boolean)[]) => volumes.push(values),
+		},
+		memory,
+	);
+	return { calls, volumes, core: new CoreMemory(glue as unknown as CoreGlue, memory) };
 }
 
 /** The error that `call` throws. */
@@ -87,6 +95,31 @@ describe('setFog', () => {
 				'setFog() got a type option.',
 			],
 			[{ color: 'grey' }, 'E1204', 'setFog() got the color "grey"'],
+			[
+				{ color: 0, volumetric: { intensity: -1 } },
+				'E1108',
+				'setFog() got the volumetric intensity -1',
+			],
+			[
+				{ color: 0, volumetric: { anisotropy: 1 } },
+				'E1108',
+				'setFog() got the volumetric anisotropy 1; it takes a number from -0.95 to 0.95.',
+			],
+			[
+				{ color: 0, volumetric: { distance: 0 } },
+				'E1108',
+				'setFog() got the volumetric distance 0',
+			],
+			[
+				{ color: 0, volumetric: { distance: Number.NaN } },
+				'E1203',
+				'setFog() got NaN for volumetric.distance',
+			],
+			[
+				{ color: 0, volumetric: { density: 0.1 } } as unknown as FogOptions,
+				'E1108',
+				'setFog() got a density in volumetric.',
+			],
 		];
 		for (const [fog, code, message] of cases) {
 			const error = thrown(() => setSceneFog(core, fog));
@@ -94,5 +127,25 @@ describe('setFog', () => {
 			expect(error.message).toStartWith(`${code}: ${message}`);
 		}
 		expect(calls).toHaveLength(0);
+	});
+
+	test('turns the volumetric fog on with the fog density and its defaults or options', () => {
+		const { volumes, core } = fakeCore();
+		expect(setSceneFog(core, { color: 0, density: 0.03, volumetric: true })).toBe(true);
+		expect(
+			setSceneFog(core, {
+				curve: 'linear',
+				color: 0,
+				volumetric: { intensity: 2, anisotropy: -0.2, distance: 40 },
+			}),
+		).toBe(true);
+		expect(setSceneFog(core, { color: 0, volumetric: false })).toBe(false);
+		expect(setSceneFog(core, null)).toBe(false);
+		expect(volumes).toEqual([
+			[true, 1, 0.6, 100, 0.03],
+			[true, 2, -0.2, 40, 0.01],
+			[false, 1, 0.6, 100, 0.01],
+			[false, 0, 0, 0, 0],
+		]);
 	});
 });
