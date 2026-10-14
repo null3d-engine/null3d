@@ -247,6 +247,17 @@
       "detect": "\\bFogExp2\\b"
     },
     {
+      "id": "volumetric-fog",
+      "category": "Scene graph",
+      "three": "VolumeNodeMaterial (webgpu_volume_lighting) / GodRaysEffect",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })",
+      "notes": "three.js has no lit fog in its core. Its webgpu_volume_lighting example marches rays through a box with VolumeNodeMaterial, lit by point and spot lights with shadows. null3D lights the scene's own fog instead, in a grid that follows the camera's view, with the sun's shadow cascades and the point and spot lights' shadows. Drop the box: the fog's density and heightFalloff say where the air holds haze, and its scattering intensity becomes intensity. The god rays effects of add-on libraries blur a mask of the sky toward the sun on the screen. null3D's rays also come from lamps and from shadows off the screen. It draws where the quality setting fogSlices is above 0: Medium and up. On Low the fog keeps its sunGlow.",
+      "docs": "api/scene",
+      "detect": "\\bVolumeNodeMaterial\\b|\\bGodRays(Effect|Pass)?\\b"
+    },
+    {
       "id": "group",
       "category": "Scene graph",
       "three": "new Group() / new Object3D()",
@@ -561,7 +572,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },

@@ -61,7 +61,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2), section 6. Effects that read only their own pixel join into one pass, so each can stay an effect of its own |
 | `DepthOfFieldEffect` (`worldFocusDistance`, `bokehScale`, `target`) | `dof: { focusDistance, maxBlur, aperture }` (0.2): `worldFocusDistance` becomes `focusDistance`, a `target` becomes `focusPoint`, and `bokehScale` becomes `maxBlur` with `aperture`, tuned by eye |
-| `GodRaysEffect` | A custom effect (0.2) that reads `effectDepth`, where essential |
+| `GodRaysEffect` | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy } })` (0.2): the scene's fog lit by the sun and lamps through their shadows, so rays also come from shadows off the screen. Set the fog's density low where the scene had no fog. It draws where the quality setting `fogSlices` is above 0: Medium and up |
 | `SSREffect` | Screen-space reflections (0.2, not built yet) |
 | `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }` (0.2): a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
 | `SelectiveBloomEffect` | Selective bloom through emissive strength and the bloom threshold (0.2) |

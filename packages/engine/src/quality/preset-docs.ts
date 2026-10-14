@@ -94,7 +94,10 @@ export const SETTING_DOCS: {
 		print: (value) =>
 			value === 'histogram' ? 'histogram on WebGPU, else 16 x 16 cells' : '16 x 16 cells',
 	},
-
+	fogSlices: {
+		label: 'Volumetric fog',
+		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),
+	},
 	reflectionScale: {
 		label: 'Reflection passes',
 		print: (value) =>
