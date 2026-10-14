@@ -224,6 +224,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: 'flag',
 	},
+	// Whether the background's physical sky draws from its own tables, or the analytic sky stands
+	// in for it, matched in brightness. The coordinator kept the analytic sky on Low, which phones
+	// draw; the tables' cost per preset is in D-143. A change makes no GPU object until the other
+	// sky first draws.
+	physicalSky: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
 	// phones and tablets it cost the job workers several times what it saved in drawing (D-22). A
@@ -466,6 +475,12 @@ export interface QualitySettings {
 	 * once. It changes during play.
 	 */
 	lodFade: boolean;
+	/**
+	 * Whether `{ atmosphere }` backgrounds draw the physical sky from its tables. False draws
+	 * three.js's analytic sky in its place, with the same sun, moon, air and clouds, matched to the
+	 * physical sky's brightness, and keeps the haze on distant objects. It changes during play.
+	 */
+	physicalSky: boolean;
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has

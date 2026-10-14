@@ -245,6 +245,7 @@ describe('SketchQuality.lower', () => {
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
 			lodFade: low.lodFade,
+			physicalSky: low.physicalSky,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -275,6 +276,7 @@ describe('SketchQuality.lower', () => {
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
+			'physicalSky',
 		]);
 	});
 });
