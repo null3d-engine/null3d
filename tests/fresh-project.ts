@@ -48,6 +48,7 @@ const DEPENDENCIES = [
 	'@null3d/controls',
 	'@null3d/geometry',
 	'@null3d/particles',
+	'@null3d/terrain',
 ];
 /** The packages that the project's tools run. */
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];

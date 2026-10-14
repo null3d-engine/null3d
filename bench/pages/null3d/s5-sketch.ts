@@ -21,6 +21,7 @@ import {
 	S5_DEFAULT_COUNT,
 	S5_GROUND,
 	S5_ORBIT,
+	S5_SHADOW_DISTANCE,
 	S5_VIEW_LIGHTS,
 	s5CameraPath,
 	s5CharactersAt,
@@ -34,7 +35,12 @@ export default defineSketch(async (context) => {
 	// S5 measures how a preset holds its frame rate with a crowd, so it keeps the preset's render
 	// scale range and the quality governor, as S4 does. A comparison of two builds turns the
 	// governor off.
-	const camera = setUpView(context, S5_VIEW_LIGHTS, S5_BACKGROUND, { dynamicResolution: true });
+	// The sun names its shadow distance, so it matches the three.js twin's cascades, which the
+	// benchmark compares this page with, instead of following the automatic distance from R10.
+	const camera = setUpView(context, S5_VIEW_LIGHTS, S5_BACKGROUND, {
+		dynamicResolution: true,
+		shadowDistance: S5_SHADOW_DISTANCE,
+	});
 	context.quality.set({ governor: readGovernor(import.meta.url) });
 	const reportQuality = watchQuality(context);
 
