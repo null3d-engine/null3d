@@ -92,8 +92,10 @@ pub enum Op {
     GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
-    /// alpha (f32), clear depth (f32), pass flags]. A target is a texture of one layer and one mip
-    /// level, or a view of one. A pass without a color target draws depth only.
+    /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
+    /// id]. A target is a texture of one layer and one mip level, or a view of one. A pass without
+    /// a color target draws depth only. A second color target has one sample, no resolve, and the
+    /// first target's clear color and flags; its pipelines are those with `permutation::WEIGHTED`.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -142,6 +144,12 @@ pub enum Op {
     /// layer count]: copies texels between two textures of the same format, one sample each. Depth
     /// textures do not copy, because WebGL2 cannot copy them.
     CopyTextureToTexture = 49,
+    /// [texture location (5 words), buffer id, buffer offset, bytes per row, rows per image, width,
+    /// height]: copies a box of texels of a texture with `COPY_SRC` usage into a buffer with
+    /// `COPY_DST` usage, which `ReadBuffer` then reads back. GPU picking copies its small id target
+    /// through this. The buffer offset aligns to 256 bytes, and each row of the copy starts at a
+    /// multiple of the texture's texel size.
+    CopyTextureToBuffer = 50,
     /// [image id]: closes an image that the backend holds, once no later command uploads it. A
     /// backend that holds no such image does nothing, as when a capture replays a list again.
     ReleaseImage = 51,
@@ -149,6 +157,12 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
+    /// [buffer id, offset, size, destination address in engine memory]: once the GPU has run the
+    /// commands before this one, maps `size` bytes of the buffer at `offset` and copies them into
+    /// engine memory at `destination`. The buffer needs `MAP_READ` usage, and the command is
+    /// asynchronous: the bytes land, and the thread that draws marks them ready, one or more frames
+    /// after the command replays. GPU picking reads the ids under the pointer this way.
+    ReadBuffer = 53,
     /// [texture id, image id]: runs the generator that the backend holds under the image id, which
     /// fills every mip level of every face of a cube texture on the GPU in one submit, ahead of the
     /// frame's passes. The thread that draws counts a generator among the images it received once
@@ -177,7 +191,7 @@ pub enum Op {
 }
 
 impl Op {
-    pub const ALL: [Op; 41] = [
+    pub const ALL: [Op; 43] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -214,8 +228,10 @@ impl Op {
         Op::EndComputePass,
         Op::CopyBufferToBuffer,
         Op::CopyTextureToTexture,
+        Op::CopyTextureToBuffer,
         Op::ReleaseImage,
         Op::DestroyPipeline,
+        Op::ReadBuffer,
         Op::GenerateTexture,
         Op::SkyMapStep,
         Op::Submit,
@@ -263,8 +279,10 @@ impl Op {
             Op::EndComputePass => "END_COMPUTE_PASS",
             Op::CopyBufferToBuffer => "COPY_BUFFER_TO_BUFFER",
             Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
+            Op::CopyTextureToBuffer => "COPY_TEXTURE_TO_BUFFER",
             Op::ReleaseImage => "RELEASE_IMAGE",
             Op::DestroyPipeline => "DESTROY_PIPELINE",
+            Op::ReadBuffer => "READ_BUFFER",
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
             Op::Submit => "SUBMIT",
@@ -278,13 +296,8 @@ pub mod reserved {
     /// Runs a compute pipeline with workgroup counts that the GPU reads from a buffer: skinning
     /// only the meshes that culling found visible, and the second phase of occlusion culling.
     pub const DISPATCH_INDIRECT: u8 = 43;
-    /// Copies texels into a buffer, to read a frame or computed values back.
-    pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
-    /// Reads part of a buffer back into engine memory once the GPU has run the commands before it,
-    /// a frame or more later: the object ids that GPU picking draws under the pointer.
-    pub const READ_BUFFER: u8 = 53;
 
-    pub const ALL: [u8; 3] = [DISPATCH_INDIRECT, COPY_TEXTURE_TO_BUFFER, READ_BUFFER];
+    pub const ALL: [u8; 1] = [DISPATCH_INDIRECT];
 }
 
 /// A target slot left empty in `BeginRenderPass`.
@@ -370,9 +383,13 @@ pub mod format {
     /// Four 32-bit unsigned integers per texel: data of several kinds in one data texture, such as
     /// WebGL2's light grid and light records, which shaders read as integers or turn into floats.
     pub const RGBA32_UINT: u32 = 23;
+    /// One 16-bit float per texel, which draws and blends: the coverage of weighted blended
+    /// transparency. WebGL2 calls it `R16F`, and draws into it with `EXT_color_buffer_float` or
+    /// `EXT_color_buffer_half_float`.
+    pub const R16_FLOAT: u32 = 25;
 
     /// Every format.
-    pub const ALL: [u32; 24] = [
+    pub const ALL: [u32; 25] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -397,6 +414,7 @@ pub mod format {
         BC6H_RGB_UFLOAT,
         DEPTH16_UNORM,
         RGBA32_UINT,
+        R16_FLOAT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -470,7 +488,7 @@ pub mod format {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
             | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
-            DEPTH16_UNORM => 2,
+            DEPTH16_UNORM | R16_FLOAT => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | RGBA32_UINT
@@ -743,6 +761,12 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// The weighted layer's blend: the weighted color sum and the coverage, both read with
+    /// `textureLoad` as unfilterable floats.
+    pub const WEIGHTED_COMPOSITE: u32 = 41;
+    /// The copy of a multisampled scene depth for the weighted layer: the depth, read with
+    /// `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
+    pub const WEIGHTED_DEPTH_MS: u32 = 42;
     /// The group of the decal pass's scene depth: the depth target, which the decal templates read
     /// with `textureLoad` as plain floats. It is group 1 of [`super::template::DECAL`] and group 2
     /// of [`super::template::DECAL_MAPS`] on WebGPU, and group 4 on WebGL2, which reads a copy of
@@ -870,9 +894,15 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The surface draws into the two targets of weighted blended transparency, in any order: the
+    /// first, of the pipeline's color format, sums its premultiplied color and its alpha, each
+    /// times a weight that falls with its distance. The second, of `format::R16_FLOAT`, sums
+    /// `-log2(1 - alpha)`, so that two to the power of minus the sum is the share of the scene that
+    /// shows through. Both targets blend by adding (decision record D-150).
+    pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 27] = [
+    pub const NAMES: [(&str, u32); 28] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -900,6 +930,7 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("WEIGHTED", WEIGHTED),
     ];
 
     /// Pairs of names that share one value, because no template lists both: the shader build
@@ -931,8 +962,10 @@ pub mod permutation {
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
-    /// that tests its alpha by the hash switches its levels at once.
-    pub const APART: [(u32, u32); 23] = [
+    /// that tests its alpha by the hash switches its levels at once. A weighted surface blends, so
+    /// it tests no mask, lets no light through and never fades, and it draws in the sorted pass's
+    /// rows, which never read instances by index.
+    pub const APART: [(u32, u32); 30] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -956,6 +989,13 @@ pub mod permutation {
         (LOD_FADE, INSTANCE_INDEX),
         (LOD_FADE, TRANSMISSION),
         (LOD_FADE, ALPHA_HASH),
+        (WEIGHTED, ALPHA_MASK),
+        (WEIGHTED, TRANSMISSION),
+        (WEIGHTED, INSTANCE_INDEX),
+        (WEIGHTED, PREPASS),
+        (WEIGHTED, CASTER),
+        (WEIGHTED, OUTLINE_VISIBLE),
+        (WEIGHTED, LOD_FADE),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1653,6 +1693,24 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// The blend of weighted blended transparency's layer over the scene color: one triangle that
+    /// reads the weighted color sum and the coverage, each one texel per pixel, with the layout
+    /// [`WEIGHTED_COMPOSITE`](super::layout::WEIGHTED_COMPOSITE), and writes their average color
+    /// premultiplied by the share that the layer covers.
+    pub const WEIGHTED_COMPOSITE: u32 = 64;
+    /// The copy of the first sample of a multisampled scene depth into a depth target of one
+    /// sample, which the weighted layer's pass tests against: one triangle that writes each
+    /// pixel's depth, first in that pass. Its pipelines name the pass's two color targets, as
+    /// [`draws_two_targets`] says, and write no color. On WebGPU it reads the multisampled depth
+    /// with the layout [`WEIGHTED_DEPTH_MS`](super::layout::WEIGHTED_DEPTH_MS); on WebGL2 it reads
+    /// the copy of one sample that the backend keeps.
+    pub const WEIGHTED_DEPTH: u32 = 65;
+
+    /// True for a pipeline that draws into a second color target of `format::R16_FLOAT` beside its
+    /// color format: the weighted layer's builds (`permutation::WEIGHTED`), and its depth copy.
+    pub const fn draws_two_targets(template: u32, permutation: u32) -> bool {
+        permutation & super::permutation::WEIGHTED != 0 || template == WEIGHTED_DEPTH
+    }
     /// Decals with the standard material: the back faces of each instance's box, which shade the
     /// surface under each pixel from the scene's depth, in the decal pass after the camera's opaque
     /// pass. It binds the frame's group, then the scene's depth in the group of
@@ -1691,6 +1749,12 @@ pub mod template {
     /// The volumetric fog's block step: one triangle over a texture of the grid's size, which sums
     /// the cells of each block of slices up to each cell. It binds as a step of bloom does.
     pub const FOG_BLOCK: u32 = 69;
+    /// GPU picking: each object of the camera's view written with its object or batch id and its
+    /// instance's row where the scene's depth leaves it, into a small id target, with the scene's
+    /// depth as its depth target and an EQUAL test that writes no depth. A masked fragment wrote
+    /// no depth, so it never matches, and picking follows the mask. Binds as the frame's group
+    /// does, and reads the table of object ranges for each instance's id.
+    pub const PICK: u32 = 70;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1882,6 +1946,7 @@ pub fn typescript_constants() -> String {
                 ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
                 ("DEPTH16_UNORM", format::DEPTH16_UNORM),
                 ("RGBA32_UINT", format::RGBA32_UINT),
+                ("R16_FLOAT", format::R16_FLOAT),
             ],
         ),
         (
@@ -1980,6 +2045,8 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
+                ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
                 ("DECAL_DEPTH", layout::DECAL_DEPTH),
                 ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
                 ("PARTICLE", layout::PARTICLE),
@@ -2082,6 +2149,8 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("WEIGHTED_COMPOSITE", template::WEIGHTED_COMPOSITE),
+                ("WEIGHTED_DEPTH", template::WEIGHTED_DEPTH),
                 ("DECAL", template::DECAL),
                 ("DECAL_MAPS", template::DECAL_MAPS),
                 ("PARTICLE", template::PARTICLE),
@@ -2100,6 +2169,7 @@ pub fn typescript_constants() -> String {
                 ("FOG_APPLY", template::FOG_APPLY),
                 ("FOG_APPLY_MS", template::FOG_APPLY_MS),
                 ("FOG_BLOCK", template::FOG_BLOCK),
+                ("PICK", template::PICK),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
