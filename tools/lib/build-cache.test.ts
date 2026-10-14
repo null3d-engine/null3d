@@ -146,7 +146,9 @@ describe('acquireLock', () => {
 		});
 		try {
 			await Bun.sleep(700);
-			expect(out).toBe('');
+			// It says which process holds the lock while it waits, rather than sitting silent: a
+			// build that waits can look hung, and one did for 13 minutes on 14 October.
+			expect(out).toContain(`held by pid ${process.pid}`);
 			release();
 			await Bun.sleep(700);
 			expect(out).toContain('acquired');
