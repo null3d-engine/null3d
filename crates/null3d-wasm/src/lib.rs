@@ -30,7 +30,7 @@ use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
-use null3d_core::lights::LightTable;
+use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
@@ -65,6 +65,7 @@ use null3d_render::gpu_driven::{
 };
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
+use null3d_render::light_tables;
 use null3d_render::materials::{self, CustomShading, LayerMap, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
@@ -167,6 +168,8 @@ mod render_detail {
     pub const SKINNED_PAGES_FULL: u32 = 13;
     /// The second detail is the most views a frame builder draws, the camera's included.
     pub const TOO_MANY_VIEWS: u32 = 14;
+    /// The second detail is the most rectangle lights with images at once.
+    pub const LIGHT_IMAGES_FULL: u32 = 16;
     /// Levels of detail that a mesh cannot take; the second detail says why
     /// (`constants::level_problem`).
     pub const BAD_LEVELS: u32 = 15;
@@ -2752,6 +2755,16 @@ pub fn set_reflection_scale() -> u32 {
     })
 }
 
+/// Sets the most area lights that one frame shades, from the next frame on: the quality preset's
+/// `areaLights`. Past it, the area lights nearest the camera shade.
+#[wasm_bindgen(js_name = setAreaLightCap)]
+pub fn set_area_light_cap(cap: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_area_light_cap(cap);
+        0
+    })
+}
+
 /// The halvings of the render size each way that make a share `scale` of it: 0 for the whole
 /// size, 1 for half and 2 for a quarter.
 fn halvings_of(scale: f32) -> u8 {
@@ -2918,12 +2931,100 @@ pub fn set_light_default(which: u32) -> u32 {
     })
 }
 
+// The area lights' two tables load on first use: TypeScript fetches them when the sketch makes its
+// first area light, writes their half floats at the address that `areaLightTables` gives, and
+// calls `finishAreaLightTables`. Area lights light frames from the next frame on. A rectangle
+// light's image goes the same way, through `areaLightImage` and `finishAreaLightImage`.
+/// Makes room for the area lights' tables, and returns the address of their half floats.
+#[wasm_bindgen(js_name = areaLightTables)]
+pub fn area_light_tables() -> u32 {
+    value_with_engine(|e| {
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        match tables.area_texels_mut() {
+            Some(texels) => Ok(address(texels)),
+            None => Err(out_of_memory(light_tables::AREA_HALVES as u64 * 2)),
+        }
+    })
+}
+
+/// Marks the area lights' tables as written, so the next frame uploads them and lists area
+/// lights.
+#[wasm_bindgen(js_name = finishAreaLightTables)]
+pub fn finish_area_light_tables() -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().light_tables_mut().finish_area();
+        0
+    })
+}
+
+/// Makes room for rectangle light `light`'s image, and returns the address of its half floats.
+/// Fails with E1501 when every place for an image is taken.
+#[wasm_bindgen(js_name = areaLightImage)]
+pub fn area_light_image(light: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights.object(light).map_err(core_failure)?;
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        match tables.image_texels_mut(light) {
+            Some(texels) => Ok(address(texels)),
+            None => Err(render_failure(
+                render_detail::LIGHT_IMAGES_FULL,
+                light_tables::MAX_IMAGES as u32,
+            )),
+        }
+    })
+}
+
+/// Marks rectangle light `light`'s image as written, so the next frame uploads it and the light
+/// shows it.
+#[wasm_bindgen(js_name = finishAreaLightImage)]
+pub fn finish_area_light_image(light: u32) -> u32 {
+    with_engine(|e| {
+        let layer = e
+            .renderer
+            .settings_mut()
+            .light_tables_mut()
+            .finish_image(light);
+        let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
+        e.lights
+            .set_value(light, light_value::IMAGE, image)
+            .map_or_else(core_failure, |()| 0)
+    })
+}
+
+/// Takes rectangle light `light`'s image away, so it lights with its color alone.
+#[wasm_bindgen(js_name = removeAreaLightImage)]
+pub fn remove_area_light_image(light: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .light_tables_mut()
+            .remove_image(light);
+        match e.lights.kind(light) {
+            light_kind::NONE => 0,
+            _ => e
+                .lights
+                .set_value(light, light_value::IMAGE, 0.0)
+                .map_or_else(core_failure, |()| 0),
+        }
+    })
+}
+
 /// The linear background color: the first three call values.
 #[wasm_bindgen(js_name = setBackground)]
 pub fn set_background() -> u32 {
     with_engine(|e| {
         let rgb = e.call_values();
         e.renderer.settings_mut().set_background(rgb);
+        0
+    })
+}
+
+/// Sets the layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+/// layer shows no decals: it draws again after them, over its own pixels.
+#[wasm_bindgen(js_name = setDecalLayers)]
+pub fn set_decal_layers(mask: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_decal_layers(mask);
         0
     })
 }

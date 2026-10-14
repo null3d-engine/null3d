@@ -226,6 +226,16 @@ impl Shading {
     pub const fn reads_object_ids(self) -> bool {
         matches!(self, Shading::Custom(custom) if custom.object_ids)
     }
+
+    /// The template that draws a decal with this shading: the standard material's, with or
+    /// without maps, or `None` for shading that has no decal builds.
+    pub const fn decal_template(self) -> Option<u32> {
+        match self {
+            Shading::Lit => Some(template::DECAL),
+            Shading::StandardMaps => Some(template::DECAL_MAPS),
+            _ => None,
+        }
+    }
 }
 
 /// Options fixed when a material is created, which choose its pipeline or its shader's code.
@@ -277,6 +287,11 @@ pub mod feature {
     /// a layered material, the map slots of the light map and the specular maps hold the layers'
     /// maps ([`LayerMap`]).
     pub const COAT_SHEEN: u32 = 65536;
+    /// The material is a decal's: each object with it projects the material onto the surfaces
+    /// inside the object's box, in the decal pass after the camera's opaque pass, and draws no
+    /// mesh of its own. Only the standard material has it. It blends, and wins over every other
+    /// feature that picks a pass, a mask or faces.
+    pub const DECAL: u32 = 131072;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -292,7 +307,8 @@ pub mod feature {
         | ALPHA_HASH
         | SINGLE_PASS
         | TRANSMISSION
-        | COAT_SHEEN;
+        | COAT_SHEEN
+        | DECAL;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -432,6 +448,13 @@ pub mod param {
     pub const SHEEN_COLOR: usize = 48;
     /// The perceptual roughness of the sheen, from 0 to 1.
     pub const SHEEN_ROUGHNESS: usize = 51;
+    /// A decal material's values take the place of the transmission's, which a decal never has.
+    /// The cosine of the angle from the decal's direction at which it starts to fade.
+    pub const DECAL_FADE_START: usize = TRANSMISSION;
+    /// The cosine of the angle from the decal's direction past which it shows nothing.
+    pub const DECAL_FADE_END: usize = THICKNESS;
+    /// The share of the box's depth, from 0 to 1, over which the decal fades at each end.
+    pub const DECAL_EDGE_FADE: usize = IOR;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
     /// the flags, the map layers, a spare float or a float inside a value.
@@ -635,6 +658,11 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row
 };
 
+/// The decal values of a new decal material's row, in place of the transmission's: the decal
+/// starts to fade 60 degrees from its direction and shows nothing past 80 degrees, as cosines, and
+/// fades over the last fifth of its box's depth at each end.
+pub const DECAL_DEFAULTS: [f32; 3] = [0.5, 0.173_648_18, 0.2];
+
 /// Materials by id, with a fixed capacity so the GPU table never moves.
 #[derive(Debug)]
 pub struct MaterialTable {
@@ -728,6 +756,9 @@ impl MaterialTable {
         row.copy_from_slice(&DEFAULT_ROW);
         row[..4].copy_from_slice(&color);
         row[param::FLAGS] = row_flags(features) as f32;
+        if features & feature::DECAL != 0 {
+            row[param::DECAL_FADE_START..][..DECAL_DEFAULTS.len()].copy_from_slice(&DECAL_DEFAULTS);
+        }
         self.shading[at] = shading;
         self.features[at] = features;
         self.maps[at] = [Handle::NONE; MAP_SLOTS];

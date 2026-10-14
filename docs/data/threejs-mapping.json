@@ -624,12 +624,23 @@
       "id": "rect-light",
       "category": "Lights and shadows",
       "three": "RectAreaLight",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A spot light plus emissive geometry",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createRectAreaLight({ color, intensity, width, height, range })",
+      "notes": "Needs a range, where three.js's light has no end. No RectAreaLightUniformsLib.init() call. The light leaves along -Z, as in three.js. Casts no shadows, as in three.js.",
+      "docs": "api/lights",
       "detect": "\\bRectAreaLight\\b"
+    },
+    {
+      "id": "rect-light-setup",
+      "category": "Lights and shadows",
+      "three": "RectAreaLightUniformsLib / RectAreaLightTexturesLib",
+      "status": "changed",
+      "since": "0.2",
+      "target": "Nothing: the engine loads the area lights' tables with the first area light",
+      "notes": "Remove the init() call.",
+      "docs": "api/lights",
+      "detect": "\\bRectAreaLight(UniformsLib|TexturesLib)\\b"
     },
     {
       "id": "light-probe",
@@ -839,6 +850,17 @@
       "notes": "The same Charlie sheen with three.js's formulas, and glTF's KHR_materials_sheen loads into it. There is no sheen option: give sheenColor times three.js's sheen, which defaults to 0, so a three.js material without sheen shows none and its port leaves the sheen options out. Give a sheen option when you create the material to change it later. sheenColorMap and sheenRoughnessMap must be one texture, with the roughness in alpha, as glTF packs them. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap.",
       "docs": "api/materials",
       "detect": "\\bsheen(Color|Roughness|ColorMap|RoughnessMap)?\\b"
+    },
+    {
+      "id": "decal-geometry",
+      "category": "Geometry",
+      "three": "DecalGeometry (addon), with a material that has polygonOffset",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createMesh({ mesh: geometry.box(), material: materials.decal({ map, normalMap, roughness }), position, rotation, scale: size })",
+      "notes": "No geometry is cut: the box projects the material onto every opaque surface inside it, in a pass after the opaque objects, lit by every light and shadow. DecalGeometry's position, orientation and size become the box's position, rotation and scale. The image lies on the box's x and y sides and looks along its z axis, as DecalGeometry lays it. There is no target mesh: the decal marks every opaque surface in its box. polygonOffset, depthWrite: false and transparent: true are not needed. angleFade and edgeFade fade the decal on surfaces that turn away and near the box's ends, where DecalGeometry stretches the image. A batch of boxes with one decal material draws many decals in one draw. Blended surfaces show no decals. Projected texture libraries, such as three-projected-material, become a large decal box.",
+      "docs": "api/materials",
+      "detect": "\\bDecalGeometry\\b"
     },
     {
       "id": "mat-basic",

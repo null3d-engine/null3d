@@ -743,6 +743,14 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// The group of the decal pass's scene depth: the depth target, which the decal templates read
+    /// with `textureLoad` as plain floats. It is group 1 of [`super::template::DECAL`] and group 2
+    /// of [`super::template::DECAL_MAPS`] on WebGPU, and group 4 on WebGL2, which reads a copy of
+    /// one sample of a multisampled depth.
+    pub const DECAL_DEPTH: u32 = 36;
+    /// [`DECAL_DEPTH`] for a multisampled depth target, whose sample 0 the decals read. Only WebGPU
+    /// has it.
+    pub const DECAL_DEPTH_MS: u32 = 37;
     /// Group 1 of the particle templates: a particle system's values as a uniform block, then the
     /// block of the view that draws, at a dynamic offset.
     pub const PARTICLE: u32 = 32;
@@ -769,7 +777,8 @@ pub mod layout {
 /// changes what a shader costs is a bit, so a pipeline without the feature does not pay for it. A
 /// cheap option is a uniform value instead. A shader reads each bit as the shader def of the bit's
 /// name in [`NAMES`], and the shader manifest lists the bits that each shader is built with. A bit
-/// that no shader reads yet is reserved for the feature it names, so no two features share one.
+/// that no shader reads yet is reserved for the feature it names. Two features share a value only
+/// when no template lists both, as [`SHARED`] records (decision record D-156).
 pub mod permutation {
     /// The vertex shader reads its draw's index, from `WEBGL_multi_draw`.
     pub const DRAW_INDEX: u32 = 1;
@@ -791,6 +800,10 @@ pub mod permutation {
     pub const MORPH: u32 = 128;
     /// The final pass smooths edges with FXAA before the output transform.
     pub const FXAA: u32 = 256;
+    /// The surface takes the light of the rectangle and tube lights in its cluster. Without it, the
+    /// light loop has no code for them, so scenes without area lights do not pay for it. It shares
+    /// [`FXAA`]'s value: only the lit templates list it, and only the final pass lists FXAA.
+    pub const AREA_LIGHTS: u32 = FXAA;
     /// The normal map's frame comes from the mesh's tangents, not from how the texture
     /// coordinates change between pixels.
     pub const VERTEX_TANGENT: u32 = 512;
@@ -863,7 +876,7 @@ pub mod permutation {
     pub const COAT_SHEEN: u32 = 1 << 30;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 27] = [
+    pub const NAMES: [(&str, u32); 28] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -873,6 +886,7 @@ pub mod permutation {
         ("SKIN", SKIN),
         ("MORPH", MORPH),
         ("FXAA", FXAA),
+        ("AREA_LIGHTS", AREA_LIGHTS),
         ("VERTEX_TANGENT", VERTEX_TANGENT),
         ("DEBUG_VIEW_LOW", DEBUG_VIEW_LOW),
         ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
@@ -892,6 +906,10 @@ pub mod permutation {
         ("CASTER", CASTER),
         ("COAT_SHEEN", COAT_SHEEN),
     ];
+
+    /// Pairs of names that share one value, because no template lists both: the shader build
+    /// refuses a template that lists two names of one value, and any other shared value.
+    pub const SHARED: [(&str, &str); 1] = [("FXAA", "AREA_LIGHTS")];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -921,7 +939,7 @@ pub mod permutation {
     /// that tests its alpha by the hash switches its levels at once.
     /// The layers shade, so casters never have them, and only the test switch reads instances by
     /// index, which no layered build needs.
-    pub const APART: [(u32, u32); 24] = [
+    pub const APART: [(u32, u32); 25] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -939,6 +957,7 @@ pub mod permutation {
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
+        (CASTER, AREA_LIGHTS),
         (LOD_FADE, SKIN),
         (LOD_FADE, MORPH),
         (LOD_FADE, INSTANCE_INDEX),
@@ -1643,6 +1662,13 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// Decals with the standard material: the back faces of each instance's box, which shade the
+    /// surface under each pixel from the scene's depth, in the decal pass after the camera's opaque
+    /// pass. It binds the frame's group, then the scene's depth in the group of
+    /// [`super::layout::DECAL_DEPTH`] or [`super::layout::DECAL_DEPTH_MS`].
+    pub const DECAL: u32 = 61;
+    /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
+    pub const DECAL_MAPS: u32 = 62;
     /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
     /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
     /// bind group of index 0 is the frame's, 1 the system's of layout
@@ -1963,6 +1989,8 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("DECAL_DEPTH", layout::DECAL_DEPTH),
+                ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
                 ("PARTICLE", layout::PARTICLE),
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
@@ -2063,6 +2091,8 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("DECAL", template::DECAL),
+                ("DECAL_MAPS", template::DECAL_MAPS),
                 ("PARTICLE", template::PARTICLE),
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
@@ -2322,11 +2352,16 @@ mod tests {
     }
 
     #[test]
-    fn permutation_bits_are_distinct_single_bits_with_their_names() {
+    fn permutation_bits_are_single_bits_with_their_names_shared_only_as_listed() {
         let mut seen = 0;
-        for (name, bit) in permutation::NAMES {
+        for (k, (name, bit)) in permutation::NAMES.into_iter().enumerate() {
             assert!(bit.is_power_of_two(), "{name}");
-            assert_eq!(seen & bit, 0, "{name} shares a bit");
+            for (other, _) in permutation::NAMES[..k].iter().filter(|(_, b)| *b == bit) {
+                let listed = permutation::SHARED
+                    .iter()
+                    .any(|&(a, b)| (a, b) == (*other, name) || (a, b) == (name, *other));
+                assert!(listed, "{name} shares a bit with {other}");
+            }
             seen |= bit;
             assert_eq!(permutation::bit(name), Some(bit));
         }
