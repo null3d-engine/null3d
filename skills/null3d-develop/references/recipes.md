@@ -670,3 +670,60 @@ export default defineSketch(async (ctx) => {
 ```
 
 Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
+
+## 21. Terrain from a height field (0.2)
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createTerrain, terrainTextures } from '@null3d/terrain';
+
+/** Hills with a valley that runs along z, in meters. */
+const ground = (x: number, z: number) =>
+  30 * Math.sin(x * 0.012) * Math.cos(z * 0.01) + 8 * Math.sin(x * 0.05 + z * 0.03) +
+  -20 * Math.exp(-(z * z) / (2 * 220 * 220));
+
+export default defineSketch((ctx) => {
+  const { scene, textures } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 55, near: 0.5, far: 4000, position: [0, 60, 320] });
+  camera.lookAt(0, 10, 0);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 3, castShadows: true, shadow: { distance: 260 } });
+  scene.createAmbientLight({ intensity: 0.5 });
+
+  const layers = terrainTextures(textures, { size: 128, seed: 7 });
+  const terrain = createTerrain(ctx, {
+    size: 1000,
+    height: ground,
+    resolution: 256,
+    layers: [
+      { map: layers.grass, tile: 6, roughness: 1 },
+      { map: layers.soil, tile: 10, roughness: 1 },
+      { map: layers.rock, tile: 7, roughness: 0.85 },
+      { map: layers.snow, tile: 12, roughness: 0.7 },
+    ],
+    maxLevel: 6,
+    split: 2.1,
+  });
+
+  // Seat an object on the ground with heightAt, since the terrain carries no collision.
+  const at = [120, 0, -60];
+  scene.createMesh({
+    mesh: ctx.geometry.sphere({ radius: 3, widthSegments: 10, heightSegments: 6 }),
+    material: ctx.materials.standard({ color: '#6d6559', roughness: 0.95, flatShading: true }),
+    position: [at[0], terrain.heightAt(at[0], at[2]) + 3, at[2]],
+    castShadows: true,
+    receiveShadows: true,
+  });
+
+  const eye = [0, 0, 0];
+  return {
+    onUpdate() {
+      // The ground follows the camera: fine blocks near it, coarse blocks far away.
+      camera.getWorldPosition(eye);
+      terrain.update(eye[0], eye[2]);
+    },
+  };
+});
+```
+
+The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.

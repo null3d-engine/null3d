@@ -1,6 +1,6 @@
 # D-143: Physical sky and aerial perspective
 
-Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. The figures of cost and size are under Data. Date: 2026-10-11. Task: M2-EX26.
+Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. Its exposure band was fixed on 14 October 2026 (addendum). The figures of cost and size are under Data. Date: 2026-10-11. Task: M2-EX26.
 
 Summary: `scene.setBackground({ atmosphere })` draws a physically based sky: Rayleigh and Mie scattering and ozone, from Hillaire's three lookup tables (2020), as Unreal Engine and Bevy draw theirs. The same air hazes distant objects by distance and by the sun's angle, inside each surface's shader, as fog does. The sky's environment, the moon, the stars and the clouds follow it. The Low preset draws three.js's analytic sky in its place, matched in brightness. Nothing runs or downloads while no scene uses it.
 
@@ -103,3 +103,32 @@ The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz)
 - The sky model now has two more copies: the shaders' and the core's CPU copy for the diffuse light and the frame's values. A unit test compares the CPU copy's transmittance and sky light with known values.
 - The frame's uniform block grows by 96 bytes on every path.
 - Every surface shader holds the haze step, so each shader build grows by 2 to 4% after Brotli, and the small sprite and line builds by 6 to 11%. The engine core grows by 2.5%, and the environment's generator by 2.2% for its panorama step. The physical sky's own shaders load on first use: 8 to 9 KB after Brotli for each GPU path.
+
+## Addendum: the physical exposure's band and the sun-to-moon hand-over
+
+Status: fixed on 14 October 2026, for the owner's review. Date: 2026-10-14. Task: none.
+
+The owner hit a fault in the showcase scenes on 14 October 2026. Surfaces washed out at some times of day, and one moment was far too bright. The physical model's exposure rose to its limit of 200 just above the horizon, and its main light fell to zero there.
+
+### The cause
+
+The exposure followed `ratio ** PHYSICAL_ADAPTATION`, clamped to `PHYSICAL_EXPOSURE_LIMIT = 200`. Here `ratio` is the day sky's mean luminance over the sky's at the sun's height. That mean is continuous across the horizon. It falls about 9-fold from 15 degrees down to the horizon. By 6 degrees under it, it has fallen about 700-fold. The interpolation blends in log space between the table's rows. With a nearly full adaptation, 0.85, the exposure reached the 200 limit at the darkest dusk. The moon's main light was `nightfall ** 3`, which is zero until 6 degrees under the horizon. So the sun's light went out at the horizon, and nothing lit the scene from 0 to 6 degrees down.
+
+| Hour | Exposure before | Exposure after | Main light before | Main light after |
+| --- | --- | --- | --- | --- |
+| 15 | 1 | 1 | 3.26 | 3.26 |
+| 17.6, golden hour | 2.12 | 1.30 | 1.98 | 1.98 |
+| 18.0, the horizon | 6.58 | 1.94 | 0 | 0.23 |
+| 18.4, blue hour | 164 | 4.0 | 0 | 0.21 |
+| 18.5 | 200 | 4.0 | 0 | 0.26 |
+| 23, night | 3.5 | 3.5 | 0.4 | 0.4 |
+
+### The fix
+
+- `PHYSICAL_EXPOSURE_LIMIT` falls from 200 to 4, and `PHYSICAL_ADAPTATION` from 0.85 to 0.3. The sun on the horizon then gives an exposure of about 2, as the analytic model's `EXPOSURE` table does. The curve rises from 1 by day to 4 at the darkest dusk, then settles at 3.5 under the moon.
+- The main light cross-fades from the sun to the moon between 6 degrees above and 12 degrees below the horizon (`MOON_LIGHT`). So the sun's light and the moon's overlap, and they are never both zero.
+- The sky's mean luminance and its interpolation are unchanged: they were already continuous, and a unit test now holds them so.
+
+Over 0 to 24 hours the exposure stays within 1 to 4, and no step of 0.1 hours changes it by more than 1.30 times. The main light's least intensity is 0.12, at about half a degree under the horizon. There the sun has gone and the moon has not yet risen. Before, the light was zero from 0 to 6 degrees down. Three unit tests hold the band, the step and the continuity of the sky's mean light across the horizon.
+
+The exposure changes at golden hour and at blue hour, and in the atmosphere demo's held frame. Those image references must be made again in both sets.
