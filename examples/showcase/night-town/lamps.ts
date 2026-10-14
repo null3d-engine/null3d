@@ -2,6 +2,7 @@
 // glow through the bloom. Each lantern is a point light, a glass shade that gives off light, and a
 // soft sprite around it that the fog and the bloom turn into haze.
 import { type MeshGeometry, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import { groundHeight } from './land';
 
@@ -116,6 +117,7 @@ export async function createLamps(
 		blending: 'additive',
 		depthWrite: false,
 	});
+	markEffect(glowSprites);
 	places.forEach((p, k) => {
 		glowSprites.positions.set([p.x, p.y + HEIGHT, p.z], k * 3);
 		glowSprites.sizes.set([4.2, 4.2], k * 2);

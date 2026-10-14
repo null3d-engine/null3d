@@ -5,6 +5,10 @@ const DEGREE = Math.PI / 180;
 
 const PRESETS: TimeOfDayPreset[] = ['afternoon', 'goldenHour', 'blueHour', 'night'];
 
+/** The band the physical exposure stays in, and the largest step it may take between adjacent hours. */
+const PHYSICAL_EXPOSURE_BAND = [1, 4] as const;
+const PHYSICAL_EXPOSURE_STEP = 1.5;
+
 /** The sun's height in degrees that a result's sky shows. */
 const skyElevation = (hours: number | TimeOfDayPreset) =>
 	(Math.asin(timeOfDay(hours).sky.sunPosition[1]) * 180) / Math.PI;
@@ -181,10 +185,10 @@ describe('timeOfDay', () => {
 		expect(night.atmosphere.moonIntensity).toBeGreaterThan(0);
 		expect(night.atmosphere.stars).toBe(1);
 		expect(night.light.color).toEqual(timeOfDay('night').light.color);
-		// The exposure rises through dusk, within its limit, and settles under the moon.
+		// The exposure rises through dusk, within its band, and settles under the moon.
 		const blue = physical('blueHour');
 		expect(blue.exposure).toBeGreaterThan(golden.exposure);
-		expect(blue.exposure).toBeLessThanOrEqual(200);
+		expect(blue.exposure).toBeLessThanOrEqual(PHYSICAL_EXPOSURE_BAND[1]);
 		expect(night.exposure).toBeLessThan(blue.exposure);
 		expect(night.exposure).toBeGreaterThan(1);
 	});
@@ -208,6 +212,63 @@ describe('timeOfDay', () => {
 				).toBeLessThan(0.5);
 				before = day;
 			}
+		}
+	});
+
+	test('keeps the physical exposure in its band with a step of under 1.5x', () => {
+		const [low, high] = PHYSICAL_EXPOSURE_BAND;
+		let before = timeOfDay(0, { model: 'physical' }).exposure;
+		expect(before).toBeGreaterThanOrEqual(low);
+		expect(before).toBeLessThanOrEqual(high);
+		// The exposure makes up for the physical sky as it dims, so it never spikes at the horizon.
+		for (let hours = 0.1; hours <= 24.0001; hours += 0.1) {
+			const now = timeOfDay(hours, { model: 'physical' }).exposure;
+			expect(now).toBeGreaterThanOrEqual(low);
+			expect(now).toBeLessThanOrEqual(high);
+			expect(Math.max(now / before, before / now)).toBeLessThan(PHYSICAL_EXPOSURE_STEP);
+			before = now;
+		}
+	});
+
+	test('hands the physical main light from the sun to the moon with no zero dip', () => {
+		// The sun's direct light is extinguished at the horizon and the moon's rises, but the two
+		// overlap, so the main light never falls to zero and the scene never goes unlit.
+		let least = Number.POSITIVE_INFINITY;
+		for (let hours = 0; hours <= 24.0001; hours += 0.1)
+			least = Math.min(least, timeOfDay(hours, { model: 'physical' }).light.intensity);
+		expect(least).toBeGreaterThan(0.05);
+	});
+
+	test("keeps the physical sky's mean light continuous across the horizon", () => {
+		// The ambient light carries the sky's mean light, and across the horizon the moon adds none,
+		// so its luminance follows the sun's sky mean there. A jump would not shrink with the step.
+		const meanLight = (hours: number) => {
+			const day = timeOfDay(hours, { model: 'physical' });
+			return luminance(day.ambient.color) * day.ambient.intensity;
+		};
+		const elevation = (hours: number) =>
+			(Math.asin(timeOfDay(hours, { model: 'physical' }).atmosphere.sunPosition[1]) * 180) /
+			Math.PI;
+		const largestStep = (from: number, to: number, step: number) => {
+			let before = -1;
+			let largest = 0;
+			for (let hours = from; hours <= to; hours += step) {
+				const degrees = elevation(hours);
+				if (degrees > 3 || degrees < -6) continue;
+				const now = meanLight(hours);
+				if (before >= 0)
+					largest = Math.max(largest, Math.abs(now - before) / Math.max(now, before, 1e-12));
+				before = now;
+			}
+			return largest;
+		};
+		for (const [from, to] of [
+			[5.5, 6.3],
+			[17.7, 18.5],
+		] as const) {
+			const coarse = largestStep(from, to, 1e-3);
+			const fine = largestStep(from, to, 1e-4);
+			expect(fine).toBeLessThanOrEqual(coarse * 0.2 + 1e-12);
 		}
 	});
 
