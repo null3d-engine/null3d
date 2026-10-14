@@ -81,7 +81,7 @@ import {
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
-	findFirstUseWasm,
+	findFirstUseFiles,
 	isFirstUseShaderPart,
 	LATER_BUDGET,
 	LATER_PARTS,
@@ -639,8 +639,8 @@ async function main(): Promise<void> {
 	for (const [part, size] of parts) sizes[`js/${part}`] = size;
 	const downloads = downloadSizes(parts);
 	const assets = join(root, JS_BUILD_DIR, 'assets');
-	const firstUseWasm = new Map(
-		[...findFirstUseWasm(readdirSync(assets))].map(([file, built]) => [
+	const firstUseFiles = new Map(
+		[...findFirstUseFiles(readdirSync(assets))].map(([file, built]) => [
 			`first-use/${file}`,
 			measure(readFileSync(join(assets, built))),
 		]),
@@ -671,10 +671,10 @@ async function main(): Promise<void> {
 	for (const [part, size] of parts)
 		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
 	console.log(
-		"\nthe WebAssembly modules that load on first use: the KTX2 transcoder with the first KTX2 file, the meshopt decoder with the first glTF file that holds meshopt data, and Draco's decoder with the first glTF file that holds Draco data, a recorded exception (D-14) (no budget)",
+		"\nthe files besides code that load on first use: the KTX2 transcoder with the first KTX2 file, the meshopt decoder with the first glTF file that holds meshopt data, Draco's decoder with the first glTF file that holds Draco data, and the area lights' tables with the first rectangle or tube light, recorded exceptions (D-14, D-145) (no budget)",
 	);
-	for (const [file, size] of firstUseWasm) printSize(file, size);
-	for (const [file, size] of firstUseWasm) sizes[file] = size;
+	for (const [file, size] of firstUseFiles) printSize(file, size);
+	for (const [file, size] of firstUseFiles) sizes[file] = size;
 	// The function names of a profiling build would add to every size.
 	if (!options.keepNames) {
 		writeFileSync(join(root, SIZE_RECORD), `${JSON.stringify(sizes, null, '\t')}\n`);
@@ -687,7 +687,7 @@ async function main(): Promise<void> {
 	const problems = Object.entries(sizes)
 		.filter(
 			([file, size]) =>
-				file.endsWith('.wasm') && !firstUseWasm.has(file) && size.brotli > WASM_BUDGET_BYTES,
+				file.endsWith('.wasm') && !firstUseFiles.has(file) && size.brotli > WASM_BUDGET_BYTES,
 		)
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
