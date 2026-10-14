@@ -3773,6 +3773,11 @@ export class Scene implements ViewHolder {
 		const points = linePoints(call, mode, positions, colors);
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
+		if (DEV && (options.blending as string | undefined) === 'weighted')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the 'weighted' blending, which lines do not take. Give them the 'normal' blending, which draws back to front.`,
+			);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
