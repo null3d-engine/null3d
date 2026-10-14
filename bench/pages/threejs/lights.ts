@@ -1,6 +1,7 @@
 // The three.js twin of the point, spot and hemisphere light scenes (bench/scenes/lights.ts), which
 // null3D's image tests draw. ?lights=N lights the floor with N point lights in a square grid,
-// ?scene=spot with three spot lights instead, and ?scene=hemisphere with a hemisphere light. A
+// ?scene=spot with three spot lights instead, ?scene=hemisphere with a hemisphere light, and
+// ?scene=rect with three RectAreaLights, whose tables each renderer's library sets up. A
 // null3D light's range is a three.js light's distance. It draws the scene once into an offscreen
 // target of the image's size, and publishes the pixels as the hold pages do. `?renderer=webgl`
 // draws with WebGLRenderer, and `?renderer=webgpu` with WebGPURenderer.
@@ -15,6 +16,7 @@ import {
 	LIGHTS_SHAPES,
 	LIGHTS_SPHERE,
 	pointLightGrid,
+	RECT_LIGHTS,
 	SPOT_LIGHTS,
 } from '../../scenes/lights';
 import { showPageName } from '../lib/fit';
@@ -72,6 +74,14 @@ run('hold', async () => {
 			light.target.position.set(...target);
 			scene.add(light, light.target);
 		}
+	} else if (lights === 'rect') {
+		await setUpRectLights(rendererName);
+		for (const { position, target, width, height, color, intensity } of RECT_LIGHTS) {
+			const light = new three.RectAreaLight(color, intensity, width, height);
+			light.position.set(...position);
+			light.lookAt(...target);
+			scene.add(light);
+		}
 	} else if (lights === 'hemisphere') {
 		const { skyColor, groundColor, intensity } = HEMISPHERE_LIGHT;
 		scene.add(new three.HemisphereLight(skyColor, groundColor, intensity));
@@ -101,3 +111,19 @@ run('hold', async () => {
 		pixels: toBase64(pixels),
 	};
 });
+
+/** Gives three.js's renderer the tables of RectAreaLight, as its examples do. */
+async function setUpRectLights(rendererName: string): Promise<void> {
+	if (rendererName === 'webgpu') {
+		const [{ RectAreaLightTexturesLib }, { RectAreaLightNode }] = await Promise.all([
+			import('three/addons/lights/RectAreaLightTexturesLib.js'),
+			import('three/webgpu'),
+		]);
+		RectAreaLightNode.setLTC(RectAreaLightTexturesLib.init());
+	} else {
+		const { RectAreaLightUniformsLib } = await import(
+			'three/addons/lights/RectAreaLightUniformsLib.js'
+		);
+		RectAreaLightUniformsLib.init();
+	}
+}
