@@ -83,3 +83,36 @@ they fly the scene themselves.
   the margin of a house, a tree, the tower or the cave. `examples/lib/clearance.test.ts` checks the
   guard's rules and that the manual camera dollies out, keeps the distance, and turns without
   shrinking it. `examples/lib/takeover.test.ts` checks that a takeover never jumps.
+
+## Addendum: a takeover halts the route at once (owner, 14 October 2026)
+
+The owner replaced the takeover's ease-to-halt the same day. Taking the camera now stops the route's
+motion at once: the manual camera takes the route's pose that moment and holds it, with no drift, and
+the controls take their target from the shot's look-at point. The earlier design eased the route's
+last motion to a halt over about 0.22 s. The owner wanted no transition at all, so the camera is
+still the moment the mode switches. The pose is still the route's own, never a snap to a shot.
+`examples/lib/takeover.test.ts` checks that the camera holds within a millimetre of the route's pose
+from the first frame after the switch and does not move over the second that follows.
+
+## Addendum: a demo's geometry must not overlap (owner, 14 October 2026)
+
+The owner ruled that a demo's and a showcase scene's own geometry must not overlap: two pieces that
+cross or lie coplanar over one another z-fight and shimmer. `examples/lib/overlap.ts` holds
+`findOverlaps`, which tests every pair of triangles of the parts it is given, counting a crossing or
+a coplanar area overlap as a fault and a shared edge or vertex as none. A deliberate intersection,
+such as a chimney sunk through a roof, is named in the check's `ignore` list, so the check stays
+meaningful. The check stops at a deliberate intersection, so a piece built from boxes that overlap on
+purpose, such as the night town's clock tower, is left out of it.
+
+The owner asked for the check to cover every demo and showcase scene. What runs today:
+
+- `examples/showcase/night-town/overlap.test.ts` checks every house's walls, roof and chimney, with
+  the chimney sunk through its roof as the one deliberate intersection. The `examples/showcase`
+  folder is now in the `bun run test` list, so this test and the two scenes' route tests run in CI;
+  before, the folder was not listed.
+- The other showcase scene, Creek, and the feature demos build their pieces through the engine
+  (`scene.createMesh`, `scene.createInstances`, `assets.loadGltf`), which keeps no triangle arrays
+  that a unit test can read. The check needs a scene readback: the engine would have to expose the
+  world-space triangles of its objects and instance rows. That readback is not built, so those scenes
+  are not covered yet. Until it is, an overlap in a demo is caught by eye or in a review, not by a
+  test.

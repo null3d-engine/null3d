@@ -48,10 +48,11 @@ The owner added two things to the controls on 14 October 2026.
   It fades in and out over about 2 s, one replaces the old, it never takes a click, and its text names
   no input device. It comes from the same control model the HUD draws, so every group has it.
   `prefers-reduced-motion` shows it with no slide.
-- **A takeover slows, it does not stop dead.** Taking the camera mid-transition sets the manual camera
-  to the pose the route holds that moment and eases the route's last motion to a halt over about
-  0.22 s, then hands over the controls. The pose passes the clearance guard, so a takeover never lands
-  inside geometry.
+- **A takeover halts the route at once.** Taking the camera mid-transition sets the manual camera to
+  the pose the route holds that moment and stops the route's motion there, with no drift; the user
+  then holds that pose until they move. (An earlier draft eased the route's last motion to a halt over
+  about 0.22 s; the owner removed the transition the same day. The D-170 addendum records it.) The
+  pose passes the clearance guard, so a takeover never lands inside geometry.
 - **The bloom blend: a question for the owner.** The engine's `Bloom.blend` default is `Mix`, which
   moves each pixel toward the glow by the intensity. At a typical intensity that crushes every pixel
   that is not glowing, so bloom looks as if it darkens the scene: turning bloom on in the night town
@@ -59,3 +60,26 @@ The owner added two things to the controls on 14 October 2026.
   which adds the glow as three.js does, and the HUD's bloom toggle does the same. The engine default
   stays `Mix` for Bevy parity (D-21 owns bloom); whether it should change to `Add` is the owner's
   question.
+
+## Addendum: tabs, the loading overlay and the effects that start off (owner, 14 October 2026)
+
+The owner asked for three follow-ups the same day, after reviewing the night town.
+
+- **The panel is tabbed.** One tab per group, and only the selected group's buttons show, so the panel
+  is short on any screen, a phone included. The owner asked for this so a phone shows fewer rows and
+  less height, and still scrolls; the earlier one-card-per-group grid stacked or wrapped and grew
+  tall. The tab bar scrolls across, the selected group scrolls inside a bounded panel, and the
+  selected tab is remembered while the panel is open, with Camera first. The tablist is
+  `role="tablist"`, each tab is `role="tab"` with `aria-selected` and `aria-controls`, each group is a
+  `role="tabpanel"`, and the arrow keys, Home and End move between tabs. The glass style, the `h` key,
+  the chevron, the tooltips and the toasts are unchanged.
+- **A loading overlay.** `examples/lib/run.ts` shows a glass overlay over the canvas before the engine
+  starts. It names the engine's start stages (`core`, `sketch`, `first-frame`) through `onProgress`,
+  and any progress a scene posts while it loads. `examples/lib/progress.ts` reports a scene's file
+  count from `assets.onProgress`; a scene with nothing to load posts its build phases. The overlay
+  fades out when the first frame draws, with a short fade that `prefers-reduced-motion` removes, and
+  shows the error text instead when the start fails.
+- **Bloom, automatic exposure and the vignette start off.** The owner wants the showcase scenes to
+  open on the look they approved, so each of those three effects starts off, its HUD button starts
+  unpressed, and turning it on shows `bloom: on` and the like. The initial `post` settings match the
+  off state, so no `post.set` turns bloom on at setup.
