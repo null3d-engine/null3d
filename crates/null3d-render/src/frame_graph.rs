@@ -1572,13 +1572,16 @@ impl FrameGraph {
     /// pipeline `built` says is built as one. When the plan changes, the passes are declared again.
     fn plan_effects(&mut self, built: impl Fn(usize) -> bool, fold: Option<usize>) {
         let mut units = [Unit::default(); MAX_EFFECTS];
-        let count = effects::plan_units(
-            self.effect_count,
-            &self.effect_joins,
-            built,
-            fold,
-            &mut units,
-        );
+        // A joined group writes one target for the whole group. The two-step pass reads that target,
+        // and its own rows differ from a single effect's on WebGL2, so below the whole canvas's
+        // scale each effect runs alone. Above it, the sketch's groups stay.
+        let joins = if self.two_step_declared {
+            EffectJoins::default()
+        } else {
+            self.effect_joins
+        };
+        let fold = fold.filter(|_| !self.two_step_declared);
+        let count = effects::plan_units(self.effect_count, &joins, built, fold, &mut units);
         if count != self.unit_count || units != self.effect_units || fold != self.folded {
             self.effect_units = units;
             self.unit_count = count;
