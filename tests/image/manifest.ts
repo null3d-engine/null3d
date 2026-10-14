@@ -95,10 +95,11 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
- * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
+ * look, which three.js lacks, joins the curves that three.js shares here.
  */
 function toneMappingTests(): ImageTest[] {
-	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -167,6 +168,54 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the volumetric fog tests: a low sun behind pillars, or street lamps at night. */
+const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
+
+/** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
+const FOG_VOLUME_SIZE = [480, 270] as const;
+
+/**
+ * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
+ * the shadow of the box under the middle lamp, each beside the same fog with its sun glow alone, on
+ * every tier. With Medium's coarse grid, which WebGL2 and compatibility mode draw at most, every
+ * tier must draw the first tier's image, with no cell's edge showing. Turned on during play, it
+ * draws the image of turning it on in the setup. At half the render scale the apply step draws into
+ * the corner of its target. With no slices, as on Low, and
+ * on a device with no HDR target, which the page's switch that turns HDR off stands in for, the fog
+ * keeps its glow and draws the image without the volumetric fog.
+ */
+function fogVolumeTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FOG_VOLUME_SKETCH}${query}`,
+		hold: 1,
+		size: FOG_VOLUME_SIZE,
+	});
+	return [
+		test('fog-volume-off', ''),
+		test('fog-volume-sun', '?fog=on'),
+		test('fog-volume-night-off', '?night'),
+		test('fog-volume-night', '?night&fog=on'),
+		{ ...test('fog-volume-later', '?fog=on&later'), reference: 'fog-volume-sun' },
+		{
+			...test('fog-volume-medium', '?fog=on&slices=32'),
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		},
+		test('fog-volume-scale-50', '?scale=0.5&fog=on'),
+		{ ...test('fog-volume-no-slices', '?fog=on&slices=0'), reference: 'fog-volume-off' },
+		{
+			...test('fog-volume-8-bit', '?fog=on'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'fog-volume-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
 const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
 
@@ -203,6 +252,52 @@ function dofTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			switches: ['hdr=off'],
 			reference: 'dof-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
+/** The sketch of the automatic exposure tests: boxes and a lamp under a sun. */
+const EXPOSURE_SKETCH = 'tests/pages/sketches/exposure-sketch.ts';
+
+/** The automatic exposure tests' image size. */
+const EXPOSURE_SIZE = [320, 180] as const;
+
+/**
+ * Automatic exposure in hold mode, which meters the held frame and takes its stops at once, on
+ * every tier. A dark hall and a sunny street both adapt toward middle gray, with the percentile
+ * and the mean meters, a center weight, a compensation and a range that stops the eye short. The
+ * eye adapts with bloom and AgX too, and at half the render scale. Turning it on during play draws
+ * the image of turning it on at the start, as the meter's first frame takes its stops at once. The
+ * downsample meter, which Low and WebGL2 use, draws its own image. A device with no HDR target
+ * keeps the camera's exposure.
+ */
+function exposureTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EXPOSURE_SKETCH}${query}`,
+		hold: 1,
+		size: EXPOSURE_SIZE,
+	});
+	return [
+		test('exposure-off', '?light=dark'),
+		test('exposure-dark', '?light=dark&auto'),
+		test('exposure-bright', '?light=bright&auto'),
+		test('exposure-mean', '?light=dark&auto&metering=mean'),
+		test('exposure-center', '?light=dark&auto&center=1'),
+		test('exposure-compensation', '?light=dark&auto&comp=1'),
+		test('exposure-range', '?light=dark&auto&min=-2'),
+		test('exposure-bloom', '?light=dark&auto&bloom'),
+		{ ...test('exposure-later', '?light=dark&auto&later'), reference: 'exposure-dark' },
+		test('exposure-scale-50', '?scale=0.5&light=dark&auto'),
+		test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+		{
+			...test('exposure-8-bit', '?light=dark&auto'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'exposure-off',
 			expect: { hdr: false },
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
@@ -1052,6 +1147,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...dofTests(),
+	...exposureTests(),
+	...fogVolumeTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
@@ -1135,7 +1232,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
-	// a scene has, so other devices get a wider tolerance here.
+	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
+	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1143,7 +1241,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
@@ -1215,6 +1313,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		(view): ImageTest => ({
 			name: view === '' ? 'shadows-contact' : `shadows-contact-${view}`,
 			sketch: `tests/pages/sketches/shadow-contact-sketch.ts${view === '' ? '' : `?view=${view}`}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
+	// Contact shadows: pebbles, a thin pole, a crate and an upright tyre under a low sun, with a
+	// coarse shadow map. The march runs in the step after the depth copy alone, in ambient
+	// occlusion's last step with it on, and with 4 steps. Off, the cascades draw alone.
+	...(
+		[
+			['contact-shadows', ''],
+			['contact-shadows-ao', '?ao'],
+			['contact-shadows-steps-4', '?steps=4'],
+			['contact-shadows-off', '?off'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/contact-shadows-sketch.ts${query}`,
 			hold: 0,
 			size: [480, 270],
 			sameOnEveryTier: true,
@@ -1294,9 +1412,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
-	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
-	// pass, and WebGL2 in the vertex shader of each pass. ?shadows stands them on a ground under a
-	// sun whose shadows must follow each pose. Every tier draws the same image.
+	// parity test compares the image with three.js's SkinnedMesh. Every tier skins them in the
+	// vertex shader of each pass. ?shadows stands them on a ground under a sun whose shadows must
+	// follow each pose. Every tier draws the same image.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}` : 'skinning',
@@ -1306,8 +1424,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			sameOnEveryTier: true,
 		}),
 	),
-	// The characters with a custom material that samples a texture, which WebGPU skins in the
-	// skinning pass and WebGL2 in the vertex shader of the material's own skinned builds.
+	// The characters with a custom material that samples a texture. WebGPU has no skinned builds of
+	// custom materials, so its skinning pass skins them, and WebGL2 skins them in the vertex shader
+	// of the material's own skinned builds.
 	{
 		name: 'skinning-custom-textures',
 		sketch: 'tests/pages/sketches/skinning-sketch.ts?textured',
@@ -1325,9 +1444,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 	},
 	// The characters with tangents and a normal map of grooves, which light alike only when every
-	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
-	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
-	...(['', '-full'] as const).map(
+	// way to skin turns the tangents alike: the vertex shaders turn them in floats, and the
+	// skinning pass stores them in 8 bits, or in 32-bit floats with ?skinning=full.
+	...(['', '-compute', '-full'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-normal-map${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?normalmap',
@@ -1336,7 +1455,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(way
 				? {
 						tiers: ['webgpu', 'compat'],
-						switches: ['skinning=full'],
+						switches: [`skinning=${way.slice(1)}`],
 						reference: 'skinning-normal-map',
 					}
 				: { sameOnEveryTier: true }),
@@ -1354,7 +1473,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// The middle character sees through, so the transparent pass draws it skinned, in front of its
 	// shadow, with each way to skin, and on WebGL2 in the vertex shader. Compatibility mode blends
 	// on the 8-bit path, which differs in the see-through pixels, so each tier has its own image.
-	...(['', '-vertex'] as const).map(
+	...(['', '-compute'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-blend${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?shadows&blend',
@@ -1363,28 +1482,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(way
 				? {
 						tiers: ['webgpu', 'compat'],
-						switches: ['skinning=vertex'],
+						switches: ['skinning=compute'],
 						reference: 'skinning-blend',
 					}
 				: {}),
 		}),
 	),
-	// The same scenes skinned in the vertex shader of each pass, which D-20 measures against the
-	// skinning pass: they must draw the same images.
+	// The same scenes skinned in the skinning pass, which ?skinning=compute picks and which D-20
+	// measured against the vertex shaders: they must draw the same images.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
-			name: variant ? `skinning-${variant}-vertex` : 'skinning-vertex',
+			name: variant ? `skinning-${variant}-compute` : 'skinning-compute',
 			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 			tiers: ['webgpu', 'compat'],
-			switches: ['skinning=vertex'],
+			switches: ['skinning=compute'],
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
 	// The same scenes from the skinning pass with neither of its savings: normals as 32-bit floats,
-	// and every character skinned in every frame. The default pass writes 8-bit normals, which must
-	// draw the same images.
+	// and every character skinned in every frame. The pass's default writes 8-bit normals, which
+	// must draw the same images.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}-full` : 'skinning-full',
@@ -1396,10 +1515,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
-	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
-	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// The middle character outlined: the outline's mask skins it in its pose, in the vertex shader
+	// or from the skinning pass's vertices, and on WebGL2 always in the vertex shader. Each tier
 	// draws the scene in its own way, so each has its own image.
-	...(['', '-vertex'] as const).map(
+	...(['', '-compute'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-outline${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
@@ -1408,7 +1527,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(way
 				? {
 						tiers: ['webgpu', 'compat'],
-						switches: ['skinning=vertex'],
+						switches: ['skinning=compute'],
 						reference: 'skinning-outline',
 					}
 				: {}),
@@ -1632,6 +1751,44 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// The physical sky at four times of day from `timeOfDay` with the physical model: its tables,
+	// its background with clouds, the moon and the stars, its environment, and the aerial
+	// perspective on a row of pillars out to 20 kilometres. Then the afternoon with the analytic sky
+	// standing in, as on Low, the afternoon without the aerial perspective, and the night on the
+	// 8-bit path, where the sky's own shader tone maps its color (D-143).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `physical-sky-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	...(
+		[
+			['physical-sky-analytic', 'analytic'],
+			['physical-sky-no-haze', 'haze=0'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=afternoon&${query}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	{
+		name: 'physical-sky-night-8-bit',
+		sketch: 'tests/pages/sketches/physical-sky-sketch.ts?time=night',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. Then the same floor under a hemisphere light. The
@@ -1895,6 +2052,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Particles of the particles add-on: soft dots that bounce, smoke from a flipbook made in code,
+	// sparks along their velocity, and tumbling leaves, each moved by the GPU in closed form.
+	{
+		name: 'particles',
+		sketch: 'tests/pages/sketches/particles-sketch.ts',
+		hold: 2,
+	},
+	// Terrain of the terrain add-on: a height field drawn as a camera-centred quadtree of blocks,
+	// with grass, soil, rock and snow blended by a splat map, and stones seated with heightAt.
+	{
+		name: 'terrain',
+		sketch: 'tests/pages/sketches/terrain-sketch.ts',
+		hold: 1,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
@@ -2057,7 +2228,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
+				...(comparison.imageDevices && { devices: comparison.imageDevices }),
 			};
+			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
+			// its test shares that comparison's references, in the scene graph mode only.
+			if (comparison.sameSceneAs)
+				return [{ ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` }];
 			return [
 				test,
 				{
@@ -2081,7 +2257,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
 			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
-			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
+			// update rates are its default, and a held frame otherwise catches far characters
+			// between two of their poses.
+			...(scene === 's5' && {
+				switches: ['anim=every'],
+				swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`],
+			}),
 			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
@@ -2192,6 +2374,7 @@ const HALF_PRECISION_TESTS = [
 	'lights-16',
 	'shadows',
 	toneMappingTest('agx', 0),
+	toneMappingTest('agx-punchy', 0),
 	eightBitTest('aces'),
 ];
 
@@ -2199,7 +2382,7 @@ const HALF_PRECISION_TESTS = [
  * The tests that draw again with vertex shaders that read each culled instance by index from
  * storage buffers, as `?instances=index` asks on core WebGPU (decision record D-23): objects with an
  * instance batch, cells far from the origin, the standard material's maps, cascaded shadows, point
- * light shadows, skinned characters from the skinning pass and skinned in the vertex shader,
+ * light shadows, skinned characters skinned in the vertex shader and from the skinning pass,
  * outlines, see-through objects beside culled ones, custom materials, which keep the culling
  * shader's copies, S1-cells and S4. Each copy must draw its test's image. Compatibility mode and
  * WebGL2 ignore the switch, so the copies draw on core WebGPU only, in their test's first thread
@@ -2212,7 +2395,7 @@ const INDEX_INSTANCE_TESTS = [
 	'shadows',
 	'point-shadows',
 	'skinning-shadows',
-	'skinning-vertex',
+	'skinning-compute',
 	'outline-hidden',
 	'transparency',
 	'custom-textures',

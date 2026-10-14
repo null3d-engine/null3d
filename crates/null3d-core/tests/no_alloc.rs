@@ -415,6 +415,9 @@ fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
         .map(|j| if j % 5 == 1 { 0.0 } else { 1.0 })
         .collect();
     let mask = animations.add_mask(id, &upper).unwrap();
+    // The dead blends' buffers, made before any frame is counted, as a sketch that uses inertial
+    // transitions would have them by its first frame.
+    animations.enable_inertial().unwrap();
     for i in 0..64 {
         let instance = animations.add_instance(id).unwrap();
         if i % 3 == 0 {
@@ -514,6 +517,16 @@ fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame
             0 => animations
                 .play(i, clips[(frame / 40 % 2) as usize], fade)
                 .unwrap(),
+            10 => {
+                let inertial = Play {
+                    fade: 0.4,
+                    inertial: true,
+                    ..Play::default()
+                };
+                animations
+                    .play(i, clips[(frame / 40 % 2) as usize], inertial)
+                    .unwrap();
+            }
             20 => animations.stop(i, Some(clips[1]), 0.1).unwrap(),
             30 if i % 2 == 1 => {
                 let blend = Blend {

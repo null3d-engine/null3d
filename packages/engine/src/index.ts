@@ -91,6 +91,8 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type {
+	AtmosphereBackground,
+	AtmosphereOptions,
 	BackgroundOptions,
 	BackgroundSource,
 	Cubemap,
@@ -105,7 +107,7 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { FogCurve, FogOptions } from './scene/fog';
+export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export type {
 	LineBatch,
@@ -116,15 +118,27 @@ export type {
 } from './scene/lines';
 export type { Lut, LutData, LutDomain } from './scene/lut';
 export type {
+	ParticleBuffer,
+	ParticleBufferOptions,
+	ParticleFacing,
+	ParticleFlipbook,
+	ParticleGroundMode,
+	ParticleLook,
+	ParticleMotion,
+	ParticleValues,
+} from './scene/particles';
+export type {
 	ObjectEventHandler,
 	ObjectEventType,
 	ObjectPointerEvent,
 } from './scene/pointer-events';
 export type {
 	AoSettings,
+	AutoExposureSettings,
 	BloomBlend,
 	BloomSettings,
 	DofSettings,
+	ExposureMetering,
 	OutlineSettings,
 	Post,
 	PostSettings,

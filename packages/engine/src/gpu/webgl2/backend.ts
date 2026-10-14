@@ -66,9 +66,7 @@ const COPY_PROGRAM = 'mipmap copy';
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
 const DEPTH_ATTACHMENT = 0x8d00;
-const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 const DISCARD_COLOR = [COLOR_ATTACHMENT0];
-const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -203,6 +201,8 @@ function glAttribute(
 	format: GPUVertexFormat,
 ): [number, number, boolean] {
 	switch (format) {
+		case 'uint32':
+			return [1, gl.UNSIGNED_INT, false];
 		case 'float32x2':
 			return [2, gl.FLOAT, false];
 		case 'float32x3':
@@ -543,6 +543,8 @@ export class WebGL2Backend {
 	private passResolve = G.NO_TARGET;
 	/** The pass's depth target, whose one-sample copy the pass's end updates when it has one. */
 	private passDepth: GlTexture | null = null;
+	/** The pass's colour target, or null for the canvas and for a depth-only pass. */
+	private passColor: GlTexture | null = null;
 	private passFlags = 0;
 	private passToCanvas = false;
 
@@ -738,14 +740,14 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
-	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
-	 * background where the browser can, and the first frame waits for them. Skinning's and morph
-	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
-	 * `scene.warmUp()` builds those, as for any material.
+	 * Starts to compile the programs of the builds of `module`, a module that the page or the sketch
+	 * preloaded, whose builds need `features`, so that the features' first objects draw at once.
+	 * They compile in the background where the browser can, and the first frame waits for them.
+	 * Skinning's and morph targets' builds vary in every material bit, and a scene's materials draw
+	 * with a few of them, so `scene.warmUp()` builds those, as for any material.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		if (WARM_UP_FEATURES.has(feature)) return;
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		if (features.some((feature) => WARM_UP_FEATURES.has(feature))) return;
 		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
 		for (const [name, builds] of Object.entries(module)) {
 			const variants = held?.[name];
@@ -1702,9 +1704,12 @@ export class WebGL2Backend {
 		this.beforeGenerator();
 		const target = texture.texture as WebGLTexture;
 		const { width, mips } = texture;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.programHost, target, width, mips, words, floats, a, this.gpuMemory);
-		else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const from = words[a + 3] as number;
+			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			const host = this.programHost;
+			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}
 
@@ -2049,6 +2054,7 @@ export class WebGL2Backend {
 		this.passResolve = words[a + 1] as number;
 		this.passFlags = flags;
 		this.passToCanvas = color === 0;
+		this.passColor = null;
 		const depthTarget = depth === G.NO_TARGET ? null : this.need(this.textures, depth, 'texture');
 		this.passDepth = depthTarget;
 		let framebuffer: WebGLFramebuffer | null;
@@ -2064,6 +2070,7 @@ export class WebGL2Backend {
 			this.passHeight = depthTarget.height;
 		} else {
 			const target = this.need(this.textures, color, 'texture');
+			this.passColor = target;
 			framebuffer = this.colorFramebuffer(target, depthTarget);
 			this.passWidth = target.width;
 			this.passHeight = target.height;
@@ -2124,14 +2131,13 @@ export class WebGL2Backend {
 		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const resolves = this.passResolve !== G.NO_TARGET;
 		const keepsColor = storeColor || resolves;
-		const discard = storeDepth
-			? keepsColor
-				? undefined
-				: DISCARD_COLOR
-			: keepsColor
-				? DISCARD_DEPTH
-				: DISCARD_BOTH;
-		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a colour-only
+		// pass, as each fullscreen step of an effect, need not name a depth it never bound: Safari
+		// runs the invalidate on the thread that draws before it draws the pass.
+		const discard: number[] = [];
+		if (this.passColor && !keepsColor) discard.push(COLOR_ATTACHMENT0);
+		if (this.passDepth && !storeDepth) discard.push(DEPTH_ATTACHMENT);
+		if (discard.length > 0) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
 		if (resolves) {
 			const into =
 				this.passResolve === 0
@@ -2433,17 +2439,25 @@ export class WebGL2Backend {
 		if (!vao) throw new Error('WebGL2 could not create a vertex array');
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+		// An attribute of the instance's step moves on once for each instance. Integer formats
+		// reach the shader as integers.
+		const divisor = layout.stepMode === 'instance' ? 1 : 0;
 		for (const attribute of layout.attributes) {
 			const [size, type, normalized] = glAttribute(gl, attribute.format);
-			gl.enableVertexAttribArray(attribute.shaderLocation);
-			gl.vertexAttribPointer(
-				attribute.shaderLocation,
-				size,
-				type,
-				normalized,
-				layout.arrayStride,
-				attribute.offset,
-			);
+			const location = attribute.shaderLocation;
+			gl.enableVertexAttribArray(location);
+			if (attribute.format.startsWith('uint') || attribute.format.startsWith('sint'))
+				gl.vertexAttribIPointer(location, size, type, layout.arrayStride, attribute.offset);
+			else
+				gl.vertexAttribPointer(
+					location,
+					size,
+					type,
+					normalized,
+					layout.arrayStride,
+					attribute.offset,
+				);
+			gl.vertexAttribDivisor(location, divisor);
 		}
 		this.layoutArrays[this.vertexBuffer] = { vao, vertices, layout };
 		return vao;

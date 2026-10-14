@@ -6,6 +6,7 @@ import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { type Material, Materials, type MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -54,7 +55,7 @@ function growingCore() {
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const time = { frame: 1 };
 	const scene = new Scene(core, time, false);
 	const materials = new Materials(core);
@@ -142,7 +143,11 @@ function growingScene(start: number) {
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory, at.moved);
+	const core = new CoreMemory(
+		withCallValues(glue, memory) as unknown as CoreGlue,
+		memory,
+		at.moved,
+	);
 	const scene = new Scene(core, { frame: 1 }, false);
 	const position = (slot: number) => [
 		...new Float32Array(memory.buffer, base + C.SCENE_FIELD_POSITIONS * 1024 + slot * 12, 3),
@@ -174,5 +179,36 @@ describe('writes after the scene grows', () => {
 		expect(core.refresh()).toBe(false);
 		crate.setPosition(1, 1, 1);
 		expect(position(crate.slot)).toEqual([1, 1, 1]);
+	});
+});
+
+describe('views that objects keep', () => {
+	// Chrome counts each buffer of a shared memory in full, so a view made before a growth would
+	// count the memory again for each size it grew through.
+	test('go when the memory grows, and not when it stays', () => {
+		const memory = new WebAssembly.Memory({ initial: 1, maximum: 4 });
+		let glueDropped = 0;
+		const glue = { dropMemoryViews: () => glueDropped++ } as unknown as CoreGlue;
+		const core = new CoreMemory(glue, memory);
+		let dropped = 0;
+		core.holdViews({ dropViews: () => dropped++ });
+		expect(core.refresh()).toBe(false);
+		expect([dropped, glueDropped]).toEqual([0, 0]);
+		memory.grow(1);
+		expect(core.refresh()).toBe(true);
+		expect([dropped, glueDropped]).toEqual([1, 1]);
+	});
+
+	test('of a batch that the sketch left alone keep no old buffer, and come back at its next read', () => {
+		const { core, scene, floats } = growingCore();
+		const material = new Materials(core).unlit();
+		const flock = scene.createInstances(box(core), ROWS, { material });
+		flock.positions.set([1, 2, 3]);
+		const kept = () => (flock as unknown as { rows: { positions: Float32Array } }).rows.positions;
+		expect(kept().buffer).toBe(core.memory.buffer);
+		scene.createPointLight({ range: 5 });
+		expect(kept().length).toBe(0);
+		expect(flock.positions.buffer).toBe(core.memory.buffer);
+		expect(floats(AT.batch + C.BATCH_FIELD_POSITIONS * 64, 3)).toEqual([1, 2, 3]);
 	});
 });

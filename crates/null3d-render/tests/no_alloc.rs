@@ -83,6 +83,8 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         bias: 0.5,
         normal_bias: 1.0,
         distance: 60.0,
+        auto: false,
+        contact: 0.0,
         layers: 1,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
@@ -194,6 +196,8 @@ fn skinning_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         bias: 0.5,
         normal_bias: 1.0,
         distance: 40.0,
+        auto: false,
+        contact: 0.0,
         layers: 1,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));

@@ -8,6 +8,7 @@ import {
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
+	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
@@ -17,6 +18,7 @@ import {
 	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
 	LAYOUT_EFFECT_DEPTH_MS,
+	LAYOUT_EXPOSURE,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FINAL_EFFECTS,
@@ -26,6 +28,9 @@ import {
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_PARTICLE,
+	LAYOUT_PARTICLE_DEPTH_MS,
+	LAYOUT_PARTICLE_SCENE_DEPTH,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
@@ -57,6 +62,7 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
@@ -70,8 +76,17 @@ import {
 	TEMPLATE_DOF_FILTER,
 	TEMPLATE_DOF_SETUP,
 	TEMPLATE_DOF_SETUP_MS,
+	TEMPLATE_EXPOSURE_ADAPT,
+	TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM,
+	TEMPLATE_EXPOSURE_HISTOGRAM,
+	TEMPLATE_EXPOSURE_LUMINANCE,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
+	TEMPLATE_FOG_APPLY,
+	TEMPLATE_FOG_APPLY_MS,
+	TEMPLATE_FOG_BLOCK,
+	TEMPLATE_FOG_LIGHT,
+	TEMPLATE_FOG_SUM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -85,10 +100,15 @@ import {
 	TEMPLATE_OCCLUSION_EARLY,
 	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_PARTICLE,
+	TEMPLATE_PARTICLE_DEPTH,
+	TEMPLATE_PARTICLE_DEPTH_MS,
+	TEMPLATE_PARTICLE_MAP,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
+	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_TRANSMISSION_COPY,
@@ -113,6 +133,7 @@ import {
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
+import { PARTICLE_RECORDS } from '../particle-records';
 import { variantFor } from '../variants';
 import {
 	plainScale,
@@ -226,7 +247,14 @@ const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
 };
 
+/** The automatic exposure's compute templates: each one's entry point in the histogram shader. */
+const EXPOSURE_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_EXPOSURE_HISTOGRAM]: 'histogram_main',
+	[TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM]: 'adapt_main',
+};
+
 /** The compacted instance that a mesh draw's instances read: its matrix rows, then its ids. */
+
 const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 	{
 		arrayStride: SIZE_INSTANCE_STRIDE,
@@ -413,6 +441,10 @@ export class Pipelines {
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
+	/** The automatic exposure's histogram steps, which arrive with the exposure feature's file. */
+	private readonly exposureHistogram: ShaderVariants;
+	/** The histogram steps' pipeline layout, made at their first pipeline. */
+	private exposureLayout: GPUPipelineLayout | undefined;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The module of the fragment shader that writes nothing, made at its first use. */
@@ -488,7 +520,6 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
-			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
@@ -523,8 +554,9 @@ export class Pipelines {
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
-		// occluders. Their history shares the buffer of the indirect draws, as eight storage buffers
-		// is all that every device allows a shader stage.
+		// occluders, the cell offsets, and the first joint of each skinned source. Their history
+		// shares the buffer of the indirect draws, as eight storage buffers is all that every device
+		// allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
@@ -536,6 +568,7 @@ export class Pipelines {
 			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 10, visibility: compute, texture: { sampleType: 'uint' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
@@ -600,6 +633,8 @@ export class Pipelines {
 			{ binding: 9, visibility: fragment, texture: { viewDimension: '3d' } },
 			{ binding: 10, visibility: fragment, sampler: {} },
 			{ binding: 11, visibility: fragment, texture: {} },
+			// The automatic exposure's texel, in 32-bit floats, which no device need filter.
+			{ binding: 12, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// The base level of bloom's chain, which the final pass's bloom build reads with a linear
@@ -639,6 +674,16 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
+		// The physical sky's group: its values, its three tables, which it reads with a linear
+		// filter, a sampler that clamps and one that repeats across the width.
+		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, texture: {} },
+			{ binding: 3, visibility: fragment, texture: {} },
+			{ binding: 4, visibility: fragment, sampler: {} },
+			{ binding: 5, visibility: fragment, sampler: {} },
+		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
@@ -677,6 +722,50 @@ export class Pipelines {
 			...foldEntries,
 			unfiltered(5, true),
 		]);
+		// A particle system's values, then the block of the view that draws, at a dynamic offset;
+		// then the view's copy of its opaque depth, which soft particles read with textureLoad.
+		const vertexAndFragment = GPUShaderStage.VERTEX | fragment;
+		this.defineLayout(LAYOUT_PARTICLE, 'particle', [
+			{ binding: 0, visibility: vertexAndFragment, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: vertexAndFragment,
+				buffer: { type: 'uniform', hasDynamicOffset: true },
+			},
+		]);
+		this.defineLayout(LAYOUT_PARTICLE_SCENE_DEPTH, 'particle scene depth', [unfiltered(0)]);
+		// The copy of the opaque depth for soft particles reads a multisampled depth's first sample;
+		// the one-sample copy binds as a view's copy does.
+		this.defineLayout(LAYOUT_PARTICLE_DEPTH_MS, 'particle depth ms', [unfiltered(0, true)]);
+		for (const [id, label, shader, layout] of [
+			[TEMPLATE_PARTICLE_DEPTH, 'particle depth', shaders.particle_depth, LAYOUT_VIEW_COPY],
+			[
+				TEMPLATE_PARTICLE_DEPTH_MS,
+				'particle depth ms',
+				shaders.particle_depth_ms,
+				LAYOUT_PARTICLE_DEPTH_MS,
+			],
+		] as const)
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: [layout],
+				vertexBuffers: [],
+			});
+		for (const [id, label, shader, map] of [
+			[TEMPLATE_PARTICLE, 'particles', shaders.particle, false],
+			[TEMPLATE_PARTICLE_MAP, 'particles map', shaders.particle_map, true],
+		] as const) {
+			const layouts = [LAYOUT_FRAME, LAYOUT_PARTICLE, LAYOUT_PARTICLE_SCENE_DEPTH];
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: map ? [...layouts, LAYOUT_TEXTURES] : layouts,
+				vertexBuffers: [PARTICLE_RECORDS],
+			});
+		}
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -753,6 +842,14 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[
+				TEMPLATE_EXPOSURE_LUMINANCE,
+				'exposure cells',
+				shaders.exposure,
+				'downsample',
+				LAYOUT_EFFECT,
+			],
+			[TEMPLATE_EXPOSURE_ADAPT, 'exposure adapt', shaders.exposure, 'adapt', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP, 'dof setup', shaders.dof, 'setup', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP_MS, 'dof setup ms', shaders.dof_ms, 'setup', LAYOUT_EFFECT_DEPTH_MS],
 			[TEMPLATE_DOF_BLUR, 'dof gather', shaders.dof, 'gather', LAYOUT_BLOOM],
@@ -765,9 +862,30 @@ export class Pipelines {
 				'composite',
 				LAYOUT_DOF_COMPOSITE_MS,
 			],
+			// The volumetric fog's block step and sum bind as steps of bloom, and its apply step as
+			// depth of field's composite, with the summed grid in place of the blurred image.
+			[TEMPLATE_FOG_BLOCK, 'fog block', shaders.fog_volume, 'block', LAYOUT_BLOOM],
+			[TEMPLATE_FOG_SUM, 'fog sum', shaders.fog_volume, 'sum', LAYOUT_BLOOM],
+			[TEMPLATE_FOG_APPLY, 'fog apply', shaders.fog_volume, 'apply', LAYOUT_DOF_COMPOSITE],
+			[
+				TEMPLATE_FOG_APPLY_MS,
+				'fog apply ms',
+				shaders.fog_volume_ms,
+				'apply',
+				LAYOUT_DOF_COMPOSITE_MS,
+			],
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
+		// The volumetric fog's light step reads the camera's frame group, as the background does,
+		// then its own settings, the last frame's grid and a sampler, as a step of bloom does.
+		this.defineTemplate(TEMPLATE_FOG_LIGHT, {
+			label: 'fog light',
+			shader: shaders.fog_light,
+			pipeline: 'light',
+			layouts: [LAYOUT_FRAME, LAYOUT_BLOOM],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,
@@ -801,6 +919,20 @@ export class Pipelines {
 				vertexBuffers: [],
 			});
 		}
+		this.defineTemplate(TEMPLATE_SKY_TABLE, {
+			label: 'sky tables',
+			shader: shaders.sky_tables,
+			pipeline: 'main',
+			layouts: [LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BACKGROUND_ATMOSPHERE, {
+			label: 'background atmosphere',
+			shader: shaders.sky_physical,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
@@ -831,6 +963,27 @@ export class Pipelines {
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
+		this.exposureHistogram = shaders.exposure_histogram;
+		// The histogram steps' group: their settings, the color they meter with a linear filter,
+		// the histogram and the stored exposure, and the exposure's texel that they write. It is
+		// made at its first use.
+		this.defineLayout(
+			LAYOUT_EXPOSURE,
+			'exposure',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, texture: {} },
+				{ binding: 2, visibility: compute, sampler: {} },
+				{ binding: 3, visibility: compute, buffer: { type: 'storage' } },
+				{ binding: 4, visibility: compute, buffer: { type: 'storage' } },
+				{
+					binding: 5,
+					visibility: compute,
+					storageTexture: { access: 'write-only', format: 'rgba32float' },
+				},
+			],
+			true,
+		);
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -1123,6 +1276,7 @@ export class Pipelines {
 	computeVariants(template: number): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
 
@@ -1169,6 +1323,19 @@ export class Pipelines {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
 				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+			};
+		}
+		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];
+		if (exposureEntry) {
+			const shader = variantFor(this.exposureHistogram, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no exposure histogram shader");
+			this.exposureLayout ??= this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_EXPOSURE)],
+			});
+			return {
+				label: `exposure ${exposureEntry}`,
+				layout: this.exposureLayout,
+				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];
