@@ -172,11 +172,12 @@ use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
-use crate::sorted::{SkinnedPipeline, SortedLayout};
+use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
+use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
@@ -240,6 +241,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
+    use crate::weighted::WeightedIds;
 
     pub const MATERIALS: u32 = 1;
     pub const MATRICES: u32 = 2;
@@ -537,8 +539,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// Each particle system's bind group, after the copy's.
-    pub const PARTICLE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of the weighted layer's composite and depth copy, after the copy's.
+    pub const WEIGHTED_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// Each particle system's bind group, after the weighted layer's.
+    pub const PARTICLE_GROUPS: u32 = WEIGHTED_GROUPS + WeightedIds::GROUPS;
     /// Each camera view's group of its depth copy for soft particles, after the systems'.
     pub const PARTICLE_DEPTH_GROUPS: u32 = PARTICLE_GROUPS + ParticleIds::GROUPS;
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
@@ -832,6 +836,9 @@ impl GpuDrivenRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        weighted: WeightedIds {
+                            first_group: ids::WEIGHTED_GROUPS,
+                        },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
@@ -1087,6 +1094,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                    self.graph.weighted_targets(targets),
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1101,6 +1109,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |_, _| SkinnedPipeline::NotSkinned,
+                    None,
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1119,6 +1128,7 @@ impl GpuDrivenRenderer {
                         0,
                         shadows,
                         |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                        None,
                         &mut self.key_counts,
                     )
                     .map_err(out_of_memory)?;
@@ -1256,6 +1266,7 @@ impl GpuDrivenRenderer {
             }
         };
         self.graph.set_motion(motion, motion_frame);
+        self.graph.set_weighted(self.sorted.weighs());
         let skipped = self.settings.decal_skipped_layers();
         let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
         self.redraw_layout.set_layer_filter(skipped, shown);
@@ -1997,6 +2008,7 @@ impl GpuDrivenRenderer {
         let particles = &self.particles;
         let (settings, meshes) = (&self.settings, &self.meshes);
         let motion_state = &mut self.motion;
+        let weighted = self.graph.weighted_declared();
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -2042,7 +2054,14 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    transparent.record(list, view, sorted, skinning, settings, meshes, 0, particles)
+                    let rows = if weighted && view == ViewId::CAMERA {
+                        SortedRows::Sorted
+                    } else {
+                        SortedRows::All
+                    };
+                    transparent.record(
+                        list, view, rows, sorted, skinning, settings, meshes, 0, particles,
+                    )
                 }
                 Role::Decals => {
                     let depth = ids::DECAL_DEPTH_GROUP;
@@ -2050,6 +2069,7 @@ impl GpuDrivenRenderer {
                     decals.record(
                         list,
                         view,
+                        SortedRows::All,
                         decal_layout,
                         skinning,
                         settings,
@@ -2063,6 +2083,7 @@ impl GpuDrivenRenderer {
                     redraws.record(
                         list,
                         view,
+                        SortedRows::All,
                         redraw_layout,
                         skinning,
                         settings,
@@ -2071,6 +2092,17 @@ impl GpuDrivenRenderer {
                         particles,
                     )
                 }
+                Role::Weighted => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::Weighted,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                    0,
+                    particles,
+                ),
                 _ => Ok(()),
             },
             |list| {

@@ -89,7 +89,7 @@ export default defineSketch(async ({ scene, textures, time }) => {
 | `opacity` | 1 | An opacity that multiplies every sprite's alpha |
 | `alphaMode` | `'blend'` | `'blend'` blends each sprite over what lies behind it. `'mask'` cuts it where its alpha falls below `alphaCutoff`. `'opaque'` ignores the alpha |
 | `alphaCutoff` | 0.5 | With the `mask` mode, the alpha below which a sprite draws nothing |
-| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and fire, or `'multiply'` |
+| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and fire, `'multiply'`, or `'weighted'` for smoke that blends in any order ([Weighted blending](materials.md#weighted-blending)) |
 | `fog` | `true` | `false` keeps the sprites out of the scene's fog |
 | `depthWrite` | `true` | `false` writes no depth, so a sprite hides nothing behind it |
 | `depthTest` | `true` | `false` draws the sprites in front of everything |

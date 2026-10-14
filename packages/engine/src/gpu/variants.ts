@@ -30,7 +30,7 @@ export function variantFor<Pipeline extends string>(
 	permutation: number,
 	target: 'wgsl' | 'glsl',
 ): ShaderVariant<Pipeline> | undefined {
-	return (
-		exactly(shader, permutation | PERMUTATION_HALF, target) ?? exactly(shader, permutation, target)
-	);
+	// The word's top bit makes JavaScript's `|` negative, so the result turns back to unsigned.
+	const half = (permutation | PERMUTATION_HALF) >>> 0;
+	return exactly(shader, half, target) ?? exactly(shader, permutation, target);
 }
