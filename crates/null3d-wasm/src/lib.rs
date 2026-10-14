@@ -3842,6 +3842,7 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
             animation_field::TIME_SCALES => address(animations.time_scales()),
+            animation_field::UPDATE_INTERVALS => address(animations.update_intervals()),
             animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
             animation_field::EVENTS => address(animations.event_buffer()),
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
