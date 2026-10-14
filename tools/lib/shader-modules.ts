@@ -7,6 +7,11 @@
 // (sources, manifest and WGSL) and the workspace's Cargo files, and a hash of the modules the build
 // wrote. A check only reads and hashes files, so it costs far less than the build. A lock file makes
 // processes that start together, such as Playwright's web servers, run one build between them.
+//
+// The build itself keeps each entry's compiled output in a per-entry cache, keyed by the entry's
+// source, its manifest table and the library modules it imports. A change to one shader compiles
+// only that shader, and a change to a library module compiles only the entries that import it. The
+// cache is shared by every checkout and reused across a change of any WGSL file.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -26,6 +31,10 @@ import { dirname, join } from 'node:path';
 export const MODULE_DIR = 'packages/engine/src/generated';
 /** The crate whose `shader-build` command writes the modules. */
 const SHADER_CRATE = 'crates/null3d-shaders';
+/** The folder of the entry shaders and the library modules, which decide one entry each. */
+const SHADER_FOLDER = `${SHADER_CRATE}/wgsl`;
+/** The manifest, whose tables decide one entry each. */
+const MANIFEST = `${SHADER_CRATE}/shaders.toml`;
 /** Workspace files that change how Cargo builds the command. */
 const WORKSPACE_FILES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'];
 /** Crate folders that hold no input of the command. */
@@ -39,6 +48,15 @@ export const RECORD = 'target/shader-modules.json';
  */
 export const CACHE_DIR =
 	process.env.NULL3D_SHADER_CACHE ?? join(homedir(), '.cache', 'null3d', 'shader-modules');
+/**
+ * The folder of the per-entry shader cache, shared by every checkout on the machine. It holds each
+ * entry's compiled output under a folder named by the compiler's stamp, so a change to one shader
+ * compiles only that shader and a change to a library module compiles only the entries that import
+ * it. It sits beside the modules' cache, and `NULL3D_SHADER_CACHE` moves both.
+ */
+export const ENTRY_CACHE_DIR = join(dirname(CACHE_DIR), 'shader-cache');
+/** The environment variable that turns the caches off, as the Vite plugin's cache names it. */
+const NO_SHADER_CACHE = 'NULL3D_NO_SHADER_CACHE';
 /** The lock file, which holds the process ID of the process that builds. */
 const LOCK = 'target/shader-modules.lock';
 /** How often a process that waits for the lock checks it, in milliseconds. */
@@ -116,6 +134,30 @@ export function inputHash(root: string, crate = SHADER_CRATE): string {
 	return hashFiles(root, inputFiles(root, crate));
 }
 
+/**
+ * True when the environment asks the build to ignore its per-entry shader cache, so every entry
+ * compiles again.
+ */
+export function shaderCacheOff(): boolean {
+	return process.env[NO_SHADER_CACHE] === '1';
+}
+
+/**
+ * The files whose contents decide how every entry compiles: the compiler's own sources and the
+ * workspace's Cargo files, without the entry shaders, the library modules and the manifest, which
+ * decide one entry each and which the build keys per entry.
+ */
+export function compilerFiles(root: string): string[] {
+	return inputFiles(root).filter(
+		(file) => file !== MANIFEST && !file.startsWith(`${SHADER_FOLDER}/`),
+	);
+}
+
+/** The stamp of the compiler: a hash of every file that changes how it compiles, for every entry. */
+export function compilerStamp(root: string): string {
+	return hashFiles(root, compilerFiles(root));
+}
+
 /** A hash of the modules on disk, or null when the main module is missing. */
 export function moduleHash(root: string): string | null {
 	const folder = join(root, MODULE_DIR);
@@ -181,8 +223,16 @@ function withLock(root: string, work: () => void): void {
 
 /** Runs the shader build, with its output on standard error so that callers keep a clean output. */
 function runShaderBuild(root: string): void {
-	const args = ['run', '--quiet', '-p', 'null3d-shaders', '--bin', 'shader-build'];
-	const result = spawnSync('cargo', [...args, '--', '--root', root], {
+	const args = ['run', '--quiet', '-p', 'null3d-shaders', '--bin', 'shader-build', '--'];
+	const buildArgs = ['--root', root];
+	if (shaderCacheOff()) {
+		buildArgs.push('--no-cache');
+	} else {
+		// A stamp from another compiler changes the folder, so no entry is read with a new meaning.
+		const stamp = compilerStamp(root);
+		buildArgs.push('--cache', join(ENTRY_CACHE_DIR, stamp), '--stamp', stamp);
+	}
+	const result = spawnSync('cargo', [...args, ...buildArgs], {
 		cwd: root,
 		stdio: ['ignore', 2, 2],
 	});

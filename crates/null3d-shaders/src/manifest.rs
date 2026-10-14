@@ -8,7 +8,7 @@ use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
 /// A language that a variant builds for.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
     /// WGSL for WebGPU.
@@ -56,7 +56,7 @@ pub struct FirstUse {
 }
 
 /// One entry shader.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shader {
     /// The WGSL file, relative to the shader folder.
@@ -117,7 +117,7 @@ impl Pipeline {
 }
 
 /// One variant of an entry shader: a build for each combination of its permutation bits.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Variant {
     /// Shader defs that are true in every build of the variant.
