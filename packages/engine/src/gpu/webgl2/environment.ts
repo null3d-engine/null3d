@@ -19,6 +19,10 @@
 // the GPU only when it has not, as in the first fill, whose stages all run in one frame. The map
 // keeps its GL objects between stages and refreshes, so a refresh allocates only its fences, one
 // for each stage that packs.
+//
+// A map of the physical sky names the engine's panorama of it, a 2D texture of 16-bit floats. Its
+// stages that draw the sky then read the panorama with the panorama's program, as a file's
+// panorama is read, over the same directions of each texel.
 
 import type { ShaderVariant } from '../../generated/shaders';
 import type { GeneratorSource } from '../../shared/images';
@@ -79,7 +83,8 @@ export interface CubeGenerator {
 	 * memory) names it, as `skyStages` plans them: the first ones draw the sky of stage 0's
 	 * settings into the chain, the next ones filter the map's levels, and the last unpacks every
 	 * level into the map. The map's first stage makes what it keeps between stages, and counts its
-	 * bytes in `memory`. It changes the bindings that `run` changes, and the pack row length.
+	 * bytes in `memory`. It changes the bindings that `run` changes, and the pack row length. A map
+	 * of the physical sky reads `panorama` in place of the analytic sky's settings.
 	 */
 	skyStage(
 		host: ProgramHost,
@@ -90,6 +95,7 @@ export interface CubeGenerator {
 		floats: Float32Array,
 		at: number,
 		memory: GpuMemory,
+		panorama: WebGLTexture | null,
 	): void;
 	/**
 	 * Deletes what the sky map in `target` keeps between its stages, if it is one, and takes its
@@ -287,6 +293,7 @@ export function environmentGenerator(
 		floats,
 		at,
 		memory,
+		panorama,
 	) => {
 		let map = skyMaps.get(target);
 		if (!map) {
@@ -295,7 +302,7 @@ export function environmentGenerator(
 			memory.addTextures(map.textureBytes);
 			memory.addBuffers(map.bufferBytes);
 		}
-		map.stage(words[at + 2] as number, floats, at + 3);
+		map.stage(words[at + 2] as number, floats, at + 4, panorama);
 	};
 	const release: CubeGenerator['release'] = (gl, target, memory) => {
 		const map = skyMaps.get(target);
@@ -313,7 +320,7 @@ interface SkyMap {
 	/** The GPU bytes of the textures and of the buffers that the map keeps. */
 	readonly textureBytes: number;
 	readonly bufferBytes: number;
-	stage(stage: number, settings: Float32Array, at: number): void;
+	stage(stage: number, settings: Float32Array, at: number, panorama: WebGLTexture | null): void;
 	destroy(gl: WebGL2RenderingContext): void;
 }
 
@@ -412,13 +419,22 @@ function makeSkyMap(
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 		gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
 	};
-	/** Draws a part into the staging texture, and packs its texels into its buffers. */
-	const draw = ({ step: k, first, faces }: SkyPart) => {
+	/**
+	 * Draws a part into the staging texture, and packs its texels into its buffers. A part that
+	 * draws the sky reads `panorama` where it is given.
+	 */
+	const draw = ({ step: k, first, faces }: SkyPart, panorama: WebGLTexture | null) => {
 		const step = steps[k] as Step;
 		const side = step.size;
 		const x = first * side;
 		const reads = step.source === 'chain';
-		gl.useProgram(programs[step.pipeline]);
+		const reread = panorama !== null && step.source === 'sky';
+		gl.useProgram(programs[reread ? 'panorama' : step.pipeline]);
+		if (reread) {
+			gl.activeTexture(gl.TEXTURE0 + units.panorama);
+			gl.bindTexture(gl.TEXTURE_2D, panorama);
+			gl.bindSampler(units.panorama, samplers.panorama);
+		}
 		gl.bindBufferRange(gl.UNIFORM_BUFFER, stepBinding, uniforms, k * stride, STEP_BYTES);
 		if (reads) {
 			gl.activeTexture(gl.TEXTURE0 + units.cube);
@@ -430,6 +446,11 @@ function makeSkyMap(
 		if (reads) {
 			gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 			gl.bindSampler(units.cube, null);
+		}
+		if (reread) {
+			gl.activeTexture(gl.TEXTURE0 + units.panorama);
+			gl.bindTexture(gl.TEXTURE_2D, null);
+			gl.bindSampler(units.panorama, null);
 		}
 		// Each face's texels lie at the same place in the buffer's rows as in the drawn rows.
 		gl.pixelStorei(gl.PACK_ROW_LENGTH, 6 * side);
@@ -451,7 +472,7 @@ function makeSkyMap(
 			(finishedOffsets[levels] as number) +
 			values.byteLength +
 			SKY_BYTES,
-		stage(stage, settings, at) {
+		stage(stage, settings, at, panorama) {
 			const parts = stages[stage] as readonly SkyPart[];
 			if (parts.length === 0) {
 				settle();
@@ -471,7 +492,7 @@ function makeSkyMap(
 			}
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 			gl.bindVertexArray(null);
-			for (let p = 0; p < parts.length; p++) draw(parts[p] as SkyPart);
+			for (let p = 0; p < parts.length; p++) draw(parts[p] as SkyPart, panorama);
 			if (drawsSky) chainWaits = true;
 			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 			if (packed) gl.deleteSync(packed);

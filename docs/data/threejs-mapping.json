@@ -1364,7 +1364,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.play('walk', { time: 0.4, weight: 0.7 }); anim.setWeight('walk', 0.5); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
-      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. startAt has no counterpart: call play at that time.",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. crossFadeTo and crossFadeFrom map to crossFade, which keeps the weighted blend that three.js shows; it never uses an inertial transition, which samples only the new clip. startAt has no counterpart: call play at that time.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
@@ -1661,9 +1661,20 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
-      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other.",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other. For a physical sky with ozone, twilight and haze on distant objects, move to `{ atmosphere }`, which looks different from three.js's sky.",
       "docs": "api/scene",
       "detect": "new\\s+Sky(Mesh)?\\s*\\("
+    },
+    {
+      "id": "atmosphere",
+      "category": "Post-processing",
+      "three": "A physical sky and aerial perspective (add-ons such as @takram/three-atmosphere: SkyMaterial, AerialPerspectiveEffect)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setBackground({ atmosphere: { sunPosition, sunIntensity, rayleigh, haze, ozone, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, ... } })",
+      "notes": "The engine's own physical sky, from Hillaire's lookup tables, with no files to load. One background call draws the sky and hazes every object by its distance, so drop the sky mesh, the precomputed textures and the aerial perspective effect. Set metersPerUnit to the scene's scale, and aerialPerspective above 1 to make a small scene look larger. The sun's light is in the units of a directional light: aim the scene's light at the sun yourself, or take it from timeOfDay(hours, { model: 'physical' }). The sky lights nothing by itself: scene.setEnvironment(await assets.skyEnvironment()) follows it. The Low preset draws the analytic sky in its place.",
+      "docs": "api/scene",
+      "detect": "new\\s+(SkyMaterial|AerialPerspectiveEffect|StarsMaterial)\\s*\\("
     },
     {
       "id": "lensflare",
