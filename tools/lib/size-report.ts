@@ -88,11 +88,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			loadedBy: drawing,
 		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
-		...(['wgsl', 'glsl'] as const).map((target) => ({
-			name: `${prefix}-shaders-${target}-combos.js`,
-			module: `generated/shaders-${target}-combos.ts`,
-			loadedBy: drawing,
-		})),
+		...(['wgsl', 'glsl'] as const).flatMap((target) =>
+			['', '-half'].map((half) => ({
+				name: `${prefix}-shaders-${target}-combos${half}.js`,
+				module: `generated/shaders-${target}-combos${half}.ts`,
+				loadedBy: drawing,
+			})),
+		),
 	];
 }
 
