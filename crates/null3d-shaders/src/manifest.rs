@@ -8,7 +8,7 @@ use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
 /// A language that a variant builds for.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
     /// WGSL for WebGPU.
@@ -56,7 +56,7 @@ pub struct FirstUse {
 }
 
 /// One entry shader.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shader {
     /// The WGSL file, relative to the shader folder.
@@ -117,7 +117,7 @@ impl Pipeline {
 }
 
 /// One variant of an entry shader: a build for each combination of its permutation bits.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Variant {
     /// Shader defs that are true in every build of the variant.
@@ -297,6 +297,21 @@ pub(crate) fn check_builds(
                     build.name
                 ));
             }
+        }
+    }
+    // A value of the permutation word names one feature in each shader, so a shader lists only
+    // one of the names that share a value (decision record D-156).
+    let mut listed: BTreeMap<u32, &str> = BTreeMap::new();
+    for bit in variants.values().flat_map(|variant| &variant.permutations) {
+        let Some(value) = permutation::bit(bit) else {
+            continue;
+        };
+        if let Some(other) = listed.insert(value, bit)
+            && other != bit
+        {
+            errors.push(format!(
+                "{shader} lists \"{other}\" and \"{bit}\", which share one value. A shader may list only one of the names that share a value (decision record D-156)."
+            ));
         }
     }
     errors
@@ -664,6 +679,24 @@ variants.a = { defs = ["TONE_MAP"], permutations = ["SHINY", "TONE_MAP", "TONE_M
             "{all}"
         );
         assert!(all.contains("in both defs and permutations"), "{all}");
+    }
+
+    #[test]
+    fn a_shader_lists_only_one_of_the_names_that_share_a_value() {
+        let text = r#"
+[shaders.mesh]
+file = "mesh.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.a = { permutations = ["FXAA"], targets = ["wgsl"] }
+variants.b = { permutations = ["AREA_LIGHTS"], targets = ["glsl"] }
+"#;
+        let all = Manifest::parse(text).unwrap_err().join("\n");
+        assert!(
+            all.contains("lists \"FXAA\" and \"AREA_LIGHTS\", which share one value"),
+            "{all}"
+        );
+        let one = text.replace("[\"FXAA\"]", "[\"AREA_LIGHTS\"]");
+        assert!(Manifest::parse(&one).is_ok());
     }
 
     #[test]

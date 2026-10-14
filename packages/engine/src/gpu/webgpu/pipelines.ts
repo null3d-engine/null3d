@@ -8,15 +8,19 @@ import {
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
+	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
+	LAYOUT_DECAL_DEPTH,
+	LAYOUT_DECAL_DEPTH_MS,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
 	LAYOUT_DOF_COMPOSITE,
 	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
 	LAYOUT_EFFECT_DEPTH_MS,
+	LAYOUT_EXPOSURE,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FINAL_EFFECTS,
@@ -60,12 +64,15 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
+	TEMPLATE_DECAL,
+	TEMPLATE_DECAL_MAPS,
 	TEMPLATE_DEPTH_PYRAMID,
 	TEMPLATE_DOF_BLUR,
 	TEMPLATE_DOF_COMPOSITE,
@@ -73,8 +80,17 @@ import {
 	TEMPLATE_DOF_FILTER,
 	TEMPLATE_DOF_SETUP,
 	TEMPLATE_DOF_SETUP_MS,
+	TEMPLATE_EXPOSURE_ADAPT,
+	TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM,
+	TEMPLATE_EXPOSURE_HISTOGRAM,
+	TEMPLATE_EXPOSURE_LUMINANCE,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
+	TEMPLATE_FOG_APPLY,
+	TEMPLATE_FOG_APPLY_MS,
+	TEMPLATE_FOG_BLOCK,
+	TEMPLATE_FOG_LIGHT,
+	TEMPLATE_FOG_SUM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -96,6 +112,7 @@ import {
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
+	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_TRANSMISSION_COPY,
@@ -162,8 +179,8 @@ export interface RenderTemplate {
 	/** The bind group layout of each group, by layout id, from group 0 on. */
 	readonly layouts: readonly number[];
 	/**
-	 * For a custom effect's template: the layouts of its builds that read a multisampled depth, the
-	 * pipelines whose permutation has the DEPTH_MULTISAMPLED bit.
+	 * For a custom effect's template or a decal template: the layouts of its builds that read a
+	 * multisampled depth, the pipelines whose permutation has the DEPTH_MULTISAMPLED bit.
 	 */
 	readonly multisampledLayouts?: readonly number[];
 	/**
@@ -234,7 +251,14 @@ const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
 };
 
+/** The automatic exposure's compute templates: each one's entry point in the histogram shader. */
+const EXPOSURE_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_EXPOSURE_HISTOGRAM]: 'histogram_main',
+	[TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM]: 'adapt_main',
+};
+
 /** The compacted instance that a mesh draw's instances read: its matrix rows, then its ids. */
+
 const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 	{
 		arrayStride: SIZE_INSTANCE_STRIDE,
@@ -421,6 +445,10 @@ export class Pipelines {
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
+	/** The automatic exposure's histogram steps, which arrive with the exposure feature's file. */
+	private readonly exposureHistogram: ShaderVariants;
+	/** The histogram steps' pipeline layout, made at their first pipeline. */
+	private exposureLayout: GPUPipelineLayout | undefined;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The module of the fragment shader that writes nothing, made at its first use. */
@@ -465,7 +493,8 @@ export class Pipelines {
 			rowValues,
 			objectRanges,
 		]);
-		// The materials' custom values, the table of specular terms, then the shadow map, whose
+		// The materials' custom values, the light tables (the table of specular terms and the area
+		// lights' tables, in the layers of one array), then the shadow map, whose
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
 		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
 		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
@@ -480,7 +509,7 @@ export class Pipelines {
 				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
-			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 3, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{
 				binding: 4,
 				visibility: fragment,
@@ -496,7 +525,6 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
-			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
@@ -610,6 +638,8 @@ export class Pipelines {
 			{ binding: 9, visibility: fragment, texture: { viewDimension: '3d' } },
 			{ binding: 10, visibility: fragment, sampler: {} },
 			{ binding: 11, visibility: fragment, texture: {} },
+			// The automatic exposure's texel, in 32-bit floats, which no device need filter.
+			{ binding: 12, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// The base level of bloom's chain, which the final pass's bloom build reads with a linear
@@ -648,6 +678,16 @@ export class Pipelines {
 			{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
+		]);
+		// The physical sky's group: its values, its three tables, which it reads with a linear
+		// filter, a sampler that clamps and one that repeats across the width.
+		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, texture: {} },
+			{ binding: 3, visibility: fragment, texture: {} },
+			{ binding: 4, visibility: fragment, sampler: {} },
+			{ binding: 5, visibility: fragment, sampler: {} },
 		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
@@ -781,6 +821,25 @@ export class Pipelines {
 				depthFragment: id === TEMPLATE_SHADOW_CUTOUT || id === TEMPLATE_SHADOW_CUTOUT_MAP,
 			});
 		}
+		// Decals: the frame's group, the maps' where the build samples them, then the scene's depth,
+		// which the builds that read a multisampled depth bind through a layout of their own. They
+		// read the position of the box's corners alone.
+		this.defineLayout(LAYOUT_DECAL_DEPTH, 'decal depth', [unfiltered(0)]);
+		this.defineLayout(LAYOUT_DECAL_DEPTH_MS, 'decal depth ms', [unfiltered(0, true)]);
+		for (const [id, label, shader, maps] of [
+			[TEMPLATE_DECAL, 'decal', shaders.decal, []],
+			[TEMPLATE_DECAL_MAPS, 'decal maps', shaders.decal_maps, [LAYOUT_MATERIAL_MAPS]],
+		] as const) {
+			this.defineTemplate(id, {
+				label: `mesh ${label}`,
+				shader,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME, ...maps, LAYOUT_DECAL_DEPTH],
+				multisampledLayouts: [LAYOUT_FRAME, ...maps, LAYOUT_DECAL_DEPTH_MS],
+				meshLocations: [0],
+				vertexBuffers: INSTANCE_BUFFERS,
+			});
+		}
 		this.defineTemplate(TEMPLATE_FINAL, {
 			label: 'final',
 			shader: shaders.final,
@@ -807,6 +866,14 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[
+				TEMPLATE_EXPOSURE_LUMINANCE,
+				'exposure cells',
+				shaders.exposure,
+				'downsample',
+				LAYOUT_EFFECT,
+			],
+			[TEMPLATE_EXPOSURE_ADAPT, 'exposure adapt', shaders.exposure, 'adapt', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP, 'dof setup', shaders.dof, 'setup', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP_MS, 'dof setup ms', shaders.dof_ms, 'setup', LAYOUT_EFFECT_DEPTH_MS],
 			[TEMPLATE_DOF_BLUR, 'dof gather', shaders.dof, 'gather', LAYOUT_BLOOM],
@@ -819,9 +886,30 @@ export class Pipelines {
 				'composite',
 				LAYOUT_DOF_COMPOSITE_MS,
 			],
+			// The volumetric fog's block step and sum bind as steps of bloom, and its apply step as
+			// depth of field's composite, with the summed grid in place of the blurred image.
+			[TEMPLATE_FOG_BLOCK, 'fog block', shaders.fog_volume, 'block', LAYOUT_BLOOM],
+			[TEMPLATE_FOG_SUM, 'fog sum', shaders.fog_volume, 'sum', LAYOUT_BLOOM],
+			[TEMPLATE_FOG_APPLY, 'fog apply', shaders.fog_volume, 'apply', LAYOUT_DOF_COMPOSITE],
+			[
+				TEMPLATE_FOG_APPLY_MS,
+				'fog apply ms',
+				shaders.fog_volume_ms,
+				'apply',
+				LAYOUT_DOF_COMPOSITE_MS,
+			],
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
+		// The volumetric fog's light step reads the camera's frame group, as the background does,
+		// then its own settings, the last frame's grid and a sampler, as a step of bloom does.
+		this.defineTemplate(TEMPLATE_FOG_LIGHT, {
+			label: 'fog light',
+			shader: shaders.fog_light,
+			pipeline: 'light',
+			layouts: [LAYOUT_FRAME, LAYOUT_BLOOM],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,
@@ -855,6 +943,20 @@ export class Pipelines {
 				vertexBuffers: [],
 			});
 		}
+		this.defineTemplate(TEMPLATE_SKY_TABLE, {
+			label: 'sky tables',
+			shader: shaders.sky_tables,
+			pipeline: 'main',
+			layouts: [LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BACKGROUND_ATMOSPHERE, {
+			label: 'background atmosphere',
+			shader: shaders.sky_physical,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
@@ -885,6 +987,27 @@ export class Pipelines {
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
+		this.exposureHistogram = shaders.exposure_histogram;
+		// The histogram steps' group: their settings, the color they meter with a linear filter,
+		// the histogram and the stored exposure, and the exposure's texel that they write. It is
+		// made at its first use.
+		this.defineLayout(
+			LAYOUT_EXPOSURE,
+			'exposure',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, texture: {} },
+				{ binding: 2, visibility: compute, sampler: {} },
+				{ binding: 3, visibility: compute, buffer: { type: 'storage' } },
+				{ binding: 4, visibility: compute, buffer: { type: 'storage' } },
+				{
+					binding: 5,
+					visibility: compute,
+					storageTexture: { access: 'write-only', format: 'rgba32float' },
+				},
+			],
+			true,
+		);
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -1177,6 +1300,7 @@ export class Pipelines {
 	computeVariants(template: number): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
 
@@ -1223,6 +1347,19 @@ export class Pipelines {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
 				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+			};
+		}
+		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];
+		if (exposureEntry) {
+			const shader = variantFor(this.exposureHistogram, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no exposure histogram shader");
+			this.exposureLayout ??= this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_EXPOSURE)],
+			});
+			return {
+				label: `exposure ${exposureEntry}`,
+				layout: this.exposureLayout,
+				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];
