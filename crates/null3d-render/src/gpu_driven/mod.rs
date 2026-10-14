@@ -153,6 +153,7 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
+use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
@@ -323,8 +324,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    /// The uniform buffer of the physical sky's values.
+    pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
-    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
+    pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = FULLSCREEN + 1;
 
@@ -359,9 +362,11 @@ mod ids {
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = ROW_VALUES + 1;
+    /// The physical sky's tables and panorama.
+    pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
-    pub const BLANK_PASS_COLOR: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const BLANK_PASS_COLOR: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
@@ -384,10 +389,12 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 6;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 7;
+    /// The physical sky's samplers.
+    pub const SKY_SAMPLERS: u32 = 8;
     /// The linear sampler of the full-screen passes.
-    pub const FULLSCREEN_SAMPLER: u32 = 8;
+    pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 9;
+    pub const SAMPLERS: u32 = FULLSCREEN_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -455,8 +462,10 @@ mod ids {
     pub const PARTICLE_DEPTH_GROUPS: u32 = PARTICLE_GROUPS + ParticleIds::GROUPS;
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub const PARTICLE_DEPTH_COPY_GROUP: u32 = PARTICLE_DEPTH_GROUPS + MAX_VIEWS as u32;
-    /// The bind group of each full-screen pass, by its view's place, after the particles'.
-    pub const FULLSCREEN_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
+    /// The physical sky's bind groups, after the particles'.
+    pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
+    /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
+    pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind groups of materials' maps, after the full-screen passes'.
     pub const TEXTURE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
 
@@ -566,6 +575,8 @@ pub struct GpuDrivenRenderer {
     background: BackgroundPass,
     /// The particle systems' GPU objects and draws.
     particles: ParticlePass,
+    /// The physical sky's tables.
+    physical_sky: PhysicalSkyPass,
     /// The point and spot lights of each camera view.
     lights: LightGrids,
     /// The camera views whose light buffers exist, as a mask of view places.
@@ -712,6 +723,12 @@ impl GpuDrivenRenderer {
                 groups: ids::PARTICLE_GROUPS,
                 depth_groups: ids::PARTICLE_DEPTH_GROUPS,
                 blank_depth: ids::BLANK_PARTICLE_DEPTH,
+            }),
+            physical_sky: PhysicalSkyPass::new(PhysicalSkyIds {
+                buffer: ids::PHYSICAL_SKY,
+                textures: ids::SKY_TABLES,
+                samplers: ids::SKY_SAMPLERS,
+                groups: ids::SKY_GROUPS,
             }),
             lights: LightGrids::new(config.light_limits, true),
             lights_made: 0,
@@ -999,6 +1016,8 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
             Place::of(self.layout.depthless),
         );
+        self.physical_sky
+            .request_pipeline(&mut self.pipelines, self.settings.physical_sky().is_some());
         created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
         // Occlusion culling's shaders load on first use: its pipelines wait for the scene's first
         // marked occluder.
@@ -1201,7 +1220,21 @@ impl GpuDrivenRenderer {
             table: ids::MATERIALS,
             values: ids::CUSTOM_VALUES,
         };
-        let groups_remade = self.settings.record_materials(input, list, arena, table)?;
+        let camera_y = match self.frames.get(ViewId::CAMERA.index()) {
+            Some(Some(frame)) => frame.uniform.camera_world[1],
+            _ => 0.0,
+        };
+        physical_sky::record_frame(
+            &mut self.physical_sky,
+            &mut self.settings,
+            (&self.pipelines, input.pipelines_built),
+            camera_y,
+            list,
+            arena,
+        )?;
+        let groups_remade =
+            self.settings
+                .record_materials(input, list, arena, table, &self.physical_sky)?;
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
         self.settings.update_post_layers();
@@ -1239,7 +1272,8 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(list, arena, &self.settings)?;
+        self.background
+            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let binding_bytes = self.config.storage_binding_bytes;
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -1723,6 +1757,7 @@ impl GpuDrivenRenderer {
             + particles
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + PhysicalSkyPass::UPLOAD_BYTES
     }
 }
 
@@ -1783,6 +1818,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.value_rows = 0;
         self.background.reset_gpu();
         self.particles.reset_gpu();
+        self.physical_sky.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();
