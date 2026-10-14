@@ -142,6 +142,8 @@ The plugin compiles two kinds of WGSL:
 
 WGSL that is neither stops the build with an error that says how to fix it.
 
+The plugin compiles each shader once and caches the result, so a later build compiles only what changed. [Install null3D](../getting-started/install.md#builds) says where the cache lives and how to ignore it.
+
 A shader can import the engine's library modules, such as `#import null3d::math`. The plugin resolves each import. [Shader library and imports](../shaders/library.md) lists the modules.
 
 Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one GLSL ES 3.00 program for each render pipeline, and it sets the shader def `WEBGL2`:
