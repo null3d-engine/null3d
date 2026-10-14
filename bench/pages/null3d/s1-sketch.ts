@@ -45,6 +45,10 @@
 // and blend across the middle, for the probes' cost on every lit pixel. `probes=always` captures
 // them again in turns in every frame, for the allocation sample and the cost of the captures and
 // their filters while the swarm moves.
+// The `weighted` switch puts a column of smoke over the swarm's middle: puffs of the weighted
+// blending in a sprite batch that rise and swell in every frame, for the allocation sample and the
+// cost of the camera's weighted layer. `weighted=sorted` gives the same smoke the normal blending,
+// which the transparent pass sorts, for the cost of one against the other.
 // The `decals` switch puts a ground under the swarm with a batch of decals on it, which turn every
 // frame, for the cost of the decal pass and the allocation sample of its rows. The tall boxes of
 // the decals reach the lowest boxes of the swarm too. `decals=off` puts the ground alone, the
@@ -106,6 +110,9 @@ export default defineSketch(async (context) => {
 	if (switches.has('transmission')) createClearWater(context);
 	const probes = switches.get('probes');
 	if (probes !== null) createProbes(context, probes === 'always');
+	const weighted = switches.get('weighted');
+	const moveSmoke =
+		weighted === null ? undefined : await createSmoke(context, weighted === 'sorted');
 	const decals = switches.get('decals');
 	const turnDecals = decals === null ? undefined : createDecals(context, decals !== 'off');
 	const particles = switches.has('particles') ? await createParticleFountains(context) : [];
@@ -197,6 +204,7 @@ export default defineSketch(async (context) => {
 		animate(t);
 		morph(t);
 		moveCasters?.(t);
+		moveSmoke?.(t);
 		turnDecals?.(t);
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
@@ -593,6 +601,47 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** The puffs of the `weighted` switch's smoke, and how long each one rises, in seconds. */
+const SMOKE_PUFFS = 2000;
+const SMOKE_LIFE = 8;
+
+/**
+ * Adds the `weighted` switch's column of smoke over the swarm's middle: soft puffs of the weighted
+ * blending, or of the normal blending with `sorted`, that rise, swell and fade. Returns the function
+ * that moves them to a time, which writes the batch's arrays and allocates nothing.
+ */
+async function createSmoke({ scene, textures }: SketchContext, sorted: boolean) {
+	const size = 32;
+	const dot = new Uint8Array(size * size * 4).fill(255);
+	for (let i = 0; i < size * size; i++) {
+		const r = Math.hypot((i % size) + 0.5 - size / 2, Math.floor(i / size) + 0.5 - size / 2);
+		dot[i * 4 + 3] = 255 * Math.max(0, 1 - (2 * r) / size) ** 2;
+	}
+	const map = textures.fromData({ width: size, height: size, data: dot });
+	const puffs = await scene.createSprites({
+		count: SMOKE_PUFFS,
+		map,
+		dynamic: true,
+		depthWrite: false,
+		blending: sorted ? 'normal' : 'weighted',
+	});
+	return (t: number) => {
+		const { positions, sizes, colors } = puffs;
+		for (let i = 0; i < SMOKE_PUFFS; i++) {
+			const seed = (i * 0.618034) % 1;
+			const age = (t / SMOKE_LIFE + seed) % 1;
+			const turn = i * 2.39996 + age * 3;
+			const spread = 2 + age * 18;
+			positions[i * 3] = Math.cos(turn) * spread * seed;
+			positions[i * 3 + 1] = S1_BOB_HEIGHT + age * 60;
+			positions[i * 3 + 2] = Math.sin(turn) * spread * seed;
+			sizes[i * 2] = sizes[i * 2 + 1] = 4 + age * 14;
+			colors[i * 4] = colors[i * 4 + 1] = colors[i * 4 + 2] = 0.55 + 0.3 * seed;
+			colors[i * 4 + 3] = 0.35 * Math.min(1, age * 8) * (1 - age);
+		}
+	};
 }
 
 /** Decals on each side of the `decals` switch's square of them, and the texels of their image. */

@@ -51,6 +51,7 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
+TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
@@ -1136,6 +1137,8 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
+					// The weighted layer's pass names a second color target after the flags.
+					setup.setSecondColor(length > 10 ? this.targetView(words[a + 9] as number) : undefined);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,

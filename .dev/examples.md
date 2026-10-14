@@ -15,7 +15,8 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/showcase/<name>/` | One showcase scene: its `sketch.ts` and the modules that it imports, with no line limit ([Showcase scenes](#showcase-scenes)) |
 | `examples/lib/stage.ts`, `examples/lib/procedural.ts` | The showcase scenes' moods, and their generators of detail: seeded noise, texture sets from numbers, terrain and rocks |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
-| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the forest demo and the test page that measures the levels' saving share |
+| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the page that measures the levels' saving uses |
+| `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -438,7 +439,8 @@ Each feature gets a decision record of its own when it is built.
 | Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |
 | Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 ([D-149](decisions/D-149-reflection-probes.md)) | D-142 |
 | Weighted blended transparency | Smoke and fire, and glass | M2-EX33 | D-142 |
-| Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
+| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 | D-142 |
+| Weighted blended transparency | Smoke and fire, and glass: `blending: 'weighted'` | M2-EX33 | D-142, [D-150](decisions/D-150-weighted-blended-transparency.md) || Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
 | Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
 

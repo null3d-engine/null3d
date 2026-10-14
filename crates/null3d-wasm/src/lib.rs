@@ -467,7 +467,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
 /// largest storage binding of the device the engine draws with, and the capability flags say
 /// whether it has transient attachments. On WebGL2 (`webgl2`), the capability flags say whether
-/// the device has multi-draw, and `max_texture_size` is its largest texture. Scene passes draw
+/// the device has multi-draw and draws into targets of 16-bit floats, and `max_texture_size` is its
+/// largest texture. Scene passes draw
 /// into a target of format `scene_color`: a float format for HDR color, or the canvas's for the
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
@@ -552,6 +553,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                float16_targets: capabilities.contains(Capabilities::FLOAT16_TARGETS),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,

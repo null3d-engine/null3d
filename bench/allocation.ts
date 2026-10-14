@@ -63,10 +63,11 @@
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
 // frame. `--probes` places two reflection probes over S1 that capture again in turns in every
-// frame, so each frame draws six capture views and runs a probe's filter. `--passes` adds a
-// full-screen pass that reads S1's color at half the render size, whose texture a custom effect
-// adds as a glow, and changes the pass's uniform every frame. `--prepass` turns the depth prepass
-// on, in any scene.
+// frame, so each frame draws six capture views and runs a probe's filter. `--weighted` puts a
+// column of smoke of the weighted blending over S1, whose 2,000 puffs rise in every frame,
+// which the camera's weighted layer draws. `--passes` adds a full-screen pass that reads S1's
+// color at half the render size, whose texture a custom effect adds as a glow, and changes the
+// pass's uniform every frame. `--prepass` turns the depth prepass on, in any scene.
 // frame. `--decals` puts a ground with a batch of decals under S1, which turn every frame, so the
 // decal pass culls, orders and uploads their rows in every frame. `--passes` adds a full-screen
 // pass that reads S1's color at half the render size, whose texture a custom effect adds as a glow,
@@ -119,7 +120,9 @@
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
 //   bun run bench:allocation --probes --gpu webgl2
-//   bun run bench:allocation --decals --gpu webgl2//   bun run bench:allocation --particles --gpu webgl2
+//   bun run bench:allocation --weighted --gpu webgl2
+//   bun run bench:allocation --decals --gpu webgl2
+//   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
@@ -654,6 +657,8 @@ async function main(): Promise<void> {
 		const probes = args.includes('--probes') ? '&probes=always' : '';
 		if (probes && scene !== 's1') throw new Error('--probes places probes over S1 only');
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
+		const weighted = args.includes('--weighted') ? '&weighted' : '';
+		if (weighted && scene !== 's1') throw new Error('--weighted puts smoke over S1 only');
 		const decals = args.includes('--decals') ? '&decals' : '';
 		if (decals && scene !== 's1') throw new Error('--decals puts decals under S1 only');
 		const particles = args.includes('--particles') ? '&particles' : '';
@@ -666,7 +671,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${probes}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${probes}${weighted}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts

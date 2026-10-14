@@ -153,6 +153,9 @@ enable draw_index;
 #ifdef SAMPLE_MASK
 #import null3d::cutout::{MaskedFragment, masked_fragment}
 #endif
+#ifdef WEIGHTED
+#import null3d::weighted::{WeightedFragment, weighted_fragment}
+#endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
@@ -1062,6 +1065,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 @fragment
 #ifdef SAMPLE_MASK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
+#else ifdef WEIGHTED
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
@@ -1155,6 +1160,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef SAMPLE_MASK
     return masked_fragment(shade(s, input, in.clip));
+#else ifdef WEIGHTED
+    return weighted_fragment(shade(s, input, in.clip), in.relative);
 #else
     return shade(s, input, in.clip);
 #endif
