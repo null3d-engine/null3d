@@ -444,6 +444,14 @@ const DOCS = {
 			'E1430: scene.createReflectionProbe() would make reflection probe 17; a scene has at most 16.',
 		since: '0.2',
 	},
+	E1431: {
+		title: "Area lights' tables missing",
+		cause:
+			"The sketch made a rectangle or tube light, and the file of the area lights' fitted tables did not download. The engine's package ships the file, area-light-tables.bin, beside its code, and the engine downloads it with the first area light. Until the file arrives, area lights give no light. A server or a build that leaves out the file, or a Content-Security-Policy whose connect-src blocks its address, stops the download.",
+		example:
+			"E1431: the area lights' tables did not load from https://example.com/assets/area-light-tables-Zx8c_Vb1.bin: HTTP 404",
+		since: '0.2',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

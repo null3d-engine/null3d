@@ -827,6 +827,7 @@ export class SketchRunner {
 			glue.setFogSlices(settings.fogSlices) !== 0 ||
 			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setAreaLightCap(settings.areaLights) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setProbeSize(settings.probeSize) !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
@@ -994,6 +995,9 @@ export class SketchRunner {
 	 * reflection probe waits for its capture after that frame, it steps the sketch once more at the
 	 * same time, and that thread draws both frames in turn. The first failure in the sketch or the
 	 * core stops the hold with E1408.
+	 * loss, textures included. It waits for the area lights' tables to load and for every texture
+	 * image to reach that thread first. The
+	 * first failure in the sketch or the core stops the hold with E1408.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
@@ -1005,6 +1009,8 @@ export class SketchRunner {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
 				if (step === steps) {
+					await this.context.scene.imagesSettled();
+					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
@@ -1124,6 +1130,10 @@ export class SketchRunner {
 			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
+			const tablesFailure = this.context.scene.takeAreaTablesFailure();
+			if (tablesFailure) this.report(tablesFailure);
+			const imageFailure = this.context.scene.takeImageFailure();
+			if (imageFailure) this.report(imageFailure);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {

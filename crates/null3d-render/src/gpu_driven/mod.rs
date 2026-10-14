@@ -127,7 +127,8 @@ use std::collections::TryReserveError;
 
 use null3d_gpu::caps::{BUDGET, Limit, MAX_WORKGROUPS_PER_DIMENSION};
 use null3d_gpu::drawlist::{
-    DrawList, MAX_WORDS, Op, buffer_usage as usage, format, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind,
+    sizes, texture_usage, view,
 };
 
 use crate::ao::{self, AoIds};
@@ -161,7 +162,7 @@ use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
-use crate::sorted::SortedLayout;
+use crate::sorted::{SkinnedPipeline, SortedLayout};
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
@@ -208,7 +209,7 @@ pub const MAX_USEFUL_BINDING_BYTES: u32 =
 /// The texture array of reflection probes that frame groups bind: the probes' array once the GPU
 /// holds one, or the blank one.
 fn probe_array(probes: Option<(u32, u32)>) -> u32 {
-    probes.map_or(ids::BLANK_PROBES, |(array, _)| array)
+    probes.map_or(0, |(array, _)| array)
 }
 
 /// The camera view whose light buffers `view`'s frame group binds: its own once they exist, in
@@ -330,9 +331,12 @@ mod ids {
     pub const DOF: u32 = EFFECTS + 1;
     /// The particle systems' buffers, three for each system from here.
     pub const PARTICLE_BUFFERS: u32 = DOF + 1;
+    /// The camera view's sorted instances of the decal pass, then of its redraw.
+    pub const DECAL_INSTANCES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    pub const REDRAW_INSTANCES: u32 = DECAL_INSTANCES + 1;
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
-    pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    pub const OBJECT_RANGES: u32 = REDRAW_INSTANCES + 1;
     /// Each camera view's list of reflection probes, one slot per view.
     pub const PROBE_LISTS: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the physical sky's values.
@@ -348,11 +352,11 @@ mod ids {
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = EXPOSURE_STATE + 1;
 
-    /// The blank texture array that frame groups bind while the scene has no reflection probe.
-    pub const BLANK_PROBES: u32 = 1;
     /// The custom values of materials: one row of texels per material, then three.js's table of
-    /// the split-sum terms of specular light in the columns after the first rows.
-    pub const CUSTOM_VALUES: u32 = BLANK_PROBES + 1;
+    /// the split-sum terms of specular light in the columns after the first rows. The probes own
+    /// the frame group's shared array, which holds the light tables' layers too
+    /// ([`crate::probes::ProbeTextures`]).
+    pub const CUSTOM_VALUES: u32 = 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// The blank cube that the frame's groups bind while the scene has no environment.
@@ -498,8 +502,10 @@ mod ids {
     pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
     /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
-    /// The bind groups of the volumetric fog's steps, after the full-screen passes'.
-    pub const FOG_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of the scene depth that the decal pass reads, after the full-screen passes'.
+    pub const DECAL_DEPTH_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
+    pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The bind groups of materials' maps, after the meter's.
@@ -608,6 +614,18 @@ pub struct GpuDrivenRenderer {
     /// The sources of the transparent pass, and each camera view's sorted rows.
     sorted: SortedLayout,
     transparent: Transparent,
+    /// The decals, and the camera view's rows of them that the decal pass draws.
+    decal_layout: SortedLayout,
+    decals: Transparent,
+    /// The opaque pairs, and the camera view's rows of them on the layers that decals skip, which
+    /// draw again after the decals.
+    redraw_layout: SortedLayout,
+    redraws: Transparent,
+    /// True when the redraw's layout holds the opaque pairs: some object is a decal, and decals
+    /// skip some layers.
+    redraws_built: bool,
+    /// The depth texture that the decal pass's group binds, or `None` before the group exists.
+    decal_depth_bound: Option<u32>,
     background: BackgroundPass,
     /// The particle systems' GPU objects and draws.
     particles: ParticlePass,
@@ -772,6 +790,12 @@ impl GpuDrivenRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
+            decal_layout: SortedLayout::decals(),
+            decals: Transparent::with_buffers(ids::DECAL_INSTANCES),
+            redraw_layout: SortedLayout::redraws(),
+            redraws: Transparent::with_buffers(ids::REDRAW_INSTANCES),
+            redraws_built: false,
+            decal_depth_bound: None,
             background: BackgroundPass::new(BackgroundIds {
                 buffer: ids::BACKGROUND,
                 group: ids::BACKGROUND_GROUP,
@@ -926,17 +950,25 @@ impl GpuDrivenRenderer {
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
+            .chain(self.decal_layout.waiting())
+            .chain(self.redraw_layout.waiting())
             .copied();
         let skinned_appear =
             self.skinning
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
+        // The lit templates switch to or from their builds that shade area lights.
+        let area_switched = self
+            .settings
+            .update_area_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         let upload_everything = particles_changed
             || input.structure_changed
             || !self.layout.built
+            || area_switched
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass
+            || self.redraws_wanted() != self.redraws_built
             || skinned_appear;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
@@ -980,6 +1012,41 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
+            self.decal_layout
+                .rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    self.graph.decal_targets(),
+                    input.scene,
+                    input.batches,
+                    |index, _| (layout.batch_base(index), 0),
+                    0,
+                    shadows,
+                    |_, _| SkinnedPipeline::NotSkinned,
+                    &mut self.key_counts,
+                )
+                .map_err(out_of_memory)?;
+            // The redraw's layout holds every opaque pair, so it is built only while decals skip
+            // some layers.
+            self.redraws_built = self.redraws_wanted();
+            if self.redraws_built {
+                self.redraw_layout
+                    .rebuild(
+                        &self.settings,
+                        &mut self.pipelines,
+                        targets,
+                        input.scene,
+                        input.batches,
+                        |index, _| (layout.batch_base(index), 0),
+                        0,
+                        shadows,
+                        |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                        &mut self.key_counts,
+                    )
+                    .map_err(out_of_memory)?;
+            } else {
+                self.redraw_layout = SortedLayout::redraws();
+            }
             // The casters' layout holds buckets only while a light casts shadows.
             if shadows {
                 self.casters.rebuild(
@@ -1037,6 +1104,12 @@ impl GpuDrivenRenderer {
         self.transparent
             .reserve(&self.sorted, views)
             .map_err(out_of_memory)?;
+        self.decals
+            .reserve(&self.decal_layout, 1)
+            .map_err(out_of_memory)?;
+        self.redraws
+            .reserve(&self.redraw_layout, 1)
+            .map_err(out_of_memory)?;
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         let mut created_pipelines = !self.created;
@@ -1073,6 +1146,12 @@ impl GpuDrivenRenderer {
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
+        let skipped = self.settings.decal_skipped_layers();
+        let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
+        self.redraw_layout.set_layer_filter(skipped, shown);
+        let redraws = self.redraws_built && skipped != 0;
+        self.graph
+            .set_decals(!self.decal_layout.is_empty(), redraws);
         self.graph
             .set_soft_particles(self.settings.particles().wants_depth());
         self.graph
@@ -1221,6 +1300,8 @@ impl GpuDrivenRenderer {
         // Each view's values first: the light grids set how much their uploads take.
         self.frames.clear();
         let exposure = self.settings.drawn_output().exposure;
+        self.lights
+            .set_area_light_cap(self.settings.area_light_cap());
         for index in 0..views {
             let view = ViewId::from_index(index);
             // A view that the graph culls needs no values.
@@ -1272,6 +1353,11 @@ impl GpuDrivenRenderer {
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
+            .light_tables_mut()
+            .record(list, array, probe_layers)?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -1349,6 +1435,7 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
+        self.bind_decal_depth(list)?;
         self.background
             .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let binding_bytes = self.config.storage_binding_bytes;
@@ -1494,6 +1581,8 @@ impl GpuDrivenRenderer {
             self.lights_made & drawn_views,
         )?;
         self.transparent.size(list, &self.sorted, views)?;
+        self.decals.size(list, &self.decal_layout, 1)?;
+        self.redraws.size(list, &self.redraw_layout, 1)?;
 
         let render_size = self.graph.render_size();
         let list_probes = self.probes_listed || self.bound_probes.is_some();
@@ -1635,6 +1724,50 @@ impl GpuDrivenRenderer {
                 parity,
             )?;
         }
+        self.decal_layout
+            .gather(scene, batches, parity)
+            .map_err(out_of_memory)?;
+        self.decals.sort(
+            input.jobs,
+            &self.decal_layout,
+            &self.frames[..1],
+            scene,
+            batches,
+            parity,
+        );
+        self.decals.upload(
+            list,
+            arena,
+            ViewId::CAMERA,
+            &self.decal_layout,
+            &self.skinning,
+            input.jobs,
+            scene,
+            batches,
+            parity,
+        )?;
+        self.redraw_layout
+            .gather(scene, batches, parity)
+            .map_err(out_of_memory)?;
+        self.redraws.sort(
+            input.jobs,
+            &self.redraw_layout,
+            &self.frames[..1],
+            scene,
+            batches,
+            parity,
+        );
+        self.redraws.upload(
+            list,
+            arena,
+            ViewId::CAMERA,
+            &self.redraw_layout,
+            &self.skinning,
+            input.jobs,
+            scene,
+            batches,
+            parity,
+        )?;
         let frames_now = &self.frames;
         self.particles.prepare(
             list,
@@ -1685,6 +1818,8 @@ impl GpuDrivenRenderer {
             _ => false,
         };
         let (sorted, transparent) = (&self.sorted, &self.transparent);
+        let (decal_layout, decals) = (&self.decal_layout, &self.decals);
+        let (redraw_layout, redraws) = (&self.redraw_layout, &self.redraws);
         let particles = &self.particles;
         let (settings, meshes) = (&self.settings, &self.meshes);
         self.graph.record(
@@ -1726,7 +1861,34 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    transparent.record(list, view, sorted, skinning, settings, meshes, particles)
+                    transparent.record(list, view, sorted, skinning, settings, meshes, 0, particles)
+                }
+                Role::Decals => {
+                    let depth = ids::DECAL_DEPTH_GROUP;
+                    let view = ViewId::CAMERA;
+                    decals.record(
+                        list,
+                        view,
+                        decal_layout,
+                        skinning,
+                        settings,
+                        meshes,
+                        depth,
+                        particles,
+                    )
+                }
+                Role::DecalRedraw => {
+                    let view = ViewId::CAMERA;
+                    redraws.record(
+                        list,
+                        view,
+                        redraw_layout,
+                        skinning,
+                        settings,
+                        meshes,
+                        0,
+                        particles,
+                    )
                 }
                 _ => Ok(()),
             },
@@ -1794,7 +1956,7 @@ impl GpuDrivenRenderer {
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
-        probes::create_blank(list, ids::BLANK_PROBES)?;
+        // The probes own the frame group's shared array of the probes' maps and the light tables.
         self.settings.probes_mut().set_textures(ProbeTextures {
             first: ids::PROBE_TEXTURES,
         });
@@ -1805,6 +1967,32 @@ impl GpuDrivenRenderer {
         self.lights_made = 1 << ViewId::CAMERA.index();
         self.dfg_pending = true;
         self.created = true;
+        Ok(())
+    }
+
+    /// True when objects on the layers that decals skip must draw again after them: some object is
+    /// a decal, and decals skip some layers.
+    fn redraws_wanted(&self) -> bool {
+        !self.decal_layout.is_empty() && self.settings.decal_skipped_layers() != 0
+    }
+
+    /// Makes the group of the scene depth that the decal pass reads, when the pass starts, and when
+    /// the frame made the plan's textures again.
+    fn bind_decal_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        let depth = self.graph.decal_depth();
+        if let Some(texture) = depth
+            && (self.graph.textures_made() || depth != self.decal_depth_bound)
+        {
+            let layout = if self.graph.decal_depth_multisampled() {
+                bind_layout::DECAL_DEPTH_MS
+            } else {
+                bind_layout::DECAL_DEPTH
+            };
+            let group = ids::DECAL_DEPTH_GROUP;
+            let words = [group, layout, 1, 0, resource_kind::TEXTURE, texture, 0, 0];
+            list.push(Op::CreateBindGroup, &words)?;
+        }
+        self.decal_depth_bound = depth;
         Ok(())
     }
 
@@ -1837,7 +2025,9 @@ impl GpuDrivenRenderer {
             self.layout.upload_bound() + self.casters.upload_bound() + self.outlined.upload_bound();
         let lights = self.lights.upload_room();
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
-        let sorted = Transparent::upload_bound(&self.sorted, camera_views);
+        let sorted = Transparent::upload_bound(&self.sorted, camera_views)
+            + Transparent::upload_bound(&self.decal_layout, 1)
+            + Transparent::upload_bound(&self.redraw_layout, 1);
         let particles = self
             .particles
             .upload_bound(self.settings.particles(), camera_views);
@@ -1937,10 +2127,14 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lights_made = 0;
         self.skinning.forget_gpu();
         self.transparent.forget_gpu();
+        self.decals.forget_gpu();
+        self.redraws.forget_gpu();
+        self.decal_depth_bound = None;
         self.meshes.forget();
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.light_tables_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
         self.settings.probes_mut().reset_gpu();
     }

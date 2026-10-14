@@ -328,7 +328,9 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // through sample, the row values textures of the resident rows and of the ring of
         // streamed ones, one texel row each while no batch has row values, and the blank array
         // of reflection probes.
-        assert_eq!(count(&commands, Op::CreateTexture), 24);
+        // through sample, and the row values textures of the resident rows and of the ring of
+        // streamed ones, one texel row each while no batch has row values, and the light tables
+        // of area lights.        assert_eq!(count(&commands, Op::CreateTexture), 24);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.

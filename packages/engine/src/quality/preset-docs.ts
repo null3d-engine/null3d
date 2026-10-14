@@ -109,6 +109,7 @@ export const SETTING_DOCS: {
 		label: 'Reflection probe maps',
 		print: (value) => `${value} x ${value}`,
 	},
+	areaLights: { label: 'Area lights per frame' },
 	lodThreshold: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),

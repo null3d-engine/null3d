@@ -78,3 +78,12 @@ Options D, A and the capture and blend above. The quality setting `probeSize` se
 - Code: `crates/null3d-render/src/probes.rs` (probes, their scheduling, the filter command, the capture views' cameras and each view's list), `view.rs` (capture views), `frame.rs`, both frame builders (the array, the lists, the split-sum table's move on WebGPU), `dfg.rs`, `textures.rs` (image ids for generators without a texture), `crates/null3d-gpu` (`Op::ProbeFilter`), the core's calls, `lib/probes.wgsl`, `lib/cubemap.wgsl`, `lib/tables.wgsl`, `lit.wgsl`, `probe.wgsl`, and the backends' `probes.ts`.
 - Docs: `api/scene`, `concepts/lighting`, the quality preset table, the error page E1430, and the three.js mapping's `cube-camera` entry.
 - Skills: the develop skill's quick reference and lighting notes, and the port skill's mapping notes.
+
+## Addendum, 2026-10-14: binding 3 is now shared with the area lights
+
+The area lights (D-145, M2-EX28) landed with their tables texture at frame-group binding 3, which
+this record gives the probes' maps. The owner ruled on 14 October 2026 that the two share one texture
+array at binding 3, the probes' maps first and the light tables' layers between them and the lights'
+images, so binding 10 stays for the light probe grid (D-146). [D-146](D-146-light-probe-grid.md)
+records the choice and the copy on a regrow. The probes' maps, the blend, the capture and the API are
+unchanged.

@@ -46,3 +46,32 @@ The frame group's binding layout change frees binding 10 for the grid. It moved 
 - **Tests and size:** image references of a baked grid on the three GPU paths, and an allocation check of the bake and the frame. A download-size check proves that a page without a grid pays nothing.
 - **Docs, mapping and skills:** a docs page, the three.js `LightProbeGrid` mapping entry, and the skill lines, with the showcase scenes able to set a grid.
 - **Later:** the GPU bake over six capture views joins with M2-EX32's capture, and a validity mask for the strong leaks the normal offset cannot fix.
+
+## Addendum, 2026-10-14: the frame group's binding 3, shared with the area lights
+
+The "Frame group's bindings, an open question" under Consequences met its answer when the area
+lights (D-145, M2-EX28) landed.
+
+**The problem.** WebGL2's frame group, group 0, has exactly sixteen slots (`GROUP_BASES[0]` in
+`gpu/webgl2/programs.ts`). Main used fourteen of them, with the area lights' tables texture at
+binding 3. M2-EX32 (reflection probes) needs binding 3 for the probes' maps, and this record reserves
+the freed binding 10 (the shadow blocks' merge) for the light probe grid. That left no free slot on
+WebGL2 for the area lights' tables: the grid, the probes and the tables could not all have one.
+
+**Options.** (A) Give binding 10 to the area lights' tables and find the grid another WebGL2 slot,
+which does not exist. (B) Hold the probes' maps and the light tables' layers in one texture array at
+binding 3. (C) Extend the WebGL2 group-0 slot budget by one, which changes `GROUP_BASES` and the
+uniform-block slot plan.
+
+**Chosen: B, by the owner on 14 October 2026.** Both textures are `rgba16float` `texture_2d_array`
+read with the frame's filtering sampler, so one array serves both. Its layers are, in order: layer 0
+spare, layers 1 and 2 the area lights' tables (D-145), the probes' maps next, and a rectangle light's
+image in each layer after them. Every layer is `max(probeSize, 128)` texels, the shape grows on
+demand, and a regrow copies the existing layers into the new texture (`Op::CopyTextureToTexture`, the
+engine's own op) rather than asking the probes to capture again: a probe's map is preserved and the
+light tables and images re-upload from engine memory, which costs nothing. So the array keeps binding
+3, binding 10 stays for the grid, and no texture is reserved at a fixed 32 layers.
+
+**Rejected.** A permanent reservation of the 32 image layers, which would add about 17 MB and pad each
+128-texel image inside a `probeSize` layer. Re-capturing or re-filtering the probes on a regrow, which
+the copy removes.

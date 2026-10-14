@@ -353,7 +353,7 @@ Development builds throw E1108 for a negative `intensity`, an `anisotropy` outsi
 
 ## Time of day
 
-`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. A second argument takes `heading` and `noonElevation`. `heading` turns the sun's path about the up axis. `noonElevation` is the noon sun's height in radians, π/3 by default. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
+`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. Pass its exposure to `post.set({ exposure })`, or set one of your own. At dusk and at night the default exposure shows the scene several times too dark. A second argument takes `heading` and `noonElevation`. `heading` turns the sun's path about the up axis. `noonElevation` is the noon sun's height in radians, π/3 by default. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';
@@ -389,6 +389,10 @@ export default defineSketch(async ({ scene, assets, post }) => {
 ## Lights
 
 Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces in this version.
+
+## Decals
+
+A decal is a mesh of `geometry.box()` with a `materials.decal` material, which projects its look onto the opaque surfaces in the box ([Decals](materials.md#decals)). `scene.setDecalLayers(mask)` sets the layers whose objects decals mark, and objects on other layers show none. The default is every layer.
 
 ## When changes take effect
 

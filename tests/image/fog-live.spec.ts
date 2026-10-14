@@ -24,7 +24,10 @@ interface FogLiveResult {
 const CHANNEL = 16;
 /** The share of pixels that may differ from WebGPU's frame. */
 const MAX_DIFFERENT = 0.06;
-/** The fewest frames of play before the capture: enough for the blend to settle. */
+/**
+ * The fewest frames of play before the capture: enough for the blend to settle. The page waits for
+ * this many frames rather than a time, because a software renderer draws only a few a second.
+ */
 const MIN_FRAMES = 20;
 
 async function load(page: Page, gpu: string) {

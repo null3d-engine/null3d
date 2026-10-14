@@ -232,6 +232,9 @@ export function probeFilter(shader: ShaderVariant<Pipeline>): ProbeFilter {
 		pairs.set(probes, pair);
 		return pair;
 	};
+	/** The first layer of the shared array that holds a probe's map: the light tables' layers
+	 * (crate::light_tables) come first, so the probes follow them. */
+	const PROBE_LAYER_BASE = 3;
 	const run: ProbeFilter['run'] = (device, encoder, probes, chain, layer, faces, memory) => {
 		const made = keep(device);
 		const pair = pairOf(device, made, probes, chain, memory);
@@ -273,7 +276,7 @@ export function probeFilter(shader: ShaderVariant<Pipeline>): ProbeFilter {
 		for (let level = 0; level < levels; level++)
 			draw(
 				encoder,
-				pair.probePasses[layer * levels + level] as GPURenderPassDescriptor,
+				pair.probePasses[(PROBE_LAYER_BASE + layer) * levels + level] as GPURenderPassDescriptor,
 				pipelines.prefilter,
 				pair.chainGroup,
 				steps.prefilter(level),

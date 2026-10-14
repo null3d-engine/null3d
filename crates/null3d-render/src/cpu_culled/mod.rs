@@ -94,7 +94,8 @@ use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
-    DrawList, MAX_WORDS, Op, buffer_usage, format, permutation, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage, format, layout as bind_layout, permutation,
+    resource_kind, sizes, texture_usage, view,
 };
 
 use crate::ao::{self, AoIds};
@@ -127,7 +128,7 @@ use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
-use crate::sorted::SortedLayout;
+use crate::sorted::{SkinnedPipeline, SortedLayout};
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
@@ -250,10 +251,10 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_PASS_DEPTH + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
-    /// The blank texture array that frame groups bind while the scene has no reflection probe.
-    pub const BLANK_PROBES: u32 = STREAMED_VALUES + RING;
-    /// The texel that particle systems bind in place of a view's depth copy.
-    pub const BLANK_PARTICLE_DEPTH: u32 = BLANK_PROBES + 1;
+    /// The texel that particle systems bind in place of a view's depth copy. WebGL2 keeps the
+    /// split-sum table beside the material table, and the area lights' tables in the probes'
+    /// shared array (see [`crate::probes::ProbeTextures`]).
+    pub const BLANK_PARTICLE_DEPTH: u32 = STREAMED_VALUES + RING;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
@@ -332,13 +333,19 @@ mod ids {
     pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
     /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
-    /// The bind groups of the volumetric fog's steps, after the full-screen passes'.
-    pub const FOG_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of the scene depth that the decal pass reads, after the full-screen passes'.
+    pub const DECAL_DEPTH_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
+    pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The bind groups of materials' maps, after the meter's.
     pub const TEXTURE_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
 }
+
+/// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
+/// maps' group.
+const DECAL_DEPTH_INDEX: u32 = 4;
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
@@ -445,6 +452,22 @@ pub struct CpuCulledRenderer {
     /// The sources of the transparent pass, and each view's draws of it.
     sorted: SortedLayout,
     transparent: Transparent,
+    /// The decals, and the camera view's draws of them in the decal pass.
+    decal_layout: SortedLayout,
+    decals: Transparent,
+    /// The opaque pairs, and the camera view's draws of them on the layers that decals skip,
+    /// which draw again after the decals.
+    redraw_layout: SortedLayout,
+    redraws: Transparent,
+    /// True when the redraw's layout holds the opaque pairs: some object is a decal, and decals
+    /// skip some layers.
+    redraws_built: bool,
+    /// Where the decal pass's records, then its redraw's, start in the transparent part of a ring
+    /// slot of draw records: after the transparent pass's.
+    decal_records_at: u32,
+    redraw_records_at: u32,
+    /// The depth texture that the decal pass's group binds, or `None` before the group exists.
+    decal_depth_bound: Option<u32>,
     background: BackgroundPass,
     /// The particle systems' GPU objects and draws.
     particles: ParticlePass,
@@ -599,6 +622,14 @@ impl CpuCulledRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::new(config.multi_draw),
+            decal_layout: SortedLayout::decals(),
+            decals: Transparent::new(config.multi_draw),
+            redraw_layout: SortedLayout::redraws(),
+            redraws: Transparent::new(config.multi_draw),
+            redraws_built: false,
+            decal_records_at: 0,
+            redraw_records_at: 0,
+            decal_depth_bound: None,
             background: BackgroundPass::new(BackgroundIds {
                 buffer: ids::BACKGROUND,
                 group: ids::BACKGROUND_GROUP,
@@ -825,8 +856,60 @@ impl CpuCulledRenderer {
             )
             .map_err(out_of_memory)?;
         self.skins.asked();
-        let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
-        self.layout.add_sorted(records, self.sorted.scene_slots());
+        let targets = self.with_draw_index(self.graph.decal_targets());
+        self.decal_layout
+            .rebuild(
+                &self.settings,
+                &mut self.pipelines,
+                targets,
+                input.scene,
+                input.batches,
+                place,
+                RESIDENT,
+                shadows.any(),
+                |_, _| SkinnedPipeline::NotSkinned,
+                &mut self.key_counts,
+            )
+            .map_err(out_of_memory)?;
+        // The redraw's layout holds every opaque pair, so it is built only while decals skip some
+        // layers. Its rows are listed a second time, after the decals'.
+        self.redraws_built = self.redraws_wanted();
+        if self.redraws_built {
+            let targets = self.with_draw_index(self.graph.scene_targets());
+            let skins = &self.skins;
+            self.redraw_layout
+                .rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    targets,
+                    input.scene,
+                    input.batches,
+                    place,
+                    RESIDENT,
+                    shadows.any(),
+                    |slot, key| skins.sorted_pipeline(slot, key),
+                    &mut self.key_counts,
+                )
+                .map_err(out_of_memory)?;
+        } else {
+            self.redraw_layout = SortedLayout::redraws();
+        }
+        let multi_draw = self.config.multi_draw;
+        let records = Transparent::records_bound(&self.sorted, multi_draw);
+        let decals = Transparent::records_bound(&self.decal_layout, multi_draw);
+        let redraws = Transparent::records_bound(&self.redraw_layout, multi_draw);
+        self.decal_records_at = records;
+        self.redraw_records_at = records + decals;
+        self.layout.add_sorted(
+            records + decals + redraws,
+            self.sorted.scene_slots(),
+            self.decal_layout.scene_slots(),
+        );
+        self.layout.room.rows = self
+            .layout
+            .room
+            .rows
+            .saturating_add(self.redraw_layout.rows());
         self.clusters
             .prepare(input.batches, &self.layout)
             .map_err(out_of_memory)?;
@@ -850,10 +933,16 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         self.culling.reserve(room, views).map_err(out_of_memory)?;
         self.culling
-            .reserve_sorted(&self.sorted)
+            .reserve_sorted(&self.sorted, &self.decal_layout, &self.redraw_layout)
             .map_err(out_of_memory)?;
         self.transparent
             .reserve(&self.sorted, views)
+            .map_err(out_of_memory)?;
+        self.decals
+            .reserve(&self.decal_layout, 1)
+            .map_err(out_of_memory)?;
+        self.redraws
+            .reserve(&self.redraw_layout, 1)
             .map_err(out_of_memory)?;
         let cascades = self.cascades();
         self.cascade_culling
@@ -906,12 +995,34 @@ impl CpuCulledRenderer {
                 bytes: self.layout.room.rows.saturating_mul(8),
             };
             self.culling
-                .reserve_sorted(&self.sorted)
+                .reserve_sorted(&self.sorted, &self.decal_layout, &self.redraw_layout)
                 .map_err(out_of_memory)?;
             self.transparent
                 .reserve(&self.sorted, views)
                 .map_err(out_of_memory)?;
         }
+        Ok(())
+    }
+
+    /// True when objects on the layers that decals skip must draw again after them: some object is
+    /// a decal, and decals skip some layers.
+    fn redraws_wanted(&self) -> bool {
+        !self.decal_layout.is_empty() && self.settings.decal_skipped_layers() != 0
+    }
+
+    /// Makes the group of the scene depth that the decal pass reads, when the pass starts, and when
+    /// the frame made the plan's textures again. The backend binds a copy of one sample of a
+    /// multisampled depth.
+    fn bind_decal_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        let depth = self.graph.decal_depth();
+        if let Some(texture) = depth
+            && (self.graph.textures_made() || depth != self.decal_depth_bound)
+        {
+            let (group, layout) = (ids::DECAL_DEPTH_GROUP, bind_layout::DECAL_DEPTH);
+            let words = [group, layout, 1, 0, resource_kind::TEXTURE, texture, 0, 0];
+            list.push(Op::CreateBindGroup, &words)?;
+        }
+        self.decal_depth_bound = depth;
         Ok(())
     }
 
@@ -946,6 +1057,8 @@ impl CpuCulledRenderer {
             + self.lights.upload_room()
             + views * per_view(&self.layout)
             + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
+            + Transparent::upload_bound(&self.decal_layout, 1, self.config.multi_draw)
+            + Transparent::upload_bound(&self.redraw_layout, 1, self.config.multi_draw)
             + cascades
             + outline
             + shadows
@@ -999,7 +1112,7 @@ impl CpuCulledRenderer {
                 buffer_usage::UNIFORM | buffer_usage::COPY_DST,
             ],
         )?;
-        probes::create_blank(list, ids::BLANK_PROBES)?;
+        // The probes own the frame group's shared array of the probes' maps and the light tables.
         self.settings.probes_mut().set_textures(ProbeTextures {
             first: ids::PROBE_TEXTURES,
         });
@@ -1249,6 +1362,10 @@ impl CpuCulledRenderer {
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
+        let skipped = self.settings.decal_skipped_layers();
+        let redraws = self.redraws_built && skipped != 0;
+        self.graph
+            .set_decals(!self.decal_layout.is_empty(), redraws);
         self.graph
             .set_soft_particles(self.settings.particles().wants_depth());
         self.graph
@@ -1297,9 +1414,7 @@ impl CpuCulledRenderer {
             environment: self.bound_environment,
             lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
-            probes: self
-                .bound_probes
-                .map_or(ids::BLANK_PROBES, |(array, _)| array),
+            probes: self.bound_probes.map_or(0, |(array, _)| array),
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1320,6 +1435,13 @@ impl CpuCulledRenderer {
             },
             ..lit
         };
+        // The light tables write into the probes' shared array, which the frame groups bind, so
+        // each view binds the array again when the probes make it again.
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
+            .light_tables_mut()
+            .record(list, array, probe_layers)?;
         let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || textures_made || lights_remade & (1 << index) != 0 {
@@ -1384,7 +1506,7 @@ impl CpuCulledRenderer {
             self.bound_environment = environment;
             self.bound_probes = probes;
             lit.environment = environment;
-            lit.probes = probes.map_or(ids::BLANK_PROBES, |(array, _)| array);
+            lit.probes = probes.map_or(0, |(array, _)| array);
             for index in 0..self.opaque.views() {
                 let view = ViewId::from_index(index);
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
@@ -1415,6 +1537,7 @@ impl CpuCulledRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
+        self.bind_decal_depth(list)?;
         self.background
             .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let culling = &self.culling;
@@ -1477,7 +1600,18 @@ impl CpuCulledRenderer {
                 list,
                 arena,
                 (&mut self.culling, &mut self.opaque, &self.layout),
-                Some((&mut self.transparent, &self.sorted, &self.settings)),
+                Some(SortedPasses {
+                    settings: &self.settings,
+                    transparent: (&mut self.transparent, &self.sorted),
+                    camera: [
+                        (&mut self.decals, &self.decal_layout, self.decal_records_at),
+                        (
+                            &mut self.redraws,
+                            &self.redraw_layout,
+                            self.redraw_records_at,
+                        ),
+                    ],
+                }),
                 views,
                 frame,
                 streamed,
@@ -1545,6 +1679,8 @@ impl CpuCulledRenderer {
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
         let outlined = &self.outlined;
         let (transparent, background) = (&self.transparent, &self.background);
+        let (decals, decal_records_at) = (&self.decals, self.decal_records_at);
+        let (redraws, redraw_records_at) = (&self.redraws, self.redraw_records_at);
         let particles = &self.particles;
         let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
@@ -1629,6 +1765,29 @@ impl CpuCulledRenderer {
                         list, arena, index, draws, at, meshes, bind, &hidden, particles,
                     )
                 }
+                Role::Decals if culling.frame(ViewId::CAMERA).is_some() => {
+                    let view = ViewId::CAMERA;
+                    let at = opaque.sorted_records_at(view, layout) + decal_records_at;
+                    let draws = ids::draws_group(view);
+                    let light_slot = light_textures.slot(view);
+                    let bind = |list: &mut DrawList| {
+                        opaque.bind_view(list, view, light_slot)?;
+                        let group = ids::DECAL_DEPTH_GROUP;
+                        list.push(Op::SetBindGroup, &[DECAL_DEPTH_INDEX, group, 0])?;
+                        Ok(())
+                    };
+                    let hidden = hidden_in(view);
+                    decals.record(list, arena, 0, draws, at, meshes, bind, &hidden, particles)
+                }
+                Role::DecalRedraw if culling.frame(ViewId::CAMERA).is_some() => {
+                    let view = ViewId::CAMERA;
+                    let at = opaque.sorted_records_at(view, layout) + redraw_records_at;
+                    let draws = ids::draws_group(view);
+                    let light_slot = light_textures.slot(view);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    let hidden = hidden_in(view);
+                    redraws.record(list, arena, 0, draws, at, meshes, bind, &hidden, particles)
+                }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
                     let group =
@@ -1650,16 +1809,26 @@ impl CpuCulledRenderer {
     }
 }
 
+/// The sorted passes that the camera's view prepares after its opaque draws: its blended rows, then
+/// its decals and the rows that draw again after them, each pass with the layout it reads and, for
+/// the camera's own passes, where their records start after the blended rows' records.
+struct SortedPasses<'a> {
+    settings: &'a SceneSettings,
+    transparent: (&'a mut Transparent, &'a SortedLayout),
+    camera: [(&'a mut Transparent, &'a SortedLayout, u32); 2],
+}
+
 /// Uploads, for each of the first `count` views of `culling` that the frame draws, its index list
 /// when it changed, and its frame uniform and draw records, from the views' culling output and the
-/// draws of `layout`. Every view reads the streamed texture of ring slot `streamed`. With
-/// `transparent`, each view also prepares its transparent pass's draws of the sorted rows, which
-/// follow the opaque ones in its index list, and uploads their records with a new list.
+/// draws of `layout`. Every view reads the streamed texture of ring slot `streamed`. With `sorted`,
+/// each view also prepares its transparent pass's draws of the sorted rows, which follow the opaque
+/// ones in its index list, and uploads their records with a new list; the camera's decals and
+/// redrawn rows follow its blended rows in the same way.
 fn upload_views(
     list: &mut DrawList,
     arena: &mut UploadArena,
     (culling, draws, layout): (&mut Culling, &mut Opaque, &Layout),
-    mut transparent: Option<(&mut Transparent, &SortedLayout, &SceneSettings)>,
+    mut sorted: Option<SortedPasses>,
     count: usize,
     frame: u32,
     streamed: u32,
@@ -1681,13 +1850,33 @@ fn upload_views(
             starts,
         };
         draws.upload(list, arena, view, upload, layout)?;
-        if let Some((transparent, sorted, settings)) = transparent.as_mut() {
-            let first_sorted = starts.last().copied().unwrap_or(0);
-            transparent.prepare(k, culling.sorted(view), sorted, settings, first_sorted);
+        let Some(SortedPasses {
+            settings,
+            transparent: (transparent, transparent_layout),
+            camera,
+        }) = sorted.as_mut()
+        else {
+            continue;
+        };
+        let mut first = starts.last().copied().unwrap_or(0);
+        transparent.prepare(k, culling.sorted(view), transparent_layout, settings, first);
+        let sorted_at = draws.sorted_records_at(view, layout);
+        if new_list {
+            transparent.upload(list, arena, k, ids::draws(view), sorted_at)?;
+        }
+        if view != ViewId::CAMERA {
+            continue;
+        }
+        first += culling.sorted(view).items().len() as u32;
+        for ((pass, pass_layout, records_at), rows) in camera
+            .iter_mut()
+            .zip([culling.decals(view), culling.redraws(view)])
+        {
+            pass.prepare(0, rows, pass_layout, settings, first);
             if new_list {
-                let at = draws.sorted_records_at(view, layout);
-                transparent.upload(list, arena, k, ids::draws(view), at)?;
+                pass.upload(list, arena, 0, ids::draws(view), sorted_at + *records_at)?;
             }
+            first += rows.items().len() as u32;
         }
     }
     Ok(())
@@ -1763,17 +1952,25 @@ impl FrameBuilder for CpuCulledRenderer {
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
+            .chain(self.decal_layout.waiting())
+            .chain(self.redraw_layout.waiting())
             .copied();
         let skinned_appear =
             self.skins
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
+        // The lit templates switch to or from their builds that shade area lights.
+        let area_switched = self
+            .settings
+            .update_area_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         if particles_changed
             || input.structure_changed
             || !self.layout.built
+            || area_switched
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || prepass_changed
+            || self.redraws_wanted() != self.redraws_built
             || skinned_appear
         {
             self.rebuild_layout(input, shadows, outlines)?;
@@ -1786,7 +1983,17 @@ impl FrameBuilder for CpuCulledRenderer {
         self.sorted
             .gather(input.scene, input.batches, input.parity())
             .map_err(|_| out_of_memory(&self.layout))?;
+        self.decal_layout
+            .gather(input.scene, input.batches, input.parity())
+            .map_err(|_| out_of_memory(&self.layout))?;
+        let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
+        self.redraw_layout
+            .set_layer_filter(self.settings.decal_skipped_layers(), shown);
+        self.redraw_layout
+            .gather(input.scene, input.batches, input.parity())
+            .map_err(|_| out_of_memory(&self.layout))?;
         let (settings, cells, sorted) = (&self.settings, &self.cells, &self.sorted);
+        let (decal_layout, redraw_layout) = (&self.decal_layout, &self.redraw_layout);
         self.culling
             .cull(
                 input,
@@ -1800,7 +2007,7 @@ impl FrameBuilder for CpuCulledRenderer {
                         .flatten()
                 },
                 &|view| settings.level_view(view, canvas),
-                Some(sorted),
+                Some((sorted, decal_layout, redraw_layout)),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
                     meshes: settings.meshes(),
@@ -1808,6 +2015,8 @@ impl FrameBuilder for CpuCulledRenderer {
                 }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
+        self.lights
+            .set_area_light_cap(self.settings.area_light_cap());
         let main = self.culling.frame(ViewId::CAMERA).map(|frame| frame.camera);
         let exposure = self.settings.drawn_output().exposure;
         for index in 0..self.settings.views().len() {
@@ -1958,8 +2167,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lights.forget_gpu();
         self.light_textures.forget_gpu();
         self.skins.forget_gpu();
+        self.decal_depth_bound = None;
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.light_tables_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
         self.settings.probes_mut().reset_gpu();
     }

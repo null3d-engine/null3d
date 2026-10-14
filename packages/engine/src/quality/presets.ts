@@ -224,6 +224,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [128, 256, 512],
 	},
+	// The most area lights that one frame shades: the ones that give the camera the most light when
+	// more are in view, and a light that crosses the cap fades over a few frames. An area light costs
+	// a surface several times what a point light costs, so phones shade fewer. A change makes no GPU
+	// object (D-145).
+	areaLights: {
+		presets: [4, 8, 16, 32],
+		changes: 'live',
+		values: { min: 0, max: 64, whole: true },
+	},
 	// Soft particles: while a particle system fades near the surfaces behind it, the camera copies
 	// its opaque depth once per frame, which splits its opaque and transparent passes. Low, which
 	// phones draw, keeps one render pass and draws particles with hard edges (D-131).
@@ -505,6 +514,14 @@ export interface QualitySettings {
 	 * step. It changes during play, which makes the maps again and captures every probe again.
 	 */
 	probeSize: 128 | 256 | 512;
+	/**
+	 * The most rectangle and tube lights that one frame shades, a whole number from 0 to 64. When
+	 * more are in view, the ones that give the camera the most light shade: the brightest and
+	 * largest, for their distance. A light that joins or leaves them fades over a few frames. An area
+	 * light costs each surface it reaches several times what a point light costs. It changes during
+	 * play.
+	 */
+	areaLights: number;
 	/**
 	 * The error in pixels under which a mesh's coarser level of detail draws (see
 	 * `mesh.setLevels`). Each object and instance row draws the coarsest level whose error covers

@@ -1,6 +1,7 @@
 #define_import_path null3d::probes
 #import null3d::cubemap::{octahedral_point, octahedral_uv}
-#import null3d::ibl::{environment_sampler, roughness_level}
+#import null3d::ibl::{roughness_level}
+#import null3d::tables::{environment_sampler, light_tables}
 
 // Reflection probes (decision record D-149): the light around a point of the scene, which the
 // engine captures in the browser, filtered for each roughness as the environment's map is. Each
@@ -35,8 +36,9 @@ struct ReflectionProbes {
     probes: array<ReflectionProbe, 8>,
 }
 
-/// The probes' maps, one layer each, read with the environment's sampler.
-@group(0) @binding(3) var probe_map: texture_2d_array<f32>;
+// The probes' maps are layers of the frame's shared array at binding 3 (null3d::tables,
+// `light_tables`), read with the environment's sampler. The engine gives each probe a layer above
+// the area lights' tables (crate::light_tables).
 #ifdef WEBGL2
 @group(0) @binding(14) var<uniform> reflection_probes: ReflectionProbes;
 #else
@@ -68,8 +70,8 @@ fn probe_texel(layer: i32, d: vec3f, level: f32) -> vec3f {
     let high = min(low + 1.0, reflection_probes.head.y);
     let at_low = octahedral_uv(e, size / exp2(low));
     let at_high = octahedral_uv(e, size / exp2(high));
-    let a = textureSampleLevel(probe_map, environment_sampler, at_low, layer, low).rgb;
-    let b = textureSampleLevel(probe_map, environment_sampler, at_high, layer, high).rgb;
+    let a = textureSampleLevel(light_tables, environment_sampler, at_low, layer, low).rgb;
+    let b = textureSampleLevel(light_tables, environment_sampler, at_high, layer, high).rgb;
     return mix(a, b, level - low);
 }
 

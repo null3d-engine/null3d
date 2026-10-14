@@ -41,20 +41,87 @@ How the data was produced: the routes in `examples/showcase/creek/sketch.ts` and
 - The help lists the camera mode and, in Manual, the movement keys. A row with an action is a button, which sends the action to the sketch.
 - [Examples](../examples.md) states the rule in its showcase section.
 
-## Addendum: the touch gestures (owner, 14 October 2026)
+## Addendum: the Manual camera turns, zooms and pans (owner, 14 October 2026)
 
-The owner set the touch gestures of a showcase scene's Manual camera on 14 October 2026. They are:
+The owner replaced the Manual camera's fly model on 14 October 2026. Manual now turns, zooms and pans
+around the point that the route was looking at, through the engine's orbit controls
+(`createOrbitControls` in `@null3d/controls`, the Orbit preset). The scene's help and the controls HUD
+name it.
 
-1. One finger drags to look and walk, as the rule above says.
-2. Two fingers pinch to zoom, a dolly along the view.
-3. A two-finger drag pans across the scene, without turning the camera.
-4. A twist of two fingers turns the camera about the world's up.
+- **Desktop:** a left drag turns the camera, the wheel zooms, a right drag pans, and `W`, `A`, `S` and
+  `D` pan the camera: `W` and `S` see forward and back, `A` and `D` move across, and `R` and `F` rise
+  and fall.
+- **Touch:** one finger turns, a pinch zooms, and a two-finger drag pans.
 
-The help names the touch gestures as well as the keys.
+This replaces the earlier one-finger look-and-walk and the two-finger twist. `examples/lib/cinematic.ts`
+keeps the camera where the route left it and sets the controls' target to the route's current look-at
+point, so a turn, a zoom and a pan act around what the shot was showing. `examples/lib/touch-gestures.ts`
+is gone: the orbit controls answer the fingers themselves. The sketch's frame step calls `pan` for the
+keys, so the frame path still allocates nothing.
 
-`examples/lib/touch-gestures.ts` holds them, and `examples/lib/cinematic.ts` gives every showcase
-scene the same helper. It takes the orbit controls' idea of a pinch, the change in the distance
-between two fingers (`fingerDistance` in `@null3d/controls`), and adds the twist, the change in the
-angle of the line between the fingers. While two fingers are down, the first-person controls stand
-down, so one finger stays theirs. The helper makes its typed arrays once, so a frame allocates
-nothing.
+## Addendum: the Auto route never passes through an object (owner, 14 October 2026)
+
+The owner set a rule for every showcase scene on 14 October 2026, and settled it the same day: the
+**Auto** route never passes through an object, unless a shot intends to reveal what is inside it.
+The **Manual** camera moves freely and may pass through anything, which is what the owner wants when
+they fly the scene themselves.
+
+- The Auto route: each frame, the guard raycasts the camera's last pose to the route's new pose
+  against the scene's own geometry (the engine's raycast, D-30). A blocked segment stops the camera
+  a margin (0.5 m) short of the surface, so it slides along it. A shot may set `through: true` to
+  pass on purpose. A move that leaves a surface is never stopped.
+- Manual: no guard. A turn, a zoom and a pan may pass through a building, and a dolly out always
+  works. An earlier draft clamped the manual camera too; that clamp shortened the orbit distance
+  each frame and ratcheted the camera inward, and it could pin the camera, so the owner removed it.
+- What fills the air, such as falling snow, mist and fairy lights, is put on `EFFECT_LAYER` alone
+  by `markEffect`, so the guard never treats a snowflake as a wall. An object whose inside a visitor
+  may see is put on `INTERIOR_LAYER` alone by `markInterior`, and Creek's cave mouth is marked so.
+  The showcase camera's layers include both.
+- `examples/lib/clearance.ts` holds the guard and gives it to every showcase scene. It makes its ray
+  and its one hit result once, so the frame path allocates nothing.
+- Tests: `examples/showcase/*/route.test.ts` sample each route and fail when a sample comes within
+  the margin of a house, a tree, the tower or the cave. `examples/lib/clearance.test.ts` checks the
+  guard's rules and that the manual camera dollies out, keeps the distance, and turns without
+  shrinking it. `examples/lib/takeover.test.ts` checks that a takeover never jumps.
+
+## Addendum: a takeover halts the route at once (owner, 14 October 2026)
+
+The owner replaced the takeover's ease-to-halt the same day. Taking the camera now stops the route's
+motion at once: the manual camera takes the route's pose that moment and holds it, with no drift, and
+the controls take their target from the shot's look-at point. The earlier design eased the route's
+last motion to a halt over about 0.22 s. The owner wanted no transition at all, so the camera is
+still the moment the mode switches. The pose is still the route's own, never a snap to a shot.
+`examples/lib/takeover.test.ts` checks that the camera holds within a millimetre of the route's pose
+from the first frame after the switch and does not move over the second that follows.
+
+## Addendum: the camera starts moving soon after the page loads (owner, 14 October 2026)
+
+The owner ruled that a showcase scene must not stand still for long when its page loads: the camera
+starts moving quickly. Each route therefore opens on a **brief** hold of the establishing view, about
+half a second to a second, and then moves off it. A route whose first two shots repeat one pose reads
+as a pause, so the second shot must set the camera moving. Night town's opening hold is 0.8 s, and
+the demo's `hold` time is 0.5 s, which lands the image test's held frame on that hold. The held frame
+changes with the hold time, so the scene's references are remade in the same change.
+
+## Addendum: a demo's geometry must not overlap (owner, 14 October 2026)
+
+The owner ruled that a demo's and a showcase scene's own geometry must not overlap: two pieces that
+cross or lie coplanar over one another z-fight and shimmer. `examples/lib/overlap.ts` holds
+`findOverlaps`, which tests every pair of triangles of the parts it is given, counting a crossing or
+a coplanar area overlap as a fault and a shared edge or vertex as none. A deliberate intersection,
+such as a chimney sunk through a roof, is named in the check's `ignore` list, so the check stays
+meaningful. The check stops at a deliberate intersection, so a piece built from boxes that overlap on
+purpose, such as the night town's clock tower, is left out of it.
+
+The owner asked for the check to cover every demo and showcase scene. What runs today:
+
+- `examples/showcase/night-town/overlap.test.ts` checks every house's walls, roof and chimney, with
+  the chimney sunk through its roof as the one deliberate intersection. The `examples/showcase`
+  folder is now in the `bun run test` list, so this test and the two scenes' route tests run in CI;
+  before, the folder was not listed.
+- The other showcase scene, Creek, and the feature demos build their pieces through the engine
+  (`scene.createMesh`, `scene.createInstances`, `assets.loadGltf`), which keeps no triangle arrays
+  that a unit test can read. The check needs a scene readback: the engine would have to expose the
+  world-space triangles of its objects and instance rows. That readback is not built, so those scenes
+  are not covered yet. Until it is, an overlap in a demo is caught by eye or in a review, not by a
+  test.

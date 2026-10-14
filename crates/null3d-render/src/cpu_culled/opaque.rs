@@ -42,6 +42,7 @@ const ROW_VALUES_BINDING: u32 = 8;
 /// The binding of the table of object ranges in the frame group, where WebGL2's mesh shaders
 /// declare it.
 const OBJECT_RANGES_BINDING: u32 = 8;
+/// The binding of the light tables in the frame group (see [`crate::light_tables`]).
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
 const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
