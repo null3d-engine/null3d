@@ -47,6 +47,33 @@ Every command that reads the shader modules builds them first: the build, the ty
 
 After you clone, run `bun install`. After a branch switch or a pull, the hooks write the generated files again. When a hook did not run, as in a worktree before its first `bun install`, run `bun install`.
 
+### Builds
+
+A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
+modules for every feature, and then builds the test page for the size report. It is the longest step
+in a landing, so keep the count down:
+
+- Cargo builds into a **cache shared by every checkout** on the machine,
+  `~/.cache/null3d/cargo-target`, so the dependency crates (wasm-bindgen and the rest) compile once
+  instead of once per worktree. Set `NULL3D_CARGO_TARGET` to another folder, or to `local`, to build
+  inside the checkout as before. Cargo locks a target folder while it writes, so two builds that share
+  it run in turn.
+- `bun run build --pages-only` builds only what the dev pages and the tools need, with no size report
+  and no production build of the test page. Use it while developing and looking at a scene; use the
+  full `bun run build` when a landing needs the size check.
+- On a machine that runs several things at once, run one build at a time so that two do not compete
+  for the cores. The coordination shell the team queues its Mac work through gives `cargo test`,
+  `cargo clippy` and a native `cargo build` the same shared cache as well
+  (`CARGO_TARGET_DIR=~/.cache/null3d/cargo-target/native`), so the Rust tests reuse the compiled
+  dependencies across worktrees too.
+- Never run **two builds at once**, in one checkout or several, and never a build beside a browser or
+  image run of the same worktree: a half-written core makes a page fail for no reason (`E1402`,
+  `E1406`).
+- Keep the measurement: note how long a build and the test runs took when you change this area, and
+  record it here or in [Benchmarks](benchmarks.md), so the next change can tell whether it helped.
+  Earlier figures: a full build took 11 minutes on CI and 8 to 13 minutes on the Mac; `cargo test
+  --workspace` took 15 minutes on CI, its longest job; a browser shard ran 9 to 15 minutes.
+
 ### A clash on a generated file
 
 Never merge a generated file by hand. Take main's side, run the file's generator, and commit what the generator writes.
