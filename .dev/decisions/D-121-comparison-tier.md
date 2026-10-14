@@ -219,6 +219,10 @@ On 13 October 2026, CI's first run of the landed tests failed every Night town a
 
 The first runs logged one "404 (Not Found)" on the first page of each browser. The comparison test page named no icon, so the browser asked the server for `/favicon.ico`. The page now names an empty icon, as the examples page does. The fault was in every comparison's test page, Battle's too.
 
+## Addendum, 14 October 2026
+
+The owner decided on 14 October 2026 to remove the Busy page comparison. It measured the page's long tasks and input delay beside a scene, which was its reason to exist. The engine's own test pages already cover that work now. It also drew Night town's scene, which Night town's own comparison draws. So it added no figure and no look that the other comparisons do not give. The history above stays as it was written. The comparison, its tests and its page are gone from the repository.
+
 ## Battle
 
 Built 2026-10-11, task M2-EX6. Battle is the second comparison, and the comparison of ready-made assets. Two armies of animated soldiers and mechs, with tanks behind each line, meet on a cratered field at dusk. Its mechanism is S5's: three.js pays per animated character on one thread. The count is the soldiers and mechs of both armies.
