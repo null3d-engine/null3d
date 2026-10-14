@@ -404,6 +404,63 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.dof]
 shaders = ["dof", "dof_ms"]
 
+[shaders.exposure]
+file = "exposure.wgsl"
+by_device = true
+pipelines.downsample = { vertex = "vs", fragment = "downsample" }
+pipelines.adapt = { vertex = "vs", fragment = "adapt" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The automatic exposure's histogram path (see exposure_histogram.wgsl): compute entry points
+# `histogram_main`, which bins a grid of the color's samples, and `adapt_main`, which meters the
+# bins into the exposure's texel. WebGPU only.
+[shaders.exposure_histogram]
+file = "exposure_histogram.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# A page downloads both paths' steps when the sketch first turns automatic exposure on. The final
+# pass keeps the camera's exposure until the meter's pipelines are built.
+[first_use.exposure]
+shaders = ["exposure", "exposure_histogram"]
+
+# The volumetric fog's light step (see fog_light.wgsl): one triangle over the grid's texture, which
+# lights each cell of the grid with the sun through its cascades and the clustered point and spot
+# lights through their shadow tiles. It binds the camera's frame group, so it builds with the
+# shadow lookups of RECEIVE_SHADOWS, and on WebGL2 with WEBGL2's data textures.
+[shaders.fog_light]
+file = "fog_light.wgsl"
+by_device = true
+pipelines.light = { vertex = "vs", fragment = "light" }
+variants.webgpu = { defs = ["RECEIVE_SHADOWS"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "RECEIVE_SHADOWS"], targets = ["glsl"] }
+
+# The volumetric fog's block, sum and apply steps (see fog_volume.wgsl): `block` sums the grid's
+# cells front to back within each block of slices, `sum` joins the blocks, and `apply` adds the
+# summed light to the scene's color at the render size.
+[shaders.fog_volume]
+file = "fog_volume.wgsl"
+by_device = true
+pipelines.block = { vertex = "vs", fragment = "block_sum" }
+pipelines.sum = { vertex = "vs", fragment = "sum" }
+pipelines.apply = { vertex = "vs", fragment = "apply" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The apply step from a multisampled depth target, whose sample 0 it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.fog_volume_ms]
+file = "fog_volume.wgsl"
+by_device = true
+pipelines.apply = { vertex = "vs", fragment = "apply" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the volumetric fog's steps when the sketch first turns it on. The frames draw
+# the fog with its sun glow until the steps' pipelines are built.
+[first_use.fog_volume]
+shaders = ["fog_light", "fog_volume", "fog_volume_ms"]
+
 # The copy of a view's image into the target that materials sample, with its rows turned around,
 # so the target holds the image's bottom row first, as on WebGL2. Only WebGPU copies: WebGL2 draws
 # the view into its target directly.
@@ -572,6 +629,28 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 # until the sky's pipeline is built.
 [first_use.sky]
 shaders = ["sky"]
+
+# The physical sky's lookup tables and its panorama for the sky's environment (see
+# sky_tables.wgsl): one shader, whose draw's first vertex names the table it draws.
+[shaders.sky_tables]
+file = "sky_tables.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The physical sky behind every object, drawn as the analytic sky is, from its tables.
+[shaders.sky_physical]
+file = "sky_physical.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the physical sky with its first physical sky background. The view shows the
+# background color until the tables are drawn.
+[first_use.physical_sky]
+shaders = ["sky_tables", "sky_physical"]
 
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.

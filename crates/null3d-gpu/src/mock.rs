@@ -796,7 +796,9 @@ impl MockBackend {
 
     fn create_bind_group(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let mut resources = Vec::new();
-        for entry in o[3..].chunks(5) {
+        // Only the group's own entries: the operands may hold a spare word or more after them.
+        let count = o[2] as usize;
+        for entry in o[3..3 + 5 * count].chunks(5) {
             let id = entry[2];
             match entry[1] {
                 resource_kind::BUFFER => {
@@ -947,7 +949,10 @@ impl MockBackend {
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
                 self.texture(op, o[0])?;
-                check(o.len() == 19, op, "a sky map's stage takes 19 words")?;
+                check(o.len() == 20, op, "a sky map's stage takes 20 words")?;
+                if o[3] != 0 {
+                    self.texture(op, o[3])?;
+                }
             }
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
