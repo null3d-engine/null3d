@@ -93,6 +93,8 @@ At 1,024 draws the indirect cost is 27.0 ms with three passes against 9.8 ms wit
 
 An earlier three-pass run at a load of 22 gave 54.4 ms for the same cell. That figure is inflated, and the cleaner run above replaces it. The table's one-pass column comes from the 2026-10-13 runs.
 
+The iPhone 17 gives the same shape, from its own slices on 2026-10-15 (Safari 26.6, three passes, 16 instances). Colour at 64, 256 and 1,024 draws cost 9.20, 8.69 and 8.80 ms of direct GPU time against 9.56, 9.09 and 13.93 indirect. Depth only at 256 and 1,024 draws cost 7.26 and 7.25 against 7.37 and 13.86. The clamp adds about 5.3 to 6.9 us for each draw, so about 1.8 to 2.3 us for each draw in each pass. The phone agrees with the Mac that the cost is a fixed amount per draw and per pass.
+
 ## Battle's own passes
 
 Battle draws its buckets indirectly in six passes. Its render graph on main 8c1e39af6 holds 34 passes. Five are compute (LightClusters, Culling and ShadowCulling0 to 2). Three are shadow cascades at 2048 by 2048, and three are scene passes (DepthPrepass, Opaque and Transparent). The other 23 are fullscreen, three for ambient occlusion, 19 for bloom and the final pass. The six that draw the buckets with `drawIndexedIndirect` are ShadowCascade0, ShadowCascade1, ShadowCascade2, DepthPrepass, Opaque and Transparent.
