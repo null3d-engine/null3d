@@ -624,12 +624,23 @@
       "id": "rect-light",
       "category": "Lights and shadows",
       "three": "RectAreaLight",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A spot light plus emissive geometry",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createRectAreaLight({ color, intensity, width, height, range })",
+      "notes": "Needs a range, where three.js's light has no end. No RectAreaLightUniformsLib.init() call. The light leaves along -Z, as in three.js. Casts no shadows, as in three.js.",
+      "docs": "api/lights",
       "detect": "\\bRectAreaLight\\b"
+    },
+    {
+      "id": "rect-light-setup",
+      "category": "Lights and shadows",
+      "three": "RectAreaLightUniformsLib / RectAreaLightTexturesLib",
+      "status": "changed",
+      "since": "0.2",
+      "target": "Nothing: the engine loads the area lights' tables with the first area light",
+      "notes": "Remove the init() call.",
+      "docs": "api/lights",
+      "detect": "\\bRectAreaLight(UniformsLib|TexturesLib)\\b"
     },
     {
       "id": "light-probe",
@@ -817,6 +828,17 @@
       "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet, and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
+    },
+    {
+      "id": "decal-geometry",
+      "category": "Geometry",
+      "three": "DecalGeometry (addon), with a material that has polygonOffset",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createMesh({ mesh: geometry.box(), material: materials.decal({ map, normalMap, roughness }), position, rotation, scale: size })",
+      "notes": "No geometry is cut: the box projects the material onto every opaque surface inside it, in a pass after the opaque objects, lit by every light and shadow. DecalGeometry's position, orientation and size become the box's position, rotation and scale. The image lies on the box's x and y sides and looks along its z axis, as DecalGeometry lays it. There is no target mesh: the decal marks every opaque surface in its box. polygonOffset, depthWrite: false and transparent: true are not needed. angleFade and edgeFade fade the decal on surfaces that turn away and near the box's ends, where DecalGeometry stretches the image. A batch of boxes with one decal material draws many decals in one draw. Blended surfaces show no decals. Projected texture libraries, such as three-projected-material, become a large decal box.",
+      "docs": "api/materials",
+      "detect": "\\bDecalGeometry\\b"
     },
     {
       "id": "mat-basic",
@@ -1598,6 +1620,17 @@
       "notes": "The same intent with a camera's lens: the blur grows with the distance from the focus, and the near and far fields blur apart, so a sharp object spreads no halo into a blurred background. BokehPass's focus becomes focusDistance. Its aperture scales the blur with the distance from the focus, and null3D's aperture is an f-number, so pick one by eye, such as 2.8, with the camera's focal length (camera.setFocalLength). maxblur is a share of the canvas's width, and maxBlur of its height, so multiply by the aspect ratio. pmndrs DepthOfFieldEffect: worldFocusDistance becomes focusDistance, a target to focus on becomes focusPoint, and bokehScale becomes maxBlur with the aperture, tuned by eye. It draws where the quality setting dofSamples is above 0: Medium and up, or quality.set({ dofSamples: 16 }) on Low.",
       "docs": "concepts/post-processing",
       "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b|\\bdof\\s*\\("
+    },
+    {
+      "id": "auto-exposure",
+      "category": "Post-processing",
+      "three": "None built in; pmndrs ToneMappingEffect with ToneMappingMode.REINHARD2_ADAPTIVE (adaptationRate, middleGrey), AdaptiveLuminancePass, AdaptiveToneMappingPass",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ autoExposure: { metering, percentiles, centerWeight, speedUp, speedDown, minEv, maxEv, compensation } })",
+      "notes": "three.js has no automatic exposure; renderer.toneMappingExposure stays post.set({ exposure }), and the eye adapts from it. pmndrs's adaptive tone mapping becomes autoExposure with metering: 'mean'. Its adaptationRate becomes about speedUp and speedDown, and its middleGrey the compensation, log2(middleGrey / 0.18) stops. Its Reinhard curve becomes a custom tone curve. The meter runs on the GPU in the same frame: a histogram on WebGPU, or 16 x 16 cells on WebGL2 and the Low preset (quality setting exposureMeter). It weights the center, adapts at its own speeds for brighter and darker scenes, and stays within minEv and maxEv, in stops from the camera's exposure. Hold mode settles at once, so image tests stay the same. It needs HDR color, as bloom does.",
+      "docs": "api/post",
+      "detect": "\\bREINHARD2_ADAPTIVE\\b|\\bAdaptive(Luminance|ToneMapping)Pass\\b|\\badaptationRate\\b"
     },
     {
       "id": "shader-pass",

@@ -89,6 +89,11 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	exposureMeter: {
+		label: "Automatic exposure's meter",
+		print: (value) =>
+			value === 'histogram' ? 'histogram on WebGPU, else 16 x 16 cells' : '16 x 16 cells',
+	},
 	fogSlices: {
 		label: 'Volumetric fog',
 		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),
@@ -100,6 +105,7 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	areaLights: { label: 'Area lights per frame' },
 	lodThreshold: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
