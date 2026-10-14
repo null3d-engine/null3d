@@ -107,10 +107,12 @@ use crate::dfg;
 use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
+use crate::exposure::ExposureIds;
 use crate::final_pass::FinalIds;
+use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, UploadArena, drawn_rows, joined_rows,
+    RecordError, SceneSettings, UploadArena, bind_frame_group, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -184,8 +186,12 @@ mod ids {
     pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
+    /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
+    pub const FOG_VOLUME: u32 = FULLSCREEN + 1;
+    /// The uniform buffer of the automatic exposure's meter.
+    pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = FULLSCREEN + 1;
+    pub const PAGES: u32 = EXPOSURE + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -246,8 +252,12 @@ mod ids {
     pub const BLANK_PARTICLE_DEPTH: u32 = STREAMED_VALUES + RING;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
+    /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
+    pub const EXPOSURE_CELLS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
+    pub const EXPOSURE_STORED: u32 = EXPOSURE_TEXEL + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const TARGETS: u32 = EXPOSURE_STORED + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -266,8 +276,12 @@ mod ids {
     pub const SKY_SAMPLERS: u32 = 7;
     /// The linear sampler of the full-screen passes.
     pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
+    /// The linear sampler of the volumetric fog's steps.
+    pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
+    /// The linear sampler of the automatic exposure's meter.
+    pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = FULLSCREEN_SAMPLER + 1;
+    pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -313,8 +327,12 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of the scene depth that the decal pass reads, after the full-screen passes'.
     pub const DECAL_DEPTH_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after the decal pass's.
-    pub const TEXTURE_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
+    pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The bind groups of the automatic exposure's meter, after the fog's.
+    pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
+    /// The bind groups of materials' maps, after the meter's.
+    pub const TEXTURE_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -539,6 +557,20 @@ impl CpuCulledRenderer {
                             buffer: ids::DOF,
                             sampler: ids::DOF_SAMPLER,
                             first_group: ids::DOF_GROUPS,
+                        },
+                        fog: FogVolumeIds {
+                            buffer: ids::FOG_VOLUME,
+                            sampler: ids::FOG_SAMPLER,
+                            first_group: ids::FOG_GROUPS,
+                        },
+                        exposure: ExposureIds {
+                            buffer: ids::EXPOSURE,
+                            sampler: ids::EXPOSURE_SAMPLER,
+                            cells: ids::EXPOSURE_CELLS,
+                            texel: ids::EXPOSURE_TEXEL,
+                            stored: ids::EXPOSURE_STORED,
+                            first_group: ids::EXPOSURE_GROUPS,
+                            compute: None,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -1283,7 +1315,13 @@ impl CpuCulledRenderer {
             self.settings
                 .dof_frame(input.scene, input.parity(), input.canvas),
         );
+        self.graph.set_fog_volume(self.settings.fog_volume_frame(
+            input.scene,
+            input.parity(),
+            input.canvas,
+        ));
         self.settings.prepare_effect_maps();
+        self.graph.set_exposure(self.settings.exposure_frame());
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1701,6 +1739,12 @@ impl CpuCulledRenderer {
                     let group =
                         ids::frame_group(ViewId::CAMERA) + light_textures.slot(ViewId::CAMERA);
                     lines.record(list, group, &[slot, slot])
+                }
+                Role::FogLight(_) => {
+                    let slot = opaque.frame_slot(ViewId::CAMERA);
+                    let group =
+                        ids::frame_group(ViewId::CAMERA) + light_textures.slot(ViewId::CAMERA);
+                    bind_frame_group(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
             },

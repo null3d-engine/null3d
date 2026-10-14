@@ -185,6 +185,26 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 16, 22, 43, 71],
 	},
+	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
+	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
+	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
+	// takes the downsample. Low takes it everywhere, as the cheaper path for phones. A change makes
+	// no GPU object it has not made before (D-148).
+	exposureMeter: {
+		presets: ['downsample', 'histogram', 'histogram', 'histogram'],
+		changes: 'live',
+		values: ['downsample', 'histogram'],
+	},
+	// The slices of the volumetric fog's grid along the view. The grid's columns follow: 64, 96 or
+	// 128 cells on the canvas's short side for 32, 64 or 96 slices. 0 draws no volumetric fog even
+	// when the sketch turns it on: the fog keeps its sun glow, which phones on Low draw at no cost.
+	// A change makes the grid's textures again; a change to or from 0 adds or removes its passes
+	// (D-133).
+	fogSlices: {
+		presets: [0, 32, 64, 96],
+		changes: 'live',
+		values: [0, 32, 64, 96],
+	},
 	// The size of the textures of reflection passes whose `scale` option names none, as a share of
 	// the render size each way. A reflection draws the scene a second time, so its cost follows its
 	// pixels: half the size each way draws a quarter of them. A change makes the texture again on
@@ -449,6 +469,20 @@ export interface QualitySettings {
 	 */
 	dofSamples: 0 | 16 | 22 | 43 | 71;
 	/**
+	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
+	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
+	 * 16 x 16 cells of the image, on every GPU path. WebGL2 always takes the downsample. The
+	 * downsample costs less, with a coarser meter. It changes during play.
+	 */
+	exposureMeter: 'downsample' | 'histogram';
+	/**
+	 * The slices of the volumetric fog's grid along the view: 32, 64 or 96, with 64, 96 or 128
+	 * cells across its short side, or 0, which draws no volumetric fog even when `scene.setFog`
+	 * turns it on. The fog then keeps its sun glow. More slices give finer light shafts and cost
+	 * more. It changes during play.
+	 */
+	fogSlices: 0 | 32 | 64 | 96;
+	/**
 	 * The size of a reflection pass's texture, as a share of the render size each way: 1, 0.5 or
 	 * 0.25, for each reflection whose `scale` option names none. A reflection draws the scene again,
 	 * so a smaller share costs less, with a softer reflection. It changes during play, which makes
@@ -485,8 +519,9 @@ export interface QualitySettings {
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
 	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
-	 * bloom's size while bloom is on, and ambient occlusion's scale while it draws. It raises them
-	 * again, in the reverse order, once frames have time to spare. `quality.governor` reports its steps. False keeps the render scale at
+	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, and the volumetric
+	 * fog's slices while it draws. It raises them again, in the reverse order, once frames have time
+	 * to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
 	 */

@@ -53,7 +53,9 @@ use null3d_render::effects::{
     EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES as MAX_EFFECT_TEXTURES,
 };
 use null3d_render::environment::Environment;
+use null3d_render::exposure::{AutoExposure, Meter as ExposureMeter, Metering};
 use null3d_render::fog::Fog;
+use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
@@ -243,12 +245,15 @@ struct Engine {
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
 /// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
 /// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
-/// 2% of the image's height and round aperture, with no focus point.
+/// 2% of the image's height and round aperture, with no focus point, then the automatic
+/// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
+/// per second, range of 4 stops either way and no compensation.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
+        3.0, 1.0, -4.0, 4.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -3174,6 +3179,46 @@ pub fn set_dof(on: bool) -> u32 {
     })
 }
 
+/// Turns automatic exposure on with its metering, percentiles, center weight, speeds, range and
+/// compensation from the post-processing values, or off, from the next frame on. The TypeScript
+/// API checks the values.
+#[wasm_bindgen(js_name = setAutoExposure)]
+pub fn set_auto_exposure(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let auto_exposure = on.then(|| AutoExposure {
+            metering: Metering::from_code(value(place::AUTO_EXPOSURE_METERING) as u32)
+                .unwrap_or_default(),
+            percentiles: [
+                value(place::AUTO_EXPOSURE_PERCENTILES),
+                value(place::AUTO_EXPOSURE_PERCENTILES + 1),
+            ],
+            center_weight: value(place::AUTO_EXPOSURE_CENTER_WEIGHT),
+            speed_up: value(place::AUTO_EXPOSURE_SPEED_UP),
+            speed_down: value(place::AUTO_EXPOSURE_SPEED_DOWN),
+            min_ev: value(place::AUTO_EXPOSURE_MIN_EV),
+            max_ev: value(place::AUTO_EXPOSURE_MAX_EV),
+            compensation: value(place::AUTO_EXPOSURE_COMPENSATION),
+        });
+        e.renderer.settings_mut().set_auto_exposure(auto_exposure);
+        0
+    })
+}
+
+/// Sets the meter of automatic exposure, which the quality settings set, from the next frame on:
+/// 0 the downsample, 1 the histogram where the GPU path has compute shaders. Other codes keep the
+/// meter as it was.
+#[wasm_bindgen(js_name = setExposureMeter)]
+pub fn set_exposure_meter(meter: u32) -> u32 {
+    with_engine(|e| {
+        if let Some(meter) = ExposureMeter::from_code(meter) {
+            e.renderer.settings_mut().set_exposure_meter(meter);
+        }
+        0
+    })
+}
+
 /// Sets the taps of depth of field's gather, which the quality settings set, from the next frame
 /// on: one of 16, 22, 43 or 71, or 0, which draws no depth of field. Other counts take the next
 /// count up, at most 71.
@@ -3529,6 +3574,54 @@ pub fn set_fog(curve: u32) -> u32 {
         let [r, g, b, values @ ..]: [f32; 10] = e.call_values();
         let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
+        0
+    })
+}
+
+/// Turns the volumetric fog on, or off, from the next frame on: the light of the sun and the point
+/// and spot lights that the scene's fog scatters toward the camera, through their shadows. The call
+/// values give how much light the fog scatters, Henyey-Greenstein's anisotropy, the distance that
+/// its grid reaches, and the fog's density. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setFogVolume)]
+pub fn set_fog_volume(on: bool) -> u32 {
+    with_engine(|e| {
+        let [intensity, anisotropy, distance, density]: [f32; 4] = e.call_values();
+        let volumetric = on.then_some(Volumetric {
+            intensity,
+            anisotropy,
+            distance,
+            density,
+        });
+        e.renderer.settings_mut().set_fog_volume(volumetric);
+        0
+    })
+}
+
+/// Sets the slices of the volumetric fog's grid, which the quality settings set, from the next
+/// frame on: one of 32, 64 or 96, or 0, which draws no volumetric fog. Other counts take the next
+/// count up, at most 96.
+#[wasm_bindgen(js_name = setFogSlices)]
+pub fn set_fog_slices(slices: u32) -> u32 {
+    with_engine(|e| {
+        let counts = fog_volume::SLICE_COUNTS;
+        let slices = match slices {
+            0 => 0,
+            _ => counts
+                .into_iter()
+                .find(|&count| count >= slices)
+                .unwrap_or(counts[counts.len() - 1]),
+        };
+        e.renderer.settings_mut().set_fog_slices(slices);
+        0
+    })
+}
+
+/// Sets the frame-budget governor's halvings of the slices that each frame draws of the
+/// volumetric fog's grid, from the next frame on. A halving makes no GPU object.
+#[wasm_bindgen(js_name = setFogHalvings)]
+pub fn set_fog_halvings(halvings: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_fog_halvings(halvings);
         0
     })
 }
@@ -3926,6 +4019,7 @@ pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
             time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
             weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
             join: flags & play_flag::JOIN != 0,
+            inertial: flags & play_flag::INERTIAL != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)

@@ -99,7 +99,28 @@ export const DEMOS: readonly Demo[] = [
 			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
-		controls: `${CAMERA} Pick a time of day, and turn on the DSLR lens to focus on the middle of the view.`,
+		controls: `Press C for the cinematic camera, or take over and fly with W, A, S and D, R and F to rise and fall, and the mouse to look. On a touch screen drag to look and move, pinch to zoom, drag two fingers to pan and twist to turn, and tap the camera row. Press D for the DSLR lens, and H to hide the keys. Pick a time of day.`,
+		hold: 21,
+		timeoutSeconds: 60,
+		choices: [
+			{
+				name: 'mood',
+				label: 'Time of day',
+				options: ['Afternoon', 'Golden', 'Blue', 'Night', 'Studio'],
+			},
+			{ name: 'dslr', label: 'DSLR', options: ['Off', 'On'] },
+		],
+	},
+	{
+		name: 'night-town',
+		group: 'Showcase',
+		sketch: new URL('./showcase/night-town/sketch.ts', import.meta.url),
+		code: 'showcase/night-town/',
+		title: 'Night town',
+		scene: 'A snowy town square under the moon',
+		summary:
+			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
+		controls: `Press C for the cinematic camera, or take over and fly with W, A, S and D, R and F to rise and fall, and the mouse to look. On a touch screen drag to look and move, pinch to zoom, drag two fingers to pan and twist to turn, and tap the camera row. Press D for the DSLR lens, and H to hide the keys. Pick a time of day.`,
 		hold: 4,
 		timeoutSeconds: 60,
 		choices: [
@@ -272,7 +293,33 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'auto-exposure',
+		group: 'Light, materials and effects',
+		sketch: new URL('./auto-exposure/sketch.ts', import.meta.url),
+		code: 'auto-exposure/',
+		title: 'Automatic exposure',
+		scene: 'Courtyard and hall',
+		summary:
+			'A walk from a sunny courtyard into a dark stone hall and back. The hall starts almost black, then the eye opens and its lamps and golden sphere come out of the dark. Turned toward the door, the courtyard blazes white until the eye closes again, faster, as eyes do.',
+		controls: `${CAMERA} Press E to turn automatic exposure off and on.`,
+		hold: 6,
+	},
+	{
+		name: 'light-shafts',
+		group: 'Light, materials and effects',
+		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
+		code: 'light-shafts/',
+		title: 'Light shafts and lit fog',
+		scene: 'Pine wood at sunset',
+		summary:
+			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is golden hour, right is dusk.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'gltf-model',
+
 		group: 'Light, materials and effects',
 		sketch: new URL('./gltf-model/sketch.ts', import.meta.url),
 		title: 'glTF models',
@@ -420,6 +467,19 @@ export const DEMOS: readonly Demo[] = [
 			'A flock of 300 drones, each with its own light, chases a lamp over a landing pad at dusk, each at its own lag and speed. vec3 and quat helpers place, turn and bank each drone from the time, with no allocation.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the lamp.`,
 		hold: 8,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'terrain',
+		group: 'Scale',
+		sketch: new URL('./terrain/sketch.ts', import.meta.url),
+		code: 'terrain/',
+		title: 'Terrain',
+		scene: 'Golden valley',
+		summary:
+			'A 1.2 km valley from the terrain add-on. The ground near the camera draws at about a meter of detail and the far hills draw coarser blocks, each with a skirt that hides the seam. Grass, soil, rock and snow blend by a splat map filled from the height and the slope, and boulders made in code stand on the ground.',
+		controls: `${CAMERA} The camera circles the valley, and the ground follows it.`,
+		hold: 3,
 		timeoutSeconds: 60,
 	},
 	{
