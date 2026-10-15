@@ -12,6 +12,7 @@ import {
 	S4_FOG,
 	S4_MATERIALS,
 	S4_MESHES,
+	S4_SHADOW_DISTANCE,
 	S4_STREET_LIGHT,
 	S4_TEXTURE_SIZE,
 	S4_TEXTURES,
@@ -44,8 +45,13 @@ export default defineSketch((context) => {
 	// the preset's render scale range, and the quality governor lowers the render scale and then
 	// the shadows when frames take too long. A comparison of two builds turns the governor off, so
 	// that a step in one run cannot change what it draws.
+	// The sun names its shadow distance, so it matches the three.js twin's cascades, which the
+	// benchmark compares this page with, instead of following the automatic distance.
 	const moveCamera = followPath(
-		setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color, { dynamicResolution: true }),
+		setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color, {
+			dynamicResolution: true,
+			shadowDistance: S4_SHADOW_DISTANCE,
+		}),
 		s4Camera,
 	);
 	context.quality.set({ governor: readGovernor(import.meta.url) });
