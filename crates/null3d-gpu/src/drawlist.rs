@@ -147,8 +147,14 @@ pub enum Op {
     /// [texture location (5 words), buffer id, buffer offset, bytes per row, rows per image, width,
     /// height]: copies a box of texels of a texture with `COPY_SRC` usage into a buffer with
     /// `COPY_DST` usage, which `ReadBuffer` then reads back. GPU picking copies its small id target
-    /// through this. The buffer offset aligns to 256 bytes, and each row of the copy starts at a
-    /// multiple of the texture's texel size.
+    /// through this. The texture is `RGBA8_UNORM` or `RGBA32_UINT`, whose texels both paths copy
+    /// as the same bytes. The buffer offset and the bytes per row are multiples of 256, as WebGPU
+    /// requires, the bytes per row hold the box's width, and the rows per image are at least its
+    /// height. Row `r` of the box lands at the offset plus `r` times the bytes per row. The box's x
+    /// and y address texels as stored, as the other copies do. So in a texture that a render pass
+    /// drew, WebGL2's first stored row is the image's bottom row, and a reader of such a target
+    /// flips y and the order of the rows on that path, as a shader that samples it flips its
+    /// texture coordinates. The buffer must not be waiting for a read (`ReadBuffer`).
     CopyTextureToBuffer = 50,
     /// [image id]: closes an image that the backend holds, once no later command uploads it. A
     /// backend that holds no such image does nothing, as when a capture replays a list again.
@@ -157,11 +163,20 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
-    /// [buffer id, offset, size, destination address in engine memory]: once the GPU has run the
-    /// commands before this one, maps `size` bytes of the buffer at `offset` and copies them into
-    /// engine memory at `destination`. The buffer needs `MAP_READ` usage, and the command is
-    /// asynchronous: the bytes land, and the thread that draws marks them ready, one or more frames
-    /// after the command replays. GPU picking reads the ids under the pointer this way.
+    /// [buffer id, offset, size, destination address in engine memory, control slot]: once the GPU
+    /// has run the commands before this one, maps `size` bytes of the buffer at `offset`, copies
+    /// them into engine memory at `destination`, then adds one to the control slot, by its index in
+    /// the control block. The buffer has `MAP_READ` usage, and no other usage than `COPY_DST`. The
+    /// offset is a multiple of 8, and the size a multiple of 4 that is not 0, as WebGPU's map
+    /// requires. Outside passes and bundles. The command is asynchronous: the bytes land, and the
+    /// slot rises, one or more frames after the command replays. Until the slot rises, the buffer
+    /// is waiting: no command writes it, copies into or out of it, or reads it again, because
+    /// WebGPU is mapping it and WebGL2 has yet to collect its bytes. So code that reads in every
+    /// frame keeps a ring of buffers, one for each read in flight. Destroying a waiting buffer
+    /// drops its read, whose slot never rises. A list that replays again while its read waits,
+    /// as a capture's does, finds the buffer waiting: both backends then skip the copy into it
+    /// and the read, and the first read still lands. GPU picking reads the ids under the pointer
+    /// this way.
     ReadBuffer = 53,
     /// [texture id, image id]: runs the generator that the backend holds under the image id, which
     /// fills every mip level of every face of a cube texture on the GPU in one submit, ahead of the
@@ -854,6 +869,12 @@ pub mod permutation {
     pub const CASTER_OFFSET: u32 = 16384;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
+    /// A custom material's template draws an object into GPU picking's id target: the vertex
+    /// shader moves each vertex by the material's vertex offset and places it as the shading
+    /// builds do, and the fragment shader writes the instance's ids, as the pick template does.
+    /// Only custom materials with a vertex offset build it. It shares [`BLOOM`]'s value: only the
+    /// final pass lists BLOOM, and only custom materials' builds of the lit template list PICK.
+    pub const PICK: u32 = BLOOM;
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
@@ -906,7 +927,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 29] = [
+    pub const NAMES: [(&str, u32); 30] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -924,6 +945,7 @@ pub mod permutation {
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
+        ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
@@ -940,7 +962,7 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 1] = [("FXAA", "AREA_LIGHTS")];
+    pub const SHARED: [(&str, &str); 2] = [("FXAA", "AREA_LIGHTS"), ("BLOOM", "PICK")];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device

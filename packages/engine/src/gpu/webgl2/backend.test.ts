@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'bun:test';
 import * as G from '../../generated/gpu';
 import { loadGlslShaders, type ShaderVariants } from '../../generated/shaders';
+import { MemoryViews } from '../../shared/memory-views';
+import { ReadSink } from '../readback';
 import { WebGL2Backend } from './backend';
 
 /**
- * A WebGL2 context that lists the calls made on it. Its constants are numbers, it offers no
- * extension, each create call makes an empty object, every program links and every framebuffer is
- * complete. With `uniforms`, every uniform that a program asks for exists.
+ * A WebGL2 context that lists the calls made on it, with their arguments in `log`. Its constants
+ * are numbers, it offers no extension, each create call makes an empty object, every program links
+ * and every framebuffer is complete. With `uniforms`, every uniform that a program asks for
+ * exists. `answer` gives a call's result in place of the fake's own, when it returns one.
  */
-function fakeContext(uniforms = false) {
+function fakeContext(
+	uniforms = false,
+	answer: (name: string, args: unknown[]) => unknown = () => undefined,
+) {
 	const calls: string[] = [];
+	const log: [string, ...unknown[]][] = [];
 	/** The attachment lists passed to `invalidateFramebuffer`, in call order. */
 	const invalidates: number[][] = [];
 	let constants = 0;
@@ -25,6 +32,9 @@ function fakeContext(uniforms = false) {
 				if (/^[A-Z0-9_]+$/.test(name)) return constant(name);
 				return (...args: unknown[]) => {
 					calls.push(name);
+					log.push([name, ...args]);
+					const answered = answer(name, args);
+					if (answered !== undefined) return answered;
 					if (name === 'invalidateFramebuffer') invalidates.push((args[1] as number[]) ?? []);
 					if (name === 'checkFramebufferStatus') return constant('FRAMEBUFFER_COMPLETE');
 					if (name === 'getExtension') return null;
@@ -38,7 +48,7 @@ function fakeContext(uniforms = false) {
 			},
 		},
 	);
-	return { gl: gl as WebGL2RenderingContext, calls, invalidates };
+	return { gl: gl as WebGL2RenderingContext, calls, invalidates, log };
 }
 
 describe('WebGL2Backend', () => {
@@ -74,26 +84,43 @@ describe('WebGL2Backend', () => {
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
 	});
 
-	it('invalidates no attachment a pass does not have', async () => {
+	it('invalidates exactly the attachments that a pass has and does not store', async () => {
 		const { gl, invalidates } = fakeContext();
 		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
 		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
-		const words: number[] = [];
-		const push = (op: number, operands: number[]) =>
-			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const replay = (...commands: [number, ...number[]][]) => {
+			const words: number[] = [];
+			for (const [op, ...operands] of commands)
+				words.push(op | ((operands.length + 1) << 8), ...operands);
+			const list = new Uint32Array(words);
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+			return invalidates.splice(0);
+		};
 		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
-		// Two passes: a fullscreen step into its own colour target with no depth, as an effect's step,
-		// and a depth-only pass that keeps its depth. Neither may invalidate an attachment it lacks.
-		push(G.OP_CREATE_TEXTURE, [1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D]);
-		push(G.OP_CREATE_TEXTURE, [2, 4, 4, 1, G.FORMAT_DEPTH24_PLUS, usage, 1, 1, G.VIEW_2D]);
-		push(G.OP_BEGIN_RENDER_PASS, [1, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_STORE_COLOR]);
-		push(G.OP_END_RENDER_PASS, []);
-		push(G.OP_BEGIN_RENDER_PASS, [G.NO_TARGET, G.NO_TARGET, 2, 0, 0, 0, 0, 0, G.PASS_STORE_DEPTH]);
-		push(G.OP_END_RENDER_PASS, []);
-		const list = new Uint32Array(words);
-		backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
-		// GL's depth attachment, which no pass here lacks while it stores.
-		expect(invalidates.flat()).not.toContain(0x8d00);
+		replay(
+			[G.OP_CREATE_TEXTURE, 1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D],
+			[G.OP_CREATE_TEXTURE, 2, 4, 4, 1, G.FORMAT_DEPTH24_PLUS, usage, 1, 1, G.VIEW_2D],
+		);
+		const pass = (color: number, depth: number, flags: number) =>
+			replay(
+				[G.OP_BEGIN_RENDER_PASS, color, G.NO_TARGET, depth, 0, 0, 0, 0, flags],
+				[G.OP_END_RENDER_PASS],
+			);
+		// GL's own numbers, which the backend's lists hold whatever the context's constants are.
+		const COLOR = 0x8ce0;
+		const DEPTH = 0x8d00;
+		const none = G.NO_TARGET;
+		// A pass that stores everything it has discards nothing.
+		expect(pass(1, none, G.PASS_STORE_COLOR)).toEqual([]);
+		expect(pass(none, 2, G.PASS_STORE_DEPTH)).toEqual([]);
+		expect(pass(1, 2, G.PASS_STORE_COLOR | G.PASS_STORE_DEPTH)).toEqual([]);
+		// Each pass discards what it has and does not store, and never names what it lacks: a
+		// fullscreen step names no depth, and a depth-only pass no color.
+		expect(pass(1, none, 0)).toEqual([[COLOR]]);
+		expect(pass(none, 2, 0)).toEqual([[DEPTH]]);
+		expect(pass(1, 2, G.PASS_STORE_COLOR)).toEqual([[DEPTH]]);
+		expect(pass(1, 2, G.PASS_STORE_DEPTH)).toEqual([[COLOR]]);
+		expect(pass(1, 2, 0)).toEqual([[COLOR, DEPTH]]);
 	});
 
 	it("makes the levels of a linear render target of one layer with GL's own generateMipmap", async () => {
@@ -251,5 +278,90 @@ describe('WebGL2Backend', () => {
 		expect([...backend.gpuMemory.bytes]).toEqual([4 * 4 * 4 + 2 * 4096, 8192]);
 		backend.destroy();
 		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
+	});
+
+	it("reads a copied box into engine memory with WebGPU's row spacing once its fence signals, and raises its slot once", async () => {
+		let signalled = false;
+		const { gl, calls, log } = fakeContext(false, (name, args) => {
+			if (name === 'fenceSync') return {};
+			if (name === 'clientWaitSync') return signalled ? gl.ALREADY_SIGNALED : gl.TIMEOUT_EXPIRED;
+			if (name === 'getBufferSubData') {
+				const [, offset, into] = args as [number, number, Uint8Array];
+				for (let i = 0; i < into.length; i++) into[i] = (offset + i) & 0xff;
+			}
+			return undefined;
+		});
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const memory = new WebAssembly.Memory({ initial: 1 });
+		const slots = new Int32Array(8);
+		backend.readSink = new ReadSink(new MemoryViews(memory), slots);
+		const replay = (...commands: [number, ...number[]][]) => {
+			const words: number[] = [];
+			for (const [op, ...operands] of commands)
+				words.push(op | ((operands.length + 1) << 8), ...operands);
+			const list = new Uint32Array(words);
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const ids = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_COPY_SRC;
+		replay(
+			[G.OP_CREATE_TEXTURE, 1, 8, 8, 1, G.FORMAT_RGBA32_UINT, ids, 1, 1, G.VIEW_2D],
+			[G.OP_CREATE_BUFFER, 2, 1024, G.BUFFER_USAGE_MAP_READ | G.BUFFER_USAGE_COPY_DST],
+		);
+		log.length = 0;
+		// Two rows of three texels from (2, 4), 256 bytes apart, read into engine memory at 64.
+		const copy: [number, ...number[]] = [
+			G.OP_COPY_TEXTURE_TO_BUFFER,
+			1,
+			0,
+			2,
+			4,
+			0,
+			2,
+			0,
+			256,
+			2,
+			3,
+			2,
+		];
+		const read: [number, ...number[]] = [G.OP_READ_BUFFER, 2, 0, 304, 64, 5];
+		replay(copy, read);
+		const named = (name: string) => log.filter(([call]) => call === name);
+		// A row of 256 bytes holds 16 texels of 16 bytes, and the default spacing comes back after.
+		expect(named('pixelStorei')).toEqual([
+			['pixelStorei', gl.PACK_ROW_LENGTH, 16],
+			['pixelStorei', gl.PACK_ROW_LENGTH, 0],
+		]);
+		expect(named('readPixels')).toEqual([
+			['readPixels', 2, 4, 3, 2, gl.RGBA_INTEGER, gl.UNSIGNED_INT, 0],
+		]);
+		expect(named('fenceSync')).toHaveLength(1);
+		// The GPU has not run the copy yet: the read waits, and asks again after the next frame.
+		expect(calls).not.toContain('getBufferSubData');
+		expect(slots[5]).toBe(0);
+		signalled = true;
+		replay();
+		const bytes = new Uint8Array(memory.buffer, 64, 304);
+		expect([...bytes]).toEqual(Array.from({ length: 304 }, (_, i) => i & 0xff));
+		expect(slots[5]).toBe(1);
+		expect(named('deleteSync')).toHaveLength(1);
+		replay();
+		expect(slots[5]).toBe(1);
+
+		// A capture replays the frame that the loop drew already: its copy and read do not run again.
+		log.length = 0;
+		backend.canvasTarget = { framebuffer: {} as WebGLFramebuffer, width: 4, height: 4 };
+		replay(copy, read);
+		backend.canvasTarget = undefined;
+		expect(named('readPixels')).toEqual([]);
+		expect(named('fenceSync')).toEqual([]);
+
+		// A buffer destroyed while its read waits drops the read: its slot never rises.
+		signalled = false;
+		replay(read, [G.OP_DESTROY_BUFFER, 2]);
+		signalled = true;
+		replay();
+		expect(slots[5]).toBe(1);
+		expect(named('deleteSync')).toHaveLength(1);
 	});
 });

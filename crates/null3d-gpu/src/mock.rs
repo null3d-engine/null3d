@@ -7,8 +7,8 @@ use crate::caps::{
     TEXTURE_3D_SIZE,
 };
 use crate::drawlist::{
-    Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
-    state_flags, template, texture_usage, upload_flags, vertex, view,
+    Command, NO_TARGET, Op, address, buffer_usage, compare, decode, filter, format, permutation,
+    resource_kind, state_flags, template, texture_usage, upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -145,6 +145,13 @@ impl Location {
     }
 }
 
+/// A buffer, as its creation described it.
+#[derive(Clone, Copy, Debug)]
+struct Buffer {
+    size: u32,
+    usage: u32,
+}
+
 /// The formats that `UploadImage` writes on both paths.
 const IMAGE_FORMATS: [u32; 4] = [
     format::RGBA8_UNORM,
@@ -153,11 +160,27 @@ const IMAGE_FORMATS: [u32; 4] = [
     format::RGBA32_FLOAT,
 ];
 
+/// The formats that `CopyTextureToBuffer` copies as the same bytes on both paths: WebGL2 reads
+/// them with `readPixels`, whose required format and type give WebGPU's texel layout for these.
+const READBACK_FORMATS: [u32; 2] = [format::RGBA8_UNORM, format::RGBA32_UINT];
+
+/// WebGPU's alignment of a texture-to-buffer copy's bytes per row, which the draw list also asks of
+/// its buffer offset.
+const COPY_ROW_ALIGNMENT: u32 = 256;
+
+/// True when `length` bytes from `offset` fit in `size`, without the overflow of a `u32` sum.
+fn fits(offset: u32, length: u32, size: u32) -> bool {
+    u64::from(offset) + u64::from(length) <= u64::from(size)
+}
+
 #[derive(Default)]
 pub struct MockBackend {
     /// What the device offers beyond the portable budget.
     caps: Capabilities,
-    buffers: HashMap<u32, u32>,
+    buffers: HashMap<u32, Buffer>,
+    /// The buffers whose `ReadBuffer` has not finished: no command may use them until the thread
+    /// that draws raises the read's slot, which [`MockBackend::finish_reads`] stands for.
+    reading: HashSet<u32>,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, View>,
     /// How many times each texture id was made or released, so a view can tell that its texture
@@ -237,6 +260,11 @@ impl MockBackend {
         self.generators.insert(id);
     }
 
+    /// Finishes every read in flight, as the thread that draws does when it raises their slots.
+    pub fn finish_reads(&mut self) {
+        self.reading.clear();
+    }
+
     pub fn replay(&mut self, words: &[u32]) -> Result<(), MockError> {
         for command in decode(words) {
             let command = command.map_err(|e| MockError::Decode(format!("{e:?}")))?;
@@ -304,6 +332,18 @@ impl MockBackend {
         Err(MockError::WriteAfterUse { op, what, id })
     }
 
+    /// A buffer by id. A buffer whose read is in flight fails: WebGPU is mapping it, and a write
+    /// or a copy would change the bytes that the read delivers.
+    fn buffer(&self, op: Op, id: u32) -> Result<Buffer, MockError> {
+        let buffer = *self.buffers.get(&id).ok_or(missing(op, "buffer", id))?;
+        check(
+            !self.reading.contains(&id),
+            op,
+            "a buffer waits until its read's slot rises before another command uses it",
+        )?;
+        Ok(buffer)
+    }
+
     fn texture(&self, op: Op, id: u32) -> Result<Texture, MockError> {
         if self.views.contains_key(&id) {
             return Err(invalid(
@@ -336,10 +376,13 @@ impl MockBackend {
             && width > 0
             && height > 0
             && layers > 0
-            && at.x + width <= level_size(texture.width, at.level)
-            && at.y + height <= level_size(texture.height, at.level)
-            && at.layer + layers
-                <= view::level_layers(texture.binding_view, texture.layers, at.level);
+            && fits(at.x, width, level_size(texture.width, at.level))
+            && fits(at.y, height, level_size(texture.height, at.level))
+            && fits(
+                at.layer,
+                layers,
+                view::level_layers(texture.binding_view, texture.layers, at.level),
+            );
         if !fits {
             return Err(MockError::OutOfRange { op, id: at.texture });
         }
@@ -716,6 +759,55 @@ impl MockBackend {
         Ok(())
     }
 
+    /// Checks a copy of a box of texels into a buffer that a read then maps, against WebGPU's
+    /// rules for the copy and the read, and the formats that WebGL2's `readPixels` copies alike.
+    fn copy_texture_to_buffer(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        check(o.len() == 11, op, "a texture-to-buffer copy takes 11 words")?;
+        let source = Location::read(&o[0..5]);
+        let (id, offset, bytes_per_row, rows_per_image, width, height) =
+            (o[5], o[6], o[7], o[8], o[9], o[10]);
+        let from = self.texel_box(op, source, width, height, 1)?;
+        check(
+            from.usage & texture_usage::COPY_SRC != 0,
+            op,
+            "a copy reads a texture with COPY_SRC usage",
+        )?;
+        check(
+            READBACK_FORMATS.contains(&from.format),
+            op,
+            "a copy into a buffer reads an RGBA8_UNORM or RGBA32_UINT texture, which both paths copy as the same bytes",
+        )?;
+        let buffer = self.buffer(op, id)?;
+        check(
+            buffer.usage & buffer_usage::COPY_DST != 0,
+            op,
+            "a copy writes a buffer with COPY_DST usage",
+        )?;
+        for aligned in [offset, bytes_per_row] {
+            if aligned % COPY_ROW_ALIGNMENT != 0 {
+                return Err(MockError::Unaligned {
+                    op,
+                    offset: aligned,
+                });
+            }
+        }
+        let row = u64::from(width) * u64::from(format::block_bytes(from.format));
+        check(
+            u64::from(bytes_per_row) >= row && rows_per_image >= height,
+            op,
+            "a copy's rows hold its width, and its rows per image its height",
+        )?;
+        // WebGPU's rule: every row but the last takes the bytes per row, and the last its texels.
+        let end = u64::from(offset) + u64::from(bytes_per_row) * u64::from(height - 1) + row;
+        if end > u64::from(buffer.size) {
+            return Err(MockError::OutOfRange { op, id });
+        }
+        self.use_resource(Resource::Texture(source.texture));
+        self.use_resource(Resource::Buffer(id));
+        Ok(())
+    }
+
     /// Makes the mip levels of one layer, in render passes on WebGPU and blits on WebGL2: the
     /// texture must be an array that both paths can draw into and filter.
     fn generate_mipmaps(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
@@ -932,26 +1024,36 @@ impl MockBackend {
     fn execute(&mut self, Command { op, operands: o }: Command<'_>) -> Result<(), MockError> {
         match op {
             Op::CreateBuffer => {
-                self.buffers.insert(o[0], o[1]);
+                let usage = o[2];
+                check(
+                    usage & buffer_usage::MAP_READ == 0
+                        || usage & !(buffer_usage::MAP_READ | buffer_usage::COPY_DST) == 0,
+                    op,
+                    "a buffer with MAP_READ usage has no other usage than COPY_DST",
+                )?;
+                self.buffers.insert(o[0], Buffer { size: o[1], usage });
+                self.reading.remove(&o[0]);
             }
             Op::WriteBuffer => {
-                let size = *self.buffers.get(&o[0]).ok_or(missing(op, "buffer", o[0]))?;
-                if o[1] + o[3] > size {
+                let size = self.buffer(op, o[0])?.size;
+                if !fits(o[1], o[3], size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
                 self.write(op, Resource::Buffer(o[0]))?;
             }
             Op::ClearBuffer => {
                 self.outside_passes(op)?;
-                let size = *self.buffers.get(&o[0]).ok_or(missing(op, "buffer", o[0]))?;
-                if o[1] + o[2] > size {
+                let size = self.buffer(op, o[0])?.size;
+                if !fits(o[1], o[2], size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
                 self.use_resource(Resource::Buffer(o[0]));
             }
             Op::WriteTexture => self.write_texture(op, o)?,
             Op::DestroyBuffer => {
+                // Destroying a buffer drops its read, whose slot then never rises.
                 self.buffers.remove(&o[0]);
+                self.reading.remove(&o[0]);
             }
             Op::CreateTexture => self.create_texture(op, o)?,
             Op::CreateTextureView => self.create_view(op, o)?,
@@ -980,32 +1082,29 @@ impl MockBackend {
                 self.render_pipelines.remove(&o[0]);
             }
             Op::CopyTextureToTexture => self.copy_texture(op, o)?,
-            Op::CopyTextureToBuffer => {
-                self.outside_passes(op)?;
-                check(o.len() == 11, op, "a texture-to-buffer copy takes 11 words")?;
-                let source = Location::read(&o[0..5]);
-                let from = self.texel_box(op, source, o[9], o[10], 1)?;
-                check(
-                    from.usage & texture_usage::COPY_SRC != 0,
-                    op,
-                    "a copy reads a texture with COPY_SRC usage",
-                )?;
-                let size = *self.buffers.get(&o[5]).ok_or(missing(op, "buffer", o[5]))?;
-                check(o[6] % 4 == 0, op, "the buffer offset is a multiple of 4")?;
-                check(o[7] > 0 && o[9] > 0 && o[10] > 0, op, "the copy has a size")?;
-                if o[6] + o[7] * o[10] > size {
-                    return Err(MockError::OutOfRange { op, id: o[5] });
-                }
-                self.use_resource(Resource::Texture(source.texture));
-                self.use_resource(Resource::Buffer(o[5]));
-            }
+            Op::CopyTextureToBuffer => self.copy_texture_to_buffer(op, o)?,
             Op::ReadBuffer => {
+                self.outside_passes(op)?;
                 check(o.len() == 5, op, "a buffer read takes 5 words")?;
-                let size = *self.buffers.get(&o[0]).ok_or(missing(op, "buffer", o[0]))?;
-                if o[1] + o[2] > size {
+                let buffer = self.buffer(op, o[0])?;
+                check(
+                    buffer.usage & buffer_usage::MAP_READ != 0,
+                    op,
+                    "a read maps a buffer with MAP_READ usage",
+                )?;
+                if o[1] % 8 != 0 {
+                    return Err(MockError::Unaligned { op, offset: o[1] });
+                }
+                check(
+                    o[2] > 0 && o[2] % 4 == 0,
+                    op,
+                    "a read's size is a multiple of 4 bytes, and not 0",
+                )?;
+                if !fits(o[1], o[2], buffer.size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
                 self.use_resource(Resource::Buffer(o[0]));
+                self.reading.insert(o[0]);
             }
             Op::CreateSampler => self.create_sampler(op, o)?,
             Op::ResizeCanvas => {
@@ -1303,8 +1402,8 @@ impl MockBackend {
             Op::CopyBufferToBuffer => {
                 self.outside_passes(op)?;
                 for (id, offset) in [(o[0], o[1]), (o[2], o[3])] {
-                    let size = *self.buffers.get(&id).ok_or(missing(op, "buffer", id))?;
-                    if offset + o[4] > size {
+                    let size = self.buffer(op, id)?.size;
+                    if !fits(offset, o[4], size) {
                         return Err(MockError::OutOfRange { op, id });
                     }
                     if offset % 4 != 0 {
@@ -2105,6 +2204,151 @@ mod tests {
             l.push(Op::SetScissor, &[0, 0, 1, 1]).unwrap();
         });
         assert!(matches!(in_bundle, Err(MockError::Outside { .. })));
+    }
+
+    /// A pick's readback: an id target, a buffer that two reads share, and one read of a box of
+    /// 3 x 2 texels, each command checked against `commands` in place of the copy and the read.
+    fn readback(commands: &[(Op, &[u32])]) -> Result<MockBackend, MockError> {
+        const IDS: u32 = 1;
+        let mut list = DrawList::with_capacity(256);
+        let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::COPY_SRC;
+        texture(
+            &mut list,
+            IDS,
+            [8, 8, 1, 1],
+            format::RGBA32_UINT,
+            usage,
+            view::D2,
+        );
+        texture(
+            &mut list,
+            2,
+            [8, 8, 1, 1],
+            format::RGBA16_FLOAT,
+            usage,
+            view::D2,
+        );
+        let read = buffer_usage::MAP_READ | buffer_usage::COPY_DST;
+        list.push(Op::CreateBuffer, &[3, 1024, read]).unwrap();
+        for (op, operands) in commands {
+            list.push(*op, operands).unwrap();
+        }
+        let mut mock = MockBackend::default();
+        mock.replay(list.words()).map(|()| mock)
+    }
+
+    #[test]
+    fn readbacks_follow_webgpus_rules_and_wait_for_their_slot() {
+        // Three rows of 3 texels from (2, 4), 256 bytes apart, then a read of the box's bytes.
+        let copy: &[u32] = &[1, 0, 2, 4, 0, 3, 0, 256, 2, 3, 2];
+        let read: &[u32] = &[3, 0, 256 + 48, 0x1000, 37];
+        let mut mock = readback(&[
+            (Op::CopyTextureToBuffer, copy),
+            (Op::ReadBuffer, read),
+            (Op::Submit, &[]),
+        ])
+        .unwrap();
+        let mut again = DrawList::with_capacity(64);
+        again.push(Op::CopyTextureToBuffer, copy).unwrap();
+        assert!(
+            matches!(mock.replay(again.words()), Err(MockError::Invalid { .. })),
+            "a buffer waits for its read's slot"
+        );
+        mock.finish_reads();
+        mock.replay(again.words()).unwrap();
+
+        let fails = |commands: &[(Op, &[u32])], message: &str| {
+            let result = readback(commands);
+            assert!(result.is_err(), "{message}");
+            result.err().unwrap()
+        };
+        let unaligned = |error| matches!(error, MockError::Unaligned { .. });
+        assert!(unaligned(fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 16, 256, 1, 1, 1]
+            )],
+            "a copy's buffer offset is a multiple of 256",
+        )));
+        assert!(unaligned(fails(
+            &[(Op::CopyTextureToBuffer, &[1, 0, 0, 0, 0, 3, 0, 48, 1, 3, 1])],
+            "a copy's bytes per row are a multiple of 256",
+        )));
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[2, 0, 0, 0, 0, 3, 0, 256, 1, 1, 1],
+            )],
+            "a half-float texture copies as other bytes on WebGL2",
+        );
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 768, 256, 2, 1, 2],
+            )],
+            "the copy's last row ends past the buffer",
+        );
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 0, 256, 1, 1, 2],
+            )],
+            "the rows per image hold the height",
+        );
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 0, 256, 1, u32::MAX, 1],
+            )],
+            "a width that overflows a sum does not fit",
+        );
+        assert!(unaligned(fails(
+            &[(Op::ReadBuffer, &[3, 4, 16, 0x1000, 37])],
+            "a read's offset is a multiple of 8",
+        )));
+        fails(
+            &[(Op::ReadBuffer, &[3, 0, 6, 0x1000, 37])],
+            "a read's size is a multiple of 4",
+        );
+        fails(
+            &[(Op::ReadBuffer, &[3, 8, u32::MAX - 3, 0x1000, 37])],
+            "a range that overflows a sum does not fit",
+        );
+        fails(
+            &[(Op::ReadBuffer, &[3, 0, 16, 0x1000])],
+            "a read names its control slot",
+        );
+        fails(
+            &[
+                (Op::CreateBuffer, &[4, 256, buffer_usage::COPY_DST]),
+                (Op::ReadBuffer, &[4, 0, 16, 0x1000, 37]),
+            ],
+            "a read maps a buffer with MAP_READ usage",
+        );
+        fails(
+            &[(
+                Op::CreateBuffer,
+                &[4, 256, buffer_usage::MAP_READ | buffer_usage::STORAGE],
+            )],
+            "a mapped buffer has no other usage than COPY_DST",
+        );
+        fails(
+            &[
+                (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+                (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+            ],
+            "a buffer takes one read at a time",
+        );
+        readback(&[
+            (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+            (Op::DestroyBuffer, &[3]),
+            (
+                Op::CreateBuffer,
+                &[3, 256, buffer_usage::MAP_READ | buffer_usage::COPY_DST],
+            ),
+            (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+        ])
+        .expect("destroying a buffer drops its read");
     }
 
     #[test]

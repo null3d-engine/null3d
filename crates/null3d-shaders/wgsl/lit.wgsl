@@ -42,7 +42,11 @@ enable draw_index;
 // caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
 // depth template places a caster's, flattened onto the near face of the light's box. Their
 // pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
-// that the pass keeps.
+// that the pass keeps. The PICK builds, which also only custom materials with a vertex offset have,
+// draw such an object into GPU picking's id target: the vertex shader moves and places each vertex
+// as the shading builds do, and the fragment shader writes the instance's ids as the pick template
+// does (pick.wgsl). Without them, the pick template would test the scene's depth at the object's
+// place before the offset moved it.
 //
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
@@ -1223,11 +1227,16 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
+#else ifdef PICK
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4u {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef CASTER
     return vec4f(0.0);
+#else ifdef PICK
+    // Red: the object's or the batch's id. Green: the instance's row within its batch.
+    return vec4u(in.ids.y, in.ids.x, 0u, 0u);
 #else
     material_row = material_of(in.material);
 #ifdef TRANSMISSION
