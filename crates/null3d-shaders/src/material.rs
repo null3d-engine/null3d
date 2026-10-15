@@ -559,9 +559,8 @@ impl Compiler {
                 // that the default surface multiplies. They have no builds of a fading level of
                 // detail, so their levels switch at once. They have no builds of the weighted
                 // layer: the engine's API refuses the weighted blending for them (decision record
-                // D-150).
-                // detail, so their levels switch at once. They always have the area lights' code,
-                // so they have no builds without it.
+                // D-150). They always have the area lights' code, so they have no builds without
+                // it.
                 let left_out = [
                     "HALF",
                     "MORPH",
