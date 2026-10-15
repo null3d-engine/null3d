@@ -411,9 +411,11 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
   message of its own: the log of 15 October 2026 shows only a runner shutdown and SIGKILL.
 - `rollupOptions.external` cannot avoid this. Vite resolves a `new URL(...)` on the filesystem in
   `vite:asset-import-meta-url`, not through Rollup's module resolution, so `external` never sees it.
-- `debug/release.test.ts` still builds with `lib`, because its production case needs the tree
-  shaking that a library build gives. Its memory footprint is about 11 GB and its bundle about
-  1.2 GB of minified code.
+- A build that must keep the entry's exports, as the shipped library has them, takes
+  `rollupOptions.preserveEntrySignatures: 'strict'` instead of `lib`. Without it the entry's exports
+  go and so does the code under test.
+- A test that reads the shader text finds it in a copied file, not in the code, once the build is a
+  page's. `debug/release.test.ts` reads both.
 
 ## Meshes on both GPU paths
 
