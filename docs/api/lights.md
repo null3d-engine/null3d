@@ -47,7 +47,7 @@ Every light takes `color` and `intensity`, except the hemisphere light, which ta
 
 ## Where a light points
 
-Directional, spot and rectangle lights send their light along their -Z axis, the way a camera looks. A tube light runs along its -Z axis. The `direction` option and `setDirection` turn that axis to a direction relative to the light's parent. `lookAt` turns it toward a point. A spot light's `target` option does the same when you create the light. The default points straight down, (0, -1, 0). Parents turn a light with them, as they turn any object.
+Directional, spot and rectangle lights send their light along their -Z axis, the way a camera looks. A tube light runs along its -Z axis. The `direction` option and `setDirection` turn that axis to a direction relative to the light's parent. `lookAt` turns it toward a point. A spot, rectangle or tube light's `target` option does the same when you create the light. The default points straight down, (0, -1, 0). Parents turn a light with them, as they turn any object.
 
 A directional light's position does not matter: only its direction does. The sky of a hemisphere light lies along its +Y axis, which points straight up until you turn the light. Its position does not matter either.
 
@@ -202,7 +202,7 @@ const lamp = scene.createSpotLight({
 
 Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra.
 
-The directional light also draws contact shadows: short shadows from the camera's depth where small objects touch the ground. `contactDistance` sets how far they reach in meters, 0.3 by default, and 0 turns them off. They draw where the quality setting `contactShadowSteps` is above 0, as on High and Ultra.
+The directional light also draws contact shadows: short shadows from the camera's depth where small objects touch the ground. `contactDistance` sets how far they reach in meters, 0.3 by default, and 0 turns them off. They draw where the quality setting `contactShadowSteps` is above 0. That is on High and Ultra, and on Medium on WebGL2.
 
 [Shadows](../concepts/shadows.md) explains cascades, contact shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 

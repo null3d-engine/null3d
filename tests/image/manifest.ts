@@ -1241,7 +1241,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
 	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
-	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
+	// runners rounds one gray pixel a step apart, so one pixel of its frame may differ. The real GPU
+	// must match exactly.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1249,7 +1250,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		swiftShaderTolerance: { maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
@@ -2095,6 +2097,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'terrain',
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
+	},
+	// Impostors of the impostors add-on: cards around an origin far from the world's, each drawing
+	// an atlas cell, and a merged row of a plain, a turned and a mirrored panel, which draws only
+	// when the merge reverses the mirrored copy's winding. The frame each card picks from its
+	// direction to the eye is checked by the package's unit test, which the picture cannot show.
+	{
+		name: 'impostors',
+		sketch: 'tests/pages/sketches/impostors-sketch.ts',
+		hold: 0,
 	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and

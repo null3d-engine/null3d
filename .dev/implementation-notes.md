@@ -393,6 +393,30 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Plugin errors count columns from 1, as editors do. Rollup counts its own from 0, but Vite and Rolldown only print the place, and Vite's overlay opens the editor at it.
 - naga turns off its checks of uniform control flow for derivatives and `textureSample`, because they reject valid shaders. The build therefore cannot catch `textureSample` in a branch that differs between pixels, which Chrome rejects when it creates the shader module.
 
+## Tests that build a bundle
+
+Some unit tests build a bundle of engine code with Vite inside the test process, such as
+`math/tree-shaking.test.ts`. Build it the way a page is built, with a single input, and never with
+`build.lib`.
+
+- A library build inlines every asset as a base64 data URL, and does not copy it as a file. Vite's
+  `shouldInline` returns true on `config.build.lib` before it reads `assetsInlineLimit`, so
+  `new URL('./x.js', import.meta.url)` becomes a data URL.
+- The engine's generated shaders are around 850 MB of assets. A worker build inherits the parent's
+  `lib` setting, so each worker bundle encodes that payload again inside itself.
+- One such build of a sketch that imports `vec3` took 22 s and 13.8 GB of memory footprint. The
+  same build without `lib` took 4.8 s and 4.1 GB. A test file that builds twice held 18.6 GB against
+  5.1 GB.
+- The unit suite is one process on a 16 GB machine. A library build in it is killed without a
+  message of its own: the log of 15 October 2026 shows only a runner shutdown and SIGKILL.
+- `rollupOptions.external` cannot avoid this. Vite resolves a `new URL(...)` on the filesystem in
+  `vite:asset-import-meta-url`, not through Rollup's module resolution, so `external` never sees it.
+- A build that must keep the entry's exports, as the shipped library has them, takes
+  `rollupOptions.preserveEntrySignatures: 'strict'` instead of `lib`. Without it the entry's exports
+  go and so does the code under test.
+- A test that reads the shader text finds it in a copied file, not in the code, once the build is a
+  page's. `debug/release.test.ts` reads both.
+
 ## Meshes on both GPU paths
 
 - WebGL2 always reads the largest value of the index type as a primitive restart, because WebGL 2.0 keeps `PRIMITIVE_RESTART_FIXED_INDEX` on. A triangle that uses 16-bit index 65,535 draws nothing. Pages and mesh parts therefore hold at most 65,535 vertices on both paths.
@@ -432,6 +456,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 A feature that most pages do not use keeps its shader builds out of the start files ([D-56](decisions/D-56-first-use-shader-files.md)). Sprites, lines, skinning, morph targets, bloom, ambient occlusion, the texture background, GPU occlusion culling, area lights and the engine's test template do so today.
 
 - A feature declares its file with a `[first_use.<feature>]` table in `crates/null3d-shaders/shaders.toml`.
+  - The engine test "the first use of X downloads its shader file once" (`tests/image/engine.spec.ts`) runs for every table, from the generated feature list. A feature without a sketch of its own draws in `tests/pages/sketches/first-use-sketch.ts`, whose `?feature=` names it. A new table fails that test until the sketch has a case that uses the feature alone.
   - `shaders` lists templates whose every build needs the feature.
   - `bits` lists permutation bits that a device does not fix. Every build with one of them needs the feature, such as every template's SKIN builds.
   - A build needs its template's feature and the feature of each of its bits that a table names. A build that needs one feature goes into that feature's file. A build that needs several, such as a SKIN build with ALPHA_HASH, goes into a file of its own for that set of features, which a page loads only once it uses each of them. So no feature's file grows by the builds of another feature ([D-56](decisions/D-56-first-use-shader-files.md#addendum-2026-10-12-builds-that-need-several-features)).
@@ -946,3 +971,53 @@ Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that retur
 - WebGL2 on the iPad costs about three times WebGPU's GPU time per pixel, at every preset. On 6 October 2026, S4 at Medium took 62 ms per frame on WebGL2. On WebGPU it took 17 ms, with 18 to 19 ms of GPU time. The frame followed the pixel count: 37 ms with the pixel ratio capped at 1.5, and 27 ms at Low. Fewer cascades, the far cascade's interval, the cascade blend and occlusion culling each changed it by 1 ms or less. This cost, not the shadow reads, made WebGL2 slow on the iPad.
 - In S4, WebGL2 shaded hidden pixels on the iPad, and a depth prepass restores their early rejection. The cause is under investigation. ANGLE's helper sample mask costs hidden surface removal on the Mac. The owner reported it on 7 October 2026 as [WebKit bug 326660](https://bugs.webkit.org/show_bug.cgi?id=326660) and [ANGLE issue 570876469](https://issues.angleproject.org/issues/570876469). A standalone WebGL2 page on the iPad kept it, so the engine's own shaders are being checked ([D-43](decisions/D-43-webgl2-prepass.md#why-webgl2-was-slow-on-the-ipad-under-investigation)). So every preset draws the depth prepass on WebGL2. On the iPad, S4 went from 38 to 60 fps at Low, and from 17.3 to 37.1 fps at Medium. WebGPU keeps it off, where it costs up to 4 ms ([D-43](decisions/D-43-webgl2-prepass.md#addendum-2026-10-07-the-prepass-on-for-webgl2-at-every-preset)).
 - S4 at Medium on WebGL2 still takes about 27 ms per frame on the iPad, against WebGPU's 15 ms. The MSAA resolve and the 5 x 5 shadow filter are the likely costs, and not measured yet.
+
+## The generated shader set's weight
+
+The build writes the engine's shader modules into `packages/engine/src/generated`. On 15 October 2026
+that set held 1,343 files and 847 MB: 987 GLSL modules at 775 MB, 352 WGSL modules at 72 MB, and four
+small framework files. The weight is a build, checkout and memory cost. It is not a download cost,
+because a page fetches the modules its features need and a module compresses about twenty times over.
+
+Two facts organise everything else.
+
+**The start file is not the problem.** The module a page needs before its first frame is 8.5 MB, one
+per cent of the set. The other 99 per cent already sits in modules that load on first use, so moving
+more shaders into first-use files saves almost nothing ([D-56](decisions/D-56-first-use-shader-files.md)).
+
+**The device permutations multiply what is left.** A device fixes three bits: whether the draw index
+comes from a texture, whether tone mapping runs in the shader, and whether half precision applies.
+GLSL has all three, so the build writes eight targets of about 96 MB each. WGSL has no draw-index
+bit, so it writes four of about 18 MB. No GLSL target is more than two per cent larger than any
+other. The draw-index targets alone are 387 MB, 46 per cent of the set, and they differ from their
+pairs by about one per cent of text.
+
+**Most of the rest is duplication.** Inside one device target, the tables of shader paragraphs repeat
+82 per cent of their text: 408,882 stored copies hold 15,374 distinct paragraphs, so one paragraph is
+stored about ten times over, once per feature set. The texture binding lists repeat 91 per cent and
+the uniform block lists 98 per cent. No two module files are byte-identical, so no file can be
+dropped as a duplicate.
+
+### What would help
+
+- **One shared paragraph table per device target.** Twelve tables replace the copy in each feature
+  set. It saves 255 MB of 847, 30 per cent, or 294 MB, 35 per cent, if the binding lists ride along,
+  taking the set to about 553 MB. The build already removes repeated paragraphs inside one file, so
+  extending that to a target is a small change to the generator. The risk is medium, because the
+  table becomes one more file that a pipeline waits for ([D-56](decisions/D-56-first-use-shader-files.md)).
+- **Derive the draw-index build from its pair.** This has the highest ceiling, up to 387 MB or 46 per
+  cent. The difference is a require line, a draw variable, an instance lookup, and a swap of the draw
+  table from a uniform block to a texture. All of it sits inside generated text rather than beside it.
+  The risk is high, so it wants a probe before a change.
+
+Both change the output of the shader build, which changes the compiler stamp that the cache is keyed
+by. Either one means a full rebuild on every checkout and a cold shader build in CI.
+
+### What would not help
+
+- **Shipping the text compressed.** The whole set is about 40 MB on the wire. It saves nothing on
+  build time, memory or checkout size, because the build still writes 847 MB and Vite still reads it.
+- **Dropping permutations that draw the same picture.** Measured: no two module files are identical,
+  so the saving is zero.
+- **More first-use files.** The start file is one per cent of the set, and a page that uses two
+  features would fetch two modules whose contents overlap. That is the merge problem in another form.

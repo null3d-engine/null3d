@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Glob } from 'bun';
 import {
 	BUDGETS,
+	PAGE_SWITCHES,
 	SKY_ENVIRONMENT_BUDGETS,
 	STATS_BUDGETS,
 	SWIFTSHADER_BUDGETS,
@@ -140,9 +141,16 @@ describe('budgets', () => {
 
 	test('name a function that its file still defines, so a moved function keeps its budget', () => {
 		const stale: string[] = [];
-		for (const table of [BUDGETS, STATS_BUDGETS, SKY_ENVIRONMENT_BUDGETS, SWIFTSHADER_BUDGETS]) {
+		const tables = [
+			BUDGETS,
+			STATS_BUDGETS,
+			SKY_ENVIRONMENT_BUDGETS,
+			SWIFTSHADER_BUDGETS,
+			...PAGE_SWITCHES.flatMap(({ budgets }) => (budgets ? [budgets] : [])),
+		];
+		for (const table of tables) {
 			for (const places of Object.values(table)) {
-				for (const place of Object.keys(places)) {
+				for (const place of Object.keys(places ?? {})) {
 					const [name, file] = place.split(' ');
 					if (!name || !file || file === '(built-in)') continue;
 					const found = sources

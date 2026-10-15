@@ -54,9 +54,9 @@ const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 /**
  * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
  * as probes of light or the tables of area lights. The builds that let light through take one of
- * them for the copy of the opaque color that they sample (decision record D-122), and the decal
- * builds one for the scene depth that they read (decision record D-144). The area lights' tables
- * took one of four (D-145).
+ * them for the copy of the opaque color that they sample (decision record D-122), the decal
+ * builds one for the scene depth that they read (decision record D-144), and the builds that shade
+ * area lights one for their tables (D-145).
  */
 const SPARE_TEXTURE_UNITS = 3;
 

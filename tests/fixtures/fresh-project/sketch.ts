@@ -1,9 +1,11 @@
 // The fresh project's sketch: a lit box on a floor beside a torus knot from the geometry package,
-// seen through orbit controls from the controls package. It poses the scene from the sketch time
-// alone, so a hold at one time draws the same frame on every run.
+// whose arrays pass through the impostors package's merge, seen through orbit controls from the
+// controls package. It poses the scene from the sketch time alone, so a hold at one time draws the
+// same frame on every run.
 import { createOrbitControls } from '@null3d/controls';
 import { defineSketch } from '@null3d/engine';
 import { torusKnot } from '@null3d/geometry';
+import { mergeFarGeometry } from '@null3d/impostors';
 
 /** How fast the box turns, in radians per second. */
 const TURN_SPEED = 0.8;
@@ -25,7 +27,9 @@ export default defineSketch((ctx) => {
 		dynamic: true,
 	});
 	scene.createMesh({
-		mesh: geometry.fromArrays(torusKnot({ radius: 0.4, tube: 0.12 })),
+		mesh: geometry.fromArrays(
+			mergeFarGeometry([{ arrays: torusKnot({ radius: 0.4, tube: 0.12 }) }]),
+		),
 		material: materials.standard({ color: '#4a8cff', roughness: 0.4 }),
 		position: [1.6, 0.6, 0],
 	});

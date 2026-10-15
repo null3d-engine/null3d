@@ -3,58 +3,36 @@
 // It prints each side's medians for D-137. It runs only with NULL3D_LOD_COST set, in a quiet window
 // on a computer with a GPU of its own: NULL3D_LOD_COST=1 bun run test:browser -- lod-cost.spec.ts.
 // NULL3D_LOD_COUNT sets the trees, 40,000 by default, and NULL3D_LOD_PRESETS the presets, as a
-// list. Each test waits until the computer's 1-minute load is under 8, and prints the load beside
-// its figures, as other work on the computer would spoil them.
-import { loadavg } from 'node:os';
+// list. Each test waits for a quiet computer, within a time limit, and prints the load beside its
+// figures (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
+import {
+	type CostResult,
+	costTimeout,
+	loadNow,
+	sideLine,
+	waitForQuiet,
+} from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
-
-interface Side {
-	gpuMs: number | null;
-	intervalMs: number | null;
-	cpuMs: number | null;
-	threads: Record<string, number | null>;
-}
-
-interface CostResult {
-	error?: string;
-	tier: string;
-	off: Side;
-	on: Side;
-	failures: string[];
-}
 
 const count = process.env.NULL3D_LOD_COUNT ?? '40000';
 const presets = (process.env.NULL3D_LOD_PRESETS ?? 'low,medium,high,ultra').split(',');
-const ms = (value: number | null) => (value === null ? 'none' : value.toFixed(2));
-
-/** The 1-minute load under which a test measures, and how often it checks the load. */
-const QUIET_LOAD = 8;
-const LOAD_CHECK_MS = 15_000;
 
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	for (const preset of presets)
 		test(`levels of detail on ${gpu} at ${preset}, timed on and off`, async ({ page }) => {
 			test.skip(!process.env.NULL3D_LOD_COST, 'set NULL3D_LOD_COST to time the levels');
-			test.setTimeout(0);
-			while ((loadavg()[0] as number) >= QUIET_LOAD)
-				await new Promise((resolve) => setTimeout(resolve, LOAD_CHECK_MS));
-			const loadBefore = (loadavg()[0] as number).toFixed(1);
+			test.setTimeout(costTimeout(600_000));
+			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 1600, height: 900 });
 			await page.goto(`lod-cost.html?gpu=${gpu}&preset=${preset}&count=${count}`);
 			const result = await pageResult<CostResult>(page, 200_000);
 			expect(result.error).toBeUndefined();
-			const line = (name: string, side: Side) =>
-				`${name}: GPU ${ms(side.gpuMs)} ms, interval ${ms(side.intervalMs)} ms, CPU ${ms(side.cpuMs)} ms, ${Object.entries(
-					side.threads,
-				)
-					.map(([thread, busy]) => `${thread} ${ms(busy)}`)
-					.join(', ')}`;
 			console.log(
 				[
-					`${result.tier} ${preset}, ${count} trees, load ${loadBefore} before and ${(loadavg()[0] as number).toFixed(1)} after`,
-					line('base meshes', result.off),
-					line('levels', result.on),
+					`${result.tier} ${preset}, ${count} trees, load ${loadBefore} before and ${loadNow()} after`,
+					sideLine('base meshes', result.off, 2, true),
+					sideLine('levels', result.on, 2, true),
 				].join('\n'),
 			);
 			expect(result.failures).toEqual([]);
