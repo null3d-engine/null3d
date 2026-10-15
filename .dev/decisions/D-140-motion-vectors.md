@@ -60,6 +60,8 @@ Each frame picks the instances that moved:
 
 An object that changes grid cells keeps its motion: the culling shader moves the last matrix by whole cells of 1,024 m, the step that brings it nearest to the new one.
 
+A bucket of skinned copies names no first joint of its own. It holds the sentinel that sends each copy to its own skin in the skin firsts texture, and every pass that reads the joint texture resolves it. The motion culling resolves it as the scene's culling does. A record left with the sentinel sends the shader past the texture's rows, where every texel reads as zero, and the object shows no motion at all. The motion spec's skinned case catches this on WebGPU, where the motion culling runs.
+
 ### The last frame's data
 
 The core keeps two world buffers, one per frame parity, but the sketch worker may already write the next frame into the older one while the thread that draws records. So the last frame's data lives on the GPU, and only while a pass reads the motion. The GPU copies it there:

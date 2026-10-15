@@ -389,7 +389,14 @@ fn main(
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, s.index, 0u);
+    // A bucket of skinned copies sends each copy to its own skin in `skin_firsts`. The motion pass
+    // reads the first joint from this record, as every other pass does.
+    var first_joint = bucket.first_joint;
+    if first_joint == PER_SOURCE_JOINT {
+        let row = (1u << INDEX_ROW_SHIFT) - 1u;
+        first_joint = textureLoad(skin_firsts, vec2u(s.index & row, s.index >> INDEX_ROW_SHIFT), 0).x;
+    }
+    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, 0u);
     visible[dst + 4u] = bitcast<vec4u>(previous_row(i, 0u, now[0], offset.x));
     visible[dst + 5u] = bitcast<vec4u>(previous_row(i, 1u, now[1], offset.y));
     visible[dst + 6u] = bitcast<vec4u>(previous_row(i, 2u, now[2], offset.z));
