@@ -1,9 +1,12 @@
-// Release versions and changelogs from Conventional Commits (AGENTS.md, "Releases"). Parsing,
-// version arithmetic, changelog rendering and the release checks are pure, so the release script
-// and its tests share them. Reading the version copies and the docs pages is the only file access.
+// Release versions and notes from Conventional Commits (AGENTS.md, "Releases"). Parsing, version
+// arithmetic, rendering the notes and the release checks are pure, so the release script and its
+// tests share them. Reading git's log, the version copies and the docs pages is the only outside
+// access.
+import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PAGES, pagePath } from './docs';
+import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
 import { readIfExists } from './files';
 import { parseFrontMatter } from './frontmatter';
 
@@ -16,7 +19,7 @@ export interface ParsedCommit {
 	breaking: boolean;
 	/** The text after the `type(scope):` prefix, without a trailing pull request number. */
 	description: string;
-	/** Short commit hash. */
+	/** The commit's hash. */
 	hash: string;
 	/** Pull request number from a trailing `(#123)`, or null. */
 	pr: number | null;
@@ -52,7 +55,42 @@ export function parseCommit({ subject, body, hash }: RawCommit): ParsedCommit {
 	};
 }
 
-/** True for the commit a release pull request adds, which no changelog lists. */
+/**
+ * Every commit in a range of history that is not a merge, newest first, parsed as git writes its
+ * log, so no limit on the log's size applies. A merge only joins a branch, and the branch's own
+ * commits are listed one by one, so the range's notes miss no change, whichever branch brought it.
+ */
+export async function* readCommits(root: string, range: string): AsyncGenerator<ParsedCommit> {
+	const git = spawn('git', ['log', '--no-merges', '--format=%H%x00%s%x00%b%x1e', range], {
+		cwd: root,
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	const exited = new Promise<number | null>((resolve, reject) => {
+		git.once('error', reject);
+		git.once('close', resolve);
+	});
+	let errors = '';
+	git.stderr.setEncoding('utf8').on('data', (text: string) => {
+		errors += text;
+	});
+	try {
+		let pending = '';
+		for await (const chunk of git.stdout.setEncoding('utf8')) {
+			const records = (pending + chunk).split('\x1e');
+			pending = records.pop() ?? '';
+			for (const record of records) {
+				const [hash = '', subject = '', body = ''] = record.replace(/^\n/, '').split('\x00');
+				if (hash !== '') yield parseCommit({ hash, subject, body });
+			}
+		}
+		const code = await exited;
+		if (code !== 0) throw new Error(`git log ${range} failed (exit ${code}): ${errors.trim()}`);
+	} finally {
+		if (git.exitCode === null) git.kill();
+	}
+}
+
+/** True for the commit a release adds, which no release notes list. */
 export function isReleaseCommit(commit: ParsedCommit): boolean {
 	return commit.type === 'chore' && commit.scope === 'release';
 }
@@ -93,72 +131,243 @@ export function nextVersion(previous: string, bump: Bump): string {
 	}
 }
 
-/** Changelog sections in order, by commit type. Other types and plain subjects go under "Other". */
-const SECTIONS: readonly (readonly [type: string, heading: string])[] = [
-	['feat', 'Features'],
-	['fix', 'Bug fixes'],
-	['perf', 'Performance'],
-	['refactor', 'Refactors'],
-	['docs', 'Documentation'],
-	['build', 'Build system'],
-	['test', 'Tests'],
-	['chore', 'Chores'],
+/**
+ * Release-notes sections in order, each with the commit types it lists. Sections that users meet
+ * come first, so a cut to GitHub's length limit drops the repository's own work first. Other types
+ * and plain subjects go under "Other".
+ */
+const SECTIONS: readonly (readonly [heading: string, types: readonly string[]])[] = [
+	['Features', ['feat']],
+	['Bug fixes', ['fix']],
+	['Performance', ['perf']],
+	['Refactors', ['refactor', 'style']],
+	['Documentation', ['docs']],
+	['Tests', ['test']],
+	['Build and tooling', ['build', 'ci', 'chore']],
 ];
-const KNOWN_TYPES = new Set(SECTIONS.map(([type]) => type));
+const KNOWN_TYPES = new Set(SECTIONS.flatMap(([, types]) => types));
+
+/** Scopes that name a part of a package rather than a package of their own, by package folder. */
+const PACKAGE_PARTS: Readonly<Record<string, string>> = {
+	core: 'engine',
+	render: 'engine',
+	gpu: 'engine',
+	shaders: 'engine',
+	shadows: 'engine',
+	errors: 'engine',
+	wasm: 'engine',
+	assets: 'cli',
+};
+const DOCS_SCOPES = new Set(['docs', 'api', 'guides', 'skills']);
+/** Scopes of the repository's own work: its tools, tests, benchmarks, CI and maintainer records. */
+const REPOSITORY_SCOPES = new Set([
+	'dev',
+	'decisions',
+	'tools',
+	'tests',
+	'test',
+	'images',
+	'image',
+	'pages',
+	'bench',
+	'parity',
+	'devices',
+	'browser',
+	'browsers',
+	'restarts',
+	'ci',
+	'hooks',
+	'deps',
+	'release',
+]);
+
+const EXAMPLES_AREA = 'Examples';
+const DOCS_AREA = 'Docs and skills';
+/** Scopes that the notes do not know; each line keeps its scope. */
+const OTHER_AREA = 'Other parts';
+const REPOSITORY_AREA = 'Repository and tooling';
+
+/**
+ * The part of the project a commit touches, from its scope: a package such as `@null3d/engine`, the
+ * examples, the docs, the repository's own work, or an empty string when the commit has no scope.
+ */
+export function areaOf(scope: string | null, packages: readonly string[]): string {
+	if (scope === null) return '';
+	const name = scope.toLowerCase().split(/[\s,]/)[0] ?? '';
+	const folder = PACKAGE_PARTS[name] ?? name;
+	if (packages.includes(folder)) return `@null3d/${folder}`;
+	if (name === 'examples') return EXAMPLES_AREA;
+	if (DOCS_SCOPES.has(name)) return DOCS_AREA;
+	if (REPOSITORY_SCOPES.has(name) || /^m\d+$/.test(name)) return REPOSITORY_AREA;
+	return OTHER_AREA;
+}
+
+/** Areas in the order the notes list them: the engine, the other packages, then the rest. */
+function areaRank(area: string): string {
+	if (area === '@null3d/engine') return '0';
+	if (area.startsWith('@null3d/')) return `1${area}`;
+	return `${[EXAMPLES_AREA, DOCS_AREA, OTHER_AREA, REPOSITORY_AREA, ''].indexOf(area) + 2}`;
+}
+
+const REFERENCE = `(?:${INTERNAL_REFERENCE_SOURCE})`;
+const RECORD = DECISION_RECORD_SOURCE;
+const list = (item: string) => `${item}(?:(?:,\\s*|\\s+(?:and|to)\\s+)${item})+`;
+/**
+ * Rewrites that take the maintainers' references out of a line and keep it readable: a possessive
+ * becomes "the", a decision record becomes "the record" unless a noun already names it, and an
+ * aside, an appositive or a closing "for T-36" goes with its words.
+ */
+const REWORDINGS: readonly (readonly [RegExp, string])[] = [
+	[new RegExp(`\\b(?:the )?${REFERENCE}'s\\b`, 'g'), 'the'],
+	[new RegExp(`(?:the |decision records? )?${list(RECORD)}`, 'g'), 'the records'],
+	[new RegExp(list(REFERENCE), 'g'), ''],
+	[new RegExp(`\\s*\\(${REFERENCE}\\)`, 'g'), ''],
+	[new RegExp(`${REFERENCE},\\s+`, 'g'), ''],
+	[new RegExp(`(?<=\\b(?:ruling|decision|record))\\s+${RECORD}`, 'g'), ''],
+	[new RegExp(`(?:the |decision records? )?${RECORD}`, 'g'), 'the record'],
+	[
+		new RegExp(
+			`,?\\s+(?:to|in|for|of|as|by|from|after|with|which closes)\\s+${REFERENCE}(?=$|[,;:)])`,
+			'g',
+		),
+		'',
+	],
+	[new RegExp(`\\s*${REFERENCE}`, 'g'), ''],
+];
+
+/**
+ * A commit's description as a line of the release notes: without the maintainers' task IDs,
+ * decision records and milestones, and starting with a capital. The commit link beside it leads to
+ * the full message.
+ */
+export function userWording(description: string): string {
+	let text = description;
+	for (const [pattern, replacement] of REWORDINGS) text = text.replace(pattern, replacement);
+	text = text
+		.replace(/\s{2,}/g, ' ')
+		.replace(/\s+([,;:)])/g, '$1')
+		.replace(/^[\s,;:]+|[\s,;:]+$/g, '');
+	if (text === '') text = description.trim();
+	return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Subjects written before the commit hook checked them, by commit hash, as the release notes word
+ * them. Every newer subject passes the hook's check, so this list does not grow.
+ */
+const REWORDED_SUBJECTS: Readonly<Record<string, string>> = {
+	d5c9d03ce654129dae33b737e6613975652ff8f5: 'the engine core, tuned for desktop speed',
+	f50a9a6e9e1da940b726e6a46948f0e5d71d961c:
+		'rename to null3D, cut releases through pull requests, and write docs for engine users',
+};
+
+/**
+ * Why release notes cannot be published: each line that breaks the published docs' writing rules,
+ * which the docs check holds `CHANGELOG.md` to. Empty when the notes pass.
+ */
+export function notesProblems(notes: string): string[] {
+	return checkDocsStyle(notes)
+		.filter((f) => f.severity === 'error')
+		.map((f) => `line ${f.line}: ${f.message} (${f.excerpt})`);
+}
 
 export interface ChangelogOptions {
 	version: string;
 	/** The release date as YYYY-MM-DD. */
 	date: string;
 	commits: readonly ParsedCommit[];
+	/** The folder names in `packages/`, which name the npm packages. */
+	packages: readonly string[];
 	/** The previous release tag, or null for the first release. */
 	previousTag: string | null;
-	/** The repository URL, such as https://github.com/owner/repo, for pull request and compare links. */
+	/** The repository URL, such as https://github.com/owner/repo, for commit and compare links. */
 	repoUrl?: string;
 }
 
-function renderLine(c: ParsedCommit, repoUrl?: string): string {
-	const scope = c.scope ? `**${c.scope}:** ` : '';
-	const pr =
-		c.pr === null ? '' : repoUrl ? ` ([#${c.pr}](${repoUrl}/pull/${c.pr}))` : ` (#${c.pr})`;
-	return `- ${scope}${c.description}${pr}`;
+/** One line of the notes: commits with the same words in one area share it. */
+interface Entry {
+	area: string;
+	scope: string | null;
+	text: string;
+	hashes: string[];
+	prs: number[];
 }
 
+/** Characters of a commit hash that the notes show. */
+const SHORT_HASH = 9;
+
+function renderEntry(entry: Entry, repoUrl?: string): string {
+	const scope = entry.area === OTHER_AREA && entry.scope ? `**${entry.scope}:** ` : '';
+	const links = [
+		...entry.prs.map((pr) => (repoUrl ? `[#${pr}](${repoUrl}/pull/${pr})` : `#${pr}`)),
+		...entry.hashes.map((hash) => {
+			const short = hash.slice(0, SHORT_HASH);
+			return repoUrl ? `[${short}](${repoUrl}/commit/${hash})` : short;
+		}),
+	];
+	return `- ${scope}${entry.text}${links.length > 0 ? ` (${links.join(', ')})` : ''}`;
+}
+
+/**
+ * One section of the notes. Its lines go under a heading for each area, and commits whose words
+ * match in one area share a line, which links each of them.
+ */
 function renderSection(
 	heading: string,
 	commits: readonly ParsedCommit[],
+	packages: readonly string[],
 	repoUrl?: string,
 ): string {
-	if (commits.length === 0) return '';
-	return `### ${heading}\n\n${commits.map((c) => renderLine(c, repoUrl)).join('\n')}\n`;
+	const entries = new Map<string, Entry>();
+	for (const c of commits) {
+		const area = areaOf(c.scope, packages);
+		const text = userWording(REWORDED_SUBJECTS[c.hash] ?? c.description);
+		const key = `${area}\n${area === OTHER_AREA ? c.scope : ''}\n${text.toLowerCase()}`;
+		const entry = entries.get(key) ?? { area, scope: c.scope, text, hashes: [], prs: [] };
+		entry.hashes.push(c.hash);
+		if (c.pr !== null && !entry.prs.includes(c.pr)) entry.prs.push(c.pr);
+		entries.set(key, entry);
+	}
+	if (entries.size === 0) return '';
+	const byArea = Map.groupBy(entries.values(), (e) => e.area);
+	const areas = [...byArea.keys()].sort((a, b) => areaRank(a).localeCompare(areaRank(b)));
+	const lists = areas.map((area) => {
+		const lines = (byArea.get(area) ?? []).map((e) => renderEntry(e, repoUrl)).join('\n');
+		if (areas.length === 1 && area === '') return `${lines}\n`;
+		return `#### ${area || 'Across the project'}\n\n${lines}\n`;
+	});
+	return `### ${heading}\n\n${lists.join('\n')}`;
 }
 
-/** One release's changelog section, which is also the GitHub Release body. */
+/**
+ * One release's notes, which are its section of the changelog file and the GitHub Release text.
+ * They list every commit in the release, whichever branch brought it to main.
+ */
 export function renderChangelog({
 	version,
 	date,
 	commits,
+	packages,
 	previousTag,
 	repoUrl,
 }: ChangelogOptions): string {
+	const section = (heading: string, list: readonly ParsedCommit[]) =>
+		renderSection(heading, list, packages, repoUrl);
 	const blocks = [
 		`## ${version} - ${date}\n`,
-		renderSection(
+		section(
 			'Breaking changes',
 			commits.filter((c) => c.breaking),
-			repoUrl,
 		),
-		...SECTIONS.map(([type, heading]) =>
-			renderSection(
+		...SECTIONS.map(([heading, types]) =>
+			section(
 				heading,
-				commits.filter((c) => c.type === type),
-				repoUrl,
+				commits.filter((c) => types.includes(c.type)),
 			),
 		),
-		renderSection(
+		section(
 			'Other',
 			commits.filter((c) => !KNOWN_TYPES.has(c.type)),
-			repoUrl,
 		),
 	].filter(Boolean);
 	if (blocks.length === 1) blocks.push('_No notable changes._\n');
@@ -169,6 +378,20 @@ export function renderChangelog({
 		blocks.push(`**Full changelog**: ${link}`);
 	}
 	return `${blocks.join('\n').trimEnd()}\n`;
+}
+
+/** GitHub refuses a release whose text is longer than this many characters. */
+export const RELEASE_TEXT_LIMIT = 125_000;
+
+/**
+ * Release notes cut to a length limit at a line's end, with a closing line that links the full
+ * list. Unchanged when they fit.
+ */
+export function fitReleaseText(notes: string, limit: number, fullListUrl: string): string {
+	if (notes.length <= limit) return notes;
+	const closing = `\n\n_GitHub limits the length of this text, so the list stops here. [CHANGELOG.md](${fullListUrl}) lists every change of this release._\n`;
+	const cut = notes.lastIndexOf('\n', limit - closing.length);
+	return `${notes.slice(0, Math.max(cut, 0)).trimEnd()}${closing}`;
 }
 
 /** Adds a release's section to the top of the changelog file, under its title. */
@@ -250,6 +473,13 @@ export interface VersionCopy {
 	pattern: RegExp;
 }
 
+/** The folder names in `packages/` that hold a package manifest, one per npm package. */
+export function packageFolders(root: string): string[] {
+	return readdirSync(join(root, 'packages')).filter((name) =>
+		existsSync(join(root, 'packages', name, 'package.json')),
+	);
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -257,9 +487,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
  * Rust workspace version (which the core reports), and the workspace crates in the lockfile.
  */
 export function versionCopies(root: string): VersionCopy[] {
-	const manifests = readdirSync(join(root, 'packages'))
-		.map((name) => `packages/${name}/package.json`)
-		.filter((path) => existsSync(join(root, path)));
+	const manifests = packageFolders(root).map((name) => `packages/${name}/package.json`);
 	const crates = readdirSync(join(root, 'crates')).flatMap((dir) => {
 		const name = /^name = "([^"]+)"/m.exec(readIfExists(root, `crates/${dir}/Cargo.toml`) ?? '');
 		return name?.[1] ? [name[1]] : [];
