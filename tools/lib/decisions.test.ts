@@ -45,6 +45,21 @@ describe('readRecords', () => {
 		]);
 	});
 
+	it('reports a status that waits for a ruling or a review and says nothing of what is built', () => {
+		const withStatus = (status: string) =>
+			`# D-09: Depth\n\nStatus: ${status}\n\nSummary: Keep it.\n`;
+		const problemsOf = (status: string) =>
+			readRecords(new Map([['.dev/decisions/D-09-depth.md', withStatus(status)]])).problems;
+		expect(problemsOf("decided by a helper, for the owner's review.")).toEqual([
+			'.dev/decisions/D-09-depth.md: its status waits for a ruling or a review, so say what is built: "Built: ..." or "Not built yet"',
+		]);
+		expect(problemsOf('proposed on 1 October 2026.')).toHaveLength(1);
+		expect(problemsOf("proposed, for the owner's ruling. Not built yet.")).toEqual([]);
+		expect(problemsOf("decided by a helper, for the owner's review. Built: on main.")).toEqual([]);
+		expect(problemsOf('proposed on 1 October; decided by its rule on 3 October.')).toEqual([]);
+		expect(problemsOf('decided by the owner, as the recommendation proposed.')).toEqual([]);
+	});
+
 	it('reports two records that take the same number', () => {
 		const { problems } = readRecords(
 			new Map([

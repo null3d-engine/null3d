@@ -458,6 +458,21 @@ export class OrbitControls {
 		this.values[SCALE] = (this.values[SCALE] as number) / dollyScale;
 	}
 
+	/**
+	 * Freezes the camera: it drops the turn, the tilt, the pan and the zoom that damping has left to
+	 * apply, so the camera stays exactly where it is. A page that takes the camera from the controls
+	 * for a while, such as a route that drives it, calls this at the handover, or the motion that was
+	 * still decaying resumes at the next `update`.
+	 */
+	stop(): void {
+		this.values[THETA_DELTA] = 0;
+		this.values[PHI_DELTA] = 0;
+		this.values[SCALE] = 1;
+		this.panOffset[0] = 0;
+		this.panOffset[1] = 0;
+		this.panOffset[2] = 0;
+	}
+
 	/** Takes the camera's position, unless it is still the one the controls wrote. */
 	private readCamera(): void {
 		const { read, stored, position } = this;

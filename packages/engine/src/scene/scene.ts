@@ -413,7 +413,7 @@ export interface DirectionalShadowOptions {
 	 * or `'auto'`, the default. `'auto'` follows the farthest visible receiver: the engine finds the
 	 * farthest surface that receives shadows in the camera's view each frame and rounds it up on a
 	 * ladder of 1.25 times per step, so shadows in a small scene get much finer texels. A number
-	 * fixes the distance. On WebGPU the farthest receiver comes back from the GPU two frames late.
+	 * fixes the distance. The engine finds the receiver on the CPU, in the frame that it draws.
 	 * The camera's far plane ends the shadows sooner, and they fade out over the last tenth of the
 	 * distance.
 	 */
@@ -1618,7 +1618,7 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/**
-	 * The focal length in millimetres of a lens with this field of view on a full-frame sensor, 24
+	 * The focal length in millimeters of a lens with this field of view on a full-frame sensor, 24
 	 * mm tall. The default field of view of 50 degrees is about 25.7 mm.
 	 */
 	get focalLength(): number {
@@ -1626,14 +1626,14 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/**
-	 * Sets the field of view of a lens of `millimetres` on a full-frame sensor, 24 mm tall, as a
+	 * Sets the field of view of a lens of `millimeters` on a full-frame sensor, 24 mm tall, as a
 	 * photographer picks a lens: 24 is wide, 50 normal and 85 a portrait lens. Depth of field takes
 	 * the same focal length unless its settings give another. Throws E1108 for a length that is not
 	 * above 0.
 	 */
-	setFocalLength(millimetres: number): void {
-		if (DEV) checkSize('setFocalLength', 'focal length', millimetres, this);
-		this.setFov((360 / Math.PI) * Math.atan(HALF_SENSOR_MM / millimetres));
+	setFocalLength(millimeters: number): void {
+		if (DEV) checkSize('setFocalLength', 'focal length', millimeters, this);
+		this.setFov((360 / Math.PI) * Math.atan(HALF_SENSOR_MM / millimeters));
 	}
 
 	/** @internal */
@@ -4104,7 +4104,7 @@ export class Scene implements ViewHolder {
 	/**
 	 * Lights the scene with a grid of irradiance probes, or with none for null. The grid's light
 	 * takes the place of the environment's diffuse light where `environmentWeight` says so, so
-	 * light that changes with a surface's place, bounced from coloured walls or sky, reaches it.
+	 * light that changes with a surface's place, bounced from colored walls or sky, reaches it.
 	 * The probes' coefficients come from a 3D texture that `LightProbeGridData.toTexture` packs
 	 * and uploads, from `bakeProbes` or from a grid baked elsewhere.
 	 * Throws the errors that `scene.setEnvironment` throws for a value out of range, E1213 for
