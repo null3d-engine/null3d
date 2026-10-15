@@ -17,13 +17,16 @@ import {
 	applyOverride,
 	computeBump,
 	extractReleaseNotes,
+	fitReleaseText,
 	isReleaseCommit,
 	nextVersion,
 	type ParsedCommit,
+	packageFolders,
 	pageStatuses,
-	parseCommit,
 	prependChangelog,
+	RELEASE_TEXT_LIMIT,
 	type ReleaseType,
+	readCommits,
 	releaseProblems,
 	renderChangelog,
 	versionCopies,
@@ -36,13 +39,7 @@ const RELEASE_TYPES: readonly ReleaseType[] = ['auto', 'patch', 'minor', 'major'
 /** Release tags are plain versions, with no `v` prefix and no pre-release part. */
 const TAG_RE = /^\d+\.\d+\.\d+$/;
 
-/** Git's output for a release can be far larger than Node's 1 MiB default: the full history in this
- * format is about 1.7 MB, and the release step failed with ENOBUFS on any checkout with real history
- * until this limit was raised. CI clones one commit deep, which is why it never showed there. */
-const GIT_MAX_BUFFER = 64 * 1024 * 1024;
-
-const git = (...args: string[]) =>
-	execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER });
+const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 
 function fail(message: string): never {
 	console.error(message);
@@ -58,23 +55,12 @@ function previousTag(): string | null {
 	);
 }
 
-/** Commits since the tag, newest first. Git fills the fields in with NUL and record separators. */
-function commitsSince(tag: string | null): ParsedCommit[] {
-	const log = git(
-		'log',
-		tag ? `${tag}..HEAD` : 'HEAD',
-		'--no-merges',
-		'--format=%h%x00%s%x00%b%x1e',
-	);
-	return log
-		.split('\x1e')
-		.map((record) => record.replace(/^\n/, ''))
-		.filter((record) => record.trim().length > 0)
-		.map((record) => {
-			const [hash = '', subject = '', body = ''] = record.split('\x00');
-			return parseCommit({ hash: hash.trim(), subject, body });
-		})
-		.filter((c) => !isReleaseCommit(c));
+/** Every commit since the tag, newest first, from every branch that main has merged. */
+async function commitsSince(tag: string | null): Promise<ParsedCommit[]> {
+	const commits: ParsedCommit[] = [];
+	for await (const commit of readCommits(root, tag ? `${tag}..HEAD` : 'HEAD'))
+		if (!isReleaseCommit(commit)) commits.push(commit);
+	return commits;
 }
 
 function repoUrl(): string | undefined {
@@ -105,7 +91,7 @@ function apply(version: string, changelog: string): void {
 		);
 }
 
-function main(): void {
+async function main(): Promise<void> {
 	const { values } = parseArgs({
 		options: {
 			'release-type': { type: 'string', default: 'auto' },
@@ -118,7 +104,8 @@ function main(): void {
 	if (values.notes !== undefined) {
 		const notes = extractReleaseNotes(readIfExists(root, CHANGELOG) ?? '', values.notes);
 		if (notes === null) fail(`${CHANGELOG} has no section for ${values.notes}`);
-		console.log(notes);
+		const fullList = `${repoUrl() ?? ''}/blob/${values.notes}/${CHANGELOG}`;
+		console.log(fitReleaseText(notes, RELEASE_TEXT_LIMIT, fullList));
 		return;
 	}
 
@@ -132,7 +119,7 @@ function main(): void {
 		console.warn(`Could not fetch tags: ${(e as Error).message}`);
 	}
 	const tag = previousTag();
-	const commits = commitsSince(tag);
+	const commits = await commitsSince(tag);
 	let bump = applyOverride(computeBump(commits), releaseType);
 	// A release someone starts by hand always releases, even with nothing to list.
 	if (bump === 'none') {
@@ -153,6 +140,7 @@ function main(): void {
 		version,
 		date: new Date().toISOString().slice(0, 10),
 		commits,
+		packages: packageFolders(root),
 		previousTag: tag,
 		repoUrl: repoUrl(),
 	});
@@ -165,4 +153,4 @@ function main(): void {
 	}
 }
 
-main();
+await main();
