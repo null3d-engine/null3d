@@ -48,3 +48,35 @@ The grid's sampling sits in its own first-use templates, `probe_grid` and `probe
 - **Tests and size:** image references of a baked grid on the three GPU paths, and an allocation check of the bake and the frame. A download-size check proves that a page without a grid pays nothing.
 - **Docs, mapping and skills:** a docs page, the three.js `LightProbeGrid` mapping entry, and the skill lines, with the showcase scenes able to set a grid.
 - **Later:** the GPU bake over six capture views joins with M2-EX32's capture, and a validity mask for the strong leaks the normal offset cannot fix.
+
+## Addendum, 15 October 2026: the CPU copy of the shader's formula
+
+The engine keeps a CPU copy of the grid's irradiance formula (`l1Irradiance` and `sampleGrid` in `packages/engine/src/scene/light-probes.ts`), and the bake uses it for the light at a ray's hit. Its first version read only the first L1 coefficient and paired it with the normal's x. It never read the L1 coefficients along z and x. The unit test of that time set the first L1 coefficient and checked it against a normal along x, so it pinned the fault. The other tests compared the CPU grid sampling with the same CPU formula, so they could not see it.
+
+The fix reads all four coefficients in the shader's order: L0, then L1 along y, z and x, as `probe_grid.wgsl` and `sh_irradiance` read them, and as the bake writes them. A unit test now compares the CPU result with the shader's formula for normals along each axis, both ways, and a diagonal. Each term and channel has its own value, so a swapped or missing term fails. The bake's light at a hit now calls the same function, so the formula lives once on the CPU. No shader or image changed: the GPU path was always right.
+
+## Addendum, 15 October 2026: the bake's spacing, and the grid setter takes the bake's arrays
+
+The coordinator ruled on three faults in the grid's public API and docs, found while the CPU formula was fixed. Nothing is released yet, so the API changed without a shim.
+
+- The bake's `resolution` option was described as the probes along each axis, but the bake used it as the distance between probes. A docs example that asked for 24 probes along an axis got two. The option is now `spacing`, in meters, 2 by default, which is what the code always did. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
+- `setLightProbeGrid`'s development check took only plain arrays for `origin`, `spacing` and `counts`, while the bake's grid holds typed arrays. The documented bake example therefore threw E1203. The setter now takes any three finite numbers, in an array or a typed array. A unit test runs the documented bake calls through the setter's check.
+- The docs examples used a class that does not exist and an internal packing function, and set a new texture in every frame after the bake ended. They now use `LightProbeGridData` and set the grid once.
+
+## Addendum, 15 October 2026: the bake's light scale, from the code review
+
+The code review of 15 October 2026 (H-3, M-17, FEAT-15) found the bake's light on the wrong scale. The coordinator assigned the fixes to the same task.
+
+- **Projection weight.** The Fibonacci directions cover the whole sphere, so each stands for 4 pi / N of solid angle. The bake used 2 pi / N, so an open surface lost half its sky light under a grid. A probe under a uniform sky now takes exactly the environment's own irradiance, and a unit test checks it.
+- **Bounce.** A matte surface sends back albedo times its irradiance over pi. The bake took albedo times the irradiance, so a coloured wall bled pi times too much. A probe that matte walls of albedo 0.5 enclose now takes half the sky's irradiance, which a unit test checks.
+- **The scene's environment.** The bake now reads the environment's nine coefficients, as the shader's `sh_irradiance` does, where it read four. It turns them by the environment's rotation and scales them by its intensity, from a new `environmentOptions` option. The bake cannot read them from the scene, so the sketch passes what `setEnvironment` got. The grid replaces the environment's diffuse light, which carries that rotation and intensity, so the bake must carry them too. A unit test turns a sky a quarter turn and doubles it.
+- **The option's type.** `environment` took an object with an `sh` field, which the published types strip. It now takes an `Environment`.
+- **Allocation.** The bake made a ray options object per probe and a view of the hit normal per hit. Both are now made once. The `albedo` callback's normal is one array reused from hit to hit.
+- **What the bake leaves out.** The bake counts no lamps, and a hit's light sees the whole sky, with no occlusion of its own. The docs say so.
+
+## Addendum, 15 October 2026: the grid becomes M3's global illumination
+
+The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), rulings 12 and 13):
+
+- **M3's global illumination is a leak-free probe volume on this grid.** Each probe gains a validity mask for the leaks that the normal offset cannot stop. A separate sky-occlusion term holds how much sky each probe sees. The live sky colour multiplies it, so time of day needs no new bake. Both were this record's "later" items. The grid's format for a grid baked elsewhere becomes a stable, documented format (hook H6 of [D-173](D-173-addon-hooks.md)).
+- **Probe detail stays L1.** three.js's `LightProbeGrid` stores L2, and a port maps it onto this grid and lists the difference.

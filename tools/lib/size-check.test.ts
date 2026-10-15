@@ -140,11 +140,21 @@ describe('chooseBase', () => {
 		});
 	});
 
-	it('compares a push to main with the commit before, which the squash builds on', () => {
-		expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '' })).toEqual({
-			ref: 'HEAD^',
-			why: 'the commit before on the branch, which the squash builds on',
+	it("compares a push to main with main's commit before the push, not the merge's first parent", () => {
+		const env = { GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '', PUSH_BEFORE: '3c8d23afb0' };
+		expect(chooseBase(undefined, env)).toEqual({
+			ref: '3c8d23afb0',
+			why: "main's commit before this push",
 		});
+	});
+
+	it('compares a push that names no commit before with the commit before on the branch', () => {
+		const why = 'the commit before on the branch, as the push names none';
+		for (const before of [undefined, '', '0000000000000000000000000000000000000000'])
+			expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', PUSH_BEFORE: before })).toEqual({
+				ref: 'HEAD^',
+				why,
+			});
 	});
 
 	it('compares a merge queue run with the commit that its group builds on', () => {

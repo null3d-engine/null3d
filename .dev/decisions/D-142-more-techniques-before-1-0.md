@@ -2,7 +2,7 @@
 
 Status: decided by the owner on 11 October 2026, at about 17:25 (UTC+8). It extends [D-132](D-132-showcase-look-and-features-2026-10-11.md). The techniques are tasks M2-EX26 to M2-EX36. Each one's design and figures go into a record of its own when it is built (D-143 to D-153). This record also lists six other rulings of the same day, five by the owner and one by the coordinator. Their own records hold them in full.
 
-Summary: The owner said "make the demos as amazing as possible". So eleven techniques move into M2, most of them from M3 or after 1.0. They are physical sky and atmosphere, projected decals, area lights, a light probe grid, and clearcoat and sheen. They are also automatic exposure, box-projected reflection probes, weighted blended transparency, impostors and merged far geometry, terrain, and subsurface and foliage translucency. The same day, the owner turned software occlusion culling off on WebGL2 and kept AgX as the default curve. TAA waits until after 1.0, and motion vectors come before it. Low's bloom base is 64, and joint overrides join M2.
+Summary: The owner said "make the demos as amazing as possible". So eleven techniques move into M2, most of them from M3 or after 1.0. They are physical sky and atmosphere, projected decals, area lights, a light probe grid, and clearcoat and sheen. They are also automatic exposure, box-projected reflection probes, weighted blended transparency, impostors and merged far geometry, terrain, and subsurface and foliage translucency. The same day, the owner turned software occlusion culling off on WebGL2 and kept AgX as the default curve. TAA waited until after 1.0, and motion vectors came before it; on 15 October 2026 the owner left TAA to M3-A11 (D-179). Low's bloom base is 64, and joint overrides join M2.
 
 ## Question
 
@@ -77,3 +77,7 @@ Six more rulings came on 11 October 2026, between about 14:05 and 17:16 (UTC+8).
 - **Technique review:** the rows for these techniques in [Technique review, October 2026](../technique-review-2026-10.md#gaps-ranked) point here. A line under the table adds impostors and translucency, which have no row.
 - **Examples guide:** the table of engine features for the showcase in [Examples](../examples.md#engine-features-for-the-showcase) gains the eleven techniques, motion vectors and joint overrides. Its layout table gains the scenery file.
 - **README:** the roadmap's 0.2 step gains the eleven techniques.
+
+## Addendum, 15 October 2026: TAA and the techniques after 1.0
+
+The owner ruled on 15 October 2026 to settle every item that was set for after 1.0 ([D-179](D-179-technique-rulings-2026-10-15.md)). TAA no longer waits for after 1.0: M3-A11 decides it, and a "no" drops it ([D-129](D-129-temporal-anti-aliasing.md)). The light probe grid of this record's M2-EX29 becomes M3's global illumination, with a validity mask and a sky-occlusion term.

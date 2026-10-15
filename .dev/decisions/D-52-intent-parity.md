@@ -81,3 +81,7 @@ The owner's rule of 4 October 2026: heavy or niche features ship as add-on modul
   - The porting skill, the port tools and the three.js mapping rewrite three.js code onto null3D's techniques, map its settings, and list the visible differences. Their content stays as it is until then.
   - Bloom's method, the vignette, the tone curves and the levels of detail get their defaults by the rule of part 2.
   - The `three-compat` add-on module, once a port needs one of its looks and the public extension points that it uses exist.
+
+## Addendum, 15 October 2026: the three-compat add-on's contents
+
+The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 23). ACES stays in the core as a shared building block, like the flat clouds of three.js's `Sky` ([D-173](D-173-addon-hooks.md)). The `three-compat` add-on comes in M3. It holds Reinhard, Cineon, and `OutlinePass`'s glow, pulse and blurred edge, and adds them through the core's own settings. It is a foundation add-on of the engine's team.

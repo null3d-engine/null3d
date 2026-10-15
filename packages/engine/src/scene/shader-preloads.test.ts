@@ -26,4 +26,34 @@ describe('ShaderPreloads', () => {
 		preloads.needListed(['skinning', 'cutout', 'not-a-feature', 'skinning']);
 		expect(sent).toEqual([['skinning'], ['cutout']]);
 	});
+
+	it("holds a listed feature back while the page's settings cannot use it, and asks once they can", () => {
+		const sent: (readonly string[])[] = [];
+		const preloads = new ShaderPreloads((features) => sent.push(features));
+		preloads.setUsable('coverage', false);
+		preloads.setUsable('lod_fade', false);
+		preloads.needListed(['cutout', 'coverage', 'lod_fade']);
+		expect(sent).toEqual([['cutout']]);
+		preloads.setUsable('lod_fade', true);
+		expect(sent).toEqual([['cutout'], ['lod_fade']]);
+		preloads.setUsable('lod_fade', true);
+		preloads.needListed(['lod_fade']);
+		expect(sent).toEqual([['cutout'], ['lod_fade']]);
+	});
+
+	it('still asks for an unusable feature that the engine itself needs', () => {
+		const sent: (readonly string[])[] = [];
+		const preloads = new ShaderPreloads((features) => sent.push(features));
+		preloads.setUsable('coverage', false);
+		preloads.need('coverage');
+		expect(sent).toEqual([['coverage']]);
+	});
+
+	it('asks for nothing when a feature that no list named turns usable', () => {
+		const sent: (readonly string[])[] = [];
+		const preloads = new ShaderPreloads((features) => sent.push(features));
+		preloads.setUsable('coverage', false);
+		preloads.setUsable('coverage', true);
+		expect(sent).toEqual([]);
+	});
 });

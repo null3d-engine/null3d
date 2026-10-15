@@ -140,3 +140,7 @@ Other consequences:
   - the clip step in the tool (A2), the texture budget's drop order (A6), and the transparency fixes (G3).
 - [D-19](D-19-environment-maps.md) on #283 still reads each roughness from the table fitted to three.js r186. Under ruling 5 and the review, the lookup moves to the material's own roughness, `lod = (n − 1) r (2 − r)`, and the fitted table goes, in #283 or right after it.
 - The record is in the table in [README.md](README.md).
+
+## Addendum, 15 October 2026: ACES stays in the core
+
+Ruling 4 moved ACES, Reinhard and Cineon to `three-compat`. On 15 October 2026 the owner kept ACES in the core ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 23). Reinhard and Cineon go to `three-compat` in M3, as ruling 4 says. AgX stays the default.

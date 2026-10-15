@@ -1,13 +1,13 @@
-// Computes the next release version and its changelog from the Conventional Commits since the last
-// release tag (AGENTS.md, "Releases"). The Release workflow runs `--apply` on a release branch and
-// opens a pull request; merging that pull request tags the version and publishes it.
+// Computes the next release version and its notes from every commit since the last release tag,
+// whichever branch brought it to main (D-108). One Release workflow runs `--apply`, lands the
+// result on main and tags the release commit; `.dev/releases.md` describes it.
 //   bun tools/release.ts [--release-type auto|patch|minor|major]
-//                                   print the next version and its changelog, and change nothing
+//                                   print the next version and its notes, and change nothing
 //   bun tools/release.ts --apply    also write every version copy and add the section to
-//                                   CHANGELOG.md; in CI, write `version` and `changelog` to
-//                                   $GITHUB_OUTPUT
+//                                   CHANGELOG.md; in CI, write `version` to $GITHUB_OUTPUT
 //   bun tools/release.ts --notes <version>
-//                                   print that version's section of CHANGELOG.md
+//                                   print that version's section of CHANGELOG.md, cut to the
+//                                   length a GitHub Release takes
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,13 +17,17 @@ import {
 	applyOverride,
 	computeBump,
 	extractReleaseNotes,
+	fitReleaseText,
 	isReleaseCommit,
 	nextVersion,
+	notesProblems,
 	type ParsedCommit,
+	packageFolders,
 	pageStatuses,
-	parseCommit,
 	prependChangelog,
+	RELEASE_TEXT_LIMIT,
 	type ReleaseType,
+	readCommits,
 	releaseProblems,
 	renderChangelog,
 	versionCopies,
@@ -36,13 +40,7 @@ const RELEASE_TYPES: readonly ReleaseType[] = ['auto', 'patch', 'minor', 'major'
 /** Release tags are plain versions, with no `v` prefix and no pre-release part. */
 const TAG_RE = /^\d+\.\d+\.\d+$/;
 
-/** Git's output for a release can be far larger than Node's 1 MiB default: the full history in this
- * format is about 1.7 MB, and the release step failed with ENOBUFS on any checkout with real history
- * until this limit was raised. CI clones one commit deep, which is why it never showed there. */
-const GIT_MAX_BUFFER = 64 * 1024 * 1024;
-
-const git = (...args: string[]) =>
-	execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER });
+const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 
 function fail(message: string): never {
 	console.error(message);
@@ -58,23 +56,12 @@ function previousTag(): string | null {
 	);
 }
 
-/** Commits since the tag, newest first. Git fills the fields in with NUL and record separators. */
-function commitsSince(tag: string | null): ParsedCommit[] {
-	const log = git(
-		'log',
-		tag ? `${tag}..HEAD` : 'HEAD',
-		'--no-merges',
-		'--format=%h%x00%s%x00%b%x1e',
-	);
-	return log
-		.split('\x1e')
-		.map((record) => record.replace(/^\n/, ''))
-		.filter((record) => record.trim().length > 0)
-		.map((record) => {
-			const [hash = '', subject = '', body = ''] = record.split('\x00');
-			return parseCommit({ hash: hash.trim(), subject, body });
-		})
-		.filter((c) => !isReleaseCommit(c));
+/** Every commit since the tag, newest first, from every branch that main has merged. */
+async function commitsSince(tag: string | null): Promise<ParsedCommit[]> {
+	const commits: ParsedCommit[] = [];
+	for await (const commit of readCommits(root, tag ? `${tag}..HEAD` : 'HEAD'))
+		if (!isReleaseCommit(commit)) commits.push(commit);
+	return commits;
 }
 
 function repoUrl(): string | undefined {
@@ -88,6 +75,12 @@ function repoUrl(): string | undefined {
 	}
 }
 
+/** The changelog file at a branch or tag, on GitHub when the repository is known. */
+function changelogUrl(ref: string): string {
+	const url = repoUrl();
+	return url ? `${url}/blob/${ref}/${CHANGELOG}` : CHANGELOG;
+}
+
 function apply(version: string, changelog: string): void {
 	for (const copy of versionCopies(root)) {
 		const path = join(root, copy.path);
@@ -97,15 +90,12 @@ function apply(version: string, changelog: string): void {
 		join(root, CHANGELOG),
 		prependChangelog(readIfExists(root, CHANGELOG) ?? '', changelog),
 	);
+	// The release workflow reads the version for its later steps.
 	const output = process.env.GITHUB_OUTPUT;
-	if (output)
-		appendFileSync(
-			output,
-			`version=${version}\nchangelog<<RELEASE_EOF\n${changelog}\nRELEASE_EOF\n`,
-		);
+	if (output) appendFileSync(output, `version=${version}\n`);
 }
 
-function main(): void {
+async function main(): Promise<void> {
 	const { values } = parseArgs({
 		options: {
 			'release-type': { type: 'string', default: 'auto' },
@@ -118,7 +108,7 @@ function main(): void {
 	if (values.notes !== undefined) {
 		const notes = extractReleaseNotes(readIfExists(root, CHANGELOG) ?? '', values.notes);
 		if (notes === null) fail(`${CHANGELOG} has no section for ${values.notes}`);
-		console.log(notes);
+		console.log(fitReleaseText(notes, RELEASE_TEXT_LIMIT, changelogUrl(values.notes)));
 		return;
 	}
 
@@ -132,7 +122,7 @@ function main(): void {
 		console.warn(`Could not fetch tags: ${(e as Error).message}`);
 	}
 	const tag = previousTag();
-	const commits = commitsSince(tag);
+	const commits = await commitsSince(tag);
 	let bump = applyOverride(computeBump(commits), releaseType);
 	// A release someone starts by hand always releases, even with nothing to list.
 	if (bump === 'none') {
@@ -153,9 +143,15 @@ function main(): void {
 		version,
 		date: new Date().toISOString().slice(0, 10),
 		commits,
+		packages: packageFolders(root),
 		previousTag: tag,
 		repoUrl: repoUrl(),
 	});
+	const wording = notesProblems(changelog);
+	if (wording.length > 0)
+		fail(
+			`The notes break the writing rules that ${CHANGELOG} is held to. Reword each commit in REWORDED_SUBJECTS (tools/lib/release.ts):\n${wording.map((p) => `  ${p}`).join('\n')}`,
+		);
 	if (values.apply) {
 		apply(version, changelog);
 		console.log(`Prepared release ${version} (bump: ${bump}, previous: ${tag ?? 'none'}).`);
@@ -165,4 +161,4 @@ function main(): void {
 	}
 }
 
-main();
+await main();

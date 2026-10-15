@@ -86,3 +86,13 @@ The owner ruled on 14 October 2026:
 - M2-EX8 shrinks to Creek and Town. M2-EX43 gains the demo touches. M3-B1 to M3-B3 later turn the touches' shader code into add-ons and move the demos onto them.
 - The add-ons follow the add-on rule: each loads its shaders on first use, and costs nothing when a page does not import it.
 - Rive's shaders were read only to learn the techniques. null3D's code is written from the techniques, never copied from Rive's files.
+
+## Addendum, 15 October 2026: example add-ons
+
+The owner ruled on 15 October 2026 ([D-173](D-173-addon-hooks.md), ruling 5) that the six add-ons M3-B1 to M3-B6 are example add-ons, not npm packages. They are the lens kit, facades, screens, weather, car paint and traffic lanes.
+
+- Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licences. It uses only the public API, and the import check covers it.
+- Their image tests run through the examples. They carry no version promise, so other developers are free to build and sell better versions.
+- The lens kit uses the core's sharpening (M3-A10), grading (M3-A8) and vignette, and adds none of its own.
+- Weather says which feature makes each part of the rain: its streaks from M3-A5's draws, and splashes and steam from the particles add-on.
+- Car paint's flakes use glints ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 17).

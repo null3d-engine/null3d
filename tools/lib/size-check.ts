@@ -63,9 +63,11 @@ export type BaseChoice =
 	| { branch: string; why: string };
 
 /**
- * The base of the size check. `--base <ref>` names it. A push to main compares with the commit
- * before: main squashes each pull request into one commit, so that commit's growth is the pull
- * request's, and its message holds the trailers exactly as the squash kept them. A merge queue run
+ * The base of the size check. `--base <ref>` names it. A push to main compares with the commit that
+ * main pointed to before the push, which CI passes as `PUSH_BEFORE`: work lands by a merge of main
+ * into a branch and a push (D-157), so the commit before (HEAD^) is the branch's own, and the push's
+ * growth and trailers are those of every commit after main's old tip. A push with no such commit,
+ * such as a branch's first, compares with the commit before. A merge queue run
  * compares with the commit that its group builds on, which holds the pull requests ahead of it in
  * the queue: the queue squashes each pull request into one commit on top of that commit, so it is
  * the commit before too. Otherwise the base is HEAD's merge base with main, or with the branch that
@@ -77,8 +79,12 @@ export function chooseBase(
 	env: Readonly<Record<string, string | undefined>>,
 ): BaseChoice {
 	if (ref) return { ref, why: 'the commit that --base names' };
-	if (env.GITHUB_EVENT_NAME === 'push')
-		return { ref: 'HEAD^', why: 'the commit before on the branch, which the squash builds on' };
+	if (env.GITHUB_EVENT_NAME === 'push') {
+		const before = env.PUSH_BEFORE ?? '';
+		if (before && !/^0+$/.test(before))
+			return { ref: before, why: "main's commit before this push" };
+		return { ref: 'HEAD^', why: 'the commit before on the branch, as the push names none' };
+	}
 	if (env.GITHUB_EVENT_NAME === 'merge_group')
 		return {
 			ref: 'HEAD^',

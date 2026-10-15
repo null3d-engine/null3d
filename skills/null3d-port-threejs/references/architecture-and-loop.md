@@ -26,7 +26,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | HTML UI, menus, HUD, lil-gui panels, stats panels | `page.ts` | Messages to and from the sketch |
 | Labels (CSS2DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) |
 | Audio (Web Audio, three.js Audio) | `page.ts` | Sketch sends events and positions |
-| Video elements | `page.ts` | After 1.0: `engine.registerVideo` and `textures.fromVideo`. Until then, send `ImageBitmap` frames (null3d-develop recipe 14) |
+| Video elements | `page.ts` | In 0.3: `engine.registerVideo` and `textures.fromVideo`. Until then, send `ImageBitmap` frames (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
 | `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
@@ -158,7 +158,7 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
 | stats.js | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
-| GSAP, tween.js | For scene values, lerp in `onUpdate` (property animation comes after 1.0); DOM tweens stay on the page |
+| GSAP, tween.js | For scene values, lerp in `onUpdate` (property animation comes in 1.0); DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
 | troika-three-text | The MSDF text add-on (0.3, not built yet). Until then, use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
