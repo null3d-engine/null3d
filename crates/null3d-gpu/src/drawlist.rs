@@ -755,9 +755,8 @@ pub mod layout {
     /// opaque color for transmission: the image, which it reads with `textureLoad`, as plain
     /// floats.
     pub const VIEW_COPY: u32 = 25;
-    /// Group 0 of a step of still-camera accumulation: the step's values, the scene color that it
-    /// reads with `textureLoad` as plain floats, and the history of a still view, also read with
-    /// `textureLoad`. The store step binds a blank texel in place of the history.
+    /// Group 0 of the still-camera accumulation's blend: its values, then the scene color that it
+    /// reads with `textureLoad`, as plain floats.
     pub const ACCUMULATE: u32 = 26;
     /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
     /// blurred image at half the render size, which the step reads with the linear sampler.
@@ -1455,16 +1454,14 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read, the
-    /// physical sky's aerial perspective's six vectors, the vignette that the 8-bit path's fragment
-    /// shaders apply, and a still view's jitter, which the scene's vertex shaders add.
+    /// environment's 208 bytes, the light probe grid's four vectors, the hemisphere lights' three
+    /// vectors, the view's offset for shadow lookups, the camera's view and projection matrices,
+    /// which custom materials read, a still view's jitter, which the scene's vertex shaders add,
+    /// the physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
+    /// fragment shaders apply.
     pub const FRAME_UNIFORM_BYTES: u32 = 896;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
-    /// Bytes of a still-camera accumulation step's values: the weight of the frame and the flags,
-    /// then a spare vector.
-    pub const ACCUMULATE_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -1684,9 +1681,9 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
-    /// A step of still-camera accumulation: one triangle over the render size, which blends the
-    /// scene color into the history of a still view, or copies it into the history (the store
-    /// build). It binds as [`layout::ACCUMULATE`](super::layout::ACCUMULATE) does.
+    /// The still-camera accumulation's blend: one triangle over the render size, which blends the
+    /// scene color into the history of a still view. It binds as
+    /// [`layout::ACCUMULATE`](super::layout::ACCUMULATE) does.
     pub const ACCUMULATE: u32 = 48;
     /// The exposure meter's adaptation from the histogram: a compute shader that meters the bins,
     /// moves the stored exposure toward the result and writes the new exposure. WebGPU only.

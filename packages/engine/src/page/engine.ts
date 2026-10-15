@@ -367,6 +367,12 @@ export interface EngineOptions {
 	 * whatever this option says. A held engine for image tests shows no overlay.
 	 */
 	stats?: boolean | StatsOverlayOptions;
+	/**
+	 * False draws every frame of a view that holds still. By default such a view blends its frames
+	 * into a sharper picture and then stops drawing until something changes. The `?still=off` switch
+	 * turns it off too, and hold mode draws without it.
+	 */
+	still?: boolean;
 }
 
 /**
@@ -1339,7 +1345,12 @@ async function startEngine(
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
 	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
 	// or rest, so a captured frame is the frame the sketch drew once.
-	if (!switches.still || options.hold !== undefined || switches.hold !== undefined)
+	if (
+		!switches.still ||
+		options.still === false ||
+		options.hold !== undefined ||
+		switches.hold !== undefined
+	)
 		Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,

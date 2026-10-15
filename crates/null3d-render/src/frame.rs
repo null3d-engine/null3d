@@ -271,22 +271,47 @@ impl FrameInput<'_> {
     }
 }
 
-/// True while the accumulation's passes are declared: a still view may then accumulate frames and
-/// its meshes jitter by each sample. While false no frame reads as settled, so nothing draws
-/// differently.
-const ACCUMULATION_WIRED: bool = true;
-
 /// True when nothing outside the frame's draw list and upload arena changed: no object transform, no
 /// path through the scene's structure and no instance batch row. The still-camera accumulation then
 /// compares the list and the arena to decide whether the frame changed at all (see
 /// [`crate::still`]). `enabled` is false where the page turns the accumulation off, such as in hold
-/// mode and the image tests, and while [`ACCUMULATION_WIRED`] is false no frame reads as settled.
-pub(crate) fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
-    ACCUMULATION_WIRED
-        && enabled
-        && !input.structure_changed
-        && !input.scene.changed().any()
-        && !input.batches.changed()
+/// mode and the image tests.
+fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
+    enabled && !input.structure_changed && !input.scene.changed().any() && !input.batches.changed()
+}
+
+/// What a frame builder tells [`ParityLists::restore`] of a frame it recorded, for the still-camera
+/// comparison (see [`crate::still`]).
+pub(crate) struct StillMarks<'a> {
+    /// True when nothing outside the list and the arena changed and the frame may accumulate, as
+    /// [`settled`] and the render graph say.
+    pub(crate) settled: bool,
+    /// The list's words that differ between a frame that blends a still view and one that does
+    /// not, in order: the comparison leaves them out.
+    pub(crate) words: &'a [Range<usize>],
+    /// The arena's offset of the blend's weight, in a frame that blends.
+    pub(crate) weight_at: Option<usize>,
+}
+
+impl<'a> StillMarks<'a> {
+    /// What a builder knows of the frame it recorded from `input` with `settings`, `graph` and
+    /// `pipelines`. The frame settles only where the page lets a view accumulate, nothing outside
+    /// the list and the arena changed, the graph lets this frame accumulate, and no pipeline reads
+    /// the frame's clock, which the comparison leaves out.
+    pub(crate) fn of(
+        input: &FrameInput<'_>,
+        settings: &SceneSettings,
+        graph: &'a crate::frame_graph::FrameGraph,
+        pipelines: &crate::pipelines::PipelineCache,
+    ) -> Self {
+        Self {
+            settled: settled(input, settings.still_enabled())
+                && graph.still_eligible()
+                && !pipelines.reads_clock(),
+            words: graph.word_marks(),
+            weight_at: graph.weight_at(),
+        }
+    }
 }
 
 /// Records frames for one GPU path. The engine holds one builder, chosen once for the device.
@@ -550,6 +575,11 @@ impl UploadArena {
         &self.bytes
     }
 
+    /// Writes `bytes` over the bytes the frame copied at `at`, which a list's command reads already.
+    pub(crate) fn patch(&mut self, at: usize, bytes: &[u8]) {
+        self.bytes[at..at + bytes.len()].copy_from_slice(bytes);
+    }
+
     /// The ranges of those bytes that hold values the frame writes every frame whatever the scene
     /// holds, in order.
     pub(crate) fn volatile(&self) -> &[Range<usize>] {
@@ -669,24 +699,31 @@ impl ParityLists {
     }
 
     /// Puts back the list and the arena that [`ParityLists::take`] took, with the frame's
-    /// `result`, which it returns. A failed frame's list goes back empty. `settled` says whether
-    /// the frame's scene inputs changed: no object transform, no structure change and no other
-    /// source of change outside the list and the arena. The frame changed nothing only when
-    /// `settled` holds and the frame matches the one this parity recorded two frames ago outside
-    /// its volatile bytes, and the still count then grows or falls.
+    /// `result`, which it returns. A failed frame's list goes back empty. The frame changed nothing
+    /// only when `marks` says it settled and it matches the frame this parity recorded two frames
+    /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
+    /// still count then grows, or falls to zero. A frame that changed while it blended a still view
+    /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
         mut list: DrawList,
-        arena: UploadArena,
-        settled: bool,
+        mut arena: UploadArena,
+        marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
-            let same = settled
-                && self.snapshots[parity].unchanged(list.words(), arena.bytes(), arena.volatile());
+            let same = self.snapshots[parity].unchanged(
+                list.words(),
+                marks.words,
+                arena.bytes(),
+                arena.volatile(),
+            ) && marks.settled;
             self.still = self.still.after(same);
+            if !same && let Some(at) = marks.weight_at {
+                arena.patch(at, &1.0f32.to_le_bytes());
+            }
         } else {
             // A frame that failed compared nothing: the next frame of this parity starts again.
             self.snapshots[parity].forget();

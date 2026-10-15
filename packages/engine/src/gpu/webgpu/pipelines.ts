@@ -720,12 +720,10 @@ export class Pipelines {
 		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
-		// A still-camera accumulation step: its values, the color it reads with textureLoad and the
-		// history of a still view, also read with textureLoad.
+		// The still-camera accumulation's blend: its values, and the color it reads with textureLoad.
 		this.defineLayout(LAYOUT_ACCUMULATE, 'accumulate', [
 			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			unfiltered(1),
-			unfiltered(2),
 		]);
 		// The weighted layer's composite reads its two sums, and its depth copy a multisampled scene
 		// depth, with textureLoad.

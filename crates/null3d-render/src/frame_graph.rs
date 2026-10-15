@@ -142,12 +142,13 @@
 //! textures' ids.
 
 use std::borrow::Cow;
+use std::ops::Range;
 
 use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, format, pass_flags, permutation, texture_usage, view,
 };
 
-use crate::accumulate::{self, AccumulateIds, AccumulateInputs, AccumulatePass, BLEND, STORE_STEP};
+use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
@@ -185,8 +186,12 @@ pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
-    /// The still-camera accumulation's buffers, bind groups and blank texel.
+    /// The still-camera accumulation's buffer and bind group.
     pub(crate) accumulate: AccumulateIds,
+    /// The GPU objects of the final pass's still build, which draws a still view's accumulated
+    /// color. It owns its settings, bind group, blank tables and sampler, as the first step of the
+    /// two-step pass does.
+    pub(crate) still_pass: FinalIds,
     /// The GPU objects of the first step of the two-step pass, which owns its settings, bind group,
     /// blank tables and sampler, so that it never destroys the final pass's.
     pub(crate) output_pass: FinalIds,
@@ -224,12 +229,37 @@ const SCENE_COLOR: &str = "sceneColor";
 const OUTPUT_COLOR: &str = "outputColor";
 /// The camera's depth target.
 const SCENE_DEPTH: &str = "sceneDepth";
-/// The still-camera accumulation's blended target: the frame's scene color mixed into the history
-/// of a still view, which the final pass draws while the view is still.
-const ACCUM_COLOR: &str = "accumColor";
 /// The still-camera accumulation's history: the mean of a still view's frames, kept from frame to
-/// frame.
+/// frame, which the final pass's still build draws while the view is still.
 const ACCUM_HISTORY: &str = "accumHistory";
+/// The most word ranges a frame's list marks for the still comparison: the accumulation's blend,
+/// the two-step pass's first step and the final pass's commands, with room to spare.
+const WORD_MARKS: usize = 8;
+
+/// True for the passes that a still view's frame records in place of others, or others in place of
+/// them: the accumulation's blend and the final pass's still build, against the final pass and the
+/// two-step pass's first step.
+fn still_swaps(role: Role) -> bool {
+    matches!(
+        role,
+        Role::Accumulate
+            | Role::FinalStill
+            | Role::Final
+            | Role::FinalBloom
+            | Role::Output
+            | Role::OutputBloom
+    )
+}
+
+/// The anti-aliasing mode of the final pass's still build for a scene drawn in `antialias`: the
+/// mode without FXAA, because the accumulated frames smooth the edges themselves.
+fn still_antialias(antialias: Antialias) -> Antialias {
+    if antialias == Antialias::Fxaa {
+        Antialias::None
+    } else {
+        antialias
+    }
+}
 /// The shadow map: a depth texture array with one layer per cascade, kept between frames.
 const SHADOW_MAP: &str = "shadowMap";
 /// The buffer of skinned vertices, which the skinning pass writes and the passes that draw skinned
@@ -465,12 +495,14 @@ pub(crate) enum Role {
     /// Copies the camera's opaque depth into the target that soft particles read. The graph
     /// records it itself.
     ParticleDepthCopy,
-    /// A step of still-camera accumulation, by its place: the blend that mixes the scene color into
-    /// a still view's history, then the store that copies the average into the kept history. The
-    /// graph records it itself.
-    Accumulate(u8),
+    /// The still-camera accumulation's blend, which mixes the scene color into a still view's kept
+    /// history. The graph records it itself.
+    Accumulate,
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
+    /// Tone maps a still view's accumulated color into the canvas, in place of the final pass,
+    /// without FXAA: the accumulation smooths the edges. The graph records it itself.
+    FinalStill,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
     /// it itself.
     FinalBloom,
@@ -482,17 +514,13 @@ pub(crate) enum Role {
     OutputBloom,
 }
 
-/// The passes that can take the scene color to the canvas: the resolve pass, the final pass's
-/// declarations by whether they read bloom's levels and then the outline mask, and the still-camera
-/// accumulation's build, which reads the blended history instead. Only the HDR path declares the
-/// ones with bloom or the still build.
+/// The passes that can take the scene color to the canvas: the resolve pass, and the final pass's
+/// declarations by whether they read bloom's levels and then the outline mask. Only the HDR path
+/// declares the ones with bloom.
 #[derive(Clone, Copy, Debug)]
 struct Outputs {
     resolve: PassId,
     finals: [[Option<PassId>; 2]; 2],
-    /// The final pass's build that reads the still-camera accumulation's blended target, at
-    /// [`ACCUM_COLOR`].
-    still: Option<PassId>,
     /// The first step of the two-step pass, by whether bloom draws: it draws the scene's display
     /// color at the render size into [`OUTPUT_COLOR`]. The plain final pass is then the second
     /// step, which scales that up to the canvas with the grading and the outline.
@@ -620,16 +648,32 @@ pub(crate) struct FrameGraph {
     bloom_textures: Option<(u32, [u32; STEPS], u32)>,
     /// The still-camera accumulation's steps' GPU objects.
     accumulate: AccumulatePass,
-    /// The accumulation's two passes, once declared: the blend, then the store.
-    accumulate_passes: Vec<PassId>,
-    /// True while the accumulation's passes run: the camera's view is still, the scene color holds
-    /// HDR color, and no bloom, outline or folded effect reads the color in between.
+    /// The final pass's still build, which draws a still view's accumulated color.
+    still_pass: FinalPass,
+    /// True while the page lets a still view accumulate its frames: hold mode and the image tests
+    /// turn it off.
+    still_enabled: bool,
+    /// True when the canvas keeps the scene's alpha, which the blend does not average.
+    canvas_alpha: bool,
+    /// True while the declarations hold the accumulation's steps and the still build: on the HDR
+    /// path while the page lets a view accumulate. Each frame's recording then picks them or the
+    /// final pass, so a view that becomes still or moves again compiles nothing.
+    still_declared: bool,
+    /// True once the accumulation's pipeline and the still build's are built.
+    still_built: bool,
+    /// True while the frame records the accumulation's steps and the still build: the camera's
+    /// view is still and [`FrameGraph::still_eligible`] holds.
     accumulate_on: bool,
     /// The weight of the frame being recorded in the still view's average.
     accumulate_weight: f32,
-    /// What the accumulation's steps read, and the compile of the graph that found it, by its
-    /// count.
-    accumulate_textures: Option<(u32, AccumulateInputs)>,
+    /// The textures that the blend reads and the still build reads, and the compile of the graph
+    /// that found them, by its count.
+    accumulate_textures: Option<(u32, [u32; 2])>,
+    /// The words of the frame's list that differ between a frame that blends a still view and one
+    /// that does not, in order, which the still comparison leaves out.
+    word_marks: Vec<Range<usize>>,
+    /// The upload arena's offset of the blend's weight, in a frame that blends.
+    weight_at: Option<usize>,
     /// The custom effects' passes and their GPU objects, on the HDR path.
     effect_pass: Option<EffectPass>,
     /// The GPU objects that the effects take.
@@ -811,7 +855,7 @@ impl FrameGraph {
         let CanvasOutput {
             scene_color,
             antialias,
-            ..
+            transparent,
         } = canvas;
         let mut graph = RenderGraph::new();
         graph.set_transient_attachments(transient_attachments);
@@ -861,10 +905,16 @@ impl FrameGraph {
             bloom_chain: ChainFrame::default(),
             bloom_textures: None,
             accumulate: AccumulatePass::new(ids.accumulate),
-            accumulate_passes: Vec::new(),
+            still_pass: FinalPass::new(ids.still_pass, scene_color, still_antialias(antialias)),
+            still_enabled: true,
+            canvas_alpha: transparent,
+            still_declared: false,
+            still_built: false,
             accumulate_on: false,
             accumulate_weight: 1.0,
             accumulate_textures: None,
+            word_marks: Vec::with_capacity(WORD_MARKS),
+            weight_at: None,
             effect_pass: scene_color
                 .is_hdr()
                 .then(|| EffectPass::new(ids.effects, gpu_culling && antialias.samples() > 1)),
@@ -957,13 +1007,16 @@ impl FrameGraph {
         let CanvasOutput {
             scene_color,
             antialias,
-            ..
+            transparent,
         } = canvas;
         self.scene_color = scene_color;
+        self.canvas_alpha = transparent;
         self.samples = antialias.samples();
         self.resolves = !scene_color.is_hdr() && antialias == Antialias::Msaa;
         self.final_pass.set_mode(scene_color, antialias);
         self.output_pass.set_mode(scene_color, antialias);
+        self.still_pass
+            .set_mode(scene_color, still_antialias(antialias));
         self.make_bloom_pass();
         // Effects run on HDR color only, and read the depth's samples, which the new mode may
         // change.
@@ -1261,8 +1314,13 @@ impl FrameGraph {
         } else {
             0
         };
+        let still = if self.still_declared {
+            accumulate::UPLOAD_BYTES + FinalPass::UPLOAD_BYTES
+        } else {
+            0
+        };
         FinalPass::UPLOAD_BYTES
-            + accumulate::UPLOAD_BYTES
+            + still
             + if self.two_step_declared {
                 FinalPass::UPLOAD_BYTES
             } else {
@@ -1341,12 +1399,10 @@ impl FrameGraph {
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
         let outlines = self.outline_draws();
-        let still = self.accumulate_on;
         let two_step = self.two_step_declared;
         if let Some(Outputs {
             resolve,
             finals,
-            still: still_pass,
             output,
         }) = self.outputs
         {
@@ -1362,21 +1418,13 @@ impl FrameGraph {
                     }
                 }
             }
-            if let Some(pass) = still_pass {
-                self.graph.set_enabled(pass, final_runs && still);
-            }
             // The first step draws the scene's display color at the render size, with the bloom.
             for (bloom, pass) in output.into_iter().enumerate() {
                 if let Some(pass) = pass {
-                    self.graph.set_enabled(
-                        pass,
-                        final_runs && two_step && !still && blooms == (bloom == 1),
-                    );
+                    self.graph
+                        .set_enabled(pass, final_runs && two_step && blooms == (bloom == 1));
                 }
             }
-        }
-        for &pass in &self.accumulate_passes {
-            self.graph.set_enabled(pass, still);
         }
         for &pass in &self.bloom_passes {
             self.graph.set_enabled(pass, blooms);
@@ -1492,6 +1540,7 @@ impl FrameGraph {
         self.final_pass.set_tone_curve(template);
         // The two-step pass's first step runs the tone curve below the whole canvas's scale.
         self.output_pass.set_tone_curve(template);
+        self.still_pass.set_tone_curve(template);
     }
 
     /// The resource that holds the scene's color after the scene's passes: the volumetric fog's
@@ -2267,19 +2316,9 @@ impl FrameGraph {
                 Some(self.add(final_bloom_outline, Role::FinalBloom)),
             ];
         }
-        // The still build of the final pass reads the accumulation's blended target in place of the
-        // scene color, and draws no outline and no bloom: the accumulation carries neither.
-        let still = self.scene_color.is_hdr().then(|| {
-            let pass = Pass::new("FinalStill", PassKind::Fullscreen)
-                .size(Size::Canvas)
-                .reads(ACCUM_COLOR)
-                .writes(CANVAS);
-            self.add(pass, Role::Final)
-        });
         self.outputs = Some(Outputs {
             resolve,
             finals,
-            still,
             output,
         });
         self.enable_outputs();
@@ -2595,60 +2634,79 @@ impl FrameGraph {
         )
     }
 
+    /// Keeps the still-camera accumulation's history and declares its blend and the final pass's
+    /// still build: the blend mixes the frame's color into the history, which it draws over, and
+    /// the still build tone maps the history into the canvas. A frame records them in place of the
+    /// final pass while the view is still. The 8-bit path declares neither: its color holds display
+    /// color, which the final pass does not tone map.
+    fn declare_accumulate(&mut self) {
+        self.still_declared = self.still_enabled && self.scene_color.is_hdr();
+        if !self.still_declared {
+            return;
+        }
+        let target = Target::color(accumulate::FORMAT);
+        self.graph.keep(ACCUM_HISTORY, target, Size::Full);
+        let blend = Pass::new("Accumulate", PassKind::Fullscreen)
+            .reads(self.color_output())
+            .writes_part(ACCUM_HISTORY);
+        self.add(blend, Role::Accumulate);
+        let still = Pass::new("FinalStill", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads(ACCUM_HISTORY)
+            .writes(CANVAS);
+        self.add(still, Role::FinalStill);
+    }
+
+    /// Says whether the page lets a still view accumulate its frames. Hold mode and the image tests
+    /// turn it off, so a captured frame is the frame the sketch drew once; the passes are declared
+    /// again without the accumulation's steps.
+    pub(crate) fn set_still_enabled(&mut self, enabled: bool) {
+        if enabled != self.still_enabled {
+            self.still_enabled = enabled;
+            self.redeclare();
+        }
+    }
+
+    /// True when a still view of this frame may accumulate: the accumulation's steps are declared
+    /// and built, the final pass takes the color to the canvas, and nothing between them changes
+    /// from frame to frame on the GPU alone or draws over the color. Bloom, outlines, effects that
+    /// fold into the final pass, automatic exposure, the volumetric fog and a canvas that keeps the
+    /// scene's alpha each rule it out: the blend averages color alone.
+    pub(crate) fn still_eligible(&self) -> bool {
+        self.still_declared
+            && self.still_built
+            && !self.canvas_alpha
+            && self.final_runs()
+            && !self.bloom_draws()
+            && !self.outline_draws()
+            && self.folded.is_none()
+            && self.exposure.is_none()
+            && self.fog_declared == 0
+    }
+
+    /// Says how still the camera's view is, for the frame about to be recorded: while it
+    /// accumulates and [`FrameGraph::still_eligible`] holds, the frame blends its color into the
+    /// history with the state's weight and draws the still build in place of the final pass.
+    pub(crate) fn set_still(&mut self, still: crate::still::Still) {
+        self.accumulate_weight = still.weight();
+        self.accumulate_on = still.accumulating() && self.still_eligible();
+    }
+
+    /// The words of the last recorded frame's list that differ between a frame that blends a still
+    /// view and one that does not, in order.
+    pub(crate) fn word_marks(&self) -> &[Range<usize>] {
+        &self.word_marks
+    }
+
+    /// The upload arena's offset of the blend's weight, in a frame that blends a still view.
+    pub(crate) fn weight_at(&self) -> Option<usize> {
+        self.weight_at
+    }
+
     /// Declares bloom's steps: a step down into each level, the first from the scene color and
     /// each later one from the level above as the steps before it leave it, then a step up into
     /// each level but the last, which reads the level below and blends into its own. Returns the
     /// declaration of the final pass with bloom, which reads the base level.
-    /// Keeps the still-camera accumulation's history and declares its two steps: the blend, which
-    /// reads the frame's color and the history and writes their average into [`ACCUM_COLOR`], and
-    /// the store, which copies that average into the history. Both are switched off until a frame
-    /// is still. The 8-bit path declares neither: its color holds display color, which the final
-    /// pass does not tone map.
-    fn declare_accumulate(&mut self) {
-        self.accumulate_passes.clear();
-        if !self.scene_color.is_hdr() {
-            return;
-        }
-        let target = Target::color(format::RGBA16_FLOAT);
-        self.graph.keep(ACCUM_HISTORY, target, Size::Full);
-        let blend = Pass::new("Accumulate", PassKind::Fullscreen)
-            .optional()
-            .reads(self.color_output())
-            .reads(ACCUM_HISTORY)
-            .creates(ACCUM_COLOR, target);
-        let pass = self.add(blend, Role::Accumulate(BLEND as u8));
-        self.accumulate_passes.push(pass);
-        let store = Pass::new("AccumulateStore", PassKind::Fullscreen)
-            .optional()
-            .reads(ACCUM_COLOR)
-            .writes(ACCUM_HISTORY);
-        let pass = self.add(store, Role::Accumulate(STORE_STEP as u8));
-        self.accumulate_passes.push(pass);
-    }
-
-    /// Keeps the history from the last still view, so the next still view starts from it, and says
-    /// whether the accumulation's steps run this frame. A frame is still only while the scene color
-    /// holds HDR color, the final pass takes the color to the canvas, and no bloom, outline or
-    /// folded effect draws over it. The frame's weight in the average is the current one.
-    pub(crate) fn set_still(&mut self, still: crate::still::Still) {
-        self.accumulate_weight = still.weight();
-        let on = still.accumulating()
-            && self.scene_color.is_hdr()
-            && self.final_runs()
-            && !self.bloom_draws()
-            && !self.outline_draws()
-            && self.folded.is_none();
-        if on != self.accumulate_on {
-            self.accumulate_on = on;
-            self.enable_outputs();
-        }
-    }
-
-    /// The format of the accumulation's blended target, which its pipeline draws into.
-    pub(crate) fn accumulate_format() -> u32 {
-        format::RGBA16_FLOAT
-    }
-
     fn declare_bloom(&mut self) -> Pass {
         let target = Target::color(bloom::FORMAT);
         let size = self.bloom_chain.size;
@@ -2782,10 +2840,16 @@ impl FrameGraph {
     ) {
         let wanted = self.bloom_wanted();
         let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
-        if self.accumulate_on && self.scene_color.is_hdr() {
-            self.accumulate
-                .request_pipeline(pipelines, Self::accumulate_format());
-        }
+        // While a view may accumulate, its passes ask for their pipelines once the first frame has
+        // drawn, so the first frame never waits for them, and a view that becomes still later finds
+        // them built and its frame makes no GPU object.
+        self.still_built = self.still_declared && pipelines_built != 0 && {
+            let blend = self.accumulate.request_pipeline(pipelines);
+            self.still_pass.request_pipeline(pipelines, false);
+            let still = self.still_pass.plain_pipeline();
+            pipelines.built(blend, pipelines_built)
+                && still.is_some_and(|id| pipelines.built(id, pipelines_built))
+        };
         // While the render scale can drop, the two steps ask for their pipelines before it first
         // drops. The first step draws the final pass's builds, which are built with it, so the
         // second step's plain build alone decides when the two steps can draw.
@@ -2993,15 +3057,8 @@ impl FrameGraph {
         if !self.final_runs() {
             return Ok(());
         }
-        // While a still view accumulates, the final pass draws the accumulated target, not the
-        // scene color the steps read: the accumulation holds the view's mean.
-        let source = if self.accumulate_on {
-            ACCUM_COLOR
-        } else {
-            self.color_output()
-        };
         let scene_color = self
-            .sampled_id(source)
+            .sampled_id(self.color_output())
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
         let bloom = if self.bloom_draws() {
@@ -3059,6 +3116,19 @@ impl FrameGraph {
         let two_step = self.two_step_runs();
         self.final_pass
             .prepare(list, arena, &inputs, made, !two_step)?;
+        // The still build uploads and binds in every frame alike, whether the view is still or
+        // not, so a view that becomes still changes only the commands that the comparison leaves
+        // out. It draws in one step at any render scale, without bloom or an outline.
+        if self.still_declared {
+            let still = FinalInputs {
+                color: self.accumulate_textures()[1],
+                bloom: None,
+                outline: None,
+                fold: None,
+                ..inputs
+            };
+            self.still_pass.prepare(list, arena, &still, made, true)?;
+        }
         if !self.two_step_declared {
             return Ok(());
         }
@@ -3096,43 +3166,46 @@ impl FrameGraph {
             .prepare_present(list, arena, &second, made, two_step)
     }
 
-    /// Records the accumulation's steps' objects and binds them to the textures they read, while a
-    /// still view accumulates.
+    /// The texture that the accumulation's blend reads, the scene color as the effects and depth of
+    /// field leave it, and the history, which the still build reads, found once for each compile.
+    fn accumulate_textures(&mut self) -> [u32; 2] {
+        let compiles = self.graph.compiles();
+        match self.accumulate_textures {
+            Some((at, textures)) if at == compiles => textures,
+            _ => {
+                let textures = [self.color_output(), ACCUM_HISTORY].map(|name| {
+                    self.sampled_id(name)
+                        .expect("the accumulation reads a planned texture")
+                });
+                self.accumulate_textures = Some((compiles, textures));
+                textures
+            }
+        }
+    }
+
+    /// Makes the accumulation's blend's objects, binds it to the color it reads and uploads the
+    /// blend's weight, in every frame alike while the blend is declared, so a view that
+    /// becomes still changes only what the comparison leaves out. The weight is a volatile part of
+    /// the arena; a frame that blends notes its offset.
     fn upload_accumulate(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        if !self.accumulate_on || !self.scene_color.is_hdr() {
+        self.weight_at = None;
+        if !self.still_declared {
             return Ok(());
         }
-        let compiles = self.graph.compiles();
-        let inputs = match self.accumulate_textures {
-            Some((at, inputs)) if at == compiles => inputs,
-            _ => {
-                let color_name = self.color_output();
-                let inputs = AccumulateInputs {
-                    color: self
-                        .sampled_id(color_name)
-                        .expect("the accumulation reads a planned texture"),
-                    history: self
-                        .sampled_id(ACCUM_HISTORY)
-                        .expect("the accumulation reads a planned texture"),
-                    blended: self
-                        .sampled_id(ACCUM_COLOR)
-                        .expect("the accumulation reads a planned texture"),
-                };
-                self.accumulate_textures = Some((compiles, inputs));
-                inputs
-            }
-        };
-        self.accumulate.prepare(
+        let [color, _] = self.accumulate_textures();
+        let weight_at = self.accumulate.prepare(
             list,
             arena,
-            inputs,
+            color,
             self.accumulate_weight,
             self.textures_made,
-        )
+        )?;
+        self.weight_at = self.accumulate_on.then_some(weight_at);
+        Ok(())
     }
 
     /// Uploads the meter's block and binds its steps to the color that the final pass reads while
@@ -3595,13 +3668,33 @@ impl FrameGraph {
     /// final pass, and `record` the commands of each other declared pass. Each render pass clears
     /// its color targets to `clear`, except the outline mask's pass, which clears to zero: no
     /// object covers the mask there. A render pass whose passes all have roles that `skips` names
-    /// is left out, so its targets keep what earlier frames drew.
+    /// is left out, so its targets keep what earlier frames drew. The words that differ between a
+    /// frame that blends a still view and one that does not are noted for
+    /// [`FrameGraph::word_marks`]: the accumulation's steps, the two-step pass's first step and the
+    /// commands of the final pass or its still build.
     pub(crate) fn record(
-        &self,
+        &mut self,
         list: &mut DrawList,
         clear: impl Fn(ViewId) -> [f32; 4],
         skips: impl Fn(Role) -> bool,
         mut record: impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
+    ) -> Result<(), RecordError> {
+        let mut marks = std::mem::take(&mut self.word_marks);
+        marks.clear();
+        let recorded = self.record_steps(list, clear, skips, &mut record, &mut marks);
+        self.word_marks = marks;
+        recorded
+    }
+
+    /// Records the plan's passes for [`FrameGraph::record`], and notes the words that a still view
+    /// changes in `marks`.
+    fn record_steps(
+        &self,
+        list: &mut DrawList,
+        clear: impl Fn(ViewId) -> [f32; 4],
+        skips: impl Fn(Role) -> bool,
+        record: &mut impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
+        marks: &mut Vec<Range<usize>>,
     ) -> Result<(), RecordError> {
         let plan = self
             .graph
@@ -3630,6 +3723,12 @@ impl FrameGraph {
                     }) {
                         continue;
                     }
+                    // A step of passes that a still view's frame swaps for others is left out of the
+                    // still comparison whole: its render pass's load operations may differ too.
+                    let swapped_step = passes
+                        .iter()
+                        .all(|&pass| still_swaps(self.roles[pass.index()]));
+                    let step_start = list.len();
                     let finals = passes.iter().any(|&pass| {
                         let role = self.roles[pass.index()];
                         // The two-step pass reads the meter's texel in its first step, so the meter
@@ -3655,15 +3754,22 @@ impl FrameGraph {
                     self.begin_render_pass(list, plan, step, clear)?;
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
-                        match self.roles[pass.index()] {
+                        let role = self.roles[pass.index()];
+                        // Where the final pass and its still build share a step with other passes,
+                        // the frame records one of them, and the still comparison leaves out which.
+                        let swapped = still_swaps(role);
+                        if swapped && !self.draws(role) {
+                            continue;
+                        }
+                        let pass_start = list.len();
+                        match role {
                             Role::Final | Role::FinalBloom if self.two_step_runs() => {
                                 self.final_pass.record_present(list)?
                             }
                             Role::Final => self.final_pass.record(list, false)?,
                             Role::FinalBloom => self.final_pass.record(list, true)?,
-                            Role::Accumulate(step) => {
-                                self.accumulate.record(list, usize::from(step))?;
-                            }
+                            Role::FinalStill => self.still_pass.record(list, false)?,
+                            Role::Accumulate => self.accumulate.record(list)?,
                             Role::Output => self.output_pass.record(list, false)?,
                             Role::OutputBloom => self.output_pass.record(list, true)?,
                             Role::Bloom(step) => self
@@ -3727,9 +3833,15 @@ impl FrameGraph {
                             Role::ParticleDepthCopy => self.particle_depth.record(list)?,
                             role => record(list, role)?,
                         }
+                        if swapped && !swapped_step {
+                            marks.push(pass_start..list.len());
+                        }
                     }
                     list.push(Op::EndRenderPass, &[])?;
                     self.make_transmission_levels(list, passes)?;
+                    if swapped_step {
+                        marks.push(step_start..list.len());
+                    }
                 }
             }
         }
@@ -3738,13 +3850,17 @@ impl FrameGraph {
     }
 
     /// False for a step of bloom that the frame drops, as the governor's step drops the last
-    /// level. Every other pass draws.
+    /// level, and for the passes that a still view's frame draws in place of others, or others in
+    /// place of them. Every other pass draws.
     fn draws(&self, role: Role) -> bool {
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
             // The first step runs only below the whole canvas's scale; at the whole canvas the final
             // pass reads the scene color as it always did.
-            (Role::Output | Role::OutputBloom, _) => self.two_step_runs(),
+            (Role::Output | Role::OutputBloom, _) => self.two_step_runs() && !self.accumulate_on,
+            // A still view draws its accumulated color in place of the final pass.
+            (Role::Final | Role::FinalBloom, _) => !self.accumulate_on,
+            (Role::Accumulate | Role::FinalStill, _) => self.accumulate_on,
             (Role::FogLight(parity), _) => self
                 .fog_pass
                 .as_ref()
@@ -3922,6 +4038,7 @@ impl FrameGraph {
         self.canvas = (0, 0);
         self.final_pass.reset_gpu();
         self.accumulate.reset_gpu();
+        self.still_pass.reset_gpu();
         self.output_pass.reset_gpu();
         if let Some(bloom) = self.bloom_pass.as_mut() {
             bloom.reset_gpu();
@@ -4326,10 +4443,15 @@ mod tests {
             blank_outline: 901,
         },
         accumulate: AccumulateIds {
-            blend: 9,
-            store: 9,
-            first_group: 9,
-            blank: 902,
+            buffer: 930,
+            group: 930,
+        },
+        still_pass: FinalIds {
+            settings: 931,
+            group: 931,
+            blank_lut: 932,
+            lut_sampler: 933,
+            blank_outline: 934,
         },
         output_pass: FinalIds {
             settings: 907,
@@ -4406,7 +4528,29 @@ mod tests {
             antialias,
             transparent: false,
         };
-        FrameGraph::new(gpu_culling, canvas, transient, IDS)
+        let mut graph = FrameGraph::new(gpu_culling, canvas, transient, IDS);
+        // These tests check the passes of frames that draw as a moving view's do; the still
+        // accumulation's passes have a test of their own.
+        graph.still_enabled = false;
+        graph
+    }
+
+    #[test]
+    fn the_hdr_path_declares_the_still_blend_and_build_where_the_page_lets_a_view_accumulate() {
+        for (format, declared) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
+            let mut frames = frame_graph(format, Antialias::Msaa, true, false);
+            frames.set_still_enabled(true);
+            frames.sync(&[View::default()]);
+            let graph = frames.graph();
+            for name in ["Accumulate", "FinalStill"] {
+                assert_eq!(graph.find_pass(name).is_some(), declared, "{name}");
+            }
+            assert_eq!(frames.still_declared, declared);
+            // Without a built pipeline no frame may blend yet.
+            assert!(!frames.still_eligible());
+            frames.set_still_enabled(false);
+            assert!(frames.graph().find_pass("Accumulate").is_none());
+        }
     }
 
     #[test]
@@ -4955,7 +5099,7 @@ mod tests {
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
         only_uploads(&mut frames, &mut list, &mut arena);
-        let record = |frames: &FrameGraph, list: &mut DrawList| {
+        let record = |frames: &mut FrameGraph, list: &mut DrawList| {
             list.clear();
             frames
                 .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
@@ -4965,7 +5109,7 @@ mod tests {
                 operands(list, Op::SetViewport),
             )
         };
-        let (passes, viewports) = record(&frames, &mut list);
+        let (passes, viewports) = record(&mut frames, &mut list);
         // The scene's corner, then each level's whole target: the base first, the default weights'
         // widest level, and the base again for its step up. The two widest levels have no weight,
         // so they do not draw.
@@ -4986,7 +5130,7 @@ mod tests {
             },
         );
         only_uploads(&mut frames, &mut list, &mut arena);
-        let (halved, viewports) = record(&frames, &mut list);
+        let (halved, viewports) = record(&mut frames, &mut list);
         assert_eq!(halved, passes - 2);
         assert_eq!(viewports[1][2..4], [455, 256]);
         assert_eq!(viewports[7][2..4], [8, 4]);

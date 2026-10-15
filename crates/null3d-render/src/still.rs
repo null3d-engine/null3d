@@ -12,9 +12,10 @@
 //!
 //! [`Still`] holds how still a view is. The frame builder decides each frame whether the view
 //! changed, by comparing the frame it has just recorded with the frame two frames before, which is
-//! the frame of the same parity and so the same draw list and upload arena. That comparison, the
-//! accumulation pass and the resting of the thread that draws are the next steps of the task; this
-//! module holds the parts that they rest on.
+//! the frame of the same parity and so the same draw list and upload arena. The comparison leaves
+//! out the parts of a frame that the accumulation itself changes: the clock and the jitter in the
+//! frame's values, the accumulation's weight, and the commands that blend and show the history. A
+//! frame that blends therefore compares equal to the frame before the view became still.
 
 use std::ops::Range;
 
@@ -79,19 +80,21 @@ impl Still {
         self.samples >= MAX_SAMPLES
     }
 
-    /// The jitter sample of the frame about to be recorded: the samples accumulated so far, so the
-    /// first frame of a still view uses sample 0 and no offset.
+    /// The jitter sample of the frame about to be recorded: the frames compared still so far. The
+    /// frame that first blends uses sample 1, as the frame before it drew with no offset.
     pub const fn jitter_sample(self) -> u32 {
         self.samples
     }
 
-    /// The weight of the frame about to be recorded in the average: one over the frames it joins,
-    /// which is 1 while the view moves and the history is ignored.
+    /// The weight of the frame about to be recorded in the average: one over the frames it joins.
+    /// The frame that first blends has weight 1, so it starts the history and ignores whatever the
+    /// history held. A view that rests has weight 0: its frames keep the history as it is, so a
+    /// capture, which draws the last frame again, shows the converged image.
     pub fn weight(self) -> f32 {
-        if self.samples == 0 {
-            1.0
+        if self.rests() {
+            0.0
         } else {
-            1.0 / (self.samples + 1) as f32
+            1.0 / self.samples.max(1) as f32
         }
     }
 
@@ -108,71 +111,96 @@ impl Still {
 }
 
 /// The last frame of one parity that the comparison kept, so the next frame of that parity can tell
-/// whether anything changed. The buffers grow to the largest frame and are reused, so a comparison
-/// allocates nothing.
+/// whether anything changed. It keeps the frame's words and bytes outside the ranges that the frame
+/// marked as changing every frame, joined, so a frame whose marked ranges differ in number or
+/// length from the kept frame's can still compare equal. The buffers grow to the largest frame and
+/// are reused, so a comparison allocates nothing.
 #[derive(Default)]
 pub(crate) struct Snapshot {
     words: Vec<u32>,
     bytes: Vec<u8>,
-    /// The byte ranges of `bytes` that the frame wrote every frame whatever the scene holds, such
-    /// as the clock and the jitter: the comparison ignores them.
-    volatile: Vec<Range<usize>>,
+    /// True once the snapshot holds a frame.
+    kept: bool,
 }
 
 impl Snapshot {
-    /// True when `words` and `bytes`, with the `volatile` ranges ignored, are the same as the frame
-    /// this snapshot kept, and then replaces it with this frame. The first frame of a parity, and
-    /// the first after [`Snapshot::forget`], have nothing to compare with, so they read as changed.
+    /// True when `words` outside `word_marks`, and `bytes` outside `byte_marks`, are the same as
+    /// the frame this snapshot kept, and then keeps this frame in its place. The first frame of a
+    /// parity, and the first after [`Snapshot::forget`], have nothing to compare with, so they read
+    /// as changed. Marks must be in order and must not overlap; a frame with marks that do not
+    /// read as changed.
     pub(crate) fn unchanged(
         &mut self,
         words: &[u32],
+        word_marks: &[Range<usize>],
         bytes: &[u8],
-        volatile: &[Range<usize>],
+        byte_marks: &[Range<usize>],
     ) -> bool {
-        let same = !self.bytes.is_empty()
-            && self.words == words
-            && self.bytes.len() == bytes.len()
-            && same_outside(&self.bytes, bytes, volatile)
-            && self.volatile == volatile;
-        self.words.clear();
-        self.words.extend_from_slice(words);
-        self.bytes.clear();
-        self.bytes.extend_from_slice(bytes);
-        self.volatile.clear();
-        self.volatile.extend_from_slice(volatile);
+        let valid = in_order(word_marks, words.len()) && in_order(byte_marks, bytes.len());
+        let same = self.kept
+            && valid
+            && same_outside(&self.words, words, word_marks)
+            && same_outside(&self.bytes, bytes, byte_marks);
+        self.kept = valid;
+        if valid {
+            keep_outside(&mut self.words, words, word_marks);
+            keep_outside(&mut self.bytes, bytes, byte_marks);
+        }
         same
     }
 
     /// Forgets the frame this snapshot kept, so the next comparison reads as changed, as the first
     /// frame of a parity does.
     pub(crate) fn forget(&mut self) {
-        self.words.clear();
-        self.bytes.clear();
-        self.volatile.clear();
+        self.kept = false;
     }
 }
 
-/// True when `a` and `b` are equal outside the byte ranges in `volatile`, which are sorted and do
-/// not overlap.
-fn same_outside(a: &[u8], b: &[u8], volatile: &[Range<usize>]) -> bool {
+/// True when `marks` are in order, do not overlap and lie within `len` items.
+fn in_order(marks: &[Range<usize>], len: usize) -> bool {
     let mut at = 0;
-    for range in volatile {
-        // A range that moves, shrinks or lies outside the frame means the frame's layout changed:
-        // the frames are not the same.
-        if range.start < at || range.end > a.len() || range.end > b.len() {
-            return false;
-        }
-        if a[at..range.start] != b[at..range.start] {
+    for range in marks {
+        if range.start < at || range.end < range.start || range.end > len {
             return false;
         }
         at = range.end;
     }
-    a[at..] == b[at..]
+    true
+}
+
+/// True when the items of `frame` outside `marks`, joined, are `kept`. The marks are in order.
+fn same_outside<T: PartialEq>(kept: &[T], frame: &[T], marks: &[Range<usize>]) -> bool {
+    let (mut at, mut from) = (0, 0);
+    for range in marks {
+        let part = &frame[at..range.start];
+        if kept.get(from..from + part.len()) != Some(part) {
+            return false;
+        }
+        from += part.len();
+        at = range.end;
+    }
+    kept.get(from..) == Some(&frame[at..])
+}
+
+/// Replaces `kept` with the items of `frame` outside `marks`, joined. The marks are in order.
+fn keep_outside<T: Copy>(kept: &mut Vec<T>, frame: &[T], marks: &[Range<usize>]) {
+    kept.clear();
+    let mut at = 0;
+    for range in marks {
+        kept.extend_from_slice(&frame[at..range.start]);
+        at = range.end;
+    }
+    kept.extend_from_slice(&frame[at..]);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One marked range, as the comparison takes its marks.
+    fn marks(range: Range<usize>) -> [Range<usize>; 1] {
+        [range]
+    }
 
     #[test]
     fn sample_zero_draws_with_no_offset_and_later_samples_cover_the_pixel() {
@@ -214,45 +242,55 @@ mod tests {
         assert_eq!(moving.after(false), moving);
 
         let mut still = moving;
-        for sample in 1..=MAX_SAMPLES {
+        for sample in 1..MAX_SAMPLES {
             still = still.after(true);
             assert_eq!(still.samples(), sample);
-            assert!(still.accumulating());
+            assert!(still.accumulating() && !still.rests());
             assert_eq!(still.jitter_sample(), sample);
-            assert!((still.weight() - 1.0 / (sample + 1) as f32).abs() < 1e-6);
+            assert!((still.weight() - 1.0 / sample as f32).abs() < 1e-6);
         }
+        // The frame that first blends takes the whole weight, so no older history shows.
+        assert_eq!(moving.after(true).weight(), 1.0);
+        // A resting view's frames leave the history as it is.
+        still = still.after(true);
         assert!(still.rests());
+        assert_eq!(still.weight(), 0.0);
         assert_eq!(still.after(true).samples(), MAX_SAMPLES + 1);
         assert_eq!(still.after(false), moving, "a change starts again");
     }
 
     #[test]
-    fn only_a_frame_that_matches_outside_its_volatile_parts_is_unchanged() {
+    fn only_a_frame_that_matches_outside_its_marked_parts_is_unchanged() {
         let mut snapshot = Snapshot::default();
         let first = [1u32, 2, 3];
         let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8];
         // The first frame of a parity has nothing to compare with.
-        assert!(!snapshot.unchanged(&first, &bytes, &[]));
+        assert!(!snapshot.unchanged(&first, &[], &bytes, &[]));
         // The same frame again is unchanged.
-        assert!(snapshot.unchanged(&first, &bytes, &[]));
+        assert!(snapshot.unchanged(&first, &[], &bytes, &[]));
         // A different word, or a different byte, is a change.
-        assert!(!snapshot.unchanged(&[1, 2, 4], &bytes, &[]));
+        assert!(!snapshot.unchanged(&[1, 2, 4], &[], &bytes, &[]));
         let mut other = bytes;
         other[5] = 9;
-        assert!(!snapshot.unchanged(&first, &other, &[]));
-        // A byte inside a volatile range is not a change, once the same volatile set is the one
-        // the snapshot holds (the first frame of a volatile layout has nothing to compare with).
-        let range = 4..6;
-        let volatile = std::slice::from_ref(&range);
-        assert!(!snapshot.unchanged(&first, &other, volatile));
-        assert!(snapshot.unchanged(&first, &other, volatile));
-        // A shorter frame, a moved range or a range past the end is a change.
-        assert!(!snapshot.unchanged(&first, &bytes[..7], std::slice::from_ref(&range)));
-        let past = 7..9;
-        assert!(!snapshot.unchanged(&first, &bytes, std::slice::from_ref(&past)));
-        assert!(!snapshot.unchanged(&first, &bytes, &[0..2, 1..3]));
+        assert!(!snapshot.unchanged(&first, &[], &other, &[]));
+        // A byte inside a marked range is not a change, once the kept frame left out the same
+        // range: the kept frame here holds all eight bytes.
+        assert!(!snapshot.unchanged(&first, &[], &bytes, &marks(4..6)));
+        assert!(snapshot.unchanged(&first, &[], &other, &marks(4..6)));
+        // A frame whose marked parts differ in number and length still compares what lies outside
+        // them: the commands that blend a still view are marked, and the frame before had none.
+        assert!(snapshot.unchanged(&[1, 7, 7, 7, 2, 3], &marks(1..4), &bytes, &marks(4..6)));
+        assert!(snapshot.unchanged(&[1, 2, 3], &marks(3..3), &bytes, &marks(4..6)));
+        assert!(!snapshot.unchanged(&[1, 7, 2, 4], &marks(1..2), &bytes, &marks(4..6)));
+        // A shorter frame is a change, and marks out of order or past the end read as one and keep
+        // nothing to compare with.
+        assert!(!snapshot.unchanged(&first, &[], &bytes[..7], &[]));
+        assert!(!snapshot.unchanged(&first, &[], &bytes, &marks(7..9)));
+        assert!(!snapshot.unchanged(&first, &[], &bytes, &[0..2, 1..3]));
+        assert!(!snapshot.unchanged(&first, &[], &bytes, &[]));
         // Forgetting the frame makes the next one read as changed.
+        assert!(snapshot.unchanged(&first, &[], &bytes, &[]));
         snapshot.forget();
-        assert!(!snapshot.unchanged(&first, &bytes, &[]));
+        assert!(!snapshot.unchanged(&first, &[], &bytes, &[]));
     }
 }

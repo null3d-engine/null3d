@@ -72,8 +72,7 @@ pub struct FrameUniform {
     pub projection: Mat4,
     /// The sub-pixel jitter of a still view's accumulated sample, in the clip space of `view_proj`,
     /// which the scene's vertex shaders add to a position's clip position (see [`crate::still`]).
-    /// Zero in the views of lights, in a moving view and in every frame before the accumulation's
-    /// passes exist.
+    /// Zero in the views of lights, in views that draw into targets, and while the view moves.
     pub jitter: [f32; 4],
     /// The physical sky's air between the camera and each surface: see
     /// [`crate::physical_sky::AerialUniform`].

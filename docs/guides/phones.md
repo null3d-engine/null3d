@@ -90,6 +90,10 @@ When the tab crashes during a start, the next start of the sketch runs one prese
 
 A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion. The `quality.onChange` handlers run after each step that follows the render scale, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
 
+## Power
+
+A view that holds still stops drawing after about a second. The engine first blends the still frames into a sharper picture, then the GPU rests until something changes ([Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation)). A product viewer that waits for a tap therefore uses little power between taps. A view that changes every frame, through an animation, particles or a moving camera, draws every frame as before.
+
 ## Touch input
 
 The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches. A tap on an object calls its `click` handler, as a mouse click does ([Pointer events on objects](../api/input.md#pointer-events-on-objects)).

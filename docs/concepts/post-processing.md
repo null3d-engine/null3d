@@ -288,13 +288,15 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 
 ## Still-camera accumulation
 
-A view whose scene stops changing sharpens itself. Each frame draws with the camera shifted by a fraction of a pixel, and the frame blends into a kept 16-bit history. The average converges on a sharper image than any single frame.
+When nothing in the view changes, the engine sharpens the picture and then stops drawing. Each frame draws the scene with the camera moved by a fraction of a pixel, and blends into a kept 16-bit history. After 63 blended frames, about a second at 60 frames per second, the history holds their average. Its edges and fine detail are smoother than any one frame's. The thread that draws then takes frames without drawing them, so the GPU rests, and the canvas keeps the sharp picture. The first frame that changes draws at once, as a moving view does, and the blending starts again.
 
-The frame builder decides that nothing changed by comparing the frame with the frame of the same parity two frames before. It ignores the values that every frame writes, such as the clock and the jitter. A missed change reads as changed, so a still image never freezes.
+The engine finds a still view by comparing each frame's draw commands and uploaded values with those of the frame two frames before. It leaves out only the values that change on their own in every frame: the clock, the sub-pixel offset and the blend's weight. Anything else that changes counts as a change, so the picture never freezes while something moves. The sketch keeps running while the view rests, so `onUpdate` sees input and time as before.
 
-Once enough frames have accumulated, the thread that draws submits no draw work. The canvas keeps the converged image until the scene changes, and the engine draws again on the frame after the change. This rests the GPU on a still scene.
-
-The feature runs on core WebGPU, compatibility mode and WebGL2. It is off in hold mode and in the image tests. The page switch `?still=off` turns it off everywhere.
+- While the view blends, the final pass skips FXAA: the blended frames smooth the edges instead. With MSAA, each blended frame keeps its 4 samples.
+- Meshes and sprites move by the sub-pixel offset. Lines, points and particles draw without it.
+- Some views never blend, because their picture can change on the GPU alone or with the clock alone, or because the blend would mix what it cannot average. They draw every frame as before: views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials or the physical sky, a canvas that keeps its alpha, and the 8-bit color path.
+- The history is one 16-bit target the size of the canvas: 8 bytes per pixel, about 17 MB at 1920 × 1080.
+- Hold mode, and so the image tests, draws without it. The option `createEngine({ still: false })` and the page switch `?still=off` turn it off.
 
 ## Effects on devices without HDR color
 

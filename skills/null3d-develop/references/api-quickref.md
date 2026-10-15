@@ -526,7 +526,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections and lit fog are (0.2, not built yet). A view whose scene stops changing sharpens itself and rests the GPU (`concepts/post-processing`). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections and lit fog are (0.2, not built yet). A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({

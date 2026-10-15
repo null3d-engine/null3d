@@ -165,6 +165,9 @@ impl<B: FrameBuilder> World<B> {
             .set_active_count(BATCH_ROWS)
             .unwrap();
         let settings = renderer.settings_mut();
+        // The world's frames draw as a moving view's do, as the test pages' do: a still view would
+        // swap the final pass for its blend after a few frames. The still tests turn it on.
+        settings.set_still_enabled(false);
         settings.set_camera(camera, LENS);
         settings.set_sun([-1.0, -2.0, -1.0], [3.0, 3.0, 3.0]);
         settings.set_ambient([0.4, 0.4, 0.4]);
