@@ -22,7 +22,10 @@ function roundCard({ textures }: SketchContext) {
 	for (let y = 0; y < size; y++)
 		for (let x = 0; x < size; x++) {
 			const r = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) / (size / 2);
-			data.set([230, 230, 230, Math.round(255 * Math.max(0, Math.min(1, (1 - r) * 3)))], (y * size + x) * 4);
+			data.set(
+				[230, 230, 230, Math.round(255 * Math.max(0, Math.min(1, (1 - r) * 3)))],
+				(y * size + x) * 4,
+			);
 		}
 	return textures.fromData({ width: size, height: size, data, colorSpace: 'srgb' });
 }
@@ -44,7 +47,11 @@ function fadingLevels({ scene, geometry, materials }: SketchContext) {
 	base.setLevels([
 		{ mesh: geometry.sphere({ radius: 0.8, widthSegments: 12, heightSegments: 6 }), error: 0.02 },
 	]);
-	scene.createMesh({ mesh: base, material: materials.standard({ color: '#b0c4de' }), position: [0, 1, 0] });
+	scene.createMesh({
+		mesh: base,
+		material: materials.standard({ color: '#b0c4de' }),
+		position: [0, 1, 0],
+	});
 }
 
 /** One skinned character that plays a clip. */
@@ -84,10 +91,14 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 	exposure: ({ post }) => post.set({ autoExposure: {} }),
 	fog_volume: ({ scene }) =>
 		scene.setFog({ color: '#8090a0', density: 0.05, heightFalloff: 0.2, volumetric: true }),
-	effect_groups: ({ post }) =>
-		post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.9, 0.8] } }),
+	effect_groups: ({ post }) => post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.9, 0.8] } }),
 	views: ({ scene, render, textures, geometry, materials }) => {
-		const top = scene.createOrthographicCamera({ height: 6, near: 1, far: 20, position: [0, 10, 0] });
+		const top = scene.createOrthographicCamera({
+			height: 6,
+			near: 1,
+			far: 20,
+			position: [0, 10, 0],
+		});
 		top.setRotationEuler(-Math.PI / 2, 0, 0);
 		const pass = render.addPass({ kind: 'scene', camera: top, writes: 'map', size: [64, 64] });
 		scene.createMesh({
@@ -97,25 +108,38 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 		});
 	},
 	area_lights: ({ scene }) => {
-		scene.createRectAreaLight({ width: 2, height: 1, color: '#ffd29a', position: [0, 2, 1] });
+		scene.createRectAreaLight({
+			width: 2,
+			height: 1,
+			range: 6,
+			color: '#ffd29a',
+			position: [0, 2, 1],
+		});
 	},
 	cutout: (context) => {
 		context.quality.set({ contactShadowSteps: 0 });
 		context.scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], castShadows: true });
 		card(context, { alphaMode: 'mask', alphaCutoff: 0.5, alphaToCoverage: false }, true);
 	},
-	coverage: (context) => card(context, { alphaMode: 'mask', alphaCutoff: 0.5, alphaToCoverage: true }),
+	coverage: (context) =>
+		card(context, { alphaMode: 'mask', alphaCutoff: 0.5, alphaToCoverage: true }),
 	hash: (context) => card(context, { alphaMode: 'hash' }),
 	sky: ({ scene }) => scene.setBackground({ sky: { sunPosition: [0, 0.2, -1] } }),
 	physical_sky: ({ scene }) => scene.setBackground({ atmosphere: { sunPosition: [0, 0.2, -1] } }),
 	skinning: skinnedCharacter,
 	morph: morphedCard,
 	texcoords: ({ scene, geometry, materials }) => {
-		scene.createMesh({ mesh: geometry.box(), material: texCoordsMaterial(materials), position: [0, 1, 0] });
+		scene.createMesh({
+			mesh: geometry.box(),
+			material: texCoordsMaterial(materials),
+			position: [0, 1, 0],
+		});
 	},
 	// The page's ?instances=index switch draws the batch's bucket with index-only instance data.
 	instance_index: ({ scene, geometry, materials }) => {
-		const batch = scene.createInstances(geometry.box(), 4, { material: materials.standard({ color: '#c0a080' }) });
+		const batch = scene.createInstances(geometry.box(), 4, {
+			material: materials.standard({ color: '#c0a080' }),
+		});
 		for (let k = 0; k < 4; k++) batch.positions.set([k - 1.5, 0.5, 0], k * 3);
 		batch.markDirty();
 	},
