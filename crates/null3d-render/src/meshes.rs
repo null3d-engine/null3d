@@ -118,6 +118,17 @@ impl Page {
         [0, 1, 2].map(|c| ty.decode(&self.vertices[at + c * size..]))
     }
 
+    /// The first texture coordinates of vertex `v`, as shaders read them, or `None` for a format
+    /// without them.
+    #[inline(always)]
+    pub fn uv(&self, v: u32) -> Option<[f32; 2]> {
+        let ty = vertex::type_of(self.format, vertex::UV0_LOCATION)?;
+        let at = v as usize * vertex::stride(self.format) as usize
+            + vertex::offset(self.format, vertex::UV0_LOCATION)? as usize;
+        let size = ty.bytes() as usize;
+        Some([0, 1].map(|c| ty.decode(&self.vertices[at + c * size..])))
+    }
+
     /// Bytes of the page's vertex buffer and index buffer, whose writes are whole 4-byte words.
     /// Every vertex format takes whole words, so the vertices always do.
     pub fn buffer_bytes(&self) -> (u64, u64) {
@@ -236,6 +247,25 @@ impl Triangles for MeshTriangles<'_> {
             local -= triangles;
         }
         [[f32::NAN; 3]; 3]
+    }
+
+    #[inline(always)]
+    fn triangle_uv(&self, i: u32) -> Option<[[f32; 2]; 3]> {
+        let mut local = i;
+        for part in self.parts {
+            let triangles = part.index_count / 3;
+            if local < triangles {
+                let page = &self.pages[part.page as usize];
+                let at = (part.first_index + local * 3) as usize;
+                let mut corners = [[0.0; 2]; 3];
+                for (c, uv) in corners.iter_mut().enumerate() {
+                    *uv = page.uv(u32::from(page.indices[at + c]) + part.base_vertex)?;
+                }
+                return Some(corners);
+            }
+            local -= triangles;
+        }
+        None
     }
 }
 

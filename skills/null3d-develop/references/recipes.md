@@ -221,6 +221,17 @@ if (input.wasPressed('Mouse0')) {
 
 The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
+A hit on a mesh with texture coordinates also carries `uv`, where on the surface the ray landed, and `hasUv` says whether to read it. So a click on an in-world screen becomes a pixel of the image it shows, with no plane maths in the sketch:
+
+```ts
+screen.on('click', (event) => {
+  if (!event.hasUv) return;
+  const px = Math.floor((event.uv[0] as number) * IMAGE_WIDTH);
+  const py = Math.floor((1 - (event.uv[1] as number)) * IMAGE_HEIGHT);   // uv's y runs up
+  page.post('screenTap', { px, py });
+});
+```
+
 ## 7. HTML labels above objects (0.2)
 
 ```ts

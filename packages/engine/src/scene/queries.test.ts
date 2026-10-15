@@ -44,6 +44,8 @@ interface Scripted {
 	triangle?: number;
 	point?: number[];
 	normal?: number[];
+	/** Where on the surface the hit landed, for a hit triangle that has texture coordinates. */
+	uv?: [number, number];
 }
 
 /**
@@ -91,6 +93,9 @@ function fakeCore() {
 			r[C.QUERY_HIT_ROW] = -1;
 			r[C.QUERY_HIT_TRIANGLE] = -1;
 			r[C.QUERY_HIT_DISTANCE] = -1;
+			// A hit with no texture coordinates holds NaN there, as the core writes them.
+			r[C.QUERY_HIT_UV] = Number.NaN;
+			r[C.QUERY_HIT_UV + 1] = Number.NaN;
 			if (!hit) return;
 			r[C.QUERY_HIT_SLOT] = hit.slot ?? 0;
 			r[C.QUERY_HIT_BATCH] = hit.batch ?? 0;
@@ -99,6 +104,10 @@ function fakeCore() {
 			r[C.QUERY_HIT_DISTANCE] = hit.distance ?? 0;
 			r.set(hit.point ?? [0, 0, 0], C.QUERY_HIT_POINT);
 			r.set(hit.normal ?? [0, 0, 0], C.QUERY_HIT_NORMAL);
+			if (hit.uv) {
+				r[C.QUERY_HIT_HAS_UV] = 1;
+				r.set(hit.uv, C.QUERY_HIT_UV);
+			}
 		});
 		return hits.filter((hit) => hit !== null).length;
 	};
@@ -211,6 +220,8 @@ describe('raycasts', () => {
 			instance: -1,
 			point: [1, 2, 3],
 			normal: [0, 0, 1],
+			uv: [0, 0],
+			hasUv: false,
 			distance: 4.5,
 			triangle: 7,
 		});
@@ -218,6 +229,26 @@ describe('raycasts', () => {
 		expect(call?.kind).toBe(C.QUERY_CLOSEST);
 		expect(call?.layers).toBe(0b110);
 		expect(call?.input.slice(0, 7)).toEqual([1, 2, 7.5, 0, 0, -2, 10]);
+	});
+
+	test('a hit says where on the surface it landed, or that it has no texture coordinates', () => {
+		const { scene, box, paint, script } = fakeCore();
+		const target = scene.createMesh({ mesh: box, material: paint });
+		const hit = newHit();
+		script([{ slot: target.slot, distance: 2, triangle: 3, uv: [0.25, 0.75] }]);
+		expect(scene.raycast([0, 0, 0], [0, 0, -1], undefined, hit)).toBe(true);
+		expect([hit.hasUv, hit.uv]).toEqual([true, [0.25, 0.75]]);
+		// The array is made on the first hit that needs one, and reused after that.
+		const uv = hit.uv;
+		script([{ slot: target.slot, distance: 3, triangle: 4, uv: [0.5, 0.5] }]);
+		scene.raycast([0, 0, 0], [0, 0, -1], undefined, hit);
+		expect(hit.uv).toBe(uv);
+		expect(hit.uv).toEqual([0.5, 0.5]);
+		// A hit on a sprite, a point or a line, and one on a mesh with no texture coordinates, say
+		// that they have none.
+		script([{ slot: target.slot, distance: 2, triangle: -1 }]);
+		scene.raycast([0, 0, 0], [0, 0, -1], undefined, hit);
+		expect(hit.hasUv).toBe(false);
 	});
 
 	test('the default options test layer 0 with no far limit', () => {
