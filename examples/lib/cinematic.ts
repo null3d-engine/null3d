@@ -10,6 +10,11 @@
 // Switching Manual back to Auto does not snap: the camera finds the nearest point of the route,
 // then glides to it over a short interval, easing in and out, and the route carries on from there.
 //
+// Every key of a showcase scene lives in one table here: the camera's own keys, the keys that the
+// page's controls answer, and any key that a scene adds. A scene adds its keys through
+// `createCinematic`, which refuses a key that is already taken, so one key never does two things.
+// The owner keeps the shortcuts basic: only the camera and the controls have one (D-171).
+//
 // The route is a function of the sketch time, so a held frame (the image tests' `?hold`) lands on a
 // fixed pose and never drifts. A scene whose held frame must not change puts the pose of that frame
 // in the route's first shot and holds it still. Consecutive shots must differ: two shots at the same
@@ -39,6 +44,58 @@ export interface Shot {
 	through?: boolean;
 }
 
+/** One key of a showcase scene: the key's code, as the engine's input names it, and what it does. */
+export interface SceneKey {
+	code: string;
+	/** What the key does, for the help and for the error that names a clash. */
+	does: string;
+}
+
+/** A key that a scene adds: it runs its action on the frame that the key goes down. */
+export interface SceneAction extends SceneKey {
+	press(): void;
+}
+
+/** The keys that the camera reads. W, S, A and D pan the Manual camera, and R and F raise it. */
+const KEY = {
+	mode: 'KeyC',
+	forward: 'KeyW',
+	back: 'KeyS',
+	left: 'KeyA',
+	right: 'KeyD',
+	rise: 'KeyR',
+	fall: 'KeyF',
+} as const;
+
+/** The keys that every showcase scene shares: the camera's, then the controls', which the page reads. */
+export const SHOWCASE_KEYS: readonly SceneKey[] = [
+	{ code: KEY.mode, does: 'switch the camera between Auto and Manual' },
+	{ code: KEY.forward, does: 'pan the Manual camera forward' },
+	{ code: KEY.back, does: 'pan the Manual camera back' },
+	{ code: KEY.left, does: 'pan the Manual camera left' },
+	{ code: KEY.right, does: 'pan the Manual camera right' },
+	{ code: KEY.rise, does: 'raise the Manual camera' },
+	{ code: KEY.fall, does: 'lower the Manual camera' },
+	{ code: 'KeyH', does: 'open and close the controls' },
+	{ code: 'Escape', does: 'close the controls' },
+];
+
+/**
+ * The whole key table of a scene: the shared keys, then the scene's own. Throws when two entries
+ * take the same key, and names both.
+ */
+export function keyTable(scene: readonly SceneKey[] = []): readonly SceneKey[] {
+	const table = [...SHOWCASE_KEYS, ...scene];
+	const taken = new Map<string, string>();
+	for (const key of table) {
+		const other = taken.get(key.code);
+		if (other !== undefined)
+			throw new Error(`The key ${key.code} would ${key.does}, but it already does: ${other}.`);
+		taken.set(key.code, key.does);
+	}
+	return table;
+}
+
 /** How `createCinematic` is called. */
 export interface CinematicOptions {
 	/** The shots of the route, in the order that the loop plays them. */
@@ -52,6 +109,8 @@ export interface CinematicOptions {
 	groups?: () => readonly HudGroup[];
 	/** How fast the keys pan the manual camera, in canvas pixels per second. The default is 420. */
 	speed?: number;
+	/** The scene's own keys. A key that the table already holds throws. */
+	keys?: readonly SceneAction[];
 }
 
 /** The cinematic camera of a showcase scene. */
@@ -87,7 +146,8 @@ export function createCinematic(
 	options: CinematicOptions,
 ): Cinematic {
 	const { input, time, page } = ctx;
-	const { shots } = options;
+	const { shots, keys = [] } = options;
+	keyTable(keys);
 	// The route's timeline: each shot's start and its length. A length below a millisecond is raised
 	// to one, so the phase never divides by zero and never stands still for a whole shot.
 	const starts: number[] = [];
@@ -300,21 +360,22 @@ export function createCinematic(
 				announced = true;
 				postControls();
 			}
-			if (input.wasPressed('KeyC')) toggleMode();
+			if (input.wasPressed(KEY.mode)) toggleMode();
+			for (const key of keys) if (input.wasPressed(key.code)) key.press();
 			if (mode === 'manual') {
 				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
 				// fall. The controls take screen pixels, so the frame's step scales the speed.
 				const step = (options.speed ?? 420) * dt;
 				let across = 0;
 				let along = 0;
-				if (input.isDown('KeyA')) across += step;
-				if (input.isDown('KeyD')) across -= step;
-				if (input.isDown('KeyW')) along += step;
-				if (input.isDown('KeyS')) along -= step;
+				if (input.isDown(KEY.left)) across += step;
+				if (input.isDown(KEY.right)) across -= step;
+				if (input.isDown(KEY.forward)) along += step;
+				if (input.isDown(KEY.back)) along -= step;
 				if (across !== 0 || along !== 0) controls.pan(across, along);
 				let rise = 0;
-				if (input.isDown('KeyR')) rise += step / 60;
-				if (input.isDown('KeyF')) rise -= step / 60;
+				if (input.isDown(KEY.rise)) rise += step / 60;
+				if (input.isDown(KEY.fall)) rise -= step / 60;
 				if (rise !== 0) {
 					controls.target[1] = (controls.target[1] as number) + rise;
 					camera.getPosition(from);
