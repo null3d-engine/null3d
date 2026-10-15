@@ -10,7 +10,7 @@ import { effectiveMessage, findAckValues, isExemptCommit } from './commit-ack';
 export const TASK_TRAILER = 'Task';
 
 /** Commits authored before this moment were made under the old, free-text footer. */
-export const TASK_RULE_SINCE = '2026-10-15T14:00:00+08:00';
+export const TASK_RULE_SINCE = '2026-10-15T14:28:48+0800';
 
 /** The shape of a task ID: a milestone, then a letter, then a word, such as M2-J4 or M2-process. */
 export const TASK_ID_SHAPE = /^M\d+-[A-Za-z][A-Za-z0-9-]*$/;

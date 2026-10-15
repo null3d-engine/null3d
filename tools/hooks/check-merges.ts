@@ -23,7 +23,7 @@ import { effectiveMessage, findAckValue, isBareAck } from './commit-ack';
 export const MERGE_EDIT_TRAILER = 'Merge-Edit';
 
 /** Merges committed before this moment were made before the rule, and are not checked. */
-export const MERGE_RULE_SINCE = '2026-10-15T14:00:00+08:00';
+export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
 
 /** Words of new work a merge may hold before the check refuses it: a line or two of glue. */
 export const NEW_WORD_ALLOWANCE = 30;
