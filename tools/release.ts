@@ -20,6 +20,7 @@ import {
 	fitReleaseText,
 	isReleaseCommit,
 	nextVersion,
+	notesProblems,
 	type ParsedCommit,
 	packageFolders,
 	pageStatuses,
@@ -104,7 +105,8 @@ async function main(): Promise<void> {
 	if (values.notes !== undefined) {
 		const notes = extractReleaseNotes(readIfExists(root, CHANGELOG) ?? '', values.notes);
 		if (notes === null) fail(`${CHANGELOG} has no section for ${values.notes}`);
-		const fullList = `${repoUrl() ?? ''}/blob/${values.notes}/${CHANGELOG}`;
+		const url = repoUrl();
+		const fullList = url ? `${url}/blob/${values.notes}/${CHANGELOG}` : CHANGELOG;
 		console.log(fitReleaseText(notes, RELEASE_TEXT_LIMIT, fullList));
 		return;
 	}
@@ -144,6 +146,11 @@ async function main(): Promise<void> {
 		previousTag: tag,
 		repoUrl: repoUrl(),
 	});
+	const wording = notesProblems(changelog);
+	if (wording.length > 0)
+		fail(
+			`The notes break the writing rules that ${CHANGELOG} is held to. Reword each commit in REWORDED_SUBJECTS (tools/lib/release.ts):\n${wording.map((p) => `  ${p}`).join('\n')}`,
+		);
 	if (values.apply) {
 		apply(version, changelog);
 		console.log(`Prepared release ${version} (bump: ${bump}, previous: ${tag ?? 'none'}).`);
