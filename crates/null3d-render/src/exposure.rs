@@ -205,8 +205,7 @@ pub(crate) struct ExposureIds {
 /// The bind groups that the meter makes.
 pub(crate) const GROUPS: u32 = 3;
 
-/// What a frame's meter draws with: the settings, the meter, the seconds since the frame before,
-/// and whether to take the metered stops at once.
+/// What a frame's meter draws with: the settings, the meter and the seconds since the frame before.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ExposureFrame {
     pub(crate) settings: AutoExposure,

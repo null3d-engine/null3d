@@ -10,23 +10,25 @@
 //! birth time in the system's seconds, its start velocity, and its lifetime as a 16-bit float
 //! above a 16-bit seed. The sketch writes a particle's record once, when it is born, and marks the
 //! range it wrote. The vertex shader works out each particle at its age in every frame, so a frame
-//! uploads only the records of the particles born since the frame before, apart from systems that
-//! the sketch sorts back to front, which write their live records in order every frame.
+//! uploads only the records of the particles born since the frame before.
 //!
 //! # Values
 //!
 //! The system's values ([`PARAM_FLOATS`] floats) hold its motion and its look: gravity, drag,
 //! wind, turbulence, the ground, sizes, spin, the flipbook, the facing, the colours and the curves
 //! over life. The sketch writes them and marks them, and a frame uploads them when they changed.
-//! After them come the values that the sketch writes each frame: the system's time, and how many
-//! records the draw reads.
+//! After them come the values that the sketch writes each frame: the system's time, how many
+//! records the draw reads, and the rebase: a record and a shift in seconds. Birth times are 32-bit
+//! floats, so the sketch moves the time that they count from now and then. It rewrites the records
+//! a share per frame, and meanwhile the shader takes the shift off the birth times of the records
+//! from that one up, so no frame uploads every record.
 //!
 //! # Drawing
 //!
 //! The sorted pass draws a system's object with one draw of six vertices for each record it reads,
 //! from the system's own vertex buffer of records. Its bind groups are the view's frame group, the
 //! system's group of its values and of a block for each view, the view's group of its depth copy for
-//! soft particles, and the map's group for a system with a flipbook. Each view's block holds the
+//! soft particles, and the map's group for a system with a map. Each view's block holds the
 //! object's world matrix moved by its cell's offset from that view's camera, so particles keep
 //! their precision far from the world's origin as objects do.
 //!
@@ -50,7 +52,7 @@ use null3d_gpu::drawlist::{
     template, texture_usage, view as view_dimension,
 };
 
-use crate::frame::{CellOffsets, RecordError, SceneSettings, UploadArena};
+use crate::frame::{RecordError, SceneSettings, UploadArena};
 use crate::materials::MapSlot;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 use crate::view::{ViewFrame, ViewId};
@@ -62,7 +64,8 @@ pub const RECORD_WORDS: usize = (RECORD_BYTES / 4) as usize;
 /// Floats of a system's values, which its shader reads as a uniform block.
 pub const PARAM_FLOATS: usize = 128;
 /// Floats that the sketch writes in every frame, after the values: the system's time in seconds,
-/// the number of records the draw reads, and two spares.
+/// the number of records the draw reads, the first record whose birth time still counts from the
+/// old time base, and the seconds that the shader takes off such birth times.
 pub const FRAME_FLOATS: usize = 4;
 /// Bytes of a view's block of a system, at an aligned place for its dynamic offset.
 pub const VIEW_BLOCK_BYTES: u32 = OFFSET_ALIGNMENT;
@@ -108,6 +111,12 @@ impl ParticleSystem {
     /// The system's time in seconds, which the sketch writes in each frame.
     fn time(&self) -> f32 {
         self.values[PARAM_FLOATS]
+    }
+
+    /// The rebase, which the sketch writes in each frame: the first record whose birth time still
+    /// counts from the old time base, and the seconds that the shader takes off such birth times.
+    fn rebase(&self) -> [f32; 2] {
+        [self.values[PARAM_FLOATS + 2], self.values[PARAM_FLOATS + 3]]
     }
 
     /// Adds records `start..end` to the ranges to upload. A range beside or across one it has
@@ -377,8 +386,6 @@ pub(crate) struct ParticlePass {
     camera_depth: u32,
     /// True once the blank depth texture exists.
     blank: bool,
-    /// Scratch: the offsets of the cells from a view's camera.
-    offsets: CellOffsets,
 }
 
 impl ParticlePass {
@@ -389,7 +396,6 @@ impl ParticlePass {
             depth_views: 0,
             camera_depth: 0,
             blank: false,
-            offsets: CellOffsets::default(),
         }
     }
 
@@ -620,18 +626,13 @@ impl ParticlePass {
     ) -> Result<(), RecordError> {
         let slot = system.slot as usize;
         let matrix = &scene.world(parity).matrices()[slot * MATRIX_FLOATS..][..MATRIX_FLOATS];
-        let cell = scene.cells()[slot] as usize;
+        let cell = scene.cells()[slot];
+        let [first, shift] = system.rebase();
         for k in 0..views {
             let Some(frame) = frame_of(k) else {
                 continue;
             };
-            self.offsets.update(scene, &frame.camera);
-            let offset = self
-                .offsets
-                .as_slice()
-                .get(cell)
-                .copied()
-                .unwrap_or([0.0; 4]);
+            let offset = scene.cell_table().offset(&frame.camera, cell);
             let mut block = [0f32; VIEW_WRITTEN_BYTES / 4];
             for (r, row) in matrix.as_chunks::<4>().0.iter().enumerate() {
                 block[r * 4..r * 4 + 4].copy_from_slice(row);
@@ -639,6 +640,8 @@ impl ParticlePass {
             }
             block[12] = system.time();
             block[13] = layer as f32;
+            block[14] = first;
+            block[15] = shift;
             // SAFETY: an f32 array is plain bytes of four times its length.
             let bytes = unsafe {
                 std::slice::from_raw_parts(block.as_ptr().cast::<u8>(), VIEW_WRITTEN_BYTES)
@@ -852,5 +855,16 @@ mod tests {
         assert_eq!(system.drawn(), 8);
         system.values[PARAM_FLOATS + 1] = f32::NAN;
         assert_eq!(system.drawn(), 0);
+    }
+
+    #[test]
+    fn the_rebase_follows_the_time_and_the_count() {
+        let mut table = ParticleTable::default();
+        let id = table.create(1, 8).unwrap();
+        let system = table.get_mut(id).unwrap();
+        assert_eq!(system.rebase(), [0.0, 0.0]);
+        system.values[PARAM_FLOATS + 2] = 5.0;
+        system.values[PARAM_FLOATS + 3] = 1000.0;
+        assert_eq!(system.rebase(), [5.0, 1000.0]);
     }
 }
