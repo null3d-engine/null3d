@@ -122,3 +122,9 @@ two-step shape is then not declared, so no `outputColor` target exists, and effe
 they did before this change.
 
 Prototype P1 has still not run, so the split ships on the Mac's GPU check alone.
+
+The code review also asked this record to say that FXAA below the whole canvas's scale is intended
+(T-4, M-41). It is: before the split the pass skipped the FXAA smoothing path below scale 1, so the
+edges of an upscaled frame were never smoothed. Step 1 now runs FXAA at the render size, and the
+three compatibility-mode scale-0.5 references that move with it were remade in both sets
+(14661f028, 1528a0feb), with the diffs on edges alone.
