@@ -8,7 +8,8 @@ This page keeps the results that a later reader needs:
 - the contents of the `three-compat` add-on;
 - the prototypes and their pass rules, and the gaps;
 - the web search results with their sources;
-- the places where the earlier reports were wrong.
+- the places where the earlier reports were wrong;
+- the newer techniques of October 2026, with what three.js gained since this review.
 
 The owner decided every question on 4 October 2026. The decisions and their reasons are records:
 
@@ -17,6 +18,11 @@ The owner decided every question on 4 October 2026. The decisions and their reas
 - [D-54](decisions/D-54-addon-modules.md): add-on modules, the one on-demand loader, and CDN delivery.
 - [D-14](decisions/D-14-js-budget.md): the budget for first-use shader files, Draco's exception and the gzip columns.
 - [Device sessions](devices.md#which-device-runs-a-check): real phones on BrowserStack Automate first.
+
+The owner ruled on the newer techniques and on every item set for after 1.0 on 15 October 2026:
+
+- [D-173](decisions/D-173-addon-hooks.md): one place per feature, public API only for add-ons, the foundation add-ons and the hooks.
+- [D-179](decisions/D-179-technique-rulings-2026-10-15.md): the techniques, and every item that was set for after 1.0.
 
 ## Rules the review applied
 
@@ -44,7 +50,7 @@ Ranked by value to users per unit of effort. Effort is S, M or L.
 | 2 | Per-feature shader files that load on first use | A page downloads and parses only the shaders it uses | n/a | M | Saves start time. One shader file takes 15 to 20 ms to parse on the Mac today; phones take several times longer (estimate) |
 | 3 | Generate the built-in room in the browser with the asset tool's filter; the same generator prefilters HDR files at load | No 2 MB file in the package | A look: null3D's own references, and a sanity comparison with three.js's `RoomEnvironment` | M | Once at load. The tool's filter reads about 98 million texels. three.js r187's reads 53 million and took 10.4 to 13.0 ms on an Apple M1 (S-10), so the tool's takes about 19 to 24 ms there (estimate), sliced into steps of 8 ms or less. 4 MiB as `rgba16float`, 2 MiB as `rg11b10ufloat` |
 | 4 | Read the environment at each material's own roughness, with a roughness floor of 0.045, one filtered read of the lighting table, and the roughest level as diffuse light | A rough material's reflection is as blurred as its own highlight | A lighting term, so strict tests. r187 uses the same formula, Filament's `maxLod · r · (2 − r)` (S-04) | S | Fewer reads: the table read goes from 4 loads to 1. The diffuse read must stay under 1% of a GPU-bound frame (L2) |
-| 5 | AgX as the default tone curve | Hues stay true in bright color; Neutral for product templates | AgX by default; ACES, Reinhard and Cineon go to `three-compat` | S | None |
+| 5 | AgX as the default tone curve | Hues stay true in bright color; Neutral for product templates | AgX by default; Reinhard and Cineon go to `three-compat`, and ACES stays in the core ([D-179](decisions/D-179-technique-rulings-2026-10-15.md)) | S | None |
 | 6 | WebGPU skinning skips unchanged poses and writes 8-bit normals and tangents | A still character costs no GPU work | None | S + S | Saves. S5's skinned memory falls from 69 MB to about 49 MB: 28 to 20 bytes per vertex (estimate) |
 | 7 | Animator start time and per-clip weight | Characters start out of step; idle, walk and run blend by weight | None | S | None |
 | 8 | A clip step in the asset tool: resample to the core's grid, 16-bit rotations | Smaller files that load with a copy, not a resample | None | S to M | Saves. Target: the Knight's binary from 846 KB to about 435 KB after Brotli, with 38 to 190 ms less parse time |
@@ -72,7 +78,8 @@ Ranked below 20 are the two-step output below render scale 1 with GSR 1, and con
 | `OutlinePass`, pmndrs `OutlineEffect` | Crisp outline | Rewrite; glow and pulse to `three-compat` | Maps `edgeThickness` to width and the visible and hidden edge colors. With `edgeGlow` above 0 or `pulsePeriod`, it imports `three-compat`'s soft outline | Small without glow; large with glow or pulse |
 | `VignetteShader`, pmndrs `Vignette` | HDR vignette | Rewrite | Maps `offset` to size and `darkness` to intensity | Small: corners darken a little more in highlights. three.js's lift of dark corners at `darkness` below 1 is lost |
 | `Fog`, `FogExp2` | Native fog | Rewrite | `Fog(near, far)` becomes the linear curve, `FogExp2(density)` the exp2 curve | Small: corners get a little thicker fog, because distance is radial |
-| ACES filmic, Reinhard, Cineon | AgX by default | Move to `three-compat` | Imports `three-compat` and sets the same curve | Large: the scene's colors were chosen under that curve |
+| ACES filmic | AgX by default | Native: ACES stays in the core ([D-179](decisions/D-179-technique-rulings-2026-10-15.md)) | Sets `'aces'` | None |
+| Reinhard, Cineon | AgX by default | Move to `three-compat` | Imports `three-compat` and sets the same curve | Large: the scene's colors were chosen under that curve |
 | AgX, Neutral, no tone mapping | The same curves | Native | One to one. null3D's AgX is three.js's polynomial | None |
 | `GTAOPass`, `SSAOPass`, `SAOPass` | AO on indirect light, with `lightAffect` | Rewrite | Maps radius and intensity, and sets `lightAffect` to 1 for passes that darken the whole image | Moderate; the bitmask variant removes dark halos |
 | `LightProbeGrid` | A probe grid that replaces the environment's diffuse light | Rewrite | Sets `environmentWeight` to 1 where the scene kept the environment at full strength | Small to moderate indoors |
@@ -101,7 +108,7 @@ Under D-52 the core loses four look modes. They are three.js's vignette formula 
 
 Contents:
 
-1. three.js's tone curves: ACES filmic (three.js's fit, with its 1/0.6 scale), Reinhard and Cineon. Color is strict, so ports keep them.
+1. three.js's tone curves Reinhard and Cineon. Color is strict, so ports keep them. ACES filmic stays in the core as a shared building block ([D-179](decisions/D-179-technique-rulings-2026-10-15.md), ruling 23).
 2. `OutlinePass`'s glow, pulse and blurred edge, from #280's steps.
 3. Only if prototype P2 fails: `UnrealBloomPass`'s steps, from #251.
 
@@ -329,7 +336,7 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 11 | Planar reflections and linked views | three.js add-ons, Babylon.js | M | M3; planar reflections in M2-EX15 for the showcase scenes ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
 | 12 | Particles on the job workers | Babylon.js, PlayCanvas, Godot | M | Before 1.0, an add-on in M2-EX20 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 13 | Projected decals | three.js's `DecalGeometry` | S | M2, in M2-EX27 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
-| 14 | Per-object light maps, reading `NEEDLE_lightmaps` first | Bevy, PlayCanvas, Godot | S to M | M3 |
+| 14 | Per-object light maps, reading `NEEDLE_lightmaps` first | Bevy, PlayCanvas, Godot | S to M | M3, with light maps that store direction ([D-179](decisions/D-179-technique-rulings-2026-10-15.md)) |
 | 15 | IK (two-bone, aim, CCD) | Godot, Babylon.js, a three.js add-on | S to M | M3; add-on if large |
 | 16 | Box-projected reflection probes | Godot, PlayCanvas, Babylon.js | M | M2, in M2-EX32 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 | 17 | `KHR_materials_specular` and `ior`; then clearcoat and sheen | three.js, Filament, Babylon.js | S, M, M | M2: the first two built; clearcoat and sheen in M2-EX30 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
@@ -344,15 +351,121 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 27 | Weighted blended transparency | | M | M2, in M2-EX33, opt-in for particle scenes ([D-142](decisions/D-142-more-techniques-before-1-0.md)): the `weighted` blending per material ([D-150](decisions/D-150-weighted-blended-transparency.md)) |
 | 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | Before 1.0: light shafts and lit fog in M2-EX21 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
-| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)), and no TAA for 1.0 ([D-129](decisions/D-129-temporal-anti-aliasing.md)); per-object motion vectors before 1.0, in M2-EX25 ([D-142](decisions/D-142-more-techniques-before-1-0.md)); screen-space reflections before 1.0, in M2-EX22 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
-| 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | After 1.0. XR needs the thread mode that draws on the main thread, so keep that mode working |
+| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)), and TAA only if M3-A11 ships a temporal resolve, else dropped ([D-129](decisions/D-129-temporal-anti-aliasing.md), [D-179](decisions/D-179-technique-rulings-2026-10-15.md)); per-object motion vectors before 1.0, in M2-EX25 ([D-142](decisions/D-142-more-techniques-before-1-0.md)); screen-space reflections before 1.0, in M2-EX22 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
+| 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | Not in version 1: after 1.0, as its own milestone ([D-179](decisions/D-179-technique-rulings-2026-10-15.md)). XR needs the thread mode that draws on the main thread, so keep that mode working |
 | 31 | Terrain | No engine core | L | M2, an add-on in M2-EX35 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 
 Global illumination was not one of the gaps. DDGI was judged too heavy for phones, so it waited for desktop presets after 1.0. It now joins M3, with a technique that phones can run ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
 Two more techniques have no row above, and both move into M2 ([D-142](decisions/D-142-more-techniques-before-1-0.md)). Impostors and merged far geometry, first in line for after 1.0 until now, are M2-EX34. Subsurface and foliage translucency, for light through leaves, petals and skin, is M2-EX36.
 
-Water is a recipe on planar reflections. Navigation meshes, CSG, trails, exporters and gizmos block no user segment in 1.0.
+Water was a recipe on planar reflections. The water add-on now owns it: river and lake water in M3, and an FFT ocean before 1.0 ([D-173](decisions/D-173-addon-hooks.md), [D-179](decisions/D-179-technique-rulings-2026-10-15.md)). Gizmos come in M4. Navigation meshes, CSG, trails and exporters block no user segment in 1.0.
+
+## Newer techniques, October 2026
+
+From 12 to 14 October 2026 a research session asked which rendering techniques three.js lacks. Three research reports ran about 155 web searches and fetches. They read three.js's r186 tag and its r187 development branch, and the talks of SIGGRAPH Advances 2024 to 2026 and HPG. They read the releases of Unreal 5.7, Unity 6, Godot 4.6, Bevy 0.17 to 0.20, Babylon.js 9 and PlayCanvas 2.23. They also read the browsers' GPU feature status. The owner ruled on the results on 15 October 2026 ([D-179](decisions/D-179-technique-rulings-2026-10-15.md), [D-173](decisions/D-173-addon-hooks.md)).
+
+### What three.js gained
+
+three.js has caught up on screen effects. A basic version of these no longer sets null3D apart, so null3D leads on quality, detail levels and phone speed instead.
+
+| three.js feature | Where | What it does and lacks | null3D's answer |
+| --- | --- | --- | --- |
+| `SSGINode` | r187 branch, display nodes | Bounce light from what is on screen, with visibility bitmasks. Needs TRAA or a denoiser, and loses all light whose source is off screen | The probe volume of D-179 ruling 12 gives bounce light. Screen-space bounce is dropped (ruling 20) |
+| `VXGINode` | Example only, WebGPU only | Voxel cone tracing in one 64³ volume, diffuse only | No equivalent; too heavy for phones |
+| `LightProbeGrid` | Add-on, WebGPU and WebGL | A baked L2 probe grid with several bounces. No validity mask, no sky term, so light leaks through walls | The L1 probe grid ([D-146](decisions/D-146-light-probe-grid.md)), with a validity mask and a sky-occlusion term in M3 |
+| `TAAUNode` | r187 branch, display nodes | A temporal upscaler: Halton jitter, variance clipping, a hand-tuned lock. Needs MSAA off | M3-A11 decides on a temporal resolve; an upscaler that keeps MSAA follows only then (rulings 16, 24) |
+| `TRAANode`, `FSR1Node` | Display nodes | Temporal anti-aliasing; FSR 1's spatial upscale and RCAS sharpening | MSAA from Medium up; the render scale with M2-F10's two-step output |
+| `SSRNode` | Display nodes | Reflections from what is on screen, with a denoiser example | M2-EX22 |
+| `OITPassNode` | Display nodes | Weighted blended transparency, for plain blended materials only | The `weighted` blending ([D-150](decisions/D-150-weighted-blended-transparency.md)) |
+| `SSSNode` | Display nodes | Screen-space shadows of the main directional light, about 1 m long | Contact shadows ([D-135](decisions/D-135-contact-shadows.md)) |
+| `ClusteredLighting` | Add-on, WebGPU only | Clustered point lights, built with compute. No shadows, no spot lights | Clustered point and spot lights with shadows on both GPU paths, since 0.1 |
+| `SunLight`, `SunShadowNode` | Add-on, r186 | Two shadow cascades fitted to the view, in one atlas | Native cascades, with a blend between them |
+| `GaussianSplat` | Add-on, r186 | Splats with a GPU counting sort and spherical harmonics up to degree 3. No detail levels, no streaming; on WebGL2 it sorts on the main thread | The splats add-on in M3, with detail levels, streaming, a budget and depth mixing (ruling 14) |
+| `webgpu_compute_rasterizer` | Example only | A software rasterizer in compute with a visibility buffer, for over a billion triangles | Waits for 64-bit atomics in browsers (ruling 27) |
+
+three.js still lacks:
+
+- probe grids that do not leak through walls, and probes that store how much sky they see;
+- a way to keep the cost of many lights fixed;
+- a baker for light maps or probes inside the engine;
+- light maps that store the light's direction;
+- soft shadows from distance fields, and cached shadow pages;
+- automatic exposure;
+- an ocean with real wave simulation;
+- hair strands, and skin light scattering with real diffusion profiles;
+- a full OpenPBR material;
+- grass made on the GPU;
+- splats with detail levels and streaming.
+
+null3D already leads on these, all in its core. It has GPU and CPU occlusion culling, large-world precision and clustered lights with shadows. It also has compute skinning, built-in raycasts and the worker threads.
+
+### Other web engines
+
+- **Babylon.js 9** (March 2026): shadows from the environment's light on voxelized casters, OpenPBR as an alpha, and a frame graph. It also has clustered lights on both GPU paths, textured area lights, and splats with shadows and SOG and SPZ files.
+- **PlayCanvas 2.23** (October 2026): clustered lights on WebGL2 with shadows, cookies and area lights, and lit fog for clustered lights. Its splats stream, with detail levels and a global splat budget.
+- **Needle Engine**, on three.js: light maps baked in Unity and Blender, and progressive loading of textures and meshes.
+- **Spark 2**, a splat renderer for three.js: detail trees, streaming in its own format, and 0.5 to 2.5 million splats per device budget.
+
+### Browser GPU features, October 2026
+
+| Feature | Chrome | Firefox | Safari |
+| --- | --- | --- | --- |
+| WebGPU | Desktop since 113, Android 12 and up since 121 | Windows since 141, Apple silicon since 145; Android behind a flag | 26 and up, on every Apple platform |
+| Subgroups | 134 | No | No |
+| `shader-f16` | 120 desktop, 121 Android | No | 26 |
+| Compatibility mode (OpenGL ES 3.1) | 146 | No | No |
+| Immediates | 149 and 150 | No | No |
+| Subgroup size control | 151 and 152 | No | No |
+| Bindless resources, multi-draw indirect, 64-bit atomics, mesh shaders, ray queries | Draft proposals or experiments only | No | No |
+| WebNN | Origin trial | No | No |
+| WebXR with WebGPU | Behind a flag | No | visionOS since 26.2 |
+
+So subgroups can only be an optional speed-up, because iPhones lack them. Anything that needs ray tracing, bindless resources or 64-bit atomics stays off phones in 2026.
+
+### The ranked techniques and their rulings
+
+Effort is S, M or L. A phone cost is a published figure unless it says "estimate".
+
+| # | Technique | Why | Phone cost | Where | Ruling ([D-179](decisions/D-179-technique-rulings-2026-10-15.md)) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Leak-free probe volume, after Unity 6's adaptive probe volumes: a validity mask, leak-reduced sampling, and a baked sky term times the live sky colour | Fixes the main flaw of three.js's grid; time of day keeps working; Unity ships it to phones | 0.1 to 0.3 ms (estimate) | Core, on the probe grid | M3's global illumination (12) |
+| 2 | A bake in the browser: a progressive path tracer on WebGPU compute | No complete version in the three.js world | Seconds to a minute; desktop first | Core, as D-146 bakes now | The ray-cast bake stays; a GPU bake joins with reflection probes' capture |
+| 3 | Many lights at a fixed cost (HypeHype's stochastic tile lighting) with a cached 16-bit shadow atlas | The only many-light method with published low-end phone timings; fragment shaders only | +0.66 ms on an Adreno 610 at one sample per pixel; about 1.5 ms at 50 lights | Core, a light-loop mode | Prototype in M3; ships only with a temporal resolve (15) |
+| 4 | A temporal upscaler that takes MSAA input, with masks and a two-pass phone tier like Snapdragon GSR 2 | Beats `TAAUNode`, which needs MSAA off | GSR 2 targets under 2 ms on a Snapdragon 8 Gen 3 | Core, in the output chain | M4 with a temporal resolve, else dropped (16) |
+| 5 | Splats with a detail tree, streaming, a budget, GPU sort and cull, depth mixing, and SOG, SPZ and `KHR_gaussian_splatting` files | three.js has no detail levels or streaming; PlayCanvas and Spark set the bar | 0.5 to 2.5 million splats per device budget (Spark) | Add-on | M3 (14) |
+| 6 | Grass made on the GPU with wind | Not in three.js | 1 to 2 ms for 200,000 blades (estimate) | Add-on | Dropped (20) |
+| 7 | Volumetric clouds | Only a community three.js library has them; an iPhone 13 runs it at 36 to 53 fps on Low | 3 to 5 ms on Low (estimate) | Add-on behind the core's cloud settings | Left to other developers ([D-173](decisions/D-173-addon-hooks.md), ruling 2) |
+| 8 | Light maps that store direction | Normal maps react to baked light | About 0.1 ms; twice the light-map memory (estimate) | Core | M3, with `NEEDLE_lightmaps` (18) |
+| 9 | OpenPBR | Adobe and Autodesk tools export it | About the base cost with its layers off (estimate) | Add-on | Dropped (20) |
+| 10 | Soft shadows and AO from distance fields | Shadows that match area lights | 1 to 2 ms at half size (estimate) | Core | Dropped (20) |
+| 11 | Cached shadow pages | Real virtual shadow maps wait for multi-draw indirect | Below cascades when the cache holds (estimate) | Core | Not a separate item: shadow tiles redraw only what moved |
+| 12 | An ocean with real waves (FFT, 2 to 3 bands) | Not in three.js; its `webgpu_ocean` is a normal map | About 0.5 ms (estimate) | The water add-on | Before 1.0 (19) |
+| 13 | Glints (Deliot and Belcour, HPG 2023) | No web engine checked has them | 0.3 to 1 ms on a full screen (estimate) | Car paint's flakes | M3 (17) |
+| 14 | Smoke lit from six baked directions; ribbons; collision with the depth buffer | Cheap on phones | Very small (estimate) | The particles add-on | Collision dropped: no simulation pass ([D-131](decisions/D-131-particles.md)) |
+| 15 | Moment transparency; per-pixel linked lists on desktops | Better order where layers overlap | About twice weighted blending's bandwidth (estimate) | Core | Dropped (20) |
+| 16 | Hair: shells and cards, then strands | No hair in any web engine | Strands 3 to 8 ms per head (estimate) | Add-on | Dropped (20) |
+| 17 | Bounce light from the screen at half size | Matches three.js's `SSGINode` | 1.5 to 3 ms (estimate) | Core | Dropped (20) |
+
+`KHR_materials_diffuse_transmission` was on the first list. M2-EX36 reads it, so it left the list.
+
+Watch list, with no work planned:
+
+- 3D radiance cascades and surfel lighting: the 2026 papers give no phone figures.
+- Stochastic light sampling per pixel (ReSTIR, Unreal's MegaLights) and Bevy's Solari: they need ray queries.
+- Neural texture compression, neural materials and learned upscalers: they need subgroup matrices or WebNN.
+- Lumen, Godot's distance-field lighting and voxel cone tracing: even native engines leave them off phones.
+
+### Sources
+
+- three.js: [releases](https://github.com/mrdoob/three.js/releases), [examples/files.json](https://github.com/mrdoob/three.js/blob/dev/examples/files.json), [display nodes](https://github.com/mrdoob/three.js/tree/dev/examples/jsm/tsl/display), [TAAUNode.js](https://github.com/mrdoob/three.js/blob/dev/examples/jsm/tsl/display/TAAUNode.js), [GaussianSplat.js](https://github.com/mrdoob/three.js/blob/dev/examples/jsm/objects/GaussianSplat.js), [LightProbeGrid.js](https://github.com/mrdoob/three.js/blob/dev/examples/jsm/lighting/LightProbeGrid.js), [the L2 grid, PR #33125](https://github.com/mrdoob/three.js/pull/33125), [SSGINode](https://threejs.org/docs/pages/SSGINode.html), [SunLight](https://threejs.org/docs/pages/SunLight.html).
+- Global illumination: [Unity 6's probe volumes](https://unity.com/blog/engine-platform/new-ways-of-applying-global-illumination-in-unity-6), [their changing light at run time](https://docs.unity3d.com/Manual/urp/probevolumes-understand-changing-lighting-at-runtime.html), [visibility bitmasks](https://arxiv.org/abs/2301.11376), [EA's GIBS, Advances 2024](https://advances.realtimerendering.com/s2024/content/EA-GIBS2/Apers_Advances-s2024_Shipping-Dynamic-GI.pdf), [Split Radiance Cascades](https://arxiv.org/abs/2607.20384).
+- Many lights: [HypeHype's stochastic tile lighting, Advances 2025](https://www.advances.realtimerendering.com/s2025/content/s2025_stb_lighting_v1.1_notes.pdf), [Arm on MegaLights](https://developer.arm.com/community/arm-community-blogs/b/mobile-graphics-and-gaming-blog/posts/lighting-at-scale-bringing-hundreds-of-dynamic-lights-to-mobile-with-unreal-megalights).
+- Upscaling: [Snapdragon GSR 2](https://www.qualcomm.com/developer/blog/2024/10/introducing-snapdragon-game-super-resolution-2), [@pmndrs/upscaler](https://github.com/pmndrs/upscaler).
+- Splats: [Spark 2.0](https://www.worldlabs.ai/blog/spark-2.0), [PlayCanvas splat streaming](https://developer.playcanvas.com/user-manual/gaussian-splatting/building/lod-streaming/), [Babylon.js 9 splats](https://radiancefields.com/babylon.js-v9.0-3dgs-gets-shadows-sogs-and-triangle-splatting-support-announced).
+- Materials and effects: [glints, Deliot and Belcour 2023](https://diglib.eg.org/items/d3e19c8a-e9e3-424b-be75-8b984153b39b/full), [OpenPBR](https://arxiv.org/abs/2512.23696), [takram's volumetric clouds](https://cdn.jsdelivr.net/npm/@takram/three-clouds@0.7.4/README.md), [frostbitten hair on WebGPU](https://github.com/Scthe/frostbitten-hair-webgpu), [six-way lit smoke](https://unity.com/blog/engine-platform/realistic-smoke-with-6-way-lighting-in-vfx-graph), [Ghost of Tsushima's grass](https://gdcvault.com/play/1027214/Advanced-Graphics-Summit-Procedural-Grass), [Unity's FFT water](https://unity.com/blog/engine-platform/new-hdrp-water-system-in-2022-lts-and-2023-1).
+- Browsers: [gpuweb implementation status](https://github.com/gpuweb/gpuweb/wiki/Implementation-Status), [MDN GPUSupportedFeatures data](https://github.com/mdn/browser-compat-data/blob/main/api/GPUSupportedFeatures.json), [web3dsurvey](https://web3dsurvey.com/webgpu), [New in WebGPU 146](https://developer.chrome.com/blog/new-in-webgpu-146), [New in WebGPU 149 and 150](https://developer.chrome.com/blog/new-in-webgpu-149-150), [the bindless proposal](https://github.com/gpuweb/gpuweb/blob/main/proposals/bindless.md), [the 64-bit atomics proposal](https://github.com/gpuweb/gpuweb/blob/main/proposals/atomic-64-min-max.md).
+- Other engines: [Babylon.js 9.0](https://blogs.windows.com/windowsdeveloper/2026/03/26/announcing-babylon-js-9-0/), [PlayCanvas releases](https://github.com/playcanvas/engine/releases), [Needle Engine features](https://engine.needle.tools/docs/explanation/core-concepts/features-overview).
 
 ## Web search results
 
