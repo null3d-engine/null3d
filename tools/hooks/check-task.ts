@@ -12,6 +12,9 @@ export const TASK_TRAILER = 'Task';
 /** Commits authored before this moment were made under the old, free-text footer. */
 export const TASK_RULE_SINCE = '2026-10-15T14:00:00+08:00';
 
+/** The shape of a task ID: a milestone, then a letter, then a word, such as M2-J4 or M2-process. */
+export const TASK_ID_SHAPE = /^M\d+-[A-Za-z][A-Za-z0-9-]*$/;
+
 /** The task IDs a footer may name, from the list beside this hook in a checkout at `root`. */
 export function knownTaskIds(root = process.cwd()): Set<string> {
 	const text = readFileSync(join(root, 'tools/hooks/task-ids.txt'), 'utf8');
@@ -41,7 +44,7 @@ export function taskProblem(
 		const ids = value.split(',').map((id) => id.trim());
 		const unknown = ids.filter((id) => !known.has(id));
 		if (unknown.length === 0) continue;
-		return /^M\d+-[A-Z]+\d+$/.test(unknown[0] ?? '')
+		return TASK_ID_SHAPE.test(unknown[0] ?? '')
 			? `Task: ${value} names ${unknown.join(', ')}, which is not in tools/hooks/task-ids.txt. Check the ID in the milestone plan; when the task is new, add it to the list in this commit.`
 			: `Task: ${value} is not a task ID. Write the milestone task ID the commit delivers part of, such as Task: M2-J4, or Task: none for work that belongs to no task. Put any other note in the body.`;
 	}
