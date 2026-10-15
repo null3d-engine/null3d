@@ -137,7 +137,7 @@ same mechanics copied twice (BT-22). The fixes:
    processes that find the same stale lock, exactly one renames it, so neither removes a lock that
    another took meanwhile. The holder names itself while a build waits.
 2. `pruneCache` removes the least recently used entries of a cache while it holds more than
-   `CACHE_LIMIT_BYTES` (4 GiB), skipping an entry used within the last two hours, because a build of
+   `CACHE_LIMIT_BYTES` (24 GiB), skipping an entry used within the last two hours, because a build of
    another checkout may still be reading it. A cache touch marks an entry as used. The module cache and
    the per-entry cache prune after a build; the artifact cache prunes after a store. The GPU check's
    baseline cache keeps its own rule: it keeps six large builds by commit, which the check names.
