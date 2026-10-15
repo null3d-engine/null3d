@@ -1,9 +1,9 @@
 import { expect, type Page, type Route, test } from '@playwright/test';
-import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import {
 	SHADER_FEATURES,
 	type ShaderFeature,
 } from '../../packages/engine/src/generated/shader-features.ts';
+import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import { FIRST_USE_FILES, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
 import { ALONE } from '../lib/alone.ts';
 import {
@@ -345,8 +345,9 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 
 /**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
- * null where the path has no file for it: WebGPU morphs in the skinning pass, and only WebGPU reads
- * index-only instance data and culls by occlusion on the GPU.
+ * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
+ * index-only instance data and culls by occlusion on the GPU, and only WebGPU copies a view's
+ * image, where WebGL2 draws the view into its target directly.
  */
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>
@@ -354,6 +355,7 @@ const FEATURE_FILE_OWNERS: Partial<
 	morph: { webgpu: 'skinning' },
 	instance_index: { webgl2: null },
 	occlusion: { webgl2: null },
+	views: { webgl2: null },
 };
 
 // A page that uses one such feature downloads that feature's shader file once, for its device's
@@ -369,7 +371,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
 			const sketch =
-				FIRST_USE_SKETCHES[feature] ?? `tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
+				FIRST_USE_SKETCHES[feature] ??
+				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
 			await page.goto(
 				`image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`,
 			);
