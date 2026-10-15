@@ -543,12 +543,12 @@ export function downloadSizes(
 /**
  * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
- * Brotli's budget is the owner's, who raised it from 145 KB on 14 October 2026 (D-14). The gzip and
- * raw budgets hold today's start with about a tenth to spare. The shader file fills most of it, so
+ * Brotli's budget is the owner's, who raised it from 145 KB on 14 October 2026 and to 165 KB on
+ * 15 October 2026 (D-14). The gzip and raw budgets hold today's start with about a tenth to spare. The shader file fills most of it, so
  * per-feature shader files bring both down. Until then they stop a start that grows on a gzip host,
  * or on a host that sends files as they are.
  */
-export const START_BUDGET: Budget = { raw: 3_448 * 1024, gzip: 464 * 1024, brotli: 160 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_448 * 1024, gzip: 464 * 1024, brotli: 165 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
