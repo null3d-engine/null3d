@@ -393,7 +393,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come in 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -410,7 +410,7 @@ The thread that draws reads the frame back and encodes it, so the canvas needs n
 
 ## 14. Video on a surface, with frames from the page
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
+Video textures (`engine.registerVideo` with `textures.fromVideo`) come in 0.3. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
 
 ```ts
 // page.ts
