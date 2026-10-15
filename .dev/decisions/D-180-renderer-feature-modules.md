@@ -1,6 +1,6 @@
 # D-180: One module per renderer feature
 
-Status: proposed on 15 October 2026, for the owner's ruling. Nothing is built. The refactor starts only when the coordinator says so, after the open feature branches EX22, EX25, EX32, EX36, F11 and J4 have landed. Task: code review findings M-9, R-16, R-17 and GPU-8 of 15 October 2026.
+Status: decided. Proposed on 15 October 2026, and approved by the owner the same day ("approved"). Nothing is built yet. Step 1, the safety-net tests, may start at once. The other steps start after the open feature branches EX22, EX25, EX32, EX36, F11 and J4 have landed. Task: code review findings M-9, R-16, R-17 and GPU-8 of 15 October 2026.
 
 Summary: A renderer feature today touches 10 to 15 Rust files, 20 to 30 places in `frame_graph.rs`, two hand-chained id tables and two hand-written template lists. In 117 merges with hand resolutions, 200 of the 305 conflict hunks in renderer files (66%) fell in those places. The proposal gives each frame-graph step one module behind one internal trait. GPU ids come from one table with an overlap test, and both GPU backends read one template descriptor with a parity test. Twelve small landings, each with unchanged draw lists and image references, take about 14 helper-days.
 
@@ -281,7 +281,9 @@ Over the measured merges, that would remove 55% to 60% of the renderer's conflic
 - A quality feature also spreads over the engine's TypeScript: the presets, the governor's steps, the runner, `shared/core.ts` and the `Scene` fields. The same review lists this beside GPU-8. It needs its own record.
 - The WebGPU fragment stage now reads 16 of its 16 sampled textures. The descriptor could later carry each template's texture count for a budget test, as review findings R-07 and H-6 ask.
 
-## Rulings needed
+## Rulings
+
+The owner approved items 1 and 2 on 15 October 2026, and step 1 started at once.
 
 1. Approve the design: the step trait and one module per feature. Ids come from one table with an overlap test, and both GPU paths read one template descriptor with a parity test.
 2. Approve the plan: twelve landings in the order above, each with unchanged draw lists and image references, starting after the open feature branches land.
