@@ -90,7 +90,7 @@ export const DEMOS: readonly Demo[] = [
 			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
-		hold: 21,
+		hold: 0.5,
 		timeoutSeconds: 60,
 	},
 	{
@@ -184,6 +184,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'coat-and-sheen',
+		group: 'Light, materials and effects',
+		sketch: new URL('./coat-and-sheen/sketch.ts', import.meta.url),
+		code: 'coat-and-sheen/',
+		title: 'Clear coat and sheen',
+		scene: 'Rainy showroom',
+		summary:
+			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
@@ -193,6 +205,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
 		hold: 1,
+	},
+	{
+		name: 'weighted-transparency',
+		group: 'Light, materials and effects',
+		sketch: new URL('./weighted-transparency/sketch.ts', import.meta.url),
+		code: 'weighted-transparency/',
+		title: 'Weighted transparency',
+		scene: 'Glass pavilion',
+		summary:
+			"Eight panes of stained glass that cross each other, and 600 puffs of smoke from a brazier, blend in any order with the weighted blending, as three.js's OITPassNode blends them. Sorting by object cannot order them, so with normal blending they pop as the camera turns.",
+		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'time-of-day',

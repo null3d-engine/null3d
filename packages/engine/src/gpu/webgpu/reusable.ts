@@ -2,6 +2,10 @@
 // allocates none of its own. WebGPU reads a descriptor only during the call that takes it, so one
 // object can serve every frame.
 
+/**
+ * A render pass descriptor with at most two color targets and one depth target. Only the weighted
+ * layer draws into a second color target, which clears and stores as the first does.
+ */
 /** How many clear colors a render pass setup keeps, more than a frame's passes clear to. */
 const CLEAR_COLORS = 4;
 
@@ -33,6 +37,16 @@ export class RenderPassSetup {
 		clearValue: undefined,
 	};
 	private readonly colorTargets: GPURenderPassColorAttachment[] = [this.colorTarget];
+	private readonly secondTarget: GPURenderPassColorAttachment = {
+		view: undefined as unknown as GPUTextureView,
+		loadOp: 'clear',
+		storeOp: 'store',
+		clearValue: undefined,
+	};
+	private readonly twoColorTargets: GPURenderPassColorAttachment[] = [
+		this.colorTarget,
+		this.secondTarget,
+	];
 	private readonly noColorTargets: GPURenderPassColorAttachment[] = [];
 	private readonly depthTarget: GPURenderPassDepthStencilAttachment = {
 		view: undefined as unknown as GPUTextureView,
@@ -69,6 +83,20 @@ export class RenderPassSetup {
 		target.storeOp = store ? 'store' : 'discard';
 		target.clearValue = clear ? this.clearColor(color, at) : undefined;
 		this.descriptor.colorAttachments = this.colorTargets;
+	}
+
+	/**
+	 * Sets a second color target after the first, or leaves the first alone when `view` is
+	 * undefined. Call it after `setColor`, whose clear color and operations it takes.
+	 */
+	setSecondColor(view: GPUTextureView | undefined): void {
+		if (!view) return;
+		const target = this.secondTarget;
+		target.view = view;
+		target.loadOp = this.colorTarget.loadOp;
+		target.storeOp = this.colorTarget.storeOp;
+		target.clearValue = this.colorTarget.clearValue;
+		this.descriptor.colorAttachments = this.twoColorTargets;
 	}
 
 	/** The clear color with the parts at `color[at, at + 4)`, made from the oldest when new. */

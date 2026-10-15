@@ -50,6 +50,7 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
+TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
@@ -703,8 +704,8 @@ export class WebGPUBackend {
 	/**
 	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use, with its builds that skin once they have arrived too. A group's or a fold's shader is joined then too, once its host's
-	 * file has arrived.
+	 * defines at its first use, once the set of its builds that holds the build has arrived too. A
+	 * group's or a fold's shader is joined then too, once its host's file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		if (!this.pipelines.has(template)) {
@@ -713,7 +714,7 @@ export class WebGPUBackend {
 				return false;
 			this.pipelines.defineCustom(template, shader);
 		}
-		if (!this.images.buildsReady(template, permutation)) return false;
+		if (!this.images.buildsReady(template, permutation, 'wgsl')) return false;
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
@@ -1104,6 +1105,8 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
+					// The weighted layer's pass names a second color target after the flags.
+					setup.setSecondColor(length > 10 ? this.targetView(words[a + 9] as number) : undefined);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,

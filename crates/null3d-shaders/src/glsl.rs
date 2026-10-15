@@ -133,6 +133,11 @@ fn write_stage(
     source = drop_unused_constants(&source);
     source = highp_integers(&source);
     source = implicit_comparison_levels(&source);
+    if let Some(name) = reserved_name(&source) {
+        return Err(format!(
+            "the {stage_name} shader `{entry_point}` of pipeline `{pipeline}` names `{name}`, which GLSL ES reserves. The GLSL writer adds `_1` to the second of two WGSL names that clash in one shader, so a WGSL name `gl` becomes `gl_1`: give the WGSL name another spelling."
+        ));
+    }
 
     let entry = module
         .entry_points
@@ -719,6 +724,17 @@ pub(crate) fn implicit_comparison_levels(source: &str) -> String {
     out
 }
 
+/// The first identifier that starts with `gl_` but is no built-in, or `None`. GLSL ES reserves
+/// every such name, and the built-ins all go on with a capital letter.
+fn reserved_name(source: &str) -> Option<&str> {
+    source
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .find(|word| {
+            word.strip_prefix("gl_")
+                .is_some_and(|rest| !rest.starts_with(|c: char| c.is_ascii_uppercase()))
+        })
+}
+
 /// The name of the temporary that naga's GLSL writer names the structure that a vertex shader
 /// returns from its entry point, and the local name in the text.
 const ENTRY_RESULT: &str = "_tmp_return";
@@ -856,6 +872,18 @@ fn split_arguments(list: &str) -> Option<Vec<&str>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_that_glsl_reserves_are_found() {
+        assert_eq!(
+            reserved_name("float gl_1 = gl_FragCoord.x;\nfloat gl = 1.0;"),
+            Some("gl_1")
+        );
+        assert_eq!(
+            reserved_name("gl_Position = vec4(gl_VertexID); float glow_1 = 0.0;"),
+            None
+        );
+    }
 
     #[test]
     fn local_array_constructors_become_element_assignments() {

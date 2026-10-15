@@ -66,7 +66,7 @@ use null3d_render::gpu_driven::{
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::light_tables;
-use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::materials::{self, CustomShading, LayerMap, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
@@ -74,6 +74,7 @@ use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
+use null3d_render::probe_grid::ProbeGrid;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
@@ -223,6 +224,7 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    light_probe_values: Box<[f32; constants::light_probe_value::COUNT as usize]>,
     /// The block of the background's values, which TypeScript writes before it calls
     /// `setBackgroundSource`.
     background_values: Box<[f32; constants::background_value::COUNT as usize]>,
@@ -466,7 +468,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
 /// largest storage binding of the device the engine draws with, and the capability flags say
 /// whether it has transient attachments. On WebGL2 (`webgl2`), the capability flags say whether
-/// the device has multi-draw, and `max_texture_size` is its largest texture. Scene passes draw
+/// the device has multi-draw and draws into targets of 16-bit floats, and `max_texture_size` is its
+/// largest texture. Scene passes draw
 /// into a target of format `scene_color`: a float format for HDR color, or the canvas's for the
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
@@ -551,6 +554,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                float16_targets: capabilities.contains(Capabilities::FLOAT16_TARGETS),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
@@ -592,6 +596,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
         effect_textures: Box::new([0; MAX_EFFECT_TEXTURES]),
@@ -607,6 +612,13 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of the block of the light probe grid's values (`LIGHT_PROBE_VALUE_*`), 32-bit floats
+/// that TypeScript writes before it calls `setLightProbeGrid`.
+#[wasm_bindgen(js_name = lightProbeValues)]
+pub fn light_probe_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.light_probe_values[..])))
 }
 
 /// The address of the block of the background's values (`background_value`), which TypeScript
@@ -2131,13 +2143,19 @@ pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
 
 // Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
 // map changes the draw tables, as a new material does.
-/// Gives a material a map in a slot (`constants::map_slot`), which the shader reads at the second
-/// texture coordinates when `second_uv` is 1.
+/// Gives a material a map in a slot (`constants::map_slot`), or one of a layered material's maps
+/// after the slots, which the shader reads at the second texture coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
-    // The engine's own calls name only the slots that exist.
-    let Some(&slot) = MapSlot::ALL.get(slot as usize) else {
-        return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
+    // The engine's own calls name only the slots and layer maps that exist.
+    let slot = slot as usize;
+    let layer = slot
+        .checked_sub(MapSlot::ALL.len())
+        .map(|k| LayerMap::ALL.get(k));
+    let (slot, layer) = match (MapSlot::ALL.get(slot), layer) {
+        (Some(&slot), _) => (slot, None),
+        (None, Some(Some(&layer))) => (layer.slot(), Some(layer)),
+        _ => return render_failure(render_detail::UNKNOWN_MATERIAL, 0),
     };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
@@ -2145,10 +2163,14 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
             Ok(map) => map,
             Err(failure) => return failure,
         };
-        match settings
-            .materials_mut()
-            .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
-        {
+        let table = settings.materials_mut();
+        let id = material.wrapping_sub(1);
+        let second_uv = second_uv != 0;
+        let set = match layer {
+            Some(layer) => table.set_layer_map(id, layer, map, second_uv),
+            None => table.set_map(id, slot, map, second_uv),
+        };
+        match set {
             Ok(()) => {
                 e.structure_changed = true;
                 0
@@ -3423,6 +3445,37 @@ pub fn set_environment(texture: u32) -> u32 {
             intensity,
             rotation,
             sh,
+        }));
+        0
+    })
+}
+
+/// Lights the scene with the light probe grid whose coefficients are 3D texture `texture`, or with
+/// none when `texture` is 0, from the next frame on. The grid's placement, spacing, counts, factor
+/// and the share of the environment's diffuse light it takes come from the block that
+/// `lightProbeValues` gives. The TypeScript API checks the values. Fails for a texture that is not
+/// live.
+#[wasm_bindgen(js_name = setLightProbeGrid)]
+pub fn set_light_probe_grid(texture: u32) -> u32 {
+    with_engine(|e| {
+        use constants::light_probe_value as at;
+        let values = &e.light_probe_values;
+        let value = |place: u32| values[place as usize];
+        let origin = std::array::from_fn(|k| value(at::ORIGIN + k as u32));
+        let spacing = std::array::from_fn(|k| value(at::SPACING + k as u32));
+        let counts = std::array::from_fn(|k| value(at::COUNTS + k as u32) as u32);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        settings.set_probe_grid((!texture.is_none()).then_some(ProbeGrid {
+            texture,
+            origin,
+            spacing,
+            counts,
+            intensity: value(at::INTENSITY),
+            environment_weight: value(at::ENVIRONMENT_WEIGHT),
         }));
         0
     })
