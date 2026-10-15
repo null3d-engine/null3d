@@ -138,3 +138,12 @@ describe('isTitleCase', () => {
 		expect(isTitleCase('GPU tiers and backends')).toBe(false);
 	});
 });
+
+describe('British spellings', () => {
+	it('warns on a British spelling in prose and tables, and not in code', () => {
+		expect(rules('The walls are coloured.')).toEqual(['warning:british_spelling:1']);
+		expect(rules('| `altitude` | The height in metres |')).toEqual(['warning:british_spelling:1']);
+		expect(rules('The camera-centred quadtree.')).toEqual(['warning:british_spelling:1']);
+		expect(rules('The walls are colored, 3 meters high, `colour` in code.')).toEqual([]);
+	});
+});

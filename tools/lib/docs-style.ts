@@ -126,6 +126,15 @@ export type DocsAudience = 'users' | 'contributors';
 
 const EMOJI = /\p{Extended_Pictographic}/u;
 
+/** British spellings, where the docs spell every word the American way. */
+const BRITISH_SPELLING =
+	/\b(?:colour\w*|\w*metres?|centre[sd]?|behaviours?|favour\w*|analys(?:e|ed|es|ing)|optimis(?:e|ed|es|ing|ation)|initialis(?:e|ed|es|ing|ation)|grey)\b/i;
+
+/** The first British spelling in a text, such as "colour", or undefined. */
+export function britishSpelling(text: string): string | undefined {
+	return BRITISH_SPELLING.exec(text)?.[0];
+}
+
 /** A sentence ends at . ! or ? before a capital, a digit, a quote, a bracket, or a name spelled in lowercase. */
 const SENTENCE_BREAK =
 	/(?<=[.!?])\s+(?=[A-Z0-9"(]|null3D\b|three\.js\b|npm\b|iOS\b|iPadOS\b|macOS\b)/;
@@ -289,6 +298,15 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 		if (/[“”‘’]/.test(text)) {
 			add('curly_quote', 'error', block.line, text, 'Use straight quotes and apostrophes.');
 		}
+		const british = britishSpelling(text);
+		if (british)
+			add(
+				'british_spelling',
+				'warning',
+				block.line,
+				text,
+				`"${british}" is a British spelling; the docs spell words the American way.`,
+			);
 		const misspelled = misspelledEngineName(text);
 		if (misspelled)
 			add(

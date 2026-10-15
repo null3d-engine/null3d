@@ -29,8 +29,14 @@ import {
 import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
-import { docsFiles, readIfExists } from './files';
+import { docsFiles, readIfExists, walkFiles } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
+import {
+	FIRST_USE_PAGE_ID,
+	firstUsePage,
+	firstUseProblems,
+	manifestFeatures,
+} from './first-use-docs';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 import { releaseOf, STEPS_NOTE, shipsSentence } from './steps';
@@ -117,7 +123,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/lines', title: 'Lines', since: '0.2', summary: 'createLines; pixel and world widths; dashes; edges from meshes.' },
 	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
 	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', since: '0.2', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
-	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centred quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
+	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
 	{ id: 'api/ui', title: 'UI overlays and labels', since: '0.2', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
 	{ id: 'api/page', title: 'Messages between sketch and page', since: '0.1', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
 
@@ -320,6 +326,25 @@ ${PLACEHOLDER_MARKER}
 
 This page will cover: ${page.summary}
 ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
+}
+
+/**
+ * Maintainer guides that AGENTS.md's table of paths or the guides' own README does not link: each
+ * Markdown file directly in `.dev/`, apart from the README and the generated tables.
+ */
+export function guideListProblems(root: string): string[] {
+	const guides = walkFiles(root, '.dev', (path) => /^\.dev\/[^/]+\.md$/.test(path)).filter(
+		(path) => path !== '.dev/README.md' && path !== RECORD_TABLES_PAGE,
+	);
+	const agents = readIfExists(root, 'AGENTS.md') ?? '';
+	const readme = readIfExists(root, '.dev/README.md') ?? '';
+	return guides.flatMap((path) => {
+		const name = path.slice('.dev/'.length);
+		return [
+			...(agents.includes(`(${path})`) ? [] : [`AGENTS.md's row of .dev/ does not link ${path}`]),
+			...(readme.includes(`(${name})`) ? [] : [`.dev/README.md does not list ${path}`]),
+		];
+	});
 }
 
 /** Problems with the shader library's modules that keep its page from being right. */
@@ -555,6 +580,7 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 			libraryPage(readLibrary(root).modules, library.title, library.summary),
 		);
 	out.set(pagePath(PRESET_TABLES_ID), presetTablesPage());
+	out.set(pagePath(FIRST_USE_PAGE_ID), firstUsePage(manifestFeatures(root)));
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
@@ -653,7 +679,12 @@ export function checkDocs(root: string): string[] {
 	let generated = new Map<string, string>();
 	try {
 		const api = readApi(root);
-		problems.push(...referenceProblems(api), ...libraryProblems(root));
+		problems.push(
+			...referenceProblems(api),
+			...libraryProblems(root),
+			...firstUseProblems(manifestFeatures(root)),
+			...guideListProblems(root),
+		);
 		generated = generateDocs(root, api);
 		problems.push(...readRecord(recordFiles(root)).problems);
 	} catch (e) {
