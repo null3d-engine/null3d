@@ -2612,16 +2612,20 @@ impl SceneSettings {
     }
 
     /// Turns probe shading on or off for the frame (see [`ProbeShading::update`]): on once the
-    /// scene sets a grid whose texture is on the GPU and the lit pipelines in use have their grid
+    /// scene sets a grid that the texture store holds and the lit pipelines in use have their grid
     /// builds. Returns true when it changes, so the layouts take their keys again.
     pub(crate) fn update_probe_shading(
         &mut self,
         pipelines: &mut PipelineCache,
         pipelines_built: u32,
     ) -> bool {
+        // A live 3D texture is enough here, not one whose texels are up already: this frame's own
+        // texture work uploads them and then writes the frame's grid values, which name no grid
+        // until they are up. So the frame that uploads a grid's texels draws with it, which is what
+        // a held frame and `engine.captureFrame` read.
         let wanted = self
             .probe_grid
-            .is_some_and(|grid| self.textures.ready_volume(grid.texture).is_some());
+            .is_some_and(|grid| self.textures.is_volume(grid.texture));
         self.probe_shading
             .update(wanted, pipelines, pipelines_built)
     }
