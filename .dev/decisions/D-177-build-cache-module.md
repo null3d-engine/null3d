@@ -78,3 +78,47 @@ Two changes make a stale or partial entry a miss. The name test matches every co
 not. And a completeness check requires every module that `shaders.ts` loads, from its imports and the
 device module names its tables hold, so a set that misses one is never fresh, is never restored and is
 never stored. A build that writes an incomplete set throws instead of recording it as up to date.
+
+## Addendum, 15 October 2026: one Rust build folder per checkout
+
+The shared cargo target is withdrawn. Each checkout builds Rust into its own `target` folder again,
+and sccache shares the compiled dependency crates instead. The owner approved this on 15 October 2026.
+
+Cargo names a workspace crate's build files by the crate and its workspace-relative path, and judges
+them fresh by comparing file times with the build's record. Two worktrees hold the same crates at the
+same relative paths, so in one shared folder they share one record. A worktree whose files are older
+than another worktree's last build of the same crate therefore links that build. This was seen twice:
+on 14 October a branch got a stale shader compiler and failed its size budgets, and on 15 October a
+branch compiled against another branch's `null3d-gpu` constants. Earlier the same day a merged branch
+got a core without its own feature.
+
+The keyed caches made it worse. Their keys hash the checkout's own files, which is correct, but the
+contents came from whatever Cargo linked. So a wrong core, shader compiler or module set was stored
+under the right key and served to every later checkout with those sources. A per-checkout folder
+removes the cause: Cargo then compares a checkout's files only with that checkout's own builds, and
+an entry's key and its contents come from the same files. The keys need no change, and a test checks
+that they hold no checkout path (`tools/build-wasm.test.ts`, "the cache keys").
+
+The decision:
+
+1. `tools/build-wasm.ts` builds into `<checkout>/target` by default. `NULL3D_CARGO_TARGET` still names
+   another folder; `local` names the checkout's own. The native shader build uses Cargo's default,
+   the workspace's `target`.
+2. The build wraps the compiler in sccache when `sccache` is on the `PATH` and `RUSTC_WRAPPER` is not
+   set, with its cache in the `sccache` folder under the root. sccache keys each compile by the
+   contents of its sources, its flags and its dependencies, so sharing it across checkouts cannot
+   hand one checkout another's crates. It caches the dependency crates and the standard library that
+   the threads variant rebuilds. It does not cache the workspace's own crates in an incremental
+   build, proc-macro crates or build scripts, which compile once per checkout.
+3. sccache is optional. CI and a machine without it build exactly as before.
+4. The caches that the shared folder fed were purged once on 15 October 2026: the built WebAssembly
+   files, the shader modules, the per-entry shader cache, the GPU check's baseline builds and the
+   shared folder itself.
+5. The size check's lock moves into the checkout with everything else: `target/build.lock`. It was
+   `~/.cache/null3d/build.lock`, one file for the whole machine. A landing in one checkout then waited
+   for a landing in another for the length of a base build. Two size checks in one checkout still
+   serialise, because they share that checkout's base tree and staging folders.
+
+The sccache server runs each compile itself, at the priority that it started with. The coordinator's
+load limiter starts it at background priority, so the CPU lane's compiles never run beside a timing
+run in the foreground.

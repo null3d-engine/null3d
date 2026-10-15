@@ -334,8 +334,8 @@ describe('budgetProblems', () => {
 				later,
 			),
 		).toEqual([
-			'the engine JavaScript that a page downloads at its start in pipelined mode is 168,961 bytes after Brotli, over its 165 KB budget',
-			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${START_BUDGET.brotli / 1024} KB budget`,
+			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${LATER_BUDGET.brotli / 1024} KB budget`,
 		]);
 	});
 

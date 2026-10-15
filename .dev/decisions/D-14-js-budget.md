@@ -570,12 +570,11 @@ The start can shrink only by moving builds that a page draws with out of the sta
 
 ### The third raise, 15 October 2026: the start to 165 KB
 
-By 15 October 2026 main's own build was over the budget again. The pipelined WebGL2 start measured 162.2 KB after Brotli against 160 KB. The WebGPU start measured 147.1 KB and passed. So only the starts that carry the GLSL shader text were over, and branches that add a mesh-template permutation measured 162 to 165 KB that morning.
+Main's own build was over the budget. The pipelined WebGL2 start measured 162.2 KB after Brotli against 160 KB, so a landing failed the size check on main's bundle rather than on its own change: showcase-hud-1, cargo-isolation-1 and ex32-probes-1 each stopped there on 15 October 2026. The WebGPU start measured 147.1 KB and passed. The raise of 14 October had left less than a day of headroom, and the WebGL2 shader text is what filled it, as the section above predicted.
 
-The owner raised the start's Brotli budget from 160 KB to 165 KB, and chose that figure over trimming the start at once. The owner recorded the trim as a later task: "we can trim later on". The same ruling returned the gzip and uncompressed figures to 448 KB and 3,328 KB.
+The owner raised the start's Brotli budget from 160 KB to 165 KB, which leaves 2.8 KB of headroom, and chose that figure over trimming the start at once. The owner recorded the trim as a later task: "we can trim later on". The same day's earlier ruling returned the gzip and uncompressed figures to 448 KB and 3,328 KB, which the raise of 14 October had changed with no written words.
 
 ### The trend, and the task that tracks it
 
 The start budget rose from 140 KB to 145 KB in the morning and was over again within hours. Hours after the raise to 160 KB, the light probe grid's figures put the pipelined WebGL2 start at 159.6 KB, 99.8% of the new budget ([D-146](D-146-light-probe-grid.md)). Every raise so far went to the GLSL side, and the WebGL2 start module is the binding one. The next landing that adds a mesh-template permutation moves it again.
 
-A change that trims the GLSL text helps more than another raise: one stage's text per program, rather than one per build. The trim is task M3-T1: every start mode at or under 155 KB after Brotli, the budget back to 160 KB, and a warning when a start passes 97% of its budget. Moving start code that few pages use into first-use files is the method, as the light probe grid did. Until the trim lands, a branch that pushes the start over the budget trims its own start code or asks the owner, as before.
