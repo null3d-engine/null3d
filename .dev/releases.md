@@ -1,18 +1,30 @@
 # Releases
 
-This guide covers how a release is made. [AGENTS.md](../AGENTS.md) holds the rule that decides each changelog line: pull requests merge by squash only.
+This guide covers how a release is made. Every commit that reaches main, other than a merge, becomes a line of the next release's notes, whichever branch brought it ([D-108](decisions/D-108-first-release.md#addendum-every-change-goes-into-the-release-notes-15-october-2026)).
 
 ## Making a release
 
-The first release is 0.1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
+The first release is 0.1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The `commit` input is for a commit other than main's newest. One workflow makes the whole release, with no pull request and no GitHub App. It:
 
-1. Checks that the newest full CI run of main's latest commit passed. That is main's own run after the merge, or a run started by hand ([D-99](decisions/D-99-no-merge-queue.md)). A pull request's run does not count, because it tested GitHub's merge of the pull request into an older main.
-2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md`.
-3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
+1. Starts from main's newest commit, or from the main commit that its `commit` input names.
+2. Checks that the newest full CI run of that commit passed. That is main's own run after the push, or a run started by hand. A cancelled run proves nothing either way, so it does not count. A push to main cancels main's own run ([D-157](decisions/D-157-direct-pushes-to-main.md)), so main's newest commit seldom has a finished run. To release, start a run by hand with `gh workflow run ci.yml --ref main`, which no push cancels. When it passes, run the Release workflow with the commit it ran on.
+3. Runs `bun run release --apply`. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's notes to `CHANGELOG.md`. The notes list every commit since the last release, up to that commit.
+4. Commits that as `chore(release): <version>` and pushes it to main. So main shows the version it last released, and its `CHANGELOG.md` holds every release. Landings may carry on while a release runs. The version numbers and the changelog section then land on the commit main holds at the end, which keeps main a straight line. The release itself still holds the commit it started from.
+5. Builds the shader modules and writes every generated file, which git on main does not keep ([D-105](decisions/D-105-generated-files-out-of-git.md)). It commits them in full on top of the release commit, and tags that commit with the plain version, such as `0.1.0`. Only the tag points to that commit. A commit that reached main after the release started is not in the release, so the next release's notes list it. The Claude Code plugin, `bunx skills add` and the docs on GitHub read a release from its tag, so they get the skills copy and the generated pages.
+6. Publishes a GitHub Release from the tag. Its text is the changelog section for that version, and it stops at GitHub's limit of 125,000 characters with a link to the release's `CHANGELOG.md`. Each skill's zip file is attached to it.
+7. Builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
 
-Merging that pull request runs the Release Publish workflow. It builds the shader modules and writes every generated file, which git on main does not keep ([D-105](decisions/D-105-generated-files-out-of-git.md)). It commits them in full on top of the merge commit, and tags that commit with the plain version, such as `0.1.0`. Only the tag points to that commit. The Claude Code plugin, `bunx skills add` and the docs on GitHub read the release from the tag, so they get the skills copy and the generated pages. The workflow then publishes the GitHub Release with the changelog section and each skill's zip file. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
+The workflow's two jobs, `release` and `publish-npm`, may run for 30 minutes each. They are the one exception to the rule that every CI job stops at 20 minutes ([Pull requests](pull-requests.md#cis-jobs)). A release is not a check of a commit, and a publish cut off halfway is worse than a slow one. A tag without its GitHub Release, or some packages on npm and not the others, leaves the release in pieces. They had not run yet on 12 October 2026, so their time is not known.
 
-The Release Publish workflow's two jobs, `publish` and `publish-npm`, may run for 30 minutes. They are the one exception to the rule that every CI job stops at 20 minutes ([Pull requests](pull-requests.md#cis-jobs)). A release is not a check of a commit, and a publish cut off halfway is worse than a slow one: a tag without its GitHub Release, or some packages on npm and not the others. They had not run yet on 12 October 2026, so their time is not known.
+A release can be made at any time (the owner, 15 October 2026). Every change that reaches main goes into the next release's notes, and no step waits on a set of features. The version type is the only choice: `minor` and `major` mark a roadmap release, and a hand-started release with nothing to list still releases a patch.
+
+### When a release fails partway
+
+The workflow lands the version on main, then tags, then publishes. Each step is safe to repeat:
+
+- A failing `publish-npm` job leaves main and the tag correct. Re-run that job from the run's page, which publishes only the packages npm does not have yet.
+- A failure before the tag exists leaves main holding the version numbers. Run the workflow again with the same commit: it finds nothing to land, and carries on to the tag.
+- A tag that exists stops the workflow, because a released version is never released again.
 
 ## Versions
 
@@ -34,7 +46,7 @@ On 11 October 2026 the notes under the pages' titles stopped saying "Ships in nu
 
 ## One-time setup
 
-- A GitHub App with write access to contents and pull requests, installed on the repository. Its ID and private key go in the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets. A pull request opened with the default token starts no workflows, so its CI would never run.
+- No GitHub App and no secret: the workflow's own `permissions: contents: write` lets the default token land the version commit and push the tag. On 15 October 2026 a probe workflow pushed a branch that way, while the repository's default workflow permission was read-only. So the repository's Actions settings need no change.
 - npm trusted publishing for each public package. npm cannot publish a package's first version that way, so the owner publishes it by hand, as [The first version of a new package](#the-first-version-of-a-new-package) shows. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`, and the pack check fails without it.
 - No npm token in the repository. npm skips trusted publishing when `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set, even to an empty string, so the publish job sets neither. It gets an OIDC token through `id-token: write`, and `actions/setup-node` with `registry-url: https://registry.npmjs.org`. Trusted publishing needs npm 11.5.1 or newer and Node 22.14 or newer, so the job uses Node 24 and installs the latest npm.
 - Git keeps neither the WebAssembly files nor the shader modules (`packages/engine/src/generated/shaders*.ts`). The publish job therefore sets up Bun and the pinned Rust toolchain, and runs `bun tools/build-wasm.ts --pages-only` before it packs. That builds the shader modules and both WebAssembly files of the engine, with no size report. It also builds the Vite plugin's shader compiler and the command-line tool's asset formats.
@@ -42,7 +54,7 @@ On 11 October 2026 the notes under the pages' titles stopped saying "Ships in nu
 
 ## The npm packages
 
-Five packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Eight packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |
@@ -50,6 +62,9 @@ Five packages are public. Each one's `prepack` script runs `bun tools/build-pack
 | `@null3d/vite-plugin` | `lib/`, and the shader compiler in `dist/shader-compiler.wasm` | `lib/` |
 | `@null3d/controls` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/impostors` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/particles` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/terrain` | `lib/`, with `terrain.wgsl`, which the built module imports and the Vite plugin compiles for the project | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
 ### Source in the repository, built files on npm
@@ -111,22 +126,25 @@ The first run passed on a MacBook Pro M5 Max in Chrome on 3 October 2026. The ty
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls` and `@null3d/geometry` by hand. Each new add-on package, such as `@null3d/rapier` and `@null3d/particles`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/impostors`, `@null3d/particles` and `@null3d/terrain` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
 3. Log in to npm with `npm login`, as an account that may publish in the `@null3d` scope.
-4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these four publishes:
+4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these first publishes:
 
    ```sh
    npm publish target/packages/null3d-engine-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-vite-plugin-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-controls-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-geometry-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-impostors-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-particles-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-terrain-0.0.0.tgz --access public --provenance=false
    ```
 
-5. On npmjs.com, open each of the five packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
-6. Run the Release workflow with `minor`. Its publish job publishes 0.1.0 of every package through trusted publishing, with provenance.
+5. On npmjs.com, open each of the eight packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.
+6. Run the Release workflow with `minor`. Its `publish-npm` job publishes 0.1.0 of every package through trusted publishing, with provenance.
 
 Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.
 
