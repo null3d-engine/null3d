@@ -128,3 +128,70 @@ The code review also asked this record to say that FXAA below the whole canvas's
 edges of an upscaled frame were never smoothed. Step 1 now runs FXAA at the render size, and the
 three compatibility-mode scale-0.5 references that move with it were remade in both sets
 (14661f028, 1528a0feb), with the diffs on edges alone.
+
+## Addendum, 15 October 2026 (later): the joins return, and the target stays
+
+The review's first cost is fixed, and its cause was not the one the split's own fix named. The
+second cost stays, and this addendum says why, with the numbers the owner asked for.
+
+### The joined effects never built on WebGL2
+
+d740587b6 said a joined group's target is read differently by the two-step pass on WebGL2, and made
+each effect run alone while the scale can drop. The difference is real, but it is in the shader and
+not in the rows: the engine writes the joined chain into the host's built GLSL at run time
+(`packages/engine/src/gpu/effect-joiner.ts`), and it wrote it in the structure form,
+`EffectInput link = start; link.color = run(link, 0u);`, while the WebGL2 build flattens every
+structure parameter into one parameter for each member (the Adreno 619 keeps a structure's values
+at 16 bits, [driver bugs](../driver-bugs.md)). The built host therefore has no `EffectInput` and its
+pieces' run functions take the members, so no group's shader compiled on WebGL2 at all. The full
+image run of 15 October 2026 recorded it: "a shader of joined custom effects failed to build, so
+those effects draw one pass each: Fragment shader is not compiled", with the driver's
+"'fx74470501_effect_piece_main' : no matching overloaded function found".
+
+The engine falls back to a pass for each effect when a joined build fails, so a joined shader that
+does not compile is invisible: the image looks right once the fallback has run, and a frame that the
+image test holds before it shows the target as the clear left it, which reads as a flat frame. That
+is the "flat frame" d740587b6 blamed on the rows, and the four `effects*` WebGL2 failures at scale 1 in the same
+run were the same fallback at another moment.
+
+The chain now carries the members, and its calls pass them in the order the hosts declare them
+(`EffectInput` is `color`, `uv`, `pixel`, `size`, `time`). A GLSL call is positional, so the chain's
+own parameter names serve. The shader crate's `check_glsl` now refuses a call whose arguments do not
+fit the function it calls, which is the check that would have caught this, and a test pins both
+hosts' chains to those five members. So the joins run at every render scale again, and
+`plan_effects` no longer drops them for the two-step: a group draws one pass, and the two steps read
+its target as the one final pass reads it.
+
+Folding stays off while the render scale can drop. An effect may fold only while the frame draws at
+the whole canvas (`may_fold`), and the declarations hold the two-step pass for the whole time the
+scale can drop, so a fold would declare the passes again at each crossing of the whole canvas's
+scale. A crossing allocates nothing, as the next section shows, so a sketch whose scale can drop
+does not fold. A sketch that sets `minRenderScale: 1` folds as it did.
+
+### The target: the plan's shape cannot follow the frame for free
+
+`outputColor` stays in the plan while the render scale can drop, and the first step draws nothing at
+the whole canvas's scale, so its cost there is the memory and no work. That cost cannot be removed
+while a crossing keeps its promise, and the declarations hold the reason:
+
+- The final pass declares a read of `outputColor` in both shapes, since its second step reads the
+  first step's target. The compiler places a frame target when a pass that runs uses it, and it
+  holds the texture that a declared pass samples even where the pass that writes it is switched
+  off. So the target is in the plan for the whole time the two-step shape is declared, whatever the
+  frame draws.
+- Its texture can share another's only where the two lifetimes do not touch. Below the whole
+  canvas the first step writes the target in the same step that reads the color it draws from, so
+  the target's lifetime begins where that color's ends and no other target can hold it either.
+- Freeing it therefore means declaring the passes again when the frame's scale crosses the whole
+  canvas, which is what a frame may not do: `render_scale.rs` (`check_scaled_frames`,
+  `check_bloom_while_scaling`) refuses any GPU object in a frame that changes the scale, and
+  `no_alloc.rs` refuses the CPU allocation that declaring again costs. That promise is what keeps
+  dynamic resolution free, and the governor moves the scale in steps of 50 thousandths
+  (`SCALE_STEP`), so a scene whose frame time sits on a threshold crosses the whole canvas's scale
+  back and forth, which would make the texture each time.
+
+So this record keeps the target and its cost: 4 bytes for each canvas pixel, about 33 MB at
+3840x2160 and 8 MB at 1920x1080. An owner who wants the memory back chooses between the two: the
+crossing promise would have to give way, for the target being made when a frame first draws below
+the whole canvas and released once the scale has stayed whole, which changes `render_scale.rs` and
+the no-allocation promises in several guides.

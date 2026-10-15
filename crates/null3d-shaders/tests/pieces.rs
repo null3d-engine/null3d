@@ -168,6 +168,12 @@ fn join_wgsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) 
 /// Joins pieces into a host's GLSL fragment shader as the engine's joiner does: a curve's items and
 /// its call in place of `tone_curve_hook`, then the effects' items, each once, and their chain in
 /// place of `effect_chain`, with the effects' slots from 0.
+///
+/// The chain carries the input's members, not the structure: the WebGL2 build flattens a
+/// structure parameter into one parameter for each member (`flatten.rs`), so a chain that named
+/// `EffectInput` and passed it to a run function would not build on a driver. A GLSL call is
+/// positional, so the names here are the chain's own. Keep this in step with the members in
+/// `GLSL_INPUT` of `packages/engine/src/gpu/effect-joiner.ts`.
 fn join_glsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) -> String {
     let mut text = host.to_owned();
     if let Some(curve) = curve {
@@ -180,9 +186,21 @@ fn join_glsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) 
         ));
         text.replace_range(span, &hook);
     }
+    let members: [(&str, &str); 5] = [
+        ("vec4", "chain_color"),
+        ("vec2", "chain_uv"),
+        ("vec2", "chain_pixel"),
+        ("vec2", "chain_size"),
+        ("float", "chain_time"),
+    ];
+    let parameters: Vec<String> = members.iter().map(|(t, n)| format!("{t} {n}")).collect();
+    let unchanged: Vec<&str> = members[1..].iter().map(|(_, n)| *n).collect();
     let mut items: Vec<&String> = Vec::new();
-    let mut chain =
-        String::from("vec4 effect_chain(EffectInput start) {\n    EffectInput link = start;\n");
+    let mut chain = format!(
+        "vec4 effect_chain({}) {{\n    vec4 link = {};\n",
+        parameters.join(", "),
+        members[0].1
+    );
     for (slot, piece) in effects.iter().enumerate() {
         let glsl = piece.glsl.as_ref().expect("a GLSL piece");
         for item in &glsl.items {
@@ -190,9 +208,13 @@ fn join_glsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) 
                 items.push(item);
             }
         }
-        chain.push_str(&format!("    link.color = {}(link, {slot}u);\n", glsl.run));
+        chain.push_str(&format!(
+            "    link = {}(link, {}, {slot}u);\n",
+            glsl.run,
+            unchanged.join(", ")
+        ));
     }
-    chain.push_str("    return link.color;\n}\n");
+    chain.push_str("    return link;\n}\n");
     let span = function_span(&text, "effect_chain");
     let joined: Vec<&str> = items.iter().map(|item| item.as_str()).collect();
     text.replace_range(span, &format!("{}\n{chain}", joined.join("\n")));
@@ -216,26 +238,58 @@ fn glsl_function(line: &str) -> Option<&str> {
     Some(&before[start..])
 }
 
-/// The names that `line` calls: each name followed by an opening parenthesis.
-fn glsl_calls(line: &str) -> impl Iterator<Item = &str> {
+/// The names that `line` calls, with the place of each call's opening parenthesis.
+fn glsl_calls(line: &str) -> impl Iterator<Item = (&str, usize)> {
     line.match_indices('(').filter_map(move |(at, _)| {
         let before = &line[..at];
         let start = before
             .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .map_or(0, |at| at + 1);
-        (start < at).then(|| &before[start..])
+        (start < at).then(|| (&before[start..], at))
     })
 }
 
+/// The number of arguments of the call whose opening parenthesis is at `open`: its top-level
+/// commas, one more than those when it holds anything.
+fn glsl_arguments(text: &str, open: usize) -> usize {
+    let mut depth = 0usize;
+    let mut commas = 0usize;
+    let mut empty = true;
+    for byte in text.as_bytes()[open..].iter() {
+        match byte {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return if empty { 0 } else { commas + 1 };
+                }
+            }
+            b',' if depth == 1 => commas += 1,
+            b' ' | b'\t' | b'\n' | b'\r' => {}
+            _ => empty = false,
+        }
+    }
+    panic!("a call is not closed: {text}");
+}
+
 /// Checks GLSL as a WebGL2 driver would refuse it where joins can go wrong: a function defined
-/// twice, `main` among them, or one called before its definition, which GLSL needs first. naga
-/// cannot read GLSL ES, so this stands in for a driver.
+/// twice, `main` among them, one called before its definition, which GLSL needs first, or a call
+/// that does not fit the function it calls, which a driver refuses where the call's arguments do
+/// not match its parameters. naga cannot read GLSL ES, so this stands in for a driver.
 fn check_glsl(glsl: &str) {
     let lines: Vec<&str> = glsl.lines().collect();
     let functions: Vec<&str> = lines
         .iter()
         .filter_map(|line| glsl_function(line))
         .collect();
+    // The parameters of each function the shader defines, by name.
+    let mut parameters: BTreeMap<&str, usize> = BTreeMap::new();
+    for line in &lines {
+        if let Some(name) = glsl_function(line) {
+            let open = line.find('(').expect("a definition has a parameter list");
+            parameters.insert(name, glsl_arguments(line, open));
+        }
+    }
     let mut defined: Vec<&str> = Vec::new();
     let mut inside: Option<&str> = None;
     for (number, line) in lines.iter().enumerate() {
@@ -253,12 +307,21 @@ fn check_glsl(glsl: &str) {
             inside = None;
         }
         let Some(caller) = inside else { continue };
-        for name in glsl_calls(line) {
+        for (name, open) in glsl_calls(line) {
             assert!(
                 !functions.contains(&name) || (defined.contains(&name) && name != caller),
                 "line {}: `{caller}` calls `{name}` before its definition\n{glsl}",
                 number + 1
             );
+            if let Some(&count) = parameters.get(name) {
+                let arguments = glsl_arguments(line, open);
+                assert_eq!(
+                    arguments,
+                    count,
+                    "line {}: `{caller}` calls `{name}` with {arguments} arguments, which takes {count}\n{glsl}",
+                    number + 1
+                );
+            }
         }
     }
     assert_eq!(
@@ -403,6 +466,45 @@ fn joined_effects_make_a_valid_group_shader() {
     );
     check_glsl(&joined);
     assert_eq!(joined.matches(" effectColor(vec2 ").count(), 1);
+}
+
+/// The hosts' chains take the input's members, in the order the structure declares them, because
+/// the WebGL2 build flattens the structure away (`flatten.rs`). The engine's joiner writes the
+/// same members in the same order (`GLSL_INPUT` in `packages/engine/src/gpu/effect-joiner.ts`),
+/// and a chain that takes other members, or takes them in another order, leaves the calls it
+/// writes for the pieces fitting no function at all: a driver refuses the whole shader then, and
+/// the engine draws the joined effects in a pass each instead.
+#[test]
+fn the_host_chains_take_the_input_members_in_the_structure_order() {
+    // The qualifiers that may stand before a parameter's type, which is the last word after them.
+    const QUALIFIERS: [&str; 9] = [
+        "const", "in", "out", "inout", "lowp", "mediump", "highp", "flat", "smooth",
+    ];
+    for name in ["effect_group", "final_effects"] {
+        let hosts = host(name);
+        let glsl = host_glsl(&hosts, "webgl2");
+        let line = glsl
+            .lines()
+            .find(|line| glsl_function(line) == Some("effect_chain"))
+            .unwrap_or_else(|| panic!("{name} defines effect_chain in its WebGL2 build:\n{glsl}"));
+        let list = &line[line.find('(').unwrap() + 1..line.rfind(')').unwrap()];
+        let types: Vec<&str> = list
+            .split(',')
+            .map(|parameter| {
+                // GLSL writes a parameter's qualifiers, then its type, then its name, which naga
+                // leaves out where a parameter is unused.
+                parameter
+                    .split_whitespace()
+                    .find(|word| !QUALIFIERS.contains(word))
+                    .unwrap_or_else(|| panic!("a parameter of {name}'s chain has a type: {line}"))
+            })
+            .collect();
+        assert_eq!(
+            types,
+            ["vec4", "vec2", "vec2", "vec2", "float"],
+            "{name}'s chain: {line}"
+        );
+    }
 }
 
 #[test]

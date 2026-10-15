@@ -1587,16 +1587,20 @@ impl FrameGraph {
     /// pipeline `built` says is built as one. When the plan changes, the passes are declared again.
     fn plan_effects(&mut self, built: impl Fn(usize) -> bool, fold: Option<usize>) {
         let mut units = [Unit::default(); MAX_EFFECTS];
-        // A joined group writes one target for the whole group. The two-step pass reads that target,
-        // and its own rows differ from a single effect's on WebGL2, so while the render scale can
-        // drop each effect runs alone. Otherwise the sketch's groups stay.
-        let joins = if self.two_step_declared {
-            EffectJoins::default()
-        } else {
-            self.effect_joins
-        };
+        // The sketch's joins run at every render scale: a joined group draws one pass, and the two
+        // steps read its target as the one final pass reads it. Folding is another matter: an
+        // effect may fold only while the frame draws at the whole canvas (`may_fold`), and the
+        // declarations hold the two-step pass for the whole time the render scale can drop, so a
+        // fold would declare the passes again at each crossing of the whole canvas's scale. A
+        // crossing allocates nothing, so a sketch whose scale can drop does not fold.
         let fold = fold.filter(|_| !self.two_step_declared);
-        let count = effects::plan_units(self.effect_count, &joins, built, fold, &mut units);
+        let count = effects::plan_units(
+            self.effect_count,
+            &self.effect_joins,
+            built,
+            fold,
+            &mut units,
+        );
         if count != self.unit_count || units != self.effect_units || fold != self.folded {
             self.effect_units = units;
             self.unit_count = count;
@@ -1607,12 +1611,13 @@ impl FrameGraph {
     }
 
     /// True when the effects from `first` on can fold into the final pass now: no bloom or FXAA
-    /// reads the image between them, and the final pass reads one texel for each pixel.
+    /// reads the image between them, the frame draws at the whole canvas, so the final pass reads
+    /// high dynamic range color, and the render scale cannot drop, so the two-step pass is not
+    /// declared and the plan does not change when the frame's scale does.
     fn may_fold(&self) -> bool {
         !self.bloom_wanted()
             && self.dof.is_none()
             && !self.final_pass.fxaa()
-            // The two-step pass reads display color in its second step, so the effects do not fold.
             && !self.two_step_declared
             && Size::Full.viewport(self.canvas, self.scale) == self.canvas
     }
@@ -4587,6 +4592,45 @@ mod tests {
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn the_two_step_target_stays_in_the_plan_while_the_first_step_is_switched_off() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_scaling(true);
+        let mut list = DrawList::with_capacity(4096);
+        frames
+            .prepare(&mut list, (1280, 720), RenderScale::FULL)
+            .unwrap();
+        let held = frames.graph().plan().unwrap().textures().len();
+        assert!(
+            frames.sampled_id(OUTPUT_COLOR).is_some(),
+            "the two-step pass's target is in the plan"
+        );
+        // The first step draws nothing at the whole canvas's scale. Switching the pass off leaves
+        // the target in the plan: the final pass declares a read of it in both shapes, and the
+        // compiler holds a target that a running pass samples even where the pass that writes it is
+        // switched off. Freeing the target would therefore mean declaring the passes again at a
+        // whole-canvas crossing, which allocates (D-167).
+        let output = frames
+            .graph()
+            .find_pass("Output")
+            .expect("the first step's pass");
+        frames.graph.set_enabled(output, false);
+        list.clear();
+        frames
+            .prepare(&mut list, (1280, 720), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(
+            frames.graph().plan().unwrap().textures().len(),
+            held,
+            "the plan keeps the target"
+        );
+        assert!(
+            frames.sampled_id(OUTPUT_COLOR).is_some(),
+            "the final pass still reads the first step's target"
+        );
     }
 
     #[test]
