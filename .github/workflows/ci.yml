@@ -174,9 +174,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Every CI job should take at most 15 minutes. These stop at 35 while the whole shader build
-    # can take longer than 20.
-    timeout-minutes: 35
+    # Every CI job should take at most 15 minutes. The other tests stop at 35, and the whole shader
+    # build at 90, until the shader build runs on every core.
+    timeout-minutes: ${{ matrix.limit }}
     strategy:
       fail-fast: false
       matrix:
@@ -184,9 +184,11 @@ jobs:
           - part: every test but the whole shader build
             id: ci
             tests: --workspace --profile ci
+            limit: 35
           - part: the whole shader build
             id: whole-shader-build
             tests: -p null3d-shaders --test build --profile whole-shader-build
+            limit: 90
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -210,8 +212,9 @@ jobs:
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
-    # The shader build can take longer than 20 minutes when it compiles every shader.
-    timeout-minutes: 35
+    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
+    # comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
@@ -258,8 +261,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The shader build can take longer than 20 minutes when it compiles every shader.
-    timeout-minutes: 35
+    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
+    # comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
@@ -367,8 +371,9 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Its repository-wide shader test builds every shader, which can take longer than 20 minutes.
-    timeout-minutes: 35
+    # Its repository-wide shader test builds every shader, which takes longer than 35 minutes on one
+    # core. The limit comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
