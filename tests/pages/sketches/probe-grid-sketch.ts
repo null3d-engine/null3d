@@ -1,11 +1,13 @@
 // A light probe grid, baked in the browser: a room open at the front and the top, with a red wall
 // at the left, a green wall at the right and a white back wall and floor, lit by the built-in room
-// environment alone. Three grey spheres stand in the room. The bake runs in the first frame's late
-// update, where queries see the objects that setup made, and the held frame draws with the grid,
-// so the spheres take red light at the left and green light at the right, and the room's corners
-// darken. ?off draws the same room without the grid. ?mirror lays a mirror on the floor in front of
-// the spheres, which a reflection pass fills: the reflected spheres must take the grid's light of
-// their own place, as the spheres above the mirror do, not that of a place below the floor.
+// environment alone. Three grey spheres stand in the room. The bake runs in the setup, before the
+// first frame: hold mode, which the image tests use, draws its one frame without running any of the
+// sketch's code, and a grid set after the first frame draws with the plain lit builds until the
+// grid's own builds are ready. The held frame draws with the grid, so the spheres take red light at
+// the left and green light at the right, and the room's corners darken. ?off draws the same room without the grid. ?mirror lays a mirror on the
+// floor in front of the spheres, which a reflection pass fills: the reflected spheres must take the
+// grid's light of their own place, as the spheres above the mirror do, not that of a place below
+// the floor.
 import { bakeProbes, defineSketch, type QueryTarget } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -84,23 +86,17 @@ export default defineSketch(async ({ scene, assets, materials, geometry, texture
 	}
 
 	if (params.has('off')) return {};
-	let baked = false;
-	return {
-		onLateUpdate() {
-			if (baked) return;
-			baked = true;
-			const grid = bakeProbes(scene, {
-				box: { min: [-2.9, 0.1, -2.9], max: [2.9, 2.9, 2.9] },
-				spacing: 1,
-				environment,
-				albedo: (object) => (object ? colours.get(object) : undefined),
-			}).finish();
-			scene.setLightProbeGrid({
-				texture: grid.toTexture(textures),
-				origin: grid.origin,
-				spacing: grid.spacing,
-				counts: grid.counts,
-			});
-		},
-	};
+	const grid = bakeProbes(scene, {
+		box: { min: [-2.9, 0.1, -2.9], max: [2.9, 2.9, 2.9] },
+		spacing: 1,
+		environment,
+		albedo: (object) => (object ? colours.get(object) : undefined),
+	}).finish();
+	scene.setLightProbeGrid({
+		texture: grid.toTexture(textures),
+		origin: grid.origin,
+		spacing: grid.spacing,
+		counts: grid.counts,
+	});
+	return {};
 });
