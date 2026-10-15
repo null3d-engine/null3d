@@ -149,6 +149,7 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | `'cutout'` | with the first masked object that casts shadows. It casts none until its shaders are built |
 | `'views'` | with the first scene pass. Its texture shows nothing until its shaders are built |
 | `'effect_groups'` | the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own |
+| `'probe_grid'` | when the sketch first sets a light probe grid |
 
 Each feature's file is 1 to 19 KB after Brotli. Shaders that need two such features, such as a skinned mesh with a hashed material, sit in a file of their own of up to 22 KB. A page downloads it only when it uses both. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A model that `assets optimize` wrote carries a list of the features its draws need. The engine asks for those files as it reads the model, so such a model needs no `preload` entry ([The asset pipeline](assets-pipeline.md#the-shader-list)). A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 

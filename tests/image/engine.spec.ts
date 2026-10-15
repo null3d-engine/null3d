@@ -328,6 +328,7 @@ const FIRST_USE_SHADER_SKETCHES = [
 	{ feature: 'coat_sheen', sketch: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv' },
 	{ feature: 'weighted', sketch: 'tests/pages/sketches/weighted-sketch.ts' },
 	{ feature: 'decals', sketch: 'tests/pages/sketches/decal-first-use-sketch.ts' },
+	{ feature: 'probe_grid', sketch: 'tests/pages/sketches/probe-grid-sketch.ts' },
 ] as const;
 
 // A page that uses one such feature downloads that feature's shader file once, for its device's

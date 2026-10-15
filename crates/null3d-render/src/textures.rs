@@ -1398,6 +1398,12 @@ impl TextureStore {
         (slot.group != NO_GROUP).then(|| self.ids.first_group + slot.group)
     }
 
+    /// True when `texture` is a live 3D texture, whether its texels are on the GPU yet or not.
+    pub fn is_volume(&self, texture: Handle) -> bool {
+        self.slot(texture)
+            .is_ok_and(|slot| self.arrays[slot.array as usize].key.kind == Kind::Volume)
+    }
+
     /// The GPU id of a 3D texture and its size in texels along each axis, once its texels are on
     /// the GPU.
     pub fn ready_volume(&self, texture: Handle) -> Option<(u32, [u32; 3])> {

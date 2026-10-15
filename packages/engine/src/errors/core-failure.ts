@@ -67,6 +67,7 @@ const TEXTURE_TOO_LARGE = 9;
 const UNKNOWN_MATERIAL = 5;
 const UNKNOWN_MESH = 6;
 const BAD_LEVELS = 15;
+const NOT_A_VOLUME = 17;
 
 /** What is wrong with levels of detail that a mesh refused, by the core's problem. */
 const LEVEL_PROBLEMS: Record<number, string> = {
@@ -146,6 +147,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				return error(
 					'E1501',
 					`${call}() failed: the texture is larger than the ${b} pixels a side that this device's texture arrays hold.`,
+				);
+			if (a === NOT_A_VOLUME)
+				return error(
+					'E1222',
+					`${name} got a texture that is not a 3D texture. Make the grid's texture with LightProbeGridData.toTexture().`,
 				);
 			if (a === BAD_LEVELS)
 				return error(

@@ -13,9 +13,10 @@
 
 @group(0) @binding(10) var probe_grid_map: texture_3d<f32>;
 
-/// True while the scene sets a light probe grid.
+/// True while the scene sets a light probe grid, whatever its intensity: a grid of intensity 0
+/// still takes over the environment's diffuse light, with none of its own.
 fn has_probe_grid(grid: ProbeGrid) -> bool {
-    return grid.origin.w > 0.5 && grid.params.x != 0.0;
+    return grid.origin.w > 0.5;
 }
 
 /// The irradiance that the scene's probe grid gives a surface at world position `world`, whose
@@ -25,7 +26,8 @@ fn probe_grid_irradiance(grid: ProbeGrid, world: vec3f, normal: vec3f) -> vec3f 
         return vec3f(0.0);
     }
     let counts = grid.counts.xyz;
-    let spacing = 1.0 / grid.inverse_spacing.xyz;
+    // An axis with no spacing has an inverse of 0; it moves the sample point by nothing.
+    let spacing = select(vec3f(0.0), 1.0 / grid.inverse_spacing.xyz, grid.inverse_spacing.xyz > vec3f(0.0));
     // The sample point moves half a spacing along the normal, then clamps into the grid.
     let at = clamp(
         (world + normal * (spacing * 0.5) - grid.origin.xyz) * grid.inverse_spacing.xyz,
