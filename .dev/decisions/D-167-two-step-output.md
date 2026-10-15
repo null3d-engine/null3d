@@ -48,8 +48,8 @@ has not run, so no phone figure exists yet.
 The two steps ship, as follows.
 
 1. Step 1 is a new full-screen pass that draws at the render size, one texel for each render pixel.
-   It runs the output transform, which is the tone curve and the sRGB encode. It also runs FXAA,
-   bloom and the folded effects. It writes an 8-bit display-colour target named `outputColor`. The
+   It runs the output transform, which is the tone curve and the sRGB encode. It also runs FXAA and
+   bloom. It writes an 8-bit display-colour target named `outputColor`. The
    pass is today's `final.wgsl` with the new `RESOLVE` settings flag. That flag makes the shader use
    the render size as its frame, so its `whole` test holds. The four-tap loop is then skipped, and
    the dither waits for step 2.
@@ -97,3 +97,28 @@ the `sharpen` RCAS value follow, once prototype P1 measures them on the phones.
 - The frames below the whole canvas's scale can change by up to one step of the 8-bit target, since
   step 1 rounds before step 2 blends. The image manifest's tolerance should cover that. The scale-0.5
   tests are compared against their references before this lands.
+
+## Addendum, 15 October 2026: the shape is held for the whole time the scale can drop
+
+Item 3 was written as if the declarations followed the frame: the two-step shape existing only while
+a frame draws below the whole canvas. The code that shipped (011310ee7) holds the two-step shape
+whenever the render scale *can* drop, which the default presets allow. A crossing of the whole
+canvas's scale then declares nothing, allocates nothing and makes no GPU object, as item 3 wants.
+Two costs come with that, and the code review of 15 October 2026 (M-1, R-09, N-02) asked for them
+here:
+
+- The plan keeps `outputColor`, an 8-bit target the size of the canvas, while the frame draws at the
+  whole canvas's scale and nothing writes it. That is 4 bytes for each canvas pixel, about 33 MB at
+  3840x2160. The target enters the plan as soon as the render scale can drop, whether or not a frame
+  draws below the whole canvas.
+- While the scale can drop, no effect joins and none folds into either step (frame_graph's
+  `plan_effects`). A sketch whose per-pixel effects would join into one pass therefore runs each of
+  them in a pass of its own, at every scale. Step 1 reads the effects' own passes' output, and over it
+  runs the output transform and FXAA. No folded effect reaches either step, which is what item 1's
+  earlier wording got wrong.
+
+A sketch that sets `quality.set({ minRenderScale: 1 })` gives up the drop and with it both costs. The
+two-step shape is then not declared, so no `outputColor` target exists, and effects join and fold as
+they did before this change.
+
+Prototype P1 has still not run, so the split ships on the Mac's GPU check alone.
