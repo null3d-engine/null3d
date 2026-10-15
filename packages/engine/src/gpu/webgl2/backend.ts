@@ -585,7 +585,7 @@ export class WebGL2Backend {
 	private passResolve = G.NO_TARGET;
 	/** The pass's depth target, whose one-sample copy the pass's end updates when it has one. */
 	private passDepth: GlTexture | null = null;
-	/** The pass's colour target, or null for the canvas and for a depth-only pass. */
+	/** The pass's color target, or null for the canvas and for a depth-only pass. */
 	private passColor: GlTexture | null = null;
 	private passFlags = 0;
 	private passToCanvas = false;
@@ -2334,7 +2334,7 @@ export class WebGL2Backend {
 		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const resolves = this.passResolve !== G.NO_TARGET;
 		const keepsColor = storeColor || resolves;
-		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a colour-only
+		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a color-only
 		// pass, as each fullscreen step of an effect, need not name a depth it never bound: Safari
 		// runs the invalidate on the thread that draws before it draws the pass. The lists are made
 		// once, because this runs for every pass of every frame.
