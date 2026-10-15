@@ -18,8 +18,10 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	bloom: 'when `post.set` turns bloom on',
 	ao: 'when `post.set` turns ambient occlusion on',
 	dof: 'when `post.set` turns depth of field on',
-	exposure: 'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
-	fog_volume: 'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
+	exposure:
+		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
+	fog_volume:
+		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
 	sprites: 'with the first sprite batch',
 	particles: 'with the first particle system (`@null3d/particles`)',
 	lines: 'with the first line batch',
@@ -27,22 +29,27 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
 	coat_sheen: 'with the first material with a clear coat or a sheen',
-	weighted: "with the first material of the `'weighted'` blending. Until it is built, such materials draw as blended ones",
+	weighted:
+		"with the first material of the `'weighted'` blending. Until it is built, such materials draw as blended ones",
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',
-	physical_sky: 'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
+	physical_sky:
+		'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
 	occlusion:
 		'with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders',
 	coverage: 'with the first masked material that MSAA smooths with alpha to coverage',
 	hash: "with the first material whose alpha mode is `'hash'`",
-	cutout: 'with the first masked object that casts shadows. It casts none until its shaders are built',
+	cutout:
+		'with the first masked object that casts shadows. It casts none until its shaders are built',
 	views: 'with the first scene pass. Its texture shows nothing until its shaders are built',
 	effect_groups:
 		'the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own',
-	row_values: 'with the first instance batch whose rows have colors or values (`colors: true` or `values: true`)',
+	row_values:
+		'with the first instance batch whose rows have colors or values (`colors: true` or `values: true`)',
 	lod_fade: 'with the first mesh whose levels of detail fade (the quality setting `lodFade`)',
-	texcoords: "only in the engine's own tests, which draw meshes colored by their texture coordinates",
+	texcoords:
+		"only in the engine's own tests, which draw meshes colored by their texture coordinates",
 	instance_index: "only in the engine's own tests, through a test switch of WebGPU's instance data",
 };
 
@@ -86,7 +93,10 @@ export function firstUsePage(features: readonly string[]): string {
 		['title', 'Shaders that load on first use'],
 		['status', 'generated'],
 		['since', '0.1'],
-		['summary', "The features whose shaders download on first use, which createEngine's preload takes."],
+		[
+			'summary',
+			"The features whose shaders download on first use, which createEngine's preload takes.",
+		],
 	])}
 # Shaders that load on first use
 
