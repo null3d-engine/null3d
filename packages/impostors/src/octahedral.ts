@@ -1,7 +1,8 @@
 // Octahedral impostors: an object drawn from many directions into one texture atlas ahead of time,
 // then shown far away as a card that faces the camera and shows the stored view nearest the
 // camera's direction. The direction is stored with the octahedral map, which folds the sphere of
-// directions onto one square, so a grid of cells covers every direction, the poles included.
+// directions onto one square, so a grid of cells covers every direction, the poles included. The
+// back pole lands on the square's corners, and a back direction with x or y at 0 lands on an edge.
 //
 // The atlas is drawn as a sprite batch's map: the cells are frames counted from the top left, along
 // each row and then down, which is the order the engine's sprites use. `impostorFrame` gives the
@@ -35,9 +36,9 @@ export interface OctahedralAtlas {
 }
 
 /**
- * The squarest grid of cells that holds at least `views` views: the columns, the rows, and the
- * cells. Give the result to a bake, which draws a view in each cell, and to
- * `scene.createImpostors`, which shows them.
+ * The squarest grid of cells that holds at least `views` views, as `{ columns, rows }`. The grid
+ * can hold more cells than `views`, and every cell shows a direction. Give the result to a bake,
+ * which draws a view in each cell, and to `createImpostors`, which shows them.
  *
  * @category api/impostors
  */
@@ -52,7 +53,8 @@ export function octahedralAtlas(views: number): OctahedralAtlas {
 }
 
 /**
- * The cells of an octahedral atlas: the count, which need not fill the last row.
+ * The number of cells of an octahedral atlas: `columns` times `rows`. A bake draws a view in each
+ * of them, because each shows a direction.
  *
  * @category api/impostors
  */
@@ -60,14 +62,16 @@ export function octahedralCells(atlas: OctahedralAtlas): number {
 	return atlas.columns * atlas.rows;
 }
 
+/** The sign of a number, with 0 counted as positive, so the fold sends each back direction home. */
+function signOf(n: number): number {
+	return n < 0 ? -1 : 1;
+}
+
 /**
- * Folds a direction onto the octahedron's two coordinates, each from -1 to 1. Opposite directions
- * land in opposite halves of the square, so a grid of cells covers the whole sphere.
- *
- * @category api/impostors
+ * Folds the direction (x, y, z) onto the octahedron's two coordinates in `out`. The direction need
+ * not have length 1.
  */
-export function encodeOctahedral(direction: Direction, out: OctahedralUv = [0, 0]): OctahedralUv {
-	const [x, y, z] = direction;
+function encodeInto(x: number, y: number, z: number, out: OctahedralUv): OctahedralUv {
 	const sum = Math.abs(x) + Math.abs(y) + Math.abs(z);
 	if (sum === 0) {
 		out[0] = 0;
@@ -81,14 +85,26 @@ export function encodeOctahedral(direction: Direction, out: OctahedralUv = [0, 0
 		out[1] = py;
 		return out;
 	}
-	out[0] = (1 - Math.abs(py)) * Math.sign(px);
-	out[1] = (1 - Math.abs(px)) * Math.sign(py);
+	out[0] = (1 - Math.abs(py)) * signOf(px);
+	out[1] = (1 - Math.abs(px)) * signOf(py);
 	return out;
 }
 
 /**
- * The unit direction that an octahedral coordinate pair names: the exact inverse of
- * `encodeOctahedral`.
+ * Folds a direction onto the octahedron's two coordinates, each from -1 to 1. The front half of the
+ * sphere, z from 0 up, fills the square's middle diamond, and the back half fills its four corners,
+ * so a grid of cells covers the whole sphere. The back pole, (0, 0, -1), lands on the corner (1, 1).
+ *
+ * @category api/impostors
+ */
+export function encodeOctahedral(direction: Direction, out: OctahedralUv = [0, 0]): OctahedralUv {
+	return encodeInto(direction[0], direction[1], direction[2], out);
+}
+
+/**
+ * The unit direction that an octahedral coordinate pair names, the inverse of `encodeOctahedral`.
+ * Encoding the result gives the pair again, except on the square's outer edges, where the fold
+ * makes two points name one direction.
  *
  * @category api/impostors
  */
@@ -96,7 +112,8 @@ export function decodeOctahedral(
 	uv: OctahedralUv,
 	out: [number, number, number] = [0, 0, 0],
 ): Direction {
-	const [u, v] = uv;
+	const u = uv[0];
+	const v = uv[1];
 	const z = 1 - Math.abs(u) - Math.abs(v);
 	let x: number;
 	let y: number;
@@ -104,8 +121,8 @@ export function decodeOctahedral(
 		x = u;
 		y = v;
 	} else {
-		x = (1 - Math.abs(v)) * Math.sign(u);
-		y = (1 - Math.abs(u)) * Math.sign(v);
+		x = (1 - Math.abs(v)) * signOf(u);
+		y = (1 - Math.abs(u)) * signOf(v);
 	}
 	const length = Math.hypot(x, y, z) || 1;
 	out[0] = x / length;
@@ -123,13 +140,21 @@ export function decodeOctahedral(
  * @category api/impostors
  */
 export function impostorFrame(direction: Direction, atlas: OctahedralAtlas): number {
-	const [u, v] = encodeOctahedral(direction);
-	const column = Math.min(
-		atlas.columns - 1,
-		Math.max(0, Math.floor((u * 0.5 + 0.5) * atlas.columns)),
-	);
-	const row = Math.min(atlas.rows - 1, Math.max(0, Math.floor((v * 0.5 + 0.5) * atlas.rows)));
-	return row * atlas.columns + column;
+	return frameOf(direction[0], direction[1], direction[2], atlas.columns, atlas.rows);
+}
+
+/** The coordinates that `frameOf` folds each direction into, kept so that a call allocates nothing. */
+const folded: OctahedralUv = [0, 0];
+
+/**
+ * @internal The frame of a grid of `columns` by `rows` cells that shows a view from the direction
+ * (x, y, z), as `impostorFrame` gives it. The direction need not have length 1.
+ */
+export function frameOf(x: number, y: number, z: number, columns: number, rows: number): number {
+	encodeInto(x, y, z, folded);
+	const column = Math.min(columns - 1, Math.max(0, Math.floor((folded[0] * 0.5 + 0.5) * columns)));
+	const row = Math.min(rows - 1, Math.max(0, Math.floor((folded[1] * 0.5 + 0.5) * rows)));
+	return row * columns + column;
 }
 
 /**

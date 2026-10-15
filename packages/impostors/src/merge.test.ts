@@ -55,6 +55,50 @@ describe('mergeFarGeometry', () => {
 		expect(normals[2]).toBeCloseTo(0, 6);
 	});
 
+	test('turns tangents with the copy and keeps their sign', () => {
+		const withTangents = {
+			...triangle,
+			tangents: new Float32Array([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, -1]),
+		};
+		const quarterY = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1];
+		const merged = mergeFarGeometry([{ arrays: withTangents, transform: quarterY }]);
+		const tangents = Array.from(merged.tangents as Float32Array).map(
+			(t) => Math.round(t * 1e6) / 1e6 + 0,
+		);
+		expect(tangents).toEqual([0, 0, -1, 1, 0, 0, -1, 1, 0, 0, -1, -1]);
+	});
+
+	test('reverses the winding and the tangent sign of a mirrored copy', () => {
+		const withTangents = {
+			...triangle,
+			tangents: new Float32Array([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1]),
+		};
+		const mirrorX = [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+		const merged = mergeFarGeometry([
+			{ arrays: withTangents },
+			{ arrays: withTangents, transform: mirrorX },
+		]);
+		expect(Array.from(merged.indices as Uint32Array)).toEqual([0, 1, 2, 3, 5, 4]);
+		expect(Array.from(merged.tangents as Float32Array).slice(12)).toEqual([
+			-1, 0, 0, -1, -1, 0, 0, -1, -1, 0, 0, -1,
+		]);
+		// The mirrored triangle's corners, in their new order, still turn counterclockwise about +z.
+		const p = merged.positions as Float32Array;
+		const corner = (v: number, axis: number) => p[v * 3 + axis] as number;
+		const faceZ =
+			(corner(5, 0) - corner(3, 0)) * (corner(4, 1) - corner(3, 1)) -
+			(corner(5, 1) - corner(3, 1)) * (corner(4, 0) - corner(3, 0));
+		expect(faceZ).toBeGreaterThan(0);
+		expect((merged.normals as Float32Array)[11]).toBeCloseTo(1, 6);
+	});
+
+	test('reverses the winding of a mirrored copy without indices', () => {
+		const plain = { positions: triangle.positions, normals: triangle.normals };
+		const mirrorY = [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+		const merged = mergeFarGeometry([{ arrays: plain, transform: mirrorY }, { arrays: plain }]);
+		expect(Array.from(merged.indices as Uint32Array)).toEqual([0, 2, 1, 3, 4, 5]);
+	});
+
 	test('makes indices for a copy without any', () => {
 		const plain = { positions: triangle.positions, normals: triangle.normals };
 		const merged = mergeFarGeometry([{ arrays: plain }, { arrays: plain }]);
@@ -82,6 +126,8 @@ describe('mergeFarGeometry', () => {
 		expect(() => mergeFarGeometry([])).toThrow(RangeError);
 		const odd = { positions: new Float32Array([0, 0, 0, 1, 0]), indices: [0] };
 		expect(() => mergeFarGeometry([{ arrays: odd }])).toThrow(RangeError);
+		const threeTangents = { ...triangle, tangents: new Float32Array(9) };
+		expect(() => mergeFarGeometry([{ arrays: threeTangents }])).toThrow(RangeError);
 	});
 });
 
