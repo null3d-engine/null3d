@@ -358,14 +358,21 @@ impl CellTable {
     pub fn write_offsets(&self, camera: &CellPosition, out: &mut [[f32; 4]]) -> usize {
         let end = self.end as usize;
         for (index, offset) in out[..end].iter_mut().enumerate() {
-            *offset = if index == ORIGIN_CELL as usize || self.counts[index] > 0 {
-                let [x, y, z] = camera.offset_to(self.coords[index]);
-                [x, y, z, 0.0]
-            } else {
-                [0.0; 4]
-            };
+            *offset = self.offset(camera, index as u32);
         }
         end
+    }
+
+    /// The offset from `camera` to the center of cell `index`, as `(x, y, z, 0)`. A free index or
+    /// one past [`CellTable::end`] gives zeros.
+    pub fn offset(&self, camera: &CellPosition, index: u32) -> [f32; 4] {
+        let at = index as usize;
+        if index < self.end && (index == ORIGIN_CELL || self.counts[at] > 0) {
+            let [x, y, z] = camera.offset_to(self.coords[at]);
+            [x, y, z, 0.0]
+        } else {
+            [0.0; 4]
+        }
     }
 }
 
@@ -563,5 +570,10 @@ mod tests {
         assert_eq!(out[0], [-1.0, -2.0, -3.0, 0.0]);
         assert_eq!(out[a as usize], [0.0; 4]);
         assert_eq!(out[b as usize], [-1.0, -2.0, -1027.0, 0.0]);
+        // One cell's offset is the one that the whole table writes, and zeros past its end.
+        for index in 0..3 {
+            assert_eq!(table.offset(&camera, index), out[index as usize]);
+        }
+        assert_eq!(table.offset(&camera, MAX_CELLS - 1), [0.0; 4]);
     }
 }

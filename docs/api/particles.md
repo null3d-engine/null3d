@@ -58,7 +58,7 @@ export default defineSketch(async (ctx) => {
 });
 ```
 
-Pass the whole sketch context, `ctx`, as the first argument: the system reads its scene, and the frame's step from its clock. Call `update()` once per frame in `onLateUpdate`. There, objects' world places are the frame's, so an emitter that follows a moving object starts its particles where the object is now. `update` allocates nothing. `update(dt)` steps by `dt` seconds in place of the frame's step.
+Pass the whole sketch context, `ctx`, as the first argument: the system reads its scene, and the frame's step from its clock. Call `update()` once per frame in `onLateUpdate`. There, objects' world places are the frame's, so an emitter that follows a moving object starts its particles where the object is now. `update` allocates nothing, once the table of a system with sub-emitters has grown. `update(dt)` steps by `dt` seconds in place of the frame's step.
 
 ## Emitters
 
@@ -157,6 +157,8 @@ The system keeps its object's culling sphere around its live particles, from whe
 ## Speed
 
 Each live particle costs the GPU one quad, whose vertex shader works out its state. The CPU writes 32 bytes per birth, and uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
+
+The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system moves the time that its birth times count from. It rewrites the records' birth times 16,384 at a time, one share per frame, so even a system of a million particles adds no long frame. A system with sub-emitters keeps a table of the events to come, 80 bytes per event. It starts small and doubles while the system warms up, up to one event per sub-emitter for each particle.
 
 ## Compared with three.js
 
