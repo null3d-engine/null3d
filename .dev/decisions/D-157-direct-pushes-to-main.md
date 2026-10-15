@@ -74,3 +74,13 @@ The owner approved it on 15 October 2026, through the coordinator: "OWNER APPROV
 - The bypass is for emergencies only: a `Push-Check-Skipped: <reason>` trailer on a commit of the push, which names the emergency in the commit body.
 - CI's `commits` job runs the commit message and trailer checks on each push to main too, over the commits after main's commit before the push.
 - [Pull requests and parallel work](../pull-requests.md#commit-messages-and-pushes) gives the details.
+
+## Addendum, 15 October 2026: a Rust-free push needs the type check only
+
+The coordinator ruled it that evening, after a branch that changed no Rust file waited hours in the machine's CPU queue for a compile that could not tell it anything.
+
+- The pre-push check runs `cargo check --workspace` and the changed crates' tests only when the diff between main's commit before the push and the pushed commit holds a Rust or Cargo file. That diff covers the merge too, so a resolution that changes Rust shows there.
+- A helper that lands by hand follows the same rule. `bun run typecheck` gates the push, and `cargo check --workspace` runs as its own queued job straight after. A failure there is fixed by the next push.
+- The criterion is equality of the two Rust trees: `git diff HEAD origin/main` over `*.rs`, `Cargo.toml`, `Cargo.lock` and `rust-toolchain.toml` prints nothing. Both halves must hold, with no Rust file in the branch's own diff and none in the merge that it just resolved. The Rust bytes are then main's own, which main's CI has compiled already, so a local compile repeats a known result at a cost that every helper behind it pays in the queue.
+- The type check still gates the push because it reads the merged tree, merge resolutions included. On 15 October it caught a merged tree whose pages import `@null3d/impostors` before that package was installed.
+- A push that takes this path names, in its report, the commit that main held before it, so a failed cargo check costs one revert.
