@@ -44,6 +44,24 @@ export const HOURS: Record<Exclude<Mood, 'Auto' | 'Studio'>, number> = {
 /** The parts of the look that the HUD turns on and off. The environment light needs the sky too. */
 export type StagePart = 'sky' | 'fog' | 'environment';
 
+/**
+ * The fixed mood whose hour is nearest to `hours`, around the clock. A scene in Auto uses it to carry
+ * the look of the moment, such as its fireflies and its caustics, rather than the look that Auto was
+ * chosen with.
+ */
+export function nearestMood(hours: number): Exclude<Mood, 'Auto' | 'Studio'> {
+	let best: Exclude<Mood, 'Auto' | 'Studio'> = 'Afternoon';
+	let gap = Infinity;
+	for (const [mood, at] of Object.entries(HOURS) as [Exclude<Mood, 'Auto' | 'Studio'>, number][]) {
+		const around = Math.min(Math.abs(hours - at), 24 - Math.abs(hours - at));
+		if (around < gap) {
+			gap = around;
+			best = mood;
+		}
+	}
+	return best;
+}
+
 /** The studio's key light, from the front left and high. */
 const STUDIO_KEY = [0.45, -0.75, -0.5] as const;
 /** The studio's fog: a near-black haze, in linear RGB. */
