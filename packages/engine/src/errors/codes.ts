@@ -211,6 +211,14 @@ const DOCS = {
 			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
 		since: '0.2',
 	},
+	E1222: {
+		title: 'Invalid light probe grid texture',
+		cause:
+			'scene.setLightProbeGrid() received a texture that is not a 3D texture. A probe grid sample reads a 3D texture, so the frame cannot bind a texture array in its place. setLightProbeGrid() also refuses a texture that is not live.',
+		example:
+			"E1222: setLightProbeGrid() got a texture that is not a 3D texture. Make the grid's texture with LightProbeGridData.toTexture().",
+		since: '0.2',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

@@ -317,7 +317,7 @@ export default defineSketch(async ({ scene, assets, textures }) => {
 });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
 
 ## Fog
 
