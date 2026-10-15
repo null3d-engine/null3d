@@ -1199,20 +1199,21 @@ mod tests {
             offsets: &offsets,
             layers,
         };
-        let distance =
-            |layers| farthest_receiver_distance(&jobs, &scene, &batches, 1, &view(layers));
+        let distance = |batches: &BatchTable, layers: u32| {
+            farthest_receiver_distance(&jobs, &scene, batches, 1, &view(layers))
+        };
         // The forest's farthest row in view, 40 m down the view with radius 1, sets the distance;
         // the batch that casts alone does not.
-        assert_eq!(distance(ALL_LAYERS), 41.0);
+        assert_eq!(distance(&batches, ALL_LAYERS), 41.0);
         // On a layer that the forest is not on, the receiver on that layer sets it.
         batches.get_mut(forest).unwrap().set_layers(1);
-        assert_eq!(distance(2), 9.5);
+        assert_eq!(distance(&batches, 2), 9.5);
         // With the forest receiving no shadows, the near object sets it.
         let batch = batches.get_mut(forest).unwrap();
         batch.set_layers(ALL_LAYERS);
         batch.set_shadows(flags::CAST_SHADOWS);
-        assert_eq!(distance(1), 5.5);
-        assert_eq!(distance(4), 0.0);
+        assert_eq!(distance(&batches, 1), 5.5);
+        assert_eq!(distance(&batches, 4), 0.0);
     }
 
     #[test]

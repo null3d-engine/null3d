@@ -7,14 +7,15 @@ mod common;
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_8};
 
 use common::perspective;
-use null3d_core::cells::{self, CellPosition};
+use null3d_core::cells::{self, CellPosition, MAX_CELLS};
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
+use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{
-    FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE, VisibleLight, color,
-    farthest_receiver_distance, kind, ladder_distance, value,
+    FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE, ReceiverView,
+    VisibleLight, color, farthest_receiver_distance, kind, ladder_distance, value,
 };
 use null3d_core::scene::{Command, SceneStorage, flags};
 
@@ -563,7 +564,27 @@ fn a_light_without_a_named_distance_follows_the_farthest_visible_receiver() {
     world.scene.set_local_radius(far, 5.0).unwrap();
     world.frame(Some(&origin_view()));
     let view = origin_view();
-    let raw = farthest_receiver_distance(&world.scene, world.scene.parity(), &view);
+    // The distance searches the scene's objects and the rows of any batch that receives shadows,
+    // each sphere moved by its cell's offset from the camera that places the cascades.
+    let mut offsets = vec![[0.0f32; 4]; MAX_CELLS as usize];
+    let len = world
+        .scene
+        .cell_table()
+        .write_offsets(&view.camera, &mut offsets);
+    let receivers = ReceiverView {
+        frustum: view.frustum,
+        offsets: &offsets[..len],
+        layers: view.layers,
+    };
+    let batches = BatchTable::with_capacity(0);
+    let jobs = JobSystem::new(0);
+    let raw = farthest_receiver_distance(
+        &jobs,
+        &world.scene,
+        &batches,
+        world.scene.parity(),
+        &receivers,
+    );
     assert!((raw - 35.0).abs() < 0.5, "the farthest receiver, got {raw}");
     let held = ladder_distance(0.0, raw);
     assert!(
