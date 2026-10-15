@@ -32,7 +32,8 @@
 // turns depth of field on in S1, focused on a point that moves every frame, so the core writes its
 // steps' blocks again in each frame. `--exposure` turns automatic exposure on in S1, and changes
 // its compensation every frame, so the meter runs and uploads its block in each frame. `--fog`
-// gives S1 height fog with the volumetric fog on, whose block the core writes again in each frame.
+// gives S1 height fog with the volumetric fog on, and changes the volumetric fog's intensity with
+// `scene.setFog` every frame, so the core writes the fog's block again in each frame.
 // The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
@@ -68,7 +69,12 @@
 // with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
 // uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's color
 // at half the render size, whose texture a custom effect adds as a glow, and changes the pass's
-// uniform every frame. `--prepass` turns the depth prepass on, in any scene.
+// uniform and keeps it on every frame. `--impostors` adds 16,384 impostor cards around S1, whose
+// views `update` picks from the camera's position every frame. `--calls` makes, every frame, the
+// calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
+// update, a camera's ray through the pointer and its screen point of a place, the orbit and fly
+// controls' update, and the sketch's read of the frame's figures, which turns on the figures that
+// `--stats` samples. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -121,6 +127,8 @@
 //   bun run bench:allocation --decals --gpu webgl2
 //   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
+//   bun run bench:allocation --impostors --gpu webgl2
+//   bun run bench:allocation --calls --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import {
@@ -253,7 +261,8 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 	},
 };
 /**
- * Places that allocate with `--stats` on top of `BUDGETS`, while the overlay samples. On WebGPU, on
+ * Places that allocate with `--stats` on top of `BUDGETS`, while the overlay samples, and with
+ * `--calls`, whose read of the frame's figures turns the same sampling on. On WebGPU, on
  * one frame in eleven, the GPU timer's readback and the readback of the GPU-culled draws' counts
  * each make a command buffer or a view of the mapped range, and a promise with its reaction: the
  * browser returns each of them, so no pool can keep them. On S1 the timer's places took 35 to 38
@@ -649,13 +658,17 @@ async function main(): Promise<void> {
 		if (particles && scene !== 's1') throw new Error('--particles adds particles to S1 only');
 		const passes = args.includes('--passes') ? '&passes' : '';
 		if (passes && scene !== 's1') throw new Error('--passes adds a full-screen pass to S1 only');
+		const impostors = args.includes('--impostors') ? '&impostors' : '';
+		if (impostors && scene !== 's1') throw new Error('--impostors adds impostors to S1 only');
+		const calls = args.includes('--calls') ? '&calls' : '';
+		if (calls && scene !== 's1') throw new Error("--calls makes S1's per-frame calls only");
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${impostors}${calls}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -785,7 +798,8 @@ async function main(): Promise<void> {
 				...BUDGETS[worker as (typeof WORKERS)[number]],
 				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
 			};
-			const statsBudgets = stats ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
+			const statsBudgets =
+				stats || calls ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			const skyBudgets = skyLight
 				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
 				: {};

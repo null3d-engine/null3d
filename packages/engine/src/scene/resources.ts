@@ -1440,23 +1440,23 @@ type Ranged =
 	| 'sheenRoughness'
 	| 'edgeFade';
 
-/** The core's code for each value that is a number, and the most it takes, or none above 0. */
-const RANGED: readonly (readonly [Ranged, number, number])[] = [
-	['opacity', MATERIAL_PARAM_OPACITY, 1],
-	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF, 1],
-	['metalness', MATERIAL_PARAM_METALNESS, 1],
-	['roughness', MATERIAL_PARAM_ROUGHNESS, 1],
-	['emissiveIntensity', MATERIAL_PARAM_EMISSIVE_INTENSITY, Number.POSITIVE_INFINITY],
-	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
-	['lightMapIntensity', MATERIAL_PARAM_LIGHT_MAP_INTENSITY, Number.POSITIVE_INFINITY],
-	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
-	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY],
-	['transmission', MATERIAL_PARAM_TRANSMISSION, 1],
-	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY],
-	['clearcoat', MATERIAL_PARAM_CLEARCOAT, 1],
-	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
-	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
-	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
+/** Each value that is a number, and the most it takes, or none above 0. */
+const RANGED: readonly (readonly [Ranged, number])[] = [
+	['opacity', 1],
+	['alphaCutoff', 1],
+	['metalness', 1],
+	['roughness', 1],
+	['emissiveIntensity', Number.POSITIVE_INFINITY],
+	['aoMapIntensity', 1],
+	['lightMapIntensity', Number.POSITIVE_INFINITY],
+	['specularIntensity', 1],
+	['envIntensity', Number.POSITIVE_INFINITY],
+	['transmission', 1],
+	['thickness', Number.POSITIVE_INFINITY],
+	['clearcoat', 1],
+	['clearcoatRoughness', 1],
+	['sheenRoughness', 1],
+	['edgeFade', 1],
 ];
 
 /** Each whole-number value's name, in `RANGED`'s order, for the development checks. */
@@ -1579,7 +1579,7 @@ function checkValues(values: AnyValues, call: string): void {
 			`${call}() got the attenuationDistance ${distance}; it takes more than 0, or Infinity.`,
 		);
 	for (let k = 0; k < RANGED.length; k++) {
-		const [key, , most] = RANGED[k] as readonly [Ranged, number, number];
+		const [key, most] = RANGED[k] as readonly [Ranged, number];
 		const value = values[key];
 		if (value === undefined) continue;
 		if (!(value >= 0 && value <= most)) {
@@ -1597,9 +1597,10 @@ function checkValues(values: AnyValues, call: string): void {
 /**
  * Writes the numbers of `values` that are set, and the linear colors that are given, into the
  * core's row of material `id`. Every value was checked and every color converted before, so a
- * call that throws changes nothing. Each option is read once, by its name, and goes to the core
- * through its call values: a fraction read by a key that changes, or passed as an argument, would
- * each make a number object in a call that the browser does not inline.
+ * call that throws changes nothing. Each number option is read once, by its name, only from an
+ * object that holds it, and goes to the core through its call values. A fraction read by a key
+ * that changes, read where some objects lack it and the read gives `undefined`, or passed as an
+ * argument to a call that the browser does not inline, would each make a number object.
  */
 function writeValues(
 	core: CoreMemory,
@@ -1618,19 +1619,111 @@ function writeValues(
 	if (attenuation) sendColor(core, id, MATERIAL_PARAM_ATTENUATION_COLOR, attenuation, call);
 	if (sheen) sendColor(core, id, MATERIAL_PARAM_SHEEN_COLOR, sheen, call);
 	const numbers = core.callValues();
-	const {
-		normalScale,
-		clearcoatNormalScale,
-		uvTransform,
-		ior,
-		attenuationDistance: distance,
-		angleFade,
-	} = values;
-	for (const [key, param] of RANGED) {
-		const value = values[key];
-		if (value === undefined) continue;
-		numbers[0] = value;
-		sendValue(core, id, param, call);
+	const { normalScale, clearcoatNormalScale, uvTransform, angleFade } = values;
+	if ('opacity' in values) {
+		const value = values.opacity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_OPACITY, call);
+		}
+	}
+	if ('alphaCutoff' in values) {
+		const value = values.alphaCutoff;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ALPHA_CUTOFF, call);
+		}
+	}
+	if ('metalness' in values) {
+		const value = values.metalness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_METALNESS, call);
+		}
+	}
+	if ('roughness' in values) {
+		const value = values.roughness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ROUGHNESS, call);
+		}
+	}
+	if ('emissiveIntensity' in values) {
+		const value = values.emissiveIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_EMISSIVE_INTENSITY, call);
+		}
+	}
+	if ('aoMapIntensity' in values) {
+		const value = values.aoMapIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_OCCLUSION_STRENGTH, call);
+		}
+	}
+	if ('lightMapIntensity' in values) {
+		const value = values.lightMapIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_INTENSITY, call);
+		}
+	}
+	if ('specularIntensity' in values) {
+		const value = values.specularIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_SPECULAR_INTENSITY, call);
+		}
+	}
+	if ('envIntensity' in values) {
+		const value = values.envIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ENV_INTENSITY, call);
+		}
+	}
+	if ('transmission' in values) {
+		const value = values.transmission;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_TRANSMISSION, call);
+		}
+	}
+	if ('thickness' in values) {
+		const value = values.thickness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
+		}
+	}
+	if ('clearcoat' in values) {
+		const value = values.clearcoat;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_CLEARCOAT, call);
+		}
+	}
+	if ('clearcoatRoughness' in values) {
+		const value = values.clearcoatRoughness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, call);
+		}
+	}
+	if ('sheenRoughness' in values) {
+		const value = values.sheenRoughness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_SHEEN_ROUGHNESS, call);
+		}
+	}
+	if ('edgeFade' in values) {
+		const value = values.edgeFade;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_DECAL_EDGE_FADE, call);
+		}
 	}
 	// A decal's fade from its direction: the cosines of the two angles the material carries.
 	if (angleFade) {
@@ -1639,16 +1732,22 @@ function writeValues(
 		numbers[0] = Math.cos(angleFade[1]);
 		sendValue(core, id, MATERIAL_PARAM_DECAL_FADE_END, call);
 	}
-	if (ior !== undefined) {
-		numbers[0] = reflectance(ior);
-		sendValue(core, id, MATERIAL_PARAM_REFLECTANCE, call);
-		numbers[0] = ior;
-		sendValue(core, id, MATERIAL_PARAM_IOR, call);
+	if ('ior' in values) {
+		const ior = values.ior;
+		if (ior !== undefined) {
+			numbers[0] = reflectance(ior);
+			sendValue(core, id, MATERIAL_PARAM_REFLECTANCE, call);
+			numbers[0] = ior;
+			sendValue(core, id, MATERIAL_PARAM_IOR, call);
+		}
 	}
 	// The core keeps 0 for a volume that absorbs nothing.
-	if (distance !== undefined) {
-		numbers[0] = distance < Infinity ? distance : 0;
-		sendValue(core, id, MATERIAL_PARAM_ATTENUATION_DISTANCE, call);
+	if ('attenuationDistance' in values) {
+		const distance = values.attenuationDistance;
+		if (distance !== undefined) {
+			numbers[0] = distance < Infinity ? distance : 0;
+			sendValue(core, id, MATERIAL_PARAM_ATTENUATION_DISTANCE, call);
+		}
 	}
 	if (normalScale) {
 		numbers[0] = normalScale[0];
@@ -1920,8 +2019,9 @@ function checkUniforms(
 	call: string,
 ): void {
 	for (const name in values) {
+		if (isStandard(name, call)) continue;
 		const value = values[name];
-		if (value === undefined || isStandard(name, call)) continue;
+		if (value === undefined) continue;
 		const uniform = uniforms.get(name);
 		if (!uniform) {
 			const names = [...uniforms.keys()].join(', ') || 'none';
@@ -1948,8 +2048,9 @@ function writeUniforms(
 ): void {
 	const numbers = core.callValues();
 	for (const name in values) {
+		if (isStandard(name, call)) continue;
 		const value = values[name];
-		if (value === undefined || isStandard(name, call)) continue;
+		if (value === undefined) continue;
 		const uniform = uniforms.get(name) as CompiledUniform;
 		const count = UNIFORM_FLOATS[uniform.type];
 		if (typeof value === 'number') numbers[0] = value;
@@ -2028,8 +2129,10 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 
 	/**
 	 * Changes the values that it gets and keeps the others. Every object that uses the material
-	 * changes with it. It allocates nothing, so a sketch can change a value or a color in every
-	 * frame. Throws E1101 once the material is destroyed.
+	 * changes with it. It allocates nothing while the objects that give it any one value come in
+	 * at most four shapes, that is sets of keys, so a sketch that keeps its options objects and
+	 * changes them in place can change a value or a color in every frame. Throws E1101 once the
+	 * material is destroyed.
 	 */
 	set(options: Values): void {
 		const { core, call } = this;
@@ -2214,14 +2317,14 @@ export class Materials {
 	 * `color` where the main directional light's shadow falls, and nothing where the light reaches
 	 * it, at `opacity`. The mesh must receive shadows (`setReceiveShadows(true)`), as three.js's
 	 * `receiveShadow` must be set. Every shadow that falls on the surface comes from the main
-	 * directional light; point and spot lights cast none onto it. The material blends, so it draws
-	 * in the transparent pass after the opaque objects, and the scene's fog leaves it alone. It
-	 * takes no texture maps.
+	 * directional light; point and spot lights cast none onto it. The default color is black, as
+	 * three.js's. The material blends, so it draws in the transparent pass after the opaque
+	 * objects, and the scene's fog leaves it alone. It takes no texture maps.
 	 */
 	shadowCatcher(options: ShadowCatcherOptions = {}): Material<ShadowCatcherValues> {
 		return this.create<ShadowCatcherValues>(
 			SHADING_LIT,
-			{ ...options, alphaMode: 'blend' },
+			{ ...options, color: options.color ?? '#000000', alphaMode: 'blend' },
 			'materials.shadowCatcher',
 			MATERIAL_FEATURE_SHADOW_CATCHER,
 		);

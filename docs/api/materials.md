@@ -316,7 +316,7 @@ On WebGL2, the maps of one material share at most six textures on the GPU. Maps 
 
 `set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff` and `uvTransform`.
 
-`set` checks every value before it changes any, so a call that throws changes nothing. It converts a color without allocating. It reads each number from the options object that you pass, however. The browser boxes such a read when the same call has seen objects of several shapes, as it has in a scene with several materials. So set a material's values and colors up front. A `set` in every frame costs a few bytes a frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
+`set` checks every value before it changes any, so a call that throws changes nothing. It converts a color without allocating, and it reads each number by its name, so a `set` in every frame allocates nothing. Keep one options object for each material that changes, and change its values in place. The browser boxes a number read where the objects that give that value come in more than four shapes, that is four sets of keys. So give a value that changes every frame from a few kinds of objects at most. `bun run bench:allocation --setters` checks a standard material's `set` in every frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
 
 ## Destroying a material
 

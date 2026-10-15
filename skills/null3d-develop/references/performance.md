@@ -206,7 +206,7 @@ Apply these habits to `onUpdate` and everything it calls.
 - Use `Math.sqrt(x * x + y * y + z * z)` for a length, not `Math.hypot`.
 - Keep scratch lists at a fixed length. `list.length = 0` frees the storage, and the next write allocates it again.
 - Make no closures, `async` wrappers or promise chains per frame. Keep closures out of per-frame functions, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into its own function.
-- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. A material's `set` and a line material's `set` read the options object that you pass, which the browser boxes where the call has seen objects of a few shapes, so set their values up front.
+- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. A material's `set` and a line material's `set` allocate nothing too: keep one options object per material, change its values in place, and give a value that changes every frame from objects of at most four shapes (sets of keys).
 - Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.
 
 ## 9. Objects during play

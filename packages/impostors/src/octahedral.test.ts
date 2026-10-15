@@ -93,3 +93,18 @@ describe('nearestFrame', () => {
 		expect(nearestFrame([1, 0, 0], [])).toBe(-1);
 	});
 });
+
+describe('the per-frame update', () => {
+	test('folds each direction into a pair made once, and reads vectors by index', async () => {
+		// The batch's update calls impostorFrame once per card in every frame, so a default pair or
+		// a destructured array there makes an object per card: `bench:allocation --impostors`.
+		const source = await Bun.file(new URL('./octahedral.ts', import.meta.url)).text();
+		const frame = source.slice(source.indexOf('export function impostorFrame('));
+		expect(frame.slice(0, frame.indexOf('\n}'))).toContain('encodeOctahedral(direction, FRAME_UV)');
+		const encode = source.slice(source.indexOf('export function encodeOctahedral('));
+		expect(encode.slice(0, encode.indexOf('\n}'))).not.toMatch(/const \[/);
+		const batch = await Bun.file(new URL('./batch.ts', import.meta.url)).text();
+		const update = batch.slice(batch.indexOf('\tupdate(eye'));
+		expect(update.slice(0, update.indexOf('\n\t}'))).not.toMatch(/const \[|= \[|Math\.hypot/);
+	});
+});

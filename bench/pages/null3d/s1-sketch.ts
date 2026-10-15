@@ -31,8 +31,8 @@
 // sample of post.set's focus point and depth of field's steps. The `exposure` switch turns automatic
 // exposure on, and changes its compensation every frame, for the allocation sample of post.set's
 // automatic exposure and the meter's steps. The `fog` switch gives the scene height fog with the
-// volumetric fog on, for the allocation sample of its steps, whose block the core writes again in
-// every frame as the camera orbits.
+// volumetric fog on, and changes the volumetric fog's intensity every frame, for the allocation
+// sample of scene.setFog and the fog's steps, whose block the core writes again in every frame.
 // The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
 // swarm and the background into, for the allocation sample of the pass and for its cost: the
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
@@ -55,7 +55,13 @@
 // The `passes` switch adds a full-screen pass that reads the scene's color at half the render
 // size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
 // the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
-// block and the effect's texture.
+// block and the effect's texture. It also keeps the pass on with render.setPassEnabled in every frame.
+// The `impostors` switch adds a field of impostor cards around the swarm, whose views `update`
+// picks from the camera's position in every frame, for the allocation sample of the impostors.
+// The `calls` switch makes, in every frame, the calls whose docs promise no allocation and that no
+// other switch makes: a raycast, a mesh's vertex update, a camera's ray through the pointer and
+// its screen point of a place, the orbit and fly controls' update, and the sketch's read of the
+// frame's figures, for the allocation sample of each.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -65,15 +71,18 @@
 // tints each box, for the allocation sample of the row values' uploads. The `levels` switch gives
 // the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
 // fading bands between levels. The `setters` switch calls, in every frame, each setter that a
-// sketch may call per frame, with fractions and colors: the lights', a line batch's, the camera's
-// field of view, the fog and the background color. A material's `set` is called once, at setup.
+// sketch may call per frame, with fractions and colors: the lights', a standard and a custom
+// material's, a line batch's, the camera's field of view, the fog and the background color.
+import { createFlyControls, createOrbitControls } from '@null3d/controls';
 import {
 	defineSketch,
 	type Environment,
 	type PerspectiveCamera,
+	type RaycastHit,
 	type SketchContext,
 	type Texture,
 } from '@null3d/engine';
+import { createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
@@ -135,13 +144,10 @@ export default defineSketch(async (context) => {
 	const dof = switches.has('dof');
 	const eye = { autoExposure: { compensation: 0 } };
 	const exposure = switches.has('exposure');
-	if (switches.has('fog'))
-		context.scene.setFog({
-			color: '#8090a0',
-			density: 0.01,
-			heightFalloff: 0.05,
-			volumetric: true,
-		});
+	const fogged = switches.has('fog');
+	// The volumetric fog's options, changed in place: its light swells and fades every frame.
+	const volume = { intensity: 1, anisotropy: 0.3 };
+	const fog = { color: '#8090a0', density: 0.01, heightFalloff: 0.05, volumetric: volume };
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -197,6 +203,10 @@ export default defineSketch(async (context) => {
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
 	const areas = switches.has('areaLights') ? createAreaLights(context) : undefined;
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
+	const pickViews = switches.has('impostors')
+		? await createImpostorField(context, camera)
+		: undefined;
+	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -230,6 +240,10 @@ export default defineSketch(async (context) => {
 			skySettings.time = t;
 			context.scene.setBackground(skyBackground);
 		}
+		if (fogged) {
+			volume.intensity = 1 + 0.25 * Math.sin(t);
+			context.scene.setFog(fog);
+		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.post.set(occlusion);
@@ -257,6 +271,7 @@ export default defineSketch(async (context) => {
 		if (soft) {
 			softness[0] = 0.3 + 0.1 * Math.sin(t);
 			context.render.setPassUniform(soft, 'glow', softness);
+			context.render.setPassEnabled(soft, true);
 		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
@@ -276,6 +291,8 @@ export default defineSketch(async (context) => {
 		onLateUpdate() {
 			poseHemispheres?.();
 			setValues?.();
+			pickViews?.();
+			makeCalls?.();
 			for (let k = 0; k < particles.length; k++) particles[k]?.update();
 		},
 	};
@@ -416,15 +433,13 @@ fn surface(input: SurfaceInput) -> Surface {
 /**
  * The `setters` switch: a point light, a spot light, a hemisphere light, a line batch, a standard
  * material and a custom one. Returns the frame's step, which calls the per-frame setters of the
- * lights, the camera's field of view, the line's width and dashes, the fog and the background color
- * with fractions and colors. The colors are an array changed in place, a hex number and a hex
- * string. The calls sit in a small step of their own, as in a game's update function, so the
- * browser inlines them and no number crosses a call as an object of its own. A material's `set`
- * reads each number from the options object it is given, and the browser boxes such a read, so the
- * two materials are set once, before the frame.
+ * lights, the materials, the camera's field of view, the line's width and dashes, the fog and the
+ * background color with fractions and colors. The colors are an array changed in place, a hex
+ * number and a hex string. The calls sit in a small step of their own, as in a game's update
+ * function, so the browser inlines them and no number crosses a call as an object of its own.
  */
 async function createSetters(
-	{ scene, materials }: SketchContext,
+	{ scene, materials, geometry }: SketchContext,
 	camera: PerspectiveCamera,
 	now: Float64Array,
 ): Promise<() => void> {
@@ -439,6 +454,10 @@ async function createSetters(
 	});
 	const paint = materials.standard({ color: '#808080' });
 	const custom = materials.shader({ wgsl: TINTED, uniforms: { tint: [1, 1, 1], strength: 0.5 } });
+	// A box of each material, so the frames upload and draw the values that the step sets.
+	const box = geometry.box({ width: 2, height: 2, depth: 2 });
+	scene.createMesh({ mesh: box, material: paint, position: [-3, 1, 0] });
+	scene.createMesh({ mesh: box, material: custom, position: [3, 1, 0] });
 	const fov = camera.fov;
 	// Every options object and color is made once and changed in place.
 	const color: [number, number, number] = [1, 1, 1];
@@ -446,10 +465,6 @@ async function createSetters(
 	const customValues = { tint: color, strength: 0.5, roughness: 0.5 };
 	const lineValues = { color, dashOffset: 0.5 };
 	const fog = { color, density: 0.001 };
-	// A material's `set` reads each number from the options object it is given, and the browser
-	// boxes such a read, so a material is set once here and not in every frame.
-	paint.set(paintValues);
-	custom.set(customValues);
 	return () => {
 		const t = now[0] as number;
 		const s = Math.sin(t);
@@ -469,9 +484,118 @@ async function createSetters(
 		lines.setWidth(2 + s);
 		lineValues.dashOffset = 0.5 + 0.5 * s;
 		lines.material.set(lineValues);
+		paintValues.roughness = 0.5 + 0.25 * s;
+		paintValues.emissiveIntensity = 1 + 0.5 * c;
+		paint.set(paintValues);
+		customValues.strength = 0.5 + 0.25 * c;
+		customValues.roughness = 0.5 + 0.25 * s;
+		custom.set(customValues);
 		fog.density = 0.001 + 0.0005 * s;
 		scene.setFog(fog);
 		scene.setBackground(color);
+	};
+}
+
+/** The vertices along each side of the `calls` switch's rippling sheet. */
+const SHEET_ROWS = 32;
+
+/**
+ * The `calls` switch: a sheet whose vertices ripple, and two cameras of their own for the orbit and
+ * the fly controls. Returns the frame's step, which updates the sheet's vertices, casts a ray down
+ * into the swarm, turns the pointer into a ray and a point of the swarm into the canvas's pixels,
+ * updates both controls and reads the frame's figures, with arrays and a hit made once.
+ */
+function createCalls(
+	context: SketchContext,
+	camera: PerspectiveCamera,
+	now: Float64Array,
+): () => void {
+	const { scene, geometry, materials, debug, time, input } = context;
+	const count = SHEET_ROWS * SHEET_ROWS;
+	const positions = new Float32Array(count * 3);
+	const normals = new Float32Array(count * 3);
+	for (let v = 0; v < count; v++) {
+		positions[v * 3] = (v % SHEET_ROWS) - SHEET_ROWS / 2;
+		positions[v * 3 + 2] = Math.floor(v / SHEET_ROWS) - SHEET_ROWS / 2;
+		normals[v * 3 + 1] = 1;
+	}
+	const quads = SHEET_ROWS - 1;
+	const indices = new Uint16Array(quads * quads * 6);
+	for (let q = 0; q < quads * quads; q++) {
+		const v = Math.floor(q / quads) * SHEET_ROWS + (q % quads);
+		indices.set([v, v + SHEET_ROWS, v + 1, v + 1, v + SHEET_ROWS, v + SHEET_ROWS + 1], q * 6);
+	}
+	const sheet = geometry.fromArrays({ positions, normals, indices });
+	const blue = materials.standard({ color: '#4080c0' });
+	scene.createMesh({ mesh: sheet, material: blue, position: [0, -2, 0] });
+	const orbit = createOrbitControls(
+		context,
+		scene.createPerspectiveCamera({ position: [0, 20, 60], target: [0, 0, 0] }),
+	);
+	const fly = createFlyControls(context, scene.createPerspectiveCamera({ position: [0, 20, 60] }));
+	const origin: [number, number, number] = [0, 80, 0];
+	const down: [number, number, number] = [0, -1, 0];
+	const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
+	const onScreen = [0, 0, 0];
+	const hit: RaycastHit = {
+		object: null,
+		instance: -1,
+		point: [0, 0, 0],
+		normal: [0, 0, 0],
+		distance: 0,
+		triangle: -1,
+	};
+	return () => {
+		const t = now[0] as number;
+		for (let v = 0; v < count; v++) positions[v * 3 + 1] = Math.sin(t + v * 0.1) * 0.5;
+		sheet.updateVertices('positions', positions);
+		origin[0] = 20 * Math.sin(t);
+		origin[2] = 20 * Math.cos(t);
+		scene.raycast(origin, down, undefined, hit);
+		camera.screenToRay(input.pointer.x, input.pointer.y, ray);
+		camera.worldToScreen(origin, onScreen);
+		orbit.update(time.dt);
+		fly.update(time.dt);
+		debug.frameStats();
+	};
+}
+
+/** The impostor cards along each side of the `impostors` switch's square field. */
+const IMPOSTOR_ROWS = 128;
+
+/**
+ * The `impostors` switch: a square field of impostor cards across and beyond the swarm, with an
+ * atlas made in code whose cells each have a shade of their own. Returns the frame's step, which
+ * reads the camera's world position into an array made once and picks every card's view from it.
+ */
+async function createImpostorField(
+	{ scene, textures }: SketchContext,
+	camera: PerspectiveCamera,
+): Promise<() => void> {
+	const atlas = octahedralAtlas(16);
+	const cell = 8;
+	const width = cell * atlas.columns;
+	const height = cell * atlas.rows;
+	const data = new Uint8Array(width * height * 4).fill(255);
+	for (let i = 0; i < width * height; i++) {
+		const frame =
+			Math.floor(Math.floor(i / width) / cell) * atlas.columns + Math.floor((i % width) / cell);
+		data[i * 4] = 40 + frame * 12;
+		data[i * 4 + 2] = 220 - frame * 12;
+	}
+	const texture = textures.fromData({ width, height, data });
+	const count = IMPOSTOR_ROWS * IMPOSTOR_ROWS;
+	const positions = new Float32Array(count * 3);
+	for (let i = 0; i < count; i++) {
+		positions[i * 3] = ((i % IMPOSTOR_ROWS) / (IMPOSTOR_ROWS - 1) - 0.5) * 4 * S1_EXTENT;
+		positions[i * 3 + 2] =
+			(Math.floor(i / IMPOSTOR_ROWS) / (IMPOSTOR_ROWS - 1) - 0.5) * 4 * S1_EXTENT;
+	}
+	const cards = await createImpostors(scene, { texture, atlas, positions, size: 3 });
+	const eye = new Float64Array(3);
+	return () => {
+		camera.getWorldPosition(eye);
+		cards.update(eye);
 	};
 }
 

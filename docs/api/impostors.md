@@ -67,7 +67,7 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
-`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position. It writes only the frame numbers, so it allocates nothing. A card shows one view: three-way blending is a later step.
+`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position. It writes only the frame numbers, so it allocates nothing. `bun run bench:allocation --impostors` checks it. A card shows one view: three-way blending is a later step.
 
 ## The atlas and its cells
 
