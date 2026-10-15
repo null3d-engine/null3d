@@ -26,9 +26,15 @@ fn srgb_to_linear(c: vec3f) -> vec3f {
 const HDR_LIMIT: f32 = 65472.0;
 
 /// A linear color with each channel no brighter than HDR_LIMIT, so that a 16-bit float target
-/// holds it. Infinity becomes HDR_LIMIT too.
+/// holds it. Infinity becomes HDR_LIMIT, and a NaN becomes 0, so it draws black.
+///
+/// The NaN test reads the bits: an exponent of all ones with a mantissa that is not 0. WGSL lets a
+/// compiler assume that no NaN exists, so a test such as `c != c` may fold to false, and `min`
+/// may return either operand for a NaN. A NaN that stays in the scene color spreads through
+/// bloom's blur over the whole picture.
 fn limit_hdr(c: vec3f) -> vec3f {
-    return min(c, vec3f(HDR_LIMIT));
+    let nan = (bitcast<vec3u>(c) & vec3u(0x7fffffffu)) > vec3u(0x7f800000u);
+    return select(min(c, vec3f(HDR_LIMIT)), vec3f(0.0), nan);
 }
 
 /// The relative luminance of a linear color, with the Rec. 709 weights that three.js uses.
