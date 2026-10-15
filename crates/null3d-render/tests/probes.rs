@@ -56,13 +56,12 @@ fn check_probes<B: FrameBuilder>(mut world: World<B>) {
     let generator = settings.textures_mut().take_image_id();
     settings.probes_mut().set_generator(generator);
 
-    // Until the thread that draws holds the filter's generator, no probe captures. The lit
-    // meshes already draw through the probe templates.
+    // Until the thread that draws holds the filter's generator, no probe captures, and the lit
+    // meshes turn to the probe templates once those builds exist.
     assert_eq!(lit_template(&world), template::INSTANCED_LIT);
     let commands = world.step(&mut mock, true);
     assert!(filters(&commands).is_empty());
     assert!(world.renderer.settings().probes().waiting());
-    assert_eq!(lit_template(&world), template::PROBE_GRID);
 
     // Once it arrived, the probe captures as soon as its views' targets exist: on WebGPU, once
     // the pipeline that copies a view's image into its target is built. It filters in the frame
@@ -101,6 +100,11 @@ fn check_probes<B: FrameBuilder>(mut world: World<B>) {
     );
     assert!(passes_after >= 1, "the camera draws after it");
     assert!(!world.renderer.settings().probes().waiting());
+    assert_eq!(
+        lit_template(&world),
+        template::PROBE_GRID,
+        "while the scene sets a probe, lit meshes draw through the probe templates"
+    );
 
     // A probe that captures once records no filter after.
     assert!(filters(&world.step(&mut mock, false)).is_empty());
