@@ -9,7 +9,11 @@ const BACKDROP = [0.02, 0.025, 0.04] as const;
 
 /** A stage on a scene that keeps the last value of each setter. */
 function staged() {
-	const last: { background?: unknown; environment?: unknown; fog?: unknown } = {};
+	const last: {
+		background?: unknown;
+		environment?: unknown;
+		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
+	} = {};
 	const scene = {
 		setBackground: (background: unknown) => {
 			last.background = background;
@@ -17,7 +21,7 @@ function staged() {
 		setEnvironment: (environment: unknown) => {
 			last.environment = environment;
 		},
-		setFog: (fog: unknown) => {
+		setFog: (fog: { color: readonly number[]; density: number; sunGlow: number } | null) => {
 			last.fog = fog;
 		},
 	};
@@ -73,4 +77,24 @@ test('a part that turns on again comes back at once, in the mood of the moment',
 	stage.set('Studio');
 	expect(last.background).toBe(ROOM);
 	expect(last.environment).toBe(ROOM);
+});
+
+test('leaving the studio takes the whole look back to the hour', () => {
+	const { stage, last, frames } = staged();
+	// Let the hour settle first, so the stage stops writing it, then go to the studio and back.
+	stage.set('Midday');
+	frames(240);
+	expect(last.environment).toBe(SKY);
+	const middayDensity = last.fog?.density as number;
+	stage.set('Studio');
+	expect(last.background).toBe(ROOM);
+	expect(last.environment).toBe(ROOM);
+	expect(last.fog?.density).not.toBeCloseTo(middayDensity, 5);
+	// The studio holds, then a fixed mood returns: every part must be the hour's again, not the
+	// studio's, and the fog of the hour must be back.
+	stage.set('Midday');
+	frames(240);
+	expect(last.background).not.toBe(ROOM);
+	expect(last.environment).toBe(SKY);
+	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
 });

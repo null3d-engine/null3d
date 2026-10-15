@@ -5,7 +5,7 @@
 // every frame, and once undid each switch a frame after the toast named it. So the test also reads
 // the canvas, and checks that each part stays off while it is off and comes back when it turns on.
 import { expect, type Page, test } from '@playwright/test';
-import { decodePng } from '../../packages/cli/src/png.js';
+import { decodePngRgba } from '../../packages/cli/src/png.js';
 import { watchPageProblems } from '../lib/page-result.ts';
 
 /** The panel of a group, by the group's name in the model. */
@@ -32,33 +32,56 @@ async function pick(
 	await expect(toast).toHaveText(text, { timeout: 20_000 });
 }
 
+/** One frame of the canvas: its size and its RGBA pixels, top row first. */
+interface Frame {
+	width: number;
+	height: number;
+	data: Uint8Array;
+}
+
 /** The canvas as the scene draws it, with the HUD, the toast, the tips and the stats hidden. */
-async function frame(page: Page): Promise<Uint8Array> {
+async function frame(page: Page): Promise<Frame> {
 	const png = await page.locator('main.stage > canvas').screenshot({
 		omitBackground: true,
 		style: 'main.stage :not(canvas) { visibility: hidden !important; }',
 	});
-	return decodePng(png, 'the canvas').data;
+	return decodePngRgba(png, 'the canvas');
 }
 
 /** The mean difference of two frames' colour, in steps of 255, over every pixel and channel. */
-function difference(a: Uint8Array, b: Uint8Array): number {
+function difference(a: Frame, b: Frame): number {
 	let sum = 0;
-	for (let i = 0; i < a.length; i += 4)
-		for (let c = 0; c < 3; c++) sum += Math.abs((a[i + c] as number) - (b[i + c] as number));
-	return sum / ((a.length / 4) * 3);
+	for (let i = 0; i < a.data.length; i += 4)
+		for (let c = 0; c < 3; c++)
+			sum += Math.abs((a.data[i + c] as number) - (b.data[i + c] as number));
+	return sum / ((a.data.length / 4) * 3);
 }
 
-/** A mean difference that only a change of the look gives; the still scene's frames differ less. */
+/** A mean difference that only a change of the look gives; the scene at rest differs less. */
 const CHANGED = 1.5;
-/** Frames read after a switch: the old look came back one frame later, so more than one is read. */
+/** A mean difference below which the canvas counts as still, over a settled look. */
+const STILL = 0.5;
+/** Frames read after a switch: the old bug rewrote the part a frame later, so several are read. */
 const FRAMES = 4;
+
+/** Waits until two frames in a row differ by less than a change the checks could mistake for one. */
+async function settle(page: Page): Promise<void> {
+	let previous = await frame(page);
+	for (let k = 0; k < 40; k++) {
+		await new Promise((r) => setTimeout(r, 250));
+		const next = await frame(page);
+		if (difference(next, previous) < STILL) return;
+		previous = next;
+	}
+}
 
 /**
  * Turns a part of the look off and on through the HUD, and checks the canvas: while the part is off,
  * each of several frames differs from the frame with it on, and once it turns on, the look returns.
  */
 async function switchPart(page: Page, label: string, tab: string, group: string): Promise<void> {
+	// The look eases and the camera settles, so the frame with the part on is read when it is still.
+	await settle(page);
 	const before = await frame(page);
 	await pick(page, tab, group, label, `${label}: off`);
 	await expect

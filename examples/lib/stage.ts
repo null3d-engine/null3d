@@ -167,6 +167,12 @@ export function createMoods(
 	};
 	/** False while any value still eases toward its target, so the frame writes the look again. */
 	let still = false;
+	/**
+	 * True when the scene needs the whole look written once, whatever the eased values say. A new
+	 * mood asks for it: the studio writes the scene itself, so the eased values may already sit on
+	 * their target while the scene holds the studio's look.
+	 */
+	let needsLook = false;
 
 	/** Works out the target from an hour, with the physical sky. */
 	const aimAt = (hours: number, at: Mood): void => {
@@ -275,7 +281,9 @@ export function createMoods(
 		// The sky keeps its own call in every frame: its clouds drift with the time.
 		if (shown.sky) scene.setBackground(look.background, look.backgroundOptions);
 		// A settled look writes nothing else: every value already sits on its target in the scene.
-		if (still) return;
+		const full = needsLook || !still;
+		needsLook = false;
+		if (!full) return;
 		if (lit()) {
 			look.environment.intensity = current.skyIntensity;
 			scene.setEnvironment(sky, look.environment);
@@ -335,6 +343,9 @@ export function createMoods(
 		set(next) {
 			mood = next;
 			wasAuto = next === 'Auto';
+			// A mood change writes the whole look, whatever the eased values say.
+			needsLook = true;
+			still = false;
 			if (next === 'Studio') {
 				targetHours = Number.NaN;
 				toStudio();
@@ -362,6 +373,7 @@ export function createMoods(
 			if (!lit()) scene.setEnvironment(null);
 			if (!shown.fog) scene.setFog(null);
 			// A part that comes back is written with the rest, settled or not.
+			needsLook = true;
 			still = false;
 			if (mood === 'Studio') toStudio();
 			else apply();
