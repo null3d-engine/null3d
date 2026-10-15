@@ -173,9 +173,9 @@ pub(crate) struct FinalPass {
     pipeline: Option<u32>,
     /// The bloom build's pipeline's id, once a frame with bloom asked for it.
     bloom_pipeline: Option<u32>,
-    /// The second step's pipeline's id, once the two-step asked for it: the plain build, which
-    /// scales the first step's display color up to the canvas.
-    present_pipeline: Option<u32>,
+    /// The second step of the two-step pass, which the plain final pass draws below the whole
+    /// canvas's render scale, or `None` for the first step.
+    present: Option<Present>,
     /// The first template of the custom tone curve that the pass draws with, or `None` for the
     /// pass's own curves.
     tone_curve: Option<u32>,
@@ -203,6 +203,32 @@ struct Bound {
     exposure: u32,
 }
 
+/// The second step of the two-step pass: its bind group, which reads the first step's display
+/// color, the plain pipeline that scales that color up to the canvas, and what the group reads.
+/// The group lives beside the pass's own, so a frame that crosses the whole canvas's render scale
+/// switches groups and makes none.
+#[derive(Debug)]
+struct Present {
+    group: u32,
+    pipeline: Option<u32>,
+    bound: Option<Bound>,
+}
+
+/// What a frame's final pass reads and applies: the tone mapping, the render size, the color it
+/// reads, bloom's inputs for the bloom build, the grading, the outline, the effects that fold into
+/// the pass, and the automatic exposure's texel.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FinalInputs {
+    pub(crate) tone_mapping: ToneMapping,
+    pub(crate) render_size: (u32, u32),
+    pub(crate) color: u32,
+    pub(crate) bloom: Option<BloomInputs>,
+    pub(crate) grading: Grading,
+    pub(crate) outline: Option<OutlineInputs>,
+    pub(crate) fold: Option<FoldInputs>,
+    pub(crate) exposure: Option<u32>,
+}
+
 impl FinalPass {
     /// The final pass of a builder whose scene draws into `scene_color` in the `antialias` mode.
     pub(crate) fn new(ids: FinalIds, scene_color: SceneColor, antialias: Antialias) -> Self {
@@ -215,7 +241,7 @@ impl FinalPass {
             flags: if hdr { 0 } else { OutputUniform::DISPLAY_COLOR },
             pipeline: None,
             bloom_pipeline: None,
-            present_pipeline: None,
+            present: None,
             tone_curve: None,
             fold_pipeline: None,
             folds: false,
@@ -233,15 +259,32 @@ impl FinalPass {
         self
     }
 
+    /// The plain final pass, which also draws the second of the two steps below the whole canvas's
+    /// render scale, binding `group` there.
+    pub(crate) fn presents(mut self, group: u32) -> Self {
+        self.present = Some(Present {
+            group,
+            pipeline: None,
+            bound: None,
+        });
+        self
+    }
+
     /// Takes the build and the flags for a scene that draws into `scene_color` in the `antialias`
-    /// mode, from the next frame on. The pass asks for its pipelines and makes its bind group again.
+    /// mode, from the next frame on. The pass asks for its pipelines and makes its bind groups
+    /// again.
     pub(crate) fn set_mode(&mut self, scene_color: SceneColor, antialias: Antialias) {
-        let resolve = self.resolve;
+        let present = self.present.as_ref().map(|present| Present {
+            group: present.group,
+            pipeline: None,
+            bound: None,
+        });
         let fresh = Self::new(self.ids, scene_color, antialias);
         *self = Self {
             created: self.created,
             tone_curve: self.tone_curve,
-            resolve,
+            resolve: self.resolve,
+            present,
             ..fresh
         };
     }
@@ -292,10 +335,8 @@ impl FinalPass {
     pub(crate) const UPLOAD_BYTES: usize = SETTINGS_BYTES as usize;
 
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
-    /// `bloom`. The plain final pass also asks, once, for the second step's pipeline, which scales
-    /// the first step's display color up to the canvas, so it is ready whenever the render scale
-    /// drops below the whole canvas. A builder asks before it records the pipelines that its frame
-    /// creates, so the list creates them with the others, at its start.
+    /// `bloom`. A builder asks before it records the pipelines that its frame creates, so the list
+    /// creates them with the others, at its start.
     pub(crate) fn request_pipeline(
         &mut self,
         pipelines: &mut PipelineCache,
@@ -307,53 +348,99 @@ impl FinalPass {
         if bloom && self.bloom_pipeline.is_none() {
             self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
         }
-        if !self.resolve && self.present_pipeline.is_none() {
-            self.present_pipeline = Some(pipelines.id(pipeline(false, false, None)));
-        }
         self.bloom_pipeline
     }
 
-    /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for
-    /// `tone_mapping`, the scene's size in pixels, `render_size`, `grading` and `outline` when they
-    /// changed, and binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom
-    /// build, the color grading table, the outline mask, the inputs of the effects that `fold` into
-    /// the pass and the automatic exposure's texel `exposure`, when they are new. The frame's list made the plan's textures again when
-    /// `textures_made`, which leaves an older bind group reading a texture that is gone.
-    #[allow(clippy::too_many_arguments)]
+    /// Asks `pipelines`, once, for the second step's plain pipeline, which scales the first step's
+    /// display color up to the canvas, and returns its id.
+    pub(crate) fn request_present(&mut self, pipelines: &mut PipelineCache) -> u32 {
+        let present = self
+            .present
+            .as_mut()
+            .expect("only the plain final pass draws the second step");
+        *present
+            .pipeline
+            .get_or_insert_with(|| pipelines.id(pipeline(false, false, None)))
+    }
+
+    /// Makes the pass's own GPU objects when the GPU lacks them, and binds what `inputs` reads in
+    /// the pass's bind group when it is new: the color, bloom's inputs for the bloom build, the
+    /// color grading table, the outline mask, the inputs of the effects that fold into the pass and
+    /// the automatic exposure's texel. While the pass `draws` this frame, it uploads its settings
+    /// when they changed. The frame's list made the plan's textures again when `textures_made`,
+    /// which leaves an older bind group reading a texture that is gone.
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        tone_mapping: ToneMapping,
-        render_size: (u32, u32),
-        scene_color: u32,
-        bloom: Option<BloomInputs>,
-        grading: Grading,
-        outline: Option<OutlineInputs>,
-        fold: Option<FoldInputs>,
-        exposure: Option<u32>,
+        inputs: &FinalInputs,
         textures_made: bool,
-        scaled: bool,
+        draws: bool,
     ) -> Result<(), RecordError> {
-        let ids = self.ids;
-        self.folds = fold.is_some();
         if !self.created {
-            Self::create_objects(list, ids)?;
+            Self::create_objects(list, self.ids)?;
             self.created = true;
         }
-        let output = Output {
-            tone_mapping,
-            exposure: 1.0,
-        };
-        // The first step's settings mark it, and the second step reads display color at the canvas:
-        // it holds the first step's tone mapped color, and dithers it when the first step read high
-        // dynamic range color.
+        self.folds = inputs.fold.is_some();
+        // The first step's settings mark it, so it draws one texel for each render pixel.
         let flags = if self.resolve {
             self.flags | OutputUniform::RESOLVE
-        } else if scaled {
-            OutputUniform::DISPLAY_COLOR | if self.hdr { OutputUniform::DITHER } else { 0 }
         } else {
             self.flags
+        };
+        let (settings, bound) = self.settings(inputs, flags);
+        if draws {
+            self.upload(list, arena, settings)?;
+        }
+        bind(
+            list,
+            self.ids,
+            self.ids.group,
+            &mut self.bound,
+            bound,
+            textures_made,
+        )
+    }
+
+    /// Binds what the second step reads in its own bind group when it is new, as
+    /// [`Self::prepare`] does, and uploads the second step's settings while it `draws` this frame.
+    /// The second step reads display color at the canvas: the first step's tone mapped color,
+    /// which it dithers when the first step read high dynamic range color. The pass's own objects
+    /// come from [`Self::prepare`], which runs first.
+    pub(crate) fn prepare_present(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        inputs: &FinalInputs,
+        textures_made: bool,
+        draws: bool,
+    ) -> Result<(), RecordError> {
+        let flags = OutputUniform::DISPLAY_COLOR | if self.hdr { OutputUniform::DITHER } else { 0 };
+        let (settings, bound) = self.settings(inputs, flags);
+        if draws {
+            self.upload(list, arena, settings)?;
+        }
+        let present = self
+            .present
+            .as_mut()
+            .expect("only the plain final pass draws the second step");
+        bind(
+            list,
+            self.ids,
+            present.group,
+            &mut present.bound,
+            bound,
+            textures_made,
+        )
+    }
+
+    /// The settings that the pass uploads for `inputs` with the output `flags`, and what its bind
+    /// group reads.
+    fn settings(&self, inputs: &FinalInputs, flags: u32) -> (FinalUniform, Bound) {
+        let ids = self.ids;
+        let output = Output {
+            tone_mapping: inputs.tone_mapping,
+            exposure: 1.0,
         };
         let mut settings = FinalUniform {
             output: OutputUniform {
@@ -362,12 +449,12 @@ impl FinalPass {
             },
             ..FinalUniform::default()
         };
-        settings.output.set_render_size(render_size);
-        if let Some(vignette) = grading.vignette {
+        settings.output.set_render_size(inputs.render_size);
+        if let Some(vignette) = inputs.grading.vignette {
             settings.output.flags |= OutputUniform::VIGNETTE;
             settings.vignette = vignette.uniform();
         }
-        let lut = match grading.lut {
+        let lut = match inputs.grading.lut {
             Some((texture, scale, offset)) => {
                 settings.output.flags |= OutputUniform::LUT;
                 settings.lut_scale = scale;
@@ -376,7 +463,7 @@ impl FinalPass {
             }
             None => ids.blank_lut,
         };
-        let mask = match outline {
+        let mask = match inputs.outline {
             Some(OutlineInputs { mask, outline }) => {
                 settings.output.flags |= OutputUniform::OUTLINE;
                 settings.outline = outline.uniform();
@@ -384,81 +471,35 @@ impl FinalPass {
             }
             None => ids.blank_outline,
         };
-        let exposure = match exposure {
+        let exposure = match inputs.exposure {
             Some(texel) => {
                 settings.output.flags |= OutputUniform::AUTO_EXPOSURE;
                 texel
             }
             None => ids.blank_outline,
         };
-        if self.uploaded != Some(settings) {
-            let (at, bytes) = arena.push(settings.as_bytes())?;
-            list.push(Op::WriteBuffer, &[ids.settings, 0, at, bytes])?;
-            self.uploaded = Some(settings);
-        }
-        let inputs = Bound {
-            scene_color,
-            bloom,
+        let bound = Bound {
+            scene_color: inputs.color,
+            bloom: inputs.bloom,
             lut,
             mask,
-            fold,
+            fold: inputs.fold,
             exposure,
         };
-        if textures_made || self.bound != Some(inputs) {
-            let mut words = [0u32; 3 + 5 * 12];
-            let mut len = 3;
-            let mut entry = |binding: u32, kind: u32, id: u32, offset: u32, size: u32| {
-                words[len..len + 5].copy_from_slice(&[binding, kind, id, offset, size]);
-                len += 5;
-            };
-            entry(0, resource_kind::BUFFER, ids.settings, 0, 0);
-            entry(1, resource_kind::TEXTURE, scene_color, 0, 0);
-            entry(LUT_BINDING, resource_kind::TEXTURE, lut, 0, 0);
-            entry(
-                LUT_SAMPLER_BINDING,
-                resource_kind::SAMPLER,
-                ids.lut_sampler,
-                0,
-                0,
-            );
-            entry(OUTLINE_BINDING, resource_kind::TEXTURE, mask, 0, 0);
-            entry(EXPOSURE_BINDING, resource_kind::TEXTURE, exposure, 0, 0);
-            let layout = match (bloom, fold) {
-                (Some(bloom), _) => {
-                    entry(2, resource_kind::BUFFER, bloom.buffer, FINAL_OFFSET, 0);
-                    entry(3, resource_kind::TEXTURE, bloom.base, 0, 0);
-                    entry(8, resource_kind::SAMPLER, bloom.sampler, 0, 0);
-                    bind_layout::FINAL_BLOOM
-                }
-                (None, Some(fold)) => {
-                    let bytes = crate::effects::BUFFER_BYTES as u32;
-                    entry(
-                        EFFECTS_BINDING,
-                        resource_kind::BUFFER,
-                        fold.buffer,
-                        0,
-                        bytes,
-                    );
-                    entry(
-                        EFFECT_DEPTH_BINDING,
-                        resource_kind::TEXTURE,
-                        fold.depth,
-                        0,
-                        0,
-                    );
-                    if fold.multisampled {
-                        bind_layout::FINAL_EFFECTS_DEPTH_MS
-                    } else {
-                        bind_layout::FINAL_EFFECTS
-                    }
-                }
-                (None, None) => bind_layout::FINAL,
-            };
-            words[0] = ids.group;
-            words[1] = layout;
-            words[2] = ((len - 3) / 5) as u32;
-            list.push(Op::CreateBindGroup, &words[..len])?;
-            self.bound = Some(inputs);
+        (settings, bound)
+    }
+
+    /// Uploads `settings` when the buffer holds others.
+    fn upload(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        settings: FinalUniform,
+    ) -> Result<(), RecordError> {
+        if self.uploaded != Some(settings) {
+            let (at, bytes) = arena.push(settings.as_bytes())?;
+            list.push(Op::WriteBuffer, &[self.ids.settings, 0, at, bytes])?;
+            self.uploaded = Some(settings);
         }
         Ok(())
     }
@@ -543,11 +584,13 @@ impl FinalPass {
     /// began into the canvas: one triangle over the canvas, with the plain pipeline that scales the
     /// first step's display color up to it.
     pub(crate) fn record_present(&self, list: &mut DrawList) -> Result<(), RecordError> {
-        let pipeline = self
-            .present_pipeline
+        let (pipeline, group) = self
+            .present
+            .as_ref()
+            .and_then(|present| Some((present.pipeline?, present.group)))
             .expect("the two-step asks for its present pipeline before it records");
         list.push(Op::SetPipeline, &[pipeline])?;
-        list.push(Op::SetBindGroup, &[0, self.ids.group, 0])?;
+        list.push(Op::SetBindGroup, &[0, group, 0])?;
         list.push(Op::Draw, &[3, 1, 0, 0])?;
         Ok(())
     }
@@ -558,7 +601,88 @@ impl FinalPass {
         self.created = false;
         self.uploaded = None;
         self.bound = None;
+        if let Some(present) = self.present.as_mut() {
+            present.bound = None;
+        }
     }
+}
+
+/// Makes the bind group `group` of a pass with `ids` again when what it reads, `inputs`, is new,
+/// or when the frame's list made the plan's textures again, and records what it reads in `bound`.
+/// Bloom's inputs take the bloom build's layout, and the inputs of effects that fold into the pass
+/// the fold build's.
+fn bind(
+    list: &mut DrawList,
+    ids: FinalIds,
+    group: u32,
+    bound: &mut Option<Bound>,
+    inputs: Bound,
+    textures_made: bool,
+) -> Result<(), RecordError> {
+    if !textures_made && *bound == Some(inputs) {
+        return Ok(());
+    }
+    let mut words = [0u32; 3 + 5 * 12];
+    let mut len = 3;
+    let mut entry = |binding: u32, kind: u32, id: u32, offset: u32, size: u32| {
+        words[len..len + 5].copy_from_slice(&[binding, kind, id, offset, size]);
+        len += 5;
+    };
+    entry(0, resource_kind::BUFFER, ids.settings, 0, 0);
+    entry(1, resource_kind::TEXTURE, inputs.scene_color, 0, 0);
+    entry(LUT_BINDING, resource_kind::TEXTURE, inputs.lut, 0, 0);
+    entry(
+        LUT_SAMPLER_BINDING,
+        resource_kind::SAMPLER,
+        ids.lut_sampler,
+        0,
+        0,
+    );
+    entry(OUTLINE_BINDING, resource_kind::TEXTURE, inputs.mask, 0, 0);
+    entry(
+        EXPOSURE_BINDING,
+        resource_kind::TEXTURE,
+        inputs.exposure,
+        0,
+        0,
+    );
+    let layout = match (inputs.bloom, inputs.fold) {
+        (Some(bloom), _) => {
+            entry(2, resource_kind::BUFFER, bloom.buffer, FINAL_OFFSET, 0);
+            entry(3, resource_kind::TEXTURE, bloom.base, 0, 0);
+            entry(8, resource_kind::SAMPLER, bloom.sampler, 0, 0);
+            bind_layout::FINAL_BLOOM
+        }
+        (None, Some(fold)) => {
+            let bytes = crate::effects::BUFFER_BYTES as u32;
+            entry(
+                EFFECTS_BINDING,
+                resource_kind::BUFFER,
+                fold.buffer,
+                0,
+                bytes,
+            );
+            entry(
+                EFFECT_DEPTH_BINDING,
+                resource_kind::TEXTURE,
+                fold.depth,
+                0,
+                0,
+            );
+            if fold.multisampled {
+                bind_layout::FINAL_EFFECTS_DEPTH_MS
+            } else {
+                bind_layout::FINAL_EFFECTS
+            }
+        }
+        (None, None) => bind_layout::FINAL,
+    };
+    words[0] = group;
+    words[1] = layout;
+    words[2] = ((len - 3) / 5) as u32;
+    list.push(Op::CreateBindGroup, &words[..len])?;
+    *bound = Some(inputs);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -573,6 +697,8 @@ mod tests {
         lut_sampler: 4,
         blank_outline: 6,
     };
+    /// The second step's bind group.
+    const PRESENT_GROUP: u32 = 7;
 
     /// Prepares a final pass for a scene color in `format` in the `antialias` mode, with
     /// `grading`, and returns the pipeline it asked for, the settings it uploaded and its list.
@@ -587,22 +713,23 @@ mod tests {
         arena.reset(FinalPass::UPLOAD_BYTES);
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines, false);
-        pass.prepare(
-            &mut list,
-            &mut arena,
-            ToneMapping::default(),
-            (64, 64),
-            5,
-            None,
-            grading,
-            None,
-            None,
-            None,
-            true,
-            false,
-        )
-        .unwrap();
+        pass.prepare(&mut list, &mut arena, &inputs(grading), true, true)
+            .unwrap();
         (pipelines.keys()[0], pass.uploaded.unwrap(), list)
+    }
+
+    /// What a pass reads at a render size of 64 by 64 pixels: the color 5, with `grading`.
+    fn inputs(grading: Grading) -> FinalInputs {
+        FinalInputs {
+            tone_mapping: ToneMapping::default(),
+            render_size: (64, 64),
+            color: 5,
+            bloom: None,
+            grading,
+            outline: None,
+            fold: None,
+            exposure: None,
+        }
     }
 
     /// Checks that `final.wgsl` declares a flag with the value that the pass uploads.
@@ -653,16 +780,9 @@ mod tests {
             .prepare(
                 &mut list,
                 &mut arena,
-                ToneMapping::default(),
-                (64, 64),
-                5,
-                None,
-                Grading::default(),
-                None,
-                None,
-                None,
+                &inputs(Grading::default()),
                 true,
-                false,
+                true,
             )
             .unwrap();
         let flags = first.uploaded.unwrap().output.flags;
@@ -670,35 +790,50 @@ mod tests {
         assert_eq!(flags & OutputUniform::DITHER, 0);
 
         // The second step reads the first step's display color and dithers it, since the first step
-        // read high dynamic range color. It draws with its own plain pipeline.
+        // read high dynamic range color. It draws with its own plain pipeline, and binds a group of
+        // its own beside the pass's, so a frame that crosses the whole canvas's scale makes none.
         let mut second = FinalPass::new(
             IDS,
             SceneColor::from_format(format::RGBA16_FLOAT),
-            Antialias::Msaa,
-        );
+            Antialias::Fxaa,
+        )
+        .presents(PRESENT_GROUP);
         let mut pipelines = PipelineCache::default();
         second.request_pipeline(&mut pipelines, false);
-        assert!(second.present_pipeline.is_some());
+        let present = second.request_present(&mut pipelines);
+        assert_eq!(pipelines.keys()[present as usize - 1].permutation, 0);
+        let groups = |list: &DrawList| -> Vec<u32> {
+            null3d_gpu::drawlist::decode(list.words())
+                .map(|command| command.unwrap())
+                .filter(|command| command.op == Op::CreateBindGroup)
+                .map(|command| command.operands[0])
+                .collect()
+        };
+        let read = inputs(Grading::default());
+        let mut list = DrawList::with_capacity(256);
         second
-            .prepare(
-                &mut list,
-                &mut arena,
-                ToneMapping::default(),
-                (64, 64),
-                5,
-                None,
-                Grading::default(),
-                None,
-                None,
-                None,
-                true,
-                true,
-            )
+            .prepare(&mut list, &mut arena, &read, false, false)
             .unwrap();
+        second
+            .prepare_present(&mut list, &mut arena, &read, false, true)
+            .unwrap();
+        assert_eq!(groups(&list), [IDS.group, PRESENT_GROUP]);
         let flags = second.uploaded.unwrap().output.flags;
         assert_ne!(flags & OutputUniform::DISPLAY_COLOR, 0);
         assert_ne!(flags & OutputUniform::DITHER, 0);
         assert_eq!(flags & OutputUniform::RESOLVE, 0);
+
+        // Back at the whole canvas the pass uploads its own settings and makes no group.
+        arena.reset(2 * FinalPass::UPLOAD_BYTES);
+        let mut list = DrawList::with_capacity(256);
+        second
+            .prepare(&mut list, &mut arena, &read, false, true)
+            .unwrap();
+        second
+            .prepare_present(&mut list, &mut arena, &read, false, false)
+            .unwrap();
+        assert!(groups(&list).is_empty());
+        assert_eq!(second.uploaded.unwrap().output.flags, 0);
     }
 
     #[test]
@@ -713,13 +848,12 @@ mod tests {
         pass.set_tone_curve(Some(template::CUSTOM_FIRST));
         pass.request_pipeline(&mut pipelines, true);
         let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
-        // The pass's own builds, the second step's plain build, then the curve's two builds.
+        // The pass's own builds, then the curve's two builds.
         assert_eq!(
             templates,
             [
                 template::FINAL,
                 template::FINAL_BLOOM,
-                template::FINAL,
                 template::CUSTOM_FIRST,
                 template::CUSTOM_FIRST + 1
             ],
