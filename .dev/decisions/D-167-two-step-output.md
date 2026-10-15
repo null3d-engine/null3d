@@ -60,18 +60,25 @@ The two steps ship, as follows.
    range color in step 1 and display color in step 2. The outline keeps its canvas-space frame and
    stays in step 2.
 3. The split runs only when the render scale can drop below the whole canvas and the frame draws
-   below it. A crossing declares the passes again inside the frame's preparation, so no frame mixes
-   the two shapes. At the whole canvas's scale the pass is exactly the one pass's again.
-4. Effects that may fold into the final pass no longer fold while the render scale can drop, since
-   step 2 reads display color.
+   below it. While the render scale can drop, the declarations hold both shapes, and every frame
+   keeps the bind groups of both ready. A crossing then only picks which passes draw: it declares
+   nothing, allocates nothing and makes no GPU object. At the whole canvas's scale the frame draws
+   exactly the one final pass, bloom build included. Until the second step's pipeline is built, a
+   frame below the whole canvas keeps to the one pass, which scales the image up by itself.
+4. The two steps ask for their pipelines only while the render scale can drop. A sketch whose
+   scale cannot drop builds no pipeline for them.
+5. Effects that may fold into the final pass no longer fold while the render scale can drop, since
+   step 2 reads display color. A custom tone curve runs in step 1.
 
 The upscaler is today's bilinear scale-up, which step 2 already draws. GSR 1, the EASU choice and
 the `sharpen` RCAS value follow, once prototype P1 measures them on the phones.
 
 ## What the questions were
 
-1. **Per-frame scale routing.** The frame now holds the two-step pass only below the whole canvas's
-   scale. It re-declares on a crossing, so the extra target is absent at scale 1.
+1. **Per-frame scale routing.** The declarations hold the two-step pass whenever the render scale
+   can drop, so the first step's target exists at scale 1 too. Declaring again at each crossing
+   allocated in the frame loop, which dynamic resolution runs every frame, so the frame picks the
+   passes that draw instead (15 October 2026).
 2. **Where the outline draws.** Step 2, unchanged in its canvas-space frame. The line's width is
    still in canvas pixels.
 3. **Bloom's frame.** Bloom draws in step 1. Its base covers the same corner, so its read did not
