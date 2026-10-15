@@ -133,7 +133,7 @@ export function decodeOctahedral(
 
 /**
  * The cell of an atlas that shows a view from `direction`, as a frame counted from the atlas's top
- * left, along each row and then down. A view was drawn from the direction a cell's centre names,
+ * left, along each row and then down. A view was drawn from the direction a cell's center names,
  * so a bake that walks `frameDirection` over every frame and this agree on every cell. A direction
  * of length 0 shows the middle cell.
  *
@@ -158,7 +158,7 @@ export function frameOf(x: number, y: number, z: number, columns: number, rows: 
 }
 
 /**
- * The direction that the view of a cell was drawn from: the centre of the octahedron's cell, as a
+ * The direction that the view of a cell was drawn from: the center of the octahedron's cell, as a
  * unit direction. `impostorFrame` of the result gives `frame` again.
  *
  * @category api/impostors

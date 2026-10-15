@@ -1,6 +1,6 @@
 # D-151: Octahedral impostors and merged far geometry
 
-Status: proposed. Date: 13 October 2026. Task: M2-EX34. It answers [D-142](D-142-more-techniques-before-1-0.md), which moved the technique into M2.
+Status: proposed. Built anyway: the add-on landed on main (`36e7451bc`, 13 October 2026) before the owner's ruling, with its docs page marked experimental. The figures that the ruling needs are not measured yet. Date: 13 October 2026. Task: M2-EX34. It answers [D-142](D-142-more-techniques-before-1-0.md), which moved the technique into M2.
 
 Summary: A far object can draw as a card that shows one stored view of it. That view is an octahedral impostor. Or the object can draw as one mesh merged from a whole grid cell of its copies. Both ship as the opt-in `@null3d/impostors` add-on. Both build on the engine's sprite batches and `geometry.fromArrays`, so both work on WebGPU and WebGL2 with no new engine shader. Neither costs anything in a page that does not install it. The figures are not measured yet. This record holds the design, the options and the measurement plan. The owner rules once the figures are in.
 

@@ -44,4 +44,4 @@ The table's statuses were short forms of each record's `Status:` paragraph. The 
 - Each record has a `Summary:` paragraph under its status, which holds what the table's summary column held. [TEMPLATE.md](TEMPLATE.md) has it too.
 - `bun run decisions` prints the list. `bun tools/decisions.ts --check` runs in `bun run docs:check` and in the commit hook. It refuses a file name without a number, and a title line whose number differs from the file name. It also refuses a record without a status or a summary, and two records with one number.
 - A pull request that adds a record changes no shared file. Two pull requests that take one number still merge without a conflict, so the check catches the clash on the queue's combined tree.
-- [The README](README.md) and [Pull requests and parallel work](../pull-requests.md#merge-main-into-a-branch) say how to write a record and how to find one.
+- [The README](README.md) and [Branches and parallel work](../pull-requests.md#merge-main-into-a-branch) say how to write a record and how to find one.

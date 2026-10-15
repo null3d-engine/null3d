@@ -1,0 +1,45 @@
+{
+  "name": "s4",
+  "gpu": "webgpu",
+  "page": "visual",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "url": "http://localhost:8004/tests/pages/visual.html?gpu=webgpu&scene=%2Fbench%2Fpages%2Fnull3d%2Fs4-sketch.ts%3Fn%3D5000&size=640x360",
+  "ok": true,
+  "tier": "webgpu",
+  "mode": {
+    "build": "threaded",
+    "latency": "pipelined",
+    "sketchThread": "worker",
+    "renderThread": "render-worker",
+    "jobWorkers": 16,
+    "hold": 2,
+    "preset": "high",
+    "presetCheck": null,
+    "crashedStarts": 0,
+    "memoryMaximumMiB": 1024,
+    "renderFallback": null
+  },
+  "scene": "/bench/pages/null3d/s4-sketch.ts?n=5000",
+  "width": 640,
+  "height": 360,
+  "stability": {
+    "changedPercent": 0,
+    "meanChangedPercent": 0,
+    "shadowedPercent": 23.375868055555554
+  },
+  "edges": {
+    "offsetPixels": 0.06856352499506027
+  },
+  "contact": {
+    "feet": 312,
+    "meanGapPixels": 0.02057566665686094,
+    "gapPercent": 0.9615384615384616,
+    "tops": 357,
+    "meanRimPixels": 2.585763709391376
+  },
+  "acne": {
+    "pixels": 54756,
+    "meanShadowPercent": 0.0776850981929703,
+    "shadowedPercent": 0
+  }
+}

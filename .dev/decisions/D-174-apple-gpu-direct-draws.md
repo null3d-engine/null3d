@@ -18,7 +18,7 @@ Battle on the iPhone 17 runs at 13 fps in null3D and 40 fps in three.js, both on
 
 The engine draws every bucket with `drawIndexedIndirect` on WebGPU. WebKit's `clampIndirectIndexBufferToValidValues` runs when a pipeline has vertex buffers. It adds two pipeline switches, an indirect point draw over the draw's whole index count, two vertex to vertex barriers and two scratch allocations. All of that sits inside the render pass. [D-87](D-87-webkit-indirect-arguments.md) covers the separate fault that this pass fixes. Chrome has no such cost.
 
-A raw-WebGPU micro-probe measures the cost with no engine. It uses 1024x768, 4x MSAA, one depth pass, and the same 131 k triangles in every arm. It times each arm with GPU timestamps. Its page is at `logs/r34/indirect-probe/`. Its results are in `logs/r34/indirect-g256-safari.json`, `indirect-iphone17.json` and `indirect-ipad10.json`.
+A raw-WebGPU micro-probe measures the cost with no engine. It uses 1024x768, 4x MSAA, one depth pass, and the same 131 k triangles in every arm. It times each arm with GPU timestamps. Its page is [`bench/probes/indirect-draws/index.html`](../../bench/probes/indirect-draws/index.html), which runs from any static server and prints its figures. Its query takes `grid`, `draws`, `passes`, `msaa` and `arms`. The results that this record cites are beside it: `indirect-g256-safari.json`, `indirect-iphone17.json` and `indirect-ipad10.json`.
 
 GPU ms per frame, 1,024 draws, one instance and 128 triangles each:
 
