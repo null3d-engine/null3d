@@ -235,9 +235,7 @@ describe('the cache keys', () => {
 		// checkout, and the build compiles them into that checkout's own Rust build folder. So an
 		// entry's key and its contents come from one checkout's crates, and two checkouts with the
 		// same crates share the entry.
-		const files = [
-			...new Set(TOOL_FOLDERS.flatMap((folder) => inputFiles(process.cwd(), folder))),
-		];
+		const files = [...new Set(TOOL_FOLDERS.flatMap((folder) => inputFiles(process.cwd(), folder)))];
 		const copies = mkdtempSync(join(tmpdir(), 'null3d-keys-'));
 		try {
 			const [one, two] = ['one', 'two'].map((name) => join(copies, name));
@@ -249,7 +247,7 @@ describe('the cache keys', () => {
 			// A crate that the shader compiler depends on, edited in one checkout only.
 			const gpu = files.find((file) => file.startsWith('crates/null3d-gpu/src/'));
 			expect(gpu).toBeDefined();
-			writeFileSync(join(two!, gpu!), '// another checkout\'s edit\n', { flag: 'a' });
+			writeFileSync(join(two!, gpu!), "// another checkout's edit\n", { flag: 'a' });
 			expect(toolInputs(two!)[0]).not.toBe(here[0]);
 			expect(toolInputs(one!)).toEqual(here);
 			expect(dirname(cargoTargetBase(two!))).toBe(two!);
