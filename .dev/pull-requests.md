@@ -1,25 +1,25 @@
-# Pull requests and parallel work
+# Branches and parallel work
 
-Since 13 October 2026, work lands on main by direct push, without pull requests ([D-157](decisions/D-157-direct-pushes-to-main.md)): merge `origin/main` into the branch, run the local checks that D-157 lists, push the branch's commits to main without waiting for main's CI, and fix main at once if your push turned it red. Where this guide says "pull request" below, read "branch": the trailers, records and checks are the same.
+Since 13 October 2026, work lands on main by direct push, without pull requests ([D-157](decisions/D-157-direct-pushes-to-main.md)). Merge `origin/main` into the branch, run the local checks, and push the branch's commits to main without waiting for main's CI. Fix main at once if your push turned it red. [D-99](decisions/D-99-no-merge-queue.md) holds the earlier pull-request flow, as history.
 
-This guide covers generated files, how to merge main into a branch, and how a pull request merges. It also covers what CI runs on each event and why its jobs are split as they are. Last, it covers several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of merging.
+This guide covers how a branch lands, generated files, and how to merge main into a branch. It also covers commit messages, what CI runs and why its jobs are split as they are, and several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates.
 
-## Before you open a pull request
+## Before you land a branch
 
-Record the reasons for the change in `.dev/`, in the same pull request, as [AGENTS.md](../AGENTS.md#record-the-reasons) says. Each kind of reason has its place:
+Record the reasons for the change in `.dev/`, in the same branch, as [AGENTS.md](../AGENTS.md#record-the-reasons) says. Each kind of reason has its place:
 
 | Kind | Place | Example |
 | --- | --- | --- |
 | A design choice or an owner's ruling | A decision record, new or an addendum: the problem, the figures, the options rejected and why, and who decided and when | [D-92](decisions/D-92-safari-removed-frames.md) gives the memory that Safari kept on CI, the options, and the owner's confirmation on 7 October 2026 |
 | A bug fix | The cause and why the fix is right, in the record or guide that owns the area | The framebuffer fault on the Pixel 10: [D-71](decisions/D-71-custom-effects.md) gives the cause, the per-call timings and the unit test |
 | A device or benchmark run | A new run file in [tested devices](tested-devices.md), or a row in the [benchmark results](benchmark-results.md) | The iPad's custom effects run of 7 October 2026, in the iPad Pro's folder |
-| A process or tooling lesson | The guide that covers it | Put each trailer on a plain commit, because the squash drops merge commits' messages, in [Commit messages and pushes](#commit-messages-and-pushes) |
+| A process or tooling lesson | The guide that covers it | Put each trailer on a plain commit, because the trailer check reads only plain commits, in [Commit messages and pushes](#commit-messages-and-pushes) |
 
 The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
 
 ## Generated files
 
-Never commit a generated file, unless [D-105](decisions/D-105-generated-files-out-of-git.md) gives the reason to keep it. A generated file changes in every pull request that changes its source, so it clashes between them. Git can also merge its text cleanly into a result that no generator makes. So git ignores each generated file, and these steps build it.
+Never commit a generated file, unless [D-105](decisions/D-105-generated-files-out-of-git.md) gives the reason to keep it. A generated file changes in every branch that changes its source, so it clashes between them. Git can also merge its text cleanly into a result that no generator makes. So git ignores each generated file, and these steps build it.
 
 | Generated files | Source | Generator |
 | --- | --- | --- |
@@ -28,6 +28,7 @@ Never commit a generated file, unless [D-105](decisions/D-105-generated-files-ou
 | The list of all pages, `docs/pages.md` | Each page's front matter | `bun run docs` |
 | The error pages, `docs/errors/` | The engine's error table | `bun run docs` |
 | The quality preset tables, `docs/concepts/quality-preset-tables.md` | The quality chooser's constants and the preset table | `bun run docs` |
+| The page of shaders that load on first use, `docs/guides/first-use-shaders.md` | The shader manifest's `[first_use.*]` tables, and the descriptions in `tools/lib/first-use-docs.ts` | `bun run docs` |
 | The shader library page, `docs/shaders/library.md` | The WGSL library's doc comments | `bun run docs` |
 | The three.js mapping page and the porting skill's 2 copies of the mapping | `docs/data/threejs-mapping.json` | `bun run docs` |
 | The placeholder pages of planned pages | The page inventory in `tools/lib/docs.ts` | `bun run docs` |
@@ -114,7 +115,7 @@ Never merge a generated file by hand. Take main's side, run the file's generator
 - The vendored Basis and meshopt builds
 - The benchmark records and the README's animation
 - What a release writes: the version numbers, `CHANGELOG.md` and the plugin's marketplace file
-- The lock files and the sample content's manifest A new kind of generated file goes into `.gitignore`, unless its pull request adds its reason to D-105.
+- The lock files and the sample content's manifest A new kind of generated file goes into `.gitignore`, unless its branch adds its reason to D-105.
 
 ## Merge main into a branch
 
@@ -122,7 +123,7 @@ Never merge a generated file by hand. Take main's side, run the file's generator
 - Never merge a generated file by hand. [Generated files](#generated-files) says how to resolve a clash on one.
 - A branch from before git stopped keeping the shader modules gets a conflict on each module that it changed when it merges main. Resolve them all with `git rm --cached packages/engine/src/generated/shaders*.ts`, which keeps the files for the next build to replace.
 - Check the shared numbers after the merge. Two branches can each take the next free number, and git then merges both lines without a conflict. The shared numbers are the error codes (`packages/engine/src/errors/codes.ts`) and the scene command numbers (`crates/null3d-wasm/src/constants.rs`). They are also the draw list's opcodes and pipeline template numbers (`crates/null3d-gpu/src/drawlist.rs`), and the decision record numbers. The engine's own templates take numbers below 128, the first custom template. Custom materials, effects and tone curves take numbers from 128 up, which the sketch gives out at run time. The first custom template was 64 until 11 October 2026. The techniques of [D-142](decisions/D-142-more-techniques-before-1-0.md) used nearly every number below it, so it moved to 128. A unit test checks that each engine template has its own number below 128. The bindings and slots that a shader and its bind group layout share are shared numbers too. A unit test catches a clash in some of these lists, such as the opcodes, but not in all of them. The docs check, `bun run docs:check`, refuses two decision records with one number.
-- Build and run the quick checks again before you push the merge: lint, types, docs, skills and unit tests. Then rerun the browser and image tests only of the areas that the merge's conflicts touched. CI runs every test on the pull request merged into main.
+- Build and run the quick checks again before you push the merge: lint, types, docs, skills and unit tests. Then rerun the browser and image tests only of the areas that the merge's conflicts touched. CI runs every test once the branch is on main.
 - Run a branch's own copy of a hook's tool, such as `tools/hooks/check-trailers.ts`, from that branch's checkout. Another checkout's copy can be older, and refuse a valid `Size-Growth:` name.
 
 ## A branch from before generated files left git
@@ -150,81 +151,57 @@ The record of [tested devices](tested-devices.md) was one table until 7 October 
 ## Commit messages and pushes
 
 - A merge commit must pass the commit-message check, as every commit does. A message such as `Merge origin/main into <branch>` passes, and so do git's own merge messages. A message such as `merge origin/main` fails, because the check reads it as a commit without a type.
-- Never force push a pull request's branch, so never amend, rebase or squash a commit that you pushed.
-- Main squashes each pull request, but CI checks the message of every commit in the pull request until it merges. A pushed commit with a bad message therefore fails CI for as long as the pull request is open.
-- Put each trailer on a plain commit, never on a merge commit; an empty commit can carry it. Main's squash keeps the messages of the pull request's plain commits and drops the merge commits' messages. CI's trailer check and size check therefore read only the plain commits, so a trailer on a merge commit fails on the pull request. On 7 October 2026, #397's `Size-Growth:` trailer sat on a merge commit. Its own size check passed, and the merge queue's check of the squash failed ([Benchmarks](benchmarks.md#download-size)).
-- To fix a bad message, open a new pull request from a new branch with a clean history. It replaces the old one. For example, `git switch -c <new-branch> origin/main`, then `git merge --squash <old-branch>`, then commit with a good message. Close the old pull request, and link the new one from it.
-- The same applies when a branch carries copies of commits that main already holds, and a commit gate rejects one of the copies. Put the branch's files in one clean commit on a new branch from main, and open a new pull request. Close the old one with a link to the new one. Do not force push the old branch, and do not loosen the gate. On 8 October 2026, #417's branch held old copies of the commits of M2-K1 and the S25 skinning fix. The trailer check failed on one of them, because its `Size-Growth:` trailer named shader files by their names before a rename. Pull request #424 held the same files as #417's last commit, in one commit merged with main, and replaced it. The owner approved this way on 8 October 2026.
+- Never force push a branch that you pushed, so never amend, rebase or squash a commit that you pushed.
+- Main keeps every commit of a branch, its merge commits too. So every plain commit's subject becomes a changelog line, and the commit-message hook checks each one. A pushed commit with a bad message stays on the branch, and on main once it lands.
+- Put each trailer on a plain commit, never on a merge commit; an empty commit can carry it. The trailer check and the size check read only plain commits, so a trailer on a merge commit counts for nothing. On 7 October 2026, #397's `Size-Growth:` trailer sat on a merge commit, and the size check did not count it ([Benchmarks](benchmarks.md#download-size)).
+- To fix a bad message on a branch that is not on main yet, put the branch's files in one clean commit on a new branch. For example, `git switch -c <new-branch> origin/main`, then `git merge --squash <old-branch>`, then commit with a good message. Land the new branch, and delete the old one. Do not force push the old branch.
+- The same applies when a branch carries copies of commits that main already holds, and a commit gate rejects one of the copies. Do not loosen the gate. On 8 October 2026, #417's branch held old copies of the commits of M2-K1 and the S25 skinning fix. Its `Size-Growth:` trailer named shader files by their names before a rename, so the trailer check failed. One clean commit of the same files replaced it. The owner approved this way on 8 October 2026.
 
-## Merging
+## Landing a branch
 
-Main does not use a merge queue from 7 October 2026 ([D-99](decisions/D-99-no-merge-queue.md)). A pull request merges by squash once its full CI run passes, and [AGENTS.md](../AGENTS.md#releases) gives the rules.
+A branch lands on main by direct push ([D-157](decisions/D-157-direct-pushes-to-main.md)). No reviewer reads it first, so the author runs every check that the change needs.
 
-- CI's last job, `ci-passed`, waits for every other CI job, and it passes only when each one passed. A job may skip only when the first job, `changes`, passed and said that the job does not run. That is so for the heavy jobs of a draft or a [docs-only pull request](#docs-only-pull-requests), and for the jobs that run only on some changes. In every other run, every job must pass.
-- Main's rules require two checks: `ci-passed`, and `squash-title` from the PR title workflow. So a CI job can split into more shards and change its name with no change to the rules.
-- Mark a pull request ready for review only when its work is complete, with `gh pr ready <number>`. That starts its full run, and so does each later push. A full run takes about 100 runner minutes and 2 macOS jobs.
-- Merge with `gh pr merge <number> --squash` once the checks pass, or add `--auto` to merge as soon as they pass. Do the steps of [Before a merge](#before-a-merge) first.
-- When a job fails, read its log, and find whether the pull request caused the failure. `gh run view <run> --log-failed` prints the failed steps. A test that fails only under load, or a run that GitHub cancelled when a runner shut down, says nothing about the pull request. Run the failed jobs again with `gh run rerun <run> --failed`. Otherwise fix the cause and push. Record the cause in `.dev/` either way.
+1. Push the branch to its own remote branch as you work, to save it: `git push origin HEAD:<branch>`.
+2. Fetch, and merge `origin/main` into the branch. Resolve each clash section by section, and keep both sides' additions. Take main's copy of a generated file and generate it again.
+3. Run `bun install`, then build, then compile the merged tree at once: `cargo check --workspace` and `bun run typecheck`. A merge that keeps both sides of a struct or a constant is often valid text, so only a build finds the fault.
+4. Run the local checks: `bun run check`, `bun run typecheck`, the unit tests, `cargo nextest run` for each crate that changed, the docs, style and skills checks, and the browser and image tests of the parts that the branch changes. An image change needs both reference sets. Run `bun run build:check-size`, and [the GPU check](#the-gpu-check) when the branch changes how the GPU draws. Check the trailers with `bun tools/hooks/check-trailers.ts origin/main..HEAD`.
+5. Push with `git push origin HEAD:main`. When git refuses the push because main moved, merge `origin/main` again, rerun the checks that the new commits touch, and push again.
+
+- A new push to main cancels main's running CI run, by the owner's choice: only the newest main matters.
+- Never wait for main's CI before a push: not for a running run, and not for a red one. When a finished run on main fails because of your push, fix it at once. Others keep pushing meanwhile.
+- When a job on main fails, read its log, and find whether a push caused the failure. `gh run view <run> --log-failed` prints the failed steps. A test that fails only under load, or a run that GitHub cancelled when a runner shut down, says nothing about the code. Run the failed jobs again with `gh run rerun <run> --failed`. Otherwise fix the cause and push. Record the cause in `.dev/` either way.
 - Two tests are known to fail only on a loaded machine. One is the GPU loss test "draws on after a GPU loss" on SwiftShader. It got no frame in its fixed recovery wait, in full local runs while the Mac's load was 21 to 30. The other is the benchmark page test of S4 on SwiftShader. It drew no frame in its short run, in CI runs 37289400132 and 37578361814. Both passed when they ran again. In each, the slow software GPU took longer than the test's fixed window to draw the first frame after a start or a loss. A rerun alone shows whether a failure is this ([Image tests](image-tests.md#tests-on-slow-machines)).
-- The Safari and Firefox jobs compare the image tests with the Mac's `chrome-real-gpu` references. A test without one of these references, or without its SwiftShader reference, fails `bun run check` in the quick checks. So a draft's run shows it too ([Image tests](image-tests.md#references)).
-- When main's run fails, nothing merges until a fix lands. Find the cause as for a pull request. A fault of the combined code gets a fix pull request at once, which merges first. A failure that says nothing about the code is run again.
+- The Safari and Firefox jobs compare the image tests with the Mac's `chrome-real-gpu` references. A test without one of these references, or without its SwiftShader reference, fails `bun run check` ([Image tests](image-tests.md#references)).
+- CI's last job, `ci-passed`, waits for every other CI job, and it passes only when each one passed. A job may skip only when the first job, `changes`, passed and said that the job does not run. Main's rules require `ci-passed`, not each job, so a CI job can split into more shards and change its name with no change to the rules.
 
-### Before a merge
+### Before you push to main
 
-Main has no merge queue, so pull requests that change the same code files merge one after another. The smaller or readier one merges first. Each later one merges main again, passes its checks, and only then merges.
+Two branches that change the same code files land one after another. The smaller or readier one lands first, and the other merges main again and runs its checks before it pushes.
 
-A pull request's run tests GitHub's merge of it into main as main was at the push. It does not hold the pull requests that merged since, or those that will merge before it. So before a pull request merges, its author tests it against main and the pull requests about to merge:
-
-- Merge current main into the branch, run the generators, and push. Run the quick checks, and the browser and image tests of the areas that the merge touched.
-- Test it combined with each pull request that will merge before it too. Merge them all into a scratch branch on top of current main, and build it. Then run the quick checks and the tests of the areas that they share.
-- Run `bun run build:check-size` with current main merged. The pull request's own size check compared with main as it was at the last push. On 6 October 2026 a pull request failed its size check for two files that had grown 2.0% against the newer main.
-- Two pull requests that add text at one place of a file clash after the first one's squash. This happens even when one pull request already contains the other's text. Merge the second only after the first merges, and merge main into it first. The record of [tested devices](tested-devices.md) had many of these clashes, so each run there is now a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)).
-- Main's full run after the merge is the last check of the combined code. The size check of a run on main compares with the commit before. So a file's growth counts only against the pull request that makes it.
+- Run `bun run build:check-size` with current main merged. On 6 October 2026 a change failed its size check for two files that had grown 2.0% against a newer main.
+- Two branches that add text at one place of a file clash when the second one merges main. Resolve the clash by keeping both sides. The record of [tested devices](tested-devices.md) had many of these clashes, so each run there is now a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)).
+- Main's run after the push is the last check of the combined code. The size check of a run on main compares with the commit before.
 
 ### The GPU check
 
-CI's benchmark job has no GPU timer, so it cannot see a change that slows only the GPU. On the Mac's GPU, pull request 389 made S4 and S6 on WebGPU 5 to 33 times slower. Yet it passed every CI job ([D-109](decisions/D-109-gpu-time-guard.md)). So a pull request that can change the GPU's work runs the GPU check, and records the result. The check needs a computer with a GPU of its own.
+CI's benchmark job has no GPU timer, so it cannot see a change that slows only the GPU. On the Mac's GPU, pull request 389 made S4 and S6 on WebGPU 5 to 33 times slower. Yet it passed every CI job ([D-109](decisions/D-109-gpu-time-guard.md)). So a branch that can change the GPU's work runs the GPU check, and records the result. The check needs a computer with a GPU of its own.
 
-- It must run when the pull request changes `crates/null3d-shaders/src/`, `crates/null3d-shaders/wgsl/` or `crates/null3d-shaders/shaders.toml`. It must also run when the pull request changes `packages/engine/src/gpu/`, `packages/engine/src/render/` or `packages/engine/src/quality/`. Changes to tests there do not count.
+- It must run when the branch changes `crates/null3d-shaders/src/`, `crates/null3d-shaders/wgsl/` or `crates/null3d-shaders/shaders.toml`. It must also run when the branch changes `packages/engine/src/gpu/`, `packages/engine/src/render/` or `packages/engine/src/quality/`. Changes to tests there do not count.
 - Run the check in two steps once the branch's code is final. First run `bun run bench:gpu-check --prepare`, which uses only the CPU. It builds the branch and its benchmark pages. It also makes sure that a shared cache holds a build of the branch's merge base with origin/main. Then run `bun run bench:gpu-check --measure` on a Mac whose load is low. It builds nothing. It runs S4 and S6 on WebGPU at Medium and at High, in turns, in Chrome. With neither option, the check runs both steps in turn. [Benchmarks](benchmarks.md#the-gpu-checks-two-steps) says how the cache works and what each step costs. Set `NULL3D_PORT` to a port of your own: the check takes that port and the next.
 - It prints one line, such as `GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%); ...`. Put that line on a plain commit, an empty one if need be, such as `test: record the GPU check`. The commit must be the last one that changes the files above, or come after it. A later change to those files needs a new run.
-- CI cannot run the check, since its machines have no GPU timer. So the trailer is the author's record that the check ran, and what it measured. CI's trailer check only fails the pull request when the trailer is missing or says nothing. It cannot check the figures.
+- CI cannot run the check, since its machines have no GPU timer. So the trailer is the author's record that the check ran, and what it measured. The trailer check only fails when the trailer is missing or says nothing. It cannot check the figures.
 - `failed`: a page's GPU time grew more than 25% and 0.3 ms. Find the cause and fix it. A slowdown on purpose needs a `Bench-Expected:` trailer that names it, such as `Bench-Expected: s4/null3d-webgpu/gpu-time: a second shadow pass`, and then a new run.
 - `not measured`: the browser gave no GPU times, as on a machine without a GPU timer. Run it on a computer with one.
 - `not judged`: the benchmark pages changed between the two commits, so the builds drew different work. The line still gives the figures, and the reviewer judges them.
 - A change that cannot change the GPU's work, such as a comment in those folders, still needs the trailer. It then says why no check ran, such as `GPU-Checked: not run; only comments change in packages/engine/src/gpu/`.
-- Each night, the owner's Mac runs the same check on main against the night before. That catches what slips past a pull request, within a day.
+- Each night, the owner's Mac runs the same check on main against the night before. That catches what slips past a branch's own check, within a day.
 
 ## What CI runs where
 
-Each event runs every job, apart from a draft or a docs-only pull request, by the owner's decision of 7 October 2026 ([D-99](decisions/D-99-no-merge-queue.md)).
+Each push to main runs every job, on the pushed commit ([D-157](decisions/D-157-direct-pushes-to-main.md)). Main's jobs also keep the caches, and `wasm-checks` keeps the commit's sizes. A run started by hand runs every job on the branch that it names: `gh workflow run ci.yml --ref <branch>`. The workflow still answers pull-request events, but no branch opens a pull request now. [D-99](decisions/D-99-no-merge-queue.md) records what those events ran, the docs-only skip among them.
 
-| Event | Jobs |
-| --- | --- |
-| Draft pull request | The quick checks: `build`, `docs-and-tools`, `rust-lint`, `rust-tests`, `size-base`, `wasm-checks`, `shader-compiler` and `packages` |
-| Docs-only pull request | `build` and `docs-and-tools`, and `skill-sketches` when the pull request changes the skills' or the cookbook's Markdown and is no draft ([Docs-only pull requests](#docs-only-pull-requests)) |
-| Pull request ready for review: opened, pushed, reopened, or marked ready | Every job: the quick checks, the 7 `browser` shards and the job of the tests that run alone, the 2 `bench` shards, and the `real-browsers` shards in Safari and Firefox |
-| Push to main | Every job, on the code that the merge made. Main's jobs also keep the caches, and `wasm-checks` keeps the commit's sizes |
-| Started by hand | Every job, on the branch that the run names: `gh workflow run ci.yml --ref main` |
-| Merge queue | Every job, only while main's rules still use the queue |
-
-- A new push to a pull request cancels the run of its older push. Runs on main each have a group of their own, so a merge never cancels main's run of the merge before.
-- CI's Chrome tests draw on SwiftShader only, and Firefox on Linux draws with a software renderer. The Mac's real GPU gets no run in CI, apart from Safari. So run the browser and image tests of the areas that a pull request touches once on the Mac's GPU, before it is ready for review. Run `bun run test:browser` with Playwright's `--grep` or a spec file, and `bun run test:images` with `--grep`. A change that Safari or Firefox may treat differently also runs `bun run test:real-browsers Safari Firefox` ([Device sessions](devices.md)).
-- Before 6 October 2026, every pull request and every push to main ran the full suite, about 100 runner minutes each. GitHub Free runs 20 Linux jobs at once, so the queue's runs waited for runners for about half of their 32 minutes. From 6 to 7 October 2026, pull requests ran only the quick checks, and the queue ran the rest ([D-86](decisions/D-86-ci-runs-per-event.md)).
-
-### Docs-only pull requests
-
-A pull request that changes only docs files runs only the checks that read them. CI's first job, `changes`, decides it from the diff of the merge commit with main. A renamed file counts as its old path and its new path.
-
-- Docs files are Markdown files anywhere, and every file in `.dev/`, `docs/` and `skills/`. Only the `docs-and-tools` job reads them, in its docs, style, skills and type checks, the skill validator and the unit tests. Nothing in the engine, the Rust crates, the benchmarks or the test pages reads them. That holds for `docs/data/threejs-mapping.json` too: only the docs generator, the skills check and their unit tests read it.
-- `build` still runs, because `docs-and-tools` needs its shader modules.
-- The browser tests draw each complete sketch in the skills' and the cookbook's Markdown (`tests/image/skill-sketches.spec.ts`). So when a docs-only pull request that is no draft changes Markdown in `skills/` or `docs/cookbook/`, the `skill-sketches` job runs that one test file. In a full run, the `browser` shards draw the sketches, and `skill-sketches` skips.
-- Every other job skips. That is the Rust jobs, the size check, the shader compiler and the packages test. It is also the browser, benchmark page, allocation, Safari and Firefox jobs.
-- A pull request that changes any other file runs every job. That includes `.github/`, `package.json` and the tools.
-- Each push to main runs every job, so main's run still tests the docs change with everything else.
-- The reason: a full run takes about 30 jobs. GitHub Free runs 20 Linux jobs at once, and few macOS jobs. On 11 October 2026, with 6 or more pull requests open, main's own run waited over 90 minutes for runners. A docs-only run takes 4 short jobs, `ci-passed` among them, or 5 with the sketches.
-- A new test that reads a docs file must run in `docs-and-tools`. If it cannot, add the file's path to the `changes` job as a code path. Otherwise a docs-only pull request skips the test, and only main's run finds a failure.
-- The `changes` job's log lists the pull request's files and its four answers: `code`, `full`, `allocation` and `sketches`. `ci-passed` prints them too.
+- A new push to main cancels main's running run, so only the newest main is tested.
+- CI's Chrome tests draw on SwiftShader only, and Firefox on Linux draws with a software renderer. The Mac's real GPU gets no run in CI, apart from Safari. So run the browser and image tests of the areas that a branch touches once on the Mac's GPU, before it lands. Run `bun run test:browser` with Playwright's `--grep` or a spec file, and `bun run test:images` with `--grep`. A change that Safari or Firefox may treat differently also runs `bun run test:real-browsers Safari Firefox` ([Device sessions](devices.md)).
 
 ## CI's jobs
 

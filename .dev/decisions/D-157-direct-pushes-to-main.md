@@ -34,4 +34,4 @@ The owner chose direct pushes to main. The rule on main ("main: CI must pass") s
 - CI runs on each push to main, and a new push cancels main's running run, by the owner's choice: only the newest main matters. A push that merges a branch counts the same. If pushes come faster than one run (about an hour), no run on main finishes, so the coordinator watches for a run that completes.
 - Each branch is still pushed to its own remote branch while it is worked on, to save the work; only finished work goes to main.
 - Nobody waits for main's CI before pushing (owner, 13 October 2026): not for a running run, and not for a red one. When a finished run on main is red, whoever's push broke it fixes it at once, while others keep pushing.
-- [Pull requests and parallel work](../pull-requests.md) and [AGENTS.md](../../AGENTS.md) describe this flow. [D-99](D-99-no-merge-queue.md), which merged pull requests when CI passed, no longer applies.
+- [Branches and parallel work](../pull-requests.md) and [AGENTS.md](../../AGENTS.md) describe this flow. [D-99](D-99-no-merge-queue.md), which merged pull requests when CI passed, no longer applies.
