@@ -138,8 +138,8 @@ cost stays, and the next two sections say why.
 
 ### The joined effects never built on WebGL2
 
-d740587b6 said a joined group's target is read differently by the two-step pass on WebGL2. It then
-made each effect run alone while the scale can drop. The difference is real, but it is in the
+d740587b6 said the two-step pass reads a joined group's target differently on WebGL2. It then made
+each effect run alone while the scale can drop. The difference is real, but it is in the
 shader. The engine writes the joined chain into the host's built GLSL at run time
 (`packages/engine/src/gpu/effect-joiner.ts`), and that chain named the structure:
 `EffectInput link = start; link.color = run(link, 0u);`. The WebGL2 build turns every structure
@@ -150,7 +150,7 @@ image run of 15 October 2026 recorded it: "a shader of joined custom effects fai
 those effects draw one pass each: Fragment shader is not compiled". The driver said
 "'fx74470501_effect_piece_main' : no matching overloaded function found".
 
-The engine falls back to a pass for each effect when a joined build fails, so the fault is
+When a joined build fails, the engine falls back to a pass for each effect. The fault is therefore
 invisible in an image that looks right. The fallback declares the passes again. Until it runs, a
 frame draws the target as the clear left it, which reads as a flat frame. That is the "flat frame"
 d740587b6 blamed on the rows. The four `effects*` WebGL2 failures at scale 1 in that run were the
@@ -187,8 +187,8 @@ crossing keeps its promise. Three facts hold the reason:
   declaring again costs. That promise is what keeps dynamic resolution free. The governor moves the
   scale in steps of 50 thousandths (`SCALE_STEP`), so a scene on a threshold crosses back and forth.
 
-So this record keeps the target and its cost: 4 bytes for each canvas pixel, which is about 33 MB at
-3840x2160 and 8 MB at 1920x1080. An owner who wants that memory back must choose between the two.
+So this record keeps the target and its cost. It is 4 bytes for each canvas pixel: about 33 MB at
+3840x2160, and 8 MB at 1920x1080. An owner who wants that memory back must choose between the two.
 The crossing promise would have to give way. The target would be made when a frame first draws
 below the whole canvas, and released once the scale has stayed whole. That changes `render_scale.rs`
 and the no-allocation promises in several guides.
