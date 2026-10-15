@@ -91,7 +91,12 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 	exposure: ({ post }) => post.set({ autoExposure: {} }),
 	fog_volume: ({ scene }) =>
 		scene.setFog({ color: '#8090a0', density: 0.05, heightFalloff: 0.2, volumetric: true }),
-	effect_groups: ({ post }) => post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.9, 0.8] } }),
+	// Two effects that each read their own pixel: the engine joins them into one pass and builds that
+	// pass's shader from their pieces, so the page loads the effects' host and the final pass's.
+	effect_groups: ({ post }) => {
+		post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.9, 0.8] } });
+		post.addEffect({ wgsl: TINT, uniforms: { color: [0.9, 0.95, 1] } });
+	},
 	views: ({ scene, render, textures, geometry, materials }) => {
 		const top = scene.createOrthographicCamera({
 			height: 6,
