@@ -388,7 +388,17 @@ export interface FeatureScene {
 	webglOnly?: boolean;
 	/** The percentage of pixels under which the scene passes, where it is not three.js's limit. */
 	limit?: number;
+	/**
+	 * The percentage in compatibility mode, where it differs from `limit`: its 8-bit path averages
+	 * edge samples after it encodes them, and its Medium ceiling smooths edges with FXAA, so some
+	 * scenes differ from three.js there alone.
+	 */
+	compatLimit?: number;
 }
+
+/** The percentage of pixels under which a feature scene passes on a tier, or on every tier. */
+export const sceneLimit = (scene: FeatureScene, tier?: Tier): number | undefined =>
+	tier === 'compat' && scene.compatLimit !== undefined ? scene.compatLimit : scene.limit;
 
 const TWINS = '/bench/pages/threejs';
 /** The sketch switch that turns off tone mapping, for sketches whose image tests keep the default curve. */
