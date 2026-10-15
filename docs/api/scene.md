@@ -366,7 +366,7 @@ export default defineSketch(async ({ scene, assets, post }) => {
 });
 ```
 
-With `{ model: 'physical' }`, the light, the ambient light and the exposure match the physical sky, and `day.atmosphere` holds its sun, its moon and its stars. The exposure then follows the sky's light, as an eye adapts: it rises through dusk and settles at night.
+With `{ model: 'physical' }`, the light, the ambient light and the exposure match the physical sky, and `day.atmosphere` holds its sun, its moon and its stars. The exposure then follows the sky's light, as an eye adapts: it rises through dusk and settles at night. After sunset the sun's light fades over the twilight while the moon's rises, and the main light never comes from below the horizon: it stays at least 2 degrees up.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';

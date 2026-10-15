@@ -173,6 +173,12 @@ const MOON_LIGHT = [-5, -18] as const;
  * horizon, and gone below the second. The twilight keeps a low warm light until the moon rises.
  */
 const SUN_TWILIGHT = [0, -18] as const;
+/**
+ * The lowest height of the physical model's main light, in degrees. Through the twilight the sun's
+ * light still shines while the sun is below the horizon, and it comes from just above the horizon
+ * instead, so it never lights the scene from under the ground.
+ */
+export const PHYSICAL_LIGHT_FLOOR = 2;
 
 /** The exposure as the sun sinks: sun heights in degrees and exposures, linear between them. */
 const EXPOSURE: readonly (readonly [number, number])[] = [
@@ -451,7 +457,10 @@ function physicalDay(
 	const moonIntensity = PHYSICAL_MOON * handover;
 	const sunColor = scale(setThrough, 1 / Math.max(sunPeak, 1e-9));
 	const bearing = Math.atan2(sun[2], sun[0]) + Math.PI * handover;
-	const height = mix(Math.asin(sun[1]), moonHeight * DEGREE, handover);
+	const height = Math.max(
+		mix(Math.asin(sun[1]), moonHeight * DEGREE, handover),
+		PHYSICAL_LIGHT_FLOOR * DEGREE,
+	);
 	const across = Math.cos(height);
 	const light: TimeOfDay['light'] = {
 		direction: [-across * Math.cos(bearing), -Math.sin(height), -across * Math.sin(bearing)],

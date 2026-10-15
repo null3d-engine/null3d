@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type TimeOfDayPreset, timeOfDay } from './time-of-day';
+import { PHYSICAL_LIGHT_FLOOR, type TimeOfDayPreset, timeOfDay } from './time-of-day';
 
 const DEGREE = Math.PI / 180;
 
@@ -259,11 +259,19 @@ describe('timeOfDay', () => {
 		}
 	});
 
+	test('never lights the physical model from below the horizon', () => {
+		for (let hours = 0; hours <= 24.0001; hours += 0.05) {
+			const day = timeOfDay(hours, { model: 'physical' });
+			const light = (Math.asin(-day.light.direction[1]) * 180) / Math.PI;
+			expect(light).toBeGreaterThanOrEqual(PHYSICAL_LIGHT_FLOOR - 1e-9);
+		}
+	});
+
 	test('keeps the moon out of the physical main light until the sun is down', () => {
 		for (let hours = 6; hours <= 18.0001; hours += 0.05) {
 			const day = timeOfDay(hours, { model: 'physical' });
 			const sun = (Math.asin(day.atmosphere.sunPosition[1]) * 180) / Math.PI;
-			if (sun <= 0) continue;
+			if (sun <= PHYSICAL_LIGHT_FLOOR) continue;
 			// While the sun stands up, the main light is the sun, not the moon.
 			const light = (Math.asin(-day.light.direction[1]) * 180) / Math.PI;
 			expect(light).toBeCloseTo(sun, 5);
@@ -277,9 +285,13 @@ describe('timeOfDay', () => {
 		expect(sunHeight('goldenHour')).toBeCloseTo(5, 0);
 		expect(sunHeight('blueHour')).toBeCloseTo(-5, 0);
 		expect(sunHeight('night')).toBeLessThan(-12);
-		// Blue hour is still the setting sun: the moon has not taken the main light yet.
+		// Blue hour is still the setting sun: the moon has not taken the main light yet, and the
+		// light comes from just above the horizon.
 		const blue = timeOfDay('blueHour', { model: 'physical' });
-		expect((Math.asin(-blue.light.direction[1]) * 180) / Math.PI).toBeCloseTo(-5, 0);
+		expect((Math.asin(-blue.light.direction[1]) * 180) / Math.PI).toBeCloseTo(
+			PHYSICAL_LIGHT_FLOOR,
+			5,
+		);
 		// Once night has fallen, the main light is the moon, from the moon's place.
 		const night = timeOfDay('night', { model: 'physical' });
 		expect((Math.asin(-night.light.direction[1]) * 180) / Math.PI).toBeGreaterThan(25);
