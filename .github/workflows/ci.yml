@@ -167,25 +167,41 @@ jobs:
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
+    # The one test that builds every shader, twice, takes longer than all the others together, so
+    # it runs in a job of its own beside them. The profiles in .config/nextest.toml split the tests.
+    # --no-fail-fast runs every test after a failure, so a run reports every failing test.
+    name: rust-tests (${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The job takes 5 to 9 minutes. Every CI job should take at most 15 minutes, and stops at 20.
-    timeout-minutes: 20
+    # Every CI job should take at most 15 minutes. These stop at 35 while the whole shader build
+    # can take longer than 20.
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: every test but the whole shader build
+            id: ci
+            tests: --workspace --profile ci
+          - part: the whole shader build
+            id: whole-shader-build
+            tests: -p null3d-shaders --test build --profile whole-shader-build
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ hashFiles('Cargo.toml') }}
+          key: ${{ hashFiles('Cargo.toml') }}-${{ matrix.id }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --no-fail-fast ${{ matrix.tests }}
       # nextest runs no documentation tests.
-      - run: cargo test --workspace --doc
+      - if: matrix.id == 'ci'
+        run: cargo test --workspace --doc --no-fail-fast
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
@@ -194,7 +210,8 @@ jobs:
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The shader build can take longer than 20 minutes when it compiles every shader.
+    timeout-minutes: 35
     env:
       HUSKY: "0"
     steps:
@@ -211,8 +228,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
-        run: bun tools/build-wasm.ts --pages-only
+        uses: ./.github/actions/shaders
+        with:
+          run: bun tools/build-wasm.ts --pages-only
       # The artifact's paths start at the repository's root, their closest shared folder.
       - uses: actions/upload-artifact@v4
         with:
@@ -238,7 +258,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The shader build can take longer than 20 minutes when it compiles every shader.
+    timeout-minutes: 35
     env:
       HUSKY: "0"
     steps:
@@ -271,13 +292,25 @@ jobs:
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
-      - name: Build the base and keep its sizes
+      # The base is usually an earlier commit of main, whose run kept its shaders in the cache.
+      - name: Build the base
+        if: steps.kept.outputs.cache-hit != 'true' && hashFiles('.github/actions/shaders/action.yml') != ''
+        uses: ./.github/actions/shaders
+        with:
+          run: |
+            bun install --frozen-lockfile
+            bun tools/build-wasm.ts --sizes-only
+      # A base from before the shader caches in CI builds every shader.
+      - name: Build the base, which has no shader cache action
+        if: steps.kept.outputs.cache-hit != 'true' && hashFiles('.github/actions/shaders/action.yml') == ''
+        run: |
+          bun install --frozen-lockfile
+          bun tools/build-wasm.ts --sizes-only
+      - name: Keep the base's sizes
         if: steps.kept.outputs.cache-hit != 'true'
         env:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
-          bun install --frozen-lockfile
-          bun tools/build-wasm.ts --sizes-only
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$BASE.json"
       - uses: actions/upload-artifact@v4
@@ -334,7 +367,8 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Its repository-wide shader test builds every shader, which can take longer than 20 minutes.
+    timeout-minutes: 35
     env:
       HUSKY: "0"
     steps:

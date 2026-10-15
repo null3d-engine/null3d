@@ -48,3 +48,9 @@ The grid's sampling sits in its own first-use templates, `probe_grid` and `probe
 - **Tests and size:** image references of a baked grid on the three GPU paths, and an allocation check of the bake and the frame. A download-size check proves that a page without a grid pays nothing.
 - **Docs, mapping and skills:** a docs page, the three.js `LightProbeGrid` mapping entry, and the skill lines, with the showcase scenes able to set a grid.
 - **Later:** the GPU bake over six capture views joins with M2-EX32's capture, and a validity mask for the strong leaks the normal offset cannot fix.
+
+## Addendum, 15 October 2026: the CPU copy of the shader's formula
+
+The engine keeps a CPU copy of the grid's irradiance formula (`l1Irradiance` and `sampleGrid` in `packages/engine/src/scene/light-probes.ts`), and the bake uses it for the light at a ray's hit. Its first version read only the first L1 coefficient and paired it with the normal's x. It never read the L1 coefficients along z and x. The unit test of that time set the first L1 coefficient and checked it against a normal along x, so it pinned the fault. The other tests compared the CPU grid sampling with the same CPU formula, so they could not see it.
+
+The fix reads all four coefficients in the shader's order: L0, then L1 along y, z and x, as `probe_grid.wgsl` and `sh_irradiance` read them, and as the bake writes them. A unit test now compares the CPU result with the shader's formula for normals along each axis, both ways, and a diagonal. Each term and channel has its own value, so a swapped or missing term fails. The bake's light at a hit now calls the same function, so the formula lives once on the CPU. No shader or image changed: the GPU path was always right.

@@ -67,7 +67,8 @@ const L1_SCALE = 1.023328;
 
 /**
  * The irradiance of a surface of unit normal `(x, y, z)` from the four RGB coefficients at `at` in
- * `coefficients`, three numbers into `out`, as the shader's first four `sh_irradiance` terms.
+ * `coefficients`, in the shader's order (L0, then L1 along y, z and x), three numbers into `out`,
+ * as the shader's first four `sh_irradiance` terms.
  */
 export function l1Irradiance(
 	coefficients: Float32Array,
@@ -77,12 +78,13 @@ export function l1Irradiance(
 	z: number,
 	out: Float32Array,
 ): void {
-	out[0] =
-		(coefficients[at] as number) * L0_SCALE + (coefficients[at + 3] as number) * L1_SCALE * x;
-	out[1] =
-		(coefficients[at + 1] as number) * L0_SCALE + (coefficients[at + 4] as number) * L1_SCALE * x;
-	out[2] =
-		(coefficients[at + 2] as number) * L0_SCALE + (coefficients[at + 5] as number) * L1_SCALE * x;
+	for (let c = 0; c < 3; c++)
+		out[c] =
+			(coefficients[at + c] as number) * L0_SCALE +
+			L1_SCALE *
+				((coefficients[at + 3 + c] as number) * y +
+					(coefficients[at + 6 + c] as number) * z +
+					(coefficients[at + 9 + c] as number) * x);
 }
 
 /**
@@ -551,16 +553,16 @@ export class ProbeBake {
 	private hitIrradiance(sample: number): Float32Array {
 		const sky = this.sky;
 		if (!sky) return ZERO;
-		const x = this.normals[sample * 3] as number;
-		const y = this.normals[sample * 3 + 1] as number;
-		const z = this.normals[sample * 3 + 2] as number;
-		for (let c = 0; c < 3; c++) {
-			SKY[c] =
-				(sky[c] as number) * 0.886227 +
-				(sky[3 + c] as number) * (2 * 0.511664) * y +
-				(sky[6 + c] as number) * (2 * 0.511664) * z +
-				(sky[9 + c] as number) * (2 * 0.511664) * x;
-		}
+		const { normals } = this;
+		const at = sample * 3;
+		l1Irradiance(
+			sky,
+			0,
+			normals[at] as number,
+			normals[at + 1] as number,
+			normals[at + 2] as number,
+			SKY,
+		);
 		return SKY;
 	}
 }
