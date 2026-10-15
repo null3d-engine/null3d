@@ -46,7 +46,8 @@ export interface TerrainOptions {
 	maxLevel?: number;
 	/**
 	 * How far from a block's edge the camera may stand and still split it, as a multiple of the
-	 * block's size. The default is 2. A larger value keeps detail farther out and draws more.
+	 * block's size, above 0 and up to 8. The default is 2. A larger value keeps detail farther out
+	 * and draws more.
 	 */
 	split?: number;
 	/**
@@ -62,13 +63,22 @@ export interface TerrainOptions {
 	receiveShadows?: boolean;
 	/** The most blocks kept ready, from 16 up. A block left out of the view is reused first. The default is 512. */
 	maxBlocks?: number;
+	/**
+	 * The most new blocks that one `update` builds, from 1 up. A camera that crosses into a new
+	 * cell may need tens of blocks, and building them all at once would stall the frame. The
+	 * ground keeps its last complete set of blocks on screen until the new set is built. The first
+	 * update builds its whole set, since there is no ground to show before it. The default is 16.
+	 */
+	blocksPerUpdate?: number;
 }
 
-/** One block of the ground, and the frame that last drew it. */
+/** One block of the ground, the selection that last picked it, and whether it draws. */
 interface Block {
+	readonly key: number;
 	readonly object: Mesh;
 	readonly mesh: MeshGeometry;
 	stamp: number;
+	shown: boolean;
 }
 
 /** The default faces along each side of a block's grid. */
@@ -81,6 +91,8 @@ const DEFAULT_SPLIT = 2;
 const DEFAULT_SPLAT = 256;
 /** The default blocks kept ready. */
 const DEFAULT_BLOCKS = 512;
+/** The default new blocks that one update builds. */
+const DEFAULT_BUILDS = 16;
 
 /**
  * A ground drawn as a quadtree of blocks. `createTerrain` makes one.
@@ -99,11 +111,19 @@ export class Terrain {
 	private readonly cast: boolean;
 	private readonly receive: boolean;
 	private readonly maxBlocks: number;
+	private readonly builds: number;
+	/** Every block kept ready, the least recently picked first. */
 	private readonly blocks = new Map<number, Block>();
+	/** The blocks that draw: the last selection whose blocks were all built. */
+	private shown: Block[] = [];
+	/** The blocks of the newest selection that are built so far. */
+	private next: Block[] = [];
+	/** True while the newest selection has blocks still to build. */
+	private pending = false;
+	private visible = true;
 	private stamp = 0;
 	private lastCellX = Number.NaN;
 	private lastCellZ = Number.NaN;
-	private drawnBlocks = 0;
 	private ended = false;
 
 	/** @internal A terrain is made by `createTerrain`. */
@@ -114,6 +134,7 @@ export class Terrain {
 			maxLevel = DEFAULT_MAX_LEVEL,
 			split = DEFAULT_SPLIT,
 			maxBlocks = DEFAULT_BLOCKS,
+			blocksPerUpdate = DEFAULT_BUILDS,
 		} = options;
 		if (!Number.isInteger(chunkQuads) || chunkQuads < 1)
 			throw new Error(
@@ -123,12 +144,17 @@ export class Terrain {
 			throw new Error(
 				`createTerrain() got the maxBlocks ${maxBlocks}, which is not a whole number of 16 or more.`,
 			);
+		if (!Number.isInteger(blocksPerUpdate) || blocksPerUpdate < 1)
+			throw new Error(
+				`createTerrain() got the blocksPerUpdate ${blocksPerUpdate}, which is not a whole number of 1 or more.`,
+			);
 		this.context = context;
 		this.quads = chunkQuads;
 		this.fixedSkirt = options.skirt;
 		this.cast = options.castShadows ?? true;
 		this.receive = options.receiveShadows ?? true;
 		this.maxBlocks = maxBlocks;
+		this.builds = blocksPerUpdate;
 		this.field = createHeightfield({
 			size,
 			resolution: options.resolution,
@@ -162,16 +188,21 @@ export class Terrain {
 		return this.field;
 	}
 
-	/** How many blocks the last update drew. */
+	/** How many blocks the ground draws. */
 	get drawn(): number {
-		return this.drawnBlocks;
+		return this.visible ? this.shown.length : 0;
 	}
 
-	/** How many triangles the last update drew, with each block's skirt. */
+	/** How many triangles the ground draws, with each block's skirt. */
 	get triangles(): number {
 		const grid = this.quads * this.quads * 2;
 		const skirt = this.quads * 4 * 2;
-		return this.drawnBlocks * (grid + skirt);
+		return this.drawn * (grid + skirt);
+	}
+
+	/** True while the camera's newest set of blocks is still being built, over the next updates. */
+	get building(): boolean {
+		return this.pending;
 	}
 
 	/**
@@ -192,55 +223,72 @@ export class Terrain {
 
 	/**
 	 * Picks the blocks to draw for a camera at `x` and `z` on the ground. It does nothing until the
-	 * camera moves into a new cell of the finest level, so a still camera costs no work. Call it in
-	 * `onUpdate` with the camera's own x and z.
+	 * camera moves into a new cell of the finest level, so a still camera costs no work. A new cell
+	 * builds at most `blocksPerUpdate` blocks per call, and the ground draws its last complete set
+	 * of blocks until the rest are built. Call it in `onUpdate` with the camera's own x and z.
 	 */
 	update(x: number, z: number): void {
 		if (this.ended) return;
-		const cell = this.tree.blockSize(this.tree.maxLevel);
-		const column = Math.floor((x + this.tree.size / 2) / cell);
-		const row = Math.floor((z + this.tree.size / 2) / cell);
-		if (column === this.lastCellX && row === this.lastCellZ) return;
-		this.lastCellX = column;
-		this.lastCellZ = row;
 		const { tree } = this;
-		const count = tree.select(x, z);
-		this.stamp++;
-		for (let i = 0; i < count; i++) {
+		const cell = tree.blockSize(tree.maxLevel);
+		const cellX = Math.floor((x + tree.size / 2) / cell);
+		const cellZ = Math.floor((z + tree.size / 2) / cell);
+		if (cellX !== this.lastCellX || cellZ !== this.lastCellZ) {
+			this.lastCellX = cellX;
+			this.lastCellZ = cellZ;
+			tree.select(x, z);
+			this.stamp++;
+		} else if (!this.pending) return;
+		// The first selection builds whole: before it, there is no ground to keep on screen.
+		let builds = this.shown.length === 0 ? Number.POSITIVE_INFINITY : this.builds;
+		const { blocks, next, stamp } = this;
+		next.length = 0;
+		this.pending = false;
+		for (let i = 0; i < tree.count; i++) {
 			const level = tree.levels[i] as number;
-			const at = tree.key(level, tree.columns[i] as number, tree.rows[i] as number);
-			let block = this.blocks.get(at);
-			if (!block)
-				block = this.makeBlock(level, tree.columns[i] as number, tree.rows[i] as number, at);
-			if (block.stamp !== this.stamp) {
-				block.stamp = this.stamp;
-				block.object.setVisible(true);
+			const column = tree.columns[i] as number;
+			const row = tree.rows[i] as number;
+			const key = tree.key(level, column, row);
+			let block = blocks.get(key);
+			if (block) {
+				if (block.stamp !== stamp) {
+					// Moves the block to the end of the map, which keeps the map in pick order.
+					blocks.delete(key);
+					blocks.set(key, block);
+				}
+			} else if (builds > 0) {
+				builds--;
+				block = this.makeBlock(level, column, row, key);
+			} else {
+				this.pending = true;
+				continue;
 			}
+			block.stamp = stamp;
+			next.push(block);
 		}
-		this.drawnBlocks = count;
-		for (const block of this.blocks.values())
-			if (block.stamp !== this.stamp) block.object.setVisible(false);
-		while (this.blocks.size > this.maxBlocks && this.evict()) {
-			// Drop the blocks that the new selection left out, oldest first.
-		}
+		if (!this.pending) this.show();
+		this.evict();
 	}
 
 	/** Shows or hides the whole ground, for a camera high above it. */
 	setVisible(visible: boolean): void {
-		for (const block of this.blocks.values()) block.object.setVisible(visible);
+		this.visible = visible;
+		for (const block of this.shown) block.object.setVisible(visible);
 	}
 
 	/** Destroys the ground: every block's object and mesh, and the material's own textures. */
 	destroy(): void {
 		for (const block of this.blocks.values()) this.endBlock(block);
 		this.blocks.clear();
+		this.shown.length = 0;
+		this.next.length = 0;
 		this.material.destroy();
 		this.splatTexture.destroy();
 		this.white?.destroy();
 		this.ended = true;
 	}
 
-	/** Makes one block's mesh and object, and remembers them. */
+	/** Makes one block's mesh and object, hidden until its selection shows, and remembers them. */
 	private makeBlock(level: number, column: number, row: number, key: number): Block {
 		const { tree, quads } = this;
 		const block = tree.blockSize(level);
@@ -258,26 +306,44 @@ export class Terrain {
 			castShadows: this.cast,
 			receiveShadows: this.receive,
 		});
-		const entry: Block = { object, mesh, stamp: this.stamp };
+		object.setVisible(false);
+		const entry: Block = { key, object, mesh, stamp: this.stamp, shown: false };
 		this.blocks.set(key, entry);
 		return entry;
 	}
 
-	/** Destroys the oldest block that this selection left out, and forgets it. False when every block is drawn. */
-	private evict(): boolean {
-		let oldest: Block | undefined;
-		let key = 0;
-		for (const [at, block] of this.blocks) {
-			if (block.stamp === this.stamp) continue;
-			if (!oldest || block.stamp < oldest.stamp) {
-				oldest = block;
-				key = at;
+	/** Draws the newest selection, whose blocks are all built, in place of the last one. */
+	private show(): void {
+		const { shown, next, stamp, visible } = this;
+		for (const block of shown)
+			if (block.stamp !== stamp) {
+				block.shown = false;
+				block.object.setVisible(false);
 			}
+		for (const block of next)
+			if (!block.shown) {
+				block.shown = true;
+				block.object.setVisible(visible);
+			}
+		this.shown = next;
+		this.next = shown;
+	}
+
+	/**
+	 * Destroys the least recently picked blocks past `maxBlocks`, in one pass over the map, which
+	 * holds them in pick order. Blocks that draw or that the newest selection picked stay.
+	 */
+	private evict(): void {
+		const { blocks, stamp } = this;
+		let excess = blocks.size - this.maxBlocks;
+		if (excess <= 0) return;
+		for (const block of blocks.values()) {
+			if (block.stamp === stamp) break;
+			if (block.shown) continue;
+			this.endBlock(block);
+			blocks.delete(block.key);
+			if (--excess === 0) return;
 		}
-		if (!oldest) return false;
-		this.endBlock(oldest);
-		this.blocks.delete(key);
-		return true;
 	}
 
 	/** Destroys a block's object first, then its mesh, as the engine asks. */
