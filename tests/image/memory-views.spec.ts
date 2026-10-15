@@ -26,8 +26,9 @@ const MARGIN_BYTES = 16 * 2 ** 20;
 const WORKERS = ['sketch-worker', 'render-worker'] as const;
 /**
  * The run fails when its page notes no new step for this long. The sketch notes a step after each
- * of its 24 growth steps, and drawing every batch takes seconds on a software GPU, so a slower
- * machine slows the run without failing it, while a stuck growth still fails.
+ * of its 24 growth steps, and the growth batches sit on a layer that the camera does not draw, so a
+ * step takes the memory's growth and a frame. The wait leaves a slow software GPU room, while a
+ * stuck growth still fails.
  */
 const STALL_MS = 30_000;
 /** The most time the run may take in all, as it always had. */
