@@ -473,6 +473,9 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.dof]
 shaders = ["dof", "dof_ms"]
 
+# The automatic exposure's downsample path (see exposure.wgsl): `downsample` draws 16 x 16 cells of
+# mean log luminance with their center weights, and `adapt` meters them into one texel of the
+# exposure. Devices without the compute histogram and the Low preset meter with it.
 [shaders.exposure]
 file = "exposure.wgsl"
 by_device = true
@@ -567,6 +570,7 @@ bits = ["TRANSMISSION"]
 # own, so no other feature's files grow.
 [first_use.coat_sheen]
 bits = ["COAT_SHEEN"]
+
 # The steps of the camera's weighted layer (weighted_layer.wgsl): the composite, which blends the
 # layer over the scene color, and the copy of one sample of a multisampled scene depth, which the
 # weighted pass tests against. Only WebGPU reads a multisampled depth; WebGL2 reads the copy of one
@@ -592,6 +596,7 @@ variants.webgl2 = { defs = ["WEBGL2", "DEPTH"], targets = ["glsl"] }
 [first_use.weighted]
 shaders = ["weighted_composite", "weighted_depth"]
 bits = ["WEIGHTED"]
+
 # A page downloads the builds of the lit templates that shade rectangle and tube lights when its
 # first area light's tables have arrived. The frames draw with the builds without them until every
 # lit pipeline in use has its build with them. AREA_LIGHTS shares FXAA's value: only the lit

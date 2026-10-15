@@ -73,7 +73,16 @@ file again.
 
 - `tools/build-wasm.ts` holds the cache and the keys, and `tools/build-wasm.test.ts` checks the keys
   and the miss paths.
-- [Pull requests and parallel work](../pull-requests.md#builds) gains the new cache beside the shared
+- [Branches and parallel work](../pull-requests.md#builds) gains the new cache beside the shared
   cargo target and the shader module cache, with the measured figures.
 - The escape hatch covers a cache that a reader suspects is stale, and a build that must not read a
   cache at all.
+
+## Addendum, 15 October 2026: the key assumes the checkout's own build folder
+
+The key hashes every input of a build, and a hit holds exactly the bytes that this build would write,
+only if cargo compiled this checkout's sources. A Rust build folder shared by several checkouts broke
+that: Cargo judged another checkout's build of an engine crate fresh, and the cache stored that build
+under this checkout's key. Each checkout now builds into its own folder, and the cache was purged.
+[D-177](D-177-build-cache-module.md#addendum-15-october-2026-one-rust-build-folder-per-checkout) gives
+the details.

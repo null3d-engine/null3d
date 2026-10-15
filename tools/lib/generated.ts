@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readApi } from './api-docs';
 import { generateDocs, libraryProblems, referenceProblems, writeGeneratedDocs } from './docs';
+import { firstUseProblems, manifestFeatures } from './first-use-docs';
 import { expectedSkillCopies, syncSkills } from './skills';
 import { readRecord, recordFiles } from './tested-devices';
 
@@ -28,6 +29,7 @@ export function writeGenerated(root: string): {
 	const problems = [
 		...referenceProblems(api),
 		...libraryProblems(root),
+		...firstUseProblems(manifestFeatures(root)),
 		...readRecord(recordFiles(root)).problems,
 	];
 	return { files, written, problems };

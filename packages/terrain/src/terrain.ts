@@ -1,4 +1,4 @@
-// The terrain add-on: a height field drawn as a camera-centred quadtree of blocks, so the ground
+// The terrain add-on: a height field drawn as a camera-centered quadtree of blocks, so the ground
 // near the camera is fine and the far ground is cheap. Each block is a mesh whose vertices carry
 // the height field's heights, with a skirt around its edge that closes the seam where two blocks
 // of different levels meet. One splat-mapped material blends up to four tiled layers over all the

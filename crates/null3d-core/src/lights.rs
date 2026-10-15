@@ -157,8 +157,7 @@ pub const AUTO_LADDER: f32 = 1.25;
 /// The shortest distance that the ladder gives, in meters.
 pub const AUTO_MIN_DISTANCE: f32 = 1.0;
 
-/// The distance that an auto light's shadows reach while the view sees no receiver: the distance
-/// a light with no shadow settings had before this setting existed.
+/// The distance that an auto light's shadows reach while the view sees no receiver.
 pub const AUTO_FALLBACK: f32 = 200.0;
 
 /// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
