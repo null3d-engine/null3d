@@ -320,6 +320,10 @@ pub struct Animations {
     /// The last frame step that posed each instance, or [`FRESH`]: the rate's schedule reads it, so
     /// a held pose with the same matrices still counts its frames.
     sampled_steps: Box<[u32]>,
+    /// The seconds of an instance's own time that its skipped frames held, added up: its `dt` times
+    /// its time scale in each of them. The instance's next pose spends the sum, so each frame
+    /// counts once, however long the last one took.
+    skipped_time: Box<[f32]>,
     /// The last frame step that changed some instance's skinning matrices.
     changed_step: u32,
     /// True once the running frame step has changed some instance's matrices.
@@ -412,6 +416,7 @@ impl Animations {
             step: 0,
             pose_steps: boxed(n, FRESH)?,
             sampled_steps: boxed(n, FRESH)?,
+            skipped_time: boxed(n, 0.0)?,
             changed_step: 0,
             pose_changed: AtomicBool::new(false),
             events: boxed(EVENT_CAPACITY, [0; EVENT_WORDS])?,
@@ -506,6 +511,7 @@ impl Animations {
         let blend_values = grown(&self.blend_values, layers, 0.0)?;
         let pose_steps = grown(&self.pose_steps, n, FRESH)?;
         let sampled_steps = grown(&self.sampled_steps, n, FRESH)?;
+        let skipped_time = grown(&self.skipped_time, n, 0.0)?;
         let update_intervals = grown(&self.update_intervals, n, 1)?;
         let objects = grown(&self.objects, n, u32::MAX)?;
         let new_overrides = grown(&self.overrides, overrides, 0.0)?;
@@ -543,6 +549,7 @@ impl Animations {
         self.blend_values = blend_values;
         self.pose_steps = pose_steps;
         self.sampled_steps = sampled_steps;
+        self.skipped_time = skipped_time;
         self.update_intervals = update_intervals;
         self.objects = objects;
         self.overrides = new_overrides;
@@ -688,13 +695,17 @@ impl Animations {
         self.ones = boxed(lanes as usize, 1.0)?;
         self.scratch_lanes = lanes;
         // A dead blend's pose is a pose of the largest skeleton, so a later skeleton with more
-        // lanes moves its buffers. A transition in flight then starts afresh, which is rare.
+        // lanes moves its buffers, and the poses they held are gone. Every blend therefore ends
+        // here: a layer that switched inertially plays its clips as it would after a fade, which
+        // is rare, and no layer decays toward a pose of nothing.
         if !self.inertial_pose.is_empty() {
             let n = self.instance_skeletons.len();
             let stride = POSE_FIELDS * lanes as usize;
             self.inertial_pose = boxed(n * MAX_LAYERS * stride, 0.0)?;
             self.inertial_vel = boxed(n * MAX_LAYERS * stride, 0.0)?;
             self.inertial_stride = stride;
+            self.inertial_time.fill(0.0);
+            self.inertial_len.fill(0.0);
         }
         Ok(())
     }
@@ -1014,7 +1025,9 @@ impl Animations {
         self.layer_masks[layers.clone()].fill(0);
         self.blend_values[layers].fill(0.0);
         self.objects[instance] = u32::MAX;
+        self.skipped_time[instance] = 0.0;
         self.clear_overrides(instance);
+        self.clear_transitions(instance);
         Ok(instance as u32)
     }
 
@@ -1034,8 +1047,22 @@ impl Animations {
         self.slots.source[slots].fill(NO_SOURCE);
         self.update_intervals[i] = 1;
         self.sampled_steps[i] = FRESH;
+        self.skipped_time[i] = 0.0;
         self.clear_overrides(i);
+        self.clear_transitions(i);
         Ok(())
+    }
+
+    /// Ends the dead blends of instance `i`, when the table of them exists: a blend the instance
+    /// left running must not decay the pose of the instance that takes its id next.
+    fn clear_transitions(&mut self, i: usize) {
+        let at = i * MAX_LAYERS;
+        if let Some(times) = self.inertial_time.get_mut(at..at + MAX_LAYERS) {
+            times.fill(0.0);
+        }
+        if let Some(lengths) = self.inertial_len.get_mut(at..at + MAX_LAYERS) {
+            lengths.fill(0.0);
+        }
     }
 
     /// Empties the joint overrides and the look-at of instance `i`, when the table exists.
@@ -1225,6 +1252,21 @@ impl Animations {
         &self.event_totals
     }
 
+    /// The dead blends of the table, which the frame step and a capture share: absent until a play
+    /// asks for an inertial transition, so a scene that never uses one pays nothing.
+    fn transitions(&mut self) -> Transition {
+        if self.inertial_stride == 0 {
+            return Transition::empty();
+        }
+        Transition {
+            pose: Some(SharedMut::new(&mut self.inertial_pose)),
+            vel: Some(SharedMut::new(&mut self.inertial_vel)),
+            time: Some(SharedMut::new(&mut self.inertial_time)),
+            len: Some(SharedMut::new(&mut self.inertial_len)),
+            stride: self.inertial_stride,
+        }
+    }
+
     /// The frame step: advances every played clip by `dt` seconds of the instance's time,
     /// collects the events it passes, then samples, blends and composes every instance's pose
     /// and writes its skinning matrices into the buffer that the step before did not write, in
@@ -1250,24 +1292,14 @@ impl Animations {
             let step = self.step;
             let pose_steps = SharedMut::new(&mut self.pose_steps);
             let sampled_steps = SharedMut::new(&mut self.sampled_steps);
+            let skipped_time = SharedMut::new(&mut self.skipped_time);
             let out = SharedMut::new(&mut self.matrices[self.written]);
             let times = SharedMut::new(&mut self.slots.time);
             let weights = SharedMut::new(&mut self.slots.weight);
             let sources = SharedMut::new(&mut self.slots.source);
             let actions = SharedMut::new(&mut self.actions);
             let last_steps = SharedMut::new(&mut self.last_steps);
-            let inertial_stride = self.inertial_stride;
-            let transition = if inertial_stride == 0 {
-                Transition::empty()
-            } else {
-                Transition {
-                    pose: Some(SharedMut::new(&mut self.inertial_pose)),
-                    vel: Some(SharedMut::new(&mut self.inertial_vel)),
-                    time: Some(SharedMut::new(&mut self.inertial_time)),
-                    len: Some(SharedMut::new(&mut self.inertial_len)),
-                    stride: inertial_stride,
-                }
-            };
+            let transition = self.transitions();
             let sink = EventSink {
                 records: SharedMut::new(&mut self.events),
                 count: &self.event_count,
@@ -1319,7 +1351,14 @@ impl Animations {
                         let interval = this.update_intervals[i].max(1);
                         let gap = step.wrapping_sub(sampled);
                         let held = sampled != FRESH;
+                        // Each frame the instance skips keeps its own time, so the pose that
+                        // follows spends the sum of them and one long frame counts once.
+                        // SAFETY: each instance is in one chunk, so no other thread touches its
+                        // held time.
+                        let own = dt * this.time_scales[i];
+                        let skipped = unsafe { skipped_time.read(i) } + own;
                         if held && gap < interval {
+                            unsafe { skipped_time.write(i, skipped) };
                             matrices.copy_from_slice(before);
                             continue;
                         }
@@ -1336,9 +1375,9 @@ impl Animations {
                         // The clip covers the frames the instance skipped too, so its time keeps
                         // the rate it was asked for, however many frames lie between two of its
                         // poses. The first pose of an instance skips nothing.
-                        let rate = if held { gap as f32 } else { 1.0 };
-                        let step_now = dt * this.time_scales[i] * rate;
+                        let step_now = skipped;
                         // SAFETY: each instance is in one chunk.
+                        unsafe { skipped_time.write(i, 0.0) };
                         unsafe { last_steps.slice(i, 1)[0] = step_now };
                         this.advance(&mut advance, step_now);
                         this.pose_instance(i, skeleton, scratch, &advance, step_now, transition);
@@ -1527,7 +1566,7 @@ impl Animations {
         let base = i * MAX_LAYERS * transition.stride + layer * transition.stride;
         // SAFETY: the range is inside this layer's own pose, which one chunk writes.
         let (ext, vel) = unsafe { (poses.slice(base, len), vs.slice(base, len)) };
-        let time = unsafe { times.read(at) } + step;
+        let time = unsafe { times.read(at) } + step.abs();
         unsafe { times.write(at, time) };
         let alpha = smoothstep(time / length);
         dead_blend(pose, ext, vel, alpha, step, lanes);
@@ -1572,7 +1611,14 @@ impl Animations {
             let clip = &self.clips[self.slots.clip[s] as usize];
             let duration = clip.duration();
             let looping = action.flags & flag::LOOP != 0;
-            let time = start_time(self.slots.time[s] - step, duration, looping);
+            // The clip's own time moved by its speed over this step, or held still when it ended,
+            // so the pose `step` seconds earlier is the one this clip made then.
+            let moved = if action.flags & flag::FINISHED != 0 {
+                0.0
+            } else {
+                step * action.speed
+            };
+            let time = start_time(self.slots.time[s] - moved, duration, looping);
             let weight = self.slots.weight[s] * action.factor() * base_scale;
             any = true;
             if lead {
@@ -1654,6 +1700,13 @@ impl Animations {
         if !now || !before {
             return Ok(false);
         }
+        // A blend that already runs on the layer holds the pose on screen, between its own clips
+        // and the pose it decays from. Both captures take it, so a second switch during a fade
+        // carries on from what the frames showed instead of jumping back to the clips. The step is
+        // 0, so the running blend's own state stays as it is.
+        let transition = self.transitions();
+        self.apply_dead_blend(i, layer, &mut scratch.pose[..len], 0.0, lanes, transition);
+        self.apply_dead_blend(i, layer, &mut scratch.add[..len], 0.0, lanes, transition);
         let base = i * MAX_LAYERS * stride + layer * stride;
         let at = i * MAX_LAYERS + layer;
         {
