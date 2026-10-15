@@ -203,11 +203,11 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 | `dof.focusDistance` | The distance from the camera, along its view, that is sharp, in world units: above 0. | 10 |
 | `dof.focusPoint` | A point in the world to focus on in every frame, as a camera's autofocus does, or `false` to focus at `focusDistance`. | `false` |
 | `dof.aperture` | The aperture as an f-number, above 0. A lower number opens the lens and blurs more. | 2.8 |
-| `dof.focalLength` | The lens's focal length in millimetres, above 0, or `'camera'` for the active camera's. | `'camera'` |
+| `dof.focalLength` | The lens's focal length in millimeters, above 0, or `'camera'` for the active camera's. | `'camera'` |
 | `dof.maxBlur` | The largest blur radius, as a share of the image's height, from 0 to 0.1. | 0.02 |
 | `dof.blades` | The aperture's blades: 0 for round out-of-focus highlights, or a whole number from 3 to 12 for polygons. | 0 |
 
-- The lens is a photographer's: a focal length on a full-frame sensor, 24 mm tall, and an f-number. World units count as metres, as in glTF. An aperture of 1.4 blurs twice as much as 2.8. At the same aperture, an 85 mm lens blurs far more than a 24 mm one.
+- The lens is a photographer's: a focal length on a full-frame sensor, 24 mm tall, and an f-number. World units count as meters, as in glTF. An aperture of 1.4 blurs twice as much as 2.8. At the same aperture, an 85 mm lens blurs far more than a 24 mm one.
 - `'camera'` takes the focal length of the active camera's field of view, which `camera.setFocalLength` sets. So the blur always matches the framing. An orthographic camera takes 50 mm.
 - With `focusPoint`, the engine finds the point's distance along the camera's view in each frame, so the focus follows a moving camera. To follow a moving object, pass its position again each frame, from an array that the sketch changes in place. Setting `focusDistance` stops the focus on the point.
 - The blur is the circle of confusion of a thin lens. It is 0 at the focus. Behind the focus it grows toward a limit, and in front of it, it grows without limit. `maxBlur` caps it.
@@ -302,7 +302,7 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 - three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping, and a plain background color then draws as a background so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
 
 The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 
@@ -344,7 +344,7 @@ fn toneCurve(color: vec3f) -> vec3f {
 post.set({ toneMapping: reinhard });
 ```
 
-- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes ([Custom passes](../guides/custom-passes.md#cost)).
+- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes, while the render scale cannot drop below the whole canvas. While it can, each effect draws in a pass of its own, at every scale ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place.
 - An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
