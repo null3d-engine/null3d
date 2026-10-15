@@ -1,13 +1,11 @@
 name: CI
 
-# Every run tests every job, except on a draft or a docs-only pull request, as D-99 (.dev/decisions)
-# decides, and .dev/pull-requests.md lists them. A pull request that is ready for review runs every job on
-# GitHub's merge of it into main, so it merges once its run passes. A draft runs only the quick
-# checks, so that unfinished work holds no browser or macOS machines. Each push to main runs every
-# job again on the code that the merge made, which no pull request's run tested as a whole. A run
-# started by hand runs every job too: gh workflow run ci.yml --ref main
-# A docs-only pull request runs only the build, the docs, style, skills and unit checks, and draws
-# the skill sketches when it changes them. The changes job decides what each run tests.
+# Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
+# job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
+# gh workflow run ci.yml --ref main
+# The pull request and merge queue events stay from the earlier flow (D-99), which no longer runs:
+# a draft ran only the quick checks, and a docs-only pull request only the build, the docs, style,
+# skills and unit checks. The changes job decides what each run tests.
 on:
   push:
     branches: [main]
@@ -21,9 +19,9 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the run of its older push, so CI's machines test only the
-# newest code. Runs on main and in the merge queue each have a group of their own.
-# A newer push to a pull request, or a newer merge to main, cancels the older run still in progress (D-99).
+# A newer push to main cancels main's run still in progress, so CI's machines test only the newest
+# code (the owner's choice, D-157). A cancelled job then reads "cancelled", as a job that hits its
+# time limit does; ci-passed says which of the two stopped it.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
@@ -38,6 +36,10 @@ env:
   # run's cache serves only that pull request or queue branch, and their saves filled GitHub's cache
   # limit for the repository, so that GitHub dropped main's caches.
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
+  # The commit that main pointed to before this push, empty on other events. The size check compares
+  # with it, and the commit check reads the commits after it: after a merge and a push, the commit
+  # before (HEAD^) is the branch's own, not main's.
+  PUSH_BEFORE: ${{ github.event.before }}
 
 jobs:
   changes:
@@ -49,7 +51,8 @@ jobs:
     #   quick checks and every browser, benchmark and macOS job then skip.
     # - full: the browser, city, benchmark page and real-browser jobs run. A draft skips them too.
     # - allocation: the allocation job runs, in a full run that changes the code whose per-frame
-    #   allocation it checks, or the check itself.
+    #   allocation it checks, or the check itself: the engine's render, GPU, sketch, scene and shared
+    #   code, the add-ons, the core's crates, and the benchmark pages and the check's tools.
     # - sketches: a docs-only pull request that is no draft changes the skills' or the cookbook's
     #   Markdown, whose complete sketches the browser tests draw. The skill-sketches job draws them.
     runs-on: ubuntu-latest
@@ -71,7 +74,7 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
           DOCS: ^(\.dev/|docs/|skills/)|\.md$
           SKETCHES: ^(skills|docs/cookbook)/.*\.md$
-          ALLOCATION: ^(packages/engine/src/(render|gpu|sketch)/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/(harness|s1-sketch|sketch-common)\.ts$|\.github/workflows/ci\.yml$)
+          ALLOCATION: ^(packages/engine/src/(render|gpu|sketch|scene|shared)/|packages/(particles|terrain|impostors)/src/|crates/null3d-(core|render|wasm)/src/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/|\.github/workflows/ci\.yml$)
         run: |
           code=true full=true allocation=true sketches=false
           if [ "$EVENT" = pull_request ]; then
@@ -130,11 +133,33 @@ jobs:
       - uses: ./.github/actions/samples
       - run: bun run test
 
+  commits:
+    # The commit messages and their trailers, which the commit hooks check locally: on a push, every
+    # commit after main's commit before the push; on a pull request, every commit of its branch. A
+    # push that starts a branch, or replaces its history, has no commit before, and checks nothing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HUSKY: "0"
+      FROM: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+      TO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
       - name: Commit messages and trailers
-        if: github.event_name == 'pull_request'
         run: |
-          bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
-          bun tools/hooks/check-trailers.ts ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+          if [ -z "$FROM" ] || [ "$FROM" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$FROM^{commit}"; then
+            echo "No commit before this push to compare with, so no commit is checked."
+            exit 0
+          fi
+          git log --oneline --no-merges "$FROM..$TO"
+          bunx commitlint --from "$FROM" --to "$TO"
+          bun tools/hooks/check-trailers.ts "$FROM..$TO"
 
   rust-lint:
     # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
@@ -167,26 +192,43 @@ jobs:
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
+    # The one test that builds every shader, twice, takes longer than all the others together, so
+    # it runs in a job of its own beside them. The profiles in .config/nextest.toml split the tests.
+    # --no-fail-fast runs every test after a failure, so a run reports every failing test.
+    name: rust-tests (${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The job takes 5 to 9 minutes. Every CI job should take at most 15 minutes; this one stops at
-    # 35 while the repository-wide shader build test can run longer than 20.
-    timeout-minutes: 35
+    # Every CI job should take at most 15 minutes. The other tests stop at 35, and the whole shader
+    # build at 90, until the shader build runs on every core.
+    timeout-minutes: ${{ matrix.limit }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: every test but the whole shader build
+            id: ci
+            tests: --workspace --profile ci
+            limit: 35
+          - part: the whole shader build
+            id: whole-shader-build
+            tests: -p null3d-shaders --test build --profile whole-shader-build
+            limit: 90
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ hashFiles('Cargo.toml') }}
+          key: ${{ hashFiles('Cargo.toml') }}-${{ matrix.id }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --no-fail-fast ${{ matrix.tests }}
       # nextest runs no documentation tests.
-      - run: cargo test --workspace --doc
+      - if: matrix.id == 'ci'
+        run: cargo test --workspace --doc --no-fail-fast
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
@@ -195,8 +237,9 @@ jobs:
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
-    # The shader build can take longer than 20 minutes when it compiles every shader.
-    timeout-minutes: 35
+    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
+    # comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
@@ -213,8 +256,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
-        run: bun tools/build-wasm.ts --pages-only
+        uses: ./.github/actions/shaders
+        with:
+          run: bun tools/build-wasm.ts --pages-only
       # The artifact's paths start at the repository's root, their closest shared folder.
       - uses: actions/upload-artifact@v4
         with:
@@ -233,21 +279,21 @@ jobs:
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
     # packages and build script, as the check builds a base in a worktree. Many runs share a base:
-    # pull requests build on main's newest commit, and a run on main on the commit before it. Each
+    # a run on main builds on main's commit before its push, which that commit's own run kept. Each
     # run on main keeps its own commit's sizes (wasm-checks below). So the sizes stay in the Actions
     # cache by commit, and a run that finds them builds nothing. Otherwise this job builds the base
     # beside the build job, and the size check waits for both.
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The shader build can take longer than 20 minutes when it compiles every shader.
-    timeout-minutes: 35
+    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
+    # comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
-      # The size check finds its base in the history. A pull request compares with main, and a run on
-      # main or in the merge queue with the commit before, so the growth of the pull requests that
-      # merged before never counts against the newest.
+      # The size check finds its base in the history. A run on main compares with main's commit
+      # before the push, so the growth that landed before never counts against the newest push.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -274,13 +320,25 @@ jobs:
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
-      - name: Build the base and keep its sizes
+      # The base is usually an earlier commit of main, whose run kept its shaders in the cache.
+      - name: Build the base
+        if: steps.kept.outputs.cache-hit != 'true' && hashFiles('.github/actions/shaders/action.yml') != ''
+        uses: ./.github/actions/shaders
+        with:
+          run: |
+            bun install --frozen-lockfile
+            bun tools/build-wasm.ts --sizes-only
+      # A base from before the shader caches in CI builds every shader.
+      - name: Build the base, which has no shader cache action
+        if: steps.kept.outputs.cache-hit != 'true' && hashFiles('.github/actions/shaders/action.yml') == ''
+        run: |
+          bun install --frozen-lockfile
+          bun tools/build-wasm.ts --sizes-only
+      - name: Keep the base's sizes
         if: steps.kept.outputs.cache-hit != 'true'
         env:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
-          bun install --frozen-lockfile
-          bun tools/build-wasm.ts --sizes-only
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$BASE.json"
       - uses: actions/upload-artifact@v4
@@ -337,8 +395,9 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Its repository-wide shader test builds every shader, which can take longer than 20 minutes.
-    timeout-minutes: 35
+    # Its repository-wide shader test builds every shader, which takes longer than 35 minutes on one
+    # core. The limit comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
@@ -725,6 +784,7 @@ jobs:
     if: always()
     needs:
       - changes
+      - commits
       - docs-and-tools
       - rust-lint
       - rust-tests
@@ -742,7 +802,26 @@ jobs:
       - real-browsers
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Reading the run's jobs and their messages, to tell a time-out from a cancel.
+    permissions:
+      actions: read
+      checks: read
     steps:
+      # GitHub calls a job that hit its time limit "cancelled", as it calls a job that a newer push
+      # cancelled. A time-out is a failure of the job, so this names it as one.
+      - name: Which stopped jobs timed out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.conclusion == "cancelled") | [.id, .name] | @tsv' |
+          while IFS=$'\t' read -r id name; do
+            if gh api "repos/$GITHUB_REPOSITORY/check-runs/$id/annotations" --jq '.[].message' | grep -q 'maximum execution time'; then
+              echo "::error title=Timed out::$name hit its time limit, which is a failure"
+            else
+              echo "::warning title=Cancelled::$name was cancelled, by a newer push to main or by hand"
+            fi
+          done
       # Each job that may skip, and the changes job's answer that gates it, as in the job's condition.
       - name: Every job passed
         env:
