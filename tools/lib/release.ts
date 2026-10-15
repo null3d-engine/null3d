@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PAGES, pagePath } from './docs';
-import { DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
+import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
 import { readIfExists } from './files';
 import { parseFrontMatter } from './frontmatter';
 
@@ -251,6 +251,26 @@ export function userWording(description: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * Subjects written before the commit hook checked them, by commit hash, as the release notes word
+ * them. Every newer subject passes the hook's check, so this list does not grow.
+ */
+const REWORDED_SUBJECTS: Readonly<Record<string, string>> = {
+	d5c9d03ce654129dae33b737e6613975652ff8f5: 'the engine core, tuned for desktop speed',
+	f50a9a6e9e1da940b726e6a46948f0e5d71d961c:
+		'rename to null3D, cut releases through pull requests, and write docs for engine users',
+};
+
+/**
+ * Why release notes cannot be published: each line that breaks the published docs' writing rules,
+ * which the docs check holds `CHANGELOG.md` to. Empty when the notes pass.
+ */
+export function notesProblems(notes: string): string[] {
+	return checkDocsStyle(notes)
+		.filter((f) => f.severity === 'error')
+		.map((f) => `line ${f.line}: ${f.message} (${f.excerpt})`);
+}
+
 export interface ChangelogOptions {
 	version: string;
 	/** The release date as YYYY-MM-DD. */
@@ -301,7 +321,7 @@ function renderSection(
 	const entries = new Map<string, Entry>();
 	for (const c of commits) {
 		const area = areaOf(c.scope, packages);
-		const text = userWording(c.description);
+		const text = userWording(REWORDED_SUBJECTS[c.hash] ?? c.description);
 		const key = `${area}\n${area === OTHER_AREA ? c.scope : ''}\n${text.toLowerCase()}`;
 		const entry = entries.get(key) ?? { area, scope: c.scope, text, hashes: [], prs: [] };
 		entry.hashes.push(c.hash);

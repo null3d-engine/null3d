@@ -12,6 +12,7 @@ import {
 	fitReleaseText,
 	isReleaseCommit,
 	nextVersion,
+	notesProblems,
 	type PageStatus,
 	type ParsedCommit,
 	packageFolders,
@@ -212,6 +213,15 @@ describe('userWording', () => {
 			'Time S6 on the S25',
 		])
 			expect(userWording(text)).toBe(text);
+	});
+});
+
+describe('notesProblems', () => {
+	it('names each line that breaks the writing rules, which the docs check holds the changelog to', () => {
+		expect(notesProblems('### Features\n\n- Add a fast path\n')).toEqual([]);
+		const problems = notesProblems('### Features\n\n- Rename to null3d\n- Reach a milestone\n');
+		expect(problems).toHaveLength(2);
+		expect(problems[0]).toStartWith('line 3: ');
 	});
 });
 
@@ -420,5 +430,27 @@ describe('version copies', () => {
 		}));
 		const engine = found.find((f) => f.path === 'packages/engine/package.json')?.version;
 		expect(found.filter((f) => f.version === null || f.version !== engine)).toEqual([]);
+	});
+});
+
+describe('the release guide', () => {
+	// Packages that npm already holds, which need no first publish by hand.
+	const onNpm = new Set(['cli']);
+
+	it('names every public package, with its first publish by hand', () => {
+		const guide = readFileSync(join(repoRoot, '.dev/releases.md'), 'utf8');
+		const isPublic = (folder: string) =>
+			JSON.parse(readFileSync(join(repoRoot, 'packages', folder, 'package.json'), 'utf8'))
+				.private !== true;
+		const missing = packageFolders(repoRoot)
+			.filter(isPublic)
+			.flatMap((folder) => [
+				...(guide.includes(`| \`@null3d/${folder}\` |`) ? [] : [`${folder}: table row`]),
+				...(onNpm.has(folder) ||
+				guide.includes(`npm publish target/packages/null3d-${folder}-0.0.0.tgz`)
+					? []
+					: [`${folder}: first publish`]),
+			]);
+		expect(missing).toEqual([]);
 	});
 });
