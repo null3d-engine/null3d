@@ -213,7 +213,7 @@ A game can play with no network after its first visit. Its own service worker ca
 | `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
 | `lut` | The readers and makers of color grading tables | `assets.loadLut` or `assets.lutFromData` |
 
-Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it. In this version, the start's files take about 6.7 MB, the skinning shaders 5.2 MB and the whole build 17.8 MB. These are the sizes of the files as they are, which the cache keeps. With compression, the downloads are about a fifth of that.
+Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it. The start's files and the skinning shaders are the largest groups, several MB each as the cache keeps them, uncompressed. Your build's output lists each file with its size. With compression, the downloads are about a fifth of that.
 
 This service worker caches the page, the start's files and the features that the game names:
 
