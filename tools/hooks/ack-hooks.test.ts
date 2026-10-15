@@ -16,6 +16,7 @@ import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-ma
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
+import { knownTaskIds, TASK_RULE_SINCE, taskProblem } from './check-task';
 import { keptCommits } from './check-trailers';
 import { checkAck, findAckValue, findAckValues } from './commit-ack';
 
@@ -422,5 +423,40 @@ describe('macReferencesProblem', () => {
 		expect(
 			macReferencesProblem([change([swift('webgpu', 's4')], 'fix: a\n\nMac-References: yes')]),
 		).toContain('Mac-References value "yes" gives no reason');
+	});
+});
+
+describe('taskProblem', () => {
+	const known = new Set(['M2-J4', 'M2-F10', 'M3-A1']);
+	const msg = (task: string) => `feat(engine): add bump maps\n\nTask: ${task}\n`;
+
+	it('accepts a listed task ID, several IDs, none, and no footer', () => {
+		for (const task of ['M2-J4', 'M2-J4, M3-A1', 'none'])
+			expect(taskProblem(msg(task), known)).toBeNull();
+		expect(taskProblem('fix(engine): mend a bound\n', known)).toBeNull();
+	});
+
+	it('refuses free text and says to write an ID or none', () => {
+		for (const task of ['main CI repair', 'build artifact cache', 'none (Factory follow-up)', 'CI'])
+			expect(taskProblem(msg(task), known)).toContain('is not a task ID');
+	});
+
+	it('refuses an ID that is not in the list', () => {
+		expect(taskProblem(msg('M2-J99'), known)).toContain('not in tools/hooks/task-ids.txt');
+		expect(taskProblem(msg('M2-J4, M2-Q1'), known)).toContain('M2-Q1');
+	});
+
+	it('exempts merges and commits authored before the rule', () => {
+		expect(taskProblem('Merge branch x\n\nTask: main CI repair\n', known)).toBeNull();
+		const before = new Date(Date.parse(TASK_RULE_SINCE) - 60_000).toISOString();
+		expect(taskProblem(msg('main CI repair'), known, before)).toBeNull();
+		const after = new Date(Date.parse(TASK_RULE_SINCE) + 60_000).toISOString();
+		expect(taskProblem(msg('main CI repair'), known, after)).not.toBeNull();
+	});
+
+	it('reads the list beside the hook, where each line is a task ID', () => {
+		const ids = knownTaskIds();
+		expect(ids.has('M2-J4')).toBe(true);
+		expect([...ids].every((id) => /^M\d+-[A-Z]+\d+$/.test(id))).toBe(true);
 	});
 });
