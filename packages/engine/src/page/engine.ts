@@ -15,6 +15,7 @@ import {
 	choosePreset,
 	crashTier,
 	deviceKind,
+	keepsTextureCopies,
 	memoryPreset,
 	type PresetRequest,
 	textureMemoryCap,
@@ -318,7 +319,8 @@ export interface EngineOptions {
 	onSketchMessage?: (name: string, data: unknown) => void;
 	/**
 	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
-	 * while the engine runs. The error's message holds the failure, such as `E1102: ...`. The engine
+	 * while the engine runs, and each file that loads on first use and did not download, as
+	 * `engine.onSketchError` says. The error's message holds the failure, such as `E1102: ...`. The engine
 	 * keeps drawing and presenting frames, so the error alone does not stop it: a frame whose update
 	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`, which
 	 * the comparison ramps judge. `engine.onSketchError` adds more handlers once the engine has
@@ -545,9 +547,8 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom material's
-	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
-	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the
+	 * engine draws no new frames: destroy it and start a new one. On WebGPU,
 	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
 	 * draws on without the objects that failed. The engine reports each failure once. Without a
 	 * handler, it logs the failure to the console. Returns a function that removes the handler.
@@ -555,10 +556,14 @@ export interface Engine {
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
 	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
-	 * while the engine runs. The engine keeps drawing, so this error alone does not stop it: a frame
-	 * whose update failed is counted in `measure().updateErrors` and left out of
-	 * `measure().updatedFps`. The handler receives the errors reported after it was added. Returns a
-	 * function that removes the handler. Without a handler, the error also reaches the console.
+	 * while the engine runs. It also receives a file that loads on first use and that did not
+	 * download, where no call can reject: E1406 for the engine's own code, E1424 for a custom
+	 * material's builds, E1431 for the area lights' tables. The engine draws on without what needs
+	 * the file, and downloads it again after a wait. The engine keeps drawing, so this error alone
+	 * does not stop it: a frame whose update failed is counted in `measure().updateErrors` and left
+	 * out of `measure().updatedFps`. The handler receives the errors reported after it was added.
+	 * Returns a function that removes the handler. Without a handler, the error also reaches the
+	 * console.
 	 */
 	onSketchError(handler: (error: Error) => void): () => void;
 	/**
@@ -1222,13 +1227,7 @@ async function startEngine(
 		hints: readDeviceHints(),
 		crashedStarts: history.crashed,
 	};
-	/**
-	 * The engine keeps a copy of each texture's texels after their upload where the device is a
-	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
-	 * otherwise (D-164).
-	 */
-	const keepTextureCopies =
-		options.keepTextureCopies ?? deviceKind(presetRequest.hints) !== 'desktop';
+	const keepTextureCopies = keepsTextureCopies(options.keepTextureCopies, presetRequest.hints);
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,

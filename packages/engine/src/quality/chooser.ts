@@ -85,6 +85,15 @@ export function deviceKind(hints: DeviceHints): DeviceKind {
 	return hints.screenMinEdge < TABLET_MIN_EDGE ? 'phone' : 'tablet';
 }
 
+/**
+ * Whether the engine keeps a copy of each texture's texels after their upload: the page's option
+ * as true or false, or by default on a phone or a tablet, which is likeliest to lose its GPU
+ * (D-164). The page reports this value, and the core takes it.
+ */
+export function keepsTextureCopies(option: unknown, hints: DeviceHints): boolean {
+	return option === undefined ? deviceKind(hints) !== 'desktop' : Boolean(option);
+}
+
 /** `preset`, or the GPU path's highest preset when `preset` is heavier. */
 export function withinTier(preset: QualityPreset, tier: Tier): QualityPreset {
 	const ceiling = TIER_CEILINGS[tier];

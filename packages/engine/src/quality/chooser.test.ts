@@ -7,6 +7,7 @@ import {
 	type DeviceHints,
 	deviceKind,
 	hintedPreset,
+	keepsTextureCopies,
 	MOBILE_TEXTURE_MEMORY_MIB,
 	memoryPreset,
 	type PresetRequest,
@@ -206,5 +207,25 @@ describe('textureMemoryCap', () => {
 		expect(textureMemoryCap('phone')).toBe(1008);
 		expect(textureMemoryCap('tablet')).toBe(1008);
 		expect(textureMemoryCap('desktop')).toBe(Number.POSITIVE_INFINITY);
+	});
+});
+
+describe('keepsTextureCopies', () => {
+	it('keeps copies on phones and tablets by default, and not on desktops', () => {
+		expect(keepsTextureCopies(undefined, hints({ coarsePointer: true, screenMinEdge: 384 }))).toBe(
+			true,
+		);
+		expect(keepsTextureCopies(undefined, hints({ coarsePointer: true, screenMinEdge: 820 }))).toBe(
+			true,
+		);
+		expect(keepsTextureCopies(undefined, hints())).toBe(false);
+	});
+
+	it("turns the page's option into true or false, the value that the core takes", () => {
+		expect(keepsTextureCopies(true, hints())).toBe(true);
+		expect(keepsTextureCopies(false, hints({ coarsePointer: true }))).toBe(false);
+		// A page in plain JavaScript may pass any value: the report and the core agree on it.
+		expect(keepsTextureCopies(1, hints())).toBe(true);
+		expect(keepsTextureCopies(0, hints({ coarsePointer: true }))).toBe(false);
 	});
 });
