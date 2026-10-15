@@ -10,6 +10,8 @@
 // device at once, and the others when a pipeline needs one, such as the builds without tone
 // mapping once bloom turns on, or those that skin for the first skinned mesh. A build of the
 // project puts each set in a file of its own, which pages of other devices never download.
+// Custom materials build without half precision, so the half bit, which splits the engine's own
+// WebGPU modules, does not split these sets.
 import { createHash } from 'node:crypto';
 import { LOAD_BUILDS, ShaderPack } from './pack.ts';
 import type { CompiledWgsl, ShaderVariant } from './shader-types.ts';

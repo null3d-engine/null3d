@@ -4,11 +4,13 @@
 // laid out and decodes it. Run it after the engine's three.js version changes:
 //
 //   bun tools/area-light-tables.ts           writes the file
-//   bun tools/area-light-tables.ts --check   fails when the file differs from what it would write
+//   bun tools/area-light-tables.ts --check   fails when the file unpacks to other bytes than it
+//                                            would write; gzip's header differs by system, so the
+//                                            check compares the unpacked bytes
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import {
 	AREA_TABLE_CHANNELS,
 	AREA_TABLE_HALVES,
@@ -62,8 +64,8 @@ export function encodeAreaTables(layers: Uint16Array): Uint8Array {
 	return bytes;
 }
 
-/** The gzip file of three.js's tables. */
-export async function tablesFile(): Promise<Uint8Array> {
+/** The file's bytes before gzip, from three.js's tables, checked to decode to them. */
+export async function tablesBytes(): Promise<Uint8Array> {
 	const layers = await threeTables();
 	const bytes = encodeAreaTables(layers);
 	const check = new Uint16Array(AREA_TABLE_HALVES);
@@ -74,14 +76,18 @@ export async function tablesFile(): Promise<Uint8Array> {
 		if (check[i] !== (unread ? 0 : layers[i]))
 			throw new Error(`the tables do not decode to three.js's at half float ${i}`);
 	}
-	return gzipSync(bytes, { level: 9 });
+	return bytes;
+}
+
+/** The kept file's bytes after gunzip. */
+export async function keptTablesBytes(): Promise<Uint8Array> {
+	return gunzipSync(new Uint8Array(await Bun.file(TABLES_FILE).arrayBuffer()));
 }
 
 if (import.meta.main) {
-	const file = await tablesFile();
+	const bytes = await tablesBytes();
 	if (process.argv.includes('--check')) {
-		const kept = new Uint8Array(await Bun.file(TABLES_FILE).arrayBuffer());
-		if (Buffer.compare(Buffer.from(kept), Buffer.from(file)) !== 0) {
+		if (Buffer.compare(Buffer.from(await keptTablesBytes()), Buffer.from(bytes)) !== 0) {
 			console.error(
 				`${TABLES_FILE} differs from three.js's tables; run bun tools/area-light-tables.ts`,
 			);
@@ -89,6 +95,7 @@ if (import.meta.main) {
 		}
 		console.log(`${TABLES_FILE} matches three.js's tables`);
 	} else {
+		const file = gzipSync(bytes, { level: 9 });
 		await Bun.write(TABLES_FILE, file);
 		console.log(`wrote ${TABLES_FILE}: ${file.length} bytes`);
 	}
