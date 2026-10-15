@@ -11,6 +11,7 @@ import {
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
+	sizeCheckLock,
 	type ToolVersions,
 	toolInputs,
 	toolsKey,
@@ -205,6 +206,16 @@ describe('cargoTargetBase', () => {
 		}
 		expect(cargoTargetBase(process.cwd()).startsWith(CACHE_ROOT)).toBe(false);
 		expect(cargoTargetBase('/work/one', '/elsewhere')).toBe('/elsewhere');
+	});
+});
+
+describe('sizeCheckLock', () => {
+	it('gives two checkouts two lock files, each inside its own target folder', () => {
+		// A lock in the shared cache root serialised the whole machine: every size check on the Mac
+		// waited on one file, and a size check holds it across its base build.
+		expect(sizeCheckLock('/work/one')).toBe('/work/one/target/build.lock');
+		expect(sizeCheckLock('/work/two')).not.toBe(sizeCheckLock('/work/one'));
+		expect(sizeCheckLock(process.cwd()).startsWith(CACHE_ROOT)).toBe(false);
 	});
 });
 

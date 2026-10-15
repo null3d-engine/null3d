@@ -69,8 +69,9 @@ function of its inputs, so re-checking a branch on a moved main is cheap.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
   output in a folder of its own, named for the build's process, and Cargo locks a target folder while
-  it writes. A size check takes a machine-wide lock, because it also builds the base commit with that
-  commit's own build script, which may stage into a folder that other builds use.
+  it writes. A size check takes the checkout's own lock, `target/build.lock`. The base commit is built
+  with that commit's own build script, in a base tree under this checkout's target folder. Size checks
+  of two checkouts therefore run at the same time.
 - Each checkout builds Rust into its own `target` folder. Never point two checkouts at one Rust build
   folder, with `CARGO_TARGET_DIR` or `NULL3D_CARGO_TARGET`. Cargo finds the engine's crates at the
   same workspace paths in every checkout and judges them fresh by file times. So a shared folder lets

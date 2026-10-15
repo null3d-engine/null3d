@@ -71,7 +71,6 @@ import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import {
 	acquireLock,
-	CACHE_ROOT,
 	cacheDir,
 	cacheOff,
 	cargoEnv,
@@ -411,13 +410,18 @@ export function variantStagingFolder(variant: Variant): string {
 }
 
 /**
- * The size check's lock. An ordinary build takes no lock: it stages in a folder of its own (see
- * variantStagingFolder), and Cargo locks the target folder while it writes. A size check takes this
- * lock, because it also builds the base commit with that commit's own build script, and an older
- * script may stage into a target folder that other builds use. One lock over the whole check keeps two checks, or a
- * check and an older build, from removing each other's staged files.
+ * The size check's lock, in the checkout that runs it. An ordinary build takes no lock: it stages in
+ * a folder of its own (see variantStagingFolder), and Cargo locks the target folder while it writes.
+ * A size check takes this lock, because it also builds the base commit with that commit's own build
+ * script, and that tree lives in this checkout's target too. One lock over the whole check keeps two
+ * checks, or a check and an older build, from removing each other's staged files. Each checkout has
+ * its own lock file, so two checkouts' size checks run at the same time.
  */
-const SIZE_CHECK_LOCK = join(CACHE_ROOT, 'build.lock');
+export function sizeCheckLock(checkout: string): string {
+	return join(checkout, 'target', 'build.lock');
+}
+
+const SIZE_CHECK_LOCK = sizeCheckLock(root);
 
 /**
  * Takes the size check's lock and returns the function that releases it. Ordinary builds do not take
