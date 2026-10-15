@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { FIRST_USE_DOWNLOADS, firstUsePage, firstUseProblems, manifestFeatures } from './first-use-docs';
+import {
+	FIRST_USE_DOWNLOADS,
+	firstUsePage,
+	firstUseProblems,
+	manifestFeatures,
+} from './first-use-docs';
 
 describe('the page of shaders that load on first use', () => {
 	it('describes every feature of the shader manifest, and no other', () => {

@@ -30,13 +30,13 @@ import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
 import { docsFiles, readIfExists, walkFiles } from './files';
-import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import {
 	FIRST_USE_PAGE_ID,
 	firstUsePage,
 	firstUseProblems,
 	manifestFeatures,
 } from './first-use-docs';
+import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 import { releaseOf, STEPS_NOTE, shipsSentence } from './steps';
