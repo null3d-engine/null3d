@@ -57,12 +57,12 @@ test('each L1 coefficient lights the normal along its own axis and darkens the o
 		coefficients[slot] = 1;
 		const out = new Float32Array(3);
 		for (let other = 0; other < 3; other++) {
-			const normal = [0, 0, 0];
+			const normal: [number, number, number] = [0, 0, 0];
 			normal[other] = 1;
-			l1Irradiance(coefficients, 0, normal[0], normal[1], normal[2], out);
+			l1Irradiance(coefficients, 0, ...normal, out);
 			expect(out[0]).toBeCloseTo(other === axis ? 1.023328 : 0, 5);
 			normal[other] = -1;
-			l1Irradiance(coefficients, 0, normal[0], normal[1], normal[2], out);
+			l1Irradiance(coefficients, 0, ...normal, out);
 			expect(out[0]).toBeCloseTo(other === axis ? -1.023328 : 0, 5);
 		}
 	}
