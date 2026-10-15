@@ -1,12 +1,12 @@
-# D-178: Process rulings of 15 October 2026
+# D-178: The owner's rulings on helpers and cloud runs, 15 October 2026
 
 Status: decided. Date: 15 October 2026. Task: none (process).
 
-Summary: The owner ruled on 15 October 2026 that the helper agents' coordination works with more than one agent tool, with one setting that picks Claude Code subagents or opencode sessions, and that the helpers move to Claude Code subagents now. No script may start an opencode server. Cloud device runs never wait for the owner's go-ahead, and they get a one-slot lane of their own in the load limiter, so they no longer hold a browser slot for up to 85 minutes.
+Summary: On 15 October 2026 the owner moved the helper agents to Claude Code subagents. The coordination works with more than one agent tool: one setting picks Claude Code or opencode, and no script may start an opencode server. Cloud device runs never wait for the owner's go-ahead. They have a one-slot lane in the load limiter, and no longer hold a browser slot for up to 85 minutes.
 
 ## Question
 
-1. Which agent tool runs the helper agents, now that the model service of the opencode sessions failed for hours, and must the coordination depend on one tool?
+1. The model service of the opencode sessions failed for hours. Which agent tool runs the helper agents now, and must the coordination depend on one tool?
 2. Must a cloud device run wait for the owner's go-ahead, and which queue slot does it take?
 
 ## Rule
@@ -34,7 +34,7 @@ How the data was produced: the coordinator's log of 15 October 2026, the process
 
 - A helper waits for its own jobs inside its turn, through a wait that records each job's process and exit status. When a tool call stops before the job ends, the helper waits on the same job again by name ([Coordinating helper agents](../pull-requests.md#coordinating-helper-agents)).
 - The check-in gives each job to the copy of the repository that it works in, and counts a task as landed only on firm evidence. Before, a subagent's job looked like the coordinator's, and a `Task:` trailer alone counted a task as landed.
-- The coordinator's own test suite checks the waits, the check-in's attribution, the milestone count, the cloud lane, and the helper scripts under both tools with a stand-in for opencode.
+- The coordinator's own test suite checks the waits, the check-in's attribution, the milestone count and the cloud lane. It also runs the helper scripts under both tools, with a stand-in for opencode.
 - [Device sessions](../devices.md#browserstack-automate) says that cloud runs need no go-ahead. Runs still happen by hand or on request, never on a timer or in CI.
 - The cloud lane went into use at 11:00 the same day. From 10:30 until then, the load limiter had one extra browser slot to make up for the slot that a cloud run held. That extra slot was removed at 11:04.
 - The same day, the owner ruled that each copy of the repository builds Rust into a folder of its own. [Builds](../pull-requests.md#builds) and [D-177](D-177-build-cache-module.md) record it.
