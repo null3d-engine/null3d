@@ -77,7 +77,7 @@ export class ImpostorBatch {
 			const x = (eye[0] as number) - (positions[i * 3] as number);
 			const y = (eye[1] as number) - (positions[i * 3 + 1] as number);
 			const z = (eye[2] as number) - (positions[i * 3 + 2] as number);
-			const length = Math.sqrt(x * x + y * y + z * z) || 1;
+			const length = Math.hypot(x, y, z) || 1;
 			dir[0] = x / length;
 			dir[1] = y / length;
 			dir[2] = z / length;

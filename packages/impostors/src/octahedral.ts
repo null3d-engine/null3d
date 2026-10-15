@@ -67,9 +67,7 @@ export function octahedralCells(atlas: OctahedralAtlas): number {
  * @category api/impostors
  */
 export function encodeOctahedral(direction: Direction, out: OctahedralUv = [0, 0]): OctahedralUv {
-	const x = direction[0];
-	const y = direction[1];
-	const z = direction[2];
+	const [x, y, z] = direction;
 	const sum = Math.abs(x) + Math.abs(y) + Math.abs(z);
 	if (sum === 0) {
 		out[0] = 0;
@@ -116,21 +114,16 @@ export function decodeOctahedral(
 	return out;
 }
 
-/** The pair that `impostorFrame` folds each direction into, made once so a call allocates nothing. */
-const FRAME_UV: OctahedralUv = [0, 0];
-
 /**
  * The cell of an atlas that shows a view from `direction`, as a frame counted from the atlas's top
  * left, along each row and then down. A view was drawn from the direction a cell's centre names,
  * so a bake that walks `frameDirection` over every frame and this agree on every cell. A direction
- * of length 0 shows the middle cell. It allocates nothing.
+ * of length 0 shows the middle cell.
  *
  * @category api/impostors
  */
 export function impostorFrame(direction: Direction, atlas: OctahedralAtlas): number {
-	encodeOctahedral(direction, FRAME_UV);
-	const u = FRAME_UV[0];
-	const v = FRAME_UV[1];
+	const [u, v] = encodeOctahedral(direction);
 	const column = Math.min(
 		atlas.columns - 1,
 		Math.max(0, Math.floor((u * 0.5 + 0.5) * atlas.columns)),
