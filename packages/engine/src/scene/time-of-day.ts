@@ -644,20 +644,24 @@ function between(
 	first: number,
 	log: boolean,
 ): number {
-	const value = (k: number) => {
-		const v = (table[k] as readonly [number, number])[1];
-		return k === 0 && v === 0 ? first : v;
-	};
-	if (x >= (table[0] as readonly [number, number])[0]) return value(0);
+	// A value read here and not through a helper: a day cycle calls this in every frame, and a
+	// closure made per call is an object of its own.
+	const first0 = (table[0] as readonly [number, number])[1];
+	if (x >= (table[0] as readonly [number, number])[0]) return first0 === 0 ? first : first0;
 	for (let k = 1; k < table.length; k++) {
-		const [high] = table[k - 1] as readonly [number, number];
-		const [low] = table[k] as readonly [number, number];
+		const high = (table[k - 1] as readonly [number, number])[0];
+		const low = (table[k] as readonly [number, number])[0];
 		if (x < low) continue;
 		const t = (high - x) / (high - low);
-		const [a, b] = [value(k - 1), value(k)];
+		const a =
+			k === 1 && (table[0] as readonly [number, number])[1] === 0
+				? first
+				: (table[k - 1] as readonly [number, number])[1];
+		const b = (table[k] as readonly [number, number])[1];
 		return log ? Math.exp(mix(Math.log(a), Math.log(b), t)) : mix(a, b, t);
 	}
-	return value(table.length - 1);
+	const last = (table[table.length - 1] as readonly [number, number])[1];
+	return table.length === 1 && last === 0 ? first : last;
 }
 
 /** `v` scaled by `factor`, into `out`. `out` may be `v`. */
