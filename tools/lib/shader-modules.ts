@@ -19,6 +19,7 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
+	cargoEnv,
 	copyFolderAtomic,
 	filesIn,
 	hashFiles,
@@ -234,6 +235,7 @@ function runShaderBuild(root: string): void {
 	}
 	const result = spawnSync('cargo', [...args, ...buildArgs], {
 		cwd: root,
+		env: { ...process.env, ...cargoEnv() },
 		stdio: ['ignore', 2, 2],
 	});
 	if (result.error)
