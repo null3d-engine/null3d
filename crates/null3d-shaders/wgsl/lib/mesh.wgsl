@@ -2,7 +2,7 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material, MaterialRow, MaterialTransmission}
+#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission}
 #import null3d::lighting::{ambient_irradiance}
 #import null3d::sky_scattering::{aerial_perspective}
 #import null3d::tonemap
@@ -385,6 +385,21 @@ fn material_transmission(id: u32) -> MaterialTransmission {
     );
 #else
     return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
+#endif
+}
+#endif
+
+#ifdef COAT_SHEEN
+/// The values of material `id`'s clear coat and sheen, which only the builds of layered
+/// materials read.
+fn material_coat_sheen(id: u32) -> MaterialCoatSheen {
+#ifdef WEBGL2
+    return MaterialCoatSheen(
+        textureLoad(materials, vec2u(11u, id), 0),
+        textureLoad(materials, vec2u(12u, id), 0),
+    );
+#else
+    return MaterialCoatSheen(materials[id].coat, materials[id].sheen);
 #endif
 }
 #endif

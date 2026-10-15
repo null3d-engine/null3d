@@ -36,7 +36,13 @@ const RELEASE_TYPES: readonly ReleaseType[] = ['auto', 'patch', 'minor', 'major'
 /** Release tags are plain versions, with no `v` prefix and no pre-release part. */
 const TAG_RE = /^\d+\.\d+\.\d+$/;
 
-const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+/** Git's output for a release can be far larger than Node's 1 MiB default: the full history in this
+ * format is about 1.7 MB, and the release step failed with ENOBUFS on any checkout with real history
+ * until this limit was raised. CI clones one commit deep, which is why it never showed there. */
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+
+const git = (...args: string[]) =>
+	execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER });
 
 function fail(message: string): never {
 	console.error(message);

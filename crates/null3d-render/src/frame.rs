@@ -61,6 +61,8 @@ use crate::particles::ParticleTable;
 use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
+use crate::probe_grid::{ProbeGrid, ProbeGridUniform};
+use crate::probe_shading::ProbeShading;
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
@@ -741,6 +743,10 @@ pub struct SceneSettings {
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The scene's light probe grid while the sketch sets one.
+    probe_grid: Option<ProbeGrid>,
+    /// Whether lit meshes draw through the grid's templates.
+    probe_shading: ProbeShading,
     /// The environment maps of the scene's sky.
     sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
@@ -867,6 +873,8 @@ impl SceneSettings {
             lut: None,
             vignette: None,
             environment: None,
+            probe_grid: None,
+            probe_shading: ProbeShading::default(),
             sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
@@ -1397,6 +1405,11 @@ impl SceneSettings {
         self.environment = environment;
     }
 
+    /// Lights the scene with a light probe grid, or with none, from the next recorded frame on.
+    pub fn set_probe_grid(&mut self, grid: Option<ProbeGrid>) {
+        self.probe_grid = grid;
+    }
+
     /// The environment maps of the scene's sky.
     pub fn sky_maps(&self) -> &SkyMaps {
         &self.sky_maps
@@ -1426,6 +1439,20 @@ impl SceneSettings {
                 )
             }
             None => (blank, EnvironmentUniform::default()),
+        }
+    }
+
+    /// The GPU id of the grid's 3D texture, once its texels are on the GPU, or `blank` while the
+    /// scene has no grid, with the grid's part of the frame uniform, whose intensity takes the
+    /// frame's exposure. A frame builder asks after the frame's uploads, so a held frame, which
+    /// uploads everything, draws with the grid.
+    pub(crate) fn probe_grid_map(&self, blank: u32) -> (u32, ProbeGridUniform) {
+        match self
+            .probe_grid
+            .and_then(|grid| Some((grid, self.textures.ready_volume(grid.texture)?)))
+        {
+            Some((grid, (map, _))) => (map, grid.uniform(self.drawn_output().exposure)),
+            None => (blank, ProbeGridUniform::default()),
         }
     }
 
@@ -2247,6 +2274,7 @@ impl SceneSettings {
     pub fn forget_shadow_maps(&mut self) {
         self.shadow_schedule.reset();
         self.area_shading.forget_gpu();
+        self.probe_shading.forget_gpu();
     }
 
     /// Turns area shading on or off for the frame (see [`AreaShading::update`]): on once the last
@@ -2265,7 +2293,22 @@ impl SceneSettings {
     /// The key that a pair draws with in the scene's passes, from its shading key: with the bit
     /// that shades area lights while area shading is on (see [`AreaShading::key`]).
     pub fn area_key(&self, pipeline: DrawKey) -> DrawKey {
-        self.area_shading.key(pipeline)
+        self.probe_shading.key(self.area_shading.key(pipeline))
+    }
+
+    /// Turns probe shading on or off for the frame (see [`ProbeShading::update`]): on once the
+    /// scene sets a grid whose texture is on the GPU and the lit pipelines in use have their grid
+    /// builds. Returns true when it changes, so the layouts take their keys again.
+    pub(crate) fn update_probe_shading(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) -> bool {
+        let wanted = self
+            .probe_grid
+            .is_some_and(|grid| self.textures.ready_volume(grid.texture).is_some());
+        self.probe_shading
+            .update(wanted, pipelines, pipelines_built)
     }
 
     /// The main directional light's shadows in the next frame, whose targets have the canvas's
@@ -2504,7 +2547,8 @@ impl SceneSettings {
     /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
     /// A material that lets light through draws with the shader variant that samples the copy of
-    /// the opaque objects behind it, in the transparent pass too, where its shading has one.
+    /// the opaque objects behind it, in the transparent pass too, where its shading has one. A
+    /// layered material draws with the builds that light its clear coat and sheen.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         self.rows_pipeline_of(mesh, material, false)
@@ -2551,6 +2595,7 @@ impl SceneSettings {
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
         let transmits = has(feature::TRANSMISSION) && shading.transmits();
+        let layers = has(feature::COAT_SHEEN) && shading.layers();
         let rows = row_values && shading.reads_row_values() && !transmits;
         let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
@@ -2566,7 +2611,8 @@ impl SceneSettings {
                 | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
-                | bit(rows, permutation::ROW_VALUES),
+                | bit(rows, permutation::ROW_VALUES)
+                | bit(layers, permutation::COAT_SHEEN),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)

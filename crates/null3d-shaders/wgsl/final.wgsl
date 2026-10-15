@@ -10,6 +10,11 @@
 // colors, after the tone mapping: a filter over HDR color would let a small share of a very bright
 // texel turn its neighbors almost white.
 //
+// A frame below the whole canvas's scale may instead draw in two steps. The first build, whose
+// settings hold RESOLVE, draws one texel for each render pixel into a target of the render size,
+// with FXAA, and leaves the dither to the second. The second build reads that target as display
+// color and scales it up as the pass above does.
+//
 // The scene color holds color multiplied by its coverage. Where it is only partly covered, as over
 // a transparent canvas's background, the pass maps the color that covers it and keeps the coverage
 // as the canvas's premultiplied alpha. WebGL2 keeps GL's row order, bottom row first, in the scene
@@ -69,6 +74,14 @@ const LUT: u32 = 4u;
 const OUTLINE: u32 = 8u;
 /// The settings flag that multiplies the HDR color by the automatic exposure's texel.
 const AUTO_EXPOSURE: u32 = 16u;
+/// The settings flag that says the pass is the first of two steps below the whole canvas's render
+/// scale: it draws one texel for each render pixel into a target of the render size, so its frame
+/// is the render size and it leaves the dither to the second step.
+const RESOLVE: u32 = 32u;
+/// The settings flag that makes the pass dither even where it holds display color. The second step
+/// sets it when the first step's target came from high dynamic range color, since that path would
+/// otherwise dither in the first step.
+const DITHER: u32 = 64u;
 
 /// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
 /// roundness, then the scale and the offset that place a display color in the table, with the
@@ -526,7 +539,9 @@ fn display(texel: vec4f) -> vec4f {
 fn finish(color: vec4f, position: vec2f) -> vec4f {
     let flags = settings.output.flags;
     let grades = (flags & (LUT | VIGNETTE)) != 0u;
-    if (display_color() && !grades) || color.a <= 0.0 {
+    // A pass that holds display color and grades nothing leaves the color as it is, unless the
+    // second step of the high dynamic range path asks for the dither (DITHER).
+    if (display_color() && !grades && (flags & DITHER) == 0u) || color.a <= 0.0 {
         return color;
     }
     var c = color.rgb / color.a;
@@ -535,7 +550,10 @@ fn finish(color: vec4f, position: vec2f) -> vec4f {
         let graded = textureSampleLevel(lut, lut_sampler, at, 0.0).rgb;
         c = mix(c, graded, settings.lut_scale.w);
     }
-    c = saturate(c + null3d::tonemap::dither(position));
+    // The first of the two steps leaves the dither to the second, which runs at the canvas size.
+    if (flags & RESOLVE) == 0u {
+        c = saturate(c + null3d::tonemap::dither(position));
+    }
     return vec4f(c * color.a, color.a);
 }
 
@@ -551,15 +569,28 @@ fn corner_texel(place: vec2f, size: vec2f) -> vec2i {
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     eye_factor = eye_exposure();
-    let size = vec2f(textureDimensions(scene_color));
     let packed = settings.output.render_size;
     let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));
+    // The first of the two steps draws one texel for each render pixel into a target of the render
+    // size, so its frame is the render size. Every other build draws the canvas, so its frame is
+    // the scene color's size, which is the canvas's.
+    let resolving = (settings.output.flags & RESOLVE) != 0u;
+    let scene = vec2f(textureDimensions(scene_color));
+    // WebGL2 counts rows from the bottom and draws the render corner into the scene color's top
+    // rows, so the first step's fragments start at that corner's own origin.
+#ifdef WEBGL2
+    let origin = select(vec2f(0.0), vec2f(0.0, scene.y - render.y), resolving);
+#else
+    let origin = vec2f(0.0);
+#endif
+    let local = position.xy - origin;
+    let size = select(scene, render, resolving);
     let whole = all(render == size);
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
     // target of the frame shares.
-    let uv = position.xy / size;
+    let uv = local / size;
     let light = glow(uv);
-    let shade = vignette(position.xy, size);
+    let shade = vignette(local, size);
     var color = vec4f(0.0);
     if whole {
         color = display(shaded(with_glow(pixel_color(position.xy), light), shade));

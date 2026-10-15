@@ -250,6 +250,43 @@ scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
 
 Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change of the sky, the scene takes the new light 19 frames later. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
 
+## The light probe grid
+
+`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from coloured walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, three filtered reads each, and its light takes the place of the environment's diffuse light; the environment keeps its reflections.
+
+```ts
+const grid = new LightProbeGrid({
+  origin: [-12, 0, -12],
+  spacing: [1, 2, 1],
+  counts: [24, 8, 24],
+  coefficients: baked, // 12 numbers per probe, packed by `packProbes`
+});
+scene.setLightProbeGrid({ ...grid, texture: textures.fromData({ ...grid.texture }) });
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients, from `textures.fromData` |
+| `origin` | required | The grid's corner of least x, y and z, in the world |
+| `spacing` | required | The distance between probes along each axis, in meters |
+| `counts` | required | The probes along each axis, each 2 or more |
+| `intensity` | 1 | The factor of the grid's light, 0 or more |
+| `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
+
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` colour for one coloured bounce. Bake a few probes a frame so a loading screen can show progress.
+
+```ts
+const bake = bakeProbes(scene, {
+  box: { min: [-12, 0, -12], max: [12, 8, 12] },
+  resolution: [24, 8, 24],
+  environment,
+  albedo: (object) => (object as Mesh).material.baseColor,
+});
+onUpdate(() => { if (bake.step(4)) scene.setLightProbeGrid({ ...bake.grid.toTexture(textures), origin: bake.grid.origin, spacing: bake.grid.spacing, counts: bake.grid.counts }); });
+```
+
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. [Lighting and environment](../concepts/lighting.md) says how the grid lights a surface, and what it costs.
+
 ## Fog
 
 `setFog` covers every object in fog that thickens with its distance from the camera. The distance is the straight line from the camera to the point, so an object keeps its fog as the camera turns. A curve sets how the fog thickens:
