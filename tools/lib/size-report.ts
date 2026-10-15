@@ -88,6 +88,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			loadedBy: drawing,
 		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
+		...(['wgsl', 'glsl'] as const).flatMap((target) =>
+			['', '-half'].map((half) => ({
+				name: `${prefix}-shaders-${target}-combos${half}.js`,
+				module: `generated/shaders-${target}-combos${half}.ts`,
+				loadedBy: drawing,
+			})),
+		),
 	];
 }
 
@@ -114,12 +121,15 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * Each GPU path's table of the shader files of builds that need several features that load on
+ * first use loads in the thread that draws, the first time a pipeline or a preload needs one.
  * The reader of the counts of the draws that the GPU culls loads in the thread that draws on WebGPU,
  * at the first frame that samples, such as with the stats overlay shown.
  * The built-in environments' numbers load in the thread that runs the sketch with the first one,
  * and the texture generators that make their maps on the GPU load in the thread that draws. The
  * code that joins custom effects into fewer passes loads in the thread that draws with the first
- * effects that join.
+ * effects that join. The area lights' tables' code loads in the thread that runs the sketch with
+ * the first rectangle or tube light, which starts the tables' download.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
@@ -146,6 +156,17 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-particles.js', module: 'scene/particles.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-area-light-tables.js',
+		module: 'scene/area-light-tables.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
+		name: 'page-light-images.js',
+		module: 'scene/light-images.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -192,6 +213,21 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-lines.js', module: 'scene/lines.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-particles.js',
+		module: 'scene/particles.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-area-light-tables.js',
+		module: 'scene/area-light-tables.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-light-images.js',
+		module: 'scene/light-images.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -243,16 +279,19 @@ export function isFirstUseShaderPart(name: string): boolean {
 }
 
 /**
- * The WebAssembly modules that the on-demand loader compiles on first use: the KTX2 transcoder,
- * with a page's first KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt
- * data, and Draco's decoder, with its first glTF file that holds Draco data. A build copies each
- * as it is, under its name with a hash. Draco's decoder is a recorded exception to the limit of
- * files that load on first use (D-14).
+ * The files besides code that load on first use: the WebAssembly modules that the on-demand
+ * loader compiles, and the area lights' tables. They are the KTX2 transcoder, with a page's first
+ * KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt data, Draco's
+ * decoder, with its first glTF file that holds Draco data, and the tables, with the first
+ * rectangle or tube light. A build copies each as it is, under its name with a hash. Draco's
+ * decoder and the tables are recorded exceptions to the limit of files that load on first use
+ * (D-14, D-145).
  */
-export const FIRST_USE_WASM = [
+export const FIRST_USE_FILES = [
 	'basis_transcoder.wasm',
 	'meshopt_decoder.wasm',
 	'draco_decoder_gltf.wasm',
+	'area-light-tables.bin',
 ] as const;
 
 /** Every file that the size report measures, by the name that the report prints. */
@@ -260,17 +299,17 @@ export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 	...SHADER_PARTS.map((name) => `js/${name}`),
-	...FIRST_USE_WASM.map((file) => `first-use/${file}`),
+	...FIRST_USE_FILES.map((file) => `first-use/${file}`),
 ];
 
 /**
- * The built name of each first-use WebAssembly module, by its own name, from the names of a
- * build's files. A build adds a hash of 8 characters to each name. Throws when a file is missing or
- * there twice, since the loader would then fetch no file or the wrong one.
+ * The built name of each file of `FIRST_USE_FILES`, by its own name, from the names of a build's
+ * files. A build adds a hash of 8 characters to each name. Throws when a file is missing or there
+ * twice, since the engine would then fetch no file or the wrong one.
  */
-export function findFirstUseWasm(builtNames: readonly string[]): Map<string, string> {
+export function findFirstUseFiles(builtNames: readonly string[]): Map<string, string> {
 	const found = new Map<string, string>();
-	for (const file of FIRST_USE_WASM) {
+	for (const file of FIRST_USE_FILES) {
 		const dot = file.lastIndexOf('.');
 		const [stem, extension] = [file.slice(0, dot), file.slice(dot)];
 		const matches = builtNames.filter(
@@ -278,7 +317,7 @@ export function findFirstUseWasm(builtNames: readonly string[]): Map<string, str
 				name.startsWith(`${stem}-`) && name.endsWith(extension) && name.length === file.length + 9,
 		);
 		if (matches.length !== 1)
-			throw new Error(`${file}: expected one built copy of the module, found ${matches.length}`);
+			throw new Error(`${file}: expected one built copy of the file, found ${matches.length}`);
 		found.set(file, matches[0] as string);
 	}
 	return found;
@@ -504,11 +543,12 @@ export function downloadSizes(
 /**
  * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
- * Brotli's budget is the owner's. The gzip and raw budgets hold today's start with about a tenth to
- * spare. The shader file fills most of it, so per-feature shader files bring both down. Until then
- * they stop a start that grows on a gzip host, or on a host that sends files as they are.
+ * Brotli's budget is the owner's, who raised it from 145 KB on 14 October 2026 (D-14). The gzip and
+ * raw budgets hold today's start with about a tenth to spare. The shader file fills most of it, so
+ * per-feature shader files bring both down. Until then they stop a start that grows on a gzip host,
+ * or on a host that sends files as they are.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 140 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_448 * 1024, gzip: 464 * 1024, brotli: 160 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
@@ -534,13 +574,14 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * file. Shader text shrinks far more under compression than code does, so these limits do not keep
  * the start budget's proportions. The owner set them on 4 October 2026, and on 5 October raised
  * the Brotli limit for the shadow filter's growth and the gzip limit, which only hosts without
- * Brotli meet, for the skinning and morph files of environment lighting (decision records D-14
- * and D-56).
+ * Brotli meet, for the skinning and morph files of environment lighting. On 14 October the owner
+ * raised the Brotli limit from 32 KB to 48 KB, because the GLSL files of the mesh templates had
+ * grown past it (decision records D-14 and D-56).
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_536 * 1024,
 	gzip: 320 * 1024,
-	brotli: 32 * 1024,
+	brotli: 48 * 1024,
 };
 
 /**

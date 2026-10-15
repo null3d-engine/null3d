@@ -76,3 +76,20 @@ for (const mode of ENGINE_MODES)
 		expect(loops('walk').length).toBeGreaterThanOrEqual(1);
 		expect(loops('run')).toEqual(loops('walk'));
 	});
+
+// The same page with `?transition=inertial`: the hero switches from its walk to its run with an
+// inertial transition, which samples only the run while the pose eases in.
+for (const mode of ENGINE_MODES)
+	test(`the animator switches a layer with an inertial transition, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(`animator.html?transition=inertial&${mode.query}`);
+		const result = await pageResult<AnimatorReport & { error?: string }>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		const hero = result.heard.filter((e) => e.who === 'hero');
+		const names = hero.map((e) => `${e.name} ${e.clip} ${e.layer}`);
+		// The run takes over and loops; the walk's footsteps stop once the transition reaches it.
+		expect(names).toContain('loop run 0');
+		const steps = hero.filter((e) => e.name === 'left' || e.name === 'right');
+		expect(steps.every((e) => e.time <= CROSS_FADE_AT + CROSS_FADE + 0.1)).toBe(true);
+	});

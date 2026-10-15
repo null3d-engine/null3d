@@ -16,7 +16,7 @@ function camera(layers = 1) {
 		layers,
 		destroyedFrame: -1,
 		describe: () => '"Map camera" (slot 3)',
-		sendLens(_glue: unknown, target: number, sent = layers) {
+		sendLens(_core: unknown, target: number, sent = layers) {
 			lenses.push([target, sent]);
 		},
 	};
@@ -85,7 +85,7 @@ function setup() {
 	const scene = {
 		setPassCamera(place: number, camera: Camera | undefined, layers: number | undefined) {
 			cameras.push([place, camera, layers]);
-			if (camera) camera.sendLens(glue as never, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
+			if (camera) camera.sendLens(core, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
 		},
 	} as unknown as Scene;
 	const shaders = new ShaderPreloads((features) => preloads.push([...features]));

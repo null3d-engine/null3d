@@ -18,12 +18,12 @@ import {
 	type StatsMainThread,
 } from '@null3d/engine/stats';
 import type { Comparison } from '../compare/comparisons';
+import { type SceneSignature, SIGNATURE_MESSAGE } from '../compare/scene-signature';
 import { threeBuildOf } from '../compare/three-builds';
 import { allEffects, type CompareMode, type Effects, effectsToText } from './compare-scene';
 import {
 	type DeviceClass,
 	deviceClass,
-	displayRate,
 	type RampOptions,
 	type RampPlan,
 	type RampResult,
@@ -94,8 +94,18 @@ export interface ComparisonOptions {
 
 /** What a measurement of a running comparison gives. */
 export interface ComparisonMeasurement {
-	/** Frames presented per second. */
+	/**
+	 * Frames per second whose scene update ran to its end: the rate the ramp judges. A frame whose
+	 * sketch update threw still presents, so a presented rate would hide it.
+	 */
 	fps: number;
+	/**
+	 * Frames of the measurement whose scene update failed, where the engine reports it. Nonzero
+	 * means the sketch's own code, or a core call in a frame, threw.
+	 */
+	updateErrors?: number;
+	/** Why the scene's update failed during the measurement, where the engine says so. */
+	error?: string;
 	/** CPU time per frame on the engine's busiest thread, in milliseconds. */
 	cpuMs: number | null;
 	/** The engine's own figures, for a closer look: per thread and phase, draws, uploads, memory. */
@@ -146,19 +156,32 @@ export interface ComparisonRun {
 	readonly failure: string | null;
 	/** The held frame, RGBA8 rows from the top, for a run started with `hold`. */
 	held?: { width: number; height: number; pixels: Uint8Array };
+	/**
+	 * Asks the sketch for a signature of its scene now: its camera's place, which moves in every
+	 * update. A test that checks the scene keeps moving asks at each ramp step, and a scene that
+	 * stopped updating answers the same as the step before. Absent for three.js, whose half answers
+	 * no such message.
+	 */
+	sceneSignature?(): Promise<SceneSignature>;
 	/** Stops the engine and frees its memory. */
 	destroy(): Promise<void>;
 }
 
-/** Measures the display's refresh rate over about half a second: the median interval of frames. */
-export function measureDisplayHz(frames = 40): Promise<number> {
+/**
+ * Measures the display's refresh rate: the median interval of the page's next `frames` frames, or
+ * of those that come within `limitMs`. A busy software GPU can hold the page's frames seconds apart
+ * while an engine draws; the measurement then ends after two of them, not after minutes.
+ */
+export function measureDisplayHz(frames = 40, limitMs = 1000): Promise<number> {
 	return new Promise((resolve) => {
 		const intervals: number[] = [];
+		let first = -1;
 		let last = -1;
 		const tick = (time: number) => {
 			if (last >= 0) intervals.push(time - last);
+			else first = time;
 			last = time;
-			if (intervals.length < frames) {
+			if (intervals.length < frames && (intervals.length === 0 || time - first < limitMs)) {
 				requestAnimationFrame(tick);
 				return;
 			}
@@ -269,10 +292,15 @@ async function startNull3d(
 	sketch.searchParams.set('mode', mode);
 	sketch.searchParams.set('effects', effectsToText(effects));
 	const stats = options.stats ?? true;
+	// The last error that the sketch's own code threw, which a step whose update failed reports.
+	let sketchError: string | undefined;
 	const engine: Engine = await createEngine({
 		canvas,
 		sketch,
 		gpu,
+		onSketchError: (error) => {
+			sketchError = error.message;
+		},
 		// A fixed preset: High, which WebGL2 caps at Medium. The sketch turns the governor off.
 		preset: 'high',
 		maxPixelRatio: pixelRatio,
@@ -285,6 +313,17 @@ async function startNull3d(
 		hold: options.hold,
 	});
 	let shown = count;
+	// Scene-signature requests in flight, matched to the sketch's answers by token.
+	const signatures = new Map<number, (signature: SceneSignature) => void>();
+	let signatureToken = 0;
+	engine.onSketchMessage((name, data) => {
+		if (name !== SIGNATURE_MESSAGE) return;
+		const signature = data as SceneSignature;
+		const resolve = signatures.get(signature.token);
+		if (!resolve) return;
+		signatures.delete(signature.token);
+		resolve(signature);
+	});
 	const run: ComparisonRun = {
 		engine: 'null3d',
 		mode,
@@ -318,13 +357,18 @@ async function startNull3d(
 				]),
 			);
 			return {
-				fps: metrics.presentedFps,
+				fps: metrics.updatedFps,
+				updateErrors: metrics.updateErrors,
+				...(metrics.updateErrors > 0 && {
+					error: sketchError ?? 'its update threw before it moved the scene',
+				}),
 				cpuMs: metrics.cpuMs.mean,
 				mainThread,
 				detail: {
 					threads,
 					cpuMsAllThreads: metrics.cpuMsAllThreads.mean,
 					gpuMs: metrics.gpuMs?.mean ?? null,
+					gpuPassMs: metrics.gpuPassMs?.map(({ name, ms }) => ({ name, ms: ms.mean })) ?? null,
 					drawCalls: metrics.drawCalls.mean,
 					uploadBytes: metrics.uploadBytes.mean,
 					wasmBytes: metrics.memory.wasmBytes,
@@ -339,6 +383,13 @@ async function startNull3d(
 		},
 		collapseStats(collapsed) {
 			if (stats !== false) engine.stats({ collapsed });
+		},
+		sceneSignature() {
+			const token = ++signatureToken;
+			return new Promise((resolve) => {
+				signatures.set(token, resolve);
+				engine.postToSketch(SIGNATURE_MESSAGE, token);
+			});
 		},
 		destroy: () => engine.destroy({ release: true }),
 	};
@@ -556,17 +607,16 @@ async function startThree(
  */
 export async function rampComparison(
 	run: ComparisonRun,
-	options: Omit<RampOptions, 'displayHz'> & { plan?: RampPlan; warmupSeconds?: number } = {},
+	options: RampOptions & { plan?: RampPlan; warmupSeconds?: number } = {},
 ): Promise<RampResult> {
+	const started = performance.now();
 	run.collapseStats(true);
 	const plan = options.plan ?? run.plan;
 	run.setCount(plan.start);
 	await new Promise((resolve) => setTimeout(resolve, (options.warmupSeconds ?? 2) * 1000));
-	const pageHz = await measureDisplayHz();
-	const start = await run.measure(1);
-	const displayHz = displayRate(pageHz, start.fps);
-	const result = await runRamp(run, plan, { ...options, displayHz });
+	const result = await runRamp(run, plan, options);
 	if (result.stopReason === 'no-frame')
 		result.failure = run.failure ?? 'it drew no frame within the step';
+	result.seconds = (performance.now() - started) / 1000;
 	return result;
 }

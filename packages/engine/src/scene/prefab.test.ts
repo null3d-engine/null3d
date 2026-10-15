@@ -4,6 +4,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { AnimationRig } from './animation';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { boundsOf, type PartTemplate, Prefab, type PrefabOwned, type TemplateNode } from './prefab';
 import { Geometry, Material, MeshGeometry } from './resources';
@@ -194,7 +195,7 @@ function fakeCore(largeWorld = false, growOnReserve = false) {
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const scene = new Scene(core, { frame: 3 }, false);
 	const u32 = (address: number, length: number) => new Uint32Array(memory.buffer, address, length);
 	return {

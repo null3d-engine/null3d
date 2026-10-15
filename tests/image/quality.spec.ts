@@ -48,6 +48,7 @@ interface QualityResult {
 		presetCheck: PresetCheck | null;
 		crashedStarts: number;
 		memoryMaximumMiB: number | null;
+		keepTextureCopies: boolean;
 	};
 	tier: Tier;
 	hints: { coarsePointer: boolean; screenMinEdge: number; deviceMemoryGB: number | null };
@@ -118,6 +119,8 @@ test("the engine chooses High on a desktop's WebGPU, and Medium on its WebGL2", 
 }) => {
 	const webgpu = await openQuality(page, 'gpu=webgpu');
 	expect(webgpu.hints.coarsePointer).toBe(false);
+	// A desktop frees each texture's copy once its upload is done (D-164).
+	expect(webgpu.mode.keepTextureCopies).toBe(false);
 	// The setup runs at the chosen preset, which the check measures first.
 	expect([chosen(webgpu), webgpu.sketch.preset]).toEqual(['high', 'high']);
 	expect(webgpu.mode.presetCheck?.rounds[0]?.preset).toBe('high');
@@ -139,6 +142,8 @@ test.describe('on a phone', () => {
 	test('the engine chooses Low from the coarse pointer and the small screen', async ({ page }) => {
 		const result = await openQuality(page, 'gpu=webgpu');
 		expect(result.hints).toMatchObject({ coarsePointer: true, screenMinEdge: 412 });
+		// A phone keeps each texture's copy, so its maps come back after a GPU loss (D-164).
+		expect(result.mode.keepTextureCopies).toBe(true);
 		expect([result.mode.preset, result.sketch.preset]).toEqual(['low', 'low']);
 		expect(result.sketch.settings.maxPixelRatio).toBe(1.5);
 		// No preset is lighter than Low, so the engine does not check it.
@@ -283,7 +288,7 @@ test('a sketch that changes a setting the engine does not take gets E1213', asyn
 	);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
-		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, reflectionScale, lodThreshold, lodShadowFactor, lodFade, softwareOcclusion or governor.',
+		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, fogSlices, reflectionScale, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion or governor.',
 	);
 });
 

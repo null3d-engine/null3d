@@ -1,6 +1,8 @@
 // The scene's fog. The core keeps it, and the lit and unlit shaders mix each object's linear color
 // toward the fog color by its straight-line distance from the camera, along a curve. The fog can
-// thin with height and glow toward the main directional light. The background takes no fog.
+// thin with height and glow toward the main directional light. The background takes no fog. The
+// volumetric fog lights the same fog with the sun and the point and spot lights, through their
+// shadows, in a grid that follows the camera's view (D-133).
 
 import { checkNumber, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -10,8 +12,8 @@ import {
 	FOG_CURVE_LINEAR,
 	FOG_CURVE_NONE,
 } from '../generated/core';
-import type { CoreGlue } from '../shared/core';
-import { type ColorInput, linearColor } from './color';
+import { type ColorInput, writeLinearColor } from './color';
+import type { CoreMemory } from './memory';
 
 /**
  * How fog thickens with distance. Exponential fog, `'exponential'`, follows light through an even
@@ -66,6 +68,40 @@ export interface FogOptions {
 	 * smaller glow. The default is 8.
 	 */
 	sunGlowExponent?: number;
+	/**
+	 * Lights the fog with the main directional light and the point and spot lights, through their
+	 * shadows: sun rays through gaps in trees, and glowing cones under lamps and headlights. `true`
+	 * takes the default options. While it draws, it replaces `sunGlow` with its own light of the
+	 * sun. It needs HDR color, and the quality setting `fogSlices` above 0: on the Low preset the
+	 * fog keeps its sun glow. The default is `false`.
+	 */
+	volumetric?: boolean | FogVolumeOptions;
+}
+
+/**
+ * Options of the volumetric fog in `scene.setFog`. The fog's `density` and `heightFalloff` say
+ * where the air holds fog, so the light falls through the same fog that dims the objects.
+ *
+ * @category api/scene
+ */
+export interface FogVolumeOptions {
+	/**
+	 * How much of the lights' light the fog scatters toward the camera, 0 or more: 1 scatters as
+	 * much as the fog's density gives. Raise it for bolder rays. The default is 1.
+	 */
+	intensity?: number;
+	/**
+	 * How much light the fog scatters forward, from -0.95 to 0.95: 0 scatters it evenly in every
+	 * direction, and values toward 0.95 gather it around the lights, as haze around a low sun.
+	 * The default is 0.6.
+	 */
+	anisotropy?: number;
+	/**
+	 * How far along the view the lit fog reaches, above 0. Past it, the fog still scatters the
+	 * sun's light, without shadows. A shorter reach gives finer rays near the camera. The default
+	 * is 100.
+	 */
+	distance?: number;
 }
 
 const DEFAULT_DENSITY = 0.01;
@@ -73,6 +109,11 @@ const DEFAULT_DENSITY = 0.01;
 const DEFAULT_NEAR = 1;
 const DEFAULT_FAR = 1000;
 const DEFAULT_SUN_GLOW_EXPONENT = 8;
+const DEFAULT_VOLUME_INTENSITY = 1;
+const DEFAULT_ANISOTROPY = 0.6;
+const DEFAULT_VOLUME_DISTANCE = 100;
+/** The strongest anisotropy, which keeps the phase function finite. */
+const MAX_ANISOTROPY = 0.95;
 
 const CURVES: Readonly<Record<FogCurve, number>> = {
 	exponential: FOG_CURVE_EXPONENTIAL,
@@ -80,9 +121,9 @@ const CURVES: Readonly<Record<FogCurve, number>> = {
 	linear: FOG_CURVE_LINEAR,
 };
 
-/** The fog's numbers in the order that the core takes them, after the curve and the color. */
-type FogValues = readonly [number, number, number, number, number, number, number];
-/** The option that gives each of the fog's numbers. */
+/** The place of the fog's first number in the core's call values, after the color. */
+const FIRST = 3;
+/** The option that gives each of the fog's numbers, in the order that the core takes them. */
 const VALUE_NAMES = [
 	'density',
 	'near',
@@ -107,7 +148,7 @@ function checkNotNegative(name: string, value: number): void {
  * far distance that is not beyond the near one, or a value below its range, and E1203 for a value
  * that is not finite. Call it inside `if (DEV)`.
  */
-function checkFog(fog: FogOptions, values: FogValues): void {
+function checkFog(fog: FogOptions, values: Float64Array): void {
 	if ('type' in fog)
 		throw new EngineError(
 			'E1108',
@@ -118,8 +159,14 @@ function checkFog(fog: FogOptions, values: FogValues): void {
 			'E1108',
 			`${CALL}() got the curve ${JSON.stringify(fog.curve)}. It takes 'exponential', 'exp2' or 'linear'.`,
 		);
-	for (const [k, name] of VALUE_NAMES.entries()) checkNumber(CALL, name, values[k] as number, FOG);
-	const [density, near, far, , heightFalloff, sunGlow, sunGlowExponent] = values;
+	const value = (k: number) => values[FIRST + k] as number;
+	for (const [k, name] of VALUE_NAMES.entries()) checkNumber(CALL, name, value(k), FOG);
+	const density = value(0);
+	const near = value(1);
+	const far = value(2);
+	const heightFalloff = value(4);
+	const sunGlow = value(5);
+	const sunGlowExponent = value(6);
 	if (!(far > near))
 		throw new EngineError(
 			'E1108',
@@ -135,22 +182,75 @@ function checkFog(fog: FogOptions, values: FogValues): void {
 		);
 }
 
-/** Gives the scene `fog`, or no fog for null. Converting the color allocates. */
-export function setSceneFog(glue: CoreGlue, fog: FogOptions | null): void {
+/**
+ * Throws E1108 for a volumetric fog option out of its range, and E1203 for a value that is not
+ * finite. Call it inside `if (DEV)`.
+ */
+function checkVolume(volume: FogVolumeOptions, values: readonly [number, number, number]): void {
+	const [intensity, anisotropy, distance] = values;
+	checkNumber(CALL, 'volumetric.intensity', intensity, FOG);
+	checkNumber(CALL, 'volumetric.anisotropy', anisotropy, FOG);
+	checkNumber(CALL, 'volumetric.distance', distance, FOG);
+	checkNotNegative('volumetric intensity', intensity);
+	if (!(Math.abs(anisotropy) <= MAX_ANISOTROPY))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got the volumetric anisotropy ${anisotropy}; it takes a number from -0.95 to 0.95.`,
+		);
+	if (!(distance > 0))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got the volumetric distance ${distance}; it takes a number above 0.`,
+		);
+	if ('density' in volume)
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got a density in volumetric. The volumetric fog takes the fog's own density: set density beside color.`,
+		);
+}
+
+/**
+ * Gives the scene `fog`, or no fog for null, and its volumetric fog. Returns true while the
+ * volumetric fog is on. The linear color and the numbers go to the core through its call values,
+ * so the call allocates nothing.
+ */
+export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	if (fog === null) {
-		glue.setFog(FOG_CURVE_NONE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-		return;
+		core.glue.setFog(FOG_CURVE_NONE);
+		const none = core.callValues();
+		none[0] = 0;
+		none[1] = 0;
+		none[2] = 0;
+		none[3] = 0;
+		core.glue.setFogVolume(false);
+		return false;
 	}
-	const values: FogValues = [
-		fog.density ?? DEFAULT_DENSITY,
-		fog.near ?? DEFAULT_NEAR,
-		fog.far ?? DEFAULT_FAR,
-		fog.height ?? 0,
-		fog.heightFalloff ?? 0,
-		fog.sunGlow ?? 0,
-		fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT,
-	];
-	if (DEV) checkFog(fog, values);
-	const [r, g, b] = linearColor(fog.color, CALL);
-	glue.setFog(CURVES[fog.curve ?? 'exponential'], r, g, b, ...values);
+	const values = core.callValues();
+	values[FIRST] = fog.density ?? DEFAULT_DENSITY;
+	values[FIRST + 1] = fog.near ?? DEFAULT_NEAR;
+	values[FIRST + 2] = fog.far ?? DEFAULT_FAR;
+	values[FIRST + 3] = fog.height ?? 0;
+	values[FIRST + 4] = fog.heightFalloff ?? 0;
+	values[FIRST + 5] = fog.sunGlow ?? 0;
+	values[FIRST + 6] = fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT;
+	const volume = fog.volumetric === true ? {} : fog.volumetric || undefined;
+	const volumeValues = [
+		volume?.intensity ?? DEFAULT_VOLUME_INTENSITY,
+		volume?.anisotropy ?? DEFAULT_ANISOTROPY,
+		volume?.distance ?? DEFAULT_VOLUME_DISTANCE,
+	] as const;
+	if (DEV) {
+		checkFog(fog, values);
+		if (volume) checkVolume(volume, volumeValues);
+	}
+	writeLinearColor(values, fog.color, CALL);
+	core.glue.setFog(CURVES[fog.curve ?? 'exponential']);
+	// The volumetric fog reads its four numbers from the call values, which setFog has read.
+	const density = values[FIRST] as number;
+	values[0] = volumeValues[0];
+	values[1] = volumeValues[1];
+	values[2] = volumeValues[2];
+	values[3] = density;
+	core.glue.setFogVolume(volume !== undefined);
+	return volume !== undefined;
 }

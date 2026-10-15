@@ -13,6 +13,16 @@ interface LossResult {
 	error?: string;
 }
 
+interface MapResult {
+	tier: string;
+	code: string | null;
+	copies: string | null;
+	/** The middle pixel before and after the loss, as four bytes. */
+	before: number[];
+	after: number[];
+	error?: string;
+}
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine draws on after a GPU loss on ${gpu}, ${mode.name}`, async ({ page }) => {
@@ -32,6 +42,37 @@ for (const query of ['threads=off', 'render=main']) {
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe('webgl2');
 		expect(result.code).toBe('E1302');
+	});
+}
+
+// A map after a loss. The page's whole canvas is one image texture, magenta, and its material's
+// color is white, so a middle pixel whose green channel sits well below its red and blue shows the
+// map, and three equal channels show the color alone.
+const showsMap = (pixel: readonly number[]) =>
+	(pixel[1] as number) + 40 < (pixel[0] as number) &&
+	(pixel[1] as number) + 40 < (pixel[2] as number);
+
+// With keepTextureCopies the engine keeps the image's copy and the map comes back. Without it the
+// image is freed after its upload, and the texture draws with its color alone.
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a kept copy brings a map back after a GPU loss on ${gpu}`, async ({ page }) => {
+		await page.goto(`map-loss.html?gpu=${gpu}&copies=on`);
+		const result = await pageResult<MapResult>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.code).toBeNull();
+		expect(showsMap(result.before), `before ${result.before.join(', ')}`).toBe(true);
+		expect(showsMap(result.after), `after ${result.after.join(', ')}`).toBe(true);
+	});
+
+	test(`a freed copy leaves a texture without its map after a GPU loss on ${gpu}`, async ({
+		page,
+	}) => {
+		await page.goto(`map-loss.html?gpu=${gpu}&copies=off`);
+		const result = await pageResult<MapResult>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.code).toBeNull();
+		expect(showsMap(result.before), `before ${result.before.join(', ')}`).toBe(true);
+		expect(showsMap(result.after), `after ${result.after.join(', ')}`).toBe(false);
 	});
 }
 

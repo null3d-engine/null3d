@@ -3,22 +3,26 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, an outline mask, and one final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering."
+summary: "HDR scene color, ambient occlusion at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and one final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering."
 ---
 
 # The post-processing chain
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, depth of field, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves.
 
 ```mermaid
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     ao --> scene
-    scene["Scene passes:<br/>linear HDR color"] --> custom["Custom effects:<br/>joined into few passes"]
+    scene["Scene passes:<br/>linear HDR color"] --> fog["Volumetric fog:<br/>adds the light in the fog"]
+    fog --> custom["Custom effects:<br/>joined into few passes"]
     custom --> dof["Depth of field:<br/>three steps at half size,<br/>then a composite"]
     dof --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
-    dof --> final["Final pass: blends in bloom,<br/>then the vignette,<br/>FXAA and tone mapping"]
+    dof --> meter["Exposure meter:<br/>a histogram or a downsample<br/>into one texel"]
+    up --> meter
+    meter --> final["Final pass: blends in bloom,<br/>applies the adapted exposure,<br/>then the vignette,<br/>FXAA and tone mapping"]
+    dof --> final
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
     final --> line["In the same pass:<br/>the outline's line"]
@@ -26,7 +30,7 @@ flowchart LR
     grade --> canvas["Canvas"]
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
+Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -135,6 +139,42 @@ Depth of field adds three passes at half the render size and one at the render s
 - Its half-size targets take 8 bytes per texel. The setup's and the tent's share one texture, so the three take about 4 bytes per pixel of the canvas. The composite's target takes 8 bytes per pixel. They exist only while it draws.
 - While it is off, it costs nothing: none of its passes run, and its shaders do not download until the first `post.set({ dof })`.
 
+## Automatic exposure
+
+Automatic exposure adapts the picture to the scene's brightness, as an eye or a camera does. A meter on the GPU reads the color that the final pass reads, in the same frame. It writes the adapted exposure into one texel, and the final pass multiplies the color by it before FXAA, the vignette and the tone curve.
+
+```ts
+post.set({ autoExposure: { minEv: -6, speedDown: 0.7 } });
+```
+
+[The post-processing API](../api/post.md#automatic-exposure) lists the settings. The meter works in four steps:
+
+1. It reads the brightness of each sample of the image in stops: the base-2 logarithm of its luminance over middle gray, 0.18. Each sample counts with its center weight.
+2. It adds the samples to 128 bins of a quarter stop each, from -16 to +16 stops.
+3. It takes the weighted mean of the bins, or with `metering: 'percentile'` the mean between two shares of the total weight. So a bright window or a black corner moves the exposure less.
+4. It moves the stored exposure toward that result, within `minEv` to `maxEv`, at `speedUp` stops per second while the scene grows brighter, and `speedDown` while it grows darker. Within one stop it slows down, so it settles without a jump.
+
+- The scene draws at the camera's exposure, and the eye adapts from there. The adapted exposure multiplies the scene's color, bloom's glow and the effects that fold into the final pass. Custom effects, depth of field and bloom's threshold see the camera's exposure.
+- The first frame that meters takes its result at once. So a scene starts adapted, and hold mode's one frame shows the adapted image, the same in every run.
+- The scene color holds the camera's exposure, a 16-bit float with its full precision from about 2^-14 to 2^15. The default range of 4 stops either way loses nothing that shows. A scene that adapts much further does best with the camera's exposure near the middle of its range.
+
+### Where the meter runs
+
+The quality setting `exposureMeter` picks one of two meters:
+
+| Meter | How it meters | Where |
+| --- | --- | --- |
+| `'histogram'` | A compute step reads a grid of 128 samples on the render size's short side, one filtered tap each, and bins them in workgroup memory. A second step meters the bins and stores the exposure. | WebGPU, core and compatibility mode, on Medium and above |
+| `'downsample'` | A full-screen step draws 16 x 16 cells, each the mean of 16 filtered taps. A second step draws one texel: its one fragment bins the 256 cells and meters them, and a copy stores the result. | WebGL2, which has no compute shaders, and the Low preset on every path |
+
+Both meters take the same settings and meter the same way. The downsample's cells average their part of the image first, so its percentiles are coarser.
+
+It needs HDR color, as bloom does. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA. On a device with no HDR target it stays off, and development builds warn once.
+
+### Cost
+
+The meter adds two small steps and reads only a grid of the image, so its cost hardly follows the canvas's size. While automatic exposure is off, it costs nothing: none of its steps run, the final pass skips its texel, and its shaders do not download until the first `post.set({ autoExposure })`.
+
 ## Custom effects and tone curves
 
 A sketch adds effects of its own with `post.addEffect`. Each is a WGSL function that the engine calls for each pixel, in a full-screen pass of its own. [Custom passes](../guides/custom-passes.md) shows how to write one.
@@ -232,10 +272,10 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 
 - The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
 - The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
-- Both draw on every GPU path. On the 8-bit path there is no HDR color, so the vignette multiplies the linear value of the display color there.
+- Both draw on every GPU path. On the 8-bit path there is no HDR color, so the scene's shaders darken their light by the vignette before their own tone mapping, and a plain background color draws as a background so the vignette darkens it too.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
-- The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings, about 1.1% of the pixels differ, all in the outer corners. There three.js's darkness of 1.1 passes black sooner.
+- The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
 
 ## Dithering
 
@@ -244,14 +284,14 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 - The noise has the shape of a triangle: values near 0 come most often. Its strength is then the same at every brightness. Noise of even spread still shows bands at some brightness levels, as Mikkel Gjoel showed in "Banding in Games" (2016). Filament and Unity's URP dither with triangle noise too.
 - The noise is the same in every frame, so a still picture does not shimmer.
 - The dither comes after every other step, so no later step shrinks it. In the dark corners of a vignette, where bands show first, it keeps its full step.
-- On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table or the vignette.
+- On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table.
 
 ## Effects on devices without HDR color
 
-Bloom, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
+Bloom, depth of field, automatic exposure, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
 
-- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Bloom, a custom effect or a custom tone curve moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
-- WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
+- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Bloom, depth of field, automatic exposure, a custom effect, a custom tone curve or volumetric fog with `fogSlices` above 0 moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
+- WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom, depth of field, automatic exposure, volumetric fog and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
 
 The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.
 
@@ -268,9 +308,10 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
 - `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
 - `OutlinePass` blurs its edge, and `edgeStrength`, `edgeGlow` and `pulsePeriod` set how bright it is, how far it glows and how fast it pulses. null3D's line is crisp and opaque, so it has none of these settings. To pulse the line, change its color or width every frame.
-- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
+- three.js has no automatic exposure. pmndrs's `ToneMappingEffect` with `mode: ToneMappingMode.REINHARD2_ADAPTIVE` adapts, and becomes `post.set({ autoExposure: { metering: 'mean' } })`. Its `adaptationRate` becomes about `speedUp` and `speedDown`, and its `middleGrey` the `compensation`: `log2(middleGrey / 0.18)` stops. Its Reinhard curve becomes a custom tone curve. pmndrs meters a mip chain of the whole frame. null3D meters on the GPU with center weighting, so the result differs a little.
+- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies punchy AgX. A port that set `AgXToneMapping` sets `'agx'`. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`.
-- A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { size: offset, intensity: darkness } })`. The default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not.
+- A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { size: offset, intensity: darkness } })`. Under ACES the default falloff gives a close match. Under AgX, keep `intensity` at 1 or less and set `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not.
 - Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `ReinhardToneMapping`, `CineonToneMapping` and `CustomToneMapping` become a custom tone curve. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
 
 ## Related pages

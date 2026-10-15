@@ -2,7 +2,8 @@
 // with three.js: see-through planes and a sphere, created nearest first, which the engine must
 // draw farthest first with normal blending. ?custom draws the lit planes and the sphere with custom
 // materials whose surface function keeps the standard look, so the image must match the one
-// without it.
+// without it. ?tone=none turns off the engine's default curve, as the parity test asks: the three.js
+// twin draws with no tone mapping, three.js's default.
 import { defineSketch, type StandardOptions } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -15,8 +16,9 @@ import {
 	SUN,
 } from '../../../bench/scenes/transparency';
 
+const params = new URL(import.meta.url).searchParams;
 /** True when the sketch module's ?custom switch draws the lit glass with custom materials. */
-const CUSTOM = new URL(import.meta.url).searchParams.has('custom');
+const CUSTOM = params.has('custom');
 
 /** A surface function that keeps the material's own look. */
 const plain = /* wgsl */ `
@@ -25,7 +27,8 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	const lit = (options: StandardOptions) =>
 		CUSTOM ? materials.shader({ ...options, wgsl: plain }) : materials.standard(options);
 	scene.setBackground(BACKGROUND);

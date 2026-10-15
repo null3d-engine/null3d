@@ -54,6 +54,7 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 		`the skinned meshes fill more than ${pages} mesh pages, the most that GPU skinning reads`,
 	14: (views) =>
 		`the frame draws ${views} views, the camera's included, which is the most it draws`,
+	16: (lights) => `${lights} rectangle lights already show images, the most that can at once`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */

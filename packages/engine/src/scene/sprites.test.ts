@@ -16,6 +16,7 @@ import {
 	SPRITE_MAX_ATLAS_SIDE,
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Geometry, Materials, type MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -67,7 +68,7 @@ function fakeCore() {
 		lastErrorDetail: () => 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const makers: SpriteMakers = { geometry: new Geometry(core), materials: new Materials(core) };
 	const scene = new Scene(core, { frame: 1 }, false, undefined, undefined, makers);
 	return { core, makers, scene, materials, quads, batches, memory, destroyedMaterials };

@@ -21,6 +21,7 @@ import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels
 import { Ui } from '../sketch/ui';
 import { Cubemap } from './background';
 import { Environment } from './environment';
+import { withCallValues } from './fake-call-values';
 import { FrameCameras } from './frame-cameras';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
@@ -106,7 +107,7 @@ function fakeCore(largeWorld = false) {
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const control = controlViews(createControlBuffer(false));
 	/** The frame that the input event at each point names, by "x,y". */
 	const eventFrames = new Map<string, number>();

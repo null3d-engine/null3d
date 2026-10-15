@@ -30,7 +30,11 @@ const realGpu = !process.env.CI;
  */
 const PROGRAMS_PER_PART = 150;
 
-/** Enough parts that none holds more than that many programs. */
+/**
+ * Enough parts that each holds about that many programs. A part checks every so many device
+ * modules, and a build that several modules hold counts in each part that downloads one of them, so
+ * a part may hold somewhat more.
+ */
 const PARTS = Math.ceil(glslProgramsOf(await everyShader()).length / PROGRAMS_PER_PART);
 
 /**

@@ -79,6 +79,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/meshopt/meshopt_decoder.wasm',
 			'vendor/draco/draco_wasm_wrapper_gltf.js',
 			'vendor/draco/draco_decoder_gltf.wasm',
+			'vendor/ltc/area-light-tables.bin',
 			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],
@@ -92,12 +93,23 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {
 		compile: true,
 		shaders: false,
 		docs: false,
 		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
+	},
+	terrain: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine'],
+		// The surface function lives in a .wgsl file, which the built module imports and the null3D
+		// Vite plugin compiles for the project that uses the package.
+		required: ['lib/terrain.wgsl'],
 	},
 	cli: {
 		compile: false,
@@ -135,6 +147,16 @@ const RELATIVE = /^\.{1,2}\//;
 /** A built file whose imports the build rewrites: JavaScript or a type declaration. */
 const BUILT_FILE = /\.(?:js|d\.ts)$/;
 
+/**
+ * A file that the build copies from `src/` into `lib/` as it is: JavaScript, type declarations, and
+ * the WGSL that a package's own modules import, which the Vite plugin compiles in the project that
+ * uses the package. Only the first two have their imports rewritten.
+ */
+const COPIED_FILE = /\.(?:js|d\.ts|wgsl)$/;
+
+/** A WGSL file, which a module imports for the null3D Vite plugin to compile. */
+const WGSL_FILE = /\.wgsl$/;
+
 /** The built files in `lib/` of each repository-only entry point of a package. */
 export function repositoryOnlyFiles(build: PackageBuild): string[] {
 	return (build.repositoryOnly ?? []).flatMap((entry) => {
@@ -169,8 +191,11 @@ export function builtAddress(
 				[`${base}.js`, `${address}.js`],
 				[`${base}/index.js`, `${address}/index.js`],
 			];
+	// A script becomes the `.js` file that TypeScript wrote, or a folder its `index.js`. A `.wgsl`
+	// file stays itself: the build copies it into `lib/`, and the null3D Vite plugin compiles it in
+	// the project that uses the package.
 	for (const [path, rewritten] of candidates)
-		if (/\.[cm]?js$/.test(path) && exists(path)) return rewritten;
+		if ((/\.[cm]?js$/.test(path) || WGSL_FILE.test(path)) && exists(path)) return rewritten;
 	return null;
 }
 
@@ -331,7 +356,7 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 		],
 		root,
 	);
-	for (const path of walkFiles(dir, 'src', (path) => BUILT_FILE.test(path))) {
+	for (const path of walkFiles(dir, 'src', (path) => COPIED_FILE.test(path))) {
 		const to = join(lib, path.slice('src/'.length));
 		mkdirSync(dirname(to), { recursive: true });
 		copyFileSync(join(dir, path), to);

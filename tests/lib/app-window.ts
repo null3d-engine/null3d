@@ -9,12 +9,7 @@
 // since a page that fills the window draws fewer pixels in a small one.
 
 import { execFileSync } from 'node:child_process';
-import {
-	type Browser,
-	type BrowserContextOptions,
-	type LaunchOptions,
-	type Page,
-} from '@playwright/test';
+import type { Browser, BrowserContextOptions, LaunchOptions, Page } from '@playwright/test';
 import { launchChromium } from '../../packages/cli/src/browser.js';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 
@@ -206,6 +201,42 @@ export async function keepingFocus<T>(step: () => Promise<T>): Promise<T> {
 	}
 }
 
+/** The scheduling priority that `ps` shows on macOS for a process at background priority. */
+export const BACKGROUND_PRIORITY = 4;
+
+/**
+ * Why a browser that this process starts would run too slowly to time, or undefined when it would
+ * not. macOS runs a process started with `taskpolicy -b` at background priority. Each of its
+ * children inherits that priority, and no call lifts it again. Chrome then draws 5 to 11 frames a
+ * second, even in a parked window, and fires its timers about 80 ms late.
+ */
+export function priorityProblem(priority: number | undefined): string | undefined {
+	if (priority === undefined || priority > BACKGROUND_PRIORITY) return undefined;
+	return `this process runs at macOS background priority (${priority}), which every browser it starts inherits: Chrome then draws about 10 frames a second and its timers fire late, so no timing would hold. It was most likely started by a job run with \`taskpolicy -b\`. Start it from a shell at normal priority`;
+}
+
+/** A process's scheduling priority as `ps` shows it on macOS, or undefined elsewhere or when `ps` fails. */
+export function processPriority(pid: number = process.pid): number | undefined {
+	if (process.platform !== 'darwin') return undefined;
+	try {
+		const priority = Number(
+			execFileSync('ps', ['-o', 'pri=', '-p', String(pid)], { encoding: 'utf8', timeout: 10_000 }),
+		);
+		return Number.isFinite(priority) ? priority : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Throws before a timing tool starts a browser at background priority, where every figure would be
+ * wrong. Each tool that starts Chrome for timing calls it, through `launchInWindow` or itself.
+ */
+export function refuseBackgroundPriority(): void {
+	const problem = priorityProblem(processPriority());
+	if (problem) throw new Error(problem);
+}
+
 /**
  * Switches that keep a window in the background, or covered by other windows, drawing at full speed,
  * so timings hold while the person at the Mac works in front of it. Playwright passes them too.
@@ -236,9 +267,11 @@ function mainDisplaySwitch(): string[] {
  * Starts Chrome, or another Chromium browser, in a window through Playwright, with the switches that
  * keep it drawing at full speed behind other windows. On a person's Mac, each window opens on the
  * main display. Focus then goes back to the app in front before. Each page then opens through
- * `newParkedPage`, or `parkChromeWindow` parks its window.
+ * `newParkedPage`, or `parkChromeWindow` parks its window. It refuses to start at background
+ * priority, where no timing would hold.
  */
 export function launchInWindow(options: LaunchOptions = {}): Promise<Browser> {
+	refuseBackgroundPriority();
 	return keepingFocus(() =>
 		launchChromium({
 			...options,

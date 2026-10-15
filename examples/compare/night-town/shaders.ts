@@ -123,7 +123,8 @@ fn surface(input: SurfaceInput) -> Surface {
     let glow = room * strength * lit * curtain * depth * shelves * (0.7 + 0.6 * kind);
 
     let roof = n.y > 0.5;
-    let tar = vec3f(0.035, 0.036, 0.04) * (0.8 + 0.4 * fract(sin(dot(floor(input.worldPosition.xz * 2.0), vec2f(12.9898, 78.233))) * 43758.5453));
+    let grain = vec2i(floor(input.worldPosition.xz * 2.0));
+    let tar = vec3f(0.035, 0.036, 0.04) * (0.8 + 0.4 * town_hash(grain.x, grain.y, 0));
     s.baseColor = select(s.baseColor * texel.rgb, tar, roof);
     s.roughness = select(orm.g, 0.45, roof);
     s.metalness = select(orm.b, 0.0, roof);
@@ -152,8 +153,17 @@ var normalMap: texture_2d<f32>;
 var puddleMap: texture_2d<f32>;
 var mirror: texture_2d<f32>;
 
+fn town_hash(a: i32, b: i32, c: i32) -> f32 {
+    var h = (bitcast<u32>(a) * 0x27d4eb2du) ^ (bitcast<u32>(b) * 0x165667b1u) ^ (bitcast<u32>(c) * 0x9e3779b9u);
+    h = h ^ (h >> 15u);
+    h = h * 0x2c1b3c6du;
+    h = h ^ (h >> 12u);
+    h = h * 0x297a2d39u;
+    h = h ^ (h >> 15u);
+    return f32(h >> 8u) / 16777216.0;
+}
 fn ripple_hash(c: vec2f) -> f32 {
-    return fract(sin(dot(c, vec2f(127.1, 311.7))) * 43758.5453);
+    return town_hash(i32(c.x), i32(c.y), 0);
 }
 
 fn surface(input: SurfaceInput) -> Surface {
@@ -288,8 +298,17 @@ fn surface(input: SurfaceInput) -> Surface {
 export const SKY_WGSL = /* wgsl */ `
 struct Uniforms { moon: vec3f, time: f32, cover: f32, brightness: f32 }
 
+fn town_hash(a: i32, b: i32, c: i32) -> f32 {
+    var h = (bitcast<u32>(a) * 0x27d4eb2du) ^ (bitcast<u32>(b) * 0x165667b1u) ^ (bitcast<u32>(c) * 0x9e3779b9u);
+    h = h ^ (h >> 15u);
+    h = h * 0x2c1b3c6du;
+    h = h ^ (h >> 12u);
+    h = h * 0x297a2d39u;
+    h = h ^ (h >> 15u);
+    return f32(h >> 8u) / 16777216.0;
+}
 fn sky_hash(p: vec2f) -> f32 {
-    return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
+    return town_hash(i32(p.x), i32(p.y), 0);
 }
 
 fn sky_noise(p: vec2f) -> f32 {
@@ -318,7 +337,7 @@ fn sky_fbm(start: vec2f) -> f32 {
 fn sky_star(d: vec3f) -> f32 {
     let q = d * 160.0;
     let cell = floor(q);
-    let h = fract(sin(dot(cell, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
+    let h = town_hash(i32(cell.x), i32(cell.y), i32(cell.z));
     let spot = length(fract(q) - 0.5);
     return step(0.985, h) * (1.0 - smoothstep(0.0, 0.3, spot)) * (h - 0.985) / 0.015;
 }

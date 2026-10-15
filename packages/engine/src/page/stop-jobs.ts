@@ -13,6 +13,7 @@
 // frame jobs instead of blocking.
 
 import { Slot } from '../shared/control';
+import { MemoryViews } from '../shared/memory-views';
 
 /**
  * How long stopping the engine waits for its job workers and the worker that draws to stop. A
@@ -28,10 +29,11 @@ export const STOP_TIMEOUT_MS = 2_000;
  * job system, and nothing after the first call.
  */
 export function stopJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): void {
+	// The addresses sit in the shared Int32 slots, so above 2 GiB each reads signed (hard rule 31).
 	stopJobWorkersAt(
 		memory,
-		Atomics.load(slots, Slot.JobsWakeAddress),
-		Atomics.load(slots, Slot.JobsStopAddress),
+		Atomics.load(slots, Slot.JobsWakeAddress) >>> 0,
+		Atomics.load(slots, Slot.JobsStopAddress) >>> 0,
 	);
 }
 
@@ -41,14 +43,13 @@ export function stopJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): v
  */
 export function stopJobWorkersAt(memory: WebAssembly.Memory, wake: number, stop: number): void {
 	if (wake === 0 || stop === 0) return;
-	const buffer = memory.buffer;
-	const flags = new Uint8Array(buffer);
-	if (Atomics.load(flags, stop) !== 0) return;
-	Atomics.store(flags, stop, 1);
-	const words = new Int32Array(buffer);
-	const word = wake / Int32Array.BYTES_PER_ELEMENT;
-	Atomics.add(words, word, 1);
-	Atomics.notify(words, word);
+	const views = new MemoryViews(memory);
+	const flag = views.view(Uint8Array, stop, 1);
+	if (Atomics.load(flag, 0) !== 0) return;
+	Atomics.store(flag, 0, 1);
+	const word = views.view(Int32Array, wake, 1);
+	Atomics.add(word, 0, 1);
+	Atomics.notify(word, 0);
 }
 
 /**
@@ -76,17 +77,17 @@ export function waitForJobWorkersToLeave(slots: Int32Array, ms = LEAVE_WAIT_MS):
  * it asks nothing, and the returned call does nothing.
  */
 export function yieldJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): () => void {
-	const wake = Atomics.load(slots, Slot.JobsWakeAddress);
-	const word = Atomics.load(slots, Slot.JobsYieldAddress);
+	// The addresses sit in the shared Int32 slots, so above 2 GiB each reads signed (hard rule 31).
+	const wake = Atomics.load(slots, Slot.JobsWakeAddress) >>> 0;
+	const word = Atomics.load(slots, Slot.JobsYieldAddress) >>> 0;
 	if (wake === 0 || word === 0) return () => {};
 	// Each step makes its own view and keeps none, since the memory may grow meanwhile.
-	const words = () => new Int32Array(memory.buffer);
-	const at = (address: number) => address / Int32Array.BYTES_PER_ELEMENT;
-	Atomics.add(words(), at(word), 1);
-	const woken = words();
-	Atomics.add(woken, at(wake), 1);
-	Atomics.notify(woken, at(wake));
+	const views = new MemoryViews(memory);
+	Atomics.add(views.i32(word, 1), 0, 1);
+	const woken = views.i32(wake, 1);
+	Atomics.add(woken, 0, 1);
+	Atomics.notify(woken, 0);
 	return () => {
-		Atomics.sub(words(), at(word), 1);
+		Atomics.sub(views.i32(word, 1), 0, 1);
 	};
 }

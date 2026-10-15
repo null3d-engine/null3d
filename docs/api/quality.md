@@ -66,6 +66,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `shadowFilter` | 3 or 5: the texels on each side of the square that blends each shadow's edge. 5 gives softer edges and costs more for each pixel that receives shadows. | During play. |
 | `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
 | `followMovingCasters` | `true` or `false`: whether a far shadow cascade draws in every frame while a moving caster touches it. `false` keeps each far cascade to its turns, so a far moving shadow can trail its caster by a few frames. Every preset turns it on. | During play. |
+| `farAnimationInterval` | A whole number from 1 to 4: a far character's pose updates once in this many frames. Give it to [`animator.setUpdateInterval`](animation.md#crowds) for the characters that the camera sees from far, and 1 to those near it. | During play. The governor raises it after every other step. |
 | `shadowCascadeBlend` | A number from 0 to 0.5: the share of each shadow cascade's length, at its far end, over which its shadows blend into the next cascade's. 0 hands over at once. | During play. |
 | `bloomSize` | 64, 128, 256 or 512: the texels on the short side of bloom's largest level. A smaller value costs less and keeps the glow's size, with a softer core. | During play. Bloom's targets are made again. |
 | `aoScale` | 0.5, 0.25 or 0: the size of ambient occlusion's targets as a share of the render size. 0 draws no ambient occlusion even when `post.set` turns it on. | During play. |
@@ -77,7 +78,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `lodThreshold` | A number from 0 to 16: the error in pixels under which a mesh's coarser [level of detail](../concepts/lod.md) draws. A larger number draws coarser levels nearer the camera, which costs less. 0 draws every mesh's base level. | During play. |
 | `lodShadowFactor` | A number from 1 to 16: what the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level than the camera sees. 1 draws the camera's level. | During play. |
 | `lodFade` | `true` or `false`: whether two levels of detail hand over in a short dithered band past each switch distance. `false` switches at once. | During play. |
-| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the levels of detail, the shadow settings, bloom's size, ambient occlusion's scale and the steps of contact shadows when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the other settings as set. |
+| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the levels of detail, the shadow settings, bloom's size, ambient occlusion's scale, the steps of contact shadows and the far characters' update interval when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the other settings as set. |
 | `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
 | `shadowCascades` | A whole number from 1 to 4: the cascades of a directional light's shadows, for each light whose `shadow` options name none. | At the start only. The page's `shadowCascades` option sets it. |
 | `shadowMapSize` | 512, 1,024, 2,048 or 4,096: the texels on each side of each cascade's shadow map, for each light whose `shadow` options name no `mapSize`. | At the start only. The page's `shadowMapSize` option sets it. |
@@ -121,16 +122,17 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first, then the levels of detail, then the live shadow settings, then bloom's size, ambient occlusion's scale and the steps of contact shadows. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
+When frames take too long, the engine lowers the render scale first. Then it lowers the levels of detail, the live shadow settings, bloom's size and ambient occlusion's scale. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
 
 | Member | What it holds |
 | --- | --- |
-| `steps` | The governor's steps past the render scale: 0 while the shadow settings, bloom's size, ambient occlusion's scale and the steps of contact shadows apply as set. |
+| `steps` | The governor's steps past the render scale: 0 while the shadow settings, bloom's size, ambient occlusion's scale, the steps of contact shadows and the far characters' update interval apply as set. |
 | `farCascadeInterval` | How often each far shadow cascade draws now: the setting's value, or up to twice as long for each step, at most every 8th frame. |
 | `shadowFilter` | The shadow filter now: the setting's value, or 3 after its step. |
 | `bloomSize` | Bloom's size now: the setting's value, or half of it after its step while bloom is on. |
 | `aoScale` | Ambient occlusion's scale now: the setting's value, or half of it after the step that follows bloom's while ambient occlusion draws. |
-| `contactShadowSteps` | The steps of contact shadows now: the setting's value, or 4 after the last step while the directional light casts shadows. |
+| `contactShadowSteps` | The steps of contact shadows now: the setting's value, or 4 after its step while the directional light casts shadows. |
+| `farAnimationInterval` | How often a far character's pose updates now: the setting's value, or up to twice as long for each of the last steps, at most every 4th frame. |
 
 The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
 

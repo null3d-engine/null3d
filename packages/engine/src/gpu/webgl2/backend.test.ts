@@ -10,6 +10,8 @@ import { WebGL2Backend } from './backend';
  */
 function fakeContext(uniforms = false) {
 	const calls: string[] = [];
+	/** The attachment lists passed to `invalidateFramebuffer`, in call order. */
+	const invalidates: number[][] = [];
 	let constants = 0;
 	const values = new Map<string, number>();
 	const constant = (name: string) => {
@@ -21,8 +23,9 @@ function fakeContext(uniforms = false) {
 		{
 			get(_, name: string) {
 				if (/^[A-Z0-9_]+$/.test(name)) return constant(name);
-				return () => {
+				return (...args: unknown[]) => {
 					calls.push(name);
+					if (name === 'invalidateFramebuffer') invalidates.push((args[1] as number[]) ?? []);
 					if (name === 'checkFramebufferStatus') return constant('FRAMEBUFFER_COMPLETE');
 					if (name === 'getExtension') return null;
 					if (name === 'getParameter') return 4;
@@ -35,7 +38,7 @@ function fakeContext(uniforms = false) {
 			},
 		},
 	);
-	return { gl: gl as WebGL2RenderingContext, calls };
+	return { gl: gl as WebGL2RenderingContext, calls, invalidates };
 }
 
 describe('WebGL2Backend', () => {
@@ -69,6 +72,28 @@ describe('WebGL2Backend', () => {
 		backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
 		expect(calls.filter((name) => name === 'createFramebuffer')).toHaveLength(2);
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
+	});
+
+	it('invalidates no attachment a pass does not have', async () => {
+		const { gl, invalidates } = fakeContext();
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		// Two passes: a fullscreen step into its own colour target with no depth, as an effect's step,
+		// and a depth-only pass that keeps its depth. Neither may invalidate an attachment it lacks.
+		push(G.OP_CREATE_TEXTURE, [1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D]);
+		push(G.OP_CREATE_TEXTURE, [2, 4, 4, 1, G.FORMAT_DEPTH24_PLUS, usage, 1, 1, G.VIEW_2D]);
+		push(G.OP_BEGIN_RENDER_PASS, [1, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_STORE_COLOR]);
+		push(G.OP_END_RENDER_PASS, []);
+		push(G.OP_BEGIN_RENDER_PASS, [G.NO_TARGET, G.NO_TARGET, 2, 0, 0, 0, 0, 0, G.PASS_STORE_DEPTH]);
+		push(G.OP_END_RENDER_PASS, []);
+		const list = new Uint32Array(words);
+		backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		// GL's depth attachment, which no pass here lacks while it stores.
+		expect(invalidates.flat()).not.toContain(0x8d00);
 	});
 
 	it("makes the levels of a linear render target of one layer with GL's own generateMipmap", async () => {

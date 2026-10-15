@@ -29,6 +29,7 @@ A material has two parts. Its values, such as its color and roughness, sit in on
 | `materials.standard` | glTF's metallic-roughness model, lit by the scene's lights | `MeshStandardMaterial` |
 | `materials.unlit` | Its color alone, without lights | `MeshBasicMaterial` |
 | `materials.shader` | The standard model, with a WGSL surface function that changes the look | `ShaderMaterial`, `onBeforeCompile` |
+| `materials.shadowCatcher` | Only the shadows that fall on it, and nothing where the light reaches it | `ShadowMaterial` |
 
 The standard material uses the same formulas as three.js's `MeshStandardMaterial`. It also reads three.js's own table of specular terms, so its highlights and its energy match three.js's. [Materials](../api/materials.md) lists every option.
 
@@ -58,6 +59,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | `transmission` | A shader variant that samples a copy of the opaque objects' colors, and the transparent pass |
 | `diffuseTransmission` | A shader variant that lights the surface's back too, and lets that light through to its front |
 | `subsurfaceRadius` | The skin pass, which draws the object again with shaders of its own, and the subsurface blur after the scene |
+| A clear coat or a sheen | A shader variant that lights the layers above the surface, whose shaders load with the first such material |
 | `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
 | `flatShading` | The material's row: every standard shader can light with face normals |
@@ -99,6 +101,8 @@ Sorting by object has these limits:
 - Surfaces that cross each other have no right order. One object draws before the other, so where the second lies behind the first, it shows wrong. Split such meshes, or give them `depthWrite: false` so they never hide each other.
 - A large object, such as a long glass wall, has one center. A small object can have a center that is farther away than the wall's while it stands in front of the wall. Split large blended meshes, or set their order with `setRenderOrder`.
 - The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided. A double-sided one draws its back faces first, then its front faces, as three.js draws it. So its near side covers its far side. Each run of neighbors that share its mesh and material takes a second draw. On flat surfaces, whose faces never overlap, `forceSinglePass: true` saves it.
+
+Surfaces of the `weighted` blending need no sort. In the camera's view they leave the transparent pass and draw after it, in any order, into two targets of their own. A last step blends their weighted average over the scene, as far as they cover it together ([Weighted blending](../api/materials.md#weighted-blending)). Use it where the limits above make smoke, particles or crossing panes pop.
 
 Surfaces that let light through, which `transmission` makes, draw in the transparent pass too, sorted with the blended ones. Before the camera's transparent pass, the engine copies its opaque objects' colors into a texture with blurred levels, which those surfaces sample behind them ([Transmission](../api/materials.md#transmission)).
 

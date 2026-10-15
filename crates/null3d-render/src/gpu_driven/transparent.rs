@@ -6,6 +6,9 @@
 //! where the vertex shaders of rows with row values find them. Instance data reaches vertex shaders only through
 //! vertex buffers, so each draw binds its slice of that buffer at vertex slot 1, and its first
 //! instance stays 0.
+//!
+//! The decal pass draws the camera view's decals the same way, from a layout and an instance
+//! buffer of its own, with the group of the scene's depth after each bucket's maps.
 
 use std::collections::TryReserveError;
 
@@ -19,7 +22,8 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, si
 use super::ids;
 use super::skin::{DrawGroups, SkinnedPart, Skinning};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
-use crate::sorted::{SortedLayout, SortedSource, SortedView};
+use crate::particles::ParticlePass;
+use crate::sorted::{SortedLayout, SortedRows, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
 /// Rows from which the job workers write the instances too.
@@ -27,14 +31,36 @@ const PARALLEL_ROWS: usize = 8192;
 /// Rows per chunk of that write.
 const ROWS_PER_CHUNK: u32 = 2048;
 /// Each view's sorted rows and instance buffer.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct Transparent {
     views: Vec<SortedView>,
     /// Bytes of each view's instance buffer, 0 before it exists.
     buffers: Vec<u32>,
+    /// The id of the first view's instance buffer. The other views' follow it.
+    first_buffer: u32,
+}
+
+impl Default for Transparent {
+    fn default() -> Self {
+        Self::with_buffers(ids::sorted(ViewId::CAMERA))
+    }
 }
 
 impl Transparent {
+    /// The passes of views whose instance buffers take ids from `first_buffer` on.
+    pub(super) fn with_buffers(first_buffer: u32) -> Self {
+        Self {
+            views: Vec::new(),
+            buffers: Vec::new(),
+            first_buffer,
+        }
+    }
+
+    /// The id of a view's instance buffer.
+    fn buffer(&self, view: ViewId) -> u32 {
+        self.first_buffer + view.index() as u32
+    }
+
     /// The most bytes that one frame's instances take in its arena.
     pub(super) fn upload_bound(layout: &SortedLayout, views: usize) -> usize {
         views * layout.rows() as usize * sizes::INSTANCE_STRIDE as usize
@@ -75,7 +101,7 @@ impl Transparent {
                 list.push(
                     Op::CreateBuffer,
                     &[
-                        ids::sorted(ViewId::from_index(index)),
+                        self.first_buffer + index as u32,
                         *made,
                         usage::VERTEX | usage::COPY_DST,
                     ],
@@ -168,7 +194,7 @@ impl Transparent {
         }
         list.push(
             Op::WriteBuffer,
-            &[ids::sorted(view), 0, at, (items.len() * stride) as u32],
+            &[self.buffer(view), 0, at, (items.len() * stride) as u32],
         )?;
         Ok(())
     }
@@ -177,15 +203,22 @@ impl Transparent {
     /// run of sorted rows that share a bucket, with one instanced draw per part of the bucket's
     /// mesh for each of the bucket's passes, from its slice of the view's sorted instances. A skinned object's bucket draws its
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
-    /// It leaves out the objects whose maps show a target that the view does not read.
+    /// It leaves out the objects whose maps show a target that the view does not read. `rows`
+    /// picks the buckets that draw, and their pipelines: those of the transparent pass, or of the
+    /// camera's weighted layer. Each draw binds group `last`, where it is not 0, after its
+    /// bucket's groups, as decals bind the scene's depth.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         list: &mut DrawList,
         view: ViewId,
+        rows: SortedRows,
         layout: &SortedLayout,
         skinning: &Skinning,
         settings: &SceneSettings,
         meshes: &MeshBuffers,
+        last: u32,
+        particles: &ParticlePass,
     ) -> Result<(), RecordError> {
         let draws = self.views[view.index()].draws();
         if draws.is_empty() {
@@ -202,21 +235,34 @@ impl Transparent {
         let textures = settings.textures();
         for draw in draws {
             let bucket = layout.buckets[draw.bucket as usize];
+            if rows.passes(&bucket).next().is_none() {
+                continue;
+            }
             if hidden_targets != 0
                 && bucket.textures != 0
                 && textures.group_pass_views(bucket.textures) & hidden_targets != 0
             {
                 continue;
             }
+            // A particle system draws its records with its own groups, which every later draw
+            // sets again.
+            if let Some(system) = bucket.particle_system() {
+                if particles.record(list, view, system, bucket.pipeline, bucket.textures)? {
+                    pipeline = None;
+                    vertices = None;
+                    groups = DrawGroups::default();
+                }
+                continue;
+            }
             let skinned = bucket.skinned_slot();
             let skins = skinned.is_some_and(|slot| skinning.skins_in_vertex_shader(slot));
-            groups.set(list, bucket.textures, skins, 0)?;
+            groups.set(list, bucket.textures, skins, last)?;
             let regions = skinned.and_then(|slot| skinning.parts_of(slot));
             list.push(
                 Op::SetVertexBuffer,
                 &[
                     1,
-                    ids::sorted(view),
+                    self.buffer(view),
                     draw.first * stride,
                     draw.count * stride,
                 ],
@@ -224,7 +270,7 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            for pass in bucket.passes() {
+            for pass in rows.passes(&bucket) {
                 if pipeline != Some(pass) {
                     list.push(Op::SetPipeline, &[pass])?;
                     pipeline = Some(pass);

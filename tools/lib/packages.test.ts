@@ -18,6 +18,7 @@ const BUILT = new Set([
 	'page/engine.js',
 	'render/draw.js',
 	'scene/ktx2.js',
+	'shader.wgsl',
 	'workers/sketch-worker.js',
 	'workers/transcoder-worker.js',
 	'shared/index.js',
@@ -36,9 +37,14 @@ describe('builtAddress', () => {
 		);
 	});
 
+	it('keeps a copied .wgsl file, which the null3D Vite plugin compiles', () => {
+		expect(builtAddress('material.js', './shader.wgsl', exists)).toBe('./shader.wgsl');
+	});
+
 	it('is null when no built file answers', () => {
 		expect(builtAddress('index.js', './missing', exists)).toBeNull();
 		expect(builtAddress('index.js', './missing.ts', exists)).toBeNull();
+		expect(builtAddress('index.js', './missing.wgsl', exists)).toBeNull();
 		expect(builtAddress('scene/ktx2.js', '../../vendor/basis/basis.wasm', exists)).toBeNull();
 	});
 });

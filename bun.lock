@@ -24,6 +24,7 @@
         "@null3d/cli": "workspace:*",
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
+        "@null3d/particles": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
         "@types/three": "0.186.0",
@@ -41,6 +42,8 @@
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
         "@null3d/geometry": "workspace:*",
+        "@null3d/particles": "workspace:*",
+        "@null3d/terrain": "workspace:*",
         "@types/three": "0.186.0",
         "@webgpu/types": "0.1.74",
         "three": "0.186.1",
@@ -102,6 +105,41 @@
         "@null3d/engine": "workspace:*",
       },
     },
+    "packages/impostors": {
+      "name": "@null3d/impostors",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+      },
+    },
+    "packages/particles": {
+      "name": "@null3d/particles",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+      },
+    },
+    "packages/terrain": {
+      "name": "@null3d/terrain",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
+      },
+    },
     "packages/vite-plugin": {
       "name": "@null3d/vite-plugin",
       "version": "0.0.0",
@@ -126,6 +164,8 @@
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
         "@null3d/geometry": "workspace:*",
+        "@null3d/particles": "workspace:*",
+        "@null3d/terrain": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
         "@types/three": "0.186.0",
@@ -134,6 +174,9 @@
         "vite": "8.3.1",
       },
     },
+  },
+  "patchedDependencies": {
+    "three@0.186.1": "patches/three@0.186.1.patch",
   },
   "packages": {
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
@@ -215,6 +258,12 @@
     "@null3d/examples": ["@null3d/examples@workspace:examples"],
 
     "@null3d/geometry": ["@null3d/geometry@workspace:packages/geometry"],
+
+    "@null3d/impostors": ["@null3d/impostors@workspace:packages/impostors"],
+
+    "@null3d/particles": ["@null3d/particles@workspace:packages/particles"],
+
+    "@null3d/terrain": ["@null3d/terrain@workspace:packages/terrain"],
 
     "@null3d/tests": ["@null3d/tests@workspace:tests"],
 

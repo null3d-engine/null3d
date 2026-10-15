@@ -17,6 +17,7 @@ function post(
 ): {
 	post: Post;
 	dofs: [boolean, ...number[]][];
+	exposures: [boolean, ...number[]][];
 	needs: string[];
 	calls: [number, number][];
 	blooms: [boolean, ...number[]][];
@@ -33,6 +34,7 @@ function post(
 	const vignettes: [boolean, ...number[]][] = [];
 	const outlines: number[][] = [];
 	const dofs: [boolean, ...number[]][] = [];
+	const exposures: [boolean, ...number[]][] = [];
 	const needs: string[] = [];
 	const block = Float32Array.of(
 		...[1, 0.15, 0, 0.1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
@@ -41,6 +43,7 @@ function post(
 		...[0, 0.28, 0.1872, 0.1359, 0.1012, 0.0754, 0.0562, 0.0419, 0.1223, 0, 0],
 		...[2, 0],
 		...[10, 2.8, 0, 0.02, 0, 0, 0, 0, 0],
+		...[1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -99,6 +102,12 @@ function post(
 				dofs.push([on, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
 				return 0;
 			},
+			setAutoExposure(on: boolean) {
+				const first = C.POST_VALUE_AUTO_EXPOSURE_METERING;
+				const values = [...block.subarray(first, C.POST_VALUE_AUTO_EXPOSURE_COMPENSATION + 1)];
+				exposures.push([on, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
+				return 0;
+			},
 			setOutline(on: boolean) {
 				const first = C.POST_VALUE_OUTLINE_COLOR;
 				const values = [...block.subarray(first, C.POST_VALUE_OUTLINE_WIDTH + 1)];
@@ -107,11 +116,13 @@ function post(
 			},
 		},
 		check: (result: number) => result,
+		holdViews: () => {},
 	} as unknown as CoreMemory;
 	const shaders = { need: (feature: string) => needs.push(feature) } as unknown as ShaderPreloads;
 	return {
 		post: new Post(core, hdrEffects, occlusionTargets, shaders),
 		dofs,
+		exposures,
 		needs,
 		calls,
 		blooms,
@@ -133,11 +144,13 @@ describe('post.set', () => {
 		output.set({ exposure: 2 });
 		output.set({ toneMapping: 'none', exposure: 0.5 });
 		output.set({});
+		output.set({ toneMapping: 'agx-punchy' });
 		expect(calls).toEqual([
 			[C.TONE_MAPPING_AGX, 1],
 			[C.TONE_MAPPING_AGX, 2],
 			[C.TONE_MAPPING_NONE, 0.5],
 			[C.TONE_MAPPING_NONE, 0.5],
+			[C.TONE_MAPPING_AGX_PUNCHY, 0.5],
 		]);
 	});
 
@@ -166,10 +179,10 @@ describe('post.set', () => {
 		expect(bad({ outline: 3 })).toThrow('E1213');
 	});
 
-	it('starts from ACES at an exposure of 1', () => {
+	it('starts from punchy AgX at an exposure of 1', () => {
 		const { post: output, calls } = post();
 		output.set({});
-		expect(calls).toEqual([[C.TONE_MAPPING_ACES, 1]]);
+		expect(calls).toEqual([[C.TONE_MAPPING_AGX_PUNCHY, 1]]);
 	});
 
 	it('turns bloom on with its defaults and the values given, keeps them while off, and sends them only with bloom', () => {
@@ -250,6 +263,66 @@ describe('post.set', () => {
 		]);
 		expect(needs.filter((feature) => feature === 'dof')).toHaveLength(5);
 		expect(output.needsHdr).toBe(false);
+	});
+
+	it('turns automatic exposure on with its meter, speeds and range, and loads its shaders only when on', () => {
+		const { post: output, exposures, needs } = post();
+		output.set({ autoExposure: false });
+		expect(output.needsHdr).toBe(false);
+		output.set({ autoExposure: {} });
+		output.set({ autoExposure: { metering: 'mean', centerWeight: 0, speedUp: 5 } });
+		output.set({
+			autoExposure: { metering: 'percentile', percentiles: [0.5, 0.5], minEv: -8, maxEv: 2 },
+		});
+		output.set({ autoExposure: { speedDown: 0.5, compensation: -1.5 } });
+		expect(output.needsHdr).toBe(true);
+		output.set({ autoExposure: false });
+		expect(exposures).toEqual([
+			[false, 1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
+			[true, 1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
+			[true, 0, 0.1, 0.9, 0, 5, 1, -4, 4, 0],
+			[true, 1, 0.5, 0.5, 0, 5, 1, -8, 2, 0],
+			[true, 1, 0.5, 0.5, 0, 5, 0.5, -8, 2, -1.5],
+			[false, 1, 0.5, 0.5, 0, 5, 0.5, -8, 2, -1.5],
+		]);
+		expect(needs.filter((feature) => feature === 'exposure')).toHaveLength(4);
+		expect(output.needsHdr).toBe(false);
+	});
+
+	it('refuses automatic exposure settings it does not know and values out of range', () => {
+		const { post: output } = post();
+		const bad = (settings: unknown) => () => output.set({ autoExposure: settings } as PostSettings);
+		expect(bad({ adaptationRate: 1 })).toThrow('E1213');
+		expect(bad({ metering: 'spot' })).toThrow('E1213');
+		expect(bad({ percentiles: [0.9, 0.1] })).toThrow('E1213');
+		expect(bad({ percentiles: [0.1] })).toThrow('E1213');
+		expect(bad({ percentiles: [0, 1.5] })).toThrow('E1213');
+		expect(bad({ centerWeight: 1.5 })).toThrow('E1213');
+		expect(bad({ speedUp: -1 })).toThrow('E1213');
+		expect(bad({ minEv: -21 })).toThrow('E1213');
+		expect(bad({ compensation: Number.NaN })).toThrow('E1203');
+		expect(bad({ minEv: 2, maxEv: 1 })).toThrow('E1213');
+		expect(bad(true)).toThrow('E1213');
+		expect(() =>
+			output.set({ autoExposure: { metering: 'mean', minEv: -20, maxEv: 20, compensation: 3 } }),
+		).not.toThrow();
+	});
+
+	it('keeps automatic exposure off and its shaders unloaded where the device has no HDR target', () => {
+		const { post: output, exposures, needs } = post(false);
+		const warnings: unknown[] = [];
+		const warn = console.warn;
+		console.warn = (message: unknown) => warnings.push(message);
+		try {
+			output.set({ autoExposure: {} });
+			output.set({ autoExposure: { minEv: -6 } });
+		} finally {
+			console.warn = warn;
+		}
+		expect(warnings).toHaveLength(1);
+		expect(String(warnings[0])).toContain('automatic exposure');
+		expect(needs).toEqual([]);
+		expect(exposures.map(([on]) => on)).toEqual([true, true]);
 	});
 
 	it('refuses depth of field settings it does not know and values out of range', () => {
@@ -436,7 +509,7 @@ describe('post.set', () => {
 		expect(calls.length).toBe(1);
 		// The refused EV100 is not kept.
 		output.set({ exposure: 1 });
-		expect(calls[1]).toEqual([C.TONE_MAPPING_ACES, 1]);
+		expect(calls[1]).toEqual([C.TONE_MAPPING_AGX_PUNCHY, 1]);
 	});
 
 	it('refuses a value that is not a finite number with E1203', () => {

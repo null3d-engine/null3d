@@ -41,6 +41,45 @@ Workaround in the engine: the multi-draw builds read their draw records from a t
 
 To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the failing program's two shaders.
 
+## Adreno 619: the floats of a struct keep only half precision on WebGL2
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGL2. WebGPU and compatibility mode on the same tablet are right.
+- Seen in: null3D's sky (`crates/null3d-shaders/wgsl/sky.wgsl` and `null3d::atmosphere`) at commit 3ed5e6c61. On WebGL2, 62% of the background-sky image's pixels differed, and 90% of S6's.
+
+What happens: a fragment shader that keeps a float in a struct reads it back at half precision. Values below the smallest normal half-precision float read as zero. In a struct, the value 1234.567 read 1234. The value 0.123456 read 0.1234131. The value 1.0001 read 1, 70000 read 65504, and 1e-5 read 0. Writing `highp` on the member changes nothing. Nor does `highp` on every float declaration of the shader. These kinds of struct all lose precision:
+- a struct local;
+- a struct that a function returns or takes;
+- a struct of scalars, and a struct with a whole number or an array in it;
+- a stage's inputs gathered into a struct;
+- a uniform block's struct copied into a local.
+
+Whole numbers in a struct keep only their low 16 bits, also as `highp uvec4` members. The shader library page's write probe passes its whole numbers through a struct, so it read 0x0000cdef for 0x89abcdef. The struct probe, which multiplies its whole numbers by a uniform 1, read 0xffffcdef: the high half took the sign of the low half. A clear of the same target kept every bit.
+
+Plain locals, plain arrays, function results that are not structs, and values passed between the stages keep all 32 bits. So does a uniform block's struct read in place. In the vertex stage, a struct in `main` kept all 32 bits, but a struct that a function returned did not. The sky's scattering coefficients per metre, about 1e-5, read as zero, except blue's Rayleigh coefficient. Red and green light then divided zero by zero, and the sky drew yellow-white.
+
+Smallest known case, a fragment shader over an `RGBA32UI` target:
+
+```glsl
+#version 300 es
+precision highp float;
+precision highp int;
+struct Held { highp vec4 value; };
+uniform highp vec4 probe;
+uniform highp float one;
+layout(location = 0) out highp uvec4 color;
+Held hold(highp vec4 value) { Held held; held.value = value * one; return held; }
+void main() { color = floatBitsToUint(hold(probe).value); }
+```
+
+With `probe` (1234.567, 0.123456, 1e-5, 70000) and `one` 1, the bits read back as (1234, 0.1234131, 0, 65504).
+
+Workaround in the engine: the sky keeps its scattering coefficients per million metres, within half precision's range (`null3d::atmosphere`). The shader library check page runs the case above and reports the fault as `structFault` ([Browser faults](implementation-notes.md#browser-faults)). The GLSL build still keeps each fragment shader's inputs and most of its values in structs, so on this driver they hold only half precision.
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the shader above.
+
 ## Adreno 830: a uniform array read at a per-thread index returns one thread's entry
 
 Status: not reported yet. Found 7 October 2026.
@@ -78,6 +117,46 @@ Workaround in the engine: the frame graph makes its multisampled targets again w
 
 To report: as above, after a standalone page confirms the three steps.
 
+## Adreno 619: the first pass on a device that draws gets nothing from indirect draws
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGPU and WebGPU compatibility mode. Both fail the same way, so the fault is not in one of Chrome's two GPU backends alone.
+- Seen in: the skinning pass page (`tests/pages/skin-pass.ts`). Its first case, the first draw on its device, read back none of its 120 points. Every later case was right. Main showed the same in run `20261012-074025-smoke`.
+
+What happens: on a new device, take the first render pass that draws anything. Its indexed or plain indirect draws draw nothing when the CPU wrote their arguments. The pass clears its target, and no point lands. Every later pass on the device draws right. No WebGPU error is reported. A new device fails again.
+
+These made no difference (run `20261012-183358-smoke`, a probe of 15 forms, each on a new device):
+
+- a render bundle, plain indirect draws instead of indexed ones, and draws with one vertex buffer only;
+- arguments written with `writeBuffer` or mapped at creation, and a wait for the queue after the writes;
+- a pipeline built with `createRenderPipelineAsync`;
+- an earlier render pass that only clears, and an earlier compute pass.
+
+These drew right:
+
+- direct draws, indexed or plain, as the first pass;
+- the same indirect draws after an earlier pass that drew one point, by a direct or an indirect draw;
+- arguments that a compute pass wrote in the same command encoder before the render pass.
+
+Smallest known case: a new device, an index buffer and a vertex buffer, five `drawIndexedIndirect` calls whose arguments came from `writeBuffer`, in the device's first render pass. The first-draw page (`tests/pages/first-draw.ts`) draws it and reads it back.
+
+Workaround in the engine: before a device's first frame, the WebGPU scene renderer draws one point into a 1x1 target (`gpu/webgpu/first-pass.ts`). Its pipeline builds in the background with the frame's own pipelines, and the first frame waits for it. The engine writes the arguments of its indirect draws from the CPU each frame, and culling then adds the counts on the GPU. So without the pass, the first frame after each device start could lose its indirect draws on such a device. An image test cannot see this, because a capture draws the frame a second time ([Image tests](image-tests.md#other-browsers-and-devices)).
+
+The pass makes the first frame no later. On 13 October 2026, `bun run bench:startup` loaded the engine test page 8 times per case on the Mac (Apple M5 Max, Chrome 155), with and without the pass, in turns. Each figure is the median time from navigation until the GPU finished the first frame. Single loads spread by up to 400 ms.
+
+| GPU path | Load | With the pass, ms | Without it, ms |
+| --- | --- | --- | --- |
+| WebGPU | cold | 552 | 620 |
+| WebGPU | warm | 439 | 625 |
+| Compatibility mode | cold | 630 | 662 |
+| Compatibility mode | warm | 636 | 655 |
+
+The GPU check found no change in the frame time of scenes S4 and S6.
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>Dawn), with the first-draw page.
+
 ## Firefox: freeing a moved MessagePort's old object drops the unread messages that its new owner sent
 
 Status: not reported yet. Found 7 October 2026.
@@ -92,3 +171,20 @@ Smallest known case: a page and two workers of about 60 lines in all. One worker
 Workaround in the engine: the page keeps every channel that it makes for the engine's threads until the engine stops ([Browser faults](implementation-notes.md#browser-faults)).
 
 To report: Mozilla's Bugzilla (Core, DOM: postMessage), with the test page.
+
+## Adreno 619: a value held in a GLSL structure keeps only 16 bits
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152 on WebGL2, which hands the GLSL to Qualcomm's driver directly, without ANGLE's own precision pass.
+- Seen in: the shader library page (`tests/pages/shader-library.ts`) and a probe hooked into `tests/pages/shaders.ts` (run `20261012-184020-smoke`).
+
+What happens: every value that a GLSL structure holds is stored at 16 bits. The precision that the shader declares does not matter. A float rounds to half precision with flush: `1234.567` reads `1234`, `0.123456` reads `0.12341`, and `1e-5` reads 0. A whole number keeps only its low 16 bits, with the sign of the low half. `0x89abcdef` reads `0xffffcdef`, even in a `highp uvec4` member.
+
+Smallest known case: a fragment shader that builds a structure in any of these ways loses the bits. The ways are a constructor, a helper that returns one, a helper parameter, a structure of scalars, one with a `uint` or an array member, its own gathered stage inputs (`VertexOut in_ = VertexOut(gl_FragCoord, ...)`), and a copy of a uniform block's structure. A plain local, a local array, a helper's non-structure result, a varying, a structure member read in place (`block.field`), and a plain uniform member are exact.
+
+Workaround in the engine: the shader build replaces each structure local, parameter and result with plain ones on naga's code model. It runs before the GLSL writer. A structure argument becomes one argument for each member, a helper's result becomes one `out` parameter for each member, and a structure or private global becomes one local or global for each member. No structure value is materialized. The shader crate's test checks every built shader for a structure-typed local, parameter or result ([Browser faults](implementation-notes.md#browser-faults)).
+
+To report: Qualcomm, through Chromium's issue tracker, with the probe page.
+

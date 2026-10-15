@@ -2,6 +2,7 @@
 // page starts. Safari gives each of the first 8 WebAssembly memories of a page a large range of
 // address space, and refuses a new memory while a dropped one still holds its range, for as long
 // as the page keeps asking. An engine that takes a kept memory asks the browser for none (D-98).
+import { MemoryViews, memoryBytes } from '../shared/memory-views';
 
 /** WebAssembly memory comes in pages of 64 KiB. */
 const PAGE_BYTES = 65_536;
@@ -66,11 +67,11 @@ export function takeMemory(key: MemoryKey, initialPages: number): WebAssembly.Me
 		(kept) =>
 			kept.core === key.core &&
 			kept.maximum === key.maximum &&
-			kept.memory.buffer.byteLength >= bytes,
+			(memoryBytes(kept.memory) ?? 0) >= bytes,
 	);
 	if (!entry) return undefined;
 	drop(entry);
-	new Uint8Array(entry.memory.buffer, 0, bytes).fill(0);
+	new MemoryViews(entry.memory).view(Uint8Array, 0, bytes).fill(0);
 	return entry.memory;
 }
 

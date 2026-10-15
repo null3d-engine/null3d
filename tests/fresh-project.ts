@@ -43,7 +43,13 @@ const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
 const TEMPLATE = join(ROOT, 'tests/fixtures/fresh-project');
 /** The packages that the project's page and sketch import. */
-const DEPENDENCIES = ['@null3d/engine', '@null3d/controls', '@null3d/geometry'];
+const DEPENDENCIES = [
+	'@null3d/engine',
+	'@null3d/controls',
+	'@null3d/geometry',
+	'@null3d/particles',
+	'@null3d/terrain',
+];
 /** The packages that the project's tools run. */
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];
 /** Tools from npm, at the versions that the repository pins. */

@@ -234,16 +234,22 @@ describe('SketchQuality.lower', () => {
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
 			followMovingCasters: low.followMovingCasters,
+			farAnimationInterval: low.farAnimationInterval,
 			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
 			contactShadowSteps: low.contactShadowSteps,
 			dofSamples: low.dofSamples,
 			subsurfaceSamples: low.subsurfaceSamples,
+			exposureMeter: low.exposureMeter,
+			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
+			areaLights: low.areaLights,
+			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
 			lodFade: low.lodFade,
+			physicalSky: low.physicalSky,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -261,7 +267,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size and the levels of detail did.
+		// the reflections' size, the cap of area lights, soft particles and the levels of detail did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -269,10 +275,15 @@ describe('SketchQuality.lower', () => {
 			'farCascadeInterval',
 			'bloomSize',
 			'dofSamples',
+			'exposureMeter',
+			'fogSlices',
 			'reflectionScale',
+			'areaLights',
+			'softParticles',
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
+			'physicalSky',
 		]);
 	});
 });
@@ -302,12 +313,13 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale, following of moving casters, cascade blend,
-		// software occlusion culling and governor, and Low and Medium on WebGPU the same ambient
-		// occlusion scale, contact shadow steps and subsurface blur.
+		// Low and Medium share the highest render scale, following of moving casters, the far
+		// characters' update interval, cascade blend, software occlusion culling and governor, and on
+		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
+			'farAnimationInterval',
 			'shadowCascadeBlend',
 			'aoScale',
 			'contactShadowSteps',

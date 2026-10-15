@@ -147,7 +147,7 @@ const DOCS = {
 		title: 'Invalid setting',
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
-		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
 		since: '0.1',
 	},
 	E1214: {
@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take, and a material that lets light through refuses the mask and hash alpha modes. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, and other materials refuse those maps.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -408,9 +408,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
 		since: '0.2',
 	},
 	E1422: {
@@ -429,11 +429,27 @@ const DOCS = {
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
 		since: '0.2',
 	},
+	E1424: {
+		title: 'Custom material builds not downloaded',
+		cause:
+			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+		example:
+			'E1424: the builds of a custom material did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
+		since: '0.2',
+	},
 	E1425: {
 		title: 'Pointer lock refused',
 		cause:
 			'engine.requestPointerLock() asked the browser to lock the pointer to the canvas, and the browser refused or ended the lock before it began. Browsers lock the pointer only right after the user clicks or presses a key. They never lock it on phones or in some frames, and they refuse for a moment after the user pressed Esc.',
 		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
+		since: '0.2',
+	},
+	E1431: {
+		title: "Area lights' tables missing",
+		cause:
+			"The sketch made a rectangle or tube light, and the file of the area lights' fitted tables did not download. The engine's package ships the file, area-light-tables.bin, beside its code, and the engine downloads it with the first area light. Until the file arrives, area lights give no light. A server or a build that leaves out the file, or a Content-Security-Policy whose connect-src blocks its address, stops the download.",
+		example:
+			"E1431: the area lights' tables did not load from https://example.com/assets/area-light-tables-Zx8c_Vb1.bin: HTTP 404",
 		since: '0.2',
 	},
 	E1501: {

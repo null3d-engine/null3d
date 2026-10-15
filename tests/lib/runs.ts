@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join } from 'node:path';
 import { MEMORY_REFUSED } from '../pages/lib/room.ts';
 import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
-import type { DeviceFacts } from './device-record.ts';
+import { type DeviceFacts, webKitOnIos } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
 
@@ -104,12 +104,20 @@ const HELD_MEMORY_FAILURE =
 	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
 
 /**
- * Whether a page's failure in Safari earns one more run in a new runner page. Safari keeps memory
- * that pages before it dropped, in a way that a new runner page does not inherit (D-92). A page
- * whose failure that explains runs once more there, and fails only if it fails again.
+ * Whether a page's failure in a browser that draws with WebKit earns one more run in a new runner
+ * page. WebKit keeps memory that pages before it dropped, in a way that a new runner page does not
+ * inherit (D-92). Safari is the WebKit browser on a Mac. Every browser on iOS draws with WebKit, so
+ * a phone or tablet that reports iOS counts whatever the browser's own name says.
  */
-export function rerunsInNewTab(browser: string, verdict: readonly string[]): boolean {
-	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
+export function rerunsInNewTab(
+	browser: string,
+	verdict: readonly string[],
+	device: Pick<DeviceFacts, 'userAgent' | 'maxTouchPoints'> = {},
+): boolean {
+	return (
+		(browser === 'Safari' || webKitOnIos(device)) &&
+		verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem))
+	);
 }
 
 /** The address of the sketch module that a failure names as not loaded (E1410), if any. */

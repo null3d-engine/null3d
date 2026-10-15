@@ -213,9 +213,15 @@ three.js builds its shaders again for each count of lights, and takes a long tim
 
 The first tests held 300 lights, 25 blocks, and 48 lights on SwiftShader. On 11 October 2026, with the Mac's load near 20, WebGPURenderer gave no frame within 180 s at 300 lights on the Mac's GPU, and none at 48 lights on SwiftShader in one of four tests. So the tests now hold 96 lights, 8 blocks, and 24 lights, 2 blocks, on SwiftShader, in both engines' tests. They wait up to 180 s. The SwiftShader references show that smaller town.
 
+On 13 October 2026, CI's first run of the landed tests failed every Night town and Busy page test on SwiftShader, and some in Firefox and Safari. The shaders' sine hashes drew other ripples, clouds and stars on other machines, so the shaders now use the integer hash. Firefox on Linux filters the facades' textures another way, so it keeps references of its own. [Image tests](../image-tests.md#ci) gives the figures.
+
 ### The test page's 404
 
 The first runs logged one "404 (Not Found)" on the first page of each browser. The comparison test page named no icon, so the browser asked the server for `/favicon.ico`. The page now names an empty icon, as the examples page does. The fault was in every comparison's test page, Battle's too.
+
+## Addendum, 14 October 2026
+
+The owner decided on 14 October 2026 to remove the Busy page comparison. It measured the page's long tasks and input delay beside a scene, which was its reason to exist. The engine's own test pages already cover that work now. It also drew Night town's scene, which Night town's own comparison draws. So it added no figure and no look that the other comparisons do not give. The history above stays as it was written. The comparison, its tests and its page are gone from the repository.
 
 ## Battle
 
@@ -266,6 +272,8 @@ The owner raised the bar on 11 October 2026: every comparison meets the look bar
 
 ### Battle's figures on the Mac
 
+**Invalid above 1,024 units (13 October 2026, task M2-R36).** Every null3D figure in this section above 1,024 units measured a scene that stood still. The engine's animation table held at most 1,024 animated objects. At about 1,030 units, Battle's next soldier failed with E1102 in the sketch's update. From then on the update threw in every frame before it moved the soldiers, the bullets and the camera. The engine logged the error once and kept presenting frames, so the ramp and the fixed counts measured 1,024 soldiers frozen in place. The null3D "held" counts of 3,698 and 7,668, and the null3D columns at 4,000 and 10,000 units, are void. The figures at 1,000 units stand. The owner found the fault by eye on 13 October 2026. The true figures follow M2-R36's fix.
+
 The runs are from 12 October 2026, measured as for Factory, on the approved look. Each count had room for that count only. The ramps had room for 40,000 units and started at 200. The [run's record](../tested-devices/macbook-pro-chrome/20261012-002614-battle-modes.md) has each figure.
 
 | Mode | Engine and path | Held | 1,000 units | 4,000 | 10,000 | Page memory at 4,000 |
@@ -288,3 +296,43 @@ The runs are from 12 October 2026, measured as for Factory, on the approved look
 - Hold mode draws every frame up to the held one. On SwiftShader, CI's software GPU, Battle's held frame at 600 units took 17 to 72 seconds a test. So the SwiftShader references hold 120 units (`swiftShaderHoldCount`), and the Mac's hold 600.
 - With the approved look, the three.js tests still took 22 to 58 seconds each at 120 units. That was on SwiftShader on the Mac, one test at a time. The null3D tests took 25 to 33 seconds, six tests at once. Factory's tests took 2.2 to 3.5 times as long in CI as on the Mac. So Battle's image tests may take 240 seconds (`holdTimeoutSeconds`), not the default 90.
 - The page's memory at 400 soldiers was 304 MB in null3D, with the effects off, and the browser's whole use 425 MB. Factory took 50 MB at 400 parts. The memory task looks into what takes it.
+
+### Battle's GPU cost and memory, 12 October 2026
+
+Task M2-EX41 looked into why null3D's page took 6 to 10 times three.js's memory in the instanced mode, and where its GPU time went.
+
+The memory:
+
+- Most of it was not real memory. Chrome's page figure (`performance.measureUserAgentSpecificMemory`) counts each `SharedArrayBuffer` object of a shared memory at its full length. The engine's memory grows in many steps while a sketch sets up, and each growth gives `memory.buffer` a new object. Parts of the scene that the sketch set up once and then left alone kept views made at older sizes: static instance batches and the setting blocks of the sky, the environment and the effects. A heap snapshot of the sketch worker found 11 such objects on one 63 MiB memory. Chrome charged the worker 420 MiB, while its own heap was 22 MiB. A real-RAM run at 400 units with the effects off had already measured the page's renderer process at 196 MiB, against three.js's 201 MiB.
+- So every view of the engine's memory now comes from one place, and every object that keeps views drops them when the memory grows. A static check and a browser test keep it so ([Views of the shared memory](../implementation-notes.md#views-of-the-shared-memory), hard rule 20).
+- The thread that draws held both GPU paths' text of every custom material. It now gets its own path's text only, and the sketch's module builds only that path's text. At 1,000 units, the render worker's strings fell from 34.1 to 8.8 MiB, and its heap from 36.2 to 10.5 MiB. The sketch worker's strings fell from 15.7 to 10.0 MiB.
+
+The GPU time:
+
+- At 1,000 units on WebGPU, null3D drew 10,214 draws a frame: about 2,100 in the camera's view, 2,000 in the depth prepass and 6,000 in the 3 cascades. Each skinned unit drew from a bucket of its own. WebGL2 drew the same scene in 289 draws. Skinned copies of one mesh and material now share an instanced draw on WebGPU too, custom materials included ([D-20](D-20-webgpu-skinning.md#addendum-2026-10-12-shared-buckets-and-custom-materials-skin-builds-on-first-use)).
+
+The figures, before and after, on the Mac's Chrome 155 with WebGPU at High, on 13 October 2026:
+
+- "Before" is main of 12 October 2026 (`16a710a2f`). Main's only engine change since then lets game code turn joints, which Battle does not use.
+- Each page ran in a production build in a visible window, for 10 seconds after 4 seconds of warm-up. Each count ran twice, before and after in turn, and once more with the memory figure. Two "before" pages ended at a load just over 8 and are left out. The table gives the range of the other runs.
+- The ramps wait for the fix to the ramp's reading of the display rate, from task M2-EX7. Without it, a ramp can report a held count that it never held.
+- The 4,000-unit pages held only 1,024 soldiers, and their scene stood still. The engine's table of animated objects held at most 1,024 objects, so each frame stopped at the first unit past it, before the units, the bullets and the camera moved (found on 13 October 2026, task M2-R36). Those rows compare the two builds on the same still scene of 1,024 soldiers. They do not give null3D's cost at 4,000 units.
+
+| Mode | Units | Draws a frame | Frames a second | Busiest CPU thread | GPU frame time |
+| --- | --- | --- | --- | --- | --- |
+| Instanced | 1,000 | 10,214 → 333 | 68 → 79 to 90 | 3.0 → 1.8 to 2.5 ms | 16.8 → 13.9 to 16.7 ms |
+| Instanced | 4,000 (1,024 held, still) | 10,464 → 343 | 55 to 61 → 68 to 91 | 9.3 to 13.9 → 5.7 to 9.6 ms | 13.2 to 14.9 → 9.7 to 13.7 ms |
+| Scene graph | 1,000 | 10,214 → 333 | 61 to 68 → 91 to 94 | 2.9 to 4.4 → 1.7 to 2.9 ms | 12.6 to 17.1 → 12.0 to 13.2 ms |
+| Scene graph | 4,000 (1,024 held, still) | 10,464 → 343 | 60 to 63 → 89 to 90 | 8.6 to 10.7 → 5.8 to 6.2 ms | 12.7 to 13.9 → 13.3 to 13.6 ms |
+
+| Memory at the 4,000-unit pages (1,024 soldiers, still) | Instanced | Scene graph |
+| --- | --- | --- |
+| Page, the shared memory counted once | 525 → 115 MiB | 567 → 115 MiB |
+| The browser's whole figure | 669 → 252 MiB | 710 → 252 MiB |
+| Sketch worker | 479 → 94 MiB | 521 → 94 MiB |
+| Render worker | 112 → 84 MiB | 112 → 84 MiB |
+
+- The page's memory fell to a fifth. three.js's instanced page took 58 MiB at 4,000 units in the run of 12 October. null3D's page held only 1,024 soldiers, so the two figures do not compare.
+- The draws fell by 97%, and the CPU time by about 40% on the 4,000-unit pages. The sketch worker no longer lays out a bucket for each unit.
+- The GPU's frame time did not change. It varied from 9.7 to 17.1 ms from page to page in both builds. Its largest render pass took 6.8 to 9.6 ms in both. The frame's compute work fell from 1.4 to 1.6 ms to 0.1 ms, as the vertex shaders now skin Battle's custom materials. So on the Mac, the draw count was not what bound Battle's GPU time. Its largest pass is, and the next step is to find what that pass spends its time on.
+- On the 4,000-unit pages, null3D now draws about 89 frames a second in both modes, against about 60 before. There the busiest CPU thread had set the rate. The rate rose at 1,000 units too, though the GPU's frame time did not fall. Apple's GPUs work on two frames at once, so a frame time from GPU timestamps does not bound the rate ([Frames in flight](../implementation-notes.md#frames-in-flight)).

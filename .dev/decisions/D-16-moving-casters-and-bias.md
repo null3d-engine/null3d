@@ -485,4 +485,4 @@ The owner ruled on 6 October 2026, at about 23:55 (rulings 11 and 12). The plane
   | gr-m: gr-m0 with the cheaper form | 11.10 |
 
   Main with the cheaper form takes 1.42 ms (15%) more than the older commit. The plane takes about 1.1 ms of that, and #359's far layers about 0.3 ms. S4 at Low still holds 60 fps, with about a third of the frame spare. The runs are 20261006-160634-bench to 20261006-163236-bench.
-- The owner ruled on 7 October 2026, at about 00:40 ([D-83](D-83-gate-rulings-2026-10-06.md), ruling 13): the cost is accepted, and the gate's GPU item closes. A new task, proposed as M2-R25, finds why the plane costs this much on Apple GPUs, and a cheaper method.
+- The owner ruled on 7 October 2026, at about 00:40 ([D-83](D-83-gate-rulings-2026-10-06.md), ruling 13): the cost is accepted, and the gate's GPU item closes. A new task, proposed as M2-R25, finds why the plane costs this much on Apple GPUs, and a cheaper method. That task closed on 13 October 2026 with no cheaper form that keeps the images ([D-169](D-169-anti-acne-plane-cost.md)).

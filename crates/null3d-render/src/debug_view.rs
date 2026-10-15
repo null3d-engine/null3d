@@ -106,10 +106,13 @@ impl DebugView {
 }
 
 /// True for a template whose shading reflects the lights, so shadows fall on it: the standard
-/// material's two templates and custom materials, which light their surfaces as it does.
+/// material's two templates, its two decal templates, and custom materials, which light their
+/// surfaces as it does.
 pub const fn shades_with_lights(template: u32) -> bool {
     template == template::INSTANCED_LIT
         || template == template::INSTANCED_STANDARD_MAPS
+        || template == template::DECAL
+        || template == template::DECAL_MAPS
         || template >= template::CUSTOM_FIRST
 }
 

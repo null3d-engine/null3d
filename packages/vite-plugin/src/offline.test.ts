@@ -6,7 +6,7 @@ import { fixture } from '../../../tools/lib/fixture';
 import {
 	engineModule,
 	FEATURE_MODULES,
-	featureOf,
+	featuresOf,
 	type ListedFile,
 	listedFiles,
 	offlineFiles,
@@ -20,25 +20,39 @@ function file(fileName: string, fields: Partial<ListedFile> = {}): ListedFile {
 	return { fileName, entry: false, modules: [], imports: [], loads: [], ...fields };
 }
 
-describe('featureOf', () => {
+describe('featuresOf', () => {
 	it("names each shader feature as createEngine's preload does", () => {
-		expect(featureOf('generated/shaders-skinning-glsl-draw-index-tone-map-half')).toBe('skinning');
-		expect(featureOf('generated/shaders-instance-index-wgsl')).toBe('instance_index');
-		expect(featureOf('generated/shaders-sky-wgsl-tone-map')).toBe('sky');
+		expect(featuresOf('generated/shaders-skinning-glsl-draw-index-tone-map-half')).toEqual([
+			'skinning',
+		]);
+		expect(featuresOf('generated/shaders-instance-index-wgsl')).toEqual(['instance_index']);
+		expect(featuresOf('generated/shaders-sky-wgsl-tone-map')).toEqual(['sky']);
+	});
+
+	it('gives the module of the builds that need several shader features to each of them', () => {
+		expect(featuresOf('generated/shaders-hash-and-skinning-wgsl-half')).toEqual([
+			'hash',
+			'skinning',
+		]);
+		expect(featuresOf('generated/shaders-hash-and-instance-index-and-lod-fade-wgsl')).toEqual([
+			'hash',
+			'instance_index',
+			'lod_fade',
+		]);
 	});
 
 	it("puts the start's shader modules and the other engine modules in the start", () => {
-		expect(featureOf('generated/shaders-glsl-draw-index-half')).toBeUndefined();
-		expect(featureOf('generated/shaders-wgsl')).toBeUndefined();
-		expect(featureOf('generated/shaders')).toBeUndefined();
-		expect(featureOf('workers/job-worker')).toBeUndefined();
+		expect(featuresOf('generated/shaders-glsl-draw-index-half')).toEqual([]);
+		expect(featuresOf('generated/shaders-wgsl')).toEqual([]);
+		expect(featuresOf('generated/shaders')).toEqual([]);
+		expect(featuresOf('workers/job-worker')).toEqual([]);
 	});
 
 	it('names the features of the loaders', () => {
-		expect(featureOf('scene/gltf-meshopt')).toBe('gltf');
-		expect(featureOf('vendor/basis/basis_transcoder.wasm')).toBe('ktx2');
-		expect(featureOf('scene/panorama')).toBe('environment');
-		expect(featureOf('generated/shaders-environment-glsl')).toBe('environment');
+		expect(featuresOf('scene/gltf-meshopt')).toEqual(['gltf']);
+		expect(featuresOf('vendor/basis/basis_transcoder.wasm')).toEqual(['ktx2']);
+		expect(featuresOf('scene/panorama')).toEqual(['environment']);
+		expect(featuresOf('generated/shaders-environment-glsl')).toEqual(['environment']);
 	});
 
 	it("names modules that the engine's source holds", () => {
@@ -133,6 +147,26 @@ describe('offlineFiles', () => {
 			ktx2: ['assets/basis_transcoder-i9.wasm', 'assets/ktx2-d4.js', 'assets/tasks-h8.js'],
 			skinning: ['assets/shaders-skinning-wgsl-f6.js'],
 		});
+	});
+
+	it('lists the file of the builds that need several features under each of them', () => {
+		const combined = [
+			...build.map((f) =>
+				f.fileName === 'assets/worker-c3.js'
+					? { ...f, text: `${f.text} "./shaders-hash-and-skinning-wgsl-k1.js"` }
+					: f,
+			),
+			file('assets/shaders-hash-and-skinning-wgsl-k1.js', {
+				modules: ['generated/shaders-hash-and-skinning-wgsl'],
+			}),
+		];
+		const list = offlineFiles(combined);
+		expect(list.features.skinning).toEqual([
+			'assets/shaders-hash-and-skinning-wgsl-k1.js',
+			'assets/shaders-skinning-wgsl-f6.js',
+		]);
+		expect(list.features.hash).toEqual(['assets/shaders-hash-and-skinning-wgsl-k1.js']);
+		expect(list.start).not.toContain('assets/shaders-hash-and-skinning-wgsl-k1.js');
 	});
 
 	it("keeps a feature's file in the start when a start file imports it statically", () => {

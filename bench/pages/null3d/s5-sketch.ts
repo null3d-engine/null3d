@@ -21,6 +21,7 @@ import {
 	S5_DEFAULT_COUNT,
 	S5_GROUND,
 	S5_ORBIT,
+	S5_SHADOW_DISTANCE,
 	S5_VIEW_LIGHTS,
 	s5CameraPath,
 	s5CharactersAt,
@@ -34,7 +35,12 @@ export default defineSketch(async (context) => {
 	// S5 measures how a preset holds its frame rate with a crowd, so it keeps the preset's render
 	// scale range and the quality governor, as S4 does. A comparison of two builds turns the
 	// governor off.
-	const camera = setUpView(context, S5_VIEW_LIGHTS, S5_BACKGROUND, { dynamicResolution: true });
+	// The sun names its shadow distance, so it matches the three.js twin's cascades, which the
+	// benchmark compares this page with, instead of following the automatic distance from R10.
+	const camera = setUpView(context, S5_VIEW_LIGHTS, S5_BACKGROUND, {
+		dynamicResolution: true,
+		shadowDistance: S5_SHADOW_DISTANCE,
+	});
 	context.quality.set({ governor: readGovernor(import.meta.url) });
 	const reportQuality = watchQuality(context);
 
@@ -105,12 +111,35 @@ export default defineSketch(async (context) => {
 		placed = true;
 	};
 
+	// A character that the camera sees from far updates its pose less often, so the job workers
+	// sample and blend fewer of them in a frame. The `farAnimationInterval` quality setting gives
+	// the interval, which the governor may raise. `?anim=every` holds every character at every
+	// frame, as the image and parity tests need for a repeatable pose.
+	const everyFrame = new URL(import.meta.url).searchParams.get('anim') === 'every';
+	/** Under this distance of the camera a character looks large, so it updates in every frame. */
+	const nearDistance = 24;
+	const cameraPlace = new Float64Array(3);
+	const rateCharacters = (): void => {
+		const far = everyFrame ? 1 : context.quality.governor.farAnimationInterval;
+		const x = cameraPlace[0] as number;
+		const z = cameraPlace[2] as number;
+		for (let i = 0; i < data.count; i++) {
+			const dx = (positions[i * 3] as number) - x;
+			const dz = (positions[i * 3 + 2] as number) - z;
+			(animators[i] as Animator).setUpdateInterval(
+				dx * dx + dz * dz < nearDistance * nearDistance ? 1 : far,
+			);
+		}
+	};
+
 	if (demo) return playable();
 	const moveCamera = followPath(camera, s5CameraPath(data));
 	const pose = (t: number): void => {
 		clock[0] = t;
 		moveCharacters();
 		moveCamera(t);
+		camera.getWorldPosition(cameraPlace);
+		rateCharacters();
 	};
 	pose(time.now);
 	return {
@@ -148,6 +177,8 @@ export default defineSketch(async (context) => {
 					moveCharacters();
 				}
 				controls.update(time.dt);
+				camera.getWorldPosition(cameraPlace);
+				rateCharacters();
 				reportQuality();
 			},
 		};

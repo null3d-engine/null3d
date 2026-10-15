@@ -69,8 +69,8 @@ export const S5_VIEW_LIGHTS: SceneLights = {
 };
 
 /**
- * How far from the camera the sun's shadows reach, in meters: null3D's default, and the far end of
- * the three.js twin's cascades.
+ * How far from the camera the sun's shadows reach, in meters: named by the null3D sketch and used
+ * for the three.js twin's cascades, so the two engines cast shadows over the same ground.
  */
 export const S5_SHADOW_DISTANCE = 200;
 

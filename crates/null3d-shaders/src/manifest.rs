@@ -8,7 +8,7 @@ use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
 /// A language that a variant builds for.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
     /// WGSL for WebGPU.
@@ -40,33 +40,23 @@ pub struct Manifest {
 }
 
 /// A feature whose shader builds go into files of their own, which a page loads the first time a
-/// pipeline asks for one of the builds. A build belongs to the feature of its shader, or else to
-/// the feature with `claims_shared_builds` of its highest `claim_priority` and then lowest
-/// permutation bit, or else to that of its lowest bit that any feature names.
+/// pipeline asks for one of the builds. A build needs the feature of its shader and the feature of
+/// each of its permutation bits that a feature names. A build that needs one feature belongs to its
+/// files, and a build that needs several to files of their own.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FirstUse {
-    /// Shaders that load by device, every build of which belongs to the feature.
+    /// Shaders that load by device, every build of which needs the feature.
     #[serde(default)]
     pub shaders: Vec<String>,
-    /// Permutation bits by name: a build of a shader that loads by device with one of them belongs
-    /// to the feature.
+    /// Permutation bits by name: a build of a shader that loads by device with one of them needs
+    /// the feature.
     #[serde(default)]
     pub bits: Vec<String>,
-    /// True when the feature's bits take the builds that they share with the bits of features
-    /// without it, such as a rare feature's SKIN builds, which would otherwise grow the skinning
-    /// files.
-    #[serde(default)]
-    pub claims_shared_builds: bool,
-    /// Of features that claim shared builds, the one of higher priority takes a build that they
-    /// share, such as a rare feature's builds with a common one's. Features of equal priority
-    /// leave it to the lower bit.
-    #[serde(default)]
-    pub claim_priority: u8,
 }
 
 /// One entry shader.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shader {
     /// The WGSL file, relative to the shader folder.
@@ -127,7 +117,7 @@ impl Pipeline {
 }
 
 /// One variant of an entry shader: a build for each combination of its permutation bits.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Variant {
     /// Shader defs that are true in every build of the variant.
@@ -309,6 +299,21 @@ pub(crate) fn check_builds(
             }
         }
     }
+    // A value of the permutation word names one feature in each shader, so a shader lists only
+    // one of the names that share a value (decision record D-156).
+    let mut listed: BTreeMap<u32, &str> = BTreeMap::new();
+    for bit in variants.values().flat_map(|variant| &variant.permutations) {
+        let Some(value) = permutation::bit(bit) else {
+            continue;
+        };
+        if let Some(other) = listed.insert(value, bit)
+            && other != bit
+        {
+            errors.push(format!(
+                "{shader} lists \"{other}\" and \"{bit}\", which share one value. A shader may list only one of the names that share a value (decision record D-156)."
+            ));
+        }
+    }
     errors
 }
 
@@ -407,9 +412,10 @@ fn check_first_use(errors: &mut Vec<String>, manifest: &Manifest) {
             || [Target::Wgsl, Target::Glsl]
                 .iter()
                 .any(|t| t.name() == feature)
+            || feature.split('_').any(|word| word == "and")
         {
             errors.push(format!(
-                "{key}: \"{feature}\" is not a valid feature name. Use lowercase letters, digits and underscores, start with a letter, and do not use \"wgsl\" or \"glsl\", because the name becomes part of a file name."
+                "{key}: \"{feature}\" is not a valid feature name. Use lowercase letters, digits and underscores, start with a letter, and do not use \"wgsl\", \"glsl\" or the word \"and\", because the name becomes part of a file name, and \"and\" joins the names of the features whose builds share a file."
             ));
         }
         if first_use.shaders.is_empty() && first_use.bits.is_empty() {
@@ -676,6 +682,24 @@ variants.a = { defs = ["TONE_MAP"], permutations = ["SHINY", "TONE_MAP", "TONE_M
     }
 
     #[test]
+    fn a_shader_lists_only_one_of_the_names_that_share_a_value() {
+        let text = r#"
+[shaders.mesh]
+file = "mesh.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.a = { permutations = ["FXAA"], targets = ["wgsl"] }
+variants.b = { permutations = ["AREA_LIGHTS"], targets = ["glsl"] }
+"#;
+        let all = Manifest::parse(text).unwrap_err().join("\n");
+        assert!(
+            all.contains("lists \"FXAA\" and \"AREA_LIGHTS\", which share one value"),
+            "{all}"
+        );
+        let one = text.replace("[\"FXAA\"]", "[\"AREA_LIGHTS\"]");
+        assert!(Manifest::parse(&one).is_ok());
+    }
+
+    #[test]
     fn a_build_name_that_another_variant_takes_is_rejected() {
         let text = r#"
 [shaders.mesh]
@@ -734,13 +758,14 @@ bits = ["BLOOM"]
     #[test]
     fn features_that_load_on_first_use_are_checked() {
         let text = format!(
-            "{FEATURES}\n[first_use.Glow]\nshaders = [\"sprite\", \"mesh\"]\nbits = [\"TONE_MAP\", \"SHINY\", \"BLOOM\", \"SKIN\"]\n\n[first_use.wgsl]\n"
+            "{FEATURES}\n[first_use.Glow]\nshaders = [\"sprite\", \"mesh\"]\nbits = [\"TONE_MAP\", \"SHINY\", \"BLOOM\", \"SKIN\"]\n\n[first_use.wgsl]\n\n[first_use.cut_and_paste]\nshaders = [\"final\"]\n"
         );
         let all = Manifest::parse(&text).unwrap_err().join("\n");
         for expected in [
             "first_use.Glow: \"Glow\" is not a valid feature name",
             "first_use.wgsl: \"wgsl\" is not a valid feature name",
             "first_use.wgsl names no shaders and no bits",
+            "first_use.cut_and_paste: \"cut_and_paste\" is not a valid feature name",
             "first_use.Glow.shaders has \"mesh\", which is not a shader of the manifest",
             "first_use.sprites.shaders has \"sprite\", which first_use.Glow names too",
             "first_use.Glow.bits has \"TONE_MAP\", which a device fixes",

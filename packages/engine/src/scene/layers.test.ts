@@ -3,6 +3,7 @@ import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -26,12 +27,13 @@ function fakeCore() {
 		sceneArrays: (field: number) => AT.fields + field * 256,
 		commandRing: (field: number) => [AT.records, RING, AT.write, AT.read][field] as number,
 		reserveObject: () => ++slot,
-		setPerspectiveCamera: (...values: number[]) => {
-			cameras.push(values);
+		// Each camera call is kept as its handle, its lens's numbers, its layers and its target.
+		setPerspectiveCamera: (camera: number, layers: number, target: number, ...lens: number[]) => {
+			cameras.push([camera, ...lens, layers, target]);
 			return 0;
 		},
-		setOrthographicCamera: (...values: number[]) => {
-			cameras.push(values);
+		setOrthographicCamera: (camera: number, layers: number, target: number, ...lens: number[]) => {
+			cameras.push([camera, ...lens, layers, target]);
 			return 0;
 		},
 		createBatch: () => 7,
@@ -43,7 +45,7 @@ function fakeCore() {
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const scene = new Scene(core, { frame: 1 }, false);
 	/** The command records the scene queued, as [operation, handle, a, b]. */
 	const commands = () => {

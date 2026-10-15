@@ -40,6 +40,7 @@ const engine = await createEngine({
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
+  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
@@ -49,6 +50,7 @@ const engine = await createEngine({
   expectedObjects: 22000,                // (0.2) the scene starts with room for this many objects (default 1,023) and never grows in play; it grows on its own past it
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
+  onSketchError: (error) => {},            // (0.2) each distinct error the sketch's own code threw in a frame; the engine keeps drawing
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
@@ -67,11 +69,13 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
-engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback, keepTextureCopies }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
+//   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
+engine.onSketchError((error) => { /* (0.2) the sketch's update threw; the engine keeps drawing, and measure().updateErrors counts the frames */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
 await engine.destroy({ release: true }); // (0.2) also frees the memory that the page keeps about 30 s for the next engine
@@ -128,12 +132,18 @@ export default defineSketch(async (ctx) => {
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |
+| `scene.setBackground({ atmosphere: { sunPosition, sunIntensity, haze, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, time } })` (0.2) | | The physical sky: Rayleigh, Mie and ozone, twilight, moon and stars. Its air also hazes distant objects (`aerialPerspective: 0` turns that off). The sun's light is in a directional light's units. The Low preset draws the analytic sky in its place |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment`, `assets.builtinEnvironment('room')` or `assets.skyEnvironment()`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
+| `scene.setLightProbeGrid({ texture, origin, spacing, counts, intensity, environmentWeight })` (0.2) | | a grid of irradiance probes from an `rgba16float` 3D texture. Its light replaces the environment's diffuse light, so coloured bounce and sky occlusion reach every surface. Pass `null` to remove it |
+| `bakeProbes(scene, { box, resolution, samples, environment, albedo })` then `bake.step(n)` / `bake.grid.toTexture(textures)` (0.2) | | bakes the grid in the browser over `scene.raycastBatch`: sky light and occlusion, plus one coloured bounce from `albedo`. `step(n)` bakes `n` probes; set the texture with `scene.setLightProbeGrid` |
 | `scene.setBackground(env or cubemap, { blur, intensity, rotation })` (0.2) | | An environment or a cube map around the scene, as three.js's `backgroundBlurriness`, `backgroundIntensity` and `backgroundRotation`. Only environments blur, at no extra cost. Allocates nothing, so it can change every frame |
-| `scene.setFog({ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent })` or `null` | | Fog by straight-line distance from the camera. `curve`: `'exponential'` (default, `density` 0.01), `'exp2'` or `'linear'` (`near`, `far`). `heightFalloff` above 0 thins the fog above `height`; `sunGlow` above 0 lights the fog toward the main directional light. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
+| `scene.setFog({ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent, volumetric })` or `null` | | Fog by straight-line distance from the camera. `curve`: `'exponential'` (default, `density` 0.01), `'exp2'` or `'linear'` (`near`, `far`). `heightFalloff` above 0 thins the fog above `height`; `sunGlow` above 0 lights the fog toward the main directional light. `volumetric: true` or `{ intensity, anisotropy, distance }` (0.2) lights the fog with the sun and the point and spot lights through their shadows (light shafts), in place of `sunGlow`; it needs HDR color and the quality setting `fogSlices` above 0 (Medium and up). The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
 | `scene.createLines({ positions, colors, mode, width, worldUnits, dashed, dashSize, gapSize, dashScale, dashOffset, lit, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<LineBatch> | Segments between points in one batch, drawn as quads with round ends at any width; the first call downloads the line code. `mode`: `'strip'` (default), `'loop'` or `'segments'` (pairs). `width` in CSS pixels, or world units with `worldUnits`. Typed arrays `positions` (3 per point) and `colors` (3 per point, linear, 8 bits per channel); `markDirty` takes points; `setActiveCount` takes points; `setWidth`; `material.set` takes the dash values and, with `lit`, the standard values. Docs `api/lines` |
 | `scene.createPoints({ positions, colors, size, sizeAttenuation, map, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<PointBatch> | Squares of one size that face the camera, in one batch; each point is a sprite row, and the first call downloads the sprite code. `size` in world units, or CSS pixels with `sizeAttenuation: false`. `colors` takes 3 or 4 numbers per point (linear). Typed arrays `positions` (3) and `colors` (4, RGBA); `setSize`, `markDirty`, `setActiveCount`, `material.set`, as instance batches. Opaque by default; a disc `map` with `alphaMode: 'mask'` makes round points. About 215 bytes of engine memory per point. Docs `api/points` |
+| `createParticles(ctx, { rate, bursts, lifetime, shape, speed, direction, spread, velocity, follow, subEmitters, gravity, drag, wind, turbulence, groundHeight, groundMode, size, sizeOverLife, colors, colorOverLife, alphaOverLife, intensity, facing, stretch, spin, blending, map, flipbook, softness, nearFade })` from `@null3d/particles` (0.2) | Promise<ParticleSystem> | A GPU particle system: the GPU moves each particle in closed form, and the CPU writes only births. Call `system.update()` every frame in `onLateUpdate`; it allocates nothing. `shape`: `point`, `sphere`, `cone`, `box`, `disc`. `facing`: `camera`, `velocity` (sparks, rain), `ground`, `tumble` (leaves). `colors` takes one color input or two that particles mix; `intensity` above 1 blooms; curves over life up to 16 steps. `follow: object` leaves trails in the world. `particleTextures.glow`, `spark`, `smoke`, `flame`, `rain`, `leaves` make maps in code: spread them into the options. `system.burst(n)`, `system.rate`, `system.emitting`, `system.set(values)`, `system.destroy()`. Docs `api/particles` |
+| `createImpostors(scene, { texture, atlas, positions, size, center, colors, alphaMode, color, origin, layers })` and `mergeFarGeometry(parts)` from `@null3d/impostors` (0.2) | Promise<ImpostorBatch>, MeshArrays | Far objects as one sprite batch of camera-facing cards: each card shows the atlas cell nearest the camera. Call `update(camera.position)` every frame; it writes only frames and allocates nothing. `octahedralAtlas(views)` gives `{ columns, rows }`; `impostorFrame(direction, atlas)` and `frameDirection(frame, atlas)` are inverses a bake and the cards share. `mergeFarGeometry([{ arrays, transform }])` writes copies of a mesh into one mesh's arrays; `farCellGroups(centres, cellSize)` groups by grid cell. `alphaMode: 'mask'` cuts the cards out; one view shows, with no blend yet. Docs `api/impostors` |
+| `createTerrain(ctx, { size, height, resolution, layers, splat, splatResolution, chunkQuads, maxLevel, split, skirt, metalness, castShadows, receiveShadows, maxBlocks })` from `@null3d/terrain` (0.2) | Terrain | A height field drawn as a camera-centred quadtree of blocks with a splat-mapped surface, built on public APIs. `height` is a function or a `Float32Array` height map; `layers` is one to four `{ map, tile, roughness }`. Call `terrain.update(x, z)` with the camera's ground position in `onUpdate`; it rebuilds only when the camera crosses a cell. `terrain.heightAt(x, z)`, `terrain.normalAt(x, z, out)`, `terrain.drawn`, `terrain.triangles`, `terrain.destroy()`. `terrainTextures(textures, { size, seed })` makes grass, soil, rock and snow maps in code. No collision. Docs `api/terrain` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
 | `scene.raycast(...)` and other queries (0.2) | | Section 13 |
@@ -237,19 +247,26 @@ scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   /
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });  // (0.2) lights surfaces: sky from +Y, ground from below
+scene.createRectAreaLight({ position, direction, width: 3, height: 2, range: 15, color, intensity });  // (0.2) range is required; light leaves along -Z
+scene.createTubeLight({ position, direction, length: 2, radius: 0.025, range: 8, color, intensity });  // (0.2) the tube runs along -Z
 const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, light, fog, ambient, exposure }, plain values
+const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, atmosphere, skyIntensity, light, fog, ambient, exposure }, plain values
+timeOfDay(17.5, { model: 'physical' });  // (0.2) values that match setBackground({ atmosphere: day.atmosphere })
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 sun.setShadow({ contactDistance: 0.3 });  // (0.2) contact shadows' reach in meters, 0 = off; drawn where contactShadowSteps > 0 (High, Ultra)
 
-light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
-light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
-light.setRange(r); light.setDecay(d);        // point and spot lights
+light.setIntensity(v); light.setColor(c);   // every light; call from a small step so the browser inlines it
+light.setDirection(x, y, z);                 // directional, spot and area lights: the way the light travels, or the tube's axis
+light.setRange(r); light.setDecay(d);        // point and spot lights; setRange on area lights too
+rect.setSize(width, height); tube.setSize(length, radius);  // (0.2) area lights; the object's scale does not size them
+rect.setImage({ width, height, data });     // (0.2) sRGB pixels shown over the light, top row first; null for one color
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
 light.setCastShadows(true);                  // directional, spot and point lights
 sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
+sun.setShadow({ distance: 'auto' });          // follow the farthest visible receiver (the default)
 spot.setShadow({ bias: 1 });                  // spot and point lights take bias and normalBias alone
 light.setVisible(false); light.destroy();    // lights are objects: section 4
 ```
@@ -258,8 +275,9 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela, the others in lux. The same colors and intensities give the same light as in three.js. For real units, give point and spot lights `intensityUnit: 'lumen'` (0.2), and set the camera with `post.set({ ev100: 15 })` (0.2) for a sunny day (`concepts/lighting`).
+- Area lights (0.2): `createRectAreaLight` for windows, screens and soft boxes, `createTubeLight` for neon and fluorescent tubes. Intensity is the surface's brightness in nits, as three.js's `RectAreaLight`; shiny surfaces show the light's whole shape. They need a `range`, cast no shadows, and cost a surface several times a point light, so the preset's `areaLights` caps them per frame (4 on Low to 32 on Ultra, most light at the camera first, fading across the cap); put the lights that matter nearest the camera, or make them brightest. They light from the frame after their 19 KB table file downloads with the first one; a failed download reports E1431 (`api/lights`).
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, every hemisphere light (0.2), and the point and spot lights. Hemisphere lights are diffuse only and add to an environment's light; the environment's `intensity` and a material's `envIntensity` do not scale them. A scene lit by the sky's environment needs no hemisphere light.
-- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame on every preset. `followMovingCasters: false` keeps its turns, so far moving shadows trail by a few frames. Neighboring cascades blend over a band, a share of each cascade's length (`shadowCascadeBlend`, 0.1). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, 200 m, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. The map stores 16-bit depth, so in far cascades a smaller `bias` acts as 1.5 depth steps, about 2 cm 200 m out. Unlit materials show no shadows. Both GPU paths draw them. Instance batches take `castShadows` and `receiveShadows` in `createInstances`, or `batch.setCastShadows(true)` / `setReceiveShadows(true)`, for every row (0.2); sprite, point and line batches take none (`concepts/shadows`).
+- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame on every preset. `followMovingCasters: false` keeps its turns, so far moving shadows trail by a few frames. Neighboring cascades blend over a band, a share of each cascade's length (`shadowCascadeBlend`, 0.1). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, the automatic `distance`, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. The map stores 16-bit depth. In far cascades a smaller `bias` then acts as 1.5 depth steps, about 2 cm 200 m out. Unlit materials show no shadows. Both GPU paths draw them. Instance batches take `castShadows` and `receiveShadows` in `createInstances`, or `batch.setCastShadows(true)` / `setReceiveShadows(true)`, for every row (0.2); sprite, point and line batches take none (`concepts/shadows`).
 - Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light moves, or a caster in its view moves, changes its layers or changes its pose. So still scenes cost nothing per frame, and at most 12 tiles draw again in a frame. The biases are in meters, up to one texel of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
@@ -301,17 +319,19 @@ const paint = materials.standard({
   attenuationColor: '#ffffff', attenuationDistance: Infinity,  // (0.2) the volume's color over that distance
   diffuseTransmission: 0, diffuseTransmissionColor: '#ffffff',  // (0.2) leaves, petals, ears: light behind shows on the front; give it at creation; the base color does not tint it
   subsurfaceRadius: 0, subsurfaceColor: '#ffffff',  // (0.2) skin 0.012 and [1, 0.4, 0.25], wax, jade: light spreads under the surface; give it at creation; blurs on High and Ultra only
+  clearcoat: 0, clearcoatRoughness: 0,        // (0.2) car paint, varnish: give a layer option at creation to have the layers
+  sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps and no diffuseTransmission with layers
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'hash' (0.2) draws the share the alpha sets; 'blend' shows through
   alphaToCoverage: true,                       // (0.2) with 'mask': MSAA smooths the cut edges
   forceSinglePass: false,                      // (0.2) with 'blend' and doubleSided: one draw for both faces
-  blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
+  blending: 'normal',                          // with 'blend': 'normal', 'additive', 'multiply' or 'weighted' (0.2)
   depthWrite: true, depthTest: true,           // fixed at creation
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
-paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
+paint.set({ roughness: 0.4 });  // changes only the options you pass; set values up front, not every frame
 
 const brick = materials.standard({   // maps are fixed at creation; the mesh needs texture coordinates
   map: color,                        // sRGB texture; multiplies color (its alpha multiplies opacity)
@@ -324,7 +344,12 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   envIntensity: 1,                   // (0.2) the scene environment's light on this material
   uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
 });
-const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
+// (0.2) A decal: a mesh of geometry.box() with this material projects it onto every opaque surface in
+// the box, lit there. The box's z axis points out of the surface; its x and y sides hold the map.
+const decal = materials.decal({ map: color, normalMap: normals, metalnessRoughnessMap: orm,
+  angleFade: [Math.PI / 3, (4 * Math.PI) / 9],   // fades on surfaces that turn away from its z axis
+  edgeFade: 0.2 });                              // fades near both ends of the box along z
+scene.createMesh({ mesh: geometry.box(), material: decal, position, rotation, scale: [2, 2, 0.5] });
 
 const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both, or a full shader
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
@@ -336,12 +361,12 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
-- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. (0.2) `blending: 'weighted'` blends smoke, dense particles and crossing panes in any order, as three.js's `OITPassNode` does, where the sort by object would pop. It draws as one layer over the camera's other see-through surfaces, and custom materials and materials with `transmission` do not take it (`api/materials#weighted-blending`). `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
 - (0.2) `alphaToCoverage`, on by default, smooths a mask's cut edges with MSAA, for foliage and fences. `false` gives three.js's hard `alphaTest` edges. Without MSAA it is a plain mask. The `'hash'` alpha mode draws a share of the surface that its alpha sets, in a pattern fixed to the mesh. Fades and crossing see-through surfaces then need no sort. A double-sided `'blend'` material draws its back faces, then its front faces, so a glass ball shows its far side. On flat surfaces, `forceSinglePass: true` saves that second draw.
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
-- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` (0.2, not built yet) makes a ground plane that shows only shadows.
+- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher({ color, opacity })` (0.2) makes a ground plane that shows only the main directional light's shadow, where the mesh sets `setReceiveShadows(true)`.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
@@ -418,6 +443,7 @@ const anim = hero.animator();           // the copy's group animates; throws E12
 anim.clips;                             // the clip names
 anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
 anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
+anim.play('run', { fade: 0.3, transition: 'inertial' }); // samples only the run: the walk carries on at its speed and eases in
 anim.play('walk', { time: 0.4 });       // starts 0.4 s in, so a crowd steps out of time
 anim.play('run', { weight: 0.3 });      // a weight joins the layer's clips instead of fading them out
 anim.setWeight('run', 0.6);             // 0 or more, on a clip that plays; free to call every frame
@@ -429,6 +455,8 @@ anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every 
 anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame
 anim.play('breathe', { layer: 2, additive: true });      // adds its change from its first frame
 anim.setTimeScale(0.5);                 // 0 pauses the object's clips
+anim.setUpdateInterval(4);              // a far crowd: sample this copy's pose once in 4 frames; 1 is every frame
+anim.updateInterval;                    // reads it back
 const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
@@ -500,13 +528,14 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
-  toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
+  toneMapping: 'agx-punchy', // the default | 'agx' | 'neutral' | 'aces' | 'none'
   exposure: 1,
   ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
+  autoExposure: { minEv: -6, maxEv: 2 },  // (0.2) the eye adapts from the camera's exposure: metering, percentiles, centerWeight, speedUp, speedDown, compensation; false turns it off
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
   dof: { aperture: 1.8, focusPoint: [0, 1, 0] },  // (0.2) a camera lens: f-number, focusDistance or a world point, focalLength ('camera'), maxBlur, blades; false turns it off

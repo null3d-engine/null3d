@@ -1,0 +1,54 @@
+{
+	"name": "@null3d/terrain",
+	"version": "0.0.0",
+	"description": "Terrain for null3D sketches: a height field drawn as a camera-centred quadtree of blocks, with a splat-mapped surface and no collision, built on the engine's public API.",
+	"license": "MIT OR Apache-2.0",
+	"author": "Ramesh Nair (https://hiddentao.com)",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
+		"directory": "packages/terrain"
+	},
+	"bugs": {
+		"url": "https://github.com/null3d-engine/null3d/issues"
+	},
+	"keywords": [
+		"null3d",
+		"3d",
+		"terrain",
+		"heightfield",
+		"cdlod",
+		"webgpu",
+		"webgl2"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"null3d-source": "./src/index.ts",
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		}
+	},
+	"files": [
+		"lib",
+		"LICENSE-MIT",
+		"LICENSE-APACHE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"prepack": "bun ../../tools/build-package.ts terrain"
+	},
+	"peerDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*"
+	},
+	"devDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*",
+		"@webgpu/types": "0.1.74"
+	}
+}

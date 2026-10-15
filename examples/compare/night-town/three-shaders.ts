@@ -215,7 +215,8 @@ uniform sampler2D townNormal;`,
 	float strength = ground ? townShopLight : townWindowLight * ( 0.5 + pick );
 	float shelves = ground ? ( 0.45 + 0.55 * step( 0.14, fract( coord.y * 4.0 ) ) ) * ( 0.75 + 0.25 * sin( coord.x * 37.0 + pick * 20.0 ) ) : 1.0;
 	vec3 townGlow = room * strength * lit * curtain * depthFade * shelves * ( 0.7 + 0.6 * kind );
-	vec3 tar = vec3( 0.035, 0.036, 0.04 ) * ( 0.8 + 0.4 * fract( sin( dot( floor( vTownWorld.xz * 2.0 ), vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) );
+	ivec2 grain = ivec2( floor( vTownWorld.xz * 2.0 ) );
+	vec3 tar = vec3( 0.035, 0.036, 0.04 ) * ( 0.8 + 0.4 * town_hash( grain.x, grain.y, 0 ) );
 	diffuseColor.rgb = roof ? tar : diffuseColor.rgb * texel.rgb;
 	roughnessFactor = roof ? 0.45 : orm.g;
 	metalnessFactor = roof ? 0.0 : orm.b;
@@ -442,11 +443,9 @@ function facadeNodes(three: Three, tsl: Tsl, maps: ShaderMaps, settings: FacadeS
 		.mul(depthFade)
 		.mul(shelves)
 		.mul(kind.mul(0.6).add(0.7));
-	const cell = floor(positionWorld.xz.mul(2));
+	const grain = floor(positionWorld.xz.mul(2));
 	const tar = vec3(0.035, 0.036, 0.04).mul(
-		fract(sin(cell.dot(vec2(12.9898, 78.233))).mul(43758.5453))
-			.mul(0.4)
-			.add(0.8),
+		hash(int(grain.x), int(grain.y), int(0)).mul(0.4).add(0.8),
 	);
 	material.colorNode = select(roof, tar, texel.rgb);
 	material.roughnessNode = select(roof, float(0.45), orm.g);
@@ -578,7 +577,8 @@ uniform sampler2D townNormal;
 uniform sampler2D townPuddles;
 uniform sampler2D townMirror;
 varying vec4 vTownMirror;
-float town_ripple( vec2 c ) { return fract( sin( dot( c, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }`,
+float town_hash(int a, int b, int c);
+float town_ripple( vec2 c ) { return town_hash(int(c.x), int(c.y), 0); }`,
 			)
 			.replace(
 				'#include <metalnessmap_fragment>',
@@ -640,7 +640,8 @@ function streetNodes(
 		roughness: 1,
 		metalness: 0,
 	});
-	const ripple = (c: Tsl) => fract(sin(c.dot(vec2(127.1, 311.7))).mul(43758.5453));
+	const integerHash = tslHash(tsl);
+	const ripple = (c: Tsl) => integerHash(tsl.int(c.x), tsl.int(c.y), tsl.int(0));
 	const p = positionWorld.xz;
 	const texel = texture(maps.color, p.div(4));
 	const orm = texture(maps.orm, p.div(4));
@@ -878,7 +879,8 @@ export interface SkySettings {
 }
 
 const GLSL_SKY = /* glsl */ `
-float sky_hash( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
+${GLSL_HASH}
+float sky_hash( vec2 p ) { return town_hash(int(p.x), int(p.y), 0); }
 float sky_noise( vec2 p ) {
 	vec2 i = floor( p );
 	vec2 f = fract( p );
@@ -902,7 +904,7 @@ float sky_fbm( vec2 p ) {
 float sky_star( vec3 d ) {
 	vec3 q = d * 160.0;
 	vec3 cell = floor( q );
-	float h = fract( sin( dot( cell, vec3( 127.1, 311.7, 74.7 ) ) ) * 43758.5453 );
+	float h = town_hash(int(cell.x), int(cell.y), int(cell.z));
 	float spot = length( fract( q ) - 0.5 );
 	return step( 0.985, h ) * ( 1.0 - smoothstep( 0.0, 0.3, spot ) ) * ( h - 0.985 ) / 0.015;
 }
@@ -986,7 +988,6 @@ function skyNodes(three: Three, tsl: Tsl, settings: SkySettings): Timed {
 		float,
 		fract,
 		floor,
-		sin,
 		dot,
 		mix,
 		max,
@@ -1002,7 +1003,8 @@ function skyNodes(three: Three, tsl: Tsl, settings: SkySettings): Timed {
 	const webgpu = three as unknown as typeof import('three/webgpu');
 	const time = uniform(0);
 	const moonDir = vec3(...settings.moon);
-	const hash = (p: Tsl) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
+	const integerHash = tslHash(tsl);
+	const hash = (p: Tsl) => integerHash(tsl.int(p.x), tsl.int(p.y), tsl.int(0));
 	const noise = (p: Tsl) => {
 		const i = floor(p);
 		const f = fract(p);
@@ -1030,7 +1032,8 @@ function skyNodes(three: Three, tsl: Tsl, settings: SkySettings): Timed {
 	const city = vec3(0.003, 0.002, 0.0016).mul(pow(float(1).sub(up), 16));
 	const moonlight = vec3(0.62, 0.72, 1);
 	const q = d.mul(160);
-	const h = fract(sin(dot(floor(q), vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+	const cell = floor(q);
+	const h = integerHash(tsl.int(cell.x), tsl.int(cell.y), tsl.int(cell.z));
 	const star = step(0.985, h)
 		.mul(float(1).sub(smoothstep(0, 0.3, length(fract(q).sub(0.5)))))
 		.mul(h.sub(0.985).div(0.015));

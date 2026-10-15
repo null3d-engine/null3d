@@ -1,11 +1,10 @@
 // A character: the KayKit Knight walks a circle in a small courtyard, at a speed that rises and
-// falls. A 1D blend mixes its idle, walk and run clips by speed, in step. A second layer, masked to
-// the spine and above, swings the sword now and then, and a 'finished' event fades the swing out.
-// The engine samples and blends the clips on its job workers, so the sketch only sets the speed.
-// The sun casts the Knight's skinned shadow, the sky's light fills the shade, and the cobblestones
-// are maps made in code. The pointer leads the Knight: it walks to the point, and runs when far.
+// falls. A 1D blend mixes its idle, walk and run clips by speed, in step, and a masked second layer
+// swings the sword now and then. The engine samples and blends the clips on its job workers, so the
+// sketch only sets the speed. The sun casts its skinned shadow, and the pointer leads the Knight.
 import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 
 /** The Knight's accessories that it leaves behind: it carries one sword and one round shield. */
@@ -29,6 +28,7 @@ const STONE = 16;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, time } = ctx;
+	reportLoading(ctx);
 	// The afternoon sun lights the courtyard from the front left, and the sky fills the shade.
 	const day = timeOfDay(15, { heading: 0.9 });
 	const sky = { intensity: day.skyIntensity };

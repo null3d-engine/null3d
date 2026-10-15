@@ -8,6 +8,7 @@
 import type { JoinedBuilds } from '../gpu/effect-join';
 import type { GpuMemory } from '../gpu/memory';
 import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
+import { MemoryViews } from '../shared/memory-views';
 import { Counter, type FrameRecorder } from '../shared/metrics';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
@@ -67,15 +68,14 @@ export function recordCounts(record: FrameRecorder, backend: SceneBackend): void
 
 /**
  * The replay of each frame's draw list, as the sketch thread published it, which both scene
- * renderers share. It keeps views on engine memory, rebuilt only when memory grows. A frame's
+ * renderers share. Its views of engine memory are made again only when the memory grows. A frame's
  * pipelines start to build the first time the frame is prepared or replayed. Until a frame has
  * drawn with every pipeline built, a frame waits for its pipelines. A change of quality preset
  * starts that wait again, from the frame that the control block's hold names.
  */
 export class FrameReplay {
-	private words = new Uint32Array(0);
-	private floats = new Float32Array(0);
-	private viewsOf: ArrayBufferLike = new ArrayBuffer(0);
+	/** The engine memory's views, which it makes again when the memory grows. */
+	private readonly views: MemoryViews;
 	private end = 0;
 	private readonly slots: Int32Array;
 	/** The newest frame whose pipelines started to build. */
@@ -94,9 +94,10 @@ export class FrameReplay {
 
 	constructor(
 		private readonly backend: SceneBackend,
-		private readonly memory: WebAssembly.Memory,
+		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 	) {
+		this.views = new MemoryViews(memory);
 		this.slots = controlViews(control).slots;
 		backend.joins.onFailed = (template) => Atomics.store(this.slots, Slot.JoinFailed, template);
 	}
@@ -121,7 +122,8 @@ export class FrameReplay {
 			while (performance.now() < until);
 		}
 		const from = this.restOf(frame);
-		this.backend.replay(this.words, this.floats, from, this.end, this.viewsOf);
+		const words = this.views.heap(Uint32Array);
+		this.backend.replay(words, this.views.heap(Float32Array), from, this.end, words.buffer);
 		if (!this.backend.building) this.complete = true;
 	}
 
@@ -160,17 +162,13 @@ export class FrameReplay {
 	 * reuses the place that its list's preparation found.
 	 */
 	private restOf(frame: number): number {
-		const buffer = this.memory.buffer;
-		if (buffer !== this.viewsOf) {
-			this.words = new Uint32Array(buffer);
-			this.floats = new Float32Array(buffer);
-			this.viewsOf = buffer;
-		}
 		const parity = frame & 1;
-		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
+		// The address is stored in the shared Int32 slots, so it reads signed above 2 GiB. The
+		// page may raise the memory's maximum to 4096 MiB (hard rule 31).
+		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
 		if (frameAfter(frame, this.prepared)) {
-			this.rests[parity] = this.backend.prepare(this.words, start, this.end);
+			this.rests[parity] = this.backend.prepare(this.views.heap(Uint32Array), start, this.end);
 			this.prepared = frame;
 		}
 		return this.rests[parity] as number;

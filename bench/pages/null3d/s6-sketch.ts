@@ -42,6 +42,7 @@ import {
 	S6_MESSAGES,
 	S6_PICK_RISE,
 	S6_PICKED_LABEL,
+	S6_SHADOW_DISTANCE,
 	S6_SKY,
 	S6_SUN_POSITION,
 	S6_VIEW_LIGHTS,
@@ -72,7 +73,13 @@ export default defineSketch(async (context) => {
 	const reportQuality = watchQuality(context);
 	scene.setBackground(S6_BACKGROUND);
 	const { sun, ambient } = S6_VIEW_LIGHTS;
-	scene.createDirectionalLight({ ...sun, castShadows: true });
+	// The sun's shadow distance is named, so it matches the three.js twin's cascades, which the
+	// benchmark compares this page with, instead of following the automatic distance.
+	scene.createDirectionalLight({
+		...sun,
+		castShadows: true,
+		shadow: { distance: S6_SHADOW_DISTANCE },
+	});
 	scene.createAmbientLight(ambient);
 	const camera = scene.createPerspectiveCamera(S6_CAMERA);
 	scene.setActiveCamera(camera);

@@ -5,6 +5,7 @@ import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
 import { presetSettings } from '../quality/presets';
+import { callValueArguments } from '../scene/fake-call-values';
 import type { Material, MeshGeometry } from '../scene/resources';
 import {
 	controlViews,
@@ -96,6 +97,8 @@ function fakeGlue(
 		sceneArrays: block,
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
+		// The first block holds no field, so the call values take its start.
+		callValues: () => 0,
 		cellsRefused,
 		meshMemoryBytes: () => MESH_BYTES,
 		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
@@ -112,7 +115,8 @@ function fakeGlue(
 		get: (_, name: string) =>
 			kept[name as keyof CoreGlue] ??
 			((...args: number[]) => {
-				if (KEPT_ARGUMENTS.has(name)) calls.push([name, ...args]);
+				if (KEPT_ARGUMENTS.has(name))
+					calls.push([name, ...args, ...callValueArguments(name, memory, 0)]);
 				if (FRAME_STEPS.has(name)) log.push(name);
 				if (grows && FRAME_STEPS.has(name)) memory.grow(1);
 				if (name === 'setTextureOption') log.push(textureOption(args[0] ?? -1, args[1] ?? -1));
@@ -265,7 +269,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
-				skinning: C.SKINNING_LEAN,
+				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
@@ -283,7 +287,9 @@ async function start(
 			},
 			sendImage: () => {},
 			sendShader: () => {},
+			sendBuilds: () => {},
 			sendPreload: () => {},
+			onAskBuilds: () => {},
 			pageUrl: 'http://localhost/',
 			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
@@ -712,6 +718,7 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, medium.uploadBytesPerFrame),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, medium.maxAnisotropy),
 			textureOption(C.TEXTURE_OPTION_MEMORY_BUDGET_KIB, medium.textureMemoryMiB * 1024),
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 0),
 			'setup',
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 2048),
 		]);
@@ -726,6 +733,21 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
 			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
+	});
+
+	it('keeps the texture copies when the page keeps them, and frees them otherwise', async () => {
+		const kept = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, keepCopies: true },
+		});
+		expect(kept.log.filter((line) => line.startsWith('setTextureOption'))).toContain(
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 1),
+		);
+		const freed = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, keepCopies: false },
+		});
+		expect(freed.log.filter((line) => line.startsWith('setTextureOption'))).toContain(
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 0),
+		);
 	});
 
 	it('records no setup frame into the list of a frame that the thread that draws still replays', async () => {

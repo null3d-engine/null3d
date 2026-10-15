@@ -6,7 +6,9 @@
 // range holds that scale alone, and the governor is off, for timing. ?size= sets the quality
 // setting bloomSize, the base of bloom's chain. On the page's 'bloom' message
 // it turns the strong bloom on, waits until its pipelines are built, and posts the frames and
-// milliseconds that took as 'settled'. The 'bloom-off' message turns bloom off.
+// milliseconds that took as 'settled'. The 'bloom-off' message turns bloom off. The 'tone' message
+// switches from plain AgX to punchy AgX and posts 'settled', and 'tone-off' switches back, for the
+// cost of the punchy look.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -30,6 +32,8 @@ const FIXED = params.has('fixed');
 const SIZE = params.get('size');
 
 export default defineSketch(({ scene, materials, geometry, post, quality, time, page }) => {
+	// The three.js twin draws with AgXToneMapping, which plain AgX matches.
+	post.set({ toneMapping: 'agx' });
 	if (BLOOM && !LATER) post.set({ bloom: BLOOM });
 	if (SCALE !== null) {
 		const scale = Number(SCALE);
@@ -71,6 +75,11 @@ export default defineSketch(({ scene, materials, geometry, post, quality, time, 
 		scene.createMesh({ mesh, material, position: [...shape.position] });
 	}
 	page.onMessage((message) => {
+		if (message === 'tone-off') post.set({ toneMapping: 'agx' });
+		if (message === 'tone') {
+			post.set({ toneMapping: 'agx-punchy' });
+			page.post('settled', {});
+		}
 		if (message === 'bloom-off') post.set({ bloom: false });
 		if (message !== 'bloom') return;
 		const frame = time.frame;

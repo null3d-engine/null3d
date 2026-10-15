@@ -1175,6 +1175,7 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
     let failures: Vec<String> = [
         same_output(&output, &again),
         glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
+        glsl_declares_no_structure_value(&output),
         wgsl_has_only_number_literals_that_safari_reads(&output),
         standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
     ]
@@ -1222,6 +1223,173 @@ fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(output: &Output) -> Result<
         ));
     }
     Ok(())
+}
+
+/// Fails when a built GLSL shader declares a structure-typed local, parameter or result. A
+/// uniform block's own declaration is the only place a structure type may name a variable.
+fn glsl_declares_no_structure_value(output: &Output) -> Result<(), String> {
+    let mut breaks = Vec::new();
+    for (shader, variants) in &output.shaders {
+        for (variant, built) in variants {
+            for (pipeline, program) in built.glsl.iter().flatten() {
+                for (source, kind) in [
+                    (&program.vertex.source, "vertex"),
+                    (&program.fragment.source, "fragment"),
+                ] {
+                    for member in structure_variables(source) {
+                        breaks.push(format!(
+                            "{shader}.{variant} ({pipeline}, {kind} shader): {member}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if breaks.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "GLSL that holds a structure in a variable, which the Adreno 619 driver of a Galaxy Tab A9 Plus stores at 16 bits:\n{}",
+            breaks.join("\n")
+        ))
+    }
+}
+
+/// Every line of `source` that declares a structure-typed local, parameter or result.
+fn structure_variables(source: &str) -> Vec<String> {
+    let structs = structure_names(source);
+    let mut found = Vec::new();
+    let mut inside = false;
+    for (number, line) in source.lines().enumerate() {
+        let text = line.trim();
+        if text.starts_with("struct ") && text.ends_with('{') {
+            inside = true;
+            continue;
+        }
+        if inside {
+            if text.starts_with('}') {
+                inside = false;
+            }
+            continue;
+        }
+        // A uniform block may name its structure type; it is the one allowed declaration.
+        if text.contains("uniform ") && text.contains('{') {
+            continue;
+        }
+        if structs.iter().any(|name| declares_structure(text, name)) {
+            found.push(format!("line {}: {text}", number + 1));
+        }
+    }
+    found
+}
+
+/// The names of the structures that `source` declares.
+fn structure_names(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix("struct ")?;
+            let name = rest.split([' ', '{']).next()?;
+            (!name.is_empty()).then(|| name.to_owned())
+        })
+        .collect()
+}
+
+/// True when `line` declares a variable or a function of the structure type `name`.
+fn declares_structure(line: &str, name: &str) -> bool {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '.';
+    let mut from = 0;
+    while let Some(at) = line[from..].find(name) {
+        let at = from + at;
+        from = at + name.len();
+        let whole = line[..at].chars().next_back().is_none_or(|c| !word(c));
+        let next = line[from..].chars().next();
+        let after = line[from..].trim_start();
+        if whole
+            && next.is_some_and(|c| c.is_ascii_whitespace())
+            && after
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// A shader whose helpers take, return and hold structures.
+const STRUCTURED: &str = r"#import null3d::math
+
+struct Values {
+    color: vec3f,
+    alpha: f32,
+}
+
+struct VertexOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+}
+
+fn bright(v: Values) -> Values {
+    var out: Values;
+    out.color = v.color * 2.0;
+    out.alpha = v.alpha;
+    return out;
+}
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VertexOut {
+    var out: VertexOut;
+    out.position = vec4f(position, 1.0);
+    out.uv = position.xy;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4f {
+    let v = bright(Values(vec3f(in.uv, 0.5), 1.0));
+    return vec4f(v.color, v.alpha) * null3d::math::square(1.0);
+}
+";
+
+#[test]
+fn glsl_declares_no_structure_variable() {
+    let output = build(&project(
+        STRUCTURED,
+        &[("v", "{ targets = [\"glsl\"] }")],
+        &[],
+    ))
+    .expect("the shader builds");
+    let program = &output.shaders["shader"]["v"].glsl.as_ref().expect("GLSL")["main"];
+    for (source, kind) in [
+        (&program.vertex.source, "vertex"),
+        (&program.fragment.source, "fragment"),
+    ] {
+        let found = structure_variables(source);
+        assert!(
+            found.is_empty(),
+            "the {kind} shader holds a structure:\n{}\n{source}",
+            found.join("\n")
+        );
+    }
+}
+
+#[test]
+fn the_structure_check_finds_a_structure_variable() {
+    let good = "struct S {\n    vec4 a;\n};\nlayout(std140) uniform U { S block; };\nvoid main() {\n    vec4 a = block.a;\n}\n";
+    assert!(
+        structure_variables(good).is_empty(),
+        "{:?}",
+        structure_variables(good)
+    );
+    let bad = "struct S {\n    vec4 a;\n};\nvoid main() {\n    S s = S(vec4(0.0));\n}\n";
+    assert_eq!(
+        structure_variables(bad).len(),
+        1,
+        "{:?}",
+        structure_variables(bad)
+    );
 }
 
 #[test]
@@ -1368,7 +1536,7 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
         assert_eq!(header, "for (var k = 0u; k < count; k++) {");
     }
     assert!(
-        sun.contains("let count = u32(cascades.forward.w);"),
+        sun.contains("let count = u32(shadows.cascades.forward.w);"),
         "{sun}"
     );
     assert_eq!(number_constant(&shadows, "MAX_CASCADES"), 4.0);

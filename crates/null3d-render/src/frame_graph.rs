@@ -54,6 +54,14 @@
 //! multisampled scene color resolves at the end of each. Nothing of it runs while no object lets
 //! light through.
 //!
+//! While some object is a decal, the decal pass comes right after the camera's opaque pass (see
+//! [`crate::sorted`]). It reads the scene depth as the opaque pass leaves it, so it draws in a
+//! render pass of its own, with the scene color as its only target, before the debug lines, the
+//! transmission copy and the transparent pass. Each decal shades the opaque surfaces inside its
+//! box and blends over them. While some layers take no decals, the decal redraw pass then draws the
+//! camera's opaque objects on those layers again, over their own pixels. Nothing of it runs while
+//! no object is a decal.
+//!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
 //! scene color, which holds exposed color, and draws the canvas: it applies the tone mapping, and
@@ -105,6 +113,14 @@
 //! render size, and the camera's opaque pass reads the last one. They are declared only while
 //! ambient occlusion is on, on either path, since it needs no HDR color.
 //!
+//! While the sketch turns automatic exposure on, on the HDR path, the meter's steps run just
+//! before the final pass's render pass (see [`crate::exposure`]). They read the color that the
+//! final pass reads and write the exposure's texel, which the final pass then multiplies the color
+//! by. They are no passes of the graph: the meter owns its small targets, which keep its state
+//! from frame to frame, and the frame records its steps itself, as it records the transmission
+//! copy's mip levels. Until the meter's pipelines are built, the final pass keeps the camera's
+//! exposure.
+//!
 //! The final pass also grades the canvas color with a color grading table and the vignette (see
 //! [`crate::grading`]). Both work on display color, so they draw on the 8-bit path too: while the
 //! sketch sets either, the final pass runs there in place of the resolve pass, as it does while
@@ -134,7 +150,9 @@
 
 use std::borrow::Cow;
 
-use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
+use null3d_gpu::drawlist::{
+    DrawList, NO_TARGET, Op, format, pass_flags, permutation, texture_usage, view,
+};
 
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
@@ -143,7 +161,9 @@ use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{
     self, Effect, EffectIds, EffectJoins, EffectMaps, EffectPass, MAX_EFFECTS, Unit,
 };
+use crate::exposure::{ExposureFrame, ExposureIds, ExposurePass};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
+use crate::fog_volume::{self, FogVolumeFrame, FogVolumeIds, FogVolumePass, FogVolumeSources};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::fullscreen::{FullscreenIds, FullscreenPasses, PassInputs};
 use crate::grading::Grading;
@@ -153,6 +173,7 @@ use crate::graph::{
 };
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
+use crate::particles::{DEPTH_COPY_FORMAT, ParticleDepthCopy};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
@@ -160,6 +181,7 @@ use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, Su
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
+use crate::weighted::{self, WeightedIds, WeightedLayer};
 
 /// The format of the scene's depth targets.
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
@@ -170,17 +192,26 @@ pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
+    /// The GPU objects of the first step of the two-step pass, which shares the final pass's blank
+    /// tables and sampler and takes settings and a bind group of its own.
+    pub(crate) output_pass: FinalIds,
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
     pub(crate) fullscreen: FullscreenIds,
     pub(crate) dof: DofIds,
+    pub(crate) exposure: ExposureIds,
+    pub(crate) fog: FogVolumeIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
     pub(crate) transmission: TransmissionIds,
     /// The subsurface blur's steps.
     pub(crate) subsurface: SubsurfaceIds,
+    /// The composite and the depth copy of the camera's weighted layer.
+    pub(crate) weighted: WeightedIds,
+    /// The bind group of the copy of the camera's opaque depth that soft particles read.
+    pub(crate) particle_depth: u32,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -192,6 +223,9 @@ const LIGHTS: &str = "lights";
 const LIGHT_GRID: &str = "lightGrid";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
+/// The first step of the two-step pass's target: the scene's display color at the render size,
+/// which the second step scales up to the canvas.
+const OUTPUT_COLOR: &str = "outputColor";
 /// The camera's depth target.
 const SCENE_DEPTH: &str = "sceneDepth";
 /// The shadow map: a depth texture array with one layer per cascade, kept between frames.
@@ -269,6 +303,18 @@ const EFFECT_TARGETS: [&str; MAX_EFFECTS] = [
 /// read.
 const DOF_PASSES: [&str; dof::STEPS] = ["DofSetup", "DofGather", "DofTent", "DofComposite"];
 const DOF_TARGETS: [&str; dof::STEPS] = ["dofHalf0", "dofHalf1", "dofHalf2", "dofColor"];
+/// The volumetric fog's light steps, one for each of the two light textures that they write and
+/// take turns with, the light textures, the block step and its target, the sum and its target, and
+/// the apply step and its target, which the custom effects, depth of field, bloom and the final
+/// pass read.
+const FOG_LIGHT_PASSES: [&str; 2] = ["FogLight0", "FogLight1"];
+const FOG_LIGHT: [&str; 2] = ["fogLight0", "fogLight1"];
+const FOG_BLOCK_PASS: &str = "FogBlock";
+const FOG_BLOCKS: &str = "fogBlocks";
+const FOG_SUM_PASS: &str = "FogSum";
+const FOG_SUMMED: &str = "fogSummed";
+const FOG_APPLY_PASS: &str = "FogApply";
+const FOG_COLOR: &str = "fogColor";
 /// An effect slot that holds no effect.
 const NO_EFFECT: Effect = Effect {
     template: 0,
@@ -303,6 +349,20 @@ const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
 /// a mip chain that it creates, which the camera's transparent pass reads.
 const TRANSMISSION_PASS: &str = "Transmission";
 const TRANSMISSION_COLOR: &str = "transmissionColor";
+/// The camera's weighted layer (see [`crate::weighted`]): the pass that draws the weighted
+/// surfaces into its two sums, and with a multisampled scene the one-sample depth target that it
+/// copies first, and the composite, which blends the sums over the scene color.
+const WEIGHTED_DEPTH: &str = "weightedDepth";
+const WEIGHTED_PASS: &str = "Weighted";
+const WEIGHTED_SUM: &str = "weightedSum";
+const WEIGHTED_COVER: &str = "weightedCover";
+const WEIGHTED_COMPOSITE_PASS: &str = "WeightedComposite";
+/// The pass that draws decals over the camera's opaque objects, from the scene's depth so far.
+const DECALS_PASS: &str = "Decals";
+/// The pass that draws the objects that decals skip again, after the decal pass.
+const DECAL_REDRAW_PASS: &str = "DecalRedraw";
+const PARTICLE_DEPTH_PASS: &str = "ParticleDepth";
+const PARTICLE_DEPTH: &str = "particleDepth";
 /// The color target of the camera's depth prepass while ambient occlusion splits it from the
 /// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
 /// pipelines draw into, so each render pass ends without storing it, and it can share a texture
@@ -371,6 +431,10 @@ pub(crate) enum Role {
     DebugLines,
     /// Draws a view's blended objects, back to front, over its opaque ones.
     Transparent(ViewId),
+    /// Draws the decals over the camera's opaque objects, from the scene's depth.
+    Decals,
+    /// Draws the camera's opaque objects on the layers that decals skip again, over the decals.
+    DecalRedraw,
     /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
     /// attachment of its render pass resolves.
     Resolve,
@@ -390,6 +454,16 @@ pub(crate) enum Role {
     Effect(u8),
     /// A step of depth of field, by its place. The graph records it itself.
     Dof(u8),
+    /// The volumetric fog's light step into one of its two light textures, by the texture. The
+    /// graph records it, apart from the binding of the camera's frame group, which the builder
+    /// records. A frame draws the step of one texture and leaves out the other.
+    FogLight(u8),
+    /// The volumetric fog's block step, which the graph records itself.
+    FogBlock,
+    /// The volumetric fog's sum, which the graph records itself.
+    FogSum,
+    /// The volumetric fog's apply step, which the graph records itself.
+    FogApply,
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
@@ -399,11 +473,25 @@ pub(crate) enum Role {
     /// Copies the camera's opaque color into the first level of the target that surfaces which
     /// let light through sample. The graph records it, and the mip levels after its render pass.
     TransmissionCopy,
+    /// Draws the camera's weighted surfaces into the weighted layer's two sums. The builder
+    /// records it, after the graph's copy of a multisampled scene depth.
+    Weighted,
+    /// Blends the camera's weighted layer over its scene color. The graph records it itself.
+    WeightedComposite,
+    /// Copies the camera's opaque depth into the target that soft particles read. The graph
+    /// records it itself.
+    ParticleDepthCopy,
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
     /// it itself.
     FinalBloom,
+    /// Draws the first step of the two-step pass: the scene's display color at the render size,
+    /// into [`OUTPUT_COLOR`]. The graph records it itself.
+    Output,
+    /// Draws the first step of the two-step pass, with bloom's base level added. The graph records
+    /// it itself.
+    OutputBloom,
 }
 
 /// The passes that can take the scene color to the canvas: the resolve pass, and the final pass's
@@ -413,6 +501,10 @@ pub(crate) enum Role {
 struct Outputs {
     resolve: PassId,
     finals: [[Option<PassId>; 2]; 2],
+    /// The first step of the two-step pass, by whether bloom draws: it draws the scene's display
+    /// color at the render size into [`OUTPUT_COLOR`]. The plain final pass is then the second
+    /// step, which scales that up to the canvas with the grading and the outline.
+    output: [Option<PassId>; 2],
 }
 
 /// A name for a view's pass or resource: `camera` for the camera's view, and `other` followed by
@@ -497,6 +589,10 @@ pub(crate) struct FrameGraph {
     /// True when the render scale may drop below the whole canvas, so the final pass runs to scale
     /// the image up even where the scene could resolve into the canvas.
     scales: bool,
+    /// True when the declarations hold the two-step pass: the render scale can drop below the whole
+    /// canvas and the frame being declared draws below it. It follows the current scale with a
+    /// one-frame delay, so a crossing declares the passes again.
+    two_step_declared: bool,
     /// True while the sketch sets a color grading table or the vignette, so the final pass runs to
     /// grade the image even where the scene could resolve into the canvas.
     grades: bool,
@@ -587,6 +683,29 @@ pub(crate) struct FrameGraph {
     /// The textures that depth of field's steps read, found once for each compile of the graph,
     /// which the count says.
     dof_textures: Option<(u32, DofSources)>,
+    /// The automatic exposure's meter and its GPU objects, once the sketch first turns it on.
+    exposure_pass: Option<ExposurePass>,
+    /// The GPU objects that the meter takes.
+    exposure_ids: ExposureIds,
+    /// What the meter draws with in the frame, while the sketch turns automatic exposure on.
+    exposure: Option<ExposureFrame>,
+    /// True once the meter's pipelines draw: built, after the frame whose list created them.
+    exposure_built: bool,
+    /// The volumetric fog's steps and their GPU objects, once the sketch first turns it on.
+    fog_pass: Option<FogVolumePass>,
+    /// The GPU objects that the volumetric fog's steps take.
+    fog_ids: FogVolumeIds,
+    /// What the volumetric fog draws with in the frame, while the sketch turns it on.
+    fog: Option<FogVolumeFrame>,
+    /// True once the volumetric fog's pipelines draw: built, after the frame whose list created
+    /// them.
+    fog_built: bool,
+    /// The slices of the grid's textures that the declared passes hold, or 0 when they hold no
+    /// volumetric fog.
+    fog_declared: u32,
+    /// The textures that the volumetric fog's steps read, found once for each compile of the graph,
+    /// which the count says.
+    fog_textures: Option<(u32, FogVolumeSources)>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -626,6 +745,37 @@ pub(crate) struct FrameGraph {
     /// The textures that the copy reads and draws into, found once for each compile of the graph,
     /// which the count says.
     transmission_target: Option<(u32, u32, u32)>,
+    /// The composite and the depth copy of the camera's weighted layer.
+    weighted: WeightedLayer,
+    /// True when the device draws into the weighted layer's targets of 16-bit floats.
+    weighted_targets: bool,
+    /// True while some sorted bucket has a pipeline of the weighted layer.
+    weighted_wanted: bool,
+    /// True once the composite's pipeline and the depth copy's, where the scene needs it, are
+    /// built.
+    weighted_built: bool,
+    /// True when the declared passes hold the weighted layer.
+    weighted_declared: bool,
+    /// The textures that the layer's composite and depth copy read, found once for each compile
+    /// of the graph, which the count says: the two sums, and the scene depth or 0.
+    weighted_textures: Option<(u32, [u32; 3])>,
+    /// True while some object is a decal.
+    decals_wanted: bool,
+    /// True while objects on the layers that decals skip draw again after them.
+    redraws_wanted: bool,
+    /// True when the declared passes hold the decal pass.
+    decals_declared: bool,
+    /// The copy of the camera's opaque depth for soft particles.
+    particle_depth: ParticleDepthCopy,
+    /// True while a particle system on the scene fades near the surfaces behind it.
+    particle_depth_wanted: bool,
+    /// True once the copy's pipeline is built, after the frame whose list created it.
+    particle_depth_built: bool,
+    /// True when the declared passes hold the copy.
+    particle_depth_declared: bool,
+    /// The textures that the copy reads and draws into, found once for each compile of the graph,
+    /// which the count says.
+    particle_depth_target: Option<(u32, u32, u32)>,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
@@ -653,6 +803,8 @@ pub(crate) struct FrameGraph {
     /// The views of layers that the draw lists made.
     made_views: u32,
     final_pass: FinalPass,
+    /// The first step of the two-step pass below the whole canvas's render scale.
+    output_pass: FinalPass,
 }
 
 impl FrameGraph {
@@ -700,6 +852,7 @@ impl FrameGraph {
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
+            two_step_declared: false,
             grades: false,
             outline: None,
             outlined: false,
@@ -750,6 +903,16 @@ impl FrameGraph {
             subsurface_built: false,
             subsurface_declared: false,
             subsurface_textures: None,
+            exposure_pass: None,
+            exposure_ids: ids.exposure,
+            exposure: None,
+            exposure_built: false,
+            fog_pass: None,
+            fog_ids: ids.fog,
+            fog: None,
+            fog_built: false,
+            fog_declared: 0,
+            fog_textures: None,
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -765,6 +928,20 @@ impl FrameGraph {
             transmission_built: false,
             transmission_declared: false,
             transmission_target: None,
+            weighted: WeightedLayer::new(ids.weighted),
+            weighted_targets: true,
+            weighted_wanted: false,
+            weighted_built: false,
+            weighted_declared: false,
+            weighted_textures: None,
+            decals_wanted: false,
+            redraws_wanted: false,
+            decals_declared: false,
+            particle_depth: ParticleDepthCopy::new(ids.particle_depth),
+            particle_depth_wanted: false,
+            particle_depth_built: false,
+            particle_depth_declared: false,
+            particle_depth_target: None,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -778,6 +955,7 @@ impl FrameGraph {
             tiles: None,
             declared: false,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
+            output_pass: FinalPass::new(ids.output_pass, scene_color, antialias).resolve(),
         }
     }
 
@@ -795,6 +973,7 @@ impl FrameGraph {
         self.samples = antialias.samples();
         self.resolves = !scene_color.is_hdr() && antialias == Antialias::Msaa;
         self.final_pass.set_mode(scene_color, antialias);
+        self.output_pass.set_mode(scene_color, antialias);
         self.make_bloom_pass();
         // Effects run on HDR color only, and read the depth's samples, which the new mode may
         // change.
@@ -819,8 +998,16 @@ impl FrameGraph {
         self.ao_pass = None;
         self.dof_pass = None;
         self.dof_built = false;
-        // The copy's target takes the scene color's format, which its pipeline draws into.
+        // The meter reads HDR color only.
+        if !scene_color.is_hdr() {
+            self.exposure = None;
+        }
+        self.fog_pass = None;
+        self.fog_built = false;
+        // The copy's target takes the scene color's format, which its pipeline draws into, and the
+        // depth copy reads the depth's samples.
         self.transmission_built = false;
+        self.particle_depth_built = false;
         self.declared = false;
     }
 
@@ -1004,6 +1191,48 @@ impl FrameGraph {
         }
     }
 
+    /// What the decal pass's pipelines draw into: the scene color alone, as the scene's pipelines
+    /// draw it, and on WebGPU the bit that reads sample 0 of a multisampled depth. WebGL2 reads a
+    /// copy of one sample.
+    pub(crate) fn decal_targets(&self) -> PassTargets {
+        let scene = self.scene_targets();
+        let multisampled = if self.decal_depth_multisampled() {
+            permutation::DEPTH_MULTISAMPLED
+        } else {
+            0
+        };
+        PassTargets {
+            depth_format: format::NONE,
+            permutation: scene.permutation | multisampled,
+            ..scene
+        }
+    }
+
+    /// True when the decal pass reads a multisampled depth texture: on WebGPU with MSAA.
+    pub(crate) fn decal_depth_multisampled(&self) -> bool {
+        self.gpu_culling && self.samples > 1
+    }
+
+    /// Turns the decal pass on while some object is a decal, and off otherwise, for the next
+    /// frames, with its redraw of the objects on the layers that decals skip while `redraws`. The
+    /// passes are declared again only when either changes.
+    pub(crate) fn set_decals(&mut self, on: bool, redraws: bool) {
+        let redraws = on && redraws;
+        if on != self.decals_wanted || redraws != self.redraws_wanted {
+            self.decals_wanted = on;
+            self.redraws_wanted = redraws;
+            self.declared = false;
+        }
+    }
+
+    /// The draw list's id of the scene depth that the decal pass reads, or `None` while it does
+    /// not run. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn decal_depth(&self) -> Option<u32> {
+        self.decals_declared
+            .then(|| self.sampled_id(SCENE_DEPTH))
+            .flatten()
+    }
+
     /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
     /// start to run in any frame, once the render scale can drop.
     pub(crate) fn upload_bound(&self) -> usize {
@@ -1032,12 +1261,35 @@ impl FrameGraph {
         } else {
             0
         };
+        let fog = if self.fog.is_some() {
+            FogVolumePass::UPLOAD_BYTES
+        } else {
+            0
+        };
         let fullscreen = if self.fullscreen_views != 0 {
             FullscreenPasses::UPLOAD_BYTES
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof + subsurface + fullscreen
+        let exposure = if self.exposure.is_some() {
+            ExposurePass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES
+            + if self.two_step_declared {
+                FinalPass::UPLOAD_BYTES
+            } else {
+                0
+            }
+            + bloom
+            + ao
+            + effects
+            + dof
+            + subsurface
+            + fog
+            + fullscreen
+            + exposure
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1051,6 +1303,7 @@ impl FrameGraph {
             || self.fullscreen_reads_color
             || self.outline_draws()
             || self.transmission_declared
+            || self.particle_depth_declared
     }
 
     /// Says whether the render scale may drop below the whole canvas. Where the scene could
@@ -1059,6 +1312,24 @@ impl FrameGraph {
     pub(crate) fn set_scaling(&mut self, scales: bool) {
         self.scales = scales;
         self.enable_outputs();
+    }
+
+    /// Declares the passes again from the last views, for a change that only the declarations
+    /// follow, such as the render scale crossing the whole canvas.
+    fn redeclare(&mut self) {
+        if self.declared_views.is_empty() {
+            self.declared = false;
+        } else {
+            let views = self.declared_views.clone();
+            let names = self.declared_names.clone();
+            self.declare(&views, &names);
+        }
+    }
+
+    /// True when the frame's declared steps are the two-step pass: the render scale can drop below
+    /// the whole canvas and the frame draws below it.
+    fn two_step(&self) -> bool {
+        self.scales && self.scale != RenderScale::FULL
     }
 
     /// Says whether the sketch sets a color grading table or the vignette. Where the scene could
@@ -1076,15 +1347,35 @@ impl FrameGraph {
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
         let outlines = self.outline_draws();
-        if let Some(Outputs { resolve, finals }) = self.outputs {
+        let two_step = self.two_step_declared;
+        if let Some(Outputs {
+            resolve,
+            finals,
+            output,
+        }) = self.outputs
+        {
             let final_runs = self.final_runs();
             self.graph.set_enabled(resolve, !final_runs);
             for (bloom, passes) in finals.into_iter().enumerate() {
                 for (outline, pass) in passes.into_iter().enumerate() {
                     if let Some(pass) = pass {
-                        let on = final_runs && blooms == (bloom == 1) && outlines == (outline == 1);
+                        // With the two-step pass the plain final pass draws the second step, which
+                        // reads the first step's display color; bloom draws in the first step then.
+                        let on = final_runs
+                            && if two_step {
+                                bloom == 0 && outlines == (outline == 1)
+                            } else {
+                                blooms == (bloom == 1) && outlines == (outline == 1)
+                            };
                         self.graph.set_enabled(pass, on);
                     }
+                }
+            }
+            // The first step draws the scene's display color at the render size, with the bloom.
+            for (bloom, pass) in output.into_iter().enumerate() {
+                if let Some(pass) = pass {
+                    self.graph
+                        .set_enabled(pass, final_runs && two_step && blooms == (bloom == 1));
                 }
             }
         }
@@ -1202,13 +1493,23 @@ impl FrameGraph {
         self.final_pass.set_tone_curve(template);
     }
 
-    /// The resource that holds the scene's color before the custom effects: the subsurface blur's
-    /// copy while its passes are declared, or else the scene color.
-    fn scene_output(&self) -> &'static str {
+    /// The resource that holds the scene's lit color: the subsurface blur's copy while its passes
+    /// are declared, or else the scene color. The volumetric fog's apply step reads it.
+    fn lit_output(&self) -> &'static str {
         if self.subsurface_declared {
             SUBSURFACE_TARGETS[subsurface::STEPS - 1]
         } else {
             SCENE_COLOR
+        }
+    }
+
+    /// The resource that holds the scene's color before the custom effects: the volumetric fog's
+    /// target while its steps are declared, or else the lit color. The custom effects read it.
+    fn scene_output(&self) -> &'static str {
+        if self.fog_declared > 0 {
+            FOG_COLOR
+        } else {
+            self.lit_output()
         }
     }
 
@@ -1243,10 +1544,88 @@ impl FrameGraph {
         }
     }
 
+    /// Turns automatic exposure on with what the frame meters with, or off with `None`, for the
+    /// next frames. The plan stays as it is: the meter records its own steps. The 8-bit path draws
+    /// no automatic exposure.
+    pub(crate) fn set_exposure(&mut self, exposure: Option<ExposureFrame>) {
+        self.exposure = exposure.filter(|_| self.scene_color.is_hdr());
+    }
+
+    /// True while the meter runs: the sketch turned automatic exposure on, on the HDR path, and the
+    /// meter's pipelines are built. Until then the final pass keeps the camera's exposure.
+    pub(crate) fn exposure_draws(&self) -> bool {
+        self.exposure.is_some() && self.exposure_built
+    }
+
+    /// The meter, made when first asked for.
+    fn exposure_meter(&mut self) -> &mut ExposurePass {
+        let rows_from_bottom = !self.gpu_culling;
+        self.exposure_pass
+            .get_or_insert_with(|| ExposurePass::new(self.exposure_ids, rows_from_bottom))
+    }
+
+    /// Records the creation of the meter's compute pipelines in the list of `frame`, while the
+    /// sketch turns automatic exposure on and its meter is the histogram. Call it before
+    /// [`FrameGraph::request_pipelines`]. Returns true when it recorded them.
+    pub(crate) fn create_exposure_pipelines(
+        &mut self,
+        list: &mut DrawList,
+        frame: u32,
+    ) -> Result<bool, RecordError> {
+        let Some(exposure) = self.exposure else {
+            return Ok(false);
+        };
+        let meter = self.exposure_meter();
+        if meter.path(exposure.meter) != crate::exposure::Meter::Histogram {
+            return Ok(false);
+        }
+        meter.create_compute_pipelines(list, frame)
+    }
+
     /// True while depth of field draws: the sketch turned it on on the HDR path, and its pipelines
     /// are built. Until then the frames draw without it.
     pub(crate) fn dof_draws(&self) -> bool {
         self.dof.is_some() && self.dof_built
+    }
+
+    /// Turns the volumetric fog on with what the frame draws it with, or off with `None`, for the
+    /// next frames. The passes are declared again only when it starts or stops drawing, or its
+    /// grid's textures change size, so a moving camera changes only the steps' block. The 8-bit
+    /// path draws no volumetric fog.
+    pub(crate) fn set_fog_volume(&mut self, fog: Option<FogVolumeFrame>) {
+        let was = self.fog_draws();
+        self.fog = fog.filter(|_| self.scene_color.is_hdr());
+        let slices = self.fog.map_or(0, |fog| fog.slices);
+        if self.fog_draws() != was || (self.fog_declared > 0 && slices != self.fog_declared) {
+            self.declared = false;
+        }
+        if !self.fog_draws()
+            && let Some(pass) = self.fog_pass.as_mut()
+        {
+            pass.forget_history();
+        }
+    }
+
+    /// True while the volumetric fog draws: the sketch turned it on on the HDR path, and its
+    /// pipelines are built. Until then the frames draw the fog with its sun glow.
+    pub(crate) fn fog_draws(&self) -> bool {
+        self.fog.is_some() && self.fog_built
+    }
+
+    /// The volumetric fog's steps, made for the scene depth's samples when first asked for, as
+    /// depth of field's are.
+    fn fog_steps(&mut self) -> &mut FogVolumePass {
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let rows_from_bottom = !self.gpu_culling;
+        self.fog_pass
+            .get_or_insert_with(|| FogVolumePass::new(self.fog_ids, samples, rows_from_bottom))
+    }
+
+    /// The volumetric fog's steps, which exist while their passes are declared.
+    fn fog_steps_ref(&self) -> &FogVolumePass {
+        self.fog_pass
+            .as_ref()
+            .expect("the volumetric fog's steps run once they are declared")
     }
 
     /// Depth of field's steps, made for the scene depth's samples when first asked for. WebGL2 has
@@ -1308,13 +1687,16 @@ impl FrameGraph {
     /// pipeline `built` says is built as one. When the plan changes, the passes are declared again.
     fn plan_effects(&mut self, built: impl Fn(usize) -> bool, fold: Option<usize>) {
         let mut units = [Unit::default(); MAX_EFFECTS];
-        let count = effects::plan_units(
-            self.effect_count,
-            &self.effect_joins,
-            built,
-            fold,
-            &mut units,
-        );
+        // A joined group writes one target for the whole group. The two-step pass reads that target,
+        // and its own rows differ from a single effect's on WebGL2, so below the whole canvas's
+        // scale each effect runs alone. Above it, the sketch's groups stay.
+        let joins = if self.two_step_declared {
+            EffectJoins::default()
+        } else {
+            self.effect_joins
+        };
+        let fold = fold.filter(|_| !self.two_step_declared);
+        let count = effects::plan_units(self.effect_count, &joins, built, fold, &mut units);
         if count != self.unit_count || units != self.effect_units || fold != self.folded {
             self.effect_units = units;
             self.unit_count = count;
@@ -1330,6 +1712,8 @@ impl FrameGraph {
         !self.bloom_wanted()
             && self.dof.is_none()
             && !self.final_pass.fxaa()
+            // The two-step pass reads display color in its second step, so the effects do not fold.
+            && !self.two_step_declared
             && Size::Full.viewport(self.canvas, self.scale) == self.canvas
     }
 
@@ -1455,6 +1839,81 @@ impl FrameGraph {
             .then(|| self.sampled_id(TRANSMISSION_COLOR))
             .flatten()
             .unwrap_or_else(|| self.transmission.blank())
+    }
+
+    /// Says whether the device draws into one-sample targets of 16-bit floats, which the camera's
+    /// weighted layer needs. Without them, weighted surfaces draw back to front in the transparent
+    /// pass, as surfaces of normal blending.
+    pub(crate) fn set_weighted_targets(&mut self, supported: bool) {
+        self.weighted_targets = supported;
+    }
+
+    /// The targets of the camera's weighted layer, for the pipelines of a pass whose targets are
+    /// `scene`, or `None` where the device cannot draw the layer.
+    pub(crate) fn weighted_targets(&self, scene: PassTargets) -> Option<PassTargets> {
+        self.weighted_targets.then_some(PassTargets {
+            color_format: weighted::SUM_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: 1,
+            ..scene
+        })
+    }
+
+    /// Turns the camera's weighted layer on while some sorted bucket has its pipeline, and off
+    /// otherwise, for the next frames. The passes are declared again only when the layer starts or
+    /// stops drawing. Call it before [`FrameGraph::request_pipelines`], which asks for the layer's
+    /// own pipelines.
+    pub(crate) fn set_weighted(&mut self, on: bool) {
+        let was = self.weighted_draws();
+        self.weighted_wanted = on && self.weighted_targets;
+        if self.weighted_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// Turns the copy of the camera's opaque depth on while a particle system fades near the
+    /// surfaces behind it, and off otherwise, as [`FrameGraph::set_transmission`] turns its copy.
+    pub(crate) fn set_soft_particles(&mut self, on: bool) {
+        let was = self.particle_depth_draws();
+        self.particle_depth_wanted = on;
+        if self.particle_depth_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while the camera's weighted layer draws: some sorted bucket has its pipeline, and the
+    /// layer's own pipelines are built. Until then weighted surfaces draw back to front in the
+    /// transparent pass.
+    pub(crate) fn weighted_draws(&self) -> bool {
+        self.weighted_wanted && self.weighted_built
+    }
+
+    /// True when the declared passes hold the camera's weighted layer, so the camera's
+    /// transparent pass leaves weighted buckets to the weighted pass.
+    pub(crate) fn weighted_declared(&self) -> bool {
+        self.weighted_declared
+    }
+
+    /// True when the camera's weighted layer copies one sample of a multisampled scene depth,
+    /// which it then tests against.
+    fn weighted_copies_depth(&self) -> bool {
+        self.samples > 1
+    }
+
+    /// True while the copy of the camera's opaque depth draws: a particle system wants it, and its
+    /// pipeline is built.
+    fn particle_depth_draws(&self) -> bool {
+        self.particle_depth_wanted && self.particle_depth_built
+    }
+
+    /// The draw list's id of the copy of the camera's opaque depth while it draws, which the
+    /// camera's particle systems bind. Valid once the frame's [`FrameGraph::prepare`] made the
+    /// plan's textures.
+    pub(crate) fn particle_depth_texture(&self) -> Option<u32> {
+        if !self.particle_depth_declared {
+            return None;
+        }
+        self.particle_depth_target.map(|(_, _, target)| target)
     }
 
     /// Switches each view's passes on or off with the view, and its transparent pass only while
@@ -1703,6 +2162,25 @@ impl FrameGraph {
             self.opaque.push((index as u16, pass));
             self.view_passes.push((index as u16, pass));
         }
+        self.decals_declared = self.decals_wanted && !views.is_empty();
+        if self.decals_declared {
+            // Decals read the depth that the camera's opaque pass leaves, and draw over its color
+            // before the debug lines and the passes that copy or blend over it.
+            let decals = Pass::new(DECALS_PASS, PassKind::Scene)
+                .size(view_size(&views[ViewId::CAMERA.index()]))
+                .reads_so_far(SCENE_DEPTH)
+                .writes(SCENE_COLOR);
+            self.add(decals, Role::Decals);
+            if self.redraws_wanted {
+                // The objects that decals skip draw again over their own pixels, with the depth
+                // test, in the render pass of the debug lines and the transparent pass.
+                let redraw = Pass::new(DECAL_REDRAW_PASS, PassKind::Scene)
+                    .size(view_size(&views[ViewId::CAMERA.index()]))
+                    .writes(SCENE_COLOR)
+                    .writes(SCENE_DEPTH);
+                self.add(redraw, Role::DecalRedraw);
+            }
+        }
         let lines = Pass::new("DebugLines", PassKind::Scene)
             .writes(SCENE_COLOR)
             .writes(SCENE_DEPTH);
@@ -1721,6 +2199,16 @@ impl FrameGraph {
                 .creates(TRANSMISSION_COLOR, target);
             self.add(copy, Role::TransmissionCopy);
         }
+        self.particle_depth_declared = self.particle_depth_draws() && !views.is_empty();
+        if self.particle_depth_declared {
+            // The copy reads the scene depth as the opaque pass and the debug lines leave it.
+            let copy = Pass::new(PARTICLE_DEPTH_PASS, PassKind::Fullscreen)
+                .optional()
+                .size(view_size(&views[ViewId::CAMERA.index()]))
+                .reads_so_far(SCENE_DEPTH)
+                .creates(PARTICLE_DEPTH, Target::color(DEPTH_COPY_FORMAT));
+            self.add(copy, Role::ParticleDepthCopy);
+        }
         for (index, view) in views.iter().enumerate() {
             if self.fullscreen_views & (1 << index) != 0 {
                 continue;
@@ -1738,10 +2226,17 @@ impl FrameGraph {
             if self.transmission_declared && index == ViewId::CAMERA.index() {
                 pass = pass.reads(TRANSMISSION_COLOR);
             }
+            if self.particle_depth_declared && index == ViewId::CAMERA.index() {
+                pass = pass.reads(PARTICLE_DEPTH);
+            }
             let pass = reads_targets(pass, views, &named, index);
             let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
             self.transparent.push((index as u16, pass));
+        }
+        self.weighted_declared = self.weighted_draws() && !views.is_empty();
+        if self.weighted_declared {
+            self.declare_weighted(views, &named);
         }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
@@ -1773,6 +2268,14 @@ impl FrameGraph {
         if self.subsurface_declared {
             self.declare_subsurface(views, &named);
         }
+        self.fog_declared = if self.fog_draws() {
+            self.fog.map_or(0, |fog| fog.slices)
+        } else {
+            0
+        };
+        if self.fog_declared > 0 {
+            self.declare_fog(self.fog_declared);
+        }
         self.declare_effects();
         self.dof_declared = self.dof_draws();
         if self.dof_declared {
@@ -1782,9 +2285,27 @@ impl FrameGraph {
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let resolve = self.add(resolve, Role::Resolve);
+        // Below the whole canvas's render scale the final pass draws in two steps: the first step
+        // draws the scene's display color at the render size into OUTPUT_COLOR, and the plain final
+        // pass then scales that up to the canvas.
+        self.two_step_declared = self.two_step();
+        let two_step = self.two_step_declared;
+        let output = if two_step {
+            [
+                Some(self.declare_output(false)),
+                self.bloom_pass.is_some().then(|| self.declare_output(true)),
+            ]
+        } else {
+            [None, None]
+        };
+        let source = if two_step {
+            OUTPUT_COLOR
+        } else {
+            self.color_output()
+        };
         let mut final_pass = Pass::new("Final", PassKind::Fullscreen)
             .size(Size::Canvas)
-            .reads(self.color_output())
+            .reads(source)
             .writes(CANVAS);
         if self.folded.is_some_and(|first| self.folded_depth(first)) {
             final_pass = final_pass.reads(SCENE_DEPTH);
@@ -1801,7 +2322,11 @@ impl FrameGraph {
                 Some(self.add(final_bloom_outline, Role::FinalBloom)),
             ];
         }
-        self.outputs = Some(Outputs { resolve, finals });
+        self.outputs = Some(Outputs {
+            resolve,
+            finals,
+            output,
+        });
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
@@ -1987,6 +2512,55 @@ impl FrameGraph {
         }
     }
 
+    /// Declares the volumetric fog's steps for a grid of `slices` slices: the two light steps, each
+    /// into a kept light texture that it reads the other one of, then the block step, which reads
+    /// both, the sum, which reads the block step's target, and the apply step, which reads the
+    /// lit color and the scene's depth as every pass leaves them and the sum's target. The light
+    /// steps bind the camera's frame group, so they read what its opaque pass reads of the lights
+    /// and the shadows. The first light step reads the second's texture as the frame starts, before
+    /// the second step writes it.
+    fn declare_fog(&mut self, slices: u32) {
+        let size = fog_volume::grid_size(slices);
+        let grid = Target::color(fog_volume::GRID_FORMAT);
+        for name in FOG_LIGHT {
+            self.graph.keep(name, grid, size);
+        }
+        for (parity, name) in FOG_LIGHT_PASSES.into_iter().enumerate() {
+            let mut pass = Pass::new(name, PassKind::Fullscreen)
+                .size(size)
+                .writes(FOG_LIGHT[parity]);
+            pass = if parity == 0 {
+                pass.reads_so_far(FOG_LIGHT[1])
+            } else {
+                pass.reads(FOG_LIGHT[0])
+            };
+            if self.gpu_culling {
+                pass = pass.reads(LIGHT_GRID);
+            }
+            if self.shadow_map {
+                pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
+            }
+            self.add(pass, Role::FogLight(parity as u8));
+        }
+        let block = Pass::new(FOG_BLOCK_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(FOG_LIGHT[0])
+            .reads(FOG_LIGHT[1])
+            .creates(FOG_BLOCKS, grid);
+        self.add(block, Role::FogBlock);
+        let sum = Pass::new(FOG_SUM_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(FOG_BLOCKS)
+            .creates(FOG_SUMMED, grid);
+        self.add(sum, Role::FogSum);
+        let apply = Pass::new(FOG_APPLY_PASS, PassKind::Fullscreen)
+            .reads(self.lit_output())
+            .reads(SCENE_DEPTH)
+            .reads(FOG_SUMMED)
+            .creates(FOG_COLOR, Target::color(fog_volume::FORMAT));
+        self.add(apply, Role::FogApply);
+    }
+
     /// The pass, reading the target of each view in the mask `views` that the graph declares.
     fn reads_views(&self, mut pass: Pass, views: u32) -> Pass {
         for (index, target) in self.view_colors.iter().enumerate() {
@@ -2027,6 +2601,39 @@ impl FrameGraph {
         }
     }
 
+    /// Declares the camera's weighted layer after its transparent pass (see [`crate::weighted`]).
+    /// The weighted pass draws into its two sums with the scene's depth as its depth target. A
+    /// scene of one sample lends its own depth. A multisampled scene's pass creates a depth target
+    /// of one sample, and its first draw copies the scene depth into it, as the transparent pass
+    /// leaves it. The composite then blends the sums over the scene color.
+    fn declare_weighted(&mut self, views: &[View], named: &[ViewPassNames]) {
+        let camera = &views[ViewId::CAMERA.index()];
+        let size = view_size(camera);
+        let mut layer = Pass::new(WEIGHTED_PASS, PassKind::Scene)
+            .size(size)
+            .layers(camera.layers())
+            .creates(WEIGHTED_SUM, Target::color(weighted::SUM_FORMAT))
+            .creates(WEIGHTED_COVER, Target::color(weighted::COVER_FORMAT));
+        layer = if self.weighted_copies_depth() {
+            layer
+                .reads_so_far(SCENE_DEPTH)
+                .creates(WEIGHTED_DEPTH, Target::depth(DEPTH_FORMAT))
+        } else {
+            layer.writes(SCENE_DEPTH)
+        };
+        if self.skins() {
+            layer = layer.reads(SKINNED);
+        }
+        let layer = reads_targets(layer, views, named, ViewId::CAMERA.index());
+        self.add(layer, Role::Weighted);
+        let composite = Pass::new(WEIGHTED_COMPOSITE_PASS, PassKind::Scene)
+            .size(size)
+            .reads(WEIGHTED_SUM)
+            .reads(WEIGHTED_COVER)
+            .writes(SCENE_COLOR);
+        self.add(composite, Role::WeightedComposite);
+    }
+
     /// Declares the steps of ambient occlusion: the depth copy reads the scene depth as the
     /// prepass leaves it, the horizon search reads the copy, and the denoise reads both.
     fn declare_ao(&mut self) {
@@ -2050,6 +2657,33 @@ impl FrameGraph {
         let samples = if self.gpu_culling { self.samples } else { 1 };
         self.ao_pass
             .get_or_insert_with(|| AoPass::new(self.ao_ids, samples))
+    }
+
+    /// Declares the first step of the two-step pass: one triangle over the render size, which draws
+    /// the scene's display color into [`OUTPUT_COLOR`], with bloom's base level added when `bloom`.
+    /// It draws at [`Size::Full`], so it fills the render size and its `whole` test holds. The
+    /// pass without bloom creates the target; the pass with bloom writes it.
+    fn declare_output(&mut self, bloom: bool) -> PassId {
+        let mut pass = Pass::new(
+            if bloom { "OutputBloom" } else { "Output" },
+            PassKind::Fullscreen,
+        )
+        .optional()
+        .size(Size::Full)
+        .reads(self.color_output());
+        if bloom {
+            pass = pass.reads(BLOOM_LEVELS[0]).writes(OUTPUT_COLOR);
+        } else {
+            pass = pass.creates(OUTPUT_COLOR, Target::color(format::CANVAS));
+        }
+        self.add(
+            pass,
+            if bloom {
+                Role::OutputBloom
+            } else {
+                Role::Output
+            },
+        )
     }
 
     /// Declares bloom's steps: a step down into each level, the first from the scene color and
@@ -2158,6 +2792,11 @@ impl FrameGraph {
         } else {
             RenderScale::FULL
         };
+        // The two-step pass runs only below the whole canvas's scale, so a crossing declares the
+        // passes again now, before the plan compiles.
+        if self.two_step() != self.two_step_declared {
+            self.redeclare();
+        }
         let rescaled = self.scale != previous;
         let compiled = self.graph.compile().map_err(RecordError::Graph)?
             | std::mem::take(&mut self.compiled_early);
@@ -2186,6 +2825,8 @@ impl FrameGraph {
     ) {
         let wanted = self.bloom_wanted();
         let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        // The first step draws the same builds as the final pass, so it asks for them too.
+        self.output_pass.request_pipeline(pipelines, wanted);
         if let Some(pass) = self.effect_pass.as_mut() {
             pass.request_pipelines(
                 pipelines,
@@ -2228,6 +2869,25 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        self.exposure_built = match self.exposure {
+            Some(exposure) => {
+                self.exposure_meter()
+                    .request_pipelines(pipelines, exposure.meter, pipelines_built)
+            }
+            None => false,
+        };
+        let fog_built = self.fog.is_some() && {
+            let steps = self.fog_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        if fog_built != self.fog_built {
+            let was = self.fog_draws();
+            self.fog_built = fog_built;
+            if self.fog_draws() != was {
+                self.declared = false;
+            }
+        }
         let ao_built = self.screen_steps() && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
@@ -2258,6 +2918,36 @@ impl FrameGraph {
             let was = self.transmission_draws();
             self.transmission_built = transmission_built;
             if self.transmission_draws() != was {
+                self.declared = false;
+            }
+        }
+        let weighted_built = self.weighted_wanted && {
+            let composite =
+                self.weighted
+                    .request_composite(pipelines, self.scene_color.format(), self.samples);
+            let depth = self
+                .weighted_copies_depth()
+                .then(|| self.weighted.request_depth(pipelines, DEPTH_FORMAT));
+            pipelines.built(composite, pipelines_built)
+                && depth.is_none_or(|id| pipelines.built(id, pipelines_built))
+        };
+        if weighted_built != self.weighted_built {
+            let was = self.weighted_draws();
+            self.weighted_built = weighted_built;
+            if self.weighted_draws() != was {
+                self.declared = false;
+            }
+        }
+        // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let particle_depth_built = self.particle_depth_wanted && {
+            let id = self.particle_depth.request_pipeline(pipelines, samples);
+            pipelines.built(id, pipelines_built)
+        };
+        if particle_depth_built != self.particle_depth_built {
+            let was = self.particle_depth_draws();
+            self.particle_depth_built = particle_depth_built;
+            if self.particle_depth_draws() != was {
                 self.declared = false;
             }
         }
@@ -2339,8 +3029,12 @@ impl FrameGraph {
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
         self.upload_dof(list, arena)?;
+        let exposure = self.upload_exposure(list, arena)?;
+        self.upload_fog(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
+        self.bind_weighted(list)?;
+        self.bind_particle_depth(list)?;
         if !self.final_runs() {
             return Ok(());
         }
@@ -2389,6 +3083,51 @@ impl FrameGraph {
             }),
             None => None,
         };
+        if self.two_step_declared {
+            // Two steps: the first draws the display color at the render size, with the bloom, and
+            // the second scales it up to the canvas, with the grading and the outline. The vignette
+            // darkens high dynamic range color in the first step and display color in the second.
+            let hdr = self.scene_color.is_hdr();
+            let output_color = self
+                .sampled_id(OUTPUT_COLOR)
+                .expect("the two-step pass reads the first step's target");
+            let first_grading = Grading {
+                vignette: if hdr { grading.vignette } else { None },
+                lut: None,
+            };
+            let second_grading = Grading {
+                vignette: if hdr { None } else { grading.vignette },
+                lut: grading.lut,
+            };
+            self.output_pass.prepare(
+                list,
+                arena,
+                output.tone_mapping,
+                render_size,
+                scene_color,
+                bloom,
+                first_grading,
+                None,
+                None,
+                exposure,
+                self.textures_made,
+                false,
+            )?;
+            return self.final_pass.prepare(
+                list,
+                arena,
+                output.tone_mapping,
+                render_size,
+                output_color,
+                None,
+                second_grading,
+                outline,
+                None,
+                None,
+                self.textures_made,
+                true,
+            );
+        }
         self.final_pass.prepare(
             list,
             arena,
@@ -2399,8 +3138,37 @@ impl FrameGraph {
             grading,
             outline,
             fold,
+            exposure,
             self.textures_made,
+            false,
         )
+    }
+
+    /// Uploads the meter's block and binds its steps to the color that the final pass reads while
+    /// the meter runs, and returns its texel, which the final pass reads. A frame without the
+    /// meter makes the next frame that meters take its stops at once.
+    fn upload_exposure(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<Option<u32>, RecordError> {
+        let frame = match self.exposure {
+            Some(frame) if self.exposure_draws() && self.final_runs() => frame,
+            _ => {
+                if let Some(meter) = self.exposure_pass.as_mut() {
+                    meter.skip();
+                }
+                return Ok(None);
+            }
+        };
+        let source = self
+            .sampled_id(self.color_output())
+            .expect("the meter reads the color that the final pass reads");
+        let size = (self.canvas, self.scale);
+        let made = self.textures_made;
+        let meter = self.exposure_meter();
+        meter.prepare(list, arena, size, frame, source, made)?;
+        Ok(Some(meter.texel()))
     }
 
     /// The texture that each of bloom's declared steps reads, and the base level's, found by name
@@ -2554,7 +3322,7 @@ impl FrameGraph {
         let mut colors = [0; MAX_EFFECTS];
         for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
             let input = if index == 0 {
-                SCENE_COLOR
+                self.scene_output()
             } else {
                 EFFECT_TARGETS[index - 1]
             };
@@ -2631,6 +3399,40 @@ impl FrameGraph {
             .prepare(list, arena, frame_size, frame, sources, made)
     }
 
+    /// Records the volumetric fog's objects and block while its steps are declared, and binds the
+    /// steps to the textures they read, found by name once for each compile of the graph.
+    fn upload_fog(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.fog.filter(|_| self.fog_declared > 0) else {
+            return Ok(());
+        };
+        let compiles = self.graph.compiles();
+        let sources = match self.fog_textures {
+            Some((at, sources)) if at == compiles => sources,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("each step of the volumetric fog reads a planned texture")
+                };
+                let sources = FogVolumeSources {
+                    lit: FOG_LIGHT.map(id),
+                    blocks: id(FOG_BLOCKS),
+                    summed: id(FOG_SUMMED),
+                    color: id(self.lit_output()),
+                    depth: id(SCENE_DEPTH),
+                };
+                self.fog_textures = Some((compiles, sources));
+                sources
+            }
+        };
+        let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
+        self.fog_steps()
+            .prepare(list, arena, frame_size, &frame, sources, made)
+    }
+
     /// Binds the copy of the camera's opaque color to the scene color that it reads while it is
     /// declared, and finds the texture of its target, once for each compile of the graph.
     fn bind_transmission(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
@@ -2651,6 +3453,64 @@ impl FrameGraph {
             }
         };
         self.transmission.prepare(list, source, self.textures_made)
+    }
+
+    /// Binds the composite of the camera's weighted layer to its two sums, and the depth copy to
+    /// the scene depth, while the layer is declared. It finds their textures once for each compile
+    /// of the graph.
+    fn bind_weighted(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if !self.weighted_declared {
+            return Ok(());
+        }
+        let compiles = self.graph.compiles();
+        let [sum, cover, depth] = match self.weighted_textures {
+            Some((at, textures)) if at == compiles => textures,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("the weighted layer reads planned textures")
+                };
+                let depth = if self.weighted_copies_depth() {
+                    id(SCENE_DEPTH)
+                } else {
+                    0
+                };
+                let textures = [id(WEIGHTED_SUM), id(WEIGHTED_COVER), depth];
+                self.weighted_textures = Some((compiles, textures));
+                textures
+            }
+        };
+        let made = self.textures_made;
+        self.weighted.prepare_composite(list, sum, cover, made)?;
+        if depth != 0 {
+            // WebGL2's backend binds a copy of one sample of a multisampled depth in its place.
+            self.weighted
+                .prepare_depth(list, depth, self.gpu_culling, made)?;
+        }
+        Ok(())
+    }
+
+    /// Binds the copy of the camera's opaque depth to the scene depth while it is declared, and
+    /// finds the texture of its target, once for each compile of the graph.
+    fn bind_particle_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if !self.particle_depth_declared {
+            return Ok(());
+        }
+        let compiles = self.graph.compiles();
+        let source = match self.particle_depth_target {
+            Some((at, source, _)) if at == compiles => source,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("the depth copy reads and writes planned textures")
+                };
+                let (source, target) = (id(SCENE_DEPTH), id(PARTICLE_DEPTH));
+                self.particle_depth_target = Some((compiles, source, target));
+                source
+            }
+        };
+        self.particle_depth
+            .prepare(list, source, self.textures_made)
     }
 
     /// Records the making of the mip levels of the copy of the camera's opaque color, after the
@@ -2812,10 +3672,25 @@ impl FrameGraph {
                     }) {
                         continue;
                     }
+                    let finals = passes.iter().any(|&pass| {
+                        let role = self.roles[pass.index()];
+                        // The two-step pass reads the meter's texel in its first step, so the meter
+                        // records before that step.
+                        if self.two_step_declared {
+                            matches!(role, Role::Output | Role::OutputBloom)
+                        } else {
+                            matches!(role, Role::Final | Role::FinalBloom)
+                        }
+                    });
+                    if finals && let Some(meter) = self.exposure_pass.as_ref() {
+                        meter.record(list)?;
+                    }
+                    // The outline mask, the weighted layer's sums and the skin pass's light start
+                    // from nothing.
                     let masks = passes.iter().any(|&pass| {
                         matches!(
                             self.roles[pass.index()],
-                            Role::OutlineMask | Role::SkinLight
+                            Role::OutlineMask | Role::SkinLight | Role::Weighted
                         )
                     });
                     let clear = if masks {
@@ -2827,8 +3702,16 @@ impl FrameGraph {
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
                         match self.roles[pass.index()] {
-                            Role::Final => self.final_pass.record(list, false)?,
+                            Role::Final => {
+                                if self.two_step_declared {
+                                    self.final_pass.record_present(list)?
+                                } else {
+                                    self.final_pass.record(list, false)?
+                                }
+                            }
                             Role::FinalBloom => self.final_pass.record(list, true)?,
+                            Role::Output => self.output_pass.record(list, false)?,
+                            Role::OutputBloom => self.output_pass.record(list, true)?,
                             Role::Bloom(step) => self
                                 .bloom_pass
                                 .as_ref()
@@ -2864,6 +3747,15 @@ impl FrameGraph {
                                 .as_ref()
                                 .expect("the subsurface blur's steps run once they are declared")
                                 .record(list, usize::from(step))?,
+                            Role::FogLight(parity) => {
+                                let fog = self.fog_steps_ref();
+                                fog.begin_light(list)?;
+                                record(list, Role::FogLight(parity))?;
+                                fog.draw(list)?;
+                            }
+                            Role::FogBlock => self.fog_steps_ref().record(list, 1)?,
+                            Role::FogSum => self.fog_steps_ref().record(list, 2)?,
+                            Role::FogApply => self.fog_steps_ref().record(list, 3)?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -2876,6 +3768,14 @@ impl FrameGraph {
                                 }
                             }
                             Role::TransmissionCopy => self.transmission.record(list)?,
+                            Role::Weighted => {
+                                if self.weighted_copies_depth() {
+                                    self.weighted.record_depth(list)?;
+                                }
+                                record(list, Role::Weighted)?;
+                            }
+                            Role::WeightedComposite => self.weighted.record_composite(list)?,
+                            Role::ParticleDepthCopy => self.particle_depth.record(list)?,
                             role => record(list, role)?,
                         }
                     }
@@ -2893,6 +3793,10 @@ impl FrameGraph {
     fn draws(&self, role: Role) -> bool {
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
+            (Role::FogLight(parity), _) => self
+                .fog_pass
+                .as_ref()
+                .is_some_and(|fog| fog.parity() == usize::from(parity)),
             _ => true,
         }
     }
@@ -2907,16 +3811,22 @@ impl FrameGraph {
         clear: [f32; 4],
     ) -> Result<(), RecordError> {
         let (mut color, mut resolve, mut depth) = (NO_TARGET, NO_TARGET, NO_TARGET);
+        let mut second = NO_TARGET;
         let mut flags = 0;
         for attachment in plan.attachments(step) {
             let (clears, stores) = if attachment.depth {
                 depth = self.attachment_id(attachment.texture, attachment.layer);
                 (pass_flags::CLEAR_DEPTH, pass_flags::STORE_DEPTH)
-            } else {
+            } else if color != NO_TARGET {
+                // Only the weighted layer draws into a second color target: its two sums, which
+                // both clear and both store.
                 debug_assert!(
-                    color == NO_TARGET,
-                    "a render pass draws into one color target"
+                    second == NO_TARGET && attachment.resolve.is_none(),
+                    "a render pass draws into at most two color targets, the second of one sample"
                 );
+                second = self.attachment_id(attachment.texture, attachment.layer);
+                (pass_flags::CLEAR_COLOR, pass_flags::STORE_COLOR)
+            } else {
                 color = self.attachment_id(attachment.texture, attachment.layer);
                 resolve = attachment
                     .resolve
@@ -2931,20 +3841,20 @@ impl FrameGraph {
             }
         }
         let [r, g, b, a] = clear;
-        list.push(
-            Op::BeginRenderPass,
-            &[
-                color,
-                resolve,
-                depth,
-                r.to_bits(),
-                g.to_bits(),
-                b.to_bits(),
-                a.to_bits(),
-                0f32.to_bits(),
-                flags,
-            ],
-        )?;
+        let operands = [
+            color,
+            resolve,
+            depth,
+            r.to_bits(),
+            g.to_bits(),
+            b.to_bits(),
+            a.to_bits(),
+            0f32.to_bits(),
+            flags,
+            second,
+        ];
+        let count = if second == NO_TARGET { 9 } else { 10 };
+        list.push(Op::BeginRenderPass, &operands[..count])?;
         Ok(())
     }
 
@@ -3059,6 +3969,7 @@ impl FrameGraph {
         self.made_views = 0;
         self.canvas = (0, 0);
         self.final_pass.reset_gpu();
+        self.output_pass.reset_gpu();
         if let Some(bloom) = self.bloom_pass.as_mut() {
             bloom.reset_gpu();
         }
@@ -3075,10 +3986,18 @@ impl FrameGraph {
         if let Some(subsurface) = self.subsurface_pass.as_mut() {
             subsurface.reset_gpu();
         }
+        if let Some(meter) = self.exposure_pass.as_mut() {
+            meter.reset_gpu();
+        }
+        if let Some(fog) = self.fog_pass.as_mut() {
+            fog.reset_gpu();
+        }
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
         }
         self.transmission.reset_gpu();
+        self.weighted.reset_gpu();
+        self.particle_depth.reset_gpu();
     }
 }
 
@@ -3456,6 +4375,13 @@ mod tests {
             lut_sampler: 9,
             blank_outline: 901,
         },
+        output_pass: FinalIds {
+            settings: 907,
+            group: 907,
+            blank_lut: 920,
+            lut_sampler: 921,
+            blank_outline: 922,
+        },
         bloom: BloomIds {
             buffer: 10,
             sampler: 10,
@@ -3483,6 +4409,24 @@ mod tests {
             sampler: 13,
             first_group: 50,
         },
+        exposure: ExposureIds {
+            buffer: 14,
+            sampler: 14,
+            cells: 904,
+            texel: 905,
+            stored: 906,
+            first_group: 70,
+            compute: Some(crate::exposure::ComputeIds {
+                histogram: 15,
+                state: 16,
+                pipelines: [70, 71],
+            }),
+        },
+        fog: FogVolumeIds {
+            buffer: 14,
+            sampler: 14,
+            first_group: 60,
+        },
         view_copy: Some(ViewCopyIds { first_group: 40 }),
         transmission: TransmissionIds {
             group: 60,
@@ -3492,6 +4436,8 @@ mod tests {
             buffer: 14,
             first_group: 70,
         },
+        weighted: WeightedIds { first_group: 70 },
+        particle_depth: 61,
     };
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling
@@ -4027,6 +4973,7 @@ mod tests {
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
         frames.set_scaling(true);
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         let only_uploads =
             |frames: &mut FrameGraph, list: &mut DrawList, arena: &mut UploadArena| {
                 list.clear();
@@ -4069,8 +5016,9 @@ mod tests {
         assert_eq!(viewports[0][2..4], [960, 540]);
         assert_eq!(viewports[1][2..4], [910, 512]);
         assert_eq!(viewports[8][2..4], [8, 4]);
-        assert_eq!(viewports.last().unwrap()[2..4], [910, 512]);
-        assert_eq!(viewports.len(), 1 + 15);
+        // The two-step pass draws the first step's whole render size, after bloom's levels.
+        assert_eq!(viewports.last().unwrap()[2..4], [960, 540]);
+        assert_eq!(viewports.len(), 2 + 15);
 
         // The governor's halving draws each level into a corner of half its target, and drops the
         // last level's two steps.
@@ -4334,6 +5282,130 @@ mod tests {
                 .keys()
                 .iter()
                 .all(|key| key.template != null3d_gpu::drawlist::template::DOF_SETUP)
+        );
+    }
+
+    /// What a frame meters automatic exposure with: the default settings and `meter`.
+    fn exposure_frame(meter: crate::exposure::Meter) -> ExposureFrame {
+        ExposureFrame {
+            settings: crate::exposure::AutoExposure::default(),
+            meter,
+            seconds: 1.0 / 60.0,
+        }
+    }
+
+    #[test]
+    fn the_exposure_meter_runs_before_the_final_pass_and_costs_nothing_while_off() {
+        use crate::exposure::Meter;
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let without = steps(&frames);
+        let keys = pipelines.keys().len();
+        let bound = frames.upload_bound();
+        let record = |frames: &mut FrameGraph, list: &mut DrawList| {
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            frames
+                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            null3d_gpu::drawlist::decode(list.words())
+                .map(|command| command.unwrap())
+                .map(|command| (command.op, command.operands.to_vec()))
+                .collect::<Vec<_>>()
+        };
+
+        // Off, the frame declares, asks for, uploads and records nothing of the meter, and the
+        // final pass binds the blank texel with its flag clear.
+        frames.set_exposure(None);
+        frames.request_pipelines(&mut pipelines, 1);
+        assert_eq!(pipelines.keys().len(), keys);
+        assert_eq!(frames.upload_bound(), bound);
+        let commands = record(&mut frames, &mut list);
+        assert!(
+            !commands
+                .iter()
+                .any(|(op, _)| *op == Op::Dispatch || *op == Op::CopyTextureToTexture)
+        );
+        assert_eq!(steps(&frames), without);
+
+        // On, the histogram's compute pass runs just before the final pass's render pass, and the
+        // final pass binds the meter's texel at binding 12.
+        frames.set_exposure(Some(exposure_frame(Meter::Histogram)));
+        assert!(frames.create_exposure_pipelines(&mut list, 2).unwrap());
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(
+            !frames.exposure_draws(),
+            "the meter waits for its pipelines"
+        );
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.exposure_draws());
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames), without, "the plan stays as it was");
+        let commands = record(&mut frames, &mut list);
+        let place = |op: Op| commands.iter().rposition(|(o, _)| *o == op).unwrap();
+        let final_pass = commands
+            .iter()
+            .rposition(|(op, operands)| *op == Op::BeginRenderPass && operands[0] == 0)
+            .expect("the final pass draws into the canvas");
+        assert!(place(Op::Dispatch) < final_pass);
+        assert!(place(Op::EndComputePass) < final_pass);
+        let final_group = commands
+            .iter()
+            .find(|(op, operands)| {
+                *op == Op::CreateBindGroup && operands[0] == IDS.final_pass.group
+            })
+            .expect("the final pass's group");
+        let texel = final_group.1[3..]
+            .chunks(5)
+            .find(|entry| entry[0] == 12)
+            .expect("binding 12");
+        assert_eq!(texel[2], IDS.exposure.texel);
+
+        // Off again, the final pass binds the blank texel.
+        frames.set_exposure(None);
+        frames.request_pipelines(&mut pipelines, 2);
+        let commands = record(&mut frames, &mut list);
+        let final_group = commands
+            .iter()
+            .find(|(op, operands)| {
+                *op == Op::CreateBindGroup && operands[0] == IDS.final_pass.group
+            })
+            .expect("the final pass's group again");
+        let texel = final_group.1[3..]
+            .chunks(5)
+            .find(|entry| entry[0] == 12)
+            .expect("binding 12");
+        assert_eq!(texel[2], IDS.final_pass.blank_outline);
+        assert!(!commands.iter().any(|(op, _)| *op == Op::Dispatch));
+    }
+
+    #[test]
+    fn the_8_bit_path_meters_no_exposure() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
+        frames.sync(&[View::default()]);
+        frames.set_exposure(Some(exposure_frame(crate::exposure::Meter::Downsample)));
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        assert!(!frames.exposure_draws());
+        assert!(
+            pipelines.keys().is_empty()
+                || pipelines.keys().iter().all(|key| {
+                    key.template != null3d_gpu::drawlist::template::EXPOSURE_LUMINANCE
+                })
         );
     }
 
@@ -4606,9 +5678,11 @@ mod tests {
                 1,
                 "the final pass binds the mask in its own group"
             );
+            // Binding 11 is the outline mask; binding 12 is the automatic exposure's texel, which
+            // every build binds, so filter for the mask alone.
             let outline_entries: Vec<_> = groups[0][3..]
                 .chunks(5)
-                .filter(|entry| entry[0] >= 11)
+                .filter(|entry| entry[0] == 11)
                 .map(|entry| entry[2])
                 .collect();
             assert_eq!(outline_entries.len(), 1);
@@ -4738,6 +5812,76 @@ mod tests {
             assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
+        }
+    }
+
+    #[test]
+    fn decals_draw_after_the_camera_opaque_pass_only_while_some_object_is_one() {
+        for gpu_culling in [true, false] {
+            let canvas = (320, 180);
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, gpu_culling, false);
+            frames.sync(&[View::default()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(8192);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            assert!(frames.decal_depth().is_none());
+
+            frames.set_decals(true, false);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let with = steps(&frames);
+            let decals = with
+                .iter()
+                .position(|step| step == &[DECALS_PASS])
+                .expect("the decals draw in a render pass of their own");
+            assert_eq!(
+                with[decals - 1][0],
+                "Opaque",
+                "after the camera's opaque pass"
+            );
+            assert!(
+                with[decals + 1].contains(&"Transparent".to_owned()),
+                "before the transparent pass"
+            );
+            assert!(
+                frames.decal_depth().is_some(),
+                "the pass reads the scene depth"
+            );
+            let targets = frames.decal_targets();
+            assert_eq!(targets.depth_format, format::NONE);
+            assert_eq!(
+                targets.permutation & permutation::DEPTH_MULTISAMPLED != 0,
+                gpu_culling,
+                "WebGPU reads sample 0 of the multisampled depth, WebGL2 a copy of one sample"
+            );
+
+            // The redraw of the objects that decals skip joins the render pass after the decals.
+            frames.set_decals(true, true);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let redrawn = steps(&frames);
+            assert!(redrawn[decals + 1].contains(&DECAL_REDRAW_PASS.to_owned()));
+            assert_eq!(
+                redrawn.len(),
+                with.len(),
+                "the redraw takes no render pass of its own"
+            );
+
+            // Without decals, the frame declares nothing of them again.
+            frames.set_decals(false, true);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert!(frames.decal_depth().is_none());
         }
     }
 
@@ -4968,6 +6112,129 @@ mod tests {
         frames.request_pipelines(&mut pipelines, 1);
         assert!(!frames.subsurface_wanted());
         assert!(!frames.subsurface_draws());
+    }
+
+    #[test]
+    fn the_weighted_layer_draws_after_the_transparent_pass_only_while_it_is_used() {
+        let canvas = (320, 180);
+        for (format, antialias) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa),
+            (format::CANVAS, Antialias::Msaa),
+            (format::RGBA16_FLOAT, Antialias::Fxaa),
+        ] {
+            let multisampled = antialias == Antialias::Msaa;
+            let mut frames = frame_graph(format, antialias, true, false);
+            frames.sync(&[View::default(), shown()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let keys = pipelines.keys().len();
+
+            // A device without targets of 16-bit floats never draws the layer, and asks for none
+            // of its pipelines.
+            frames.set_weighted_targets(false);
+            assert!(frames.weighted_targets(frames.scene_targets()).is_none());
+            frames.set_weighted(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.weighted_draws());
+            assert_eq!(pipelines.keys().len(), keys);
+
+            // The layer waits for its own pipelines.
+            frames.set_weighted_targets(true);
+            frames.set_weighted(true);
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(
+                !frames.weighted_draws(),
+                "the layer waits for its pipelines"
+            );
+            assert_eq!(
+                pipelines.keys().len(),
+                keys + if multisampled { 2 } else { 1 },
+                "the layer asks for the depth copy only for a multisampled scene"
+            );
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.weighted_draws());
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(frames.weighted_declared());
+            let with: Vec<String> = steps(&frames).into_iter().flatten().collect();
+            let at = |name: &str| with.iter().position(|n| n == name);
+            let transparent = at("Transparent").unwrap();
+            let layer = at(WEIGHTED_PASS).unwrap();
+            let composite = at(WEIGHTED_COMPOSITE_PASS).unwrap();
+            assert!(transparent < layer && layer < composite);
+            // Other views keep their own passes and draw no layer.
+            assert!(at("Transparent1").is_some());
+
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let groups: Vec<(u32, u32)> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .map(|group| (group[0], group[1]))
+                .filter(|&(id, _)| id >= IDS.weighted.first_group)
+                .collect();
+            let mut expected = vec![(IDS.weighted.first_group, bind_layout::WEIGHTED_COMPOSITE)];
+            if multisampled {
+                expected.push((IDS.weighted.first_group + 1, bind_layout::WEIGHTED_DEPTH_MS));
+            }
+            assert_eq!(groups, expected);
+
+            // The layer's pass clears both sums to nothing and stores them for the composite.
+            list.clear();
+            frames
+                .record(&mut list, |_| [0.5; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
+                .into_iter()
+                .filter(|pass| pass.len() == 10)
+                .collect();
+            assert_eq!(
+                pairs.len(),
+                1,
+                "one render pass draws into two color targets"
+            );
+            let pair = &pairs[0];
+            assert_ne!(pair[9], null3d_gpu::drawlist::NO_TARGET);
+            assert_eq!(
+                pair[1],
+                null3d_gpu::drawlist::NO_TARGET,
+                "the sums have one sample"
+            );
+            assert_eq!(&pair[3..7], &[0f32.to_bits(); 4]);
+            let flags = pair[8];
+            assert_eq!(
+                flags & (pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR),
+                pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR
+            );
+            // A multisampled scene's pass starts its own depth, which it copies first; another
+            // tests the scene's depth.
+            assert_eq!(flags & pass_flags::CLEAR_DEPTH != 0, multisampled);
+            let copies = operands(&list, Op::SetBindGroup)
+                .iter()
+                .filter(|group| group[1] == IDS.weighted.first_group + 1)
+                .count();
+            assert_eq!(copies, usize::from(multisampled));
+
+            // Unused again, the layer and its targets are gone.
+            frames.set_weighted(false);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+        }
     }
 
     fn build_transmission(frames: &mut FrameGraph, pipelines: &mut PipelineCache) {

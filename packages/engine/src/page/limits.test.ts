@@ -49,7 +49,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	cellCulling: true,
 	joinEffects: true,
 	depthPrepass: false,
-	skinning: C.SKINNING_LEAN,
+	skinning: C.SKINNING_VERTEX,
 	indexInstances: false,
 	shadowDepthBits: 16,
 	largeWorld: false,
@@ -66,6 +66,9 @@ const refusedTarget = { complete: false, readsBack: false, samples: 0 };
 const HDR_TARGETS = {
 	rgba16f: { complete: true, readsBack: true, samples: C.LIMIT_MSAA_SAMPLES },
 };
+
+/** The flag of 16-bit float targets, which every WebGPU device and this file's WebGL2 report have. */
+const F16 = C.CAPABILITY_FLOAT16_TARGETS;
 
 /** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
@@ -92,7 +95,7 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	join: true,
-	skinning: 'lean',
+	skinning: 'vertex',
 	indexInstances: false,
 	shadowDepthBits: 16,
 	hdr: true,
@@ -202,9 +205,9 @@ describe('sceneColorFormat', () => {
 		const withThem = report({});
 		withThem.webgpu.transientAttachments = true;
 		expect(coreDevice('webgpu', withThem, PLAIN).capabilities).toBe(
-			C.CAPABILITY_TRANSIENT_ATTACHMENTS,
+			C.CAPABILITY_TRANSIENT_ATTACHMENTS | F16,
 		);
-		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(0);
+		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(F16);
 	});
 });
 
@@ -212,20 +215,22 @@ describe('coreDevice on WebGPU', () => {
 	it("flags each compressed texture family among the adapter's features", () => {
 		const features = ['texture-compression-bc', 'timestamp-query', 'texture-compression-astc'];
 		expect(coreDevice('webgpu', report({}, features), PLAIN).capabilities).toBe(
-			C.CAPABILITY_TEXTURE_BC | C.CAPABILITY_TEXTURE_ASTC,
+			C.CAPABILITY_TEXTURE_BC | C.CAPABILITY_TEXTURE_ASTC | F16,
 		);
-		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(0);
+		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(F16);
 	});
 
 	it('keeps only the families that ?compression= names', () => {
 		const all = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc'];
 		const limited = (compression: ('astc' | 'bc' | 'etc2')[]) =>
-			coreDevice('webgpu', report({}, all), { ...PLAIN, compression }).capabilities;
+			coreDevice('webgpu', report({}, all), { ...PLAIN, compression }).capabilities & ~F16;
 		expect(limited(['bc'])).toBe(C.CAPABILITY_TEXTURE_BC);
 		expect(limited(['etc2', 'astc'])).toBe(C.CAPABILITY_TEXTURE_ETC2 | C.CAPABILITY_TEXTURE_ASTC);
 		expect(limited([])).toBe(0);
 		const bcOnly = report({}, ['texture-compression-bc']);
-		expect(coreDevice('webgpu', bcOnly, { ...PLAIN, compression: ['astc'] }).capabilities).toBe(0);
+		expect(coreDevice('webgpu', bcOnly, { ...PLAIN, compression: ['astc'] }).capabilities).toBe(
+			F16,
+		);
 	});
 });
 
@@ -307,8 +312,15 @@ describe('coreDevice on WebGL2', () => {
 
 	it('passes multi-draw to the core only where the extension exists', () => {
 		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
-		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
-		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(0);
+		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(C.CAPABILITY_MULTI_DRAW | F16);
+		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
+	});
+
+	it('tells the core about 16-bit float targets only where RGBA16F passes the probe', () => {
+		const none = report({ floatRenderTargets: null });
+		expect(coreDevice('webgl2', none, PLAIN).capabilities).toBe(0);
+		const refused = report({ floatRenderTargets: { rgba16f: refusedTarget } });
+		expect(coreDevice('webgl2', refused, PLAIN).capabilities).toBe(0);
 	});
 
 	it('flags each compressed texture family whose extension the context turned on', () => {
@@ -319,7 +331,7 @@ describe('coreDevice on WebGL2', () => {
 			WEBGL_compressed_texture_s3tc: true,
 		};
 		expect(coreDevice('webgl2', report({ extensions }), PLAIN).capabilities).toBe(
-			C.CAPABILITY_TEXTURE_ASTC | C.CAPABILITY_TEXTURE_ETC2,
+			C.CAPABILITY_TEXTURE_ASTC | C.CAPABILITY_TEXTURE_ETC2 | F16,
 		);
 	});
 

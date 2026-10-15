@@ -43,7 +43,7 @@ Every feature works on both paths, or its page describes its WebGL2 fallback. Th
 | Lists of the lights of each cluster | A compute pass on the GPU | The job workers |
 | Culling for shadow cascades and shadow tiles | A compute pass for each, on the GPU | The job workers |
 | Sorting see-through objects back to front | The job workers | The job workers |
-| [Skinning](../api/animation.md#skinned-meshes) | A compute pass, once per frame for every pass that draws the mesh | The vertex shader of each pass that draws the mesh |
+| [Skinning](../api/animation.md#skinned-meshes) | The vertex shader of each pass that draws the mesh, with copies of one mesh and material in one instanced draw | The same |
 | [Morph targets](../api/animation.md#morph-targets) | The skinning pass, once per frame, with every weight | The vertex shader of each pass, with the preset's count of each object's largest weights. Its shaders load with the first morphed mesh |
 | The [depth prepass](quality-presets.md#the-depth-prepass) | Off on every preset. Drawn when `depthPrepass` is on, with a shader that computes positions only | On for every preset, as it restores early rejection of hidden pixels on Apple GPUs. Drawn with each material's own vertex shader |
 | [Occlusion culling](culling.md#gpu-occlusion-culling-on-webgpu) | On the GPU, in two phases, when `gpuOcclusion` is on | Not on the GPU |
@@ -167,7 +167,7 @@ KTX2 textures take the compressed format of the first family that the device has
 
 ## When the GPU goes away
 
-A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. The engine keeps no copy of a texture's texels once their upload is done. Such a texture draws without its map until it gets an update ([Textures](../api/textures.md#when-the-browser-takes-the-gpu-away)). The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
+A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. A texture from a file loads its file again. On a phone or a tablet the engine also keeps a copy of each texture's texels after their upload, so those maps come back too. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](../api/engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where no copy is kept, such a texture draws without its map until the sketch gives it texels again ([Textures](../api/textures.md#when-the-browser-takes-the-gpu-away)). The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
 
 ## Minimum browsers
 

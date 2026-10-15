@@ -32,6 +32,11 @@ use crate::{
 const UNIFORMS_DEF: &str = "CUSTOM_UNIFORMS";
 /// The shader def that makes the template load the layers of a custom material's textures.
 const TEXTURES_DEF: &str = "CUSTOM_TEXTURES";
+/// The shader def that puts the joint texture's group after the maps' group on WebGPU.
+const JOINTS_AFTER_MAPS_DEF: &str = "JOINTS_AFTER_MAPS";
+/// The permutation bit of the lit templates' builds that shade area lights, which every build of a
+/// custom material holds as a shader def instead.
+const AREA_LIGHTS: &str = "AREA_LIGHTS";
 
 /// A function that a custom material's WGSL may declare for the template to call.
 struct Hook {
@@ -444,6 +449,24 @@ fn names_diffuse_transmission(tokens: &[Token]) -> bool {
     })
 }
 
+/// The fields of the surface record that a layered material's builds light: the clear coat's and
+/// the sheen's values.
+const LAYER_FIELDS: [&str; 5] = [
+    "clearcoat",
+    "clearcoatRoughness",
+    "clearcoatNormal",
+    "sheenColor",
+    "sheenRoughness",
+];
+
+/// True when a custom material's WGSL sets or reads one of the surface's layer values, so the
+/// material can have a clear coat or a sheen.
+fn names_coat_sheen(tokens: &[Token]) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == "." && LAYER_FIELDS.contains(&pair[1].text))
+}
+
 /// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
 /// draw index in `null3d::mesh`, and the directive goes at the top of the file.
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
@@ -511,6 +534,7 @@ impl Compiler {
 
         let transmits = sets_transmission(&tokens);
         let translucent = names_diffuse_transmission(&tokens);
+        let layered = names_coat_sheen(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let inputs = read_inputs(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
@@ -523,25 +547,36 @@ impl Compiler {
                 defs.extend(inputs.iter().map(|&def| def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 if !texture_fields.is_empty() {
+                    // On WebGPU the textures take the maps' group after the frame's, so the SKIN
+                    // builds read the joint texture from the group after them.
                     defs.push(TEXTURES_DEF.to_owned());
+                    defs.push(JOINTS_AFTER_MAPS_DEF.to_owned());
+                }
+                // Every build shades area lights, so a material's builds stay as few as before.
+                if variant.permutations.iter().any(|bit| bit == AREA_LIGHTS) {
+                    defs.push(AREA_LIGHTS.to_owned());
                 }
                 defs.sort();
-                // Custom materials draw at full precision, so their builds stay half as many. On
-                // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
-                // SKIN builds there. WebGL2 skins in the vertex shader, so its builds keep the bit.
-                // They have no MORPH builds, which would double their WebGL2 builds again: on
-                // WebGL2 they draw morphed meshes at rest (decision record D-51). They read their
-                // instances from the culling shader's copies on every path, so they have no
-                // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
+                // Custom materials draw at full precision, so their builds stay half as many. They
+                // keep the SKIN builds on both paths, as the vertex shaders skin by default, and
+                // skinned objects of one mesh and material then share an instanced draw (decision
+                // record D-20). They have no MORPH builds, which would double their WebGL2 builds
+                // again: on WebGL2 they draw morphed meshes at rest (decision record D-51). They
+                // read their instances from the culling shader's copies on every path, so they
+                // have no INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
                 // Only WGSL that sets the surface's transmission has the builds that let light
-                // through, and only WGSL that names its diffuse transmission has the builds that
-                // let light through a thin surface, so other materials keep their builds as few
-                // as before. Every material
+                // through, only WGSL that names its diffuse transmission has the builds that let
+                // light through a thin surface, and only WGSL that names a layer's value has the
+                // builds of the clear coat and the sheen, so other materials keep their builds as
+                // few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies. They have no builds of a fading level of
-                // detail, so their levels switch at once.
-                let skins = !variant.targets.contains(&Target::Wgsl);
+                // detail, so their levels switch at once. They have no builds of the weighted
+                // layer: the engine's API refuses the weighted blending for them (decision record
+                // D-150).
+                // detail, so their levels switch at once. They always have the area lights' code,
+                // so they have no builds without it.
                 let left_out = [
                     "HALF",
                     "MORPH",
@@ -550,13 +585,16 @@ impl Compiler {
                     "ALPHA_COVERAGE",
                     "ALPHA_HASH",
                     "LOD_FADE",
+                    "WEIGHTED",
+                    AREA_LIGHTS,
                 ];
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
+                    .filter(|bit| !left_out.contains(&bit.as_str()))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
                     .filter(|bit| translucent || *bit != "TRANSLUCENCY")
+                    .filter(|bit| layered || *bit != "COAT_SHEEN")
                     .cloned()
                     .collect();
                 let variant = Variant {

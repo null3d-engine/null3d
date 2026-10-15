@@ -54,13 +54,17 @@ const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 /**
  * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
  * as probes of light or the tables of area lights. The builds that let light through take one of
- * them for the copy of the opaque color that they sample (decision record D-122).
+ * them for the copy of the opaque color that they sample (decision record D-122), and the decal
+ * builds one for the scene depth that they read (decision record D-144). The area lights' tables
+ * took one of four (D-145).
  */
-const SPARE_TEXTURE_UNITS = 4;
+const SPARE_TEXTURE_UNITS = 3;
 
 /** The spare texture units of a stage, by its name. */
 const spareUnits = (name: string) =>
-	name.includes('_transmission') ? SPARE_TEXTURE_UNITS - 1 : SPARE_TEXTURE_UNITS;
+	name.includes('_transmission') || name.startsWith('decal')
+		? SPARE_TEXTURE_UNITS - 1
+		: SPARE_TEXTURE_UNITS;
 
 describe('WebGL2 slots of bind groups', () => {
 	const stages = glslStages();

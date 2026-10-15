@@ -1,6 +1,7 @@
 #define_import_path null3d::ibl
 #import null3d::globals::{EnvironmentLight}
 #import null3d::lighting::{sh_irradiance}
+#import null3d::tables::{environment_sampler}
 
 // Image-based light: the light of the scene's environment, as three.js's MeshStandardMaterial
 // takes it from `scene.environment` (envmap_physical_pars_fragment). The environment is a cube
@@ -10,7 +11,6 @@
 // values then say not to read.
 
 @group(0) @binding(12) var environment_map: texture_cube<f32>;
-@group(0) @binding(13) var environment_sampler: sampler;
 
 /// True while the scene has an environment whose map is on the GPU.
 fn has_environment(env: EnvironmentLight) -> bool {

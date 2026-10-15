@@ -57,7 +57,7 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | `SSAOPass`, `SAOPass`, N8AO | `ao` | Their settings mean other things. Start from the defaults and tune `radius` and `scale` by eye. |
 | `OutlinePass` | `outline` and `mesh.setOutlined(true)` | `visibleEdgeColor` becomes `color`, and `hiddenEdgeColor` becomes `hiddenColor`. Set `width` to about twice `edgeThickness`. |
 | `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`, with floats from 0 to 1 in the same order. |
-| `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. The default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
+| `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs in the final pass. |
 | `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA, SSAA or TAA. |
 | `BokehPass` | `dof: { focusDistance: focus, aperture, maxBlur }` and `camera.setFocalLength(mm)` | `focus` becomes `focusDistance`. null3D's `aperture` is an f-number of a camera's lens, so pick one by eye, such as 2.8, with the camera's focal length. `maxblur` is a share of the canvas's width, and `maxBlur` of its height: multiply by the aspect ratio. null3D blurs the near and far fields apart, so sharp objects spread no halo. |
@@ -74,7 +74,7 @@ pmndrs postprocessing maps the same way:
 | `SSAOEffect`, N8AO | `ao`, tuned by eye |
 | `OutlineEffect` | `outline`. `xRay: false` becomes `hiddenColor: false`. |
 | `LUT3DEffect` | `lut` |
-| `VignetteEffect` | `vignette: { size: offset, intensity: darkness }` for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
+| `VignetteEffect` | As `VignetteShader` for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | A custom effect for each |
 | `DepthOfFieldEffect` | `dof`. `worldFocusDistance` becomes `focusDistance`, and `bokehScale` becomes `maxBlur`, tuned by eye with `aperture`. A `target` to focus on becomes `focusPoint`. |
 

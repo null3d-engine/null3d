@@ -8,7 +8,7 @@ import {
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
-	findFirstUseWasm,
+	findFirstUseFiles,
 	isFirstUseShaderPart,
 	LATER_BUDGET,
 	LATER_PARTS,
@@ -55,36 +55,41 @@ describe('REPORTED_FILES', () => {
 		expect(REPORTED_FILES).toContain('js/page.js');
 		expect(REPORTED_FILES).toContain('js/render-worker.js');
 		expect(REPORTED_FILES).toContain('js/shaders-glsl-draw-index.js');
-		expect(REPORTED_FILES.slice(-3)).toEqual([
+		expect(REPORTED_FILES.slice(-4)).toEqual([
 			'first-use/basis_transcoder.wasm',
 			'first-use/meshopt_decoder.wasm',
 			'first-use/draco_decoder_gltf.wasm',
+			'first-use/area-light-tables.bin',
 		]);
 	});
 });
 
-describe('findFirstUseWasm', () => {
+describe('findFirstUseFiles', () => {
 	const names = [
 		'meshopt_decoder-JKal9Vjx.wasm',
 		'null3d_bg-58dKJVnh.wasm',
 		'basis_transcoder-DBaCnI5p.wasm',
 		'draco_decoder_gltf-Qw3eRt5Y.wasm',
+		'area-light-tables-Zx8c_Vb1.bin',
 		'ktx2-Cl41QH8w.js',
 	];
 
-	it("finds the build's copy of each module by its name and hash", () => {
-		expect([...findFirstUseWasm(names)]).toEqual([
+	it("finds the build's copy of each file by its name and hash", () => {
+		expect([...findFirstUseFiles(names)]).toEqual([
 			['basis_transcoder.wasm', 'basis_transcoder-DBaCnI5p.wasm'],
 			['meshopt_decoder.wasm', 'meshopt_decoder-JKal9Vjx.wasm'],
 			['draco_decoder_gltf.wasm', 'draco_decoder_gltf-Qw3eRt5Y.wasm'],
+			['area-light-tables.bin', 'area-light-tables-Zx8c_Vb1.bin'],
 		]);
 	});
 
 	it('fails when a file is missing or there twice', () => {
-		expect(() => findFirstUseWasm(names.slice(1))).toThrow(
-			'meshopt_decoder.wasm: expected one built copy of the module, found 0',
+		expect(() => findFirstUseFiles(names.slice(1))).toThrow(
+			'meshopt_decoder.wasm: expected one built copy of the file, found 0',
 		);
-		expect(() => findFirstUseWasm([...names, 'basis_transcoder-Ab_-cdEf.wasm'])).toThrow('found 2');
+		expect(() => findFirstUseFiles([...names, 'basis_transcoder-Ab_-cdEf.wasm'])).toThrow(
+			'found 2',
+		);
 	});
 });
 
@@ -316,7 +321,7 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(140 * 1024);
+		expect(START_BUDGET.brotli).toBe(160 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
@@ -329,7 +334,7 @@ describe('budgetProblems', () => {
 				later,
 			),
 		).toEqual([
-			'the engine JavaScript that a page downloads at its start in pipelined mode is 143,361 bytes after Brotli, over its 140 KB budget',
+			'the engine JavaScript that a page downloads at its start in pipelined mode is 163,841 bytes after Brotli, over its 160 KB budget',
 			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
 		]);
 	});
@@ -347,13 +352,13 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(32 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(48 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 32,769 bytes after Brotli, over its 32 KB budget',
+			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 49,153 bytes after Brotli, over its 48 KB budget',
 		]);
 	});
 });

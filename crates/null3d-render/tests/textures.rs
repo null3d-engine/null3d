@@ -237,3 +237,133 @@ fn after_a_gpu_reset_the_maps_upload_again_and_the_frame_replays_on_a_new_device
         Some(0)
     );
 }
+
+#[test]
+fn freed_copies_leave_the_map_off_after_a_gpu_reset_once_its_upload_is_done() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let (texture, _, _) = world.add_mapped(SIZE);
+    world.step(&mut mock, true);
+    world.arrive(&mut mock, 1, SIZE);
+    world.step(&mut mock, false);
+    // The default: the store frees the image once no list that reads it can run again.
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::ReleaseImage), 1);
+    // The thread that draws has taken the frame that released it.
+    let taken = world.frame - 1;
+    world.renderer.settings_mut().textures_mut().sync(1, taken);
+    world.renderer.reset_gpu();
+    let mut device = MockBackend::default();
+    device.provide_image(1, SIZE, SIZE);
+    let commands = world.step(&mut device, false);
+    assert_eq!(
+        count(&commands, Op::UploadImage),
+        0,
+        "nothing left to upload"
+    );
+    assert_eq!(
+        world.renderer.settings().textures().ready_layer(texture),
+        None
+    );
+}
+
+#[test]
+fn kept_copies_upload_again_after_a_gpu_reset_once_their_upload_is_done() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let (texture, _, _) = world.add_mapped(SIZE);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .set_keep_copies(true);
+    world.step(&mut mock, true);
+    world.arrive(&mut mock, 1, SIZE);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::UploadImage), 1);
+    assert!(world.renderer.settings().textures().keep_copies());
+    // The frame that would release the image, which the store now keeps.
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::ReleaseImage), 0, "the copy stays");
+    // Even once the thread that draws has taken every frame, the store holds the copy.
+    let taken = world.frame - 1;
+    world.renderer.settings_mut().textures_mut().sync(1, taken);
+    world.renderer.reset_gpu();
+    let mut device = MockBackend::default();
+    device.provide_image(1, SIZE, SIZE);
+    let commands = world.step(&mut device, false);
+    assert_eq!(count(&commands, Op::UploadImage), 1, "the map comes back");
+    assert_eq!(
+        world.renderer.settings().textures().ready_layer(texture),
+        Some(0)
+    );
+}
+
+#[test]
+fn turning_the_copies_off_releases_the_ones_that_the_store_kept() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let (texture, _, _) = world.add_mapped(SIZE);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .set_keep_copies(true);
+    world.step(&mut mock, true);
+    world.arrive(&mut mock, 1, SIZE);
+    world.step(&mut mock, false);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::ReleaseImage), 0);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .set_keep_copies(false);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::ReleaseImage), 1, "the copy goes");
+    let taken = world.frame - 1;
+    world.renderer.settings_mut().textures_mut().sync(1, taken);
+    world.renderer.reset_gpu();
+    let mut device = MockBackend::default();
+    device.provide_image(1, SIZE, SIZE);
+    let commands = world.step(&mut device, false);
+    assert_eq!(
+        count(&commands, Op::UploadImage),
+        0,
+        "nothing left to upload"
+    );
+    assert_eq!(
+        world.renderer.settings().textures().ready_layer(texture),
+        None
+    );
+}
+
+#[test]
+fn destroying_a_texture_with_a_kept_copy_releases_it() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let (texture, _, _) = world.add_mapped(SIZE);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .set_keep_copies(true);
+    world.step(&mut mock, true);
+    world.arrive(&mut mock, 1, SIZE);
+    world.step(&mut mock, false);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .sync(1, world.frame - 1);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::ReleaseImage), 0);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .destroy(texture, world.frame)
+        .unwrap();
+    let commands = world.step(&mut mock, false);
+    assert_eq!(count(&commands, Op::ReleaseImage), 1, "the kept copy goes");
+}

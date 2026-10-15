@@ -172,6 +172,11 @@ export type WorkerReply =
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
 	/**
+	 * An error that the sketch's own code threw in a frame, once for each distinct message. The
+	 * engine keeps drawing; the page reports it through `onSketchError`.
+	 */
+	| { type: 'sketch-error'; message: string }
+	/**
 	 * The quality preset and settings after a change, for the settings that the page applies, with
 	 * the preset check's result once it has run.
 	 */

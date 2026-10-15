@@ -51,7 +51,7 @@ describe("the page's memory measurements", () => {
 				else if (/\.tsx?$/.test(name) && !name.endsWith('.test.ts')) files.push(path);
 			}
 		};
-		for (const dir of ['packages/engine/src', 'examples', 'tests/pages', 'bench'])
+		for (const dir of ['packages/engine/src', 'examples', 'tests/pages', 'tests/image', 'bench'])
 			walk(join(root, dir));
 		const calls = files.flatMap((path) =>
 			readFileSync(path, 'utf8')

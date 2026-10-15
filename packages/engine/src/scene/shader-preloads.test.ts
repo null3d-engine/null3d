@@ -19,4 +19,11 @@ describe('ShaderPreloads', () => {
 		preloads.needGenerators();
 		expect(sent).toEqual([[GENERATORS_PRELOAD]]);
 	});
+
+	it('asks for the files that a recorded list names, and leaves out a name it does not know', () => {
+		const sent: (readonly string[])[] = [];
+		const preloads = new ShaderPreloads((features) => sent.push(features));
+		preloads.needListed(['skinning', 'cutout', 'not-a-feature', 'skinning']);
+		expect(sent).toEqual([['skinning'], ['cutout']]);
+	});
 });

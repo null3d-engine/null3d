@@ -42,6 +42,7 @@ import {
 	readJobCounts,
 	readSwitches,
 	SHADOW_MAX_DIFFERENT_PERCENT,
+	SPECULAR_AA_LIMITS,
 	TIER_PAIRS,
 	TIERS,
 	TRANSMISSION_MAX_DIFFERENT_PERCENT,
@@ -265,7 +266,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give alpha to coverage, the alpha hash, the masked shadows, the glass, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the glossy lit scenes, alpha to coverage, the alpha hash, the masked shadows, the glass, the points, the shadows, the strong bloom, ambient occlusion, the vignette, the glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
@@ -282,17 +283,33 @@ describe('feature scenes', () => {
 		expect(featureScene('lut-cube')?.limit).toBeUndefined();
 		// The 8-bit path averages the glass's edges after it encodes them.
 		expect(featureScene('transmission')?.limit).toBe(TRANSMISSION_MAX_DIFFERENT_PERCENT);
+		// Specular anti-aliasing widens small highlights by another term than three.js's.
+		for (const [glossy, limit] of Object.entries(SPECULAR_AA_LIMITS))
+			expect(featureScene(glossy)?.limit).toBe(limit);
+		expect(featureScene('lights-spot')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
+			'standard-grid',
+			'environment-room',
+			'environment-venice',
+			'environment-venice-rotated',
+			'environment-venice-hdr',
+			'environment-room-hemisphere',
 			'alpha-coverage',
 			'alpha-hash',
 			'alpha-mask-shadows',
 			'transmission',
 			'points',
+			'lights-16',
+			'gltf-metal-rough',
 			'gltf-instancing',
 			'gltf-ktx2',
 			'gltf-meshopt-ext',
+			'gltf-specular',
+			'gltf-ior',
+			'gltf-clearcoat',
 			'shadows',
+			'shadow-catcher',
 			'morph',
 			'bloom-strong',
 			'ao-default',
@@ -470,7 +487,7 @@ describe('the pages', () => {
 			'null3d-webgpu-box',
 			'null3d-webgpu-sky-room-first',
 			'null3d-webgpu-sky-texture-first',
-			'null3d-webgpu-skin-vertex',
+			'null3d-webgpu-skin-compute',
 			'null3d-webgpu-skin-full',
 			'null3d-webgpu-skin-skip',
 			'null3d-webgpu-skin-narrow',
@@ -597,7 +614,7 @@ describe('the pages', () => {
 			'null3d-webgpu-box',
 			'null3d-webgpu-sky-room-first',
 			'null3d-webgpu-sky-texture-first',
-			'null3d-webgpu-skin-vertex',
+			'null3d-webgpu-skin-compute',
 			'null3d-webgpu-skin-full',
 			'null3d-webgpu-skin-skip',
 			'null3d-webgpu-skin-narrow',

@@ -87,12 +87,14 @@ export function gradingWarmNumbers(): Float64Array {
 export const GRADING_VIGNETTE_THREE = { offset: 1.2, darkness: 1.1 } as const;
 
 /**
- * The same vignette in null3D's settings, as the porting skill maps them: the offset becomes the
- * size, and the darkness the intensity.
+ * The same vignette in null3D's settings, as the porting skill maps them under AgX, the curve that
+ * the grading scenes draw with: the offset becomes the size, the darkness the intensity up to 1,
+ * and the falloff is 3.
  */
 export const GRADING_VIGNETTE = {
 	size: GRADING_VIGNETTE_THREE.offset,
-	intensity: GRADING_VIGNETTE_THREE.darkness,
+	intensity: Math.min(GRADING_VIGNETTE_THREE.darkness, 1),
+	falloff: 3,
 } as const;
 
 /** The table's intensity in the tests that draw it with the vignette. */

@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, rectangle and tube lights, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -18,23 +18,23 @@ flowchart LR
     object --> frame{"Each frame:<br/>visible, and on the<br/>camera's layers?"}
     table --> frame
     frame --> main["The first directional light,<br/>the ambient and hemisphere lights"]
-    frame --> list["Point and spot lights<br/>whose ranges reach the view"]
+    frame --> list["Point, spot and area lights<br/>whose ranges reach the view"]
     list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
     grid --> shading
     env --> shading
 ```
 
-Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors, its intensity, and for point and spot lights their range, decay and cone.
+Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors and its intensity. It also holds a point or spot light's range, decay and cone, and an area light's range and size.
 
-Setters change the engine's memory at once, and they allocate nothing except those that convert a color. Each frame, after the engine updates transforms, it reads every light:
+Setters change the engine's memory at once. They write their numbers into a block of the engine's memory, and they call the core with whole numbers only. So a setter allocates nothing, a color included. Call a per-frame setter from a small function of its own, so the browser inlines it. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
 2. Standard materials reflect the first directional light created that remains, the sum of the ambient and hemisphere lights, and the scene's environment.
-3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
+3. It tests the sphere of each point, spot and area light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
-A scene pass ([Custom passes](../guides/custom-passes.md)) does steps 3 and 4 again for its own camera and layers, with a light grid of its own. Its point and spot lights cast shadows where the camera's view gives them shadows.
+A scene pass ([Custom passes](../guides/custom-passes.md)) does steps 3 and 4 again for its own camera and layers, with a light grid of its own. It lists the point, spot and area lights that its camera sees. Its point and spot lights cast shadows where the camera's view gives them shadows.
 
 ## Kinds of light and their units
 
@@ -47,8 +47,18 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 | Spot | A torch or a stage light: light from a point in a cone | Candela | `'lumen'`: divided by π at any cone angle |
 | Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | Lux, on both colors | `'lux'` |
 | Ambient | Light that bounces everywhere, from no direction | Lux | `'lux'` |
+| Rectangle | A window, a screen or a soft box: light from a glowing rectangle | Nits: the brightness of its surface | None |
+| Tube | A neon or fluorescent tube: light from a glowing tube | Nits: the brightness of its surface | None |
 
 A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
+
+Three defaults keep shiny surfaces clean. They are always on, and they have no settings:
+
+- The smoothest surface has a roughness of 0.045, as in three.js and Filament. A roughness of 0 still shows a small highlight, and reads the sharpest level of an environment.
+- Highlights flicker less on curved shapes. A highlight narrower than a pixel comes and goes as the camera moves. So where a mesh's normal turns fast between pixels, the highlight widens by the spread of the normals within the pixel. This is Filament's specular anti-aliasing. The widening has a limit, so edges stay glossy, and flat surfaces get none. three.js widens highlights by a cruder rule that has no limit. So on small curved shapes, the engine's highlights are a little brighter and narrower than three.js's.
+- Reflections never come from inside an object. A normal map can tilt a surface so far that its reflection points below the mesh's own surface. There the environment's reflection fades out, as in Unity and Godot. three.js has no such fade, so grazing reflections on strong normal maps are darker than three.js's.
+
+A rectangle or tube light's light follows from its size and brightness: the engine integrates it over the light's area, with three.js's linearly transformed cosines. A larger light of the same intensity therefore gives more light, and a shiny surface shows its shape. [Area lights](../api/lights.md#area-lights) gives the details.
 
 Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
 
@@ -97,13 +107,13 @@ Colors that you set in the scene's units take the exposure too: a background col
 
 ## Clustered forward shading
 
-A scene can hold hundreds of point and spot lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
+A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
 
 Each frame the engine lists, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
 
 ```mermaid
 flowchart LR
-    lights["Visible point and<br/>spot lights"] --> path{"GPU path"}
+    lights["Visible point, spot<br/>and area lights"] --> path{"GPU path"}
     path -->|WebGPU| upload["Upload:<br/>lights only"]
     upload --> compute["Compute pass:<br/>lights of each cluster"]
     path -->|WebGL2| assign["Job workers:<br/>lights of each cluster"]
@@ -125,11 +135,11 @@ The engine shades each surface in the pass that draws it. A deferred renderer wo
 - Forward shading works with MSAA directly, where deferred shading needs extra passes.
 - Transparent surfaces use the same lighting code as opaque ones.
 
-Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. In this version the camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it. Each cluster lists up to 128. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
+Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. In this version the camera lists up to 1,024 lights in a frame, the ones nearest to it. Each cluster lists up to 128. Of those, the quality preset's `areaLights` caps the rectangle and tube lights, which cost more per pixel. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
 
 ## Lights as objects
 
-Because each light is an object, it moves, turns, hides and has a parent the way a mesh does. A lamp that is the child of a car moves with the car. Directional and spot lights send their light along their -Z axis, as a camera looks, so `lookAt` aims them. A hemisphere light's sky lies along its +Y axis.
+Because each light is an object, it moves, turns, hides and has a parent the way a mesh does. A lamp that is the child of a car moves with the car. Directional, spot and rectangle lights send their light along their -Z axis, as a camera looks, so `lookAt` aims them. A tube light runs along its -Z axis. A hemisphere light's sky lies along its +Y axis.
 
 Point and spot lights that move in most frames should be dynamic, with `dynamic: true`, as any object that moves in most frames should be. [Static and dynamic objects](static-dynamic.md) explains the choice.
 
@@ -154,6 +164,33 @@ A curve sets how the fog thickens. The default, exponential fog, follows light t
 Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog. With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
 
 The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color, as in three.js's WebGPURenderer and in WebGLRenderer with a half-float target. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
+
+### Volumetric fog
+
+With the fog's `volumetric` option, the lights light the fog itself, through their shadows. A low sun shines through the gaps between trees in rays, and the trees' shadows cut dark lanes through the haze. A street lamp or a car's headlight casts a glowing cone, with the shadows of what stands in it. [Scene](../api/scene.md#volumetric-fog) lists the options.
+
+```mermaid
+flowchart LR
+    light["Light step<br/>each cell of the grid:<br/>fog density, sun through its cascades,<br/>lamps of its cluster through their tiles"] --> sum["Sum steps<br/>each cell adds up<br/>the cells in front of it,<br/>block by block"]
+    last["Last frame's grid"] --> light
+    sum --> apply["Apply step<br/>each pixel adds the<br/>light at its depth"]
+    scene["Scene color and depth"] --> apply
+    apply --> effects["Custom effects, depth of field,<br/>bloom, final pass"]
+```
+
+The engine lights a grid of cells that follow the camera's view, a technique called froxels, which Frostbite and Unreal Engine use too. The grid's columns and rows cover the view, and its slices run away from the camera, thin near it and thicker far away. Each frame runs three stages:
+
+1. The light step lights each cell once. It finds how dense the fog is there, from the fog's `density` and `heightFalloff`. It adds the sun's light where the sun's shadow map sees the cell, and the light of each point and spot light of the cell's cluster, through its shadow. A phase function sets how much of each light the fog sends toward the camera. It sends most when the camera looks into the light, as `anisotropy` sets.
+2. The sum adds up, for each cell, the light of the cells in front of it, dimmed by the fog between them. It runs in two steps: the first sums each block of 8 slices, and the second joins the blocks. So its cost grows with the slices, not with their square.
+3. The apply step adds the summed light at each pixel's depth to the scene's color, after the transparent objects and before the custom effects. It reads the grid through a smooth cubic filter over the 16 nearest cells, so the cells' edges never show, even on Medium's coarse grid.
+
+Each frame moves the cells' sample points a little, and blends each cell's light with the last frame's light at the same place in the world. Over about ten frames that settles the light in each cell, so rays show steady, smooth edges. The grid's cost follows its cells, not the screen's pixels, and each cell loops over the lights of its own cluster alone.
+
+The fog of the section above stays as it is: it dims each surface and mixes in the fog's color. The grid only adds the light that the sun and the lamps scatter toward the camera, and while it draws it replaces the sun glow. Past the grid's `distance`, the fog scatters the sun's light without shadows, in a closed formula, so no edge shows where the grid ends.
+
+The quality setting `fogSlices` sets the grid: 32 slices with 64 cells on the canvas's short side on Medium, 64 slices with 96 on High, and 96 slices with 128 on Ultra. On Low it is 0, and the fog keeps its sun glow, at no cost. The frame-budget governor's last step halves the slices that each frame draws. While the fog is not volumetric, nothing of it runs or downloads.
+
+Surfaces that blend or let light through, such as water and glass, draw before the apply step. They take the lit fog of the whole line of sight to the opaque surface behind them.
 
 ## Environment maps
 
@@ -198,6 +235,7 @@ The standard material takes the environment's light as three.js's `MeshStandardM
 - Diffuse light comes from the nine coefficients, along the surface's normal.
 - The split-sum terms of three.js's table weigh the two by the view's angle, the roughness and the metalness, with three.js's energy compensation.
 - The occlusion map darkens the diffuse light, and darkens the specular light as three.js's `computeSpecularOcclusion` does.
+- The specular light fades where a normal map tilts the reflection below the mesh's own surface.
 
 three.js's PMREM blurs its levels a little less than the GGX distribution of its own materials. The engine therefore reads each roughness from the level that matches three.js's light best, from a table that compares the two. A port keeps its look: the spheres of the engine's parity scenes match three.js under three.js's own image rule.
 
@@ -222,7 +260,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 12 of them, the cube map included, so four stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
+- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 13 of them, the cube map and the area lights' tables included, so three stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
@@ -240,7 +278,7 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 
 ## Sky and backgrounds
 
-The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, or three.js's analytic sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
+The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, three.js's analytic sky, or the physical sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -292,12 +330,42 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
 - three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 
+### The physical sky
+
+The physical sky models the earth's air: a layer 100 km deep over a planet of the earth's size. Its molecules scatter blue light more than red (Rayleigh scattering), its haze scatters every color and mostly forward (Mie scattering), and its ozone absorbs some orange. The engine follows Hillaire's method of 2020, which Unreal Engine and Bevy use. Three small tables hold what each pixel would otherwise work out along its ray:
+
+```mermaid
+flowchart LR
+  air["The air's settings"] --> T["Transmittance table<br/>256 x 64"]
+  air --> M["Multiple scattering table<br/>32 x 32"]
+  T --> M
+  T --> V["Sky view table<br/>256 x 128"]
+  M --> V
+  lights["Sun, moon, camera height"] --> V
+  V --> B["Background"]
+  V --> P["Panorama for the sky's environment"]
+  T --> B
+```
+
+- The transmittance table holds the share of light that passes from each height to the top of the air, along each angle. The sun's light reaches each point through it, and it reddens the sun as it sets.
+- The multiple scattering table holds the light that scatters more than once. Without it the sky would be too dark and too saturated, most of all at twilight.
+- The sky view table holds the whole sky's light, seen from the camera's height. Its rows crowd near the horizon, where the sky changes fastest.
+
+The engine draws the first two tables when the air's settings change, and the sky view when the air, the sun, the moon or the camera's height changes. A still sky draws none of them. The background then reads one texel of the sky view per pixel, and adds the sun's disc, the moon, the stars and the clouds.
+
+The aerial perspective needs no table. Over a scene's distances, the air's density falls with height as height fog's does, and the sun's light along the way barely changes. So each surface's shader integrates Rayleigh's and Mie's scattering along its ray exactly, from a few values that the engine works out each frame. It costs about what fog costs. Past a few tens of kilometres, the earth's curve, which this leaves out, would show.
+
+At night the moon is a second light of the air: it lights the sky as the sun does, a little bluer at the scene's exposure. The moon's disc shows its phase, lit from the sun's side. The stars add their light to the sky's, so they show only where the sky is dark enough, and the air dims them toward the horizon.
+
+The sky's environment shows the physical sky too. When a refresh starts, the engine draws the sky with its clouds into a panorama, and the map's steps read it. So every face of the map shows the same sky while the sun moves. The diffuse light comes from a CPU copy of the same model.
+
 ### Background cost
 
-- Each background is one draw of at most 12 triangles. The sky reads no texture.
+- Each background is one draw of at most 12 triangles. The analytic sky reads no texture. The physical sky reads its sky view table once a pixel, and its transmittance table for the sun's disc and the clouds.
 - A background costs only the pixels that no object covers. An opaque material with `depthWrite: false` or `depthTest: false` makes the background draw first, and then every pixel of the view pays for it.
 - An environment or a cube map reads one texel of its cube map per pixel. The sky computes its light in each pixel, and does more work above the horizon while it draws clouds. `cloudCoverage: 0` skips the clouds.
-- The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, and `'sky'` for the sky. A page with neither downloads none of them.
+- The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, `'sky'` for the analytic sky, and `'physical_sky'` for the physical sky. A page with none of them downloads none of them.
+- The physical sky's tables and panorama take 1.4 MB of GPU memory. A frame draws a table only when what it holds changes: the sky view, about 33,000 texels, when the sun moves. Without a physical sky, nothing runs, and the shaders' haze step stops at one value of the frame.
 - The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
 - A cube map's six images upload in the frames after the load, within the frame's upload budget. Its faces have one level, so large faces seen small can shimmer.
 
@@ -307,6 +375,7 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - three.js's `SkyMesh` moves its clouds by the renderer's clock. The engine's sky moves them by its `time` setting, as three.js's `Sky` does, so a still frame shows the same clouds.
 - Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. For a background that blurs, load an environment with `assets.loadEnvironment`.
 - `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
+- three.js has no physical sky of its own. Ports of its `Sky` keep `{ sky }`, which matches three.js. `{ atmosphere }` is the engine's best sky, which a port can move to.
 
 ## Time of day
 
@@ -341,10 +410,20 @@ The result holds plain values. Apply them to your own objects, as above:
 | --- | --- |
 | `sky` | `scene.setBackground({ sky })`. Add the clouds and their `time` of your own: `{ ...day.sky, cloudCoverage: 0.3 }` |
 | `skyIntensity` | The sky background's and the sky environment's `intensity` |
-| `light` | The main directional light: `direction`, a linear `color` and `intensity`. By day it is the sun. After sunset it is the moon, a cool light at least 25 degrees up |
+| `light` | The main directional light: `direction`, a linear `color` and `intensity`. By day it is the sun. After sunset it is the moon, a cool light that rises from the horizon as night falls |
 | `fog` | `scene.setFog`: the `color` of the sky's horizon and the `sunGlow`. Choose the curve and the density for your scene |
 | `ambient` | An ambient light's `color` and `intensity`, for a scene without the sky's environment. A scene lit by the sky's environment needs none |
 | `exposure` | `post.set({ exposure })`: 1 by day, up to 3.5 at night |
+
+With `{ model: 'physical' }`, the values match the physical sky instead, from a table of its light by the sun's height:
+
+| Value | With the physical model |
+| --- | --- |
+| `atmosphere` | `scene.setBackground({ atmosphere })`: the real sun, its light above the air, and at night the moon and the stars. Add your scene's clouds and haze: `{ ...day.atmosphere, aerialPerspective: 2 }` |
+| `skyIntensity` | 1: the physical sky dims by itself after sunset |
+| `light` | The sun through the air, which reddens as it sets. As night falls the light sweeps to the moon and turns cool, while the sun's own light fades |
+| `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
+| `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.1 once night has fallen |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 
@@ -356,7 +435,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 
 ## Lights in scene passes
 
-A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point and spot lights that its camera sees. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
 
 ## Related pages
 

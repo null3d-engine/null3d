@@ -96,7 +96,7 @@ By default, culling tests an object's mesh sphere: the sphere around the object'
 water.setBounds([0, 1, 0], waterMesh.radius + 1);
 ```
 
-Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. On WebGL2, the job workers test each object's own sphere and the cost stays the same.
+Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. Skinned objects without morph targets are the exception: copies of one mesh and material share a group, whose sphere holds every copy's. On WebGL2, the job workers test each object's own sphere and the cost stays the same.
 
 ## Software occlusion culling on WebGL2
 

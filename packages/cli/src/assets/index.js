@@ -5,3 +5,10 @@ export { VERSION } from '../version.js';
 export { defaultJobs, encodeOnce, encoderPool } from './encoder-pool.js';
 export { DEFAULT_OPTIONS, GENERATOR, namedFiles, optimizeModel } from './pipeline.js';
 export { reportLines } from './report.js';
+export {
+	ASSET_PERMUTATIONS,
+	ASSET_SHADER_FILES,
+	ASSET_TEMPLATES,
+	NULL3D_SHADERS,
+	shaderList,
+} from './shaders.js';

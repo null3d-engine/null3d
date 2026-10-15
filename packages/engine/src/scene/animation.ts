@@ -17,7 +17,7 @@ import * as C from '../generated/core';
 import type { QuatLike, Vec3Like } from '../math/types';
 import { DEV } from '../shared/dev';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
 
 export type { RigClip, RigData, RigJoint, RigTrack };
@@ -68,6 +68,16 @@ export interface PlayOptions {
 	 * clip that already plays keeps its weight.
 	 */
 	weight?: number;
+	/**
+	 * How a play with a `fade` switches what its layer plays. `'blend'`, the default, cross-fades
+	 * the layer's old clips with the new one, as three.js's `crossFadeTo` does, and samples both
+	 * while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves
+	 * continues on its path and eases into the new clip, which keeps feet from sliding through a
+	 * mixed gait. It needs a fade above 0, no `weight` and no `join`, and a clip already playing on
+	 * the layer keeps its own fade. `crossFade` always cross-fades, so a port of `crossFadeTo`
+	 * shows the blend that three.js shows.
+	 */
+	transition?: 'blend' | 'inertial';
 }
 
 /**
@@ -177,6 +187,12 @@ const FINISHED = 'finished';
 const ANIMATED_OBJECTS = 1024;
 const ANIMATED_JOINTS = 65_536;
 
+/**
+ * The most frames between two updates of one object's pose that `setUpdateInterval` takes. A
+ * larger interval saves more, with more visible stepping on a character near the camera.
+ */
+const MAX_UPDATE_INTERVAL = 64;
+
 /** Floats per joint's inverse bind matrix: row-major 3 × 4. */
 const BIND_FLOATS = 12;
 /** The parent of a root joint in the core's arrays. */
@@ -229,6 +245,11 @@ const blendRecords = new WeakMap<BlendOptions, ReadOptions>();
 const pointRecords = new WeakMap<Readonly<Record<string, number>>, ReadPoints>();
 /** The record of a play without options. */
 const NO_OPTIONS = new ReadOptions();
+
+/** Views of nothing, which the animation table keeps in place of the views that it dropped. */
+const NO_FLOATS: Float32Array<ArrayBufferLike> = new Float32Array(0);
+const NO_WORDS: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
+const NO_DOUBLES: Float64Array<ArrayBufferLike> = new Float64Array(0);
 /** The records that plays fill again from objects that are not frozen. */
 const sharedOptions = new ReadOptions();
 const sharedPoints = new ReadPoints();
@@ -323,22 +344,21 @@ function listed(names: Iterable<string>): string {
  * The scene's animated objects: the animation table in the engine core, the arrays of it that
  * calls write, and the events of each frame step. The first rig creates it.
  */
-export class SceneAnimations {
+export class SceneAnimations implements ViewHolder {
 	private generation = -1;
-	private scales!: Float32Array;
-	private weights!: Float32Array;
-	private sources!: Uint32Array;
-	private clipWeights!: Float32Array;
-	private blends!: Float32Array;
-	private words!: Uint32Array;
-	private floats!: Float32Array;
-	private args!: Float32Array;
-	private records!: Uint32Array;
-	private totals!: Uint32Array;
+	private scales = NO_FLOATS;
+	private intervals = NO_WORDS;
+	private weights = NO_FLOATS;
+	private sources = NO_WORDS;
+	private clipWeights = NO_FLOATS;
+	private blends = NO_FLOATS;
+	private args = NO_FLOATS;
+	private records = NO_WORDS;
+	private totals = NO_WORDS;
 	/** True once the core holds the table of joint overrides. */
 	private overridesMade = false;
-	private overrides!: Float32Array;
-	private targets!: Float64Array;
+	private overrides = NO_FLOATS;
+	private targets = NO_DOUBLES;
 	/** The animator of each object, by its instance id in the core. */
 	readonly animators: (Animator | undefined)[] = [];
 	/** Each clip's name, by its id in the core. */
@@ -357,6 +377,16 @@ export class SceneAnimations {
 			undefined,
 			true,
 		);
+		core.holdViews(this);
+	}
+
+	/** Forgets the arrays of the animation table, which the next read makes again. */
+	dropViews(): void {
+		this.generation = -1;
+		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
+		this.overrides = NO_FLOATS;
+		this.sources = this.records = this.totals = this.intervals = NO_WORDS;
+		this.targets = NO_DOUBLES;
 	}
 
 	/** The id of event name `name`, which it gives a new name. */
@@ -383,6 +413,7 @@ export class SceneAnimations {
 		const { core } = this;
 		const at = (field: number) => core.glue.animationArrays(field);
 		this.scales = core.f32(at(C.ANIMATION_FIELD_TIME_SCALES), ANIMATED_OBJECTS);
+		this.intervals = core.u32(at(C.ANIMATION_FIELD_UPDATE_INTERVALS), ANIMATED_OBJECTS);
 		this.weights = core.f32(
 			at(C.ANIMATION_FIELD_LAYER_WEIGHTS),
 			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
@@ -394,8 +425,6 @@ export class SceneAnimations {
 		const slots = ANIMATED_OBJECTS * C.ANIMATION_MAX_BLEND;
 		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
 		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
-		this.words = new Uint32Array(core.memory.buffer);
-		this.floats = new Float32Array(core.memory.buffer);
 		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
 		this.records = core.u32(
 			at(C.ANIMATION_FIELD_EVENTS),
@@ -454,6 +483,12 @@ export class SceneAnimations {
 		return this.scales;
 	}
 
+	/** The frames between two updates of each instance's pose, by its id in the core. */
+	updateIntervals(): Uint32Array {
+		this.views();
+		return this.intervals;
+	}
+
 	/** The weight of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */
 	layerWeights(): Float32Array {
 		this.views();
@@ -472,14 +507,12 @@ export class SceneAnimations {
 
 	/** The whole engine memory as 32-bit words, for staging words without a view of their own. */
 	memoryWords(): Uint32Array {
-		this.views();
-		return this.words;
+		return this.core.heap(Uint32Array);
 	}
 
 	/** The whole engine memory as 32-bit floats. */
 	memoryFloats(): Float32Array {
-		this.views();
-		return this.floats;
+		return this.core.heap(Float32Array);
 	}
 
 	/** The blend value of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */
@@ -603,7 +636,7 @@ export class Animator implements Described {
 	 * clip with a weight still takes over.
 	 */
 	crossFade(name: string, duration: number, options?: PlayOptions): void {
-		this.start('crossFade', name, options, false, duration);
+		this.start('crossFade', name, options, false, duration, true);
 	}
 
 	/**
@@ -684,7 +717,9 @@ export class Animator implements Described {
 			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
 		}
-		this.done(this.system.core.glue.animatorStop(this.instance, clip, fade), call);
+		const { system } = this;
+		system.playArgs()[C.ANIMATION_ARG_FADE] = fade;
+		this.done(system.core.glue.animatorStop(this.instance, clip), call);
 	}
 
 	/**
@@ -725,6 +760,33 @@ export class Animator implements Described {
 			checks.checkNumber('setTimeScale', 'scale', scale, this);
 		}
 		this.system.timeScales()[this.instance - 1] = scale;
+	}
+
+	/**
+	 * The frames between two updates of the object's pose. The value 1, the default, updates it in
+	 * every frame. A larger number samples and composes it once every that many frames, and holds
+	 * the last pose in between. A far crowd then costs less on the job workers, and, where the
+	 * skinning pass skips a held pose, on the GPU too. The object's clips keep their real speed.
+	 * Each update covers the frames that it skipped.
+	 */
+	get updateInterval(): number {
+		return this.system.updateIntervals()[this.instance - 1] ?? 1;
+	}
+
+	/**
+	 * Sets the frames between two updates of the object's pose, a whole number from 1 to 64. The
+	 * value 1, the default, updates the pose in every frame, which a character near the camera
+	 * needs. A larger value leaves a far character in the pose of its last update for longer, which
+	 * steps. Give a crowd's near characters 1 and its far ones more. It writes engine memory, so
+	 * calling it every frame costs nothing.
+	 */
+	setUpdateInterval(frames: number): void {
+		const call = 'setUpdateInterval';
+		if (DEV) {
+			checks.checkLive(call, this.object);
+			this.checkInterval(call, frames);
+		}
+		this.system.updateIntervals()[this.instance - 1] = frames;
 	}
 
 	/**
@@ -888,6 +950,7 @@ export class Animator implements Described {
 		options: PlayOptions | undefined,
 		join: boolean,
 		duration?: number,
+		forceBlend = false,
 	): void {
 		const clip = this.clip(call, name);
 		if (DEV) {
@@ -900,7 +963,11 @@ export class Animator implements Described {
 		args.set(read.numbers);
 		if (duration !== undefined) args[C.ANIMATION_ARG_FADE] = duration;
 		const joins = join && (read.flags & C.ANIMATION_PLAY_WEIGHT) !== 0;
-		const flags = read.flags | (joins ? C.ANIMATION_PLAY_JOIN : 0);
+		// A cross-fade keeps the weighted blend, so a port of three.js's crossFadeTo shows the mix
+		// three.js shows, whatever transition its options name.
+		const flags =
+			(read.flags & (forceBlend ? ~C.ANIMATION_PLAY_INERTIAL : ~0)) |
+			(joins ? C.ANIMATION_PLAY_JOIN : 0);
 		const status = core.glue.animatorPlay(this.instance, clip, read.layer, flags);
 		// The first additive play of a clip stores its additive form, which can grow the memory.
 		core.refresh();
@@ -915,13 +982,17 @@ export class Animator implements Described {
 		const fade = options.fade ?? 0;
 		const speed = options.speed ?? 1;
 		const layer = options.layer ?? 0;
-		const { time, weight } = options;
+		const { time, weight, transition } = options;
 		if (DEV) {
 			this.checkFade(call, fade);
 			checks.checkNumber(call, 'speed', speed, this);
 			this.checkLayer(call, layer);
 			if (time !== undefined) checks.checkNumber(call, 'time', time, this);
 			if (weight !== undefined) this.checkWeight(call, weight);
+			if (transition !== undefined && transition !== 'blend' && transition !== 'inertial')
+				refuse(
+					`${call}() got the transition ${transition} on ${this.describe()}; it takes 'blend' or 'inertial'.`,
+				);
 		}
 		const read = recordFor(options, sharedOptions, ReadOptions);
 		const { numbers } = read;
@@ -933,7 +1004,8 @@ export class Animator implements Described {
 			(options.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
 			(options.additive ? C.ANIMATION_PLAY_ADDITIVE : 0) |
 			(time === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
-			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT);
+			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT) |
+			(transition === 'inertial' ? C.ANIMATION_PLAY_INERTIAL : 0);
 		read.layer = layer;
 		if (read !== sharedOptions) playRecords.set(options, read);
 		return read;
@@ -1169,6 +1241,13 @@ export class Animator implements Described {
 		checks.checkNumber(call, 'weight', weight, this);
 		if (weight < 0)
 			refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 or more.`);
+	}
+
+	private checkInterval(call: string, frames: number): void {
+		if (Number.isInteger(frames) && frames >= 1 && frames <= MAX_UPDATE_INTERVAL) return;
+		refuse(
+			`${call}() got the interval ${frames} on ${this.describe()}; it takes a whole number from 1 to ${MAX_UPDATE_INTERVAL}.`,
+		);
 	}
 
 	private checkLayer(call: string, layer: number): void {

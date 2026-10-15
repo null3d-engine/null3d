@@ -32,6 +32,7 @@ import {
 	WGSL_UPDATE_EVENT,
 	type WgslUpdate,
 } from './hot.ts';
+import { MATERIAL_BUILDS_ADDRESS, MaterialBuilds, ModuleBuilds } from './material-builds.ts';
 import {
 	FILES_LIST,
 	listedFiles,
@@ -41,6 +42,7 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
+import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -338,6 +340,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
+	/** True when the shader cache is ignored, by the environment or by Vite's `--force`. */
+	let noShaderCache = shaderCacheOff();
 	/** The third-party notices that a client build writes beside the page; null in other builds. */
 	let notices: string | null = null;
 	/** What each worker build's files hold, by file name, for the list of files for offline play. */
@@ -347,6 +351,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
+	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
+	const shaders = new ShaderCache(() => root, compiler, { disabled: () => noShaderCache });
+	/** Custom materials' builds, which load on first use from modules of their own by device. */
+	const materialBuilds = new MaterialBuilds();
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
@@ -403,6 +411,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				);
 			}
 			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
+			// Vite's `--force` ignores its own caches; it ignores the shader cache too.
+			noShaderCache ||= config.optimizeDeps?.force === true;
 		},
 		buildStart() {
 			emitted.clear();
@@ -425,9 +435,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		// early script imports nothing, so it runs as soon as it arrives, and the core's download
 		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: [HOT_CLIENT_ADDRESS, /^@null3d\/engine$/] },
+			filter: { id: [HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS, /^@null3d\/engine$/] },
 			async handler(source, importer) {
 				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
+				if (MATERIAL_BUILDS_ADDRESS.test(source))
+					return source.startsWith('\0') ? source : `\0${source}`;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
@@ -459,9 +471,20 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		load: {
-			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS] } },
+			filter: {
+				id: {
+					include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS],
+				},
+			},
 			async handler(id) {
 				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
+				if (MATERIAL_BUILDS_ADDRESS.test(id))
+					return (
+						materialBuilds.module(id) ??
+						this.error(
+							`null3D has no custom material builds named ${id.slice(1)}. Reload the page so the dev server compiles its WGSL again.`,
+						)
+					);
 				// Another plugin's virtual module whose name ends like a WGSL file.
 				if (id.startsWith('\0')) return;
 				if (OPTIMIZED_MODEL.test(id)) {
@@ -494,7 +517,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					return `export default new URL(import.meta.ROLLUP_FILE_URL_${ref}, import.meta.url).href;\n`;
 				}
 				const path = projectPath(root, id);
-				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), compiler);
+				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), shaders);
 				if ('error' in compiled) return this.error(compiled.error);
 				for (const warning of compiled.warnings) this.warn(warning);
 				const key = keyOf(id, path);
@@ -509,8 +532,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					}
 				}
 				const pack = new ShaderPack();
+				const builds = new ModuleBuilds();
+				const value = builds.value(pack, compiled.shader, key);
 				return {
-					code: `export default ${pack.value(compiled.shader, key)};\n${pack.unpacker()}`,
+					code: `export default ${value};\n${pack.unpacker()}${materialBuilds.finish(id, builds)}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -526,17 +551,19 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				let out: MagicString | undefined;
 				if (SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
 					const path = projectPath(root, file);
-					const tagged = await compileTaggedWgsl(code, file, path, compiler);
+					const tagged = await compileTaggedWgsl(code, file, path, shaders);
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
 					const pack = new ShaderPack();
+					const builds = new ModuleBuilds();
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, pack.value(shader, key));
+						out.overwrite(start, end, builds.value(pack, shader, key));
 					}
-					if (out && !pack.empty) out.append(pack.unpacker());
+					if (out && !pack.empty)
+						out.append(`${pack.unpacker()}${materialBuilds.finish(file, builds)}`);
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
 				}
@@ -571,7 +598,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			if (!modules.some((module) => module.id === file)) return;
 			const path = projectPath(root, file);
 			if (WGSL_FILE.test(file)) {
-				const compiled = await compileWgslFile(path, file, await read(), compiler);
+				const compiled = await compileWgslFile(path, file, await read(), shaders);
 				if ('error' in compiled) {
 					showError(environment, compiled.error);
 					return otherModules(modules, file);
@@ -590,7 +617,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			const changed = changedLiterals(before, code, file);
 			if (!changed) return;
 			const results = await Promise.all(
-				changed.map(({ literal }) => compileLiteral(literal, code, file, path, compiler)),
+				changed.map(({ literal }) => compileLiteral(literal, code, file, path, shaders)),
 			);
 			const updates: WgslUpdate[] = [];
 			for (const [k, result] of results.entries()) {

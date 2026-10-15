@@ -35,15 +35,16 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', href?
 	return node;
 }
 
-/** The address of a demo's page, live or held at its hold time. */
-const demoLink = (demo: Demo, held = false) =>
-	`?demo=${demo.name}${held ? `&hold=${demo.hold}` : ''}`;
+/** The address of a demo's page. */
+const demoLink = (demo: Demo) => `?demo=${demo.name}`;
 
-/** A demo's title, then its scene in a quieter style: "Instancing · 100,000 columns". */
+/** A demo's title, then its scene as a smaller sub-title under it, on its own line. */
 function heading(demo: Demo): (string | HTMLElement)[] {
-	const scene = element('span', ` · ${demo.scene}`);
+	const name = element('span', demo.title);
+	name.className = 'name';
+	const scene = element('span', demo.scene);
 	scene.className = 'scene';
-	return [demo.title, scene];
+	return [name, scene];
 }
 
 /** Lists the demos in the sidebar, group by group, and marks the one that runs. */
@@ -64,13 +65,7 @@ function listDemos(): void {
 			if (demo.group !== group) continue;
 			const link = element('a', '', demoLink(demo));
 			link.append(...heading(demo));
-			// A demo that loads files says so, and why, as the website's list does.
-			if (demo.assets) {
-				const tag = element('span', 'loads files');
-				tag.className = 'tag';
-				tag.title = demo.assets;
-				link.append(' ', tag);
-			}
+			if (demo.assets) link.title = demo.assets;
 			if (demo === current) link.setAttribute('aria-current', 'page');
 			const item = element('li');
 			item.append(link);
@@ -125,8 +120,8 @@ function welcome(missing?: string): void {
 }
 
 /**
- * Runs the demo on a canvas that fills the panel, with a caption at its top left. The caption's
- * links open the held frame, or the live demo from it, and the demo's code on the main branch.
+ * Runs the demo on a canvas that fills the panel, with a caption at its top left. The caption shows
+ * the demo's title and summary, with a link to its code on the main branch, and starts folded.
  */
 async function runDemo(demo: Demo): Promise<void> {
 	document.title = `${demo.title} · ${demo.scene}: null3D demos`;
@@ -136,30 +131,35 @@ async function runDemo(demo: Demo): Promise<void> {
 	labels.className = 'labels';
 	const caption = element('details');
 	caption.className = 'caption';
-	// A narrow window starts with the caption folded to its title, to leave the canvas clear.
-	caption.open = wide.matches;
 	const title = element('summary');
 	const h1 = element('h1');
 	h1.append(...heading(demo));
-	title.append(h1);
+	// The chevron floats at the top right of the summary, in place of the native marker. It points
+	// down while the caption is folded and up while it is open, and the summary toggles it once.
+	const chevron = element('span');
+	chevron.className = 'caption__chevron';
+	chevron.setAttribute('aria-hidden', 'true');
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('viewBox', '0 0 24 24');
+	svg.setAttribute('fill', 'none');
+	svg.setAttribute('width', '18');
+	svg.setAttribute('height', '18');
+	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	path.setAttribute('d', 'M6 9l6 6 6-6');
+	path.setAttribute('stroke', 'currentColor');
+	path.setAttribute('stroke-width', '2');
+	path.setAttribute('stroke-linecap', 'round');
+	path.setAttribute('stroke-linejoin', 'round');
+	svg.append(path);
+	chevron.append(svg);
+	title.append(h1, chevron);
 	caption.append(title, element('p', demo.summary));
-	if (demo.controls) {
-		const controls = element('p', demo.controls);
-		controls.className = 'controls';
-		caption.append(controls);
-	}
 	const code = element('a', 'View code', sourceUrl(demo));
 	code.target = '_blank';
 	code.rel = 'noopener';
 	const links = element('p');
 	links.className = 'quiet';
-	links.append(
-		params.has('hold')
-			? element('a', 'Live', demoLink(demo))
-			: element('a', `Held frame at ${demo.hold} s`, demoLink(demo, true)),
-		' · ',
-		code,
-	);
+	links.append(code);
 	caption.append(links);
 	stage.append(canvas, labels, caption);
 	// A showcase scene's choices, such as its time of day, sit in a bar at the bottom of the panel.
@@ -168,8 +168,15 @@ async function runDemo(demo: Demo): Promise<void> {
 		choices.className = 'choices';
 		stage.append(choices);
 	}
+	// The help that a showcase scene posts: its keys and the camera mode. A held frame has none.
+	const hud = !params.has('hold') ? element('div') : undefined;
+	if (hud) {
+		hud.className = 'hud';
+		hud.hidden = true;
+		stage.append(hud);
+	}
 	try {
-		await startDemo({ canvas, demo, labels, choices });
+		await startDemo({ canvas, demo, labels, choices, hud });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

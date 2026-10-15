@@ -11,6 +11,7 @@ import {
 	type RigData,
 	type RigJoint,
 } from './animation';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Group, Scene } from './scene';
 
@@ -112,7 +113,10 @@ function fakeCore() {
 			calls.push(['animatorPlayBlend', ...given, ...args(BLEND)]);
 			return 0;
 		},
-		animatorStop: record('animatorStop'),
+		animatorStop: (...given: number[]) => {
+			calls.push(['animatorStop', ...given, ...args([FADE])]);
+			return 0;
+		},
 		setLayerMask: record('setLayerMask'),
 		updateAnimations: record('updateAnimations'),
 		sceneCapacity: () => CAPACITY,
@@ -121,7 +125,7 @@ function fakeCore() {
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const scene = new Scene(core, { frame: 5 }, false);
 	return {
 		scene,
@@ -286,7 +290,7 @@ describe('the animator', () => {
 			['animatorPlay', instance, 3, 1, 0, 0.25, -2, 0, 1],
 			['animatorPlay', instance, 2, 3, LOOP | ADD, 0, 1, 0, 1],
 			['animatorPlay', instance, 3, 0, LOOP, 0.5, 1.5, 0, 1],
-			['animatorStop', instance, 2, 0.2],
+			['animatorStop', instance, 2, Math.fround(0.2)],
 			['animatorStop', instance, 0, 0],
 		]);
 	});

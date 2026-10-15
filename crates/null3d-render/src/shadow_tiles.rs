@@ -78,7 +78,7 @@ use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{HIDDEN_RADIUS, MATRIX_FLOATS};
 use null3d_gpu::drawlist::sizes::SHADOW_TILES_UNIFORM_BYTES;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, format};
+use null3d_gpu::drawlist::{DrawList, Op, format};
 
 use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
 use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
@@ -590,31 +590,21 @@ impl ShadowTiles {
         }
     }
 
-    /// Records the creation of the tiles' uniform block under `uniform`.
-    pub(crate) fn create_objects(list: &mut DrawList, uniform: u32) -> Result<(), RecordError> {
-        list.push(
-            Op::CreateBuffer,
-            &[
-                uniform,
-                SHADOW_TILES_UNIFORM_BYTES,
-                buffer_usage::UNIFORM | buffer_usage::COPY_DST,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Uploads the frame's uniform block into `uniform` when it differs from what the GPU holds.
+    /// Uploads the tiles' part of the frame's shadow settings into `uniform` at `offset`, when it
+    /// differs from what the GPU holds. The cascades hold the block's first part, so the tiles
+    /// follow them (D-146).
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         uniform: u32,
+        offset: u32,
     ) -> Result<(), RecordError> {
         if self.lit.is_empty() || self.held.as_ref() == Some(&self.uniform) {
             return Ok(());
         }
         let (at, bytes) = arena.push(self.uniform.as_bytes())?;
-        list.push(Op::WriteBuffer, &[uniform, 0, at, bytes])?;
+        list.push(Op::WriteBuffer, &[uniform, offset, at, bytes])?;
         self.held = Some(self.uniform);
         Ok(())
     }

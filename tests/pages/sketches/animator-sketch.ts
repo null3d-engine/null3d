@@ -16,6 +16,11 @@ const JOINTS = 16;
 /** The time in seconds at which the pair starts its walk, between the walk's two footsteps. */
 const PAIR_START = 0.5;
 
+/** `?transition=inertial` switches the hero with an inertial transition; anything else cross-fades. */
+const TRANSITION = new URL(import.meta.url).searchParams.get('transition') ?? 'blend';
+/** Frozen options for the hero's inertial switch, so the switch allocates nothing. */
+const INERTIAL_RUN = Object.freeze({ fade: 0.3, transition: 'inertial' as const });
+
 /** The point that the soldier aims at, and its chain: a limb of three joints from the root. */
 const TARGET = [1, 1.5, -2] as const;
 const AIM = Object.freeze({ joints: ['joint1', 'joint6', 'joint11'], limit: 1.2 });
@@ -137,7 +142,10 @@ export default defineSketch(({ scene, time, page }) => {
 			strider.animator.setBlend(0.5 + 0.5 * Math.sin(2 * time.now));
 			if (!crossFaded && time.now >= 1.2) {
 				crossFaded = true;
-				hero.animator.crossFade('run', 0.3);
+				// `?transition=inertial` switches the hero with an inertial transition instead of the
+				// cross-fade, so the same page draws both for comparison.
+				if (TRANSITION === 'inertial') hero.animator.play('run', INERTIAL_RUN);
+				else hero.animator.crossFade('run', 0.3);
 			}
 			if (destroyedAt < 0 && time.now >= 1) {
 				dancer.object.destroy();

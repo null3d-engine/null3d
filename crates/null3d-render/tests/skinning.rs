@@ -1,10 +1,11 @@
 //! Skinning on both frame builders, checked through the mock backend, which rejects what a real
-//! GPU would, and by decoding the lists they record. On WebGPU: the skinning pass, which skins each
-//! skinned object that some view draws once per frame, the joint texture it reads, and the views'
-//! draws of the skinned vertices, the outline mask's among them. On WebGL2: the skinning builds of
-//! the pipelines that draw skinned objects, shadows and the outline mask included, the joint
-//! texture and the texture of first joints that their vertex shaders read, and the instanced draws
-//! that skinned objects of one mesh share.
+//! GPU would, and by decoding the lists they record. On WebGPU: the SKIN builds that skin in the
+//! vertex shader by default, the objects that the skinning pass still takes, and the skinning pass
+//! itself, which skins each skinned object that some view draws once per frame, the joint texture
+//! it reads, and the views' draws of the skinned vertices, the outline mask's among them. On
+//! WebGL2: the skinning builds of the pipelines that draw skinned objects, shadows and the outline
+//! mask included, the joint texture and the texture of first joints that their vertex shaders
+//! read, and the instanced draws that skinned objects of one mesh share.
 
 mod common;
 
@@ -14,20 +15,30 @@ use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{
-    Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
+    Op, buffer_usage, format, layout, permutation, sizes, template, texture_usage, vertex,
 };
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_view::DebugView;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::materials::{CustomShading, Shading};
 use null3d_render::outline::Outline;
 use null3d_render::skinning::{JOINTS_PER_ROW, SkinningMode, TEXELS_PER_JOINT, skinned_format};
 use null3d_render::view::ViewId;
 
-/// The common world with a skinned column at `position`, which casts shadows. Returns the world
-/// and the column.
+/// The common world on a WebGPU frame builder that skins in the skinning pass.
+fn skinning_pass() -> World {
+    World::with_config(RendererConfig {
+        skinning: SkinningMode::LEAN,
+        ..RendererConfig::default()
+    })
+}
+
+/// The common world with a skinned column at `position`, which casts shadows and which the
+/// skinning pass skins. Returns the world and the column.
 fn skinned(position: [f32; 3]) -> (World, Handle) {
-    let mut world = World::new();
+    let mut world = skinning_pass();
     // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
     // objects at once.
     world.pipelines_built = 0;
@@ -158,7 +169,7 @@ fn column_with_tangents() -> null3d_render::geometry::Geometry {
 
 #[test]
 fn the_skinning_pass_skins_formats_with_a_tangent_with_a_build_of_their_own() {
-    let mut world = World::new();
+    let mut world = skinning_pass();
     world.add_skinned([-1.0, 0.0, 0.0]);
     world.add_skinned_mesh([1.0, 0.0, 0.0], &column_with_tangents());
     let mut mock = MockBackend::default();
@@ -271,7 +282,7 @@ fn without_the_pose_skip_a_still_character_skins_every_frame() {
 fn a_still_character_added_during_play_keeps_its_pose_once_its_pipelines_are_built() {
     // Frames have drawn, so a skinned object added now waits for its pipelines, and its regions
     // keep no pose until they are built: a dispatch whose pipeline still builds writes nothing.
-    let mut world = World::new();
+    let mut world = skinning_pass();
     world.add_skinned([0.0, 0.0, 0.0]);
     world.animation_step = 0.0;
     let mut mock = MockBackend::default();
@@ -395,6 +406,82 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
     );
     let second = world.step(&mut mock, false);
     assert_eq!(count(&second, Op::Dispatch), 1);
+}
+
+#[test]
+fn by_default_the_vertex_shaders_skin_custom_materials_too_and_the_pass_takes_the_rest() {
+    // A lit column and one with a custom material built from the standard template, which both
+    // have SKIN builds, so the vertex shaders skin both. A third column has a whole shader of the
+    // sketch's, which has none, so the skinning pass skins it.
+    let mut world = World::new();
+    world.pipelines_built = 0;
+    world.add_skinned([-1.0, 0.0, 0.0]);
+    let custom = world.add_skinned([1.0, 0.0, 0.0]);
+    let full = world.add_skinned([3.0, 0.0, 0.0]);
+    let mut material = |template: u32, row_values: bool| {
+        world
+            .renderer
+            .settings_mut()
+            .materials_mut()
+            .create(
+                Shading::Custom(CustomShading {
+                    template,
+                    attributes: 0,
+                    base_color: true,
+                    textures: 0,
+                    transmission: false,
+                    row_values,
+                    caster: false,
+                    object_ids: false,
+                }),
+                0,
+                [1.0; 4],
+            )
+            .unwrap()
+    };
+    let standard = material(template::CUSTOM_FIRST, true);
+    let whole = material(template::CUSTOM_FIRST + 1, false);
+    world
+        .scene
+        .apply_commands(
+            &[
+                Command::set_material(custom, standard + 1),
+                Command::set_material(full, whole + 1),
+            ],
+            world.frame,
+        )
+        .unwrap();
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    assert_eq!(world.renderer.skinned_vertices(), RINGS * AROUND);
+    let pipelines = operands(&first, Op::CreateRenderPipeline);
+    assert!(
+        pipelines
+            .iter()
+            .any(|p| p[1] == template::INSTANCED_LIT && p[2] & permutation::SKIN != 0),
+        "the lit column's SKIN build"
+    );
+    let pipeline_of = |template: u32| {
+        pipelines
+            .iter()
+            .find(|p| p[1] == template)
+            .expect("the custom material's pipeline")
+    };
+    let custom_pipeline = pipeline_of(template::CUSTOM_FIRST);
+    assert_ne!(custom_pipeline[2] & permutation::SKIN, 0);
+    assert_eq!(custom_pipeline[7], column().format);
+    let full_pipeline = pipeline_of(template::CUSTOM_FIRST + 1);
+    assert_eq!(full_pipeline[2] & permutation::SKIN, 0);
+    assert_eq!(full_pipeline[7], skinned_format(column().format, true));
+
+    // A debug view has no SKIN build either, so the pass skins every column.
+    world
+        .renderer
+        .settings_mut()
+        .set_debug_view(DebugView::Normals);
+    world.step(&mut mock, true);
+    assert_eq!(world.renderer.skinned_vertices(), 3 * RINGS * AROUND);
 }
 
 #[test]
@@ -735,12 +822,70 @@ fn crowd<B: FrameBuilder>(mut world: World<B>) -> Vec<(Op, Vec<u32>)> {
 
 #[test]
 fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgpu() {
-    // Each skinned object draws from a bucket of its own in the camera's bundle, so the list needs
-    // room in proportion to the buckets. The copies cast no shadow, and the cascades draw the first.
+    // The vertex shaders skin the crowd, so its copies share one bucket, which each view draws in
+    // one indirect draw. The copies cast no shadow, and the cascades draw the first.
     let renderer = GpuDrivenRenderer::new(RendererConfig::default());
     let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
     assert_eq!(count(&first, Op::BeginBundle), 3);
+    assert!(count(&first, Op::DrawIndexedIndirect) < 8);
+}
+
+#[test]
+fn a_crowd_of_skinned_objects_fits_the_draw_list_with_the_skinning_pass() {
+    // Each object that the pass skins draws its own vertices from a bucket of its own in the
+    // camera's bundle, so the list needs room in proportion to the buckets.
+    let config = RendererConfig {
+        skinning: SkinningMode::LEAN,
+        ..RendererConfig::default()
+    };
+    let renderer = GpuDrivenRenderer::new(config);
+    let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
+    assert_eq!(count(&first, Op::BeginBundle), 3);
     assert!(count(&first, Op::DrawIndexedIndirect) >= CROWD);
+}
+
+#[test]
+fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgpu() {
+    let draws = |twins: usize| {
+        let mut world = World::new();
+        world.pipelines_built = 0;
+        let left = world.add_skinned([-2.0, 0.0, 0.0]);
+        let mut slots = vec![world.scene.resolve(left).unwrap()];
+        for k in 0..twins {
+            let twin = world.add_twin(left, [2.0 + k as f32, 0.0, 0.0]);
+            slots.push(world.scene.resolve(twin).unwrap());
+        }
+        let first = world.step(&mut MockBackend::default(), true);
+        (first, slots)
+    };
+    // The vertex shaders skin the columns, so they share their mesh and material's bucket: two
+    // columns take the camera's bundle no more draws than one.
+    let (alone, _) = draws(0);
+    let (first, slots) = draws(1);
+    assert_eq!(
+        count(&first, Op::DrawIndexedIndirect),
+        count(&alone, Op::DrawIndexedIndirect)
+    );
+
+    // The culling pass gives each copy its own first joint, from the texture of 32-bit indices
+    // that the culling groups bind after the cell offsets. It holds the scene's slots up to the
+    // last column's, in one write.
+    let group = operands(&first, Op::CreateBindGroup)
+        .into_iter()
+        .find(|g| g[1] == layout::CULL)
+        .expect("a culling group");
+    let firsts = bound(&group, 10);
+    let texture = operands(&first, Op::CreateTexture)
+        .into_iter()
+        .find(|t| t[0] == firsts)
+        .expect("the skin firsts texture");
+    assert_eq!(texture[1], sizes::INDICES_PER_TEXTURE_ROW);
+    assert_eq!(texture[4], format::R32_UINT);
+    let written = writes(&first, firsts);
+    assert_eq!(written.len(), 1);
+    let width = slots[1] + 1;
+    assert_eq!(written[0][2..6], [0, 0, 0, width]);
+    assert_eq!(written[0][9], width * 4);
 }
 
 #[test]
@@ -754,7 +899,7 @@ fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgl2() {
 #[test]
 fn a_skinned_object_added_during_play_draws_once_its_pipelines_are_built() {
     // A frame has drawn, so a pipeline counts as built from the frame after the one that created it.
-    let mut world = World::new();
+    let mut world = skinning_pass();
     let mut mock = MockBackend::default();
     world.step(&mut mock, true);
     world.add_skinned([0.0, 0.0, 0.0]);

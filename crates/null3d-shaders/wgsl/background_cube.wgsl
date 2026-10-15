@@ -4,7 +4,9 @@
 // texture in `scene.background`. An environment reads the level that holds the blur's roughness, as
 // three.js reads its PMREM with `backgroundBlurriness`; a cube map reads its only level. The
 // fragment shader writes linear color as the mesh shaders write theirs: into the HDR scene color,
-// or tone mapped and encoded on the 8-bit path (the TONE_MAP builds).
+// or tone mapped and encoded on the 8-bit path (the TONE_MAP builds). On the 8-bit path with the
+// vignette on, a plain background color draws through this shader too, so the vignette darkens it
+// before the tone mapping as it does on the HDR path.
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::ibl::{roughness_level}
@@ -30,9 +32,19 @@ fn vs(@builtin(vertex_index) vertex: u32) -> CubeOut {
 }
 
 /// The cube map's light in the fragment's direction, turned by the background's rotation, at the
-/// level that holds the blur's roughness, times the intensity and the exposure.
+/// level that holds the blur's roughness, times the intensity and the exposure. A plain color
+/// draws as it is, exposed already.
 @fragment
 fn fs(in: CubeOut) -> @location(0) vec4f {
+    if backdrop.color.w > 0.0 {
+        return null3d::tonemap::finish(
+            backdrop.color.rgb,
+            in.clip.xy,
+            frame.output,
+            frame.target_size.xy,
+            frame.vignette,
+        );
+    }
     let d = in.direction;
     let turned = vec3f(
         dot(backdrop.rotation[0].xyz, d),
@@ -42,5 +54,11 @@ fn fs(in: CubeOut) -> @location(0) vec4f {
     let level = roughness_level(backdrop.params.y, backdrop.params.z);
     let light = textureSampleLevel(cube_map, cube_sampler, turned, level).rgb;
     let scale = backdrop.params.x * frame.output.exposure;
-    return null3d::tonemap::finish(light * scale, in.clip.xy, frame.output);
+    return null3d::tonemap::finish(
+        light * scale,
+        in.clip.xy,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }

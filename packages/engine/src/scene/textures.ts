@@ -498,7 +498,7 @@ export class Textures {
 			levels,
 		);
 		const address = this.texelAddress(texture, width, height, call);
-		new Uint8Array(this.core.memory.buffer, address, texels.length).set(texels);
+		this.core.view(Uint8Array, address, texels.length).set(texels);
 		return texture;
 	}
 
@@ -585,7 +585,7 @@ export class Textures {
 		try {
 			let address = this.texelAddress(texture, size, size, call);
 			for (const level of texels) {
-				new Uint8Array(core.memory.buffer, address, level.length).set(level);
+				core.view(Uint8Array, address, level.length).set(level);
 				address += level.length;
 			}
 		} catch (error) {
@@ -791,10 +791,10 @@ export class Textures {
 				);
 		}
 		const address = this.texelAddress(texture, width, height, call);
-		const { buffer } = this.core.memory;
-		if (data instanceof Float32Array) toHalfFloats(data, new Uint16Array(buffer, address, values));
-		else if (data instanceof Uint16Array) new Uint16Array(buffer, address, values).set(data);
-		else new Uint8Array(buffer, address, values).set(data);
+		const { core } = this;
+		if (data instanceof Float32Array) toHalfFloats(data, core.view(Uint16Array, address, values));
+		else if (data instanceof Uint16Array) core.view(Uint16Array, address, values).set(data);
+		else core.view(Uint8Array, address, values).set(data);
 	}
 
 	/** @internal */
@@ -827,7 +827,7 @@ export class Textures {
 	 */
 	setTexels(texture: Texture, texels: Uint8Array, call: string): void {
 		const address = this.texelAddress(texture, texture.width, texture.height, call);
-		new Uint8Array(this.core.memory.buffer, address, texels.length).set(texels);
+		this.core.view(Uint8Array, address, texels.length).set(texels);
 	}
 
 	/**

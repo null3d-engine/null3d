@@ -8,6 +8,7 @@ import { BLOCK } from './images.js';
 /** @import { SpatialReport } from './spatial.js' */
 /** @import { DedupReport } from './dedup.js' */
 /** @import { MeshLevels } from './levels.js' */
+/** @import { DrawBucket, ShaderList } from './shaders.js' */
 
 /**
  * @typedef {object} TextureGroup Textures of one size, format and color space. The engine keeps
@@ -45,7 +46,38 @@ import { BLOCK } from './images.js';
  *   A texture whose sides are not whole blocks counts as uncompressed in each.
  * @property {number} textureMs The CPU time that the texture encodes took.
  * @property {number} ms The time the whole model took.
+ * @property {{ permutations: string[], features: string[] }} shaders The permutation bits and the
+ *   first-use shader files that the model's draws need, which the tool records with the file.
+ * @property {DrawBucket[]} buckets The pipeline keys that the model's draws need, most objects
+ *   first. Every object that draws with one key shares one pipeline.
+ * @property {PresetWarning[]} budgetWarnings The quality presets whose texture memory budget the
+ *   model's textures pass.
  */
+
+/**
+ * @typedef {object} PresetWarning A quality preset whose texture memory budget the model's
+ *   textures pass on the devices that the preset serves.
+ * @property {QualityPresetName} preset
+ * @property {number} limitMiB The preset's texture memory budget in MiB.
+ * @property {number} bytes The texture memory that passes it.
+ * @property {'etc2' | 'bc7'} figure Which memory figure passes it: ETC2 or ASTC on phones and
+ *   tablets, or BC7 on computers.
+ */
+
+/** The quality presets from the lightest to the heaviest, as the engine names them. */
+export const PRESET_NAMES = /** @type {const} */ (['low', 'medium', 'high', 'ultra']);
+
+/** Bytes in a mebibyte. */
+const MIB = 1024 * 1024;
+
+/** @typedef {(typeof PRESET_NAMES)[number]} QualityPresetName */
+
+/**
+ * The GPU memory in MiB that each preset gives textures, from Low to Ultra: the engine's
+ * `textureMemoryMiB` setting (`packages/engine/src/quality/presets.ts`). A test keeps the two
+ * equal.
+ */
+export const PRESET_TEXTURE_MEMORY_MIB = [256, 512, 1024, 2048];
 
 /**
  * The bytes of a texture's mip levels, from its size down to 1 x 1, in blocks of 4 x 4 texels of
@@ -312,6 +344,26 @@ function drawn(doc) {
 }
 
 /**
+ * The presets whose texture memory budget the textures pass. Phones and tablets run Low and
+ * Medium, where the textures take their ETC2 or ASTC bytes; computers run High and Ultra, where
+ * they take their BC7 bytes.
+ *
+ * @param {{ etc2: number, bc7: number, rgba8: number }} memory
+ * @returns {PresetWarning[]}
+ */
+export function budgetWarnings(memory) {
+	/** @type {PresetWarning[]} */
+	const warnings = [];
+	PRESET_NAMES.forEach((preset, k) => {
+		const figure = k < 2 ? 'etc2' : 'bc7';
+		const limitMiB = /** @type {number} */ (PRESET_TEXTURE_MEMORY_MIB[k]);
+		const bytes = memory[figure];
+		if (bytes > limitMiB * MIB) warnings.push({ preset, limitMiB, bytes, figure });
+	});
+	return warnings;
+}
+
+/**
  * The triangles of the meshes with levels at each level, the full meshes first. A mesh with
  * fewer levels adds its lowest level to the deeper figures.
  *
@@ -340,12 +392,12 @@ function levelTriangles(levels) {
  * The report's figures for a model, from its document after every step.
  *
  * @param {Document} doc
- * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], unbaked: BakeSkip[], files: Map<string, Uint8Array>, levels: MeshLevels[], merged: DedupReport, spatial: SpatialReport, ms: number }} facts
+ * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], unbaked: BakeSkip[], files: Map<string, Uint8Array>, levels: MeshLevels[], merged: DedupReport, spatial: SpatialReport, shaders: ShaderList, ms: number }} facts
  * @returns {ModelReport}
  */
 export function modelReport(
 	doc,
-	{ name, inputBytes, modelBytes, textures, unbaked, files, levels, merged, spatial, ms },
+	{ name, inputBytes, modelBytes, textures, unbaked, files, levels, merged, spatial, shaders, ms },
 ) {
 	const root = doc.getRoot();
 	const positions = new Set(
@@ -356,6 +408,7 @@ export function modelReport(
 	);
 	let fileBytes = 0;
 	for (const bytes of files.values()) fileBytes += bytes.byteLength;
+	const memory = textureMemory(textures);
 	return {
 		name,
 		inputBytes,
@@ -371,9 +424,12 @@ export function modelReport(
 		unbaked,
 		partialBlocks: textures.filter((t) => !wholeBlocks(t)).map((t) => t.name),
 		textureGroups: textureGroups(textures),
-		textureMemory: textureMemory(textures),
+		textureMemory: memory,
 		textureMs: textures.reduce((sum, t) => sum + t.ms, 0),
 		ms,
+		shaders: { permutations: shaders.permutations, features: shaders.features },
+		buckets: shaders.buckets,
+		budgetWarnings: budgetWarnings(memory),
 	};
 }
 
@@ -450,6 +506,33 @@ function textureNotes({ textures, unbaked, partialBlocks }) {
 }
 
 /**
+ * The report's lines for the shader list, the pipeline keys and the preset budgets that the
+ * model's textures pass.
+ *
+ * @param {ModelReport} report
+ * @returns {string[]}
+ */
+function shaderLines({ shaders, buckets, budgetWarnings }) {
+	const lines = [];
+	if (shaders.permutations.length > 0)
+		lines.push(`  shader permutations: ${shaders.permutations.join(', ')}`);
+	if (shaders.features.length > 0)
+		lines.push(`  shader files that load on first use: ${shaders.features.join(', ')}`);
+	if (buckets.length > 0)
+		lines.push(
+			`  draw buckets: ${counted(buckets.length, 'pipeline key')}, one pipeline each:`,
+			...buckets.map((bucket) => `    ${bucket.key}: ${counted(bucket.objects, 'object')}`),
+		);
+	for (const warning of budgetWarnings)
+		lines.push(
+			`  warning: the textures take ${shownBytes(warning.bytes)} with ${
+				warning.figure === 'etc2' ? 'ETC2 and ASTC' : 'BC7 only'
+			}, past the ${warning.preset} preset's budget of ${warning.limitMiB} MiB`,
+		);
+	return lines;
+}
+
+/**
  * A model's report as lines for the terminal.
  *
  * @param {ModelReport} report
@@ -485,5 +568,6 @@ export function reportLines(report) {
 		);
 	}
 	lines.push(...textureNotes(report));
+	lines.push(...shaderLines(report));
 	return lines;
 }

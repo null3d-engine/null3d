@@ -1,0 +1,345 @@
+// A cinematic camera for the showcase scenes. In Auto, the camera follows a route of shots on a loop
+// and shows the scene's best views; in Manual, the user flies the camera with the keyboard and the
+// pointer, or with a finger on a touch screen. The `c` key toggles the two. The current mode and the
+// scene's controls go to the page as a `hud` message, since a sketch runs in a worker and cannot
+// touch the page. The camera group of the controls is a row of buttons, so a touch screen, which has
+// no `c` key, can switch the mode too.
+//
+// Switching Auto to Manual is instant: the route's motion stops at once, and the user takes the
+// camera exactly where it is, holding that pose, with the controls taking their view from it.
+// Switching Manual back to Auto does not snap: the camera finds the nearest point of the route,
+// then glides to it over a short interval, easing in and out, and the route carries on from there.
+//
+// The route is a function of the sketch time, so a held frame (the image tests' `?hold`) lands on a
+// fixed pose and never drifts. A scene whose held frame must not change puts the pose of that frame
+// in the route's first shot and holds it still. Consecutive shots must differ: two shots at the same
+// pose would stand the camera still for both, which reads as a stall.
+import { createOrbitControls } from '@null3d/controls';
+import { type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
+import { createClearance } from './clearance';
+import { CAMERA_OPTIONS, type HudGroup, radioGroup } from './controls';
+
+/** One shot of a route: where the camera stands, what it looks at, and how long the shot lasts. */
+export interface Shot {
+	/** The camera's position, in meters. */
+	position: readonly [number, number, number];
+	/** The point that the camera looks at, in meters. */
+	target: readonly [number, number, number];
+	/** How long the shot lasts, in seconds. The loop's length is the sum of its shots. */
+	seconds: number;
+	/**
+	 * `'hold'` keeps the camera still for the shot, and `'ease'` moves it toward the next shot's
+	 * pose over the shot, so the route flows. The default is `'ease'`.
+	 */
+	move?: 'hold' | 'ease';
+	/**
+	 * True lets the shot pass through an object on purpose, to reveal what is inside it. The
+	 * clearance guard holds every other shot out of the scene's geometry. The default is false.
+	 */
+	through?: boolean;
+}
+
+/** How `createCinematic` is called. */
+export interface CinematicOptions {
+	/** The shots of the route, in the order that the loop plays them. */
+	shots: readonly Shot[];
+	/** The mutable point that the camera looks at, which the depth-of-field lens focuses on. */
+	target: [number, number, number];
+	/**
+	 * The scene's own groups of the HUD, such as its times of day and its effects, read whenever the
+	 * model is posted again.
+	 */
+	groups?: () => readonly HudGroup[];
+	/** How fast the keys pan the manual camera, in canvas pixels per second. The default is 420. */
+	speed?: number;
+}
+
+/** The cinematic camera of a showcase scene. */
+export interface Cinematic {
+	/** The mode now: `'auto'` follows the route, `'manual'` answers the user. */
+	readonly mode: 'auto' | 'manual';
+	/** Reads the frame's keys and, in Auto, moves the camera along the route. Call once per frame. */
+	update(dt: number): void;
+	/** Sends the controls model again, for a button or key that the scene answered itself. */
+	refresh(): void;
+	/** Switches between the route and the user's camera, as the `c` key does. */
+	toggle(): void;
+	/** Sets the camera mode from the HUD: `Auto` follows the route, `Manual` hands it to the user. */
+	select(id: string): void;
+}
+
+const smooth = (t: number) => t * t * (3 - 2 * t);
+/** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
+const GLIDE = 1.5;
+/** How finely the nearest point of the route is searched, in samples around the loop. */
+const SAMPLES = 240;
+/** How much the look-at target counts against the camera's position, in the search. */
+const TARGET_WEIGHT = 0.6;
+
+/**
+ * Makes a cinematic camera. The scene gives the shots of its route and the point its lens focuses
+ * on. In Manual the user turns, zooms and pans the camera around the point the shot was looking at,
+ * with the engine's orbit controls, and the keys pan it too.
+ */
+export function createCinematic(
+	ctx: SketchContext,
+	camera: PerspectiveCamera,
+	options: CinematicOptions,
+): Cinematic {
+	const { input, time, page } = ctx;
+	const { shots } = options;
+	// The route's timeline: each shot's start and its length. A length below a millisecond is raised
+	// to one, so the phase never divides by zero and never stands still for a whole shot.
+	const starts: number[] = [];
+	const lengths: number[] = [];
+	let total = 0;
+	for (const shot of shots) {
+		starts.push(total);
+		const length = Math.max(0.001, Number.isFinite(shot.seconds) ? shot.seconds : 0.001);
+		lengths.push(length);
+		total += length;
+	}
+	// The pose of the route at a phase: camera position, then the point it looks at.
+	const sample = new Float32Array(6);
+	const pose = new Float32Array(6);
+	const from = new Float32Array(6);
+	const glideTo = new Float32Array(6);
+	let mode: 'auto' | 'manual' = 'auto';
+	/** The shift that keeps the route's phase, after a glide has landed on it. */
+	let phaseShift = 0;
+	/** How far the glide has gone, from 0 to 1; 1 means the route drives the camera. */
+	let glide = 1;
+	/** The phase that a glide resumes from. */
+	let glideFrom = 0;
+	let announced = false;
+
+	// The manual camera: the engine's orbit controls. A left drag or one finger turns the camera
+	// around its target, the wheel or a pinch zooms, and a right drag or two fingers pan. The keys
+	// pan as well.
+	const held = vec3.create();
+	const heldRotation = quat.create();
+	camera.getPosition(held);
+	camera.getRotation(heldRotation);
+	const controls = createOrbitControls(ctx, camera, {
+		// The Orbit preset: left turns, the middle zooms and the right pans; one finger turns and
+		// two fingers dolly and pan. The limits are wide, so a user can dolly well out and swing
+		// below the horizon; the clearance guard is what keeps the camera out of geometry.
+		enableDamping: true,
+		screenSpacePanning: false,
+		minDistance: 0.5,
+		minPolarAngle: 0.05,
+		maxPolarAngle: 3,
+	});
+	controls.enabled = false;
+	// The controls turn the camera toward their target as they start: put it back where the route
+	// left it.
+	camera.setPosition(held[0] as number, held[1] as number, held[2] as number);
+	camera.setRotation(
+		heldRotation[0] as number,
+		heldRotation[1] as number,
+		heldRotation[2] as number,
+		heldRotation[3] as number,
+	);
+
+	// The clearance guard of the Auto route: the camera never passes through the scene's solid
+	// geometry there. The Manual camera is free and may pass through anything, so this runs only for
+	// the route. A scene marks what fills the air with `markEffect`, so a snowflake is not a wall,
+	// and an object whose inside shows with `markInterior`.
+	const clearance = createClearance(ctx);
+	const previousCamera = vec3.create();
+	const allowed = vec3.create();
+	let primed = false;
+
+	/** Stops the Auto camera short of a surface, so it slides along it instead of passing through. */
+	const guardRoute = (): void => {
+		camera.getPosition(allowed);
+		if (!primed) {
+			vec3.set(previousCamera, allowed[0] as number, allowed[1] as number, allowed[2] as number);
+			primed = true;
+		}
+		if (clearance.move(previousCamera, allowed, allowed))
+			camera.setPosition(allowed[0] as number, allowed[1] as number, allowed[2] as number);
+		camera.getPosition(previousCamera);
+	};
+
+	/** Writes the route's pose at a phase into `out`. */
+	const routePose = (phase: number, out: Float32Array): void => {
+		const a = ((phase % total) + total) % total || 0;
+		let index = 0;
+		for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
+		const shot = shots[index] as Shot;
+		const next = shots[(index + 1) % shots.length] as Shot;
+		const along = (a - (starts[index] as number)) / (lengths[index] as number);
+		const f = shot.move === 'hold' ? 0 : smooth(Math.min(1, Math.max(0, along)));
+		for (let c = 0; c < 3; c++) {
+			const p = shot.position[c] as number;
+			const t = shot.target[c] as number;
+			out[c] = p + ((next.position[c] as number) - p) * f;
+			out[3 + c] = t + ((next.target[c] as number) - t) * f;
+		}
+	};
+
+	/** The shot that a phase falls in. */
+	const shotAt = (phase: number): Shot => {
+		const a = ((phase % total) + total) % total || 0;
+		let index = 0;
+		for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
+		return shots[index] as Shot;
+	};
+
+	// The controls orbit the route's opening look-at until a takeover gives them their own target,
+	// so their first update never turns the camera around the origin. The camera also takes the
+	// opening pose now, so a frame drawn before the route's first step shows the opening view and
+	// never the pose the camera was created at.
+	routePose(0, sample);
+	controls.target[0] = sample[3] as number;
+	controls.target[1] = sample[4] as number;
+	controls.target[2] = sample[5] as number;
+	camera.setPosition(sample[0] as number, sample[1] as number, sample[2] as number);
+	camera.lookAt(sample[3] as number, sample[4] as number, sample[5] as number);
+	options.target[0] = sample[3] as number;
+	options.target[1] = sample[4] as number;
+	options.target[2] = sample[5] as number;
+
+	/** The phase of the route whose pose is nearest to `at`, weighing the position and the target. */
+	const nearestPhase = (at: Float32Array): number => {
+		let best = 0;
+		let bestCost = Infinity;
+		for (let k = 0; k < SAMPLES; k++) {
+			const phase = (k / SAMPLES) * total;
+			routePose(phase, sample);
+			let cost = 0;
+			for (let c = 0; c < 3; c++) {
+				cost += ((sample[c] as number) - (at[c] as number)) ** 2;
+				cost += TARGET_WEIGHT * ((sample[3 + c] as number) - (at[3 + c] as number)) ** 2;
+			}
+			if (cost < bestCost) {
+				bestCost = cost;
+				best = phase;
+			}
+		}
+		return best;
+	};
+
+	/** Moves the camera to a pose, and points the lens at what it looks at. */
+	const apply = (p: Float32Array): void => {
+		const px = p[0] as number;
+		const py = p[1] as number;
+		const pz = p[2] as number;
+		const tx = p[3] as number;
+		const ty = p[4] as number;
+		const tz = p[5] as number;
+		camera.setPosition(px, py, pz);
+		camera.lookAt(tx, ty, tz);
+		options.target[0] = tx;
+		options.target[1] = ty;
+		options.target[2] = tz;
+	};
+
+	/** Sends the whole controls model to the page, with the camera group first. */
+	const postControls = (): void => {
+		const groups: HudGroup[] = [
+			radioGroup('camera', 'Camera', CAMERA_OPTIONS, mode === 'manual' ? 'Manual' : 'Auto'),
+			...(options.groups?.() ?? []),
+		];
+		page.post('hud', { groups, visible: true });
+	};
+
+	/** Switches the camera between the route and the user, as the `c` key and the button do. */
+	const toggleMode = (): void => {
+		if (mode === 'auto') {
+			// The route's motion stops at once, and the user takes the camera exactly where it is:
+			// the pose is the route's own this moment, never a snap to a shot. The controls take
+			// their target from what the shot was looking at, so the camera holds still until the
+			// user moves it.
+			routePose(time.now + phaseShift, pose);
+			apply(pose);
+			controls.target[0] = pose[3] as number;
+			controls.target[1] = pose[4] as number;
+			controls.target[2] = pose[5] as number;
+			mode = 'manual';
+			glide = 1;
+			controls.enabled = true;
+		} else {
+			// Auto glides: find the nearest point of the route, then ease onto it.
+			mode = 'auto';
+			controls.enabled = false;
+			primed = false;
+			camera.getPosition(from);
+			from[3] = options.target[0];
+			from[4] = options.target[1];
+			from[5] = options.target[2];
+			glideFrom = nearestPhase(from);
+			routePose(glideFrom, glideTo);
+			glide = 0;
+		}
+		postControls();
+	};
+
+	// Send the model once, so the HUD shows before the first change.
+	postControls();
+
+	return {
+		get mode() {
+			return mode;
+		},
+		refresh() {
+			postControls();
+		},
+		toggle() {
+			toggleMode();
+		},
+		select(id) {
+			const wanted = id === 'Manual' ? 'manual' : 'auto';
+			if (wanted !== mode) toggleMode();
+		},
+		update(dt) {
+			// Send the model again on the first frame, since the page binds its listener after the
+			// sketch's setup runs.
+			if (!announced) {
+				announced = true;
+				postControls();
+			}
+			if (input.wasPressed('KeyC')) toggleMode();
+			if (mode === 'manual') {
+				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
+				// fall. The controls take screen pixels, so the frame's step scales the speed.
+				const step = (options.speed ?? 420) * dt;
+				let across = 0;
+				let along = 0;
+				if (input.isDown('KeyA')) across += step;
+				if (input.isDown('KeyD')) across -= step;
+				if (input.isDown('KeyW')) along += step;
+				if (input.isDown('KeyS')) along -= step;
+				if (across !== 0 || along !== 0) controls.pan(across, along);
+				let rise = 0;
+				if (input.isDown('KeyR')) rise += step / 60;
+				if (input.isDown('KeyF')) rise -= step / 60;
+				if (rise !== 0) {
+					controls.target[1] = (controls.target[1] as number) + rise;
+					camera.getPosition(from);
+					camera.setPosition(from[0] as number, (from[1] as number) + rise, from[2] as number);
+				}
+				controls.update(dt);
+				// The lens focuses on the point that the camera turns around.
+				options.target[0] = controls.target[0] as number;
+				options.target[1] = controls.target[1] as number;
+				options.target[2] = controls.target[2] as number;
+				return;
+			}
+			if (glide < 1) {
+				// Ease from the user's pose onto the route point, then carry on from that phase.
+				glide = Math.min(1, glide + dt / GLIDE);
+				const b = smooth(glide);
+				for (let c = 0; c < 6; c++)
+					pose[c] = (from[c] as number) + ((glideTo[c] as number) - (from[c] as number)) * b;
+				if (glide >= 1) phaseShift = glideFrom - time.now;
+			} else {
+				routePose(time.now + phaseShift, pose);
+			}
+			apply(pose);
+			// The route never passes through an object, unless its shot asks to reveal an inside.
+			if (!shotAt(glide < 1 ? glideFrom : time.now + phaseShift).through) guardRoute();
+		},
+	};
+}
