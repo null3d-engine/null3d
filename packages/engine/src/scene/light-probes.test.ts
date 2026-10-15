@@ -46,17 +46,64 @@ test('the L0 coefficient lights every normal the same', () => {
 	expect(out[0]).toBeCloseTo(0.886227, 5);
 });
 
-test('the L1 coefficient along x lights the +x normal and darkens the -x one', () => {
-	const coefficients = new Float32Array(PROBE_FLOATS);
-	coefficients[3] = 1;
+test('each L1 coefficient lights the normal along its own axis and darkens the opposite one', () => {
+	// The shader's order: L1 along y, then z, then x.
+	for (const [slot, axis] of [
+		[3, 1],
+		[6, 2],
+		[9, 0],
+	] as const) {
+		const coefficients = new Float32Array(PROBE_FLOATS);
+		coefficients[slot] = 1;
+		const out = new Float32Array(3);
+		for (let other = 0; other < 3; other++) {
+			const normal: [number, number, number] = [0, 0, 0];
+			normal[other] = 1;
+			l1Irradiance(coefficients, 0, ...normal, out);
+			expect(out[0]).toBeCloseTo(other === axis ? 1.023328 : 0, 5);
+			normal[other] = -1;
+			l1Irradiance(coefficients, 0, ...normal, out);
+			expect(out[0]).toBeCloseTo(other === axis ? -1.023328 : 0, 5);
+		}
+	}
+});
+
+test('the CPU irradiance matches the shader formula for every axis and a diagonal', () => {
+	// probe_grid.wgsl: c0 * 0.886227 + 2 * 0.511664 * (c1 * n.y + c2 * n.z + c3 * n.x), where c0
+	// to c3 are the four RGB coefficients in order. Each term and channel has its own value, so a
+	// swapped or missing term changes the result.
+	const at = PROBE_FLOATS;
+	const coefficients = new Float32Array(2 * PROBE_FLOATS);
+	const terms = [
+		[0.9, 1.3, 1.7],
+		[0.31, -0.53, 0.71],
+		[-0.43, 0.67, -0.29],
+		[0.59, 0.23, -0.83],
+	];
+	for (let term = 0; term < 4; term++)
+		for (let c = 0; c < 3; c++)
+			coefficients[at + term * 3 + c] = (terms[term] as number[])[c] as number;
+	const shader = (x: number, y: number, z: number, c: number) => {
+		const [c0, c1, c2, c3] = terms.map((term) => term[c] as number) as number[];
+		return (
+			(c0 as number) * 0.886227 +
+			2 * 0.511664 * ((c1 as number) * y + (c2 as number) * z + (c3 as number) * x)
+		);
+	};
+	const d = 1 / Math.sqrt(14);
 	const out = new Float32Array(3);
-	l1Irradiance(coefficients, 0, 1, 0, 0, out);
-	expect(out[0]).toBeCloseTo(1.023328, 5);
-	l1Irradiance(coefficients, 0, -1, 0, 0, out);
-	expect(out[0]).toBeCloseTo(-1.023328, 5);
-	// A normal across x reads nothing of that coefficient.
-	l1Irradiance(coefficients, 0, 0, 0, 1, out);
-	expect(out[0]).toBeCloseTo(0, 5);
+	for (const [x, y, z] of [
+		[1, 0, 0],
+		[-1, 0, 0],
+		[0, 1, 0],
+		[0, -1, 0],
+		[0, 0, 1],
+		[0, 0, -1],
+		[d, 2 * d, -3 * d],
+	] as const) {
+		l1Irradiance(coefficients, at, x, y, z, out);
+		for (let c = 0; c < 3; c++) expect(out[c]).toBeCloseTo(shader(x, y, z, c), 5);
+	}
 });
 
 test('packing puts each coefficient in its sub-volume and leaves the padding zero', () => {
