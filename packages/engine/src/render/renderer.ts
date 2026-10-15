@@ -281,10 +281,16 @@ async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; de
 	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,
-		// A buffer as large as a binding must fit the device's largest buffer too.
 		requiredLimits: {
+			// A buffer as large as a binding must fit the device's largest buffer too.
 			maxStorageBufferBindingSize: binding,
 			maxBufferSize: Math.max(binding, DEFAULT_MAX_BUFFER_BYTES),
+			// The WebGPU default for the sampled textures of a stage is 16, and a decal's pipeline
+			// binds one more than that where its maps are bound. Ask for the adapter's own limit, which
+			// is never above what it offers, so a device is made wherever one can be. An adapter that
+			// offers the same 16 leaves the decal's layout over the line: that layout must then carry
+			// one fewer entry, and until it does a decal material with a map cannot draw on WebGPU.
+			maxSampledTexturesPerShaderStage: adapter.limits.maxSampledTexturesPerShaderStage,
 		},
 	});
 	return { tier: core ? 'webgpu' : 'webgpu-compat', device };

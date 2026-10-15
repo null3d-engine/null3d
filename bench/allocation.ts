@@ -73,11 +73,12 @@
 // cards around S1, which pick their views from the camera in every frame. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--prepass` turns the depth prepass on, in any scene.
-// `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
-// the Mac on 15 October 2026, the terrain's update allocated 1908 bytes per frame in the heightfield
-// sampling, 1871 in the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and
-// the impostors' batch update allocated 187 KB per frame with 23 KB in the sampling beside it. Both
-// add-ons must stop allocating in their per-frame update, which their owners owe.
+// `--terrain` fails the check while that add-on's per-frame update allocates in five places, measured
+// on the Mac on 15 October 2026: the quadtree's visit took 43.6 bytes per frame, a mesh array's
+// problem check 33.6, the sketch's pose 23.7, the sampling beside the quadtree 23.7 and the add-on's
+// update 19.3, against the 4 bytes a place without a budget of its own may take. The add-on must stop
+// allocating in that update. `--impostors` passed the check on the same day, once that add-on's batch
+// update stopped uploading a card in every frame and uploaded one only when its view changed.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -801,7 +802,12 @@ async function main(): Promise<void> {
 		}
 		if (unsampled.length > 0)
 			console.log(`FAIL: the profiler sampled nothing in ${unsampled.join(' and ')}`);
-		if (over.length > 0) console.log(`FAIL: over budget: ${over.join('; ')}`);
+		// The failing line names the switches, so a red result points at the feature that owes the fix
+		// rather than at this check.
+		if (over.length > 0) {
+			const flags = chosen.map(({ flag }) => flag).join(' ');
+			console.log(`FAIL: over budget${flags ? ` with ${flags}` : ''}: ${over.join('; ')}`);
+		}
 		const passed = over.length === 0 && unsampled.length === 0;
 		if (passed) console.log('pass');
 		process.exitCode = passed ? 0 : 1;

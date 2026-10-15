@@ -156,13 +156,14 @@ describe('the WebGL2 renderer', () => {
 });
 
 describe('the WebGPU renderer', () => {
-	/** Gives the thread a WebGPU adapter with `features`, and lists the features each device asks for. */
-	function fakeGpu(features: string[]) {
-		const requests: string[][] = [];
+	/** Gives the thread a WebGPU adapter with `features`, and lists the descriptors each device asks for. */
+	function fakeGpu(features: string[], sampledTextures = 16) {
+		const requests: GPUDeviceDescriptor[] = [];
 		const adapter = {
 			features: new Set(features),
+			limits: { maxSampledTexturesPerShaderStage: sampledTextures },
 			async requestDevice(descriptor: GPUDeviceDescriptor) {
-				requests.push([...(descriptor.requiredFeatures ?? [])]);
+				requests.push(descriptor);
 				throw new Error('the fake adapter makes no device');
 			},
 		};
@@ -197,4 +198,21 @@ describe('the WebGPU renderer', () => {
 			}
 		});
 	}
+
+	it("asks for the adapter's own limit on the sampled textures of a stage, which a decal's pipeline needs", async () => {
+		const { requests, restore } = fakeGpu(['core-features-and-limits'], 48);
+		try {
+			const options = {
+				tier: 'webgpu' as const,
+				device: { capabilities: 0, storageBindingBytes: 1 << 27, shaderBits: 0 } as CoreDevice,
+			};
+			await expect(createRenderer(fakeCanvas().canvas, options)).rejects.toThrow(
+				'the fake adapter makes no device',
+			);
+			expect(requests[0]?.requiredLimits?.maxSampledTexturesPerShaderStage).toBe(48);
+			expect(requests[0]?.requiredLimits?.maxStorageBufferBindingSize).toBe(1 << 27);
+		} finally {
+			restore();
+		}
+	});
 });
