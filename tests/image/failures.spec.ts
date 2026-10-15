@@ -48,6 +48,21 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+for (const mode of ENGINE_MODES) {
+	test(`a custom material whose builds do not download reaches onFailure as E1424, ${mode.name}`, async ({
+		page,
+	}) => {
+		// A set's module on the dev server and its file in a build both carry the set's name.
+		await page.context().route(/\/material-(wgsl|glsl)-\d+-[0-9a-f]+/, (route) => route.abort());
+		await page.goto(`failures.html?case=material-fault&${mode.query}`);
+		const result = await pageResult<FailureResult>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(result.codes[0]).toBe('E1424');
+		expect(result.messages[0]).toContain('the builds of a custom material did not load: ');
+		expect(result.ticks).toBeGreaterThan(0);
+	});
+}
+
 for (const mode of THREADED_MODES) {
 	test(`a job worker that fails reaches onFailure, and the page never hangs, ${mode.name}`, async ({
 		page,

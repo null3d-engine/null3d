@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CompilerPool } from './compile-pool';
-import { ShaderPack, UNPACK } from './pack';
+import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
 import type { CompiledMaterial, CompiledWgsl, GlslProgram, ShaderVariant } from './shader-types';
 import { compileLiteral, compileWgslFile, findTaggedWgsl, WGSL_TAG } from './wgsl';
 
@@ -103,19 +103,18 @@ describe('ShaderPack', () => {
 		expect(await run(code)).toEqual([variant(2).wgsl?.source, [true, false]]);
 	});
 
-	it('gives a shader whose builds load on first use a function that imports them', async () => {
+	it('gives a material whose builds load on first use a function that imports its share of a set', async () => {
 		const pack = new ShaderPack();
 		const shader = material(2);
-		const later = new ShaderPack();
-		const builds = { variants: { standard_skin: variant(7) } };
-		const code = `export default ${pack.value(shader, undefined, './later.mjs')};\n${pack.unpacker()}`;
-		const laterCode = `export default ${later.value(builds as unknown as CompiledWgsl)};\n${later.unpacker()}`;
-		const loaded = (await run(code, { 'later.mjs': laterCode })) as CompiledMaterial & {
-			skinBuilds: () => Promise<unknown>;
-		};
-		const { skinBuilds, ...rest } = loaded;
+		const set = new ShaderPack();
+		const records = [{}, { standard_skin: variant(7) }];
+		const code = `export default ${pack.value(shader, undefined, 1)};\n${pack.unpacker()}\nfunction ${LOAD_BUILDS}(target, set) {\n\treturn import('./set.mjs').then((module) => ({ default: target + ' ' + set === 'wgsl 64' ? module.default : [] }));\n}\n`;
+		const setCode = `export default ${set.value(records)};\n${set.unpacker()}`;
+		const loaded = (await run(code, { 'set.mjs': setCode })) as CompiledMaterial;
+		const { builds, ...rest } = loaded;
 		expect(rest).toEqual(shader);
-		expect(await skinBuilds()).toEqual(builds);
+		expect(await builds?.('wgsl', 64)).toEqual(records[1] as Record<string, ShaderVariant>);
+		expect(await builds?.('glsl', 0)).toEqual({});
 	});
 
 	it('needs no function in a module without compiled shaders', () => {

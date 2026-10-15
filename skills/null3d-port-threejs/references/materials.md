@@ -59,7 +59,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer, and takes the index of refraction, specular and transmission options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+`materials.standard` takes the index of refraction, specular, transmission, clear coat and sheen options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -68,13 +68,15 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
 | `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass |
+| `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale`, `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap` | Same names | Give a clear coat option at creation, even as 0, to change it later. `clearcoatMap` and `clearcoatRoughnessMap` must be one texture (coat in red, roughness in green) |
+| `sheen`, `sheenColor`, `sheenRoughness`, `sheenColorMap`, `sheenRoughnessMap` | `sheenColor` times `sheen`, and the same other names | No `sheen` option: multiply it into `sheenColor`. three.js's `sheen` defaults to 0, so a material without it has no sheen: leave the sheen options out. The two maps must be one texture (roughness in alpha) |
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
+A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap` or `specularColorMap`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
+
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
-| `clearcoat`, `clearcoatRoughness` | Lower `roughness`; raise `envIntensity` (0.2) slightly | The second highlight is lost |
-| `sheen`, `sheenColor`, `sheenRoughness` | Surface function adding a fresnel rim to `emissive` | Approximate |
 | `iridescence` | Surface function tinting by view angle | Approximate |
 | `anisotropy` | Not available | Brushed-metal streaks are lost |
 | `dispersion` | Not available | |
@@ -104,7 +106,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | --- | --- |
 | `MeshNormalMaterial` | `debug.view('normals')` for debugging (world-space normals; three.js shows view-space ones); a surface function that outputs the normal as color for a styled look |
 | `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` for debugging; custom shadow materials are not needed |
-| `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2, not built yet) |
+| `ShadowMaterial` | `materials.shadowCatcher({ opacity })` |
 | `PointsMaterial` | Options of `scene.createPoints`: `size` (with `sizeAttenuation`, world units: three.js's size times `tan(fov / 2)`; without it, CSS pixels), `sizeAttenuation`, `map`, `color`, `opacity`, `colors` for `vertexColors`, `alphaMode` (`'opaque'` by default; `'blend'` for `transparent`, `'mask'` with `alphaCutoff` for `alphaTest`), `blending` (0.2). Points do not vanish at the screen's edge as WebGL points do. Docs `api/points` |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width` (1 for a one-pixel line), `worldUnits`, `dashed` with `dashSize`, `gapSize`, `dashScale` and `dashOffset`, `colors` (0.2). Docs `api/lines` |
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |

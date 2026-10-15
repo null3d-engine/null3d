@@ -909,6 +909,10 @@ pub mod permutation {
     /// hides and shows the surface behind it. Its pipelines bind the maps group with the
     /// displacement map visible to the fragment stage too.
     pub const PARALLAX: u32 = 1 << 27;
+    /// The surface has a clear coat, a sheen or both above its base, as three.js's
+    /// `MeshPhysicalMaterial` draws them: a second GGX lobe at the coat's normal and roughness,
+    /// and the Charlie lobe of cloth. The material's row holds their values in two more `vec4f`s.
+    pub const COAT_SHEEN: u32 = 1 << 30;
     /// The surface draws into the two targets of weighted blended transparency, in any order: the
     /// first, of the pipeline's color format, sums its premultiplied color and its alpha, each
     /// times a weight that falls with its distance. The second, of `format::R16_FLOAT`, sums
@@ -917,7 +921,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 30] = [
+    pub const NAMES: [(&str, u32); 31] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -947,6 +951,7 @@ pub mod permutation {
         ("CASTER", CASTER),
         ("DISPLACEMENT", DISPLACEMENT),
         ("PARALLAX", PARALLAX),
+        ("COAT_SHEEN", COAT_SHEEN),
         ("WEIGHTED", WEIGHTED),
     ];
 
@@ -980,14 +985,16 @@ pub mod permutation {
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
-    /// that tests its alpha by the hash switches its levels at once. A weighted surface blends, so
-    /// it tests no mask, lets no light through and never fades, and it draws in the sorted pass's
-    /// rows, which never read instances by index.
+    /// that tests its alpha by the hash switches its levels at once.
+    /// The layers shade, so casters never have them, and only the test switch reads instances by
+    /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
+    /// no light through and never fades, and it draws in the sorted pass's rows, which never read
+    /// instances by index.
     /// Displacement and bump builds load on first use, so the test switch's builds do without them.
     /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
     /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
     /// displaced level of detail switches at once, so the fading builds stay small.
-    pub const APART: [(u32, u32); 35] = [
+    pub const APART: [(u32, u32); 37] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1016,6 +1023,8 @@ pub mod permutation {
         (LOD_FADE, TRANSMISSION),
         (LOD_FADE, ALPHA_HASH),
         (LOD_FADE, DISPLACEMENT),
+        (COAT_SHEEN, INSTANCE_INDEX),
+        (COAT_SHEEN, CASTER),
         (WEIGHTED, ALPHA_MASK),
         (WEIGHTED, TRANSMISSION),
         (WEIGHTED, INSTANCE_INDEX),
@@ -1469,11 +1478,11 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read, the
-    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
-    /// fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 816;
+    /// environment's 208 bytes, the light probe grid's four vectors, the hemisphere lights' three
+    /// vectors, the view's offset for shadow lookups, the camera's view and projection matrices,
+    /// which custom materials read, the physical sky's aerial perspective's six vectors, and the
+    /// vignette that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 880;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1527,9 +1536,9 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eleven `vec4f`s. On WebGL2 each row is a
-    /// row of eleven `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 176;
+    /// Bytes of one material's row in the material table: thirteen `vec4f`s. On WebGL2 each row
+    /// is a row of thirteen `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 208;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1745,6 +1754,12 @@ pub mod template {
     pub const DECAL: u32 = 61;
     /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
     pub const DECAL_MAPS: u32 = 62;
+    /// The lit material with the scene's light probe grid (D-146): the standard material with the
+    /// grid's sampling in the light's loop, in a template of its own so a page that sets no grid
+    /// loads none of it. The engine draws lit meshes through it while the scene sets a grid.
+    pub const PROBE_GRID: u32 = 71;
+    /// The same with the material's texture maps.
+    pub const PROBE_GRID_MAPS: u32 = 72;
     /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
     /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
     /// bind group of index 0 is the frame's, 1 the system's of layout
@@ -2181,6 +2196,8 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_DEPTH", template::WEIGHTED_DEPTH),
                 ("DECAL", template::DECAL),
                 ("DECAL_MAPS", template::DECAL_MAPS),
+                ("PROBE_GRID", template::PROBE_GRID),
+                ("PROBE_GRID_MAPS", template::PROBE_GRID_MAPS),
                 ("PARTICLE", template::PARTICLE),
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),

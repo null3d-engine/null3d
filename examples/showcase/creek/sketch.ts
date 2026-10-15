@@ -26,7 +26,7 @@ import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
-import { createLand, UNREFLECTED_LAYER } from './land';
+import { createLand, streamZ, UNREFLECTED_LAYER } from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
@@ -62,22 +62,42 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
 /**
- * The cinematic route: it opens high over the whole valley, showing the stream, both banks and the
- * trees at once, then swings over the far bank and drops to the water, runs low along the stream
- * past the cave and back up the near bank, and climbs to the opening view to close the loop. Low
- * passes stay over the water, so the camera never enters a tree or the bank. Its first shot holds
- * still, so a held frame can land on the opening view; the image test holds the low stream pass
- * instead, which is the scene's best view.
+ * The cinematic route. It opens high over the whole valley, showing the stream, both banks and the
+ * trees at once. It glides down behind the near bank's trees and runs along them to the end of the
+ * line, facing across to the far bank, then turns back down the valley. It drops to the water and
+ * traces the stream's own winding line back past the trees with no pause, then turns right to run
+ * behind the far bank's trees, facing the near bank. Last it circles out around the creek's head to
+ * the opening view, with the middle of the creek in frame, and zooms back to the opening distance.
+ * The opening shot holds only briefly, so a held frame lands on a settled pose and the camera moves
+ * off it at once; the low passes stay over the stream, so the camera never enters a tree or a bank.
+ * The opening pose repeats in the second shot: a shot starts at its own pose, so without the repeat
+ * the camera would snap when the hold ends.
  */
 const WIDE: readonly [number, number, number] = [-23, 13, 19];
 const WIDE_LOOK: readonly [number, number, number] = [2, 0, 0];
 export const SHOTS: readonly Shot[] = [
-	{ position: WIDE, target: WIDE_LOOK, seconds: 5, move: 'hold' },
-	{ position: WIDE, target: WIDE_LOOK, seconds: 3 },
-	{ position: [24, 16, -2], target: [4, 0, -1], seconds: 9 },
-	{ position: [22, 2.6, 1.0], target: [8, 0.6, -0.5], seconds: 8 },
-	{ position: [-18, 2.8, -1.5], target: [-34, 0.6, 0], seconds: 8 },
-	{ position: [-18, 14, 0], target: [-40, 1, 0], seconds: 8 },
+	// The opening: high over the valley with the whole stream in view. It holds briefly, so the
+	// image test's held frame lands on a settled pose and the auto camera moves off it quickly.
+	{ position: WIDE, target: WIDE_LOOK, seconds: 1, move: 'hold' },
+	// The same pose, then the glide to the near bank: the repeat avoids a snap at the hold's end.
+	{ position: WIDE, target: WIDE_LOOK, seconds: 7 },
+	// Behind the near bank's trees, looking across to the far bank.
+	{ position: [-17, 5, 12.5], target: [-11, 1, -7], seconds: 6 },
+	// Along behind the near tree line, still facing the far bank.
+	{ position: [6, 5, 14.5], target: [10, 1, -6], seconds: 6 },
+	// The end of the near tree line: it turns to face back down the valley here.
+	{ position: [26, 5, 15.5], target: [28, 1, -4], seconds: 7 },
+	// Down to the water, tracing the stream's own winding line back down the valley.
+	{ position: [26, 2.4, streamZ(26)], target: [10, 0.5, streamZ(10)], seconds: 8 },
+	{ position: [6, 2.2, streamZ(6)], target: [-8, 0.5, streamZ(-8)], seconds: 7 },
+	{ position: [-12.5, 2.2, streamZ(-12.5)], target: [-22, 0.6, streamZ(-22)], seconds: 7 },
+	// Right to the far bank, behind its trees and facing back over the water.
+	{ position: [-12.5, 4.5, -18], target: [-6, 1, 6], seconds: 7 },
+	// Along the back of the far bank's trees, all the way down the valley.
+	{ position: [-22, 4.5, -18], target: [-16, 1, 6], seconds: 7 },
+	// Circle out around the creek's head to the opening view, keeping the middle of the creek in
+	// frame and zooming back to the opening distance, so the loop closes on the opening pose.
+	{ position: [-27, 7, 2], target: [1, 0.5, 0], seconds: 8 },
 ];
 
 const params = new URL(import.meta.url).searchParams;
@@ -102,6 +122,10 @@ export default defineSketch(async (ctx) => {
 		near: 0.05,
 		far: 2000,
 		layers: 1 | UNREFLECTED_LAYER | INTERIOR_LAYER | EFFECT_LAYER,
+		// The camera takes the route's opening pose at once, so even a frame drawn before the
+		// route's first step shows the opening view, never the origin inside the far bank.
+		position: WIDE,
+		target: WIDE_LOOK,
 	});
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];

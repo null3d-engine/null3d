@@ -71,9 +71,47 @@ export function isShaderModule(name: string): boolean {
 		name === 'shaders.ts' ||
 		name === 'shader-features.ts' ||
 		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
-		/^shaders-(wgsl|glsl)-combos\.ts$/.test(name) ||
+		// A target's table of builds that need several features, one file for each value of the
+		// half-precision bit: `shaders-wgsl-combos` and `shaders-wgsl-combos-half`, and the same for
+		// GLSL. The suffix names the bit value, and a later bit adds another.
+		/^shaders-(wgsl|glsl)-combos(-[a-z0-9-]+)*\.ts$/.test(name) ||
 		/^shaders-[a-z0-9-]+\.js$/.test(name)
 	);
+}
+
+/**
+ * The modules that the main module `shaders.ts` in `folder` loads, from the relative names of its
+ * imports and the device module files its loader tables name. A set that lacks one of them is not the
+ * set a build wrote, so it must be a miss and never a silent "up to date".
+ */
+function requiredModules(folder: string): string[] {
+	const file = join(folder, 'shaders.ts');
+	if (!existsSync(file)) return [];
+	const text = readFileSync(file, 'utf8');
+	const names = new Set<string>();
+	for (const match of text.matchAll(/\bfrom\s*'\.\/([A-Za-z0-9_.-]+)'/g)) names.add(match[1] ?? '');
+	for (const match of text.matchAll(/\bimport\('\.\/([A-Za-z0-9_.-]+)'\)/g))
+		names.add(match[1] ?? '');
+	// A device module is named with its extension, as `new URL('./shaders-ao-glsl.js', import.meta.url)`.
+	for (const match of text.matchAll(/'\.\/([A-Za-z0-9_.-]+\.[jt]s)'/g)) names.add(match[1] ?? '');
+	return [...names].filter((name) => name !== '').sort();
+}
+
+/**
+ * True when `folder` holds `shaders.ts` and every module it loads. A build writes one module for each
+ * feature, each target and each value of the bits a device fixes, so a set that misses one is a
+ * partial set that must never be used.
+ */
+export function folderIsComplete(folder: string): boolean {
+	if (!existsSync(join(folder, 'shaders.ts'))) return false;
+	for (const name of requiredModules(folder))
+		if (
+			!existsSync(join(folder, name)) &&
+			!existsSync(join(folder, `${name}.ts`)) &&
+			!existsSync(join(folder, `${name}.js`))
+		)
+			return false;
+	return true;
 }
 
 /**
@@ -141,11 +179,15 @@ export function compilerStamp(root: string): string {
 	return hashFiles(root, compilerFiles(root));
 }
 
-/** A hash of the modules on disk, or null when the main module is missing. */
+/**
+ * A hash of the modules on disk, or null when the set is incomplete: the main module is missing, or a
+ * module that it loads is. A partial set is never fresh, so the build runs again rather than reporting
+ * an incomplete set as up to date.
+ */
 export function moduleHash(root: string): string | null {
 	const folder = join(root, MODULE_DIR);
-	const names = existsSync(folder) ? readdirSync(folder).filter(isShaderModule).sort() : [];
-	if (!names.includes('shaders.ts')) return null;
+	if (!folderIsComplete(folder)) return null;
+	const names = readdirSync(folder).filter(isShaderModule).sort();
 	return hashFiles(
 		root,
 		names.map((name) => `${MODULE_DIR}/${name}`),
@@ -218,21 +260,28 @@ function writeRecord(root: string, record: ModuleRecord): void {
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const cache = join(CACHE_DIR, inputs);
+	// A partial entry is a miss. An older entry, written before the module set was complete, must
+	// never be handed back as the set a build would produce.
+	if (!folderIsComplete(cache)) return false;
 	const names = filesIn(cache, isShaderModule);
-	if (!names.includes('shaders.ts')) return false;
 	const folder = join(root, MODULE_DIR);
 	mkdirSync(folder, { recursive: true });
 	const wanted = new Set(names);
 	for (const name of moduleNames(root))
 		if (!wanted.has(name)) rmSync(join(folder, name), { force: true });
 	for (const name of names) copyFileSync(join(cache, name), join(folder, name));
-	writeRecord(root, { inputs, modules: moduleHash(root) ?? '' });
+	const modules = moduleHash(root);
+	if (modules === null) return false;
+	writeRecord(root, { inputs, modules });
 	console.error(`the shader modules came from the shared cache (${CACHE_DIR})`);
 	return true;
 }
 
 /** Copies the modules on disk into the shared cache, so another checkout need not build them. */
 function saveToCache(root: string, inputs: string): void {
+	// Only a complete set is stored: a partial set, from a build that wrote less than it declared,
+	// would otherwise be handed to every checkout.
+	if (!folderIsComplete(join(root, MODULE_DIR))) return;
 	copyFolderAtomic(
 		join(CACHE_DIR, inputs),
 		moduleNames(root).map((name) => [name, join(root, MODULE_DIR, name)] as const),
@@ -253,7 +302,12 @@ export function ensureShaderModules(root: string): boolean {
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;
 		runShaderBuild(root);
-		writeRecord(root, { inputs, modules: moduleHash(root) ?? '' });
+		const modules = moduleHash(root);
+		if (modules === null)
+			throw new Error(
+				'the shader build wrote an incomplete set: a module that shaders.ts loads is missing',
+			);
+		writeRecord(root, { inputs, modules });
 		saveToCache(root, inputs);
 		built = true;
 	});

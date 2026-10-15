@@ -34,6 +34,7 @@ import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
 import { POINT_IMAGE } from '../../bench/scenes/points.ts';
 import { RELIEF_IMAGE } from '../../bench/scenes/relief.ts';
 import { ROOM_IMAGE } from '../../bench/scenes/room.ts';
+import { SHADOW_CATCHER_IMAGE } from '../../bench/scenes/shadow-catcher.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -676,6 +677,8 @@ const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** The sketch of the clear coats and sheens. */
+const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
 /** The sketch of decals on a stone yard. */
 const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
@@ -934,13 +937,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// GLTFLoader. A model compressed with meshopt must draw as its uncompressed scene does. A model
 	// with a clip holds the clip's time.
 	...MODEL_NAMES.map((model): ImageTest => {
-		const { uncompressed, clip } = MODEL_SCENES[model] as ModelScene;
+		const { uncompressed, clip, timeoutSeconds } = MODEL_SCENES[model] as ModelScene;
 		return {
 			name: `gltf-${model}`,
 			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 			hold: clip?.time ?? 0,
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
+			...(timeoutSeconds ? { timeoutSeconds } : {}),
 		};
 	}),
 	// The asset tool's test scene, then the tool's output, which must draw the source's image: its
@@ -1344,6 +1348,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
+	// A shadow-catcher plane: it shows the main directional light's shadow in its color, and draws
+	// nothing where the light reaches it, so the background shows through. The shadow edges take the
+	// tolerance of the other shadow tests. The parity test compares it with three.js's ShadowMaterial.
+	{
+		name: 'shadow-catcher',
+		sketch: 'tests/pages/sketches/shadow-catcher-sketch.ts',
+		hold: 0,
+		size: [SHADOW_CATCHER_IMAGE.width, SHADOW_CATCHER_IMAGE.height] as const,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
 	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.
@@ -2202,6 +2216,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
+	// function sets its coat, in the room's light. The layers spec checks that layers turned off
+	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly.
+	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0, timeoutSeconds: 60 },
+	// The coated and sheened balls with a custom material that keeps the default surface: they
+	// draw as the standard material does, so the references are copies of the coat-sheen test's.
+	{
+		name: 'coat-sheen-custom',
+		sketch: `${COAT_SHEEN_SKETCH}?custom`,
+		hold: 0,
+		reference: 'coat-sheen',
+		timeoutSeconds: 60,
+	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.
 	{ name: 'weighted', sketch: WEIGHTED_SKETCH, hold: 0, size: [480, 270] },
@@ -2291,8 +2318,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				}),
 				...(comparison.imageDevices && { devices: comparison.imageDevices }),
 			};
-			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
-			// its test shares that comparison's references, in the scene graph mode only.
+			// A comparison that draws another's scene holds the same frame: its test shares that
+			// comparison's references, in the scene graph mode only.
 			if (comparison.sameSceneAs)
 				return [{ ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` }];
 			return [

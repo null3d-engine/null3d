@@ -236,8 +236,9 @@ interface FirstUseTarget {
 	readonly files: Readonly<Record<string, FirstUseFiles>>;
 	/** The keys of the modules of builds that need several features. */
 	readonly combined: readonly string[];
-	/** Loads the table of the modules of builds that need several features. */
-	readonly loadCombined: () => Promise<Readonly<Record<string, FirstUseFiles>>>;
+	/** Loads the table of the modules of builds that need several features, for a device whose fixed
+	 * bits are `bits`: the half-precision builds sit in a table of their own. */
+	readonly loadCombined: (bits: number) => Promise<Readonly<Record<string, FirstUseFiles>>>;
 	/** The features whose own modules a page asked for. */
 	readonly asked: Set<string>;
 }
@@ -269,9 +270,9 @@ function loadFirstUse(target: FirstUseTarget, file: string, bits: number) {
 	if (!combined && !target.asked.has(file)) {
 		target.asked.add(file);
 		const needs = (key: string) => key.split(FEATURE_JOIN).every((one) => target.asked.has(one));
-		if (target.combined.some(needs)) target.loadCombined().catch(() => undefined);
+		if (target.combined.some(needs)) target.loadCombined(bits).catch(() => undefined);
 	}
-	const table = combined ? target.loadCombined() : Promise.resolve(target.files);
+	const table = combined ? target.loadCombined(bits) : Promise.resolve(target.files);
 	return table.then((loaded) => {
 		const of = loaded[file];
 		const load = of?.modules[bits & of.bits];
@@ -334,7 +335,14 @@ export async function everyShader(part = 1, parts = 1): Promise<Record<string, S
 	const tables = [
 		WGSL_FIRST_USE,
 		GLSL_FIRST_USE,
-		...(await Promise.all([loadWgslCombined(), loadGlslCombined()])),
+		// The builds of both halves of the fixed bits: a page loads the table of its own half alone,
+		// while these tests need every build.
+		...(await Promise.all([
+			loadWgslCombined(0),
+			loadWgslCombined(HALF),
+			loadGlslCombined(0),
+			loadGlslCombined(HALF),
+		])),
 	];
 	const loads = [
 		...Object.values(WGSL_MODULES),
@@ -521,20 +529,47 @@ pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
     }
     for target in [Target::Wgsl, Target::Glsl] {
         let combined = first_use_files(&devices, target, true);
-        if !combined.is_empty() {
-            modules.insert(
-                format!("{}.ts", combined_module_name(target)),
-                combined_module(target, &combined),
-            );
+        for half in [false, true] {
+            let part = split_by_half(&combined, half);
+            if !part.is_empty() {
+                modules.insert(
+                    format!("{}.ts", combined_module_name(target, half)),
+                    combined_module(target, &part),
+                );
+            }
         }
     }
     modules
 }
 
+/// The device modules of `files` whose fixed bits hold the half-precision bit, or those that do
+/// not, so that the loader table of one device's builds is one file that fits its budget.
+fn split_by_half<'a>(
+    files: &BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)>,
+    half: bool,
+) -> BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)> {
+    let mask = permutation::bit("HALF").unwrap_or(0);
+    let mut out: BTreeMap<&str, (u32, Vec<&DeviceModule>)> = BTreeMap::new();
+    for (file, (_, modules)) in files {
+        let kept: Vec<&DeviceModule> = modules
+            .iter()
+            .copied()
+            .filter(|module| (module.bits & mask != 0) == half)
+            .collect();
+        if kept.is_empty() {
+            continue;
+        }
+        let bits = kept.iter().fold(0u32, |bits, module| bits | module.bits);
+        out.insert(file, (bits, kept));
+    }
+    out
+}
+
 /// The name of the module, without its extension, that holds the loader table of a target's device
 /// modules of builds that need several features, such as `shaders-wgsl-combos`.
-fn combined_module_name(target: Target) -> String {
-    format!("{MAIN_MODULE}-{}-combos", target.name())
+fn combined_module_name(target: Target, half: bool) -> String {
+    let suffix = if half { "-half" } else { "" };
+    format!("{MAIN_MODULE}-{}-combos{suffix}", target.name())
 }
 
 /// A target's device modules of features that load on first use, by `firstUseFile`'s key, with the
@@ -846,6 +881,12 @@ fn first_use_tables(
     first_use: &FirstUseFeatures,
     devices: &BTreeMap<DeviceModule, Builds<'_>>,
 ) {
+    ts.line("");
+    ts.line("/** The half-precision bit of the device's fixed bits, whose combined builds sit in a table of their own. */");
+    ts.line(&format!(
+        "const HALF = {};",
+        permutation::bit("HALF").unwrap_or(0)
+    ));
     for target in [Target::Wgsl, Target::Glsl] {
         let name = target.name().to_ascii_uppercase();
         ts.line("");
@@ -873,15 +914,24 @@ fn first_use_tables(
         ));
         if combined.is_empty() {
             ts.line(&format!(
-                "const load{}Combined = (): Promise<Readonly<Record<string, FirstUseFiles>>> => Promise.resolve({{}});",
+                "const load{}Combined = (_bits: number): Promise<Readonly<Record<string, FirstUseFiles>>> => Promise.resolve({{}});",
                 target_word(target)
             ));
         } else {
-            ts.line(&format!(
-                "const load{}Combined = () => import('./{}').then((module) => module.FILES);",
-                target_word(target),
-                combined_module_name(target)
-            ));
+            let mask = permutation::bit("HALF").unwrap_or(0);
+            let base = combined_module_name(target, false);
+            if split_by_half(&combined, true).is_empty() {
+                ts.line(&format!(
+                    "const load{}Combined = (_bits: number) => import('./{base}').then((module) => module.FILES);",
+                    target_word(target)
+                ));
+            } else {
+                let half = combined_module_name(target, true);
+                ts.line(&format!(
+                    "const load{}Combined = (bits: number) => (bits & {mask} ? import('./{half}') : import('./{base}')).then((module) => module.FILES);",
+                    target_word(target)
+                ));
+            }
         }
     }
     ts.line("");

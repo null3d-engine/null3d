@@ -90,7 +90,7 @@ export const DEMOS: readonly Demo[] = [
 			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
-		hold: 21,
+		hold: 0.5,
 		timeoutSeconds: 60,
 	},
 	{
@@ -193,6 +193,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'Hills and cut boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. A brick wall steps down the slope: parallax gives its flat faces the depth of their bricks, and bump maps give its cap stones their grain. A geodesic frame drawn as a wireframe casts a shadow of lines. Turn parallax off and on with the button or the P key.',
 		choices: [{ name: 'parallax', label: 'Parallax', options: ['On', 'Off'] }],
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'coat-and-sheen',
+		group: 'Light, materials and effects',
+		sketch: new URL('./coat-and-sheen/sketch.ts', import.meta.url),
+		code: 'coat-and-sheen/',
+		title: 'Clear coat and sheen',
+		scene: 'Rainy showroom',
+		summary:
+			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
 		hold: 1,
 		timeoutSeconds: 60,
 	},

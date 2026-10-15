@@ -1,7 +1,7 @@
 // The three.js twin of the glTF model scenes (bench/scenes/gltf-models.ts), which null3D's image
 // tests draw. `?model=` names the scene. It loads the model with GLTFLoader, its KTX2 textures
 // with KTX2Loader, its Draco data with DRACOLoader and its meshopt data with the MeshoptDecoder
-// that three.js ships, plays the
+// that three.js ships, lights it with the HDR environment where the scene asks, plays the
 // scene's clip to its time with an AnimationMixer, turns alpha to coverage on for MASK materials, as
 // null3D does by default, frames it from its bounds or the scene's frame
 // as the null3D sketch does, draws one frame into an offscreen target of the image's size, and
@@ -10,6 +10,7 @@
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import {
@@ -18,6 +19,7 @@ import {
 	MODEL_SCENES,
 	MODELS_BACKGROUND,
 	MODELS_FOV,
+	MODELS_HDR,
 	MODELS_IMAGE,
 	type ModelName,
 	type ModelScene,
@@ -42,6 +44,15 @@ run('hold', async () => {
 		scene.background = new three.Color(MODELS_BACKGROUND);
 		scene.add(new three.AmbientLight(DIM_AMBIENT.color, DIM_AMBIENT.intensity));
 	} else lightScene(three, scene, { sun: SUN, ambient: AMBIENT }, MODELS_BACKGROUND);
+	if (model.environment) {
+		// Each renderer takes its addons' classes from its own build, which the harness loaded.
+		const build = (
+			rendererName === 'webgpu' ? await import('three/webgpu') : await import('three')
+		) as typeof import('three');
+		const pmrem = new build.PMREMGenerator(renderer as never);
+		const hdr = await new HDRLoader().setDataType(build.FloatType).loadAsync(MODELS_HDR);
+		scene.environment = pmrem.fromEquirectangular(hdr).texture;
+	}
 
 	// KTX2Loader finds the transcoder that three.js ships beside it, which the build copies.
 	const ktx2 = new KTX2Loader();

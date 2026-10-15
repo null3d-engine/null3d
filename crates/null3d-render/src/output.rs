@@ -167,6 +167,13 @@ impl OutputUniform {
     pub const OUTLINE: u32 = 8;
     /// The flag that makes the final pass multiply HDR color by the automatic exposure's texel.
     pub const AUTO_EXPOSURE: u32 = 16;
+    /// The flag that makes the pass the first of two steps below the whole canvas's render scale:
+    /// it draws one texel for each render pixel into a target of the render size, and leaves the
+    /// dither to the second step.
+    pub const RESOLVE: u32 = 32;
+    /// The flag that makes the pass dither even where it holds display color. The second step sets
+    /// it when the first step's target came from high dynamic range color.
+    pub const DITHER: u32 = 64;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

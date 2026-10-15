@@ -73,6 +73,7 @@ import {
 	setViewHeight,
 } from './lens';
 import type { LightImagePixels } from './light-images';
+import { type LightProbeGridOptions, SceneLightProbeGrid } from './light-probes';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { ParticleBuffer, ParticleBufferOptions } from './particles';
@@ -2710,6 +2711,8 @@ export class Scene implements ViewHolder {
 	private sceneQueries: SceneQueries | undefined;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
 	private sceneEnvironment: SceneEnvironment | undefined;
+	/** The light probe grid's values in the core, made on the first `setLightProbeGrid`. */
+	private sceneProbeGrid: SceneLightProbeGrid | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
 	/** True while the fog is volumetric. */
@@ -4041,6 +4044,20 @@ export class Scene implements ViewHolder {
 	setEnvironment(environment: Environment | null, options?: EnvironmentOptions): void {
 		this.sceneEnvironment ??= new SceneEnvironment(this.core);
 		this.sceneEnvironment.set(environment, options);
+	}
+
+	/**
+	 * Lights the scene with a grid of irradiance probes, or with none for null. The grid's light
+	 * takes the place of the environment's diffuse light where `environmentWeight` says so, so
+	 * light that changes with a surface's place, bounced from coloured walls or sky, reaches it.
+	 * The probes' coefficients come from a 3D texture that the sketch uploads with
+	 * `textures.fromData({ ..., format: 'rgba16float' })`, packed as `packProbes` packs them.
+	 * Throws the errors that `scene.setEnvironment` throws for a value out of range, E1213 for
+	 * something that is not a texture, and E1101 for a texture that was destroyed.
+	 */
+	setLightProbeGrid(grid: LightProbeGridOptions | null): void {
+		this.sceneProbeGrid ??= new SceneLightProbeGrid(this.core);
+		this.sceneProbeGrid.set(grid);
 	}
 
 	/**

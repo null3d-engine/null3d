@@ -4,6 +4,7 @@
 import { expect, test } from 'bun:test';
 import type { Shot } from '../../lib/cinematic';
 import { TREES } from './flora';
+import { streamZ } from './land';
 import { SHOTS } from './sketch';
 import { CAVE } from './stones';
 
@@ -19,9 +20,10 @@ interface Cylinder {
 
 /** A tree's trunk and crown, as a rough cylinder: the model is about 11 m tall at size 1. */
 function treeCylinders(): Cylinder[] {
-	return TREES.map(([x, z, , size]) => ({
+	// A tree's second value is its bank offset, dz, so its world z is streamZ(x) + dz.
+	return TREES.map(([x, dz, , size]) => ({
 		x,
-		z,
+		z: streamZ(x) + dz,
 		radius: 2.2 * size + CLEARANCE,
 		height: 11 * size,
 	}));

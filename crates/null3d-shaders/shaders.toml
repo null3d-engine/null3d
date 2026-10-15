@@ -143,20 +143,24 @@
 # skins, morph targets, the alpha hash, transmission and index-read instances, and loads on first
 # use. Custom materials build none of
 # its builds: their levels switch at once.
+# with, and loads on first use. COAT_SHEEN lights a clear coat and a sheen above the base
+# (null3d::coat_sheen); it builds without index-read instances and loads on first use. Custom
+# materials build it only where their WGSL names a layer's value of the surface.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
-# occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
+# occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the COAT_SHEEN
+# builds the light and specular maps' slots hold the coat, coat normal and sheen maps instead.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
-# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material. BUMP bends the normal by a
-# height map in the normal map's slot. DISPLACEMENT moves each vertex along its normal by the
-# displacement map, and PARALLAX shifts where the fragment shader reads the maps by the map's
+# RECEIVE_SHADOWS, TRANSMISSION and COAT_SHEEN act as for the standard material. BUMP bends the
+# normal by a height map in the normal map's slot. DISPLACEMENT moves each vertex along its normal
+# by the displacement map, and PARALLAX shifts where the fragment shader reads the maps by the map's
 # relief. The builds of all three load on first use. The caster variants draw the shadows of
 # displaced materials: each vertex moves as in the camera's view, then lands as the shadow depth
 # template places a caster's, with no fragment stage on WebGPU. Their PARALLAX builds differ only in
@@ -165,8 +169,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX", "BUMP", "WEIGHTED"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX", "BUMP", "WEIGHTED"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX", "BUMP", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX", "BUMP", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 variants.webgpu_caster = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["SKIN", "CASTER_OFFSET", "CASTER", "DISPLACEMENT", "PARALLAX"], required = ["CASTER", "DISPLACEMENT"], targets = ["wgsl"] }
 variants.webgl2_caster = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "CASTER_OFFSET", "CASTER", "DISPLACEMENT", "PARALLAX"], required = ["CASTER", "DISPLACEMENT"], targets = ["glsl"] }
 
@@ -194,6 +198,28 @@ variants.webgl2 = { defs = ["WEBGL2", "DECAL", "VERTEX_TANGENT", "MAPS"], permut
 
 [first_use.decals]
 shaders = ["decal", "decal_maps"]
+
+# The lit material with the scene's light probe grid (decision record D-146): the same file with
+# PROBE_GRID, in templates of its own so a page that sets no grid loads none of it. The engine
+# draws lit meshes through them while the scene sets a grid. RECEIVE_SHADOWS and ROW_VALUES act as
+# for the standard material.
+[shaders.probe_grid]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["PROBE_GRID"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+
+[shaders.probe_grid_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["PROBE_GRID", "MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+
+# A page downloads the grid templates when the sketch first sets a light probe grid.
+[first_use.probe_grid]
+shaders = ["probe_grid", "probe_grid_maps"]
 
 # The WEIGHTED builds of the standard material, the basic material and sprites, with or without
 # maps, draw surfaces of the weighted blending into the camera's weighted layer (null3d::weighted):
@@ -544,6 +570,11 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 shaders = ["transmission_copy"]
 bits = ["TRANSMISSION"]
 
+# A page downloads the builds of layered materials, with a clear coat or a sheen, when it creates
+# its first one. Its builds that need another feature too, such as skinning, go into files of their
+# own, so no other feature's files grow.
+[first_use.coat_sheen]
+bits = ["COAT_SHEEN"]
 # The steps of the camera's weighted layer (weighted_layer.wgsl): the composite, which blends the
 # layer over the scene color, and the copy of one sample of a multisampled scene depth, which the
 # weighted pass tests against. Only WebGPU reads a multisampled depth; WebGL2 reads the copy of one

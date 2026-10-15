@@ -31,6 +31,18 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /**
+ * The shadow-catcher scene's limit, in percent of the pixels. The material draws nothing where the
+ * light reaches it, so the sun's shadow fills the frame and its softness sets the material's alpha.
+ * Core WebGPU and WebGL2 match three.js closely. Compatibility mode runs at its Medium ceiling,
+ * whose FXAA smooths the shadow's edge; the smoothing then shows across the whole penumbra, where an
+ * opaque surface would show only a brightness change. The `shadows` scene's limit of 0.5% therefore
+ * does not hold there. On 15 October 2026 with the 3 x 3 filter, on the Mac's GPU, 0.019% of the
+ * pixels differed on core WebGPU and 0.017% on WebGL2, and 2.382% in compatibility mode.
+ * `.dev/image-tests.md` records the figures.
+ */
+export const SHADOW_CATCHER_MAX_DIFFERENT_PERCENT = 2.5;
+
+/**
  * The limit for ambient occlusion. null3D finds the occlusion at half the render size from the depth
  * alone, and three.js at the whole size with a normal pass of its own, so the soft edges of the
  * darkened areas differ a little. With GTAOPass's defaults under 0.1% of the pixels differ, which
@@ -385,16 +397,18 @@ const NO_TONE = 'tone=none';
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's stained glass takes its transmission from a map, which null3D does not draw, and a clear
- * coat: 0.39% of the pixels differ, all on the glass. The instanced cubes have black faces beside
- * white ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes
- * the colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with
- * meshopt take the same limit, for the same edges. The glossy spheres of the metal-rough, specular
- * and IOR scenes take specular anti-aliasing's limits.
+ * lamp's stained glass takes its transmission from a map, which null3D does not draw: 0.16% to
+ * 0.18% of the pixels differ, all on the glass. The instanced cubes have black faces beside white
+ * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
+ * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
+ * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
+ * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere. The glossy spheres of the metal-rough, specular and IOR scenes take
+ * specular anti-aliasing's limits.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 0.5,
 	instancing: 0.5,
+	clearcoat: 0.2,
 	'meshopt-ext': 0.5,
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
@@ -550,6 +564,18 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/shadows.html`,
 		sketchSwitches: NO_TONE,
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+	// A shadow-catcher plane against three.js's ShadowMaterial: both show the directional light's
+	// shadow in the material's color and nothing where the light reaches the plane. The shadow edges
+	// differ as the other shadow scenes' do, so core WebGPU and WebGL2 take that limit. Compatibility
+	// mode has one of its own, because the surface shows nothing where the light reaches it: the
+	// edges its Medium ceiling smooths with FXAA change the material's alpha over the whole penumbra,
+	// where the `shadows` scene changes only the brightness of an opaque surface.
+	{
+		test: 'shadow-catcher',
+		twin: `${TWINS}/shadow-catcher.html`,
+		sketchSwitches: NO_TONE,
+		limit: SHADOW_CATCHER_MAX_DIFFERENT_PERCENT,
 	},
 	// Skinning against three.js's SkinnedMesh.
 	{

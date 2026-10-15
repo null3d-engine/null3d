@@ -114,6 +114,8 @@ import {
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_DEPTH_MS,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PROBE_GRID,
+	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
@@ -558,6 +560,7 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
+			{ binding: 10, visibility: fragment, texture: { viewDimension: '3d' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
@@ -823,6 +826,14 @@ export class Pipelines {
 		}
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
+			[TEMPLATE_PROBE_GRID, 'probe grid', shaders.probe_grid, [0, 1], [LAYOUT_FRAME]],
+			[
+				TEMPLATE_PROBE_GRID_MAPS,
+				'probe grid maps',
+				shaders.probe_grid_maps,
+				[0, 1, 2, 3],
+				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
+			],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', shaders.texcoords, [0, 2], [LAYOUT_FRAME]],
 			[
