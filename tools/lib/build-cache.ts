@@ -263,8 +263,13 @@ export function acquireLock(path: string): () => void {
 	};
 }
 
-/** How many bytes a cache under the root may keep before its least recently used entries go. */
-export const CACHE_LIMIT_BYTES = 4 * 1024 * 1024 * 1024;
+/**
+ * How many bytes a cache under the root may keep before its least recently used entries go. The
+ * figure bounds runaway growth rather than a working set: one shader module set is about 850 MB and
+ * the entry cache of one compiler stamp was about 18 GB on 15 October 2026, so a tighter limit would
+ * evict sets and entries that the next build would then rebuild.
+ */
+export const CACHE_LIMIT_BYTES = 24 * 1024 * 1024 * 1024;
 
 /** An entry used within this long stays, because a build of another checkout may still read it. */
 const IN_USE_MS = 2 * 60 * 60 * 1000;

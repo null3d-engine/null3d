@@ -68,7 +68,7 @@ a branch on a moved main is cheap.
   record that names the bytes of each of them. A set that misses one, or holds a file with other bytes
   than its record, is a miss, so the build runs again rather than reporting "up to date" while a file
   is absent or half written.
-- Each cache prunes itself: while it holds more than 4 GiB it removes its least recently used entries,
+- Each cache prunes itself: while it holds more than 24 GiB it removes its least recently used entries,
   and an entry used within the last two hours stays, because another checkout's build may be reading
   it. A cache key names every input of the build, including the build's own code, and a build hashes
   its inputs again before it stores anything, so an edit that lands while a build runs is never stored
