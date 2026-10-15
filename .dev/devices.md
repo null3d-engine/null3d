@@ -652,6 +652,7 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 - The owner took Automate for one month, from 3 October 2026. It is not a lasting subscription, so nothing in CI or in nightly runs depends on it.
 - When it lapses, the command stops at its first check, because BrowserStack refuses the account. The manual steps of [BrowserStack Live](#browserstack-live) still work then, with the same tiers and runner names.
 - Cloud timings are only a rough guide, as in Live.
+- A run needs no go-ahead from the owner, by the owner's ruling of 15 October 2026 ([D-178](decisions/D-178-process-rulings-2026-10-15.md)). Start it when a tier or a check needs it. Runs still happen by hand or on a helper's request, never on a timer.
 
 ### Run a tier
 
