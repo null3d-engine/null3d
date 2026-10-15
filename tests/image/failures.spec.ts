@@ -14,6 +14,8 @@ interface FailureResult {
 	codes: string[];
 	messages: string[];
 	ticks: number;
+	/** The frames drawn after the sketch error, where the page counts them. */
+	frames?: number;
 	error?: string;
 }
 
@@ -49,17 +51,27 @@ for (const mode of ENGINE_MODES) {
 }
 
 for (const mode of ENGINE_MODES) {
-	test(`a custom material whose builds do not download reaches onFailure as E1424, ${mode.name}`, async ({
+	test(`a custom material whose builds do not download reports E1424, draws on and loads them again, ${mode.name}`, async ({
 		page,
 	}) => {
-		// A set's module on the dev server and its file in a build both carry the set's name.
-		await page.context().route(/\/material-(wgsl|glsl)-\d+-[0-9a-f]+/, (route) => route.abort());
+		// A set's module on the dev server and its file in a build both carry the set's name. The
+		// first download fails, and the later ones pass.
+		let downloads = 0;
+		await page
+			.context()
+			.route(/\/material-(wgsl|glsl)-\d+-[0-9a-f]+/, (route) =>
+				downloads++ === 0 ? route.abort() : route.continue(),
+			);
 		await page.goto(`failures.html?case=material-fault&${mode.query}`);
 		const result = await pageResult<FailureResult>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(result.codes[0]).toBe('E1424');
-		expect(result.messages[0]).toContain('the builds of a custom material did not load: ');
+		// No failure stops the engine: the sketch's error handlers hear the download's failure.
+		expect(result.codes).toEqual([]);
+		expect(result.messages[0]).toContain('E1424: the builds of a custom material did not load: ');
+		expect(result.frames).toBeGreaterThan(0);
 		expect(result.ticks).toBeGreaterThan(0);
+		// The engine downloaded the builds again after its wait.
+		expect(downloads).toBeGreaterThanOrEqual(2);
 	});
 }
 

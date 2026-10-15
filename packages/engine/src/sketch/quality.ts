@@ -73,14 +73,15 @@ export type ApplyQuality = (update: QualityUpdate, changed: readonly QualitySett
 
 /**
  * What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale
- * first, which `quality.renderScale` reports, then the shadow settings and bloom's size here.
+ * first, which `quality.renderScale` reports, then the detail, shadow and effect settings, one step
+ * at a time. The quality presets page lists the steps in their order.
  *
  * @category api/quality
  */
 export interface QualityGovernor {
 	/**
-	 * The steps past the render scale that the governor has taken: 0 while the shadow settings and
-	 * bloom's size apply as set. Each step lowers the frame's cost after the render scale has reached
+	 * The steps past the render scale that the governor has taken: 0 while every setting that it
+	 * lowers applies as set. Each step lowers the frame's cost after the render scale has reached
 	 * `minRenderScale`, so a sketch can lighten its own work too, such as its particles.
 	 */
 	readonly steps: number;
@@ -105,16 +106,21 @@ export interface QualityGovernor {
 	readonly aoScale: number;
 	/**
 	 * The steps of each search for the sun's contact shadows now: `settings.contactShadowSteps`, or
-	 * the fewest after the governor's last step.
+	 * the fewest after the governor's step that follows ambient occlusion's.
 	 */
 	readonly contactShadowSteps: number;
 	/**
 	 * The frames between two updates of a far character's pose now. It is
-	 * `settings.farAnimationInterval`, or up to twice as long for each of the governor's last
-	 * steps, at most every 4th frame. Give it to `animator.setUpdateInterval` for the characters
-	 * that the camera sees from far.
+	 * `settings.farAnimationInterval`, or up to twice as long for each of the governor's steps that
+	 * follow the contact shadows' step, at most every 4th frame. Give it to
+	 * `animator.setUpdateInterval` for the characters that the camera sees from far.
 	 */
 	readonly farAnimationInterval: number;
+	/**
+	 * The slices that the volumetric fog draws now: `settings.fogSlices`, or half as many after the
+	 * governor's last step, while the fog draws.
+	 */
+	readonly fogSlices: number;
 }
 
 /**
@@ -411,6 +417,9 @@ export class SketchQuality implements Quality {
 			},
 			get farAnimationInterval() {
 				return settings.farAnimationInterval;
+			},
+			get fogSlices() {
+				return settings.fogSlices;
 			},
 		};
 	}

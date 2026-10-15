@@ -14,6 +14,7 @@ import {
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { withCallValues } from './fake-call-values';
+import { keptViews } from './kept-views';
 import { LineBatch, type LineBatchRows, type LineChecks, lineParts } from './lines';
 import { CoreMemory } from './memory';
 import { Geometry, Materials } from './resources';
@@ -252,6 +253,18 @@ describe('line batches', () => {
 		core.refresh();
 		expect(lines.colors).not.toBe(before);
 		expect(lines.colors.buffer).toBe(memory.buffer);
+	});
+
+	test('a destroyed batch keeps no view of the memory after it grows', () => {
+		const { core, makers, memory } = fakeCore();
+		const checks = loggedChecks([]);
+		const { material } = lineParts(makers, core, undefined, { positions: SQUARE }, checks, 'l');
+		const lines = new LineBatch(core, 7, 5, material, rowCalls([]), checks);
+		const old = lines.positions.buffer;
+		lines.destroy();
+		memory.grow(1);
+		core.refresh();
+		expect(keptViews(lines, old)).toEqual([]);
 	});
 
 	test('calls reach the instance batch and the core, with markDirty defaulting to every point', () => {

@@ -26,13 +26,14 @@
 // before the objects that need it are drawn. A reserved name asks for the generators' code and
 // shaders the same way, while an HDR file still downloads.
 
-import { messageOf } from '../errors/message';
+import { messageOf, reasonOf } from '../errors/message';
 import { PERMUTATION_DRAW_INDEX, PERMUTATION_SKIN, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { EffectPieces } from '../gpu/effect-join';
 import { variantFor } from '../gpu/variants';
 import type { Panorama } from '../scene/panorama-files';
 import { frameAfter, Slot } from './control';
+import { FirstUse } from './first-use';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
 
 /**
@@ -151,10 +152,17 @@ export class ImageTable {
 	/** Asks the sketch thread for a set of the builds of a template that load on first use. */
 	askBuilds: (template: number, set: number) => void = () => {};
 	/**
-	 * The sets of each template's builds that the table asked for or that arrived, by their bits:
-	 * true once a set arrived, false while it is on its way, or why it failed to load.
+	 * Tells the sketch thread why a file that this thread loads on first use did not load, as a
+	 * coded message, so its frame loop reports it. This thread draws on without what needs the file.
 	 */
-	private readonly sets = new Map<number, Map<number, boolean | string>>();
+	reportFailure: (message: string) => void = () => {};
+	/**
+	 * True in hold mode: a file that this thread loads on first use and that failed to load fails
+	 * the drawing at once, as the held frame can never draw without it.
+	 */
+	failFast = false;
+	/** The sets of each template's builds that load on first use, by their bits. */
+	private readonly sets = new Map<number, Map<number, BuildsSet>>();
 	/** Each distinct text of the builds that arrived, so that equal text is kept once. */
 	private readonly texts = new Map<string, string>();
 
@@ -162,47 +170,68 @@ export class ImageTable {
 	 * True when the shader of `template` can build the pipeline of `permutation` with output for
 	 * `target`, as far as its builds that load on first use go: it holds the build, or the set that
 	 * would hold it has arrived, so the backend builds the pipeline or reports its error. The first
-	 * call that needs a set asks for it, and the calls return false until it arrives. Throws E1424
-	 * when the set failed to load.
+	 * call that needs a set asks for it, and the calls return false until it arrives. A set that
+	 * failed to load is asked for again after a wait, and the pipeline waits meanwhile; in hold mode
+	 * the failure throws E1424.
 	 */
 	buildsReady(template: number, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		const shader = this.shaders.get(template);
 		if (!shader?.builds || variantFor(shader.variants, permutation, target)) return true;
-		const set = permutation & SET_BITS;
-		let sets = this.sets.get(template);
-		if (!sets) {
-			sets = new Map();
-			this.sets.set(template, sets);
-		}
-		const state = sets.get(set);
-		if (typeof state === 'string')
-			throw new Error(`E1424: the builds of a custom material did not load: ${state}.`);
-		if (state === undefined) {
-			sets.set(set, false);
-			this.askBuilds(template, set);
-		}
-		return state === true;
+		const builds = this.setOf(template, permutation & SET_BITS);
+		if (builds.load.value) return true;
+		if (this.failFast && builds.load.error !== undefined)
+			throw new Error(
+				`E1424: the builds of a custom material did not load: ${messageOf(builds.load.error)}.`,
+			);
+		void builds.load.get();
+		return false;
 	}
 
 	/**
 	 * Adds a set of builds that loaded on first use to the shader of `template`, whose pipelines then
-	 * build from them, or keeps why the set failed to load.
+	 * build from them, or ends the ask for the set with why it failed to load.
 	 */
 	addBuilds(template: number, set: number, builds: ShaderVariants | string): void {
 		const shader = this.shaders.get(template);
 		if (!shader?.builds) return;
+		const held = this.setOf(template, set);
+		const { answer } = held;
+		held.answer = undefined;
+		if (typeof builds === 'string') {
+			answer?.(builds);
+			return;
+		}
+		// The backends' templates hold the shader's object of variants, so they see the new builds.
+		Object.assign(shader.variants, keepTextOnce(builds, this.texts));
+		// Ready at once, whether the set was asked for or the sketch sent it first.
+		held.load.value = true;
+		answer?.();
+	}
+
+	/** The set `set` of the builds of `template`, made on its first use. */
+	private setOf(template: number, set: number): BuildsSet {
 		let sets = this.sets.get(template);
 		if (!sets) {
 			sets = new Map();
 			this.sets.set(template, sets);
 		}
-		if (typeof builds === 'string') {
-			sets.set(set, builds);
-			return;
+		let held = sets.get(set);
+		if (!held) {
+			const made: BuildsSet = {
+				load: new FirstUse(
+					() =>
+						new Promise<true>((resolve, reject) => {
+							made.answer = (failure) =>
+								failure === undefined ? resolve(true) : reject(new Error(failure));
+							this.askBuilds(template, set);
+						}),
+				),
+				answer: undefined,
+			};
+			held = made;
+			sets.set(set, held);
 		}
-		sets.set(set, true);
-		// The backends' templates hold the shader's object of variants, so they see the new builds.
-		Object.assign(shader.variants, keepTextOnce(builds, this.texts));
+		return held;
 	}
 
 	/** The features whose shader files the sketch asked for, which every renderer loads. */
@@ -233,13 +262,19 @@ export class ImageTable {
 	private readonly generators = new Map<number, GeneratorSource>();
 	/** The generators' code for the GPU path of the thread that draws, once it has loaded. */
 	private generatorCode: unknown;
-	/** Why the generators' code did not load. */
+	/** Why the generators' code did not load, in hold mode. */
 	private generatorFailure = '';
 	/** How the thread that draws loads the generators' code, once it has said. */
 	private readonly loader: Promise<() => Promise<unknown>>;
 	private setLoader: (load: () => Promise<unknown>) => void = () => {};
-	/** The load of the generators' code, from the first generator on. */
-	private loading: Promise<void> | undefined;
+	/** The load of the generators' code, which starts with the first generator. */
+	private readonly generatorLoad = new FirstUse(
+		() => this.loader.then((load) => load()),
+		(error) =>
+			this.reportFailure(
+				`E1406: the code of the environment generator did not download: ${reasonOf(error)}.`,
+			),
+	);
 	/** How the backend of the thread's GPU device builds the generators' pipelines ahead. */
 	private warm: ((code: unknown) => Promise<unknown>) | undefined;
 
@@ -275,28 +310,31 @@ export class ImageTable {
 	}
 
 	/**
-	 * Loads the generators' code once, then has the backend build their pipelines, and resolves when
-	 * both are done or either failed. A failure waits for the command that runs a generator.
+	 * Loads the generators' code, then has the backend build their pipelines. A generator cannot
+	 * run without the code, so a failed load is tried again after each wait until it loads, and the
+	 * generators and images after it wait. In hold mode the failure instead waits for the command
+	 * that runs the generator, which throws it.
 	 */
 	private async generatorsReady(): Promise<void> {
-		this.loading ??= this.loader
-			.then((load) => load())
-			.then(
-				(code) => {
-					this.generatorCode = code;
-				},
-				(error: unknown) => {
+		for (;;) {
+			try {
+				this.generatorCode = await this.generatorLoad.get();
+				break;
+			} catch (error) {
+				if (this.failFast) {
 					this.generatorFailure = messageOf(error);
-				},
-			);
-		await this.loading;
+					return;
+				}
+				await this.generatorLoad.untilRetry();
+			}
+		}
 		await this.warmGenerators();
 	}
 
 	/**
 	 * Keeps a generator under its id once the generators' code has loaded and the backend has built
-	 * their pipelines, or once either failed, which the command that runs the generator then
-	 * reports.
+	 * their pipelines. A failed build waits for the command that runs the generator, which reports
+	 * it, as does a failed load in hold mode.
 	 */
 	async addGenerator(id: number, source: GeneratorSource): Promise<void> {
 		await this.generatorsReady();
@@ -366,7 +404,17 @@ export class ImageTable {
 		// builds can reach the sketch's objects, so it goes too.
 		this.onPreload = undefined;
 		this.askBuilds = () => {};
+		this.reportFailure = () => {};
 	}
+}
+
+/**
+ * A set of a template's builds that load on first use, on the thread that draws: its load, which
+ * asks the sketch thread for it, and the end of the ask that waits for the answer.
+ */
+interface BuildsSet {
+	load: FirstUse<true>;
+	answer: ((failure?: string) => void) | undefined;
 }
 
 /** Sends an image, or what a texture generator makes, under its id, to the thread that draws. */
@@ -404,6 +452,11 @@ interface AskBuilds {
 	set: number;
 }
 
+/** The message in which the thread that draws says why a file that it loads on first use failed. */
+interface DrawingFailure {
+	failure: string;
+}
+
 /**
  * Notes the id of an image that the thread that draws received, and wakes a thread that waits for
  * it, through `to` where another thread runs the sketch.
@@ -436,13 +489,17 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 		else port.postMessage(message, transfer);
 	};
 	let answer: BuildsAsker = () => {};
+	let failed: (message: string) => void = () => {};
 	port.onmessage = (event: MessageEvent<unknown>) => {
-		const data = event.data as ({ type?: string } & Partial<AskBuilds>) | null;
+		const data = event.data as
+			| ({ type?: string } & Partial<AskBuilds> & Partial<DrawingFailure>)
+			| null;
 		if (held && data?.type === RECEIVING.type) {
 			for (const [message, transfer] of held) port.postMessage(message, transfer);
 			held = undefined;
 		}
 		if (data?.askBuilds !== undefined) answer(data.askBuilds, data.set ?? 0);
+		if (data?.failure !== undefined) failed(data.failure);
 		wakeWaiters();
 	};
 	return {
@@ -456,6 +513,9 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 		sendPreload: (features) => port.postMessage({ preload: features } satisfies DrawingMessage),
 		onAskBuilds(handler) {
 			answer = handler;
+		},
+		onDrawingFailure(handler) {
+			failed = handler;
 		},
 	};
 }
@@ -508,6 +568,8 @@ export interface DrawingSenders {
 	sendPreload: PreloadSender;
 	/** Answers each ask of the thread that draws for a set of a template's builds. */
 	onAskBuilds(handler: BuildsAsker): void;
+	/** Hears why each file that the thread that draws loads on first use failed, as a coded message. */
+	onDrawingFailure(handler: (message: string) => void): void;
 }
 
 /**
@@ -529,6 +591,9 @@ export function drawingSenders(
 				onAskBuilds(handler) {
 					table.askBuilds = handler;
 				},
+				onDrawingFailure(handler) {
+					table.reportFailure = handler;
+				},
 			};
 }
 
@@ -546,6 +611,7 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	};
 	table.askBuilds = (template, set) =>
 		port.postMessage({ askBuilds: template, set } satisfies AskBuilds);
+	table.reportFailure = (failure) => port.postMessage({ failure } satisfies DrawingFailure);
 	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
 		const data = event.data;
 		if ('shader' in data) table.setShader(data.template, data.shader);

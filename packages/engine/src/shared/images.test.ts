@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import {
 	PERMUTATION_RECEIVE_SHADOWS,
 	PERMUTATION_SKIN,
@@ -6,6 +6,7 @@ import {
 	TEMPLATE_CUSTOM_FIRST,
 } from '../generated/gpu';
 import { controlViews, createControlBuffer, Slot } from './control';
+import { FIRST_RETRY_MS } from './first-use';
 import {
 	type CustomShader,
 	GENERATORS_PRELOAD,
@@ -199,13 +200,43 @@ describe('texture generators on their way to the thread that draws', () => {
 		);
 	});
 
-	test('cross a port by name, and count when their code did not load, which running one reports', async () => {
+	test('cross a port by name, report code that did not load, and count them once it loads again', async () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
 		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
-		sendThrough(sketchEnd).sendImage(1, 'room');
+		const senders = sendThrough(sketchEnd);
+		const failures: string[] = [];
+		senders.onDrawingFailure((message) => failures.push(message));
+		senders.sendImage(1, 'room');
 		deliver(sketchEnd, RECEIVING);
 		expect(sketchEnd.posted).toEqual([[{ id: 1, generator: 'room' }, []]]);
+		receiveImages(drawingEnd, table, slots);
+		const code = { run: () => {} };
+		let loads = 0;
+		table.loadGeneratorsWith(() =>
+			loads++ === 0 ? Promise.reject(new Error('offline')) : Promise.resolve(code),
+		);
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
+		// The failure goes back to the sketch thread, whose frame loop reports it.
+		const failure = () => drawingEnd.posted.find(([message]) => 'failure' in (message as object));
+		while (!failure()) await new Promise((resolve) => setTimeout(resolve, 10));
+		deliver(sketchEnd, failure()?.[0]);
+		expect(failures).toEqual([
+			'E1406: the code of the environment generator did not download: offline.',
+		]);
+		// After the wait the code loads again, and the generator counts.
+		await imagesArrived(slots, 1);
+		expect(loads).toBe(2);
+		expect(table.generator(1)).toEqual(['room', code]);
+	});
+
+	test('in hold mode, count them when their code did not load, which running one reports', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		table.failFast = true;
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		sendThrough(sketchEnd).sendImage(1, 'room');
+		deliver(sketchEnd, RECEIVING);
 		receiveImages(drawingEnd, table, slots);
 		table.loadGeneratorsWith(() => Promise.reject(new Error('offline')));
 		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
@@ -342,14 +373,37 @@ describe("custom materials' builds that load on first use", () => {
 		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(true);
 	});
 
-	test('fail the pipelines that need a set with E1424 when it did not load', () => {
+	test('ask again for a set that did not load, after a wait, and fail with E1424 in hold mode', async () => {
 		const table = new ImageTable();
+		const asks: [number, number][] = [];
+		table.askBuilds = (asked, set) => asks.push([asked, set]);
 		table.setShader(template, later());
+		const start = performance.now();
 		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
 		table.addBuilds(template, PERMUTATION_SKIN, 'the network failed');
-		expect(() => table.buildsReady(template, skinned, 'wgsl')).toThrow(
-			'E1424: the builds of a custom material did not load: the network failed.',
-		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		// The pipeline waits, and the drawing goes on: no throw, and no new ask within the wait.
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
+		expect(asks).toEqual([[template, PERMUTATION_SKIN]]);
+		const now = spyOn(performance, 'now').mockImplementation(() => start + FIRST_RETRY_MS + 1);
+		try {
+			expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
+			expect(asks).toEqual([
+				[template, PERMUTATION_SKIN],
+				[template, PERMUTATION_SKIN],
+			]);
+			table.failFast = true;
+			table.addBuilds(template, PERMUTATION_SKIN, 'the network failed again');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(() => table.buildsReady(template, skinned, 'wgsl')).toThrow(
+				'E1424: the builds of a custom material did not load: the network failed again.',
+			);
+		} finally {
+			now.mockRestore();
+		}
+		// A set that arrives after a failure lets the pipeline build.
+		table.addBuilds(template, PERMUTATION_SKIN, { webgpu_receive_shadows_skin: build(skinned) });
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(true);
 	});
 
 	test('cross the port of the images both ways', () => {

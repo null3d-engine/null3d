@@ -5,6 +5,8 @@
 // output or the reason it failed. The engine's own tasks are imported by name below; an add-on's
 // task comes by the address of its module.
 
+import { FirstUse } from '../shared/first-use';
+
 /** A request of the loader. */
 export interface TaskRequest {
 	id: number;
@@ -69,7 +71,7 @@ export function serveTasks(
 	finished: () => void = () => {},
 ): { whenIdle(idle: () => boolean): Promise<void> } {
 	const modules = new Map<string, WebAssembly.Module>();
-	const loaded = new Map<string, Promise<TaskModule>>();
+	const loaded = new Map<string, FirstUse<TaskModule>>();
 	let waiters: (() => void)[] = [];
 	const wasm = (name: string) => {
 		const module = modules.get(name);
@@ -80,17 +82,19 @@ export function serveTasks(
 		const key = request.script ?? request.task;
 		let module = loaded.get(key);
 		if (!module) {
+			const { script } = request;
 			const engineTask = ENGINE_TASKS[request.task];
-			module = request.script
-				? (import(/* @vite-ignore */ request.script) as Promise<TaskModule>)
-				: engineTask
-					? engineTask()
-					: Promise.reject(new TaskLoadError(`the engine has no task ${request.task}`));
-			// A module that did not load lets the next request try again.
-			module.catch(() => loaded.delete(key));
+			// A module that did not load loads again for a request after the wait.
+			module = new FirstUse(() =>
+				script
+					? (import(/* @vite-ignore */ script) as Promise<TaskModule>)
+					: engineTask
+						? engineTask()
+						: Promise.reject(new TaskLoadError(`the engine has no task ${request.task}`)),
+			);
 			loaded.set(key, module);
 		}
-		return module;
+		return module.get();
 	};
 	const run = async (request: TaskRequest) => {
 		for (const [name, module] of request.modules ?? []) modules.set(name, module);

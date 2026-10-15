@@ -10,10 +10,13 @@
 // device fixes and by skinning. When the sketch first uses the material, this thread imports the
 // set of its device's bits that does not skin and sends it on. The thread that draws asks for
 // another set when a pipeline first needs one, and this thread imports that set then. It imports
-// and sends each set of a template once.
+// and sends each set of a template once. A set that fails to import is reported as E1424 through
+// the frame loop, and the next ask for it, which the thread that draws makes after a wait, imports
+// it again.
 
 import { DEV } from '../errors/checks';
-import { messageOf } from '../errors/message';
+import { EngineError } from '../errors/engine-error';
+import { reasonOf } from '../errors/message';
 import { SHADING_CUSTOM_FIRST } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
 import type { PieceBuilds, ShaderPiece } from '../gpu/effect-join';
@@ -58,13 +61,14 @@ export class ShaderTemplates {
 	 * `send` gives each template's shader to the thread that draws, with the builds of `target`, or
 	 * of both paths without it. `sendBuilds` gives it the sets of builds that load on first use,
 	 * from the set of `deviceSet`, the permutation bits that the device fixes, at a material's
-	 * first use.
+	 * first use. `failed` hears each set that did not import, as E1424.
 	 */
 	constructor(
 		private readonly send: ShaderSender = () => {},
 		private readonly target?: ShaderTarget,
 		private readonly sendBuilds: BuildsSender = () => {},
 		private readonly deviceSet = 0,
+		private readonly failed: (error: EngineError) => void = () => {},
 	) {}
 
 	/**
@@ -129,7 +133,7 @@ export class ShaderTemplates {
 	/**
 	 * Imports the set `set` of the builds of `template` that load on first use, which the thread
 	 * that draws asked for or which the template's first use sends, and sends it, or why it did not
-	 * load. A set that this thread imports or sent already is not sent again.
+	 * load. A set that this thread imports or sent already is not sent again, unless it failed.
 	 */
 	answer(template: number, set: number): void {
 		let sent = this.sent.get(template);
@@ -147,7 +151,14 @@ export class ShaderTemplates {
 		}
 		load(target, set).then(
 			(variants) => this.sendBuilds(template, set, variants),
-			(error: unknown) => this.sendBuilds(template, set, messageOf(error)),
+			(error: unknown) => {
+				sent.delete(set);
+				const reason = reasonOf(error);
+				this.failed(
+					new EngineError('E1424', `the builds of a custom material did not load: ${reason}.`),
+				);
+				this.sendBuilds(template, set, reason);
+			},
 		);
 	}
 

@@ -127,7 +127,7 @@ The intent of the ruling stays: each device gets only its own builds, on first u
 - The sketch thread imports its device's set that does not skin when it first uses a material, and sends it. The thread that draws asks for another set, by template and set, when a pipeline needs a build that it lacks: the builds that skin for a skinned mesh, or the builds without tone mapping once bloom or depth of field moves the 8-bit path to HDR color. The sketch thread imports and sends each set of a template once.
 - The thread that draws keeps each distinct text of the sets once. A message gives each build its own copy of the text that WebGL2's builds share, so without this the text would be held several times.
 - The sketch module's getters build each text when the sketch reads it, and keep none: the sketch reads each text once, when it sends a set.
-- A set that does not load stops the drawing with E1424, with the fix text of 2026-10-08.
+- A set that does not load stops the drawing with E1424, with the fix text of 2026-10-08. From 15 October 2026 the engine draws on without the material instead, reports E1424 to the sketch's error handlers and asks for the set again after a wait ([D-54](D-54-addon-modules.md#failed-first-use-loads-15-october-2026)).
 - A hot update on the dev server still carries the new shader with all its builds. So the backends swap a material's pipelines only once its new builds are there, and a set of the old shader that comes later is dropped.
 - The compiler's split of the WebGPU builds that skin, from M2-EX41, goes: the plugin splits every material's builds.
 

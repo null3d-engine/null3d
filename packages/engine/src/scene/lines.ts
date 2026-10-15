@@ -415,6 +415,6 @@ export class LineBatch implements ViewHolder {
 	 */
 	destroy(): void {
 		this.batch.destroy();
-		this.generation = -1;
+		this.dropViews();
 	}
 }

@@ -87,16 +87,37 @@ describe('the templates of compiled WGSL', () => {
 		}
 	});
 
-	test('send why a set did not load', async () => {
-		const { templates, builds } = recording('wgsl');
+	test('send why a set did not load, report it as E1424, and import it again at the next ask', async () => {
+		const failures: string[] = [];
+		const builds: [number, number, unknown][] = [];
+		const templates = new ShaderTemplates(
+			() => {},
+			'wgsl',
+			(template, set, sent) => builds.push([template, set, sent]),
+			TONE_MAP,
+			(error) => failures.push(`${error.code} ${error.message.split(' See ')[0]}`),
+		);
+		let imports = 0;
 		const template = templates.of(
 			{},
 			() => [shader(true)],
 			undefined,
-			() => Promise.reject(new Error('the network failed')),
+			() => {
+				imports++;
+				return Promise.reject(new Error('the network failed'));
+			},
 		);
 		await settle();
 		expect(builds).toEqual([[template, TONE_MAP, 'the network failed']]);
+		expect(failures).toHaveLength(1);
+		expect(failures[0]).toStartWith(
+			'E1424 E1424: the builds of a custom material did not load: the network failed.',
+		);
+		// The thread that draws asks again after its wait, and the set imports again.
+		templates.answer(template, TONE_MAP);
+		await settle();
+		expect(imports).toBe(2);
+		expect(builds).toHaveLength(2);
 	});
 
 	test('answer an ask for a template without such builds with a reason', () => {

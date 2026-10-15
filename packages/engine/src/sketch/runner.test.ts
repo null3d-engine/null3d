@@ -284,6 +284,7 @@ async function start(
 			sendBuilds: () => {},
 			sendPreload: () => {},
 			onAskBuilds: () => {},
+			onDrawingFailure: () => {},
 			pageUrl: 'http://localhost/',
 			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],

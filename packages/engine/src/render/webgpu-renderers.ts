@@ -11,6 +11,7 @@ import { FirstPass } from '../gpu/webgpu/first-pass';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { controlViews } from '../shared/control';
+import { FirstUse } from '../shared/first-use';
 import type { ImageTable } from '../shared/images';
 import { MemoryViews } from '../shared/memory-views';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
@@ -24,6 +25,9 @@ import {
 	type Tier,
 } from './renderer';
 import { FrameReplay, recordCounts } from './scene-renderer';
+
+/** The code that counts what the GPU's culling passed, which loads with the first stats that need it. */
+const CULLED_COUNTS_CODE = new FirstUse(() => import('../gpu/webgpu/culled-counts'));
 
 /**
  * The renderer on a WebGPU device: the scene's renderer for a thread that draws a scene with
@@ -257,10 +261,17 @@ class WebGPUSceneRenderer implements Renderer {
 
 	private loadCulledCounts(): void {
 		this.culledLoading = true;
-		import('../gpu/webgpu/culled-counts').then(({ CulledCounts }) => {
-			if (!this.destroyed)
-				this.backend.culled = new CulledCounts(this.device, this.backend.gpuMemory);
-		}, console.warn);
+		CULLED_COUNTS_CODE.get().then(
+			({ CulledCounts }) => {
+				if (!this.destroyed)
+					this.backend.culled = new CulledCounts(this.device, this.backend.gpuMemory);
+			},
+			(error: unknown) => {
+				// A later frame that counts loads the code again, after the wait.
+				this.culledLoading = false;
+				console.warn(error);
+			},
+		);
 	}
 
 	/**

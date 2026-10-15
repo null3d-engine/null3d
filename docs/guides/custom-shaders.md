@@ -169,7 +169,7 @@ A custom material has many builds: one for each variant of the standard material
 
 For example, the battle comparison's sketch has 5 custom materials, and its module takes 5 KB. With every build in it, the module would take 1,504 KB, or 41 KB with Brotli compression. A device downloads a file of 235 to 346 KB, or 18 to 21 KB with Brotli, and one more for its skinned meshes. The thread that draws keeps 3 to 4 MB of shader text. Every build of the device's GPU path would take 7 MB on WebGPU and 27 MB on WebGL2.
 
-Deploy every file that the build writes. When a file that a device needs does not download, the engine stops drawing with [E1424](../errors/E1424.md).
+Deploy every file that the build writes. When a file that a device needs does not download, the engine reports [E1424](../errors/E1424.md) to `engine.onSketchError` and draws on without the material. It downloads the file again after a few seconds, and the material's objects appear once the file arrives.
 
 You can use arrays in every form that WGSL allows. A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. Your WGSL does not change, and the WebGPU build keeps it as you wrote it.
 

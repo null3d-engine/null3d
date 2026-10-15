@@ -143,6 +143,20 @@ Two runs each. The differences are within the Mac's run-to-run spread.
 - The worker imports Draco's script (`scene/gltf-draco.ts`) on first use, and instantiates the module through the script's `instantiateWasm` hook. Pages without Draco files download neither.
 - A decoder that failed, or whose memory grew past 64 MiB, gives way to a fresh instance from the same module. [D-112](D-112-draco-decoding.md) gives the build's choices and figures.
 
+### Failed first-use loads (15 October 2026)
+
+The code review of 15 October 2026 found that first-use loads failed in four ways (finding M-15). A custom material's set of builds that did not download failed the thread that draws with E1424, and the engine drew no more frames. The engine's own first-use shader files and the environment generator's code failed it the same way, as E1404. The area lights' code failed with no report outside hold mode (finding M-19), and its failed load stayed cached, so no later light tried again. Sprites, particles and lines rejected the one call. Only the light pictures reported through the frame loop. None tried again after a failure, and some kept the failed load for good. One dropped connection on a phone, or a deploy that replaced the hashed files while a page was open, ended the scene.
+
+The rule now, built the same day:
+
+- Every first-use load goes through one helper, `FirstUse` (`shared/first-use.ts`). It runs one load at a time and keeps its result. A failed load does not stay: after a wait, the next use loads again. The wait starts at 1 second and doubles with each failure in a row, up to 32 seconds, so a feature that asks in every frame does not ask the network in every frame. The browsers now fetch a failed module again on a second `import()` (the HTML change "Don't cache HTTP errors in the module map", shipped by Firefox and WebKit).
+- A call that waits for the load, such as `assets.loadGltf` or `scene.createParticles`, rejects with E1406 (`firstUseCode` in `errors/engine-error.ts`), and its next call loads again.
+- A load that no call waits for reports through the frame loop to the sketch's error handlers (`engine.onSketchError`), and the engine draws on without what needs the file. The scene keeps such failures in one queue (`Scene.reportLater`). The thread that draws sends its own failures to the sketch thread through the image port, as coded messages. The codes: E1406 for the engine's own code and shader files, E1424 for a custom material's builds, E1431 for the area lights' tables file.
+- E1424 stays apart from E1406, as [D-107](D-107-custom-material-files.md) set: its fix is the project's own build files, not the engine's package. Both now behave the same way.
+- In hold mode the held frame cannot draw without the file, so a failure on the thread that draws still stops the engine at once, as before. A hold never waits forever for a file that failed.
+- `preset-check` keeps its single try: it runs once after the first frame, and a failure leaves the preset as it is.
+- Tests: `first-use.test.ts` checks the wait and the reload, `images.test.ts` that a failed set of builds is asked for again after the wait, and the browser test of a material whose builds do not download that the engine keeps drawing and reports E1424 to `onSketchError`.
+
 ### Options rejected while building
 
 - Move glTF parsing into the job workers, so that only job workers decode. A long parse would sit beside frame work, and Draco's decoder runs where the file is parsed.

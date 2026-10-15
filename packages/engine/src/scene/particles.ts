@@ -496,7 +496,7 @@ export class ParticleBuffer implements ViewHolder {
 	destroy(): void {
 		if (!this.live) return;
 		this.live = false;
-		this.generation = -1;
+		this.dropViews();
 		this.core.glue.destroyParticles(this.id);
 		this.object.scene.particleBuffers--;
 		this.object.destroy();

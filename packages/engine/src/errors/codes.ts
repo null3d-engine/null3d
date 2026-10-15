@@ -291,7 +291,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			"A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, the first particle buffer the particle code, and the first line batch the line code. The first rectangle or tube light loads the area lights' code, and the first light picture its resampler. The first pipeline of some effects and materials loads the engine's shaders for it. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. A call that waits for the file rejects, and the next call downloads it again. A file that a frame needs is reported to the sketch's error handlers, and the engine draws on without what needs it and downloads the file again after a few seconds.",
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -432,7 +432,7 @@ const DOCS = {
 	E1424: {
 		title: 'Custom material builds not downloaded',
 		cause:
-			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine draws on without the material's objects, reports the failure to the sketch's error handlers, and downloads the file again after a few seconds, waiting longer after each failure in a row. In hold mode the held frame cannot draw, so the failure stops the engine.",
 		example:
 			'E1424: the builds of a custom material did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
 		since: '0.2',
@@ -447,7 +447,7 @@ const DOCS = {
 	E1431: {
 		title: "Area lights' tables missing",
 		cause:
-			"The sketch made a rectangle or tube light, and the file of the area lights' fitted tables did not download. The engine's package ships the file, area-light-tables.bin, beside its code, and the engine downloads it with the first area light. Until the file arrives, area lights give no light. A server or a build that leaves out the file, or a Content-Security-Policy whose connect-src blocks its address, stops the download.",
+			"The sketch made a rectangle or tube light, and the file of the area lights' fitted tables did not download. The engine's package ships the file, area-light-tables.bin, beside its code, and the engine downloads it with the first area light. Until the file arrives, area lights give no light. The engine reports the failure to the sketch's error handlers, and a later area light downloads the file again. A server or a build that leaves out the file, or a Content-Security-Policy whose connect-src blocks its address, stops the download.",
 		example:
 			"E1431: the area lights' tables did not load from https://example.com/assets/area-light-tables-Zx8c_Vb1.bin: HTTP 404",
 		since: '0.2',

@@ -155,14 +155,15 @@ async function deviceShaders(
 	// Every download starts at once: a module that the set imports again comes from the cache.
 	for (const file of filesFor(files, new Set(preload)))
 		loadFeature(file, bits).catch(() => undefined);
+	const table = options.imageTable;
 	const shaders = new DeviceShaderSet(
 		await freshIf(device, load(bits)),
 		bits,
 		(more, file) => freshIf(device, file === undefined ? load(more) : loadFeature(file, more)),
 		files,
+		table,
 	);
 	await shaders.preload(preload);
-	const table = options.imageTable;
 	if (table) {
 		void shaders.preload([...table.preloads].map(fileOf));
 		table.onPreload = (feature) => void shaders.preload([fileOf(feature)]);

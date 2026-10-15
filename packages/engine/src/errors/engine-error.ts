@@ -8,7 +8,9 @@
 // the table of fixes and the mark on each error live under registered symbols, which every copy in
 // the thread shares. Each copy then reads the same table, and instanceof accepts the errors of both.
 
+import type { FirstUse } from '../shared/first-use';
 import type { ErrorCode, ErrorFixes } from './fixes';
+import { reasonOf } from './message';
 
 const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
@@ -81,4 +83,21 @@ export function errorOfMessage(message: string): EngineError | undefined {
 	const error = new EngineError(code, '');
 	error.message = message;
 	return error;
+}
+
+/**
+ * The error of code that loads on its first use and did not download: E1406, which names the code
+ * as `what` and the call that needed it as `use`, such as `loadTexture() of <address>`.
+ */
+export function notDownloaded(what: string, use: string, error: unknown): EngineError {
+	return new EngineError('E1406', `${what} did not download for ${use}: ${reasonOf(error)}.`);
+}
+
+/** What `code` loads on its first use, or the E1406 of `notDownloaded` when it did not download. */
+export async function firstUseCode<T>(code: FirstUse<T>, what: string, use: string): Promise<T> {
+	try {
+		return await code.get();
+	} catch (error) {
+		throw notDownloaded(what, use, error);
+	}
 }

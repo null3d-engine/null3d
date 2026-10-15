@@ -2,7 +2,8 @@
 // - fault: the engine's frame step throws once, and the page must hear E1404 while it stays
 //   responsive.
 // - material-fault: the sketch creates a custom material after the start, and the test blocks the
-//   download of its builds, so the page must hear E1424 while it stays responsive.
+//   first download of its builds. The sketch's error handlers must hear E1424 while the engine
+//   draws on, and the engine downloads the builds again after its wait, with no failure.
 // - job-fault: the test makes a job worker fail inside the job system (it rewrites the job
 //   worker's script), and the page must hear E1404 while it stays responsive. The sketch gives the
 //   job workers parallel work, so the engine starts them. A failure during the start comes as the
@@ -62,6 +63,35 @@ async function firstFailure(engine: Engine): Promise<Record<string, unknown>> {
 	};
 }
 
+/** How long the page watches the engine after a sketch error, past the first wait of a retry. */
+const RETRY_WATCH_MS = 3000;
+
+/**
+ * Waits for the engine's first sketch error, then watches it draw on past the wait after which it
+ * downloads a failed file again. Returns the sketch errors, the failures and the frames drawn after
+ * the error.
+ */
+async function sketchErrorThenRetry(engine: Engine): Promise<Record<string, unknown>> {
+	const errors: Error[] = [];
+	const failures: EngineError[] = [];
+	engine.onSketchError((error) => errors.push(error));
+	engine.onFailure((error) => failures.push(error));
+	let ticks = 0;
+	const timer = setInterval(() => ticks++, TICK_MS);
+	const deadline = performance.now() + REPORT_MS;
+	while (errors.length === 0 && performance.now() < deadline)
+		await new Promise((resolve) => setTimeout(resolve, TICK_MS));
+	const frames = (await engine.measure(RETRY_WATCH_MS / 1000)).frames;
+	clearInterval(timer);
+	await engine.destroy();
+	return {
+		codes: failures.map((error) => error.code),
+		messages: errors.map((error) => error.message.split(' See ')[0]),
+		frames,
+		ticks,
+	};
+}
+
 /** The code of a failed call, or 'none'. */
 function codeOf(call: () => unknown): string {
 	try {
@@ -77,7 +107,8 @@ run('failures', async () => {
 	if (which === 'fault' || which === 'material-fault') {
 		const faulty = new URL(sketch);
 		faulty.searchParams.set('fault', which === 'fault' ? 'step' : 'material');
-		return firstFailure(await started(faulty));
+		const engine = await started(faulty);
+		return which === 'fault' ? firstFailure(engine) : sketchErrorThenRetry(engine);
 	}
 	if (which === 'job-fault') {
 		const busy = new URL(sketch);

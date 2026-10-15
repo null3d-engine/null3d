@@ -6,12 +6,15 @@
 
 import type { OverlaySetup, StatsOverlay } from '../debug/overlay';
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
+import { FirstUse } from '../shared/first-use';
+
+/** The overlay's code, which a page downloads with its first request to show it. */
+const OVERLAY_CODE = new FirstUse(() => import('../debug/overlay'));
 
 export class StatsSwitch {
 	private overlay: StatsOverlay | undefined;
 	private wanted = false;
 	private readonly options: StatsOverlayOptions = {};
-	private load: Promise<typeof import('../debug/overlay')> | undefined;
 
 	/** `setup` gives what the overlay reads, when the first request comes. */
 	constructor(private readonly setup: () => OverlaySetup) {}
@@ -31,8 +34,7 @@ export class StatsSwitch {
 			if (show.collapsed !== undefined) this.options.collapsed = show.collapsed;
 			this.overlay?.configure(show);
 		}
-		this.load ??= import('../debug/overlay');
-		this.load.then(({ StatsOverlay }) => {
+		OVERLAY_CODE.get().then(({ StatsOverlay }) => {
 			if (this.wanted && !this.overlay) this.overlay = new StatsOverlay(this.setup(), this.options);
 		}, console.warn);
 	}

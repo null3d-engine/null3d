@@ -11,7 +11,7 @@ import {
 	DEV,
 	type Described,
 } from '../errors/checks';
-import { EngineError } from '../errors/engine-error';
+import { EngineError, firstUseCode } from '../errors/engine-error';
 import type { ErrorCode } from '../errors/fixes';
 import { reasonOf } from '../errors/message';
 import * as C from '../generated/core';
@@ -33,8 +33,8 @@ import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
+import { FirstUse } from '../shared/first-use';
 import type { Animator, SceneAnimations } from './animation';
-import type { AreaLightTables } from './area-light-tables';
 import {
 	type BackgroundOptions,
 	type BackgroundSource,
@@ -413,9 +413,8 @@ export interface DirectionalShadowOptions {
 	 * or `'auto'`, the default. `'auto'` follows the farthest visible receiver: the engine finds the
 	 * farthest surface that receives shadows in the camera's view each frame and rounds it up on a
 	 * ladder of 1.25 times per step, so shadows in a small scene get much finer texels. A number
-	 * fixes the distance. On WebGPU the farthest receiver comes back from the GPU two frames late.
-	 * The camera's far plane ends the shadows sooner, and they fade out over the last tenth of the
-	 * distance.
+	 * fixes the distance. The camera's far plane ends the shadows sooner, and they fade out over the
+	 * last tenth of the distance.
 	 */
 	distance?: number | 'auto';
 	/**
@@ -2025,8 +2024,10 @@ export class RectAreaLight extends Light {
 	 * picture's average color, so a mostly dark picture lights little around it. The picture's top
 	 * row lies along the light's +Y axis, and it reads the right way round from the lit side. The
 	 * engine resamples it to 128 x 128 texels, so shiny surfaces show it sharp and rough ones
-	 * blurred. Up to 32 lights show pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
-	 * now and then, not in every frame.
+	 * blurred. Up to 32 lights show pictures at once: a 33rd fails this call. The light keeps a copy
+	 * of the pixels, so the buffer may change after the call, and it shows the picture from a later
+	 * frame. A new picture allocates and takes a few milliseconds, so set it at setup or now and
+	 * then, not in every frame.
 	 */
 	setImage(image: LightImagePixels | null): void {
 		const call = 'setImage';
@@ -2039,17 +2040,25 @@ export class RectAreaLight extends Light {
 			return;
 		}
 		if (DEV) checkLightImage(call, image, this);
-		// The resampler loads on first use, so a page that sets no picture downloads none of it.
-		// The light keeps the pixels; a task writes them, which `imagesSettled` waits for.
-		this.pendingImage = image;
 		const id = this.id;
+		// The light takes its place for a picture now, so a full table fails this call. Taking it can
+		// grow the memory. The place keeps its address, which the task asks for again.
+		core.checkGrowth(core.glue.areaLightImage(id), call, this.label);
+		// The resampler loads on first use, so a page that sets no picture downloads none of it. A
+		// task writes a copy of the pixels, which `imagesSettled` waits for, so the caller may fill
+		// its buffer again at once.
+		const { width, height, data } = image;
+		const pixels: LightImagePixels = { width, height, data: data.slice(0, width * height * 4) };
+		this.pendingImage = pixels;
 		scene.queueImage(
-			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
-				if (this.id !== id || this.pendingImage !== image) return;
-				const at = core.check(core.glue.areaLightImage(id), call, this.label);
-				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
-				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
-			}),
+			firstUseCode(LIGHT_IMAGE_CODE, "the lights' picture code", `${call}()`).then(
+				({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
+					if (this.id !== id || this.pendingImage !== pixels) return;
+					const at = core.check(core.glue.areaLightImage(id), call, this.label);
+					prepareLightImage(pixels, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
+					core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
+				},
+			),
 		);
 	}
 
@@ -2335,9 +2344,9 @@ export class InstanceBatch implements ViewHolder {
 		this.scene.forgetListeners(this);
 		if (this.face) this.scene.forgetListeners(this.face);
 		this.destroyedFrame = this.scene.frame;
-		// The next read of the arrays asks the core for them again, and the core refuses a
-		// destroyed batch.
-		this.generation = -1;
+		// The views go now, so a kept batch holds no old memory, and the next read of the arrays
+		// asks the core for them again, which refuses a destroyed batch.
+		this.dropViews();
 	}
 }
 
@@ -2408,40 +2417,34 @@ const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
 	[C.LIGHT_KIND_TUBE]: TubeLight,
 };
 
-/** Imports the sprite code, which a page downloads with its first sprite batch, or throws E1406. */
-async function loadSprites(call: string): Promise<typeof import('./sprites')> {
-	try {
-		return await import('./sprites');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the sprite code did not download for ${call}(): ${reasonOf(error)}.`,
-		);
-	}
+/** The area lights' code, which a page downloads with its first rectangle or tube light. */
+const AREA_TABLES_CODE = new FirstUse(() => import('./area-light-tables'));
+
+/** The resampler of lights' pictures, which a page downloads with its first picture. */
+const LIGHT_IMAGE_CODE = new FirstUse(() => import('./light-images'));
+
+/** The sprite code, which a page downloads with its first use. */
+const SPRITES_CODE = new FirstUse(() => import('./sprites'));
+
+/** The sprite code, or E1406 when it does not download. */
+function loadSprites(call: string): Promise<typeof import('./sprites')> {
+	return firstUseCode(SPRITES_CODE, 'the sprite code', `${call}()`);
 }
 
-/** Imports the particle code, which a page downloads with its first particle buffer, or throws E1406. */
-async function loadParticles(call: string): Promise<typeof import('./particles')> {
-	try {
-		return await import('./particles');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the particle code did not download for ${call}(): ${reasonOf(error)}.`,
-		);
-	}
+/** The particle code, which a page downloads with its first use. */
+const PARTICLES_CODE = new FirstUse(() => import('./particles'));
+
+/** The particle code, or E1406 when it does not download. */
+function loadParticles(call: string): Promise<typeof import('./particles')> {
+	return firstUseCode(PARTICLES_CODE, 'the particle code', `${call}()`);
 }
 
-/** Imports the line code, which a page downloads with its first line batch, or throws E1406. */
-async function loadLines(call: string): Promise<typeof import('./lines')> {
-	try {
-		return await import('./lines');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the line code did not download for ${call}(): ${reasonOf(error)}.`,
-		);
-	}
+/** The line code, which a page downloads with its first use. */
+const LINES_CODE = new FirstUse(() => import('./lines'));
+
+/** The line code, or E1406 when it does not download. */
+function loadLines(call: string): Promise<typeof import('./lines')> {
+	return firstUseCode(LINES_CODE, 'the line code', `${call}()`);
 }
 
 /** The segments that each line mode makes of a number of points. */
@@ -2599,49 +2602,45 @@ export class Scene implements ViewHolder {
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
-	/** @internal The area lights' tables, which load with the first rectangle or tube light. */
-	private areaTables: AreaLightTables | undefined;
-	/** @internal The load of the area lights' tables' code and their download, once started. */
-	private areaTablesLoad: Promise<AreaLightTables> | undefined;
-	/** @internal The area lights' tables' failure before the code arrived, once: the frame loop reports it. */
-	private areaTablesFailure: EngineError | undefined;
+	/**
+	 * @internal Failures of loads on first use that no call could reject, such as the area lights'
+	 * tables, a light's picture or a file that the thread that draws needs: the frame loop reports
+	 * each.
+	 */
+	private readonly failures: unknown[] = [];
+	/**
+	 * @internal The area lights' tables: their code, then their file, which load with the first
+	 * rectangle or tube light. After a failure, a later area light loads them again.
+	 */
+	private readonly areaTables = new FirstUse(
+		async () => {
+			const tables = await firstUseCode(
+				AREA_TABLES_CODE,
+				"the area lights' code",
+				'the first rectangle or tube light',
+			);
+			try {
+				await tables.writeAreaTables(this.core);
+			} catch (error) {
+				throw new EngineError(
+					'E1431',
+					`the area lights' tables did not load from ${tables.AREA_TABLES_URL}: ${reasonOf(error)}`,
+				);
+			}
+		},
+		(error) => this.reportLater(error),
+	);
 	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` set. */
 	private readonly imageTasks = new Set<Promise<void>>();
-	/** @internal The picture that failed to write, once: the frame loop reports it. */
-	private imageFailure: unknown;
 
-	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
+	/** @internal Starts the area lights' tables' load, unless they have loaded. */
 	private loadAreaTables(): void {
-		this.areaTablesLoad ??= import('./area-light-tables').then(({ AreaLightTables }) => {
-			const tables = new AreaLightTables(this.core);
-			this.areaTables = tables;
-			tables.load();
-			return tables;
-		});
+		if (this.areaTables.value === undefined) void this.areaTables.get();
 	}
 
-	/** @internal Settles when the area lights' tables have loaded, or at once when none started. */
+	/** @internal Settles when the area lights' tables' load has ended, or at once when none started. */
 	async areaTablesSettled(): Promise<void> {
-		const load = this.areaTablesLoad;
-		if (!load) return;
-		const tables = await load.catch((error: unknown) => {
-			this.areaTablesFailure =
-				error instanceof EngineError ? error : new EngineError('E1431', String(error));
-			return undefined;
-		});
-		await tables?.settled();
-	}
-
-	/** @internal The area lights' tables' failure, once: the frame loop reports it. */
-	takeAreaTablesFailure(): EngineError | undefined {
-		const failure = this.areaTablesFailure ?? this.areaTables?.takeFailure();
-		this.areaTablesFailure = undefined;
-		if (failure === undefined) return undefined;
-		if (failure instanceof EngineError) return failure;
-		return new EngineError(
-			'E1431',
-			`the area lights' tables did not load from ${failure.url}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`,
-		);
+		await this.areaTables.settled();
 	}
 
 	/** @internal Settles when every picture that `setImage` set has been written to engine memory. */
@@ -2651,18 +2650,19 @@ export class Scene implements ViewHolder {
 
 	/** @internal Queues a picture's write, which loads its resampler on first use. */
 	queueImage(task: Promise<void>): void {
-		const settled = task.catch((error: unknown) => {
-			this.imageFailure = error;
-		});
+		const settled = task.catch((error: unknown) => this.reportLater(error));
 		this.imageTasks.add(settled);
 		void settled.finally(() => this.imageTasks.delete(settled));
 	}
 
-	/** @internal The picture that failed to write, once: the frame loop reports it. */
-	takeImageFailure(): unknown {
-		const failure = this.imageFailure;
-		this.imageFailure = undefined;
-		return failure;
+	/** @internal Keeps a failure of a load on first use, which the frame loop reports. */
+	reportLater(error: unknown): void {
+		this.failures.push(error);
+	}
+
+	/** @internal The oldest failure that the frame loop has not reported yet, if any. */
+	takeFailure(): unknown {
+		return this.failures.shift();
 	}
 	/**
 	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or

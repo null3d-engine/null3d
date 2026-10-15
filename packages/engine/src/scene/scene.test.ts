@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import {
 	Matrix4,
 	Quaternion,
@@ -23,6 +23,7 @@ import { Cubemap } from './background';
 import { Environment } from './environment';
 import { withCallValues } from './fake-call-values';
 import { FrameCameras } from './frame-cameras';
+import { LIGHT_IMAGE_HALVES } from './light-images';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
@@ -59,8 +60,8 @@ const DESTROYED_TEXTURE = 13;
  * A core with the scene's arrays and command ring in a memory of its own. Its world matrices are
  * the ones that a test sets for each handle. With `largeWorld`, positions hold whole cells too.
  */
-function fakeCore(largeWorld = false) {
-	const memory = new WebAssembly.Memory({ initial: 1 });
+function fakeCore(largeWorld = false, extraGlue: Record<string, unknown> = {}, pages = 1) {
+	const memory = new WebAssembly.Memory({ initial: pages });
 	const matrices = new Map<number, readonly number[]>();
 	let next = 1;
 	let failure = { code: 0, details: [0, 0] };
@@ -106,6 +107,7 @@ function fakeCore(largeWorld = false) {
 		},
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
+		...extraGlue,
 	};
 	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const control = controlViews(createControlBuffer(false));
@@ -125,6 +127,7 @@ function fakeCore(largeWorld = false) {
 			return [...new Int32Array(memory.buffer, AT.cells + object.slot * 12, 3)];
 		},
 		core,
+		memory,
 		scene,
 		eventFrames,
 		/** Sizes the canvas: device pixels, then CSS pixels. */
@@ -1207,5 +1210,110 @@ describe('labels', () => {
 			expect(thrown(() => labelCapacity(bad)).message).toStartWith(
 				`E1213: createEngine() got ${bad} for maxLabels`,
 			);
+	});
+});
+
+describe('rectangle light pictures', () => {
+	/** Where the fake core keeps each light's picture: one place per light, past the scene's arrays. */
+	const PICTURE_AT = 65536;
+	const PICTURE_BYTES = 2 * LIGHT_IMAGE_HALVES;
+
+	/** A scene whose core holds up to `places` pictures, and the lights' finished pictures. */
+	function pictures(places = 2) {
+		const finished = new Map<number, number>();
+		let nextLight = 1;
+		const placeOf = new Map<number, number>();
+		let failure = 0;
+		const memory = () => fake.memory;
+		const fake = fakeCore(
+			false,
+			{
+				createLight: () => nextLight++,
+				setLightValue: () => 0,
+				setLightColor: () => 0,
+				areaLightImage: (light: number) => {
+					let place = placeOf.get(light);
+					if (place === undefined) {
+						if (placeOf.size === places) {
+							failure = 1501;
+							return 0;
+						}
+						place = placeOf.size;
+						placeOf.set(light, place);
+					}
+					return PICTURE_AT + place * PICTURE_BYTES;
+				},
+				finishAreaLightImage: (light: number) => {
+					const place = placeOf.get(light) as number;
+					// The first texel's red half, which tells one picture from another.
+					finished.set(
+						light,
+						new Uint16Array(memory().buffer, PICTURE_AT + place * PICTURE_BYTES, 1)[0] as number,
+					);
+					return 0;
+				},
+				lastErrorCode: () => failure,
+				lastErrorDetail: () => 0,
+			},
+			1 + Math.ceil((places * PICTURE_BYTES) / 65536),
+		);
+		return { ...fake, finished };
+	}
+
+	/** A download that fails, for the area lights' tables. */
+	const OFFLINE = (() => Promise.reject(new Error('offline'))) as unknown as typeof fetch;
+
+	/** A picture of one color, four bytes per pixel. */
+	const fill = (data: Uint8Array, red: number) => {
+		for (let k = 0; k < data.length; k += 4) data.set([red, 0, 0, 255], k);
+	};
+
+	test('keep a copy of the pixels, so one buffer serves two lights', async () => {
+		const fetched = spyOn(globalThis, 'fetch').mockImplementation(OFFLINE);
+		try {
+			const { scene, finished } = pictures();
+			const a = scene.createRectAreaLight({ width: 1, height: 1, range: 5 });
+			const b = scene.createRectAreaLight({ width: 1, height: 1, range: 5 });
+			const data = new Uint8Array(4 * 4 * 4);
+			fill(data, 255);
+			a.setImage({ width: 4, height: 4, data });
+			fill(data, 0);
+			b.setImage({ width: 4, height: 4, data });
+			await scene.imagesSettled();
+			expect(finished.get(a.id)).not.toBe(finished.get(b.id));
+			expect(finished.get(b.id)).toBe(0);
+		} finally {
+			fetched.mockRestore();
+		}
+	});
+
+	test('fail the call that asks for a picture past the last place', () => {
+		const fetched = spyOn(globalThis, 'fetch').mockImplementation(OFFLINE);
+		try {
+			const { scene } = pictures(1);
+			const data = new Uint8Array(4);
+			scene
+				.createRectAreaLight({ width: 1, height: 1, range: 5 })
+				.setImage({ width: 1, height: 1, data });
+			const second = scene.createRectAreaLight({ width: 1, height: 1, range: 5 });
+			expect(thrown(() => second.setImage({ width: 1, height: 1, data })).code).toBe('E1501');
+		} finally {
+			fetched.mockRestore();
+		}
+	});
+
+	test("report a failed load of the area lights' tables through the frame loop", async () => {
+		const fetched = spyOn(globalThis, 'fetch').mockImplementation(OFFLINE);
+		try {
+			const { scene } = pictures();
+			scene.createRectAreaLight({ width: 1, height: 1, range: 5 });
+			await scene.areaTablesSettled();
+			const failure = scene.takeFailure() as EngineError;
+			expect(failure.code).toBe('E1431');
+			expect(failure.message).toContain("the area lights' tables did not load from ");
+			expect(scene.takeFailure()).toBeUndefined();
+		} finally {
+			fetched.mockRestore();
+		}
 	});
 });

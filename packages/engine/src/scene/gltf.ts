@@ -30,6 +30,7 @@ import {
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
 import { DEV } from '../shared/dev';
+import { FirstUse } from '../shared/first-use';
 import { onEngineStop } from '../shared/helper-workers';
 import { compileOnce, type WasmFile } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
@@ -566,6 +567,9 @@ export async function makeTextures(
 	throw failed.reason;
 }
 
+/** The KTX2 loader, which a page downloads with its first model that holds a KTX2 image. */
+const KTX2_CODE = new FirstUse(() => import('./ktx2'));
+
 /** A texture from KTX2 data, through the KTX2 loader, which this imports the first time. */
 async function ktx2Texture(
 	context: GltfContext,
@@ -576,7 +580,7 @@ async function ktx2Texture(
 ): Promise<Texture> {
 	let ktx2: typeof import('./ktx2');
 	try {
-		ktx2 = await import('./ktx2');
+		ktx2 = await KTX2_CODE.get();
 	} catch (error) {
 		throw context.error(
 			'E1406',

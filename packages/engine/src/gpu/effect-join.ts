@@ -164,7 +164,7 @@ export function joinedReady(
 	const fold = kind === 'effectFold';
 	const host = fold ? set.shaders.final_effects : set.shaders.effect_group;
 	if (!set.ready(host, 0, target)) return false;
-	const joiner = loadedJoiner();
+	const joiner = set.loaded(set.joiner);
 	if (!joiner) return false;
 	const piecesOf = (template: number): PieceBuilds => {
 		const pieces = shaders.get(template)?.pieces;
@@ -179,28 +179,4 @@ export function joinedReady(
 	);
 	Object.assign(shader.variants, joined);
 	return true;
-}
-
-/** The joiner, which loads on first use, once it has loaded. */
-let joiner: typeof import('./effect-joiner') | undefined;
-/** True while the joiner loads. */
-let loading = false;
-
-/**
- * The joiner once it has loaded. The first call starts to load it, and a pipeline that needs it
- * waits as for any file that loads on first use: the backends ask again while they build. A failed
- * load is tried again at the next call.
- */
-function loadedJoiner(): typeof import('./effect-joiner') | undefined {
-	if (joiner || loading) return joiner;
-	loading = true;
-	import('./effect-joiner').then(
-		(module) => {
-			joiner = module;
-		},
-		() => {
-			loading = false;
-		},
-	);
-	return undefined;
 }

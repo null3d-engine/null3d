@@ -9,11 +9,15 @@ import type { Vec3Like } from '../math/types';
 import type { QualityPreset } from '../quality/presets';
 import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
+import { FirstUse } from '../shared/first-use';
 import { sampleFrames } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
 import type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug';
 import type { FrameStats, FrameStatsWindow, StatsSources } from './stats';
 import type { StatsRequest } from './stats-options';
+
+/** The frame figures' code, which loads with the first read of them. */
+const FRAME_STATS_CODE = new FirstUse(() => import('./stats'));
 
 /** What the debug API needs from the thread that runs the sketch. */
 export interface DebugHost {
@@ -95,8 +99,15 @@ export class SketchDebug implements Debug {
 		this.loading = true;
 		const { metrics, threads, sources } = this.host;
 		sampleFrames(metrics, true);
-		import('./stats').then(({ FrameStatsWindow }) => {
-			this.window = new FrameStatsWindow(metrics, threads, sources);
-		}, console.warn);
+		FRAME_STATS_CODE.get().then(
+			({ FrameStatsWindow }) => {
+				this.window = new FrameStatsWindow(metrics, threads, sources);
+			},
+			(error: unknown) => {
+				// The next read loads the code again, after the wait.
+				this.loading = false;
+				console.warn(error);
+			},
+		);
 	}
 }

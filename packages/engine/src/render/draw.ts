@@ -60,6 +60,7 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
 	imageTable.loadGeneratorsWith(generatorLoader(setup.tier));
+	imageTable.failFast = hold;
 	const receiving = setup.imagePort && receiveImages(setup.imagePort, imageTable, slots);
 	const options = { ...setup, imageTable };
 	const create = () => createRenderer(canvas, options);

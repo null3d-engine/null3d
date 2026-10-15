@@ -7,8 +7,9 @@
 // address at the same time share one download; the HTTP cache keeps everything else.
 
 import { DEV } from '../errors/checks';
-import { EngineError } from '../errors/engine-error';
+import { EngineError, firstUseCode } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
+import { FirstUse } from '../shared/first-use';
 import { Cubemap, writeSkyDefaults } from './background';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
@@ -437,7 +438,7 @@ export class Assets {
 	 */
 	private prepareHdr(): void {
 		this.makers?.materials.shaders.needGenerators();
-		panoramaLoader().then(
+		PANORAMA_CODE.get().then(
 			(loader) => loader.startPanoramaReader((code, message) => new EngineError(code, message)),
 			() => undefined,
 		);
@@ -448,15 +449,11 @@ export class Assets {
 	 * GPU with the environment generator.
 	 */
 	private async panorama(bytes: ArrayBuffer, address: URL, call: string): Promise<Environment> {
-		let loader: typeof import('./panorama');
-		try {
-			loader = await panoramaLoader();
-		} catch (error) {
-			throw new EngineError(
-				'E1406',
-				`the HDR file reader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
-			);
-		}
+		const loader = await firstUseCode(
+			PANORAMA_CODE,
+			'the HDR file reader',
+			`${call}() of ${address}`,
+		);
 		const { size, levels } = loader.PANORAMA_MAP;
 		const { panorama, sh } = await loader.readPanoramaFile(
 			bytes,
@@ -604,16 +601,12 @@ export class Assets {
 /** The identifier that starts every KTX2 file. */
 const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
 
-/** The KTX2 loader, which this imports the first time. Throws E1406 when it does not download. */
-async function ktx2Module(address: URL, call: string): Promise<typeof import('./ktx2')> {
-	try {
-		return await import('./ktx2');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the KTX2 loader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
-		);
-	}
+/** The KTX2 loader, which a page downloads with its first KTX2 file. */
+const KTX2_CODE = new FirstUse(() => import('./ktx2'));
+
+/** The KTX2 loader. Throws E1406 when it does not download. */
+function ktx2Module(address: URL, call: string): Promise<typeof import('./ktx2')> {
+	return firstUseCode(KTX2_CODE, 'the KTX2 loader', `${call}() of ${address}`);
 }
 
 /**
@@ -702,71 +695,44 @@ function rewritten(at: URL, file: URL, options: LoadGltfOptions, call: string): 
 /** The ends of the addresses of Radiance and OpenEXR files. */
 const HDR_FILE = /\.(hdr|exr)$/i;
 
-/** The color grading table makers, or E1406 for `what` when they do not download. */
-async function lutMakers(what: string): Promise<typeof import('./lut-files')> {
-	try {
-		return await import('./lut-files');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the color grading table code did not download for ${what}: ${reasonOf(error)}.`,
-		);
-	}
+/** The color grading table readers and makers, which a page downloads with its first table. */
+const LUT_CODE = new FirstUse(() => import('./lut-files'));
+
+/** The color grading table makers, or E1406 for the use `use` when they do not download. */
+function lutMakers(use: string): Promise<typeof import('./lut-files')> {
+	return firstUseCode(LUT_CODE, 'the color grading table code', use);
 }
+
+/** The built-in environments' module, which also makes the sky's environment. */
+const BUILTIN_CODE = new FirstUse(() => import('./builtin-environments'));
 
 /**
- * Imports the built-in environments' module, which also makes the sky's environment, on the first
- * call that needs it. Throws E1406 when it does not download.
+ * The built-in environments' module, on the first call that needs it. Throws E1406 when it does
+ * not download.
  */
-async function builtinEnvironments(call: string): Promise<typeof import('./builtin-environments')> {
-	try {
-		return await import('./builtin-environments');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the built-in environments did not download for ${call}(): ${reasonOf(error)}.`,
-		);
-	}
+function builtinEnvironments(call: string): Promise<typeof import('./builtin-environments')> {
+	return firstUseCode(BUILTIN_CODE, 'the built-in environments', `${call}()`);
 }
 
-/** The HDR file loader, once its import started. A failed import lets the next load try again. */
-let panoramaImport: Promise<typeof import('./panorama')> | undefined;
-
-function panoramaLoader(): Promise<typeof import('./panorama')> {
-	panoramaImport ??= import('./panorama').catch((error: unknown) => {
-		panoramaImport = undefined;
-		throw error;
-	});
-	return panoramaImport;
-}
+/** The HDR file reader, which a page downloads with its first Radiance or OpenEXR file. */
+const PANORAMA_CODE = new FirstUse(() => import('./panorama'));
 
 type EnvironmentReader = typeof import('./environment-file');
 
-/**
- * Imports the environment map reader, which a page downloads with its first environment, or
- * throws E1406 that names what `call` was loading.
- */
-async function environmentReader(call: string, what: string): Promise<EnvironmentReader> {
-	try {
-		return await import('./environment-file');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the environment map reader did not download for ${call}() of ${what}: ${reasonOf(error)}.`,
-		);
-	}
+/** The environment map reader, which a page downloads with its first environment. */
+const ENVIRONMENT_CODE = new FirstUse(() => import('./environment-file'));
+
+/** The environment map reader, or E1406 that names what `call` was loading. */
+function environmentReader(call: string, what: string): Promise<EnvironmentReader> {
+	return firstUseCode(ENVIRONMENT_CODE, 'the environment map reader', `${call}() of ${what}`);
 }
 
-/** Imports the glTF loader, which a page downloads with its first glTF file, or throws E1406. */
-async function loadModule(address: URL, call: string): Promise<typeof import('./gltf')> {
-	try {
-		return await import('./gltf');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the glTF loader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
-		);
-	}
+/** The glTF loader, which a page downloads with its first glTF file. */
+const GLTF_CODE = new FirstUse(() => import('./gltf'));
+
+/** The glTF loader, or E1406 when it does not download. */
+function loadModule(address: URL, call: string): Promise<typeof import('./gltf')> {
+	return firstUseCode(GLTF_CODE, 'the glTF loader', `${call}() of ${address}`);
 }
 
 /**

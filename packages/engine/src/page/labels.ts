@@ -5,8 +5,12 @@
 
 import { EngineError } from '../errors/engine-error';
 import type { ControlViews } from '../shared/control';
+import { FirstUse } from '../shared/first-use';
 import { DEFAULT_MAX_LABELS, MAX_LABELS_LIMIT } from '../shared/labels';
 import type { LabelLoop } from './label-loop';
+
+/** The code that places labels, which a page downloads with its first label. */
+const LABEL_CODE = new FirstUse(() => import('./label-loop'));
 
 /**
  * The page's labels, as `engine.labels` gives them.
@@ -86,14 +90,18 @@ export class PageLabels implements EngineLabels {
 		this.waiting.push([id, element]);
 		if (!this.loading) {
 			this.loading = true;
-			import('./label-loop').then(
+			LABEL_CODE.get().then(
 				({ LabelLoop }) => {
 					const made = new LabelLoop(this.control, this.drawsHere, this.slots);
 					this.loop = made;
 					for (const [waitingId, waitingElement] of this.waiting.splice(0))
 						made.bind(waitingId, waitingElement);
 				},
-				(error: unknown) => console.warn(`null3D could not load the label code: ${String(error)}`),
+				(error: unknown) => {
+					// The next label loads the code again, after the wait.
+					this.loading = false;
+					console.warn(`null3D could not load the label code: ${String(error)}`);
+				},
 			);
 		}
 		return () => {

@@ -20,6 +20,7 @@ import {
 	usesDraco,
 	usesMeshopt,
 } from '../scene/gltf-parse';
+import { FirstUse } from '../shared/first-use';
 
 /** The decoders that a file can need, by the name of their compiled module. */
 export type GltfDecoder = 'meshopt' | 'draco';
@@ -45,12 +46,16 @@ const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0
 /** Files that wait for their buffers, by request. */
 const waiting = new Map<number, { container: GltfContainer; url: string }>();
 
+/** The meshopt and Draco decoders' code, which this worker downloads with the first file that needs it. */
+const MESHOPT_CODE = new FirstUse(() => import('../scene/gltf-meshopt'));
+const DRACO_CODE = new FirstUse(() => import('../scene/gltf-draco'));
+
 /** The meshopt decoder, once a file has needed it. A failed start lets the next file try again. */
 let meshopt: Promise<MeshoptDecode> | undefined;
 
 /** Starts the meshopt decoder from its compiled module, once. */
 function startMeshopt(compiled: WebAssembly.Module): void {
-	meshopt ??= import('../scene/gltf-meshopt')
+	meshopt ??= MESHOPT_CODE.get()
 		.then((module) => module.meshoptDecoder(compiled))
 		.catch(
 			decoderFailed('meshopt', () => {
@@ -70,7 +75,7 @@ let draco: Promise<DracoDecoder> | undefined;
 async function dracoDecoder(): Promise<DracoDecoder> {
 	const compiled = dracoModule;
 	if (!compiled) throw new GltfError('E1406', 'the Draco decoder did not load');
-	draco ??= import('../scene/gltf-draco')
+	draco ??= DRACO_CODE.get()
 		.then((module) => module.dracoDecoder(compiled))
 		.catch(
 			decoderFailed('Draco', () => {

@@ -20,7 +20,7 @@ export const AREA_TABLE_CHANNELS = 6;
 export const AREA_TABLE_HALVES = 2 * 4 * AREA_TABLE_SIZE * AREA_TABLE_SIZE;
 
 /** The file, which bundlers ship beside the engine's code. */
-const TABLES_URL = new URL('../../vendor/ltc/area-light-tables.bin', import.meta.url);
+export const AREA_TABLES_URL = new URL('../../vendor/ltc/area-light-tables.bin', import.meta.url);
 
 /**
  * Decodes the unpacked file `bytes` into the texels of the core's two layers, four half floats
@@ -53,43 +53,17 @@ export function decodeAreaTables(bytes: Uint8Array, out: Uint16Array): void {
 }
 
 /**
- * The area lights' tables of one engine: the download, which starts with the first area light,
- * and its failure, which the sketch's error handler gets with the next frame.
+ * Downloads the area lights' tables and writes them into engine memory, for the core to upload with
+ * the next frame. Area lights light the frames from then on. Throws the reason when the file does
+ * not download.
  */
-export class AreaLightTables {
-	private loading: Promise<void> | undefined;
-	private failure: { url: string; error: unknown } | undefined;
-
-	constructor(private readonly core: CoreMemory) {}
-
-	/** Starts the download, once. Area lights light frames from the frame after it ends. */
-	load(): void {
-		this.loading ??= this.download().catch((error: unknown) => {
-			this.failure = { url: TABLES_URL.href, error };
-		});
-	}
-
-	/** Settles when the download has ended, or at once when none started. Hold mode waits for it. */
-	settled(): Promise<void> {
-		return this.loading ?? Promise.resolve();
-	}
-
-	/** The download's failure, once: the frame loop reports it as E1431. */
-	takeFailure(): { url: string; error: unknown } | undefined {
-		const { failure } = this;
-		this.failure = undefined;
-		return failure;
-	}
-
-	private async download(): Promise<void> {
-		const response = await fetch(TABLES_URL);
-		if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-		const unpacked = response.body.pipeThrough(new DecompressionStream('gzip'));
-		const bytes = new Uint8Array(await new Response(unpacked).arrayBuffer());
-		const { core } = this;
-		if (core.stopped) return;
-		const at = core.check(core.glue.areaLightTables(), 'createRectAreaLight', undefined, false);
-		decodeAreaTables(bytes, core.view(Uint16Array, at, AREA_TABLE_HALVES));
-		core.check(core.glue.finishAreaLightTables(), 'createRectAreaLight', undefined, true);
-	}
+export async function writeAreaTables(core: CoreMemory): Promise<void> {
+	const response = await fetch(AREA_TABLES_URL);
+	if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+	const unpacked = response.body.pipeThrough(new DecompressionStream('gzip'));
+	const bytes = new Uint8Array(await new Response(unpacked).arrayBuffer());
+	if (core.stopped) return;
+	const at = core.check(core.glue.areaLightTables(), 'createRectAreaLight', undefined, false);
+	decodeAreaTables(bytes, core.view(Uint16Array, at, AREA_TABLE_HALVES));
+	core.check(core.glue.finishAreaLightTables(), 'createRectAreaLight', undefined, true);
 }

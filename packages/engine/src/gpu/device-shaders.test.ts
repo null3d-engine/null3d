@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import {
 	PERMUTATION_ALPHA_HASH,
 	PERMUTATION_BLOOM,
@@ -8,6 +8,7 @@ import {
 	PERMUTATION_TONE_MAP,
 } from '../generated/gpu';
 import type { DeviceShaders, FirstUseShaders, ShaderVariant } from '../generated/shaders';
+import { FIRST_RETRY_MS } from '../shared/first-use';
 import { DeviceShaderSet } from './device-shaders';
 
 /** A WGSL build with the permutation word `permutation`. */
@@ -56,19 +57,48 @@ function loader() {
 }
 
 describe('DeviceShaderSet', () => {
-	it('names the failed download when a pipeline needs the shaders of a module that failed to load', async () => {
+	it('reports a module that failed to download, and loads it again after a wait', async () => {
 		const asked: string[] = [];
-		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, async (bits, feature) => {
-			asked.push(feature === undefined ? `start ${bits}` : `${feature} ${bits}`);
+		const reports: string[] = [];
+		const set = new DeviceShaderSet(
+			start(),
+			PERMUTATION_TONE_MAP,
+			async (bits, feature) => {
+				asked.push(feature === undefined ? `start ${bits}` : `${feature} ${bits}`);
+				throw new Error('404 Not Found');
+			},
+			[],
+			{ reportFailure: (message) => reports.push(message), failFast: false },
+		);
+		const sprite = set.shaders.sprite;
+		const begin = performance.now();
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		// The pipeline waits, and the drawing goes on.
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		expect(asked).toEqual(['sprites 0']);
+		expect(reports).toEqual([
+			"E1406: the engine's shaders that a pipeline needs did not download: 404 Not Found.",
+		]);
+		const now = spyOn(performance, 'now').mockImplementation(() => begin + FIRST_RETRY_MS + 1);
+		try {
+			expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+			expect(asked).toEqual(['sprites 0', 'sprites 0']);
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it('stops the drawing with the failed download in hold mode', async () => {
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, async () => {
 			throw new Error('404 Not Found');
 		});
 		const sprite = set.shaders.sprite;
 		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(() => set.ready(sprite, 0, 'wgsl')).toThrow(
-			'the engine could not download the shaders that a pipeline needs: 404 Not Found',
+			"E1406: the engine's shaders that a pipeline needs did not download: 404 Not Found.",
 		);
-		expect(asked).toEqual(['sprites 0']);
 	});
 
 	it("loads a feature's module once, the first time a pipeline asks for one of its shaders", async () => {

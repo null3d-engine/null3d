@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { PARTICLE_FRAME_FLOATS, PARTICLE_PARAM_FLOATS } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { linearColor } from './color';
+import { keptViews } from './kept-views';
 import { CoreMemory } from './memory';
 import { ParticleBuffer } from './particles';
 import type { Mesh } from './scene';
@@ -20,16 +21,26 @@ function buffer(capacity: number, additive = true) {
 		markParticleValues: () => marks.push([-1]),
 		destroyParticles: () => 0,
 	} as unknown as CoreGlue;
-	const core = new CoreMemory(glue, new WebAssembly.Memory({ initial: 2 }));
-	const object = {} as Mesh;
+	const memory = new WebAssembly.Memory({ initial: 2 });
+	const core = new CoreMemory(glue, memory);
+	const object = { scene: { particleBuffers: 1 }, destroy() {} } as unknown as Mesh;
 	const linear = (color: Parameters<typeof linearColor>[0]) => linearColor(color, 'test');
 	const particles = new ParticleBuffer(core, 1, capacity, object, additive, linear);
 	particles.reset({});
 	const values = core.f32(VALUES, PARTICLE_PARAM_FLOATS + PARTICLE_FRAME_FLOATS);
-	return { particles, marks, values, core };
+	return { particles, marks, values, core, memory };
 }
 
 describe('particle buffers', () => {
+	test('a destroyed buffer keeps no view of the memory after it grows', () => {
+		const { particles, core, memory } = buffer(8);
+		const old = memory.buffer;
+		particles.destroy();
+		memory.grow(1);
+		core.refresh();
+		expect(keptViews(particles, old)).toEqual([]);
+	});
+
 	test('a record keeps its birth, velocity, lifetime and seed, and marks run together', () => {
 		const { particles, marks } = buffer(8);
 		particles.write(2, [1, 2, 3, 4.5, -1, 0.5, 0, 1.75], 0x1234);

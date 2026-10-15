@@ -17,6 +17,7 @@ import {
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { withCallValues } from './fake-call-values';
+import { keptViews } from './kept-views';
 import { CoreMemory } from './memory';
 import { Geometry, Materials, type MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -202,6 +203,17 @@ describe('sprite batches', () => {
 		core.refresh();
 		expect(sprites.positions).not.toBe(before);
 		expect(sprites.positions.buffer).toBe(memory.buffer);
+	});
+
+	test('a destroyed batch keeps no view of the memory after it grows', () => {
+		const { core, makers, memory } = fakeCore();
+		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'blend', 'createSprites');
+		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls([]));
+		const old = sprites.positions.buffer;
+		sprites.destroy();
+		memory.grow(1);
+		core.refresh();
+		expect(keptViews(sprites, old)).toEqual([]);
 	});
 
 	test('row calls reach the instance batch, with markDirty defaulting to every sprite', () => {

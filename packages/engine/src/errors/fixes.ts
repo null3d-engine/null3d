@@ -115,7 +115,7 @@ export const ERROR_FIXES = {
 	E1423:
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
 	E1424:
-		'Deploy every file that the build wrote, the material-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.',
+		'Deploy every file that the build wrote, the material-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, the engine downloads the file again by itself.',
 	E1425:
 		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
 	E1431:

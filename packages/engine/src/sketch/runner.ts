@@ -23,7 +23,7 @@ import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
 import type { StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
-import { EngineError } from '../errors/engine-error';
+import { EngineError, errorOfMessage } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
 	LIGHT_VALUE_SHADOW_CASCADES,
@@ -107,6 +107,8 @@ export interface SketchCore {
 	sendBuilds: BuildsSender;
 	/** Answers each ask of the thread that draws for a set of a shader's builds. */
 	onAskBuilds(handler: BuildsAsker): void;
+	/** Hears why each file that the thread that draws loads on first use failed, as a coded message. */
+	onDrawingFailure(handler: (message: string) => void): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -409,7 +411,7 @@ export class SketchRunner {
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
 		// The page's own setting, which is not one of the preset's: it keeps the copies that bring
 		// each texture's map back after the GPU is lost.
-		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies === true ? 1 : 0);
+		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies ? 1 : 0);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(
@@ -425,6 +427,7 @@ export class SketchRunner {
 				: undefined;
 		const { governor } = this;
 		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
+		const fogSlices = () => this.fogSetting >> governor.fogHalvings;
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(update, changed) => {
@@ -456,6 +459,9 @@ export class SketchRunner {
 				get farAnimationInterval() {
 					return governor.animationInterval;
 				},
+				get fogSlices() {
+					return fogSlices();
+				},
 			},
 			textures.memory,
 		);
@@ -478,8 +484,12 @@ export class SketchRunner {
 			device.webgl2 ? 'glsl' : 'wgsl',
 			sketch.sendBuilds,
 			device.shaderBits & (PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP),
+			(error) => scene.reportLater(error),
 		);
 		sketch.onAskBuilds((template, set) => templates.answer(template, set));
+		sketch.onDrawingFailure((message) =>
+			scene.reportLater(errorOfMessage(message) ?? new Error(message)),
+		);
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
@@ -1114,10 +1124,10 @@ export class SketchRunner {
 			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
-			const tablesFailure = this.context.scene.takeAreaTablesFailure();
-			if (tablesFailure) this.report(tablesFailure);
-			const imageFailure = this.context.scene.takeImageFailure();
-			if (imageFailure) this.report(imageFailure);
+			// Loads on first use that failed since the frame before, as the area lights' tables.
+			const { scene } = this.context;
+			for (let failure = scene.takeFailure(); failure !== undefined; failure = scene.takeFailure())
+				this.report(failure);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {
