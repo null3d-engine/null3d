@@ -1,7 +1,8 @@
 // Pre-push guard for pushes to main (D-157's addendum of 15 October 2026). A push to any other
 // branch only saves work, so it runs nothing. A push to main first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
-//      the push up to the push, as CI's `commits` job does;
+//      the push up to the push, as CI's `commits` job does, and their merges, with check-merges.ts,
+//      which refuses a merge that carries new work;
 //   2. when the push changes Rust code or Cargo settings, `cargo check --workspace`, since a merge
 //      that keeps both sides of a struct or a constant often looks valid until it compiles;
 //   3. then the tests of each crate that the push changes, through cargo-nextest's `ci` profile with
@@ -106,6 +107,11 @@ export function plan(
 			why: 'the commits that the push adds to main must carry their trailers',
 			lane: 'QUICK',
 			command: ['bun', 'tools/hooks/check-trailers.ts', range],
+		},
+		{
+			why: 'a merge commit that the push adds to main must hold only resolutions and mechanical fixes',
+			lane: 'QUICK',
+			command: ['bun', 'tools/hooks/check-merges.ts', range],
 		},
 	];
 	if (!touchesRust([...files])) return steps;
