@@ -1133,6 +1133,48 @@ fn each_library_module_builds_every_function_for_webgpu_and_webgl2() {
 }
 
 #[test]
+fn the_library_test_numbers_its_cases_once_each_without_a_gap() {
+    // The page draws each case over the row of its number and compares it with the reference of
+    // the same number, so the numbers must be 0..N-1, each once. Two modules can take one number
+    // without a build noticing, since each variant enables one module, and the reference table's
+    // size check cannot see a repeat either: a case that replaces another leaves the count of
+    // numbers alone.
+    let path = format!("{}/wgsl/test_library.wgsl", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let start = text
+        .find("\nfn run(")
+        .expect("the library test's run function");
+    let run = &text[start..];
+    let run = &run[..run.find("\n        default:").expect("the default case")];
+
+    let mut numbers = Vec::new();
+    for line in run.lines() {
+        let Some(rest) = line.strip_prefix("        case ") else {
+            continue;
+        };
+        let Some((number, tail)) = rest.split_once('u') else {
+            continue;
+        };
+        if !tail.starts_with(": {") {
+            continue;
+        }
+        numbers.push(
+            number
+                .parse::<u32>()
+                .unwrap_or_else(|e| panic!("the case number `{number}`: {e}")),
+        );
+    }
+    let count = numbers.len();
+    assert!(count > 100, "only {count} cases were found in {path}");
+    numbers.sort_unstable();
+    let expected: Vec<u32> = (0..count as u32).collect();
+    assert_eq!(
+        numbers, expected,
+        "each case number must be used exactly once, with no gap"
+    );
+}
+
+#[test]
 fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     let source = "#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    let math = 2.0;\n    return vec4f(math);\n}\n";
     let problem = only_problem(build_wgsl(source));

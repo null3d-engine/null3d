@@ -769,7 +769,9 @@ impl<'a> Lower<'a> {
                     .ok_or_else(|| self.refuse("a struct value with a missing member"))?;
                 self.leaf_value(component, &path[1..])
             }
-            Expression::AccessIndex { base, index } => {
+            // The index of a member of a structure. An element of an array is not a member, so a
+            // step into one stays a plain access and the `_` arm adds the member below it.
+            Expression::AccessIndex { base, index } if self.kind(base).is_some() => {
                 let mut full = vec![index];
                 full.extend_from_slice(path);
                 self.leaf_value(base, &full)
@@ -820,7 +822,9 @@ impl<'a> Lower<'a> {
                 let leaf = self.leaf_local(local, path);
                 Ok(self.push(Expression::LocalVariable(leaf)))
             }
-            Expression::AccessIndex { base, index } => {
+            // The index of a member of a structure. An element of an array is not a member, so a
+            // step into one stays a plain access and the `_` arm adds the member below it.
+            Expression::AccessIndex { base, index } if self.kind(base).is_some() => {
                 let mut full = vec![index];
                 full.extend_from_slice(path);
                 self.leaf_pointer(base, &full)
