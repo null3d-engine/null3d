@@ -85,7 +85,7 @@ The terrain carries no collision. Read `heightAt(x, z)` and `normalAt(x, z, out)
 
 ## Speed
 
-A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, whatever the camera does. A block splits or merges only when the camera crosses a cell. A block that the view leaves is destroyed only when the count passes `maxBlocks`.
+A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, whatever the camera does. A block splits or merges only when the camera crosses a cell. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them, and its frame path allocates nothing.
 
 A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules, so its surface function compiles into the project's shaders and loads with them.
 
