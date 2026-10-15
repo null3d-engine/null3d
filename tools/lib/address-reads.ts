@@ -24,7 +24,7 @@ export interface AddressReadProblem {
 const SIGNED_ARRAYS = new Set(['Int32Array']);
 /** A slot constant that holds an address: a name ending in `Address`, with an optional parity. */
 const ADDRESS_TOKEN = /[A-Za-z_$][A-Za-z0-9_$]*Address\d*/;
-/** The loop that reads one value from an array without the `Atomics` object. */
+/** The name of the `Atomics` method that reads one value from a shared array. */
 const ATOMICS_LOAD = 'load';
 
 /** True when `node`'s type, less null and undefined, is a signed 32-bit typed array. */

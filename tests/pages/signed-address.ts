@@ -7,6 +7,7 @@
 // control slots. It then draws and stops the engine, which ends the job workers through the wake
 // and stop addresses.
 import { createEngine, EngineError } from '@null3d/engine';
+import * as Slot from '../../packages/engine/src/shared/slot';
 import { progress, run } from './lib/result';
 
 /** The memory's maximum that the page asks for, in MiB: the largest a page may ask for (D-04). */
@@ -17,17 +18,13 @@ const GROW_TO_MIB = 2052;
 const PAGE_BYTES = 65_536;
 /** The hidden batches the sketch makes to fill the engine's low heap. */
 const BATCHES = 250;
-/** The draw list addresses in the control slots, by frame parity (`shared/slot.ts`). */
-const DRAW_LIST_ADDRESS0 = 9;
-const DRAW_LIST_ADDRESS1 = 10;
-/** The words of each draw list, by frame parity. */
-const DRAW_LIST_WORDS0 = 11;
-/** The frame the renderer drew last. */
-const FRAME_PRESENTED = 8;
 /** The address at or above which a signed 32-bit read is negative. */
 const SIGNED_LIMIT = 2 ** 31;
 /** How long the page waits for the draw list to move above 2 GiB. */
 const MOVE_TIMEOUT_MS = 40_000;
+/** The frames the renderer must draw after the draw list moved, and how long it may take. */
+const FRAMES_AFTER_MOVE = 3;
+const DRAW_TIMEOUT_MS = 20_000;
 /** How long the engine may take to stop. */
 const STOP_TIMEOUT_MS = 30_000;
 
@@ -41,7 +38,9 @@ interface SignedAddressResult extends Record<string, unknown> {
 	/** The words of the draw list that the page read last. */
 	drawListWords?: number;
 	made?: number;
-	/** The frame the renderer drew last, which the page read from the control slots. */
+	/** The frame the renderer had drawn when the draw list moved, from the control slots. */
+	presentedAtMove?: number;
+	/** The frame the renderer drew last before the stop, from the control slots. */
 	presented?: number;
 	stopMs?: number;
 	failures?: string[];
@@ -151,13 +150,13 @@ run('signed-address', async (): Promise<SignedAddressResult> => {
 	while (performance.now() < deadline) {
 		drawListAddress = Math.max(
 			drawListAddress,
-			Atomics.load(slots, DRAW_LIST_ADDRESS0) >>> 0,
-			Atomics.load(slots, DRAW_LIST_ADDRESS1) >>> 0,
+			Atomics.load(slots, Slot.DrawListAddress0) >>> 0,
+			Atomics.load(slots, Slot.DrawListAddress1) >>> 0,
 		);
 		drawListWords = Math.max(
 			drawListWords,
-			Atomics.load(slots, DRAW_LIST_WORDS0) >>> 0,
-			Atomics.load(slots, DRAW_LIST_WORDS0 + 1) >>> 0,
+			Atomics.load(slots, Slot.DrawListWords0) >>> 0,
+			Atomics.load(slots, Slot.DrawListWords1) >>> 0,
 		);
 		if (performance.now() - noted > 4_000) {
 			noted = performance.now();
@@ -168,15 +167,22 @@ run('signed-address', async (): Promise<SignedAddressResult> => {
 		if (drawListAddress >= SIGNED_LIMIT) break;
 		await sleep(25);
 	}
-	engine.postToSketch('stop');
 	progress(
 		`the draw list is ${drawListAddress} bytes, ${drawListWords} words, after ${made} objects`,
 	);
 
-	// The frames that the renderer drew from the moved list. A frame that failed to replay raises
-	// through `onFailure`, which `failures` collects. The frame counter needs no page measurement,
-	// which with a memory this size can hold a job worker's thread for a while.
-	const presented = Atomics.load(slots, FRAME_PRESENTED) >>> 0;
+	// The renderer must go on drawing from the moved list: the frame it drew last must move on. A
+	// frame that failed to replay raises through `onFailure`, which `failures` collects. The frame
+	// counter needs no page measurement, which with a memory this size can hold a job worker's
+	// thread for a while.
+	const framePresented = () => Atomics.load(slots, Slot.FramePresented) >>> 0;
+	const presentedAtMove = framePresented();
+	const drawDeadline = performance.now() + DRAW_TIMEOUT_MS;
+	while (framePresented() < presentedAtMove + FRAMES_AFTER_MOVE && performance.now() < drawDeadline)
+		await sleep(25);
+	engine.postToSketch('stop');
+	const presented = framePresented();
+	progress(`the renderer drew frame ${presented}, and frame ${presentedAtMove} at the move`);
 	const stopStart = performance.now();
 	await withTimeout(engine.destroy(), STOP_TIMEOUT_MS, 'the engine stop');
 	const stopMs = Math.round(performance.now() - stopStart);
@@ -187,6 +193,7 @@ run('signed-address', async (): Promise<SignedAddressResult> => {
 		drawListAddress,
 		drawListWords,
 		made,
+		presentedAtMove,
 		presented,
 		stopMs,
 		failures,

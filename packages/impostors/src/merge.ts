@@ -25,15 +25,18 @@ export interface FarPart {
 /** The attributes that a merge carries over, besides positions and indices. */
 const ATTRIBUTES = ['normals', 'uvs', 'uvs1', 'colors', 'tangents'] as const;
 
+/** The attributes that a merge copies as they are: none of them turns with the copy. */
+const COPIED = ['uvs', 'uvs1', 'colors'] as const;
+
 /** The identity transform, column-major, which a copy without one takes. */
 const IDENTITY: Mat4Like = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 /**
- * The inverse of a column-major matrix's upper left 3 by 3, written column-major into `out`. A
- * normal turns by its transpose, so `mergeFarGeometry` reads it that way. A matrix with no
- * inverse, such as a zero scale, writes its own upper left 3 by 3 instead.
+ * The inverse of a column-major matrix's upper left 3 by 3, written row-major into `out`, and the
+ * determinant. Read as column-major, `out` is the inverse's transpose, which turns normals. A
+ * matrix with no inverse, such as a zero scale, writes its own upper left 3 by 3 instead.
  */
-function inverse3(m: Mat4Like, out: number[]): void {
+function inverse3(m: Mat4Like, out: number[]): number {
 	const a00 = m[0] as number;
 	const a01 = m[4] as number;
 	const a02 = m[8] as number;
@@ -63,7 +66,7 @@ function inverse3(m: Mat4Like, out: number[]): void {
 		out[6] = a20;
 		out[7] = a21;
 		out[8] = a22;
-		return;
+		return det;
 	}
 	out[0] = b00 / det;
 	out[1] = b01 / det;
@@ -74,6 +77,7 @@ function inverse3(m: Mat4Like, out: number[]): void {
 	out[6] = b20 / det;
 	out[7] = b21 / det;
 	out[8] = b22 / det;
+	return det;
 }
 
 /** The numbers of one attribute, which a `VertexArray` wraps. Throws for normalized integers. */
@@ -106,7 +110,10 @@ function strideOf(attr: ArrayLike<number>, vertices: number, name: string): numb
  * vertex in every copy. An attribute that any copy lacks is left out of the result. Positions are
  * always carried, and indices are made for a copy that has none. A copy's normals turn by the
  * inverse transpose of its transform's upper left 3 by 3, as normals turn, so a stretched copy
- * keeps its shading. Throws a RangeError for arrays that do not fit together.
+ * keeps its shading. Its tangents turn by the upper left 3 by 3 itself. A mirrored copy, whose
+ * transform has a negative determinant, gets its triangles' winding reversed and its tangents'
+ * fourth number negated, so its front faces stay outward and its normal map keeps its sense.
+ * Throws a RangeError for arrays that do not fit together.
  *
  * @category api/impostors
  */
@@ -168,6 +175,10 @@ export function mergeFarGeometry(parts: readonly FarPart[]): MeshArrays {
 	const outputs: { [name: string]: Float32Array | undefined } = {};
 	for (const name of ATTRIBUTES) {
 		if (name === 'normals' || (carried[name] as unknown[]).length !== count) continue;
+		if (name === 'tangents' && strides[name] !== 4)
+			throw new RangeError(
+				`mergeFarGeometry() got tangents with ${strides[name]} numbers per vertex; tangents take 4.`,
+			);
 		const stride = strides[name] as number;
 		const array = new Float32Array(totalVertices * stride);
 		outputs[name] = array;
@@ -181,7 +192,10 @@ export function mergeFarGeometry(parts: readonly FarPart[]): MeshArrays {
 		const m = transform ?? IDENTITY;
 		const position = positions[k] as ArrayLike<number>;
 		const n = vertices[k] as number;
-		inverse3(m, inverse);
+		const mirrored = inverse3(m, inverse) < 0;
+		const tangents = outputs.tangents
+			? ((carried.tangents as ArrayLike<number>[])[k] as ArrayLike<number>)
+			: undefined;
 		for (let i = 0; i < n; i++) {
 			const x = position[i * 3] as number;
 			const y = position[i * 3 + 1] as number;
@@ -209,7 +223,23 @@ export function mergeFarGeometry(parts: readonly FarPart[]): MeshArrays {
 				normalsOut[at + 1] = ty / length;
 				normalsOut[at + 2] = tz / length;
 			}
-			for (const name of ['uvs', 'uvs1', 'colors', 'tangents'] as const) {
+			if (tangents) {
+				const tangentsOut = outputs.tangents as Float32Array;
+				const tx = tangents[i * 4] as number;
+				const ty = tangents[i * 4 + 1] as number;
+				const tz = tangents[i * 4 + 2] as number;
+				const ux = (m[0] as number) * tx + (m[4] as number) * ty + (m[8] as number) * tz;
+				const uy = (m[1] as number) * tx + (m[5] as number) * ty + (m[9] as number) * tz;
+				const uz = (m[2] as number) * tx + (m[6] as number) * ty + (m[10] as number) * tz;
+				const length = Math.hypot(ux, uy, uz) || 1;
+				const at4 = (vertexAt + i) * 4;
+				tangentsOut[at4] = ux / length;
+				tangentsOut[at4 + 1] = uy / length;
+				tangentsOut[at4 + 2] = uz / length;
+				const w = tangents[i * 4 + 3] as number;
+				tangentsOut[at4 + 3] = mirrored ? -w : w;
+			}
+			for (const name of COPIED) {
 				const array = outputs[name];
 				if (!array) continue;
 				const stride = strides[name] as number;
@@ -218,22 +248,23 @@ export function mergeFarGeometry(parts: readonly FarPart[]): MeshArrays {
 					array[(vertexAt + i) * stride + c] = values[i * stride + c] as number;
 			}
 		}
+		// A mirrored copy swaps the last two corners of each triangle, which reverses its winding.
 		const index = indices[k];
-		if (index) {
-			for (let i = 0; i < index.length; i++)
-				indicesOut[indexAt + i] = (index[i] as number) + vertexAt;
-			indexAt += index.length;
-		} else {
-			for (let i = 0; i < n; i++) indicesOut[indexAt + i] = vertexAt + i;
-			indexAt += n;
+		const corners = index ? index.length : n;
+		for (let i = 0; i < corners; i++) {
+			const within = i % 3;
+			const swap = mirrored && within !== 0 && i - within + 2 < corners;
+			const corner = swap ? (within === 1 ? i + 1 : i - 1) : i;
+			indicesOut[indexAt + i] = (index ? (index[corner] as number) : corner) + vertexAt;
 		}
+		indexAt += corners;
 		vertexAt += n;
 	}
 	return out;
 }
 
 /**
- * Groups copies by the grid cell of their centres: the cell a centre falls in is its position
+ * Groups copies by the grid cell of their centers: the cell a center falls in is its position
  * divided by `cellSize` and rounded down, along each axis. Merge each group into one mesh, so a
  * large world draws a few meshes instead of one per copy. Centers that share a cell, in the order
  * they were given, come back as one list.
