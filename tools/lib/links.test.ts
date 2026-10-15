@@ -9,6 +9,7 @@ import {
 	isOwnRepoUrl,
 	isSkippedExternalUrl,
 	linkedFiles,
+	linkTargetExists,
 	selfRepoPath,
 	slugifyHeading,
 	stripCode,
@@ -100,6 +101,19 @@ describe('target classification', () => {
 		expect(classifyExternalStatus(302)).toBe('ok');
 		expect(classifyExternalStatus(403)).toBe('unreachable');
 		expect(classifyExternalStatus(503)).toBe('unreachable');
+	});
+});
+
+describe('linkTargetExists', () => {
+	it('accepts a page that exists, and one that git ignores because a generator writes it', () => {
+		expect(linkTargetExists(repoRoot, 'README.md')).toBe(true);
+		// An ignored path is one the repository does not keep, so its absence proves nothing: a
+		// generated page is missing until the generators run.
+		expect(linkTargetExists(repoRoot, '.internal/never-written.md')).toBe(true);
+	});
+
+	it('rejects a page that is neither present nor generated', () => {
+		expect(linkTargetExists(repoRoot, 'docs/guides/no-such-page.md')).toBe(false);
 	});
 });
 
