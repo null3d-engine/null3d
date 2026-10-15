@@ -73,6 +73,14 @@ function woodTexture(textures: Textures) {
 	});
 }
 
+/** Fine grit for a pixel's place, from 0 to 1, in integer math so every machine draws it alike. */
+function gritAt(x: number, y: number) {
+	let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1);
+	h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+	h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+	return ((h ^ (h >>> 15)) >>> 8) / 16777216;
+}
+
 /** A plaster wall's texture in sRGB: warm grey with soft blotches and fine grit. */
 function plasterTexture(textures: Textures) {
 	const size = 256;
@@ -80,8 +88,7 @@ function plasterTexture(textures: Textures) {
 	for (let y = 0; y < size; y++)
 		for (let x = 0; x < size; x++) {
 			const blotch = Math.sin(x * 0.05 + Math.sin(y * 0.04) * 2) * Math.sin(y * 0.06 + x * 0.01);
-			const grit = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-			const shade = 0.82 + 0.1 * blotch + 0.06 * (grit - Math.floor(grit));
+			const shade = 0.82 + 0.1 * blotch + 0.06 * gritAt(x, y);
 			data.set([150 * shade, 124 * shade, 102 * shade, 255], (y * size + x) * 4);
 		}
 	return textures.fromData({

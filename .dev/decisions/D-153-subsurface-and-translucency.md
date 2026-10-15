@@ -92,6 +92,7 @@ The `subsurface` demo shows wax, jade and soap by candlelight. Its first looks h
 - **A light inside each lit candle.** A flame's light enters the pool of melted wax and leaves through the wall, brightest just under the flame. A small shadowless point light inside the candle, at a fifth of the flame's intensity and with a range of 12 cm, stands for it. The wax's diffuse transmission lets it through the wall, and the blur reddens it with depth. The unlit candle glows only from the others' light.
 - **Exposure 0.25.** The flames' lights sit 4 cm above the wax, so the wax under them takes far more light than the rest. At an exposure of 2.2, the tone curve turned the upper half of each candle white. At 0.25, the wax keeps its amber color, and the falloff down each candle shows.
 - **The soap egg lets 35% of its light through**, so its dark side glows a little. The room has a plaster wall close behind the candles, so their light fades across it.
+- **The wall's grain comes from an integer hash** of each pixel's place. The first version took the fraction of a large sine, which each machine works out its own way, and the repository's rule against sine hashes forbids it in code that ships.
 
 ## Data
 
