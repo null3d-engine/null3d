@@ -1,11 +1,17 @@
 // The chunked level of detail: a quadtree over the height field that keeps the ground near the
 // camera at its finest and coarser blocks farther away. The selection is pure: it writes the
-// leaves it picks into flat arrays, so a frame that moves the camera allocates nothing.
+// leaves it picks into flat arrays, which grow only when a selection picks more leaves than any
+// before it, so a frame that moves the camera allocates nothing.
 
-/** The most leaves one selection may pick. A quadtree of 15 levels over any ground picks fewer. */
-export const MAX_NODES = 4096;
+/** The leaves that the arrays hold at first. */
+const FIRST_NODES = 1024;
 /** The most levels a terrain may take, so a leaf's key fits in a number. */
 export const MAX_LEVELS = 15;
+/**
+ * The largest split distance. At 15 levels it picks about 8,000 leaves; a larger one picks every
+ * leaf of the finest levels over a wide ring, far more blocks than a frame can draw.
+ */
+export const MAX_SPLIT = 8;
 
 /** The settings of the quadtree. */
 export interface QuadtreeOptions {
@@ -15,8 +21,8 @@ export interface QuadtreeOptions {
 	maxLevel: number;
 	/**
 	 * How far from a block's edge the camera may stand and still split it, as a multiple of the
-	 * block's size. A larger value keeps detail farther out and picks more leaves. The default is
-	 * 2.
+	 * block's size, above 0 and up to 8. A larger value keeps detail farther out and picks more
+	 * leaves. The default is 2.
 	 */
 	split?: number;
 }
@@ -34,11 +40,11 @@ export class Quadtree {
 	/** The split distance, as a multiple of a block's size. */
 	readonly split: number;
 	/** The level of each picked leaf. */
-	readonly levels = new Int32Array(MAX_NODES);
+	levels = new Int32Array(FIRST_NODES);
 	/** The column of each picked leaf among the leaves of its level. */
-	readonly columns = new Int32Array(MAX_NODES);
+	columns = new Int32Array(FIRST_NODES);
 	/** The row of each picked leaf among the leaves of its level. */
-	readonly rows = new Int32Array(MAX_NODES);
+	rows = new Int32Array(FIRST_NODES);
 	/** How many leaves the last selection picked. */
 	count = 0;
 
@@ -51,8 +57,10 @@ export class Quadtree {
 			throw new Error(
 				`a quadtree got the maxLevel ${maxLevel}, which is not a whole number from 0 to ${MAX_LEVELS}.`,
 			);
-		if (!(split > 0) || !Number.isFinite(split))
-			throw new Error(`a quadtree got the split ${split}, which is not a positive number.`);
+		if (!(split > 0 && split <= MAX_SPLIT))
+			throw new Error(
+				`a quadtree got the split ${split}, which is not a number above 0 and up to ${MAX_SPLIT}.`,
+			);
 		this.size = size;
 		this.maxLevel = maxLevel;
 		this.split = split;
@@ -80,8 +88,8 @@ export class Quadtree {
 
 	/**
 	 * Picks the leaves to draw for a camera at `x` and `z`, into the arrays. Returns the count,
-	 * which `count` also holds. Two calls with the same arguments pick the same leaves, and a call
-	 * allocates nothing.
+	 * which `count` also holds. Two calls with the same arguments pick the same leaves. A call
+	 * allocates only when it picks more leaves than the arrays hold, and then grows them.
 	 */
 	select(x: number, z: number): number {
 		const count = this.visit(0, 0, 0, x, z, 0);
@@ -116,9 +124,24 @@ export class Quadtree {
 			written += this.visit(next, column * 2 + 1, row * 2 + 1, x, z, at + written);
 			return written;
 		}
+		if (at >= this.levels.length) this.grow();
 		this.levels[at] = level;
 		this.columns[at] = column;
 		this.rows[at] = row;
 		return 1;
+	}
+
+	/** Doubles the arrays, keeping the leaves picked so far. */
+	private grow(): void {
+		const size = this.levels.length * 2;
+		const levels = new Int32Array(size);
+		const columns = new Int32Array(size);
+		const rows = new Int32Array(size);
+		levels.set(this.levels);
+		columns.set(this.columns);
+		rows.set(this.rows);
+		this.levels = levels;
+		this.columns = columns;
+		this.rows = rows;
 	}
 }

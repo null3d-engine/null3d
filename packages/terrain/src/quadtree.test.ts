@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_LEVELS, Quadtree } from './quadtree';
+import { MAX_LEVELS, MAX_SPLIT, Quadtree } from './quadtree';
 
 /** The leaves of a selection, as `[level, column, row]` triples. */
 function leaves(tree: Quadtree, x: number, z: number): [number, number, number][] {
@@ -66,6 +66,22 @@ describe('quadtree', () => {
 	test('refuses a size, a level or a split that does not fit', () => {
 		expect(() => new Quadtree({ size: -1, maxLevel: 3 })).toThrow(/positive/);
 		expect(() => new Quadtree({ size: 1, maxLevel: MAX_LEVELS + 1 })).toThrow(/whole number/);
-		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: -1 })).toThrow(/positive/);
+		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: -1 })).toThrow(/above 0/);
+		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: MAX_SPLIT + 0.5 })).toThrow(
+			`up to ${MAX_SPLIT}`,
+		);
+	});
+
+	test('a selection larger than the arrays grows them and keeps every leaf', () => {
+		// A wide split at many levels picks thousands of leaves.
+		const tree = new Quadtree({ size: 10_000, maxLevel: MAX_LEVELS, split: 6 });
+		const picked = leaves(tree, 1, 1);
+		expect(picked.length).toBeGreaterThan(4096);
+		let area = 0;
+		for (const [level, column, row] of picked) {
+			expect(Number.isInteger(column) && Number.isInteger(row)).toBe(true);
+			area += tree.blockSize(level) ** 2;
+		}
+		expect(area / 10_000 ** 2).toBeCloseTo(1, 9);
 	});
 });
