@@ -51,11 +51,12 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
-in a landing, so keep the count down. Every build cache lives under one root, `~/.cache/null3d` by
-default, each in a named subfolder: `shader-modules`, `shader-cache`, `wasm-artifacts` and, when
-sccache is installed, `sccache`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache
-variables still name one folder. Clearing the root is always safe, because every entry is a pure
-function of its inputs, so re-checking a branch on a moved main is cheap.
+in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
+`XDG_CACHE_HOME` or `~/.cache/null3d`, each in a named subfolder: `shader-modules`, `shader-cache`,
+`wasm-artifacts`, `samples`, `gpu-check-baselines` and, when sccache is installed, `sccache`.
+`NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still name one folder.
+Clearing the root is always safe, because every entry is a pure function of its inputs, so re-checking
+a branch on a moved main is cheap.
 [D-176](decisions/D-176-wasm-artifact-cache.md) and
 [D-177](decisions/D-177-build-cache-module.md) give the keys, and
 [Benchmarks](benchmarks.md#build-caches) the figures.
@@ -63,9 +64,15 @@ function of its inputs, so re-checking a branch on a moved main is cheap.
 - `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
   landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
 - A cache is used only when its entry is whole. The shader modules cache, for example, requires every
-  module that `shaders.ts` loads, from its imports and the device module names its tables hold. A set
-  that misses one is a miss, so the build runs again rather than reporting "up to date" while a file is
-  absent.
+  module that `shaders.ts` loads, from its imports and the device module names its tables hold, and a
+  record that names the bytes of each of them. A set that misses one, or holds a file with other bytes
+  than its record, is a miss, so the build runs again rather than reporting "up to date" while a file
+  is absent or half written.
+- Each cache prunes itself: while it holds more than 4 GiB it removes its least recently used entries,
+  and an entry used within the last two hours stays, because another checkout's build may be reading
+  it. A cache key names every input of the build, including the build's own code, and a build hashes
+  its inputs again before it stores anything, so an edit that lands while a build runs is never stored
+  under the key of the state before it.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
   output in a folder of its own, named for the build's process, and Cargo locks a target folder while

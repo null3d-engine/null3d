@@ -7,20 +7,20 @@
 //   bun tools/shaders.ts --cache-keys >> "$GITHUB_OUTPUT"
 import { join } from 'node:path';
 import {
-	CACHE_DIR,
 	compilerStamp,
-	ENTRY_CACHE_DIR,
 	ensureShaderModules,
+	entryCacheDir,
 	inputHash,
 	MODULE_DIR,
+	modulesCacheDir,
 } from './lib/shader-modules';
 
 const root = join(import.meta.dirname, '..');
 
 try {
 	if (process.argv.includes('--cache-keys')) {
-		console.log(`modules-dir=${CACHE_DIR}`);
-		console.log(`entries-dir=${ENTRY_CACHE_DIR}`);
+		console.log(`modules-dir=${modulesCacheDir()}`);
+		console.log(`entries-dir=${entryCacheDir()}`);
 		console.log(`inputs=${inputHash(root)}`);
 		console.log(`stamp=${compilerStamp(root)}`);
 	} else if (!ensureShaderModules(root))
