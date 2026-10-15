@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { checkDocsStyle, isTitleCase } from './docs-style';
+import { checkDocsStyle, checkSubject, isTitleCase } from './docs-style';
 
 const rules = (md: string) => checkDocsStyle(md).map((f) => `${f.severity}:${f.rule}:${f.line}`);
 
@@ -145,5 +145,33 @@ describe('British spellings', () => {
 		expect(rules('| `altitude` | The height in metres |')).toEqual(['warning:british_spelling:1']);
 		expect(rules('The camera-centred quadtree.')).toEqual(['warning:british_spelling:1']);
 		expect(rules('The walls are colored, 3 meters high, `colour` in code.')).toEqual([]);
+	});
+});
+
+describe('checkSubject', () => {
+	const subjectRules = (subject: string) =>
+		checkSubject(subject).map((f) => `${f.severity}:${f.rule}`);
+
+	it("blocks the maintainers' references, which release-notes readers cannot look up", () => {
+		for (const subject of [
+			'feat(examples): the EX8 HUD follow-ups',
+			'docs(decisions): record D-174, the Apple GPU path',
+			'feat(bench): time S6 with culling off, for T-36',
+			"docs(dev): record M2's smoke run",
+			'chore(m2): record the material build sets',
+		])
+			expect(subjectRules(subject)).toEqual(['error:internal_reference']);
+		expect(subjectRules('feat(examples): finish M2-EX8')).toEqual(['error:build_process']);
+	});
+
+	it('lets chips, phones, formats, error codes and scenes through', () => {
+		for (const subject of [
+			'perf(engine): win back time on the MacBook Pro M5 Max and the Apple M4',
+			'fix(engine): read every L1 coefficient',
+			'docs(dev): record the Tab A9+ and the M32 runs',
+			'feat(engine): load KTX2 files, and report E1405',
+			'feat(bench): time S6 on the S25',
+		])
+			expect(subjectRules(subject)).toEqual([]);
 	});
 });

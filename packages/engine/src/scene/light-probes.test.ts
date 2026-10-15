@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test';
+import { setErrorFixes } from '../errors/engine-error';
+import { ERROR_FIXES } from '../errors/fixes';
+import * as C from '../generated/core';
+import { Environment } from './environment';
 import { toHalfFloat } from './half-float';
 import {
+	bakeProbes,
 	FEWEST_PROBES,
 	fibonacciDirections,
 	gridBytes,
@@ -8,8 +13,13 @@ import {
 	l1Irradiance,
 	PROBE_FLOATS,
 	packProbes,
+	SceneLightProbeGrid,
 	sampleGrid,
 } from './light-probes';
+import type { CoreMemory } from './memory';
+import type { RaycastBatchHits } from './queries';
+import type { Scene } from './scene';
+import type { Texture, Textures } from './textures';
 
 test('fibonacci directions are unit length and spread evenly', () => {
 	const count = 64;
@@ -200,4 +210,148 @@ test('the grid interpolates the light between two probes', () => {
 test('the byte count is 24 per probe plus the padding slices', () => {
 	expect(gridBytes([2, 2, 2])).toBe(2 * 2 * 12 * 8);
 	expect(gridBytes([16, 4, 16])).toBe(16 * 4 * (3 * 18) * 8);
+});
+
+test('the documented bake passes its grid to the grid setter as it is, and spaces probes by meters', () => {
+	setErrorFixes(ERROR_FIXES);
+	// A scene whose rays all reach the sky, and a core that records the grid's values.
+	const scene = {
+		raycastBatch(_rays: Float32Array, _options: unknown, hits: RaycastBatchHits) {
+			hits.distances.fill(-1);
+		},
+	} as unknown as Scene;
+	const block = new Float32Array(C.LIGHT_PROBE_VALUE_COUNT);
+	const handles: number[] = [];
+	const core = {
+		generation: 0,
+		f32: () => block,
+		check: (status: number) => status,
+		glue: {
+			lightProbeValues: () => 0,
+			setLightProbeGrid(texture: number) {
+				handles.push(texture);
+				return 0;
+			},
+		},
+		holdViews: () => {},
+	} as unknown as CoreMemory;
+	const textures = { fromData: () => ({ handle: 5 }) as unknown as Texture } as unknown as Textures;
+	const sh = new Float32Array(27);
+	sh[0] = 1;
+	// The calls of the scene page's bake example.
+	const grey = [0.8, 0.8, 0.8] as const;
+	const bake = bakeProbes(scene, {
+		box: { min: [-12, 0, -12], max: [12, 8, 12] },
+		spacing: [1, 2, 1],
+		environment: environmentOf(sh),
+		albedo: () => grey,
+	});
+	let baking = true;
+	for (let frame = 0; frame < 10000 && baking; frame++) if (bake.step(4096)) baking = false;
+	expect(baking).toBe(false);
+	const grid = bake.grid;
+	expect(grid.counts).toEqual([25, 5, 25]);
+	new SceneLightProbeGrid(core).set({
+		texture: grid.toTexture(textures),
+		origin: grid.origin,
+		spacing: grid.spacing,
+		counts: grid.counts,
+	});
+	expect(handles).toEqual([5]);
+	const at = (offset: number) => Array.from(block.subarray(offset, offset + 3));
+	expect(at(C.LIGHT_PROBE_VALUE_ORIGIN)).toEqual([-12, 0, -12]);
+	expect(at(C.LIGHT_PROBE_VALUE_SPACING)).toEqual([1, 2, 1]);
+	expect(at(C.LIGHT_PROBE_VALUE_COUNTS)).toEqual([25, 5, 25]);
+	// The development check still refuses a value that is not three finite numbers.
+	expect(() =>
+		new SceneLightProbeGrid(core).set({
+			texture: grid.toTexture(textures),
+			origin: new Float32Array([0, Number.NaN, 0]),
+			spacing: grid.spacing,
+			counts: grid.counts,
+		}),
+	).toThrow('E1203');
+});
+
+/** An environment whose diffuse light has the nine RGB coefficients `sh`. */
+function environmentOf(sh: Float32Array): Environment {
+	return new Environment({ handle: 1 } as unknown as Texture, 1, 1, 'rgb9e5ufloat', sh);
+}
+
+/**
+ * Bakes one probe at the origin with 1024 directions, in a scene whose rays all reach the sky,
+ * or all hit a surface 1 m away when `albedo` is given. Gives the probe's irradiance at a normal.
+ */
+function bakeOne(
+	sh: Float32Array,
+	options: { intensity?: number; rotation?: [number, number, number]; albedo?: number } = {},
+): (x: number, y: number, z: number) => number[] {
+	const scene = {
+		raycastBatch(_rays: Float32Array, _options: unknown, hits: RaycastBatchHits) {
+			hits.distances.fill(options.albedo === undefined ? -1 : 1);
+			const normals = hits.normals as Float32Array;
+			normals.fill(0);
+			for (let s = 0; s < hits.distances.length; s++) normals[s * 3 + 1] = 1;
+		},
+	} as unknown as Scene;
+	const albedo = options.albedo;
+	const colour = [albedo ?? 0, albedo ?? 0, albedo ?? 0] as const;
+	const grid = bakeProbes(scene, {
+		box: { min: [0, 0, 0], max: [0.01, 0.01, 0.01] },
+		samples: 1024,
+		environment: environmentOf(sh),
+		environmentOptions: { intensity: options.intensity, rotation: options.rotation },
+		albedo: albedo === undefined ? undefined : () => colour,
+	}).finish();
+	const out = new Float32Array(3);
+	return (x, y, z) => {
+		l1Irradiance(grid.coefficients, 0, x, y, z, out);
+		return Array.from(out);
+	};
+}
+
+const AXES = [
+	[1, 0, 0],
+	[-1, 0, 0],
+	[0, 1, 0],
+	[0, -1, 0],
+	[0, 0, 1],
+	[0, 0, -1],
+] as const;
+
+test("a probe under an open uniform sky takes the environment's own irradiance", () => {
+	const sh = new Float32Array(27);
+	sh.set([1, 2, 3]);
+	const probe = bakeOne(sh);
+	// The environment's irradiance at any normal: its L0 coefficient times pi times Y00.
+	for (const [x, y, z] of AXES) {
+		const [r, g, b] = probe(x, y, z) as [number, number, number];
+		expect(r).toBeCloseTo(0.886227, 2);
+		expect(g).toBeCloseTo(2 * 0.886227, 2);
+		expect(b).toBeCloseTo(3 * 0.886227, 2);
+	}
+});
+
+test("a probe takes a directional sky's L1 light, turned and scaled as the scene's environment", () => {
+	// Light from +x: the L0 term and the L1 term along x.
+	const sh = new Float32Array(27);
+	sh.fill(1, 0, 3);
+	sh.fill(1, 9, 12);
+	const plain = bakeOne(sh);
+	expect(plain(1, 0, 0)[0]).toBeCloseTo(0.886227 + 1.023328, 2);
+	expect(plain(-1, 0, 0)[0]).toBeCloseTo(0.886227 - 1.023328, 2);
+	expect(plain(0, 1, 0)[0]).toBeCloseTo(0.886227, 2);
+	// A quarter turn about y turns the map's +x toward the world's -z, and intensity 2 doubles it.
+	const turned = bakeOne(sh, { intensity: 2, rotation: [0, Math.PI / 2, 0] });
+	expect(turned(0, 0, -1)[0]).toBeCloseTo(2 * (0.886227 + 1.023328), 2);
+	expect(turned(0, 0, 1)[0]).toBeCloseTo(2 * (0.886227 - 1.023328), 2);
+	expect(turned(1, 0, 0)[0]).toBeCloseTo(2 * 0.886227, 2);
+});
+
+test("a probe enclosed by matte surfaces takes their albedo times the sky's irradiance", () => {
+	const sh = new Float32Array(27);
+	sh.fill(1, 0, 3);
+	const probe = bakeOne(sh, { albedo: 0.5 });
+	// Each wall sends back albedo * E / pi, which the probe turns into albedo * E again.
+	for (const [x, y, z] of AXES) expect(probe(x, y, z)[0]).toBeCloseTo(0.5 * 0.886227, 2);
 });

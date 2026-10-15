@@ -1,9 +1,9 @@
 name: Release Publish
 
 # Runs when a release pull request (branch release/<version>, opened by release.yml) merges. It
-# tags the plain version on a commit that adds every generated file to the merge commit, publishes
-# a GitHub Release whose notes are that version's CHANGELOG.md section, then publishes every package
-# that is not private to npm. Main keeps no generated file (D-105), and the tagged commit holds them
+# tags the plain version on a commit that adds every generated file to the release branch's commit,
+# publishes a GitHub Release whose notes are that version's CHANGELOG.md section, then publishes
+# every package that is not private to npm. Main keeps no generated file (D-105), and the tagged commit holds them
 # for what reads the release from git: the Claude Code plugin, `skills add` and the docs on GitHub.
 
 on:
@@ -37,7 +37,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          # The release branch's commit, not the merge: a commit that reached main after the
+          # release branch was cut is in neither this release nor its notes, so the next release
+          # lists it.
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           fetch-tags: true
       - uses: oven-sh/setup-bun@v2
@@ -62,8 +65,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # The tagged commit's parent is the merge commit on main, so the next release's changelog
-          # still starts after it.
+          # The tagged commit's parent is the release branch's commit, whose parent is on main, so
+          # the next release's notes start after the released commit.
           bun tools/generate.ts --stage
           git commit -m "chore(release): ${version} with its generated files"
           git tag -a "$version" -m "Release ${version}"
