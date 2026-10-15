@@ -83,3 +83,10 @@ The owner asked for three follow-ups the same day, after reviewing the night tow
   open on the look they approved, so each of those three effects starts off, its HUD button starts
   unpressed, and turning it on shows `bloom: on` and the like. The initial `post` settings match the
   off state, so no `post.set` turns bloom on at setup.
+
+## Addendum: the lens key goes, and the stage keeps the switches (15 October 2026)
+
+A code review on 15 October 2026 found two faults in the controls, and both are fixed under the rules above.
+
+- **The lens had a key.** Both scenes toggled the depth-of-field lens with `D`, which also pans the Manual camera, so one press in Manual moved the camera, changed the lens and posted a toast. Point 5 gives a shortcut only to the camera and the controls, so the lens key is gone, and the Post tab's Depth of field button is the one way to turn the lens on. `examples/lib/cinematic.ts` now owns one table of every showcase key, and a scene's own key that clashes with it throws.
+- **Sky, Fog and Environment undid themselves.** The scenes turned each part off with one call to the scene, and the stage wrote it back on the next frame. The stage now holds the three switches and leaves out each part that is off. The HUD test reads the canvas to check that the part stays off, since the toast alone said "off" while the fog stayed.

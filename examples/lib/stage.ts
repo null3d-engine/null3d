@@ -5,6 +5,10 @@
 // match the sky. A mood is a target: every value eases toward it over a fraction of a second, so a
 // change of mood glides and Auto's sun and moon move continuously. A scene gives the turn of the
 // sun's path and the density of its fog.
+//
+// The stage also holds the switches of the sky, the fog and the environment light. It writes the
+// look every frame, so a part that the HUD turns off stays off only when the stage itself leaves it
+// out: a scene turns a part off through the stage, never with its own call to the scene.
 import {
 	type DirectionalLight,
 	type Environment,
@@ -37,6 +41,9 @@ export const HOURS: Record<Exclude<Mood, 'Auto' | 'Studio'>, number> = {
 	Night: 23,
 };
 
+/** The parts of the look that the HUD turns on and off. The environment light needs the sky too. */
+export type StagePart = 'sky' | 'fog' | 'environment';
+
 /** The studio's key light, from the front left and high. */
 const STUDIO_KEY = [0.45, -0.75, -0.5] as const;
 /** How many minutes a whole day takes in Auto, unless a scene says otherwise. */
@@ -56,6 +63,8 @@ export interface StageOptions {
 	haze?: Partial<Record<Exclude<Mood, 'Auto' | 'Studio'>, number>>;
 	/** The minutes a whole day takes in Auto. The default is 4. */
 	minutesPerDay?: number;
+	/** The plain background color, in linear RGB, that shows while the sky is off. */
+	backdrop: readonly [number, number, number];
 }
 
 /** The stage of a showcase scene: the mood, the Auto driver, and what its values ease toward. */
@@ -70,6 +79,8 @@ export interface Stage {
 	readonly hours: number;
 	/** Eases toward the target and applies it. Call once per frame with the frame's step. */
 	update(dt: number): void;
+	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
+	show(part: StagePart, on: boolean): void;
 }
 
 /** True for a mood name. */
@@ -86,7 +97,7 @@ export function createMoods(
 	options: StageOptions,
 ): Stage {
 	const { scene, post, time } = ctx;
-	const { heading, fogDensity, cloudCoverage, haze = {} } = options;
+	const { heading, fogDensity, cloudCoverage, backdrop, haze = {} } = options;
 	const perDay = options.minutesPerDay ?? MINUTES_PER_DAY;
 	/** The values in use, which ease toward the target's. */
 	const current = {
@@ -114,6 +125,10 @@ export function createMoods(
 	let started = false;
 	/** The hours that the target was made for, so a fixed mood computes it once. */
 	let targetHours = Number.NaN;
+	/** The parts of the look that are on. A part that is off is written once, when it turns off. */
+	const shown: Record<StagePart, boolean> = { sky: true, fog: true, environment: true };
+	/** True while the scene takes its environment light from the background. */
+	const lit = () => shown.sky && shown.environment;
 
 	/** Works out the target from an hour, with the physical sky. */
 	const aimAt = (hours: number, at: Mood): void => {
@@ -190,39 +205,44 @@ export function createMoods(
 		apply();
 	};
 
-	/** Writes the eased values into the scene. */
+	/** Writes the eased values into the scene, leaving out each part that is off. */
 	const apply = (): void => {
 		clouds.time = time.now;
-		scene.setBackground(
-			{
-				atmosphere: {
-					sunPosition: current.sunPosition,
-					sunIntensity: current.sunLight,
-					moonPosition: current.moonPosition,
-					moonIntensity: current.moonLight,
-					stars: current.stars,
-					cloudCoverage: current.clouds,
-					time: clouds.time,
+		if (shown.sky)
+			scene.setBackground(
+				{
+					atmosphere: {
+						sunPosition: current.sunPosition,
+						sunIntensity: current.sunLight,
+						moonPosition: current.moonPosition,
+						moonIntensity: current.moonLight,
+						stars: current.stars,
+						cloudCoverage: current.clouds,
+						time: clouds.time,
+					},
 				},
-			},
-			{ intensity: 1 },
-		);
-		scene.setEnvironment(sky, { intensity: current.skyIntensity });
+				{ intensity: 1 },
+			);
+		if (lit()) scene.setEnvironment(sky, { intensity: current.skyIntensity });
 		sun.setDirection(current.dir[0] as number, current.dir[1] as number, current.dir[2] as number);
 		sun.setColor(current.color);
 		sun.setIntensity(current.intensity);
-		scene.setFog({ color: current.fog, density: current.density, sunGlow: current.glow });
+		if (shown.fog)
+			scene.setFog({ color: current.fog, density: current.density, sunGlow: current.glow });
 		post.set({ exposure: current.exposure });
 	};
 
-	/** Puts the studio's own values in place at once: it is a different background, not an hour. */
+	/**
+	 * Puts the studio's own values in place at once: it is a different background, not an hour. Each
+	 * part that is off is left out.
+	 */
 	const toStudio = (): void => {
-		scene.setBackground(room, { blur: 0.7, intensity: 0.18 });
-		scene.setEnvironment(room, { intensity: 0.55 });
+		if (shown.sky) scene.setBackground(room, { blur: 0.7, intensity: 0.18 });
+		if (lit()) scene.setEnvironment(room, { intensity: 0.55 });
 		sun.setDirection(STUDIO_KEY[0], STUDIO_KEY[1], STUDIO_KEY[2]);
 		sun.setColor('#fff4e6');
 		sun.setIntensity(3);
-		scene.setFog({ color: [0.05, 0.05, 0.055], density: 0.012 });
+		if (shown.fog) scene.setFog({ color: [0.05, 0.05, 0.055], density: 0.012 });
 		post.set({ exposure: 1 });
 	};
 
@@ -259,6 +279,15 @@ export function createMoods(
 			}
 			ease(dt);
 			apply();
+		},
+		show(part, on) {
+			shown[part] = on;
+			// A part that is off is written once here, since the frame's writes leave it out.
+			if (!shown.sky) scene.setBackground(backdrop);
+			if (!lit()) scene.setEnvironment(null);
+			if (!shown.fog) scene.setFog(null);
+			if (mood === 'Studio') toStudio();
+			else apply();
 		},
 	};
 	return stage;
