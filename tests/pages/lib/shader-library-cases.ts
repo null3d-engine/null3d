@@ -1435,9 +1435,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			...uniform(3, 0, 70000)(random),
 		],
 		expected: (i) =>
-			floats(
-				map3(xyz(i.f(0)), (value) => (Number.isNaN(value) ? 0 : Math.min(value, 65472))),
-			),
+			floats(map3(xyz(i.f(0)), (value) => (Number.isNaN(value) ? 0 : Math.min(value, 65472)))),
 		tolerance: 0,
 	},
 	{
