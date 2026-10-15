@@ -1,11 +1,10 @@
 // Computes the next release version and its notes from every commit since the last release tag,
-// whichever branch brought it to main (D-108). The Release workflow runs `--apply` on a release
-// branch and opens a pull request; merging that pull request tags the version and publishes it.
+// whichever branch brought it to main (D-108). One Release workflow runs `--apply`, lands the
+// result on main and tags the release commit; `.dev/releases.md` describes it.
 //   bun tools/release.ts [--release-type auto|patch|minor|major]
 //                                   print the next version and its notes, and change nothing
 //   bun tools/release.ts --apply    also write every version copy and add the section to
-//                                   CHANGELOG.md; in CI, write `version` and `changelog` to
-//                                   $GITHUB_OUTPUT
+//                                   CHANGELOG.md; in CI, write `version` to $GITHUB_OUTPUT
 //   bun tools/release.ts --notes <version>
 //                                   print that version's section of CHANGELOG.md, cut to the
 //                                   length a GitHub Release takes
@@ -38,8 +37,6 @@ import {
 const root = process.cwd();
 const CHANGELOG = 'CHANGELOG.md';
 const RELEASE_TYPES: readonly ReleaseType[] = ['auto', 'patch', 'minor', 'major'];
-/** GitHub limits a pull request's text to 65,536 characters; the rest is the workflow's preamble. */
-const PULL_REQUEST_NOTES_LIMIT = 64_000;
 /** Release tags are plain versions, with no `v` prefix and no pre-release part. */
 const TAG_RE = /^\d+\.\d+\.\d+$/;
 
@@ -93,17 +90,9 @@ function apply(version: string, changelog: string): void {
 		join(root, CHANGELOG),
 		prependChangelog(readIfExists(root, CHANGELOG) ?? '', changelog),
 	);
-	// The notes go into the release pull request's text, which GitHub limits, so they stop at the
-	// limit with a link to the release branch's full list.
+	// The release workflow reads the version for its later steps.
 	const output = process.env.GITHUB_OUTPUT;
-	if (output) {
-		const notes = fitReleaseText(
-			changelog,
-			PULL_REQUEST_NOTES_LIMIT,
-			changelogUrl(`release/${version}`),
-		);
-		appendFileSync(output, `version=${version}\nchangelog<<RELEASE_EOF\n${notes}\nRELEASE_EOF\n`);
-	}
+	if (output) appendFileSync(output, `version=${version}\n`);
 }
 
 async function main(): Promise<void> {
