@@ -22,6 +22,7 @@ import {
 	type GovernorScene,
 	GPU_DELAY_US,
 	GRACE_MS,
+	LEVELS,
 	LONGEST_RAISE_AFTER_MS,
 	LOWEST_AO_SCALE,
 	RAISE_AFTER_MS,
@@ -29,9 +30,11 @@ import {
 	SETTLE_MS,
 	SMALLEST_BLOOM_SIZE,
 	thousandths,
+	WIDEST_STEPS,
 	WINDOW_END,
 	WINDOW_MS,
 } from './governor';
+import { QUALITY_SETTINGS } from './presets';
 
 const BUDGET = 1000 / 60;
 /** Frames at the target rate whose GPU finished each well within one frame. */
@@ -489,6 +492,21 @@ describe('the bloom steps', () => {
 		expect(FEWEST_CONTACT_STEPS).toBe(4);
 	});
 
+	it('leave contact shadows off when a later step comes and they have no step of their own', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setCasters(1, false);
+		controller.setContact(0);
+		controller.setFog(true, 32);
+		controller.setAnimation(2);
+		expect(controller.maxSteps).toBe(2);
+		for (let k = 0; k < 3; k++) untilStep(SLOW);
+		// The far characters' step and the fog's step both came, and contact shadows stayed off.
+		expect([controller.steps, controller.animationInterval, controller.fogHalvings]).toEqual([
+			2, 4, 1,
+		]);
+		expect(controller.contactSteps).toBe(0);
+	});
+
 	it("doubles the far characters' update interval last, after every other step", () => {
 		const { controller, untilStep } = controlled(950);
 		controller.setAnimation(1);
@@ -524,6 +542,23 @@ describe('the bloom steps', () => {
 		expect(ladder(SLOW)).toEqual(['950 1 3']);
 		expect(controller.maxSteps).toBe(0);
 		expect(SMALLEST_BLOOM_SIZE).toBe(64);
+	});
+});
+
+describe("the governor's levels", () => {
+	it('count every step of every kind on the widest settings', () => {
+		const { controller } = controlled(50);
+		controller.setLevels(true);
+		controller.setCasters(4, true);
+		controller.setShadows(QUALITY_SETTINGS.shadowFilter.values.at(-1) as number, 1, true);
+		controller.setBloom(true, QUALITY_SETTINGS.bloomSize.values.at(-1) as number);
+		controller.setAo(true, 500);
+		controller.setContact(QUALITY_SETTINGS.contactShadowSteps.values.at(-1) as number);
+		controller.setAnimation(1);
+		controller.setFog(true, 64);
+		const widest = Object.values(WIDEST_STEPS).reduce((sum, steps) => sum + steps, 0);
+		expect(controller.maxSteps).toBe(widest);
+		expect(LEVELS).toBe(FULL_SCALE / SCALE_STEP + 1 + BUDGET_STEPS + controller.maxSteps);
 	});
 });
 

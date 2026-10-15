@@ -1,9 +1,8 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
-// time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
-// how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
-// occlusion's scale, then the steps of the sun's contact shadows, then the update interval of far
-// characters' poses, then the volumetric fog's slices. When the frames have time to spare again, it
-// raises them in the reverse order. It never changes a setting that is fixed while a preset runs.
+// time, in a fixed order: the render scale first, then the kinds of steps that the list of step
+// kinds below names, in its order. When the frames have time to spare again, it raises them in the
+// reverse order. It never changes a setting that is fixed while a preset runs. The quality presets
+// page holds the docs' one list of the steps.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
@@ -200,21 +199,34 @@ const RECENT_SLOT = 5;
 const STATE_SIZE = 6;
 
 /**
+ * The kinds of steps past the render scale, in the order that the governor takes them, each with
+ * the most steps that it takes on the widest range of settings. The governor's levels count these,
+ * and its steps add up each kind's own count, so a new kind of step joins this list.
+ */
+export const WIDEST_STEPS = {
+	detail: DETAIL_STEPS,
+	farInterval: farIntervalSteps(1),
+	filter: 1,
+	bloom: 1,
+	ao: 1,
+	contact: 1,
+	animation: animationSteps(1),
+	fog: 1,
+} as const;
+
+type StepKind = keyof typeof WIDEST_STEPS;
+const STEP_KINDS = Object.keys(WIDEST_STEPS) as StepKind[];
+
+/**
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
  * step down. They cover every scale of the widest range, every step of the budgets and every step
  * past the scale.
  */
-const LEVELS =
+export const LEVELS =
 	FULL_SCALE / SCALE_STEP +
 	1 +
 	BUDGET_STEPS +
-	DETAIL_STEPS +
-	farIntervalSteps(1) +
-	1 +
-	1 +
-	1 +
-	1 +
-	animationSteps(1);
+	STEP_KINDS.reduce((sum, kind) => sum + WIDEST_STEPS[kind], 0);
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -430,16 +442,9 @@ export class Governor {
 	 * occlusion, contact shadows, far characters' pose updates and the settings allow.
 	 */
 	get maxSteps(): number {
-		return (
-			this.detailSteps() +
-			this.intervalSteps() +
-			this.filterSteps() +
-			this.bloomSteps() +
-			this.aoSteps() +
-			this.contactStepCount() +
-			this.animationStepCount() +
-			this.fogSteps()
-		);
+		let steps = 0;
+		for (let k = 0; k < STEP_KINDS.length; k++) steps += this.stepsOf(STEP_KINDS[k] as StepKind);
+		return steps;
 	}
 
 	/**
@@ -621,6 +626,28 @@ export class Governor {
 		this.applySteps();
 	}
 
+	/** The steps of one kind that the settings and the scene allow. */
+	private stepsOf(kind: StepKind): number {
+		switch (kind) {
+			case 'detail':
+				return this.detailSteps();
+			case 'farInterval':
+				return this.intervalSteps();
+			case 'filter':
+				return this.filterSteps();
+			case 'bloom':
+				return this.bloomSteps();
+			case 'ao':
+				return this.aoSteps();
+			case 'contact':
+				return this.contactStepCount();
+			case 'animation':
+				return this.animationStepCount();
+			case 'fog':
+				return this.fogSteps();
+		}
+	}
+
 	/** The detail steps while the scene draws a mesh with levels of detail. */
 	private detailSteps(): number {
 		return this.levels ? DETAIL_STEPS : 0;
@@ -688,10 +715,7 @@ export class Governor {
 		const before = shadowSteps + bloomSteps + aoSteps;
 		const contactStepCount = this.contactStepCount();
 		const animationStepCount = this.animationStepCount();
-		this.steps = Math.min(
-			this.steps,
-			before + contactStepCount + animationStepCount + this.fogSteps(),
-		);
+		this.steps = Math.min(this.steps, this.maxSteps);
 		const detailFactor = 1 << Math.min(this.steps, detailSteps);
 		const shadowStepsTaken = Math.max(0, this.steps - detailSteps);
 		const doublings = Math.min(shadowStepsTaken, intervalSteps);
@@ -700,7 +724,8 @@ export class Governor {
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
 		const aoScale =
 			aoSteps > 0 && this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
-		const contactSteps = this.steps > before ? FEWEST_CONTACT_STEPS : this.contactSetting;
+		const contactSteps =
+			contactStepCount > 0 && this.steps > before ? FEWEST_CONTACT_STEPS : this.contactSetting;
 		const animationTaken = Math.max(0, this.steps - before - contactStepCount);
 		const animationInterval = Math.min(
 			LONGEST_ANIMATION_INTERVAL,

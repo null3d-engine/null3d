@@ -84,7 +84,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
 | 30 frames per second on a 60 Hz display, with the busiest thread's `cpuMs` a little over one refresh | In pipelined mode, a frame that misses one refresh waits for the next | Cut the CPU work below the refresh interval. Or measure `latency: 'low'`: on a warm Galaxy S24+ it showed 40 frames per second where pipelined mode showed 32. On the iPad keep pipelined mode (`guides/performance`) |
-| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the live shadow settings; lighten your own work in `quality.onChange` by `quality.governor.steps` |
+| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the detail, shadow and effect settings; lighten your own work in `quality.onChange` by `quality.governor.steps` |
 
 ## 5. Phones and tablets
 
@@ -156,12 +156,11 @@ The frame-budget governor keeps the frame rate when the scene is too heavy for t
 The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
 
 1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas. Budgets that you register with `quality.setBudget` (0.2) step down by 0.25 before each step of the render scale.
-2. The far shadow cascades draw half as often, up to every 8th frame.
-3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
+2. The detail, shadow and effect settings, one step each, in the order that `concepts/quality-presets` lists under "The frame-budget governor".
 
 It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that falls behind within 30 seconds doubles the wait before the governor tries that setting again, up to 80 seconds. At 57 to 59 frames per second, the settings stay where they are. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
 
-Read the current render scale in `quality.renderScale`, and the shadow settings that frames draw with in `quality.governor`. After each shadow step, `quality.onChange` runs, and `quality.governor.steps` counts the steps past the render scale. Lighten your own systems there. To measure the scene's own cost, turn the governor off: `quality.set({ governor: false })`. The scene then draws at `maxRenderScale`, with the shadow settings as set.
+Read the current render scale in `quality.renderScale`, and the settings that frames draw with in `quality.governor`. After each step past the render scale, `quality.onChange` runs, and `quality.governor.steps` counts the steps past the render scale. Lighten your own systems there. To measure the scene's own cost, turn the governor off: `quality.set({ governor: false })`. The scene then draws at `maxRenderScale`, with the shadow settings as set.
 
 ### The depth prepass
 
