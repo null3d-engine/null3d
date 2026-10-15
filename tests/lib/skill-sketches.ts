@@ -2,7 +2,8 @@
 // block in their Markdown whose code exports `defineSketch(...)`. The tests type check them against
 // the engine and draw them in hold mode, so every call that such a sketch shows exists and runs. A
 // sketch under a heading that names a later version, such as (0.2), (after 1.0) or (later in 0.1),
-// uses parts that are not built yet. The tests leave it out until its heading loses the version.
+// uses parts that are not built yet. The tests leave it out until its heading loses the version,
+// and fail when it type checks, because its parts then exist.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { walkFiles } from '../../tools/lib/files.ts';
