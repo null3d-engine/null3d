@@ -237,3 +237,14 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 - New claims: this record, the layouts `EFFECT` (21) and `EFFECT_DEPTH_MS` (22), and the permutation bit `DEPTH_MULTISAMPLED` (262144).
 - The effect cost page gains `effect=effects`, and the device runner gains the `effects` plan.
 - Docs: `api/post`, `concepts/post-processing`, `guides/custom-passes`, `porting/threejs-postprocessing` and the mapping entries `ShaderPass` and `FilmPass / GlitchPass / ...`. Skills: both skills' `shaders.md`, the port skill's `post-processing.md`, and the develop skill's recipes and quick reference.
+
+## Addendum, 15 October 2026: the joins never built on WebGL2
+
+The joins above did not run on WebGL2, on any device, from the day they shipped. The engine writes a
+joined chain into the group host's built shader at run time, and it wrote that text in the structure
+form, naming `EffectInput`. The WebGL2 build removes every structure parameter, one parameter for
+each member, which the Adreno 619's driver needs ([driver bugs](../driver-bugs.md)). So the chain's
+calls fitted no function, and the driver refused the whole shader with "'fx74470501_effect_piece_main'
+: no matching overloaded function found". The engine then drew each effect in a pass of its own, so
+the images still matched and the fault stayed hidden. D-167's addendum records the fix, the check
+that refuses such a call, and its evidence. The joins now run at every render scale.
