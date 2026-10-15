@@ -1,8 +1,9 @@
 // Creek's route must stay clear of its trees and its cave ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)).
-// The test samples the whole route, as the player does each frame, and fails when a sample comes
-// within the clearance of a tree's trunk or the cave rock, so a route edit cannot reintroduce a clip.
+// The test samples the whole route through the player's own interpolation, and fails when a sample
+// comes within the clearance of a tree's trunk or the cave rock, so a route edit cannot reintroduce
+// a clip.
 import { expect, test } from 'bun:test';
-import type { Shot } from '../../lib/cinematic';
+import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { TREES } from './flora';
 import { streamZ } from './land';
 import { SHOTS } from './sketch';
@@ -29,46 +30,17 @@ function treeCylinders(): Cylinder[] {
 	}));
 }
 
-/** The route's position at a phase, as `cinematic.ts` interpolates it. */
-function place(
-	shots: readonly Shot[],
-	starts: readonly number[],
-	seconds: readonly number[],
-	phase: number,
-): [number, number, number] {
-	const total = starts[starts.length - 1]! + seconds[seconds.length - 1]!;
-	const a = ((phase % total) + total) % total;
-	let index = 0;
-	for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
-	const shot = shots[index] as Shot;
-	const next = shots[(index + 1) % shots.length] as Shot;
-	const along = (a - (starts[index] as number)) / (seconds[index] as number);
-	const f = shot.move === 'hold' ? 0 : along * along * (3 - 2 * along);
-	return [
-		(shot.position[0] as number) +
-			((next.position[0] as number) - (shot.position[0] as number)) * f,
-		(shot.position[1] as number) +
-			((next.position[1] as number) - (shot.position[1] as number)) * f,
-		(shot.position[2] as number) +
-			((next.position[2] as number) - (shot.position[2] as number)) * f,
-	];
-}
-
 test('the creek route stays clear of its trees and its cave', () => {
-	const starts: number[] = [];
-	const seconds: number[] = [];
-	let total = 0;
-	for (const shot of SHOTS) {
-		starts.push(total);
-		seconds.push(shot.seconds);
-		total += shot.seconds;
-	}
+	const route = routeTimeline(SHOTS);
+	const pose = new Float32Array(6);
 	const cylinders: Cylinder[] = [
 		...treeCylinders(),
 		{ x: CAVE.x, z: CAVE.z, radius: CAVE.reach + CLEARANCE, height: 6 },
 	];
 	for (let step = 0; step <= 400; step++) {
-		const at = place(SHOTS, starts, seconds, (step / 400) * total);
+		// The sample through the player's own interpolation: what it plays is what is checked.
+		routePosition(route, (step / 400) * route.total, pose);
+		const at = [pose[0] as number, pose[1] as number, pose[2] as number];
 		for (const cylinder of cylinders) {
 			const inside =
 				Math.hypot(at[0] - cylinder.x, at[2] - cylinder.z) < cylinder.radius &&
