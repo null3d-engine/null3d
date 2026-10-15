@@ -45,7 +45,7 @@ function stub() {
 		},
 	} as never as {
 		time: { now: number };
-		pointer: { dragDx: number; dragDy: number };
+		pointer: { buttons: number; dragDx: number; dragDy: number };
 		context: never;
 	};
 }
@@ -117,10 +117,15 @@ test('a fling that damping still carries never resumes after a switch', () => {
 	const cinematic = createCinematic(context, camera as never, { shots: SHOTS, target, speed: 420 });
 	run(2, cinematic, time);
 	cinematic.select('Manual');
-	// A fling: one frame carries a drag, which the damped controls turn over the frames after it.
+	// A fling: a press, a drag and a release, whose damped motion the controls carry over the frames
+	// that follow.
+	pointer.buttons = 1;
+	cinematic.update(1 / 60);
 	pointer.dragDx = 60;
 	cinematic.update(1 / 60);
 	pointer.dragDx = 0;
+	pointer.buttons = 0;
+	cinematic.update(1 / 60);
 	const flung = [...camera.stored];
 	run(0.2, cinematic, time);
 	expect(moved([...camera.stored], flung)).toBeGreaterThan(0.01);
@@ -145,12 +150,16 @@ test('a takeover during the glide back to Auto keeps the camera where it is', ()
 	run(2, cinematic, time);
 	cinematic.select('Manual');
 	// Move the camera well away from the route's pose, so the glide has a long way to go.
+	pointer.buttons = 1;
+	cinematic.update(1 / 60);
 	for (let k = 0; k < 6; k++) {
 		pointer.dragDx = 80;
 		cinematic.update(1 / 60);
 		pointer.dragDx = 0;
 		cinematic.update(1 / 60);
 	}
+	pointer.buttons = 0;
+	cinematic.update(1 / 60);
 	cinematic.select('Auto');
 	// Mid-glide: the camera is between the user's pose and the route's, not on the route.
 	run(0.25, cinematic, time);
