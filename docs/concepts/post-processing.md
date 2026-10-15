@@ -294,7 +294,7 @@ The engine finds a still view by comparing each frame's draw commands and upload
 
 - While the view blends, the final pass skips FXAA: the blended frames smooth the edges instead. With MSAA, each blended frame keeps its 4 samples.
 - Meshes and sprites move by the sub-pixel offset. Lines, points and particles draw without it.
-- Some views never blend, because their picture can change on the GPU alone or with the clock alone, or because the blend would mix what it cannot average. They draw every frame as before: views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials or the physical sky, a canvas that keeps its alpha, and the 8-bit color path.
+- Some views never blend. Their picture can change on the GPU alone, or with the clock alone, or the blend would mix what it cannot average. Those views draw every frame as before. Views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials or the physical sky never blend either. Nor does a canvas that keeps its alpha, or the 8-bit color path.
 - The history is one 16-bit target the size of the canvas: 8 bytes per pixel, about 17 MB at 1920 × 1080.
 - Hold mode, and so the image tests, draws without it. The option `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
 

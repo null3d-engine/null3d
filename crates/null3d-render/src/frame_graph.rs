@@ -4546,6 +4546,14 @@ mod tests {
                 assert_eq!(graph.find_pass(name).is_some(), declared, "{name}");
             }
             assert_eq!(frames.still_declared, declared);
+            // The blend's weight and the still build's settings each take a block of the frame's
+            // upload arena, so the bound grows by both where the graph declares them.
+            let moving = frame_graph(format, Antialias::Msaa, true, false).upload_bound();
+            let blocks = accumulate::UPLOAD_BYTES + FinalPass::UPLOAD_BYTES;
+            assert_eq!(
+                frames.upload_bound(),
+                moving + if declared { blocks } else { 0 }
+            );
             // Without a built pipeline no frame may blend yet.
             assert!(!frames.still_eligible());
             frames.set_still_enabled(false);
@@ -4645,9 +4653,11 @@ mod tests {
                 Some(Surface::Texture(_))
             ));
             assert_eq!(plan.steps().len(), 2);
+            // This graph draws as a moving view's does, so the accumulation's blocks are not in
+            // the bound.
             assert_eq!(
                 frames.upload_bound(),
-                FinalPass::UPLOAD_BYTES + accumulate::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
+                FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
             );
         }
     }
@@ -4683,7 +4693,8 @@ mod tests {
                 };
                 assert_eq!(
                     frames.upload_bound(),
-                    FinalPass::UPLOAD_BYTES + crate::accumulate::UPLOAD_BYTES + bloom
+                    FinalPass::UPLOAD_BYTES + bloom,
+                    "a moving view's frames"
                 );
             }
         }
