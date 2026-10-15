@@ -52,10 +52,10 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `~/.cache/null3d` by
-default, each in a named subfolder: `cargo-target`, `shader-modules`, `shader-cache` and
-`wasm-artifacts`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still
-name one folder. Clearing the root is always safe, because every entry is a pure function of its
-inputs, so re-checking a branch on a moved main is cheap.
+default, each in a named subfolder: `shader-modules`, `shader-cache`, `wasm-artifacts` and, when
+sccache is installed, `sccache`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache
+variables still name one folder. Clearing the root is always safe, because every entry is a pure
+function of its inputs, so re-checking a branch on a moved main is cheap.
 [D-176](decisions/D-176-wasm-artifact-cache.md) and
 [D-177](decisions/D-177-build-cache-module.md) give the keys, and
 [Benchmarks](benchmarks.md#build-caches) the figures.
@@ -68,15 +68,26 @@ inputs, so re-checking a branch on a moved main is cheap.
   absent.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
-  output in a folder of its own, named for the build's process, and Cargo locks the target folder that
-  they share. A size check takes a machine-wide lock, because it also builds the base commit with that
-  commit's own build script, which may stage into the shared target folder.
-- The shared `cargo-target` folder holds one compiled object for each crate name. A build in one copy
-  can therefore leave files that another copy's build reuses. On 15 October 2026 that gave a merged
-  branch a core without its own feature. The feature bit was missing from the material's flags, and
-  the generated shader modules were newer than the core. When a core change seems to be ignored,
-  touch the crate sources and build with `NULL3D_NO_CACHE=1`. Check the flags word that a material
-  row holds before looking anywhere else.
+  output in a folder of its own, named for the build's process, and Cargo locks a target folder while
+  it writes. A size check takes the checkout's own lock, `target/build.lock`. The base commit is built
+  with that commit's own build script, in a base tree under this checkout's target folder. Size checks
+  of two checkouts therefore run at the same time.
+- Each checkout builds Rust into its own `target` folder. Never point two checkouts at one Rust build
+  folder, with `CARGO_TARGET_DIR` or `NULL3D_CARGO_TARGET`. Cargo finds the engine's crates at the
+  same workspace paths in every checkout and judges them fresh by file times. So a shared folder lets
+  one checkout compile or link against another checkout's build of `null3d-gpu`, `null3d-render` or
+  the shader compiler. The caches above then store that output under the right key, and the bad entry
+  outlives the build. On 14 and 15 October 2026 this gave branches a stale shader compiler, another
+  branch's GPU constants, and a core without its own feature.
+  [D-177](decisions/D-177-build-cache-module.md#addendum-15-october-2026-one-rust-build-folder-per-checkout)
+  gives the reasons.
+- sccache, when installed, compiles the dependency crates once for every checkout. The build uses it
+  through `RUSTC_WRAPPER` when it finds `sccache` on the `PATH` and no wrapper is set; an empty
+  `RUSTC_WRAPPER` turns it off. sccache keys each compile by the contents of its sources, flags and
+  dependencies, never by file times, so sharing it across checkouts is safe. Without sccache the
+  build runs as before, as in CI.
+- When a core change seems to be ignored, build with `NULL3D_NO_CACHE=1`, and check the flags word
+  that a material row holds before looking anywhere else.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
 shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the
@@ -115,12 +126,17 @@ Never merge a generated file by hand. Take main's side, run the file's generator
 - The vendored Basis and meshopt builds
 - The benchmark records and the README's animation
 - What a release writes: the version numbers, `CHANGELOG.md` and the plugin's marketplace file
-- The lock files and the sample content's manifest A new kind of generated file goes into `.gitignore`, unless its pull request adds its reason to D-105.
+- The lock files and the sample content's manifest
+- The list of milestone task IDs that a `Task:` footer may name
+
+A new kind of generated file goes into `.gitignore`, unless its pull request adds its reason to D-105.
 
 ## Merge main into a branch
 
 - Merge main into your branch. Do not rebase a branch that you pushed, because a rebase needs a force push (see [Commit messages and pushes](#commit-messages-and-pushes)).
 - Never merge a generated file by hand. [Generated files](#generated-files) says how to resolve a clash on one.
+- A merge commit holds only the resolution of its conflicts and mechanical fixes. Mechanical fixes are files that a generator writes again, renumbered entries, and edits that the other side's change forces, such as a renamed import. Write anything else in a normal commit before or after the merge: a feature, a test, a shading change or docs text. Five merges of 12 to 14 October 2026 held features: area lights in reflection passes, automatic exposure in the two-step output, and a new clear coat roughness. Four more held measured figures of D-174. No history search finds them.
+- Before a push, `bun tools/hooks/check-merges.ts <base>..HEAD` reads each new merge against git's automatic merge, as `git show --remerge-diff` does. It refuses a merge with more than 30 words of new work, or any new shader code. It also refuses a binary file that the merge changed itself. To fix a refused merge before you push it, undo the new work with `git commit --amend`, then commit it again on top. When the check cannot tell that an edit is mechanical, add a `Merge-Edit:` trailer to the merge's message. It names the edit and says why, such as `Merge-Edit: lit.wgsl passes main's new finish() argument`.
 - A branch from before git stopped keeping the shader modules gets a conflict on each module that it changed when it merges main. Resolve them all with `git rm --cached packages/engine/src/generated/shaders*.ts`, which keeps the files for the next build to replace.
 - Check the shared numbers after the merge. Two branches can each take the next free number, and git then merges both lines without a conflict. The shared numbers are the error codes (`packages/engine/src/errors/codes.ts`) and the scene command numbers (`crates/null3d-wasm/src/constants.rs`). They are also the draw list's opcodes and pipeline template numbers (`crates/null3d-gpu/src/drawlist.rs`), and the decision record numbers. The engine's own templates take numbers below 128, the first custom template. Custom materials, effects and tone curves take numbers from 128 up, which the sketch gives out at run time. The first custom template was 64 until 11 October 2026. The techniques of [D-142](decisions/D-142-more-techniques-before-1-0.md) used nearly every number below it, so it moved to 128. A unit test checks that each engine template has its own number below 128. The bindings and slots that a shader and its bind group layout share are shared numbers too. A unit test catches a clash in some of these lists, such as the opcodes, but not in all of them. The docs check, `bun run docs:check`, refuses two decision records with one number.
 - Build and run the quick checks again before you push the merge: lint, types, docs, skills and unit tests. Then rerun the browser and image tests only of the areas that the merge's conflicts touched. CI runs every test on the pull request merged into main.
@@ -158,8 +174,9 @@ The record of [tested devices](tested-devices.md) was one table until 7 October 
 
 - A merge commit must pass the commit-message check, as every commit does. A message such as `Merge origin/main into <branch>` passes, and so do git's own merge messages. A message such as `merge origin/main` fails, because the check reads it as a commit without a type.
 - Never force push a pull request's branch, so never amend, rebase or squash a commit that you pushed.
+- A `Task:` footer names a listed milestone task that the commit delivers part of, or says `none`. The commit-msg hook (`tools/hooks/check-task.ts`) refuses free text and IDs that are not in `tools/hooks/task-ids.txt`. Before 15 October 2026, footers carried text such as `main CI repair`. Four shader commits carried `Task: M2-J4`, though they delivered none of its materials. The milestone count read those footers and counted tasks that were not done. Now it counts only each task's audited status.
 - Main squashes each pull request, but CI checks the message of every commit in the pull request until it merges. A pushed commit with a bad message therefore fails CI for as long as the pull request is open.
-- Put each trailer on a plain commit, never on a merge commit; an empty commit can carry it. Main's squash keeps the messages of the pull request's plain commits and drops the merge commits' messages. CI's trailer check and size check therefore read only the plain commits, so a trailer on a merge commit fails on the pull request. On 7 October 2026, #397's `Size-Growth:` trailer sat on a merge commit. Its own size check passed, and the merge queue's check of the squash failed ([Benchmarks](benchmarks.md#download-size)).
+- Put each trailer on a plain commit, never on a merge commit; an empty commit can carry it. The one exception is `Merge-Edit:`, which explains an edit in the merge itself (see [Merge main into a branch](#merge-main-into-a-branch)). Main's squash keeps the messages of the pull request's plain commits and drops the merge commits' messages. CI's trailer check and size check therefore read only the plain commits, so a trailer on a merge commit fails on the pull request. On 7 October 2026, #397's `Size-Growth:` trailer sat on a merge commit. Its own size check passed, and the merge queue's check of the squash failed ([Benchmarks](benchmarks.md#download-size)).
 - To fix a bad message, open a new pull request from a new branch with a clean history. It replaces the old one. For example, `git switch -c <new-branch> origin/main`, then `git merge --squash <old-branch>`, then commit with a good message. Close the old pull request, and link the new one from it.
 - The same applies when a branch carries copies of commits that main already holds, and a commit gate rejects one of the copies. Put the branch's files in one clean commit on a new branch from main, and open a new pull request. Close the old one with a link to the new one. Do not force push the old branch, and do not loosen the gate. On 8 October 2026, #417's branch held old copies of the commits of M2-K1 and the S25 skinning fix. The trailer check failed on one of them, because its `Size-Growth:` trailer named shader files by their names before a rename. Pull request #424 held the same files as #417's last commit, in one commit merged with main, and replaced it. The owner approved this way on 8 October 2026.
 
@@ -251,7 +268,7 @@ A pull request that changes only docs files runs only the checks that read them.
 - The `commits` job checks the commit messages with commitlint and the trailers with `tools/hooks/check-trailers.ts`. On a push to main it reads every plain commit after main's commit before the push. Before 15 October 2026 it ran only on pull requests, so after the move to direct pushes no CI check read a message or a trailer.
 - The `ci-passed` job tells a time-out from a cancel. GitHub calls both "cancelled". `ci-passed` reads each cancelled job's messages and marks a job that hit its time limit as an error: a time-out is a failure of that job. A job that a newer push cancelled gets a warning.
 - Each nextest profile of CI gives every test a time limit: 15 minutes in `ci`, and 85 in `whole-shader-build` while the shader build runs on one core. nextest stops a test past its limit and reports it as failed. Before, on 913613695, one test failed and nextest waited on two long tests until the job's limit, so the job read "cancelled" and showed no result.
-- The shader cache action writes each run's shader build into the job summary: the minutes it took, the cache it restored, how many entries it compiled and reused, and the entry and module counts and sizes. So the build's growth shows from run to run.
+- The shader cache action writes each run's shader build into the job summary: the minutes it took, the cache it restored, how many entries it compiled and reused, and the entry and module counts and sizes. From run to run, the build's growth shows. A run whose inputs match the restored module set compiles nothing, and prints no compiled-and-reused line; the record names that case. The record only reports the log. The build step has already decided the job, so a missing line shows in the summary instead of failing the build. Until 15 October 2026 the step read a missing line as an error, because a search that found nothing ended it under the shell's `-e` and `pipefail`. Main's run 96b955566 failed its `build` job that way, on a restored module set, and a failed `build` skips every job that needs it. `tests/lib/shaders-action.test.ts` runs the record step over each shape of log, so a missing line cannot fail a job again.
 - Main's rules require `ci-passed`, not each job, because a job that splits into more shards changes its name. Without that job, a new shard would strand every open pull request.
 - Playwright's Chromium and its Ubuntu packages stay in the Actions cache. Ubuntu's package mirror stalls for 30 to 110 seconds on some files, and the install once took 11.5 minutes of a 4-minute shard.
 - The Rust caches are keyed by the workspace's `Cargo.toml`, because the cache's own key leaves out the build profiles. After a profile change, each run restored the old cache and compiled the dependencies again, for about 3 minutes.

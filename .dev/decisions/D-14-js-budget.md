@@ -679,3 +679,20 @@ One trend is worth watching: the start budget rose from 140 KB to 145 KB
 earlier the same day, and main was over it again within hours. Every raise so
 far has gone to the GLSL side, and the WebGL2 start module is the binding one.
 A future landing that adds a mesh-template permutation moves it again.
+
+## The start's Brotli figure raised again on 15 October 2026
+
+The start's WebGL2 bundle measured 162.2 KB after Brotli, against the 160 KB
+figure. So every landing that builds the start failed the size check on main's
+own bundle rather than on its own change: showcase-hud-1, cargo-isolation-1 and
+ex32-probes-1 each stopped there on 15 October 2026. The raise of the start's
+figures on 14 October left less than a day of headroom, and the WebGL2 shader
+text is what filled it, as the section above predicted.
+
+### The decision
+
+The owner raised the start's Brotli figure to 165 KB, which leaves 2.8 KB of
+headroom, and left the gzip and uncompressed figures alone, since they pass with
+about a tenth to spare. Nothing else moved. The raise keeps landings possible
+while the shader text that fills the start is brought down by the files that
+load on a feature's first use.
