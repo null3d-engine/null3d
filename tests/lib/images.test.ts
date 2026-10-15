@@ -49,7 +49,9 @@ const TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'boxes',
 		tolerance: { maxDiffRatio: 0.5 },
+		swiftShaderTolerance: { maxDiffRatio: 0.75 },
 	},
+
 	{
 		name: 'grid',
 		page: 'pages/grid.html',
@@ -319,6 +321,15 @@ describe('the reference of a run', () => {
 			file: 'chrome-real-gpu/compat/boxes.png',
 			tolerance: TOLERANCE,
 		});
+	});
+
+	it("takes SwiftShader's own tolerance on SwiftShader alone", () => {
+		const swiftShader: Place = { environment: 'chromium-swiftshader' };
+		const copied = run('boxes-copied-webgl2-pipelined');
+		const threshold = TOLERANCE.threshold;
+		expect(referenceOf(copied, REAL).tolerance).toEqual({ threshold, maxDiffRatio: 0.5 });
+		expect(referenceOf(copied, swiftShader).tolerance).toEqual({ threshold, maxDiffRatio: 0.75 });
+		expect(referenceOf(run('boxes-compat-pipelined'), swiftShader).tolerance).toEqual(TOLERANCE);
 	});
 
 	it("is the real GPU's for another browser, at the device tolerance, and cannot become it", () => {
