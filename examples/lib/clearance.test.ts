@@ -4,7 +4,6 @@
 import { expect, test } from 'bun:test';
 import { createOrbitControls } from '@null3d/controls';
 import { type RaycastHit, type SketchContext, vec3 } from '@null3d/engine';
-import { InputRing } from '../../packages/engine/src/page/input-ring';
 import { controlViews, createControlBuffer, Slot } from '../../packages/engine/src/shared/control';
 import { KEY_CODES } from '../../packages/engine/src/shared/key-codes';
 import { InputReader } from '../../packages/engine/src/sketch/input';
