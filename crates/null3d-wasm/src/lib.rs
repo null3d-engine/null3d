@@ -183,6 +183,8 @@ mod render_detail {
     /// Levels of detail that a mesh cannot take; the second detail says why
     /// (`constants::level_problem`).
     pub const BAD_LEVELS: u32 = 15;
+    /// A light probe grid's texture that is not a 3D texture.
+    pub const NOT_A_VOLUME: u32 = 17;
 }
 
 struct Engine {
@@ -3551,7 +3553,7 @@ pub fn set_environment(texture: u32) -> u32 {
 /// none when `texture` is 0, from the next frame on. The grid's placement, spacing, counts, factor
 /// and the share of the environment's diffuse light it takes come from the block that
 /// `lightProbeValues` gives. The TypeScript API checks the values. Fails for a texture that is not
-/// live.
+/// live, or not a 3D texture, which the frame's group could not bind.
 #[wasm_bindgen(js_name = setLightProbeGrid)]
 pub fn set_light_probe_grid(texture: u32) -> u32 {
     with_engine(|e| {
@@ -3566,6 +3568,9 @@ pub fn set_light_probe_grid(texture: u32) -> u32 {
             Ok(texture) => texture,
             Err(failure) => return failure,
         };
+        if !texture.is_none() && !settings.textures().is_volume(texture) {
+            return render_failure(render_detail::NOT_A_VOLUME, 0);
+        }
         settings.set_probe_grid((!texture.is_none()).then_some(ProbeGrid {
             texture,
             origin,

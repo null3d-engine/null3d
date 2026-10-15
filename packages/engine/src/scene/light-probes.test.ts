@@ -13,10 +13,12 @@ import {
 	gridBytes,
 	gridTexels,
 	l1Irradiance,
+	MOST_PROBES,
 	PROBE_FLOATS,
 	packProbes,
 	SceneLightProbeGrid,
 	sampleGrid,
+	VOLUME_TEXELS,
 } from './light-probes';
 import type { CoreMemory } from './memory';
 import type { RaycastBatchHits } from './queries';
@@ -258,7 +260,13 @@ test('the documented bake passes its grid to the grid setter as it is, and space
 		},
 		holdViews: () => {},
 	} as unknown as CoreMemory;
-	const textures = { fromData: () => ({ handle: 5 }) as unknown as Texture } as unknown as Textures;
+	const volumes: number[][] = [];
+	const textures = {
+		fromVolumeData(width: number, height: number, depth: number, format: string) {
+			volumes.push([width, height, depth, format === 'rgba16float' ? 1 : 0]);
+			return { handle: 5 } as unknown as Texture;
+		},
+	} as unknown as Textures;
 	const sh = new Float32Array(27);
 	sh[0] = 1;
 	// The calls of the scene page's bake example.
@@ -281,6 +289,8 @@ test('the documented bake passes its grid to the grid setter as it is, and space
 		counts: grid.counts,
 	});
 	expect(handles).toEqual([5]);
+	// The texture is a 3D texture of half floats, which the frame's group binds.
+	expect(volumes[0]).toEqual([25, 5, 3 * (25 + 2), 1]);
 	const at = (offset: number) => Array.from(block.subarray(offset, offset + 3));
 	expect(at(C.LIGHT_PROBE_VALUE_ORIGIN)).toEqual([-12, 0, -12]);
 	expect(at(C.LIGHT_PROBE_VALUE_SPACING)).toEqual([1, 2, 1]);
@@ -377,4 +387,23 @@ test("a probe enclosed by matte surfaces takes their albedo times the sky's irra
 	const probe = bakeOne(sh, { albedo: 0.5 });
 	// Each wall sends back albedo * E / pi, which the probe turns into albedo * E again.
 	for (const [x, y, z] of AXES) expect(probe(x, y, z)[0]).toBeCloseTo(0.5 * 0.886227, 2);
+});
+
+test('a grid fits the 3D texture size that the core allows, and the bake refuses one that does not', () => {
+	setErrorFixes(ERROR_FIXES);
+	const caps = readFileSync(
+		new URL('../../../../crates/null3d-gpu/src/caps.rs', import.meta.url),
+		'utf8',
+	);
+	expect(caps).toContain(`pub const TEXTURE_3D_SIZE: u32 = ${VOLUME_TEXELS};`);
+	expect(gridTexels(MOST_PROBES).every((side) => side <= VOLUME_TEXELS)).toBe(true);
+	const scene = {} as unknown as Scene;
+	// A box whose depth fits one probe more than the most along z, then exactly the most.
+	const z = MOST_PROBES[2] * 0.5;
+	expect(() =>
+		bakeProbes(scene, { box: { min: [0, 0, 0], max: [1, 1, z] }, spacing: 0.5 }),
+	).toThrow('E1108');
+	expect(() =>
+		bakeProbes(scene, { box: { min: [0, 0, 0], max: [1, 1, z - 0.5] }, spacing: 0.5 }),
+	).not.toThrow();
 });
