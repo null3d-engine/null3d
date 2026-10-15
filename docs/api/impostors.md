@@ -92,8 +92,8 @@ A bake needs the direction of each cell and one camera per cell, looking from th
 import { farCellGroups, mergeFarGeometry } from '@null3d/impostors';
 
 // The arrays that made each mesh's far level, and where each copy sits.
-const centres = trees.map((tree) => tree.position);
-for (const group of farCellGroups(centres, 64)) {
+const centers = trees.map((tree) => tree.position);
+for (const group of farCellGroups(centers, 64)) {
   const merged = mergeFarGeometry(group.map((i) => ({
     arrays: treeFarArrays,
     transform: place(trees[i]),
@@ -102,7 +102,7 @@ for (const group of farCellGroups(centres, 64)) {
 }
 ```
 
-`farCellGroups(centres, cellSize)` groups copies by the cell of the grid their centres fall in, so each group becomes one mesh. The detailed levels stay for what is near, and the merged far meshes draw as single objects.
+`farCellGroups(centers, cellSize)` groups copies by the cell of the grid their centers fall in, so each group becomes one mesh. The detailed levels stay for what is near, and the merged far meshes draw as single objects.
 
 ## Compared with three.js
 

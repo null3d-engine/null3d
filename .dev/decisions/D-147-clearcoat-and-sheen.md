@@ -1,6 +1,6 @@
 # D-147: Clearcoat and sheen
 
-Status: decided by the helper of M2-EX30 on 12 October 2026, for the owner's review. The owner approved the map slots' trade-off on 11 October 2026 ("The owner's ruling"), and the look of the demo, `examples/coat-and-sheen`, on 12 October 2026. Date: 2026-10-11. Task: M2-EX30.
+Status: decided by the helper of M2-EX30 on 12 October 2026, for the owner's review. The owner approved the map slots' trade-off on 11 October 2026 ("The owner's ruling"), and the look of the demo, `examples/coat-and-sheen`, on 12 October 2026. Built: the clear coat and the sheen are on main (`ca28c9fdd`). The owner's review of the rest of the design is pending. Date: 2026-10-11. Task: M2-EX30.
 
 Summary: The standard material takes a clear coat and a sheen layer, with the names and formulas of three.js's `MeshPhysicalMaterial`, and the glTF loader reads `KHR_materials_clearcoat` and `KHR_materials_sheen` into them. The sheen's loss of energy comes from three.js's curve fit, a stated approximation that needs no table. One permutation bit, `COAT_SHEEN`, gives both layers shader builds that load on first use. The layers' maps take three map slots that a layered material cannot use otherwise, so no GPU path binds a texture more.
 

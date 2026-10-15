@@ -1,0 +1,45 @@
+{
+  "name": "room-fixed",
+  "gpu": "webgpu",
+  "page": "visual",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "url": "http://localhost:8004/tests/pages/visual.html?scene=%2Ftests%2Fpages%2Fsketches%2Fshadow-room-sketch.ts%3Ffixed%3D1&gpu=webgpu&size=480x270",
+  "ok": true,
+  "tier": "webgpu",
+  "mode": {
+    "build": "threaded",
+    "latency": "pipelined",
+    "sketchThread": "worker",
+    "renderThread": "render-worker",
+    "jobWorkers": 16,
+    "hold": 2,
+    "preset": "high",
+    "presetCheck": null,
+    "crashedStarts": 0,
+    "memoryMaximumMiB": 1024,
+    "renderFallback": null
+  },
+  "scene": "/tests/pages/sketches/shadow-room-sketch.ts?fixed=1",
+  "width": 480,
+  "height": 270,
+  "stability": {
+    "changedPercent": 0,
+    "meanChangedPercent": 0,
+    "shadowedPercent": 44.423611111111114
+  },
+  "edges": {
+    "offsetPixels": 0.013853904282115869
+  },
+  "contact": {
+    "feet": 96,
+    "meanGapPixels": 0.055596406649177275,
+    "gapPercent": 0,
+    "tops": 0,
+    "meanRimPixels": 0
+  },
+  "acne": {
+    "pixels": 47438,
+    "meanShadowPercent": 0.0704324860120283,
+    "shadowedPercent": 0
+  }
+}
