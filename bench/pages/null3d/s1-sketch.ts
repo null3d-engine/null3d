@@ -113,7 +113,7 @@ export default defineSketch(async (context) => {
 	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
 	const pickViews = switches.has('impostors') ? await createImpostorField(context) : undefined;
 	// The camera's position for the add-ons' steps, and the target that the path writes beside it.
-	const eye = new Float64Array(3);
+	const cameraAt = new Float64Array(3);
 	const lookAt = new Float64Array(3);
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
@@ -221,9 +221,9 @@ export default defineSketch(async (context) => {
 		moveSmoke?.(t);
 		turnDecals?.(t);
 		if (followTerrain || pickViews) {
-			s1Camera(t, eye, lookAt);
-			followTerrain?.(eye);
-			pickViews?.(eye);
+			s1Camera(t, cameraAt, lookAt);
+			followTerrain?.(cameraAt);
+			pickViews?.(cameraAt);
 		}
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
