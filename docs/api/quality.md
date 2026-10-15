@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, the 
 
 # Quality API
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `quality.setBudget`. The API is experimental, so it can still change between versions. `quality.set` takes every setting that the [settings table](#settings) says changes during play. The others stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `quality.setBudget`. The API is experimental, so it can still change between versions. `quality.set` takes every setting that changes during play, as [Settings](#settings) says. The others stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -53,42 +53,9 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 
 ## Settings
 
-`quality.settings` holds the settings that a sketch can read. Each starts at the preset's value, or at the value of the page's option for it.
+`quality.settings` holds the settings that a sketch can read. Each starts at the preset's value, or at the value of the page's option for it. The API reference lists every setting with what it takes and when it changes: [`QualitySettings`](reference/quality.md#qualitysettings). The engine's own doc comments make that list, so it holds every setting of this version. [Quality preset tables](../concepts/quality-preset-tables.md#settings-of-each-preset) gives each preset's value of each setting.
 
-| Setting | Takes | Changes |
-| --- | --- | --- |
-| `maxPixelRatio` | A number from 0.5 up. `Infinity` draws at the screen's full pixel ratio. | During play. The canvas takes its new size within a frame or two. |
-| `minRenderScale` | A number from 0.25 to 1, at most `maxRenderScale`: the lowest render scale that dynamic resolution may draw at. 1 keeps the whole canvas. | During play. |
-| `maxRenderScale` | A number from 0.25 to 1: the highest render scale, where the engine starts. | During play. |
-| `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
-| `textureMemoryMiB` | A whole number of MiB from 64 to 16,384: the GPU memory that textures may take. Phones and tablets cap a preset's value at 1,008. | During play. Past it, the engine drops the largest mip levels of textures from files. |
-| `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
-| `shadowFilter` | 3 or 5: the texels on each side of the square that blends each shadow's edge. 5 gives softer edges and costs more for each pixel that receives shadows. | During play. |
-| `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
-| `followMovingCasters` | `true` or `false`: whether a far shadow cascade draws in every frame while a moving caster touches it. `false` keeps each far cascade to its turns, so a far moving shadow can trail its caster by a few frames. Every preset turns it on. | During play. |
-| `farAnimationInterval` | A whole number from 1 to 4: a far character's pose updates once in this many frames. Give it to [`animator.setUpdateInterval`](animation.md#crowds) for the characters that the camera sees from far, and 1 to those near it. | During play. The governor raises it after every other step. |
-| `shadowCascadeBlend` | A number from 0 to 0.5: the share of each shadow cascade's length, at its far end, over which its shadows blend into the next cascade's. 0 hands over at once. | During play. |
-| `bloomSize` | 64, 128, 256 or 512: the texels on the short side of bloom's largest level. A smaller value costs less and keeps the glow's size, with a softer core. | During play. Bloom's targets are made again. |
-| `aoScale` | 0.5, 0.25 or 0: the size of ambient occlusion's targets as a share of the render size. 0 draws no ambient occlusion even when `post.set` turns it on. | During play. |
-| `contactShadowSteps` | 0, 4, 8 or 16: the steps of each search for the directional light's [contact shadows](../concepts/shadows.md#contact-shadows). 0 draws none, whatever the light's `contactDistance`. | During play. |
-| `dofSamples` | 16, 22, 43, 71 or 0: the taps of depth of field's gather. 0 draws no depth of field even when `post.set` turns it on. | During play. |
-| `ssrScale` | 0.5, 0.25 or 0: the size of the grid that [screen-space reflections](post.md#screen-space-reflections) trace on, as a share of the render size. 0 draws no reflections even when `post.set` turns them on. | During play. |
-| `ssrSteps` | 16, 24, 32, 48 or 64: the most steps of each reflected ray's march. More steps let rays reach farther objects and cost more. | During play. |
-| `reflectionScale` | 1, 0.5 or 0.25: the size of a reflection pass's texture as a share of the render size, for each reflection whose `scale` option names none. | During play. The reflections' textures are made again. |
-| `softwareOcclusion` | `true` or `false`: whether the job workers cull objects that marked occluders hide, on WebGL2. WebGPU ignores it. | During play. |
-| `lodThreshold` | A number from 0 to 16: the error in pixels under which a mesh's coarser [level of detail](../concepts/lod.md) draws. A larger number draws coarser levels nearer the camera, which costs less. 0 draws every mesh's base level. | During play. |
-| `lodShadowFactor` | A number from 1 to 16: what the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level than the camera sees. 1 draws the camera's level. | During play. |
-| `lodFade` | `true` or `false`: whether two levels of detail hand over in a short dithered band past each switch distance. `false` switches at once. | During play. |
-| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the levels of detail, the shadow settings, bloom's size, ambient occlusion's scale, the scale of screen-space reflections, the steps of contact shadows and the far characters' update interval when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the other settings as set. |
-| `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
-| `shadowCascades` | A whole number from 1 to 4: the cascades of a directional light's shadows, for each light whose `shadow` options name none. | At the start only. The page's `shadowCascades` option sets it. |
-| `shadowMapSize` | 512, 1,024, 2,048 or 4,096: the texels on each side of each cascade's shadow map, for each light whose `shadow` options name no `mapSize`. | At the start only. The page's `shadowMapSize` option sets it. |
-| `shadowTiles` | A whole number from 0 to 24: the tiles of the shadow atlas that spot and point lights cast their shadows into. 0 turns their shadows off. | At the start only. The page's `shadowTiles` option sets it. |
-| `shadowTileSize` | 256, 512, 1,024 or 2,048: the texels on each side of a tile of the shadow atlas. | At the start only. The page's `shadowTileSize` option sets it. |
-| `pointLightShadows` | `true` or `false`: whether point lights cast shadows. Each one takes six tiles of the atlas. | At the start only. The page's `pointLightShadows` option sets it. |
-| `depthPrepass` | `true` or `false`: whether the engine draws the opaque objects' depth before it shades them. | At the start only. The page's `depthPrepass` option sets it. |
-| `gpuOcclusion` | `true` or `false`: whether GPU occlusion culling runs on WebGPU. It is always `false` on WebGL2 and with the depth prepass. | At the start only. The page's `gpuOcclusion` option sets it. |
-| `morphTargets` | A whole number from 1 to 256: the most morph target weights of each object that WebGL2 draws. WebGPU draws every weight. | At the start only. The page's `morphTargets` option sets it. |
+Most settings change during play. The preset tables' "Changes" column names the ones that stay fixed from the start, which the page's `createEngine` options set.
 
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
 

@@ -353,7 +353,7 @@ flowchart LR
 
 The engine draws the first two tables when the air's settings change, and the sky view when the air, the sun, the moon or the camera's height changes. A still sky draws none of them. The background then reads one texel of the sky view per pixel, and adds the sun's disc, the moon, the stars and the clouds.
 
-The aerial perspective needs no table. Over a scene's distances, the air's density falls with height as height fog's does, and the sun's light along the way barely changes. So each surface's shader integrates Rayleigh's and Mie's scattering along its ray exactly, from a few values that the engine works out each frame. It costs about what fog costs. Past a few tens of kilometres, the earth's curve, which this leaves out, would show.
+The aerial perspective needs no table. Over a scene's distances, the air's density falls with height as height fog's does, and the sun's light along the way barely changes. So each surface's shader integrates Rayleigh's and Mie's scattering along its ray exactly, from a few values that the engine works out each frame. It costs about what fog costs. Past a few tens of kilometers, the earth's curve, which this leaves out, would show.
 
 At night the moon is a second light of the air: it lights the sky as the sun does, a little bluer at the scene's exposure. The moon's disc shows its phase, lit from the sun's side. The stars add their light to the sky's, so they show only where the sky is dark enough, and the air dims them toward the horizon.
 

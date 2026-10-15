@@ -3,7 +3,7 @@ id: api/terrain
 title: "Terrain (@null3d/terrain)"
 status: experimental
 since: "0.2"
-summary: "createTerrain: a height field drawn as a camera-centred quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects."
+summary: "createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects."
 ---
 
 # Terrain (@null3d/terrain)
@@ -12,7 +12,7 @@ summary: "createTerrain: a height field drawn as a camera-centred quadtree of bl
 
 ```mermaid
 flowchart LR
-    height["A height field<br/>from a function or a map"] --> tree["A camera-centred quadtree<br/>picks the blocks"]
+    height["A height field<br/>from a function or a map"] --> tree["A camera-centered quadtree<br/>picks the blocks"]
     tree --> blocks["Each block a mesh,<br/>with a skirt at its edge"]
     blocks --> splat["One splat-mapped material<br/>blends up to four layers"]
     splat --> screen["The ground"]
@@ -96,7 +96,7 @@ three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, u
 | three.js | null3D |
 | --- | --- |
 | A `PlaneGeometry` with displaced vertices | `createTerrain` with a height function or height map |
-| A quadtree or a library for levels of detail | The add-on's own camera-centred quadtree |
+| A quadtree or a library for levels of detail | The add-on's own camera-centered quadtree |
 | A hand-painted ground or per-vertex colors | A splat map that blends four tiled layers |
 | A physics collider or a height lookup on the mesh | `heightAt` and `normalAt` |
 | A vertex morph between levels | A skirt around each block |

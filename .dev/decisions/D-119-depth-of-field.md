@@ -1,6 +1,6 @@
 # D-119: Depth of field
 
-Status: proposed, 2026-10-09. Date: 2026-10-09. Task: M2-EX17.
+Status: proposed by the helper of M2-EX17 on 9 October 2026. Built: depth of field is on main (`ea4df4b37`, 9 October 2026). No ruling is recorded. Date: 2026-10-09. Task: M2-EX17.
 
 Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimetres on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and keeps it off on Low, by the owner's ruling after the cloud phone runs. At 1920 x 1080 on the Mac it costs about 0.6 ms of GPU time per frame at 22 taps with WebGL2 and 0.85 ms with WebGPU, about 0.9 and 1.3 ms at 43 taps, and nothing while it is off.
 

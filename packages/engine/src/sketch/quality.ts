@@ -73,14 +73,15 @@ export type ApplyQuality = (update: QualityUpdate, changed: readonly QualitySett
 
 /**
  * What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale
- * first, which `quality.renderScale` reports, then the shadow settings and bloom's size here.
+ * first, which `quality.renderScale` reports. Then it lowers the settings here, and last the
+ * volumetric fog's slices, which have no member here.
  *
  * @category api/quality
  */
 export interface QualityGovernor {
 	/**
-	 * The steps past the render scale that the governor has taken: 0 while the shadow settings and
-	 * bloom's size apply as set. Each step lowers the frame's cost after the render scale has reached
+	 * The steps past the render scale that the governor has taken: 0 while every setting applies as
+	 * set. The steps of the levels of detail and of the volumetric fog count too. Each step lowers the frame's cost after the render scale has reached
 	 * `minRenderScale`, so a sketch can lighten its own work too, such as its particles.
 	 */
 	readonly steps: number;
@@ -195,9 +196,10 @@ export interface Quality {
 	readonly renderScale: number;
 	/**
 	 * What the frame-budget governor has lowered below `settings`. When frames take too long, the
-	 * governor lowers the render scale, then the shadow settings, then bloom's size, one step at a
-	 * time. The `onChange` handlers run after each of those steps, but not after a step of the
-	 * render scale. Hold mode has no governor, so it draws with the settings as set.
+	 * governor lowers the render scale, then the levels of detail, the shadow settings, the effects'
+	 * settings and the far characters' updates, one step at a time, in the order that the quality
+	 * presets page lists. The `onChange` handlers run after each of those steps, but not after a
+	 * step of the render scale. Hold mode has no governor, so it draws with the settings as set.
 	 */
 	readonly governor: QualityGovernor;
 	/**

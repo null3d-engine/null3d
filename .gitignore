@@ -43,6 +43,7 @@ tools/fixtures/*/Cargo.lock
 docs/api/reference/
 docs/concepts/quality-preset-tables.md
 docs/errors/
+docs/guides/first-use-shaders.md
 docs/pages.md
 docs/porting/threejs-mapping.md
 docs/shaders/library.md

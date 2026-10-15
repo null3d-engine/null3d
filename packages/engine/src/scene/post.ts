@@ -308,8 +308,8 @@ export interface OutlineSettings {
 
 /**
  * Depth of field's settings: a camera lens's blur, which keeps sharp only what lies near the focus
- * distance. The lens is a photographer's: a focal length in millimetres on a full-frame sensor, 24
- * mm tall, and an aperture as an f-number. World units count as metres. A setting that a call
+ * distance. The lens is a photographer's: a focal length in millimeters on a full-frame sensor, 24
+ * mm tall, and an aperture as an f-number. World units count as meters. A setting that a call
  * leaves out keeps its value.
  *
  * @category api/post
@@ -333,7 +333,7 @@ export interface DofSettings {
 	 */
 	aperture?: number;
 	/**
-	 * The lens's focal length in millimetres, above 0, or `'camera'`, the default, for the active
+	 * The lens's focal length in millimeters, above 0, or `'camera'`, the default, for the active
 	 * camera's: its field of view on a full-frame sensor, which `camera.setFocalLength` sets. A
 	 * longer lens blurs more at the same aperture.
 	 */

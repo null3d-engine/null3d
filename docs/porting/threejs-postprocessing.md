@@ -25,6 +25,8 @@ flowchart LR
 
 Delete `EffectComposer`, `RenderPass`, `OutputPass`, `GammaCorrectionShader` and the call to `composer.render()`. Delete `composer.setSize` and `composer.setPixelRatio` too: the engine follows the canvas. Then move each pass's numbers into `post.set` in the sketch.
 
+null3D's default tone curve is `'agx-punchy'`, AgX with more contrast and color. three.js has no tone mapping by default. So a port of a scene without tone mapping sets `toneMapping: 'none'`. Otherwise the port looks darker and more saturated than the original.
+
 A three.js chain with ACES tone mapping and a vignette:
 
 ```js
@@ -51,7 +53,8 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | --- | --- | --- |
 | `RenderPass`, `OutputPass` | Nothing | The scene pass and the final pass are built in. |
 | `GammaCorrectionShader`, `SRGBShader` | Delete | The final pass encodes sRGB once. Keeping the pass applies it twice. |
-| `renderer.toneMapping`, `toneMappingExposure` | `toneMapping`, `exposure` | `'aces'`, `'agx'`, `'neutral'` and `'none'` use three.js's formulas. Other curves become a [custom tone curve](#port-a-tone-mapping). |
+| `renderer.toneMapping`, `toneMappingExposure` | `toneMapping`, `exposure` | `'aces'`, `'agx'`, `'neutral'` and `'none'` use three.js's formulas. `'agx-punchy'`, the default, is AgX with more contrast and color, and three.js has no match for it. Other curves become a [custom tone curve](#port-a-tone-mapping). |
+| `AdaptiveToneMappingPass` | `autoExposure: { metering: 'mean', speedUp, speedDown, compensation }`, and a custom tone curve for its Reinhard curve | `adaptationRate` becomes about `speedUp` and `speedDown`. `middleGrey` becomes `compensation`, `log2(middleGrey / 0.18)` stops. |
 | `UnrealBloomPass` | `bloom` with `blend: 'add'` and `knee: 0.01` | Keep the threshold. The intensity is about 8.8 times `strength`, and `radius` becomes the `weights`. |
 | `GTAOPass` | `ao` | The settings keep their names. `distanceFallOff` becomes `distanceFalloff`, and `blendIntensity` becomes `intensity`. |
 | `SSAOPass`, `SAOPass`, N8AO | `ao` | Their settings mean other things. Start from the defaults and tune `radius` and `scale` by eye. |
@@ -73,6 +76,8 @@ pmndrs postprocessing maps the same way:
 | `EffectComposer`, `RenderPass`, `EffectPass` | Nothing |
 | `BloomEffect` | `bloom` with `blend: 'screen'`. `luminanceThreshold` becomes `threshold`, and `luminanceSmoothing` becomes `knee`. |
 | `ToneMappingEffect` | `toneMapping` |
+| `ToneMappingEffect` with `REINHARD2_ADAPTIVE`, `AdaptiveLuminancePass` | `autoExposure`, as for `AdaptiveToneMappingPass`. null3D weights the center of the screen, so its exposure differs a little. |
+| `GodRaysEffect` | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy } })`: the scene's fog, lit by the sun and the lamps through their shadows. Set a low density where the scene had no fog. It draws where the quality setting `fogSlices` is above 0. |
 | `SSAOEffect`, N8AO | `ao`, tuned by eye |
 | `OutlineEffect` | `outline`. `xRay: false` becomes `hiddenColor: false`. |
 | `LUT3DEffect` | `lut` |
