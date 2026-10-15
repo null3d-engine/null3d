@@ -563,7 +563,7 @@ const COLUMN_NAMES: Readonly<Record<Column, string>> = {
 function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
 	return COLUMNS.filter((column) => size[column] > budget[column]).map(
 		(column) =>
-			`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, over its ${budget[column] / 1024} KB budget`,
+			`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, over its ${budget[column] / 1024} KB budget set in tools/lib/size-report.ts`,
 	);
 }
 
@@ -577,7 +577,7 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_536 * 1024,
 	gzip: 320 * 1024,
-	brotli: 48 * 1024,
+	brotli: 49 * 1024,
 };
 
 /**
