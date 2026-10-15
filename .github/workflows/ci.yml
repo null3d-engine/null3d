@@ -544,6 +544,9 @@ jobs:
     timeout-minutes: 20
     env:
       HUSKY: "0"
+      # As in the browser job: collecting the tests loads every generated shader, because one test
+      # file sizes its parts by asking for them all. This entry comes out with that file's fix.
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
