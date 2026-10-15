@@ -203,8 +203,9 @@ const EXPOSURE: readonly (readonly [number, number])[] = [
  * preset.
  *
  * Give it `out`, an object of a previous call, and it writes the new settings into that object: a
- * day cycle then allocates nothing, so a sketch can move the time in every frame. Without it the
- * call makes a new object. `emptyTimeOfDay()` makes the first one to pass.
+ * day cycle then allocates nothing, so a sketch can move the time in every frame. `bun run
+ * bench:allocation --time-of-day` checks that. Without it the call makes a new object.
+ * `emptyTimeOfDay()` makes the first one to pass.
  *
  * ```ts
  * const day = emptyTimeOfDay();

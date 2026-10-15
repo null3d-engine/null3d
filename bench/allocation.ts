@@ -74,7 +74,9 @@
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
 // update, a camera's ray through the pointer and its screen point of a place, the orbit and fly
 // controls' update, and the sketch's read of the frame's figures, which turns on the figures that
-// `--stats` samples. `--prepass` turns the depth prepass on, in any scene.
+// `--stats` samples. `--time-of-day` moves a day cycle's hour in every frame, through the object
+// that the first `timeOfDay` call made, for the allocation sample of the helper's per-frame form.
+// `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -128,6 +130,7 @@
 //   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
 //   bun run bench:allocation --impostors --gpu webgl2
+//   bun run bench:allocation --time-of-day
 //   bun run bench:allocation --calls --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
@@ -662,13 +665,16 @@ async function main(): Promise<void> {
 		if (impostors && scene !== 's1') throw new Error('--impostors adds impostors to S1 only');
 		const calls = args.includes('--calls') ? '&calls' : '';
 		if (calls && scene !== 's1') throw new Error("--calls makes S1's per-frame calls only");
+		const timeOfDaySwitch = args.includes('--time-of-day') ? '&timeOfDay' : '';
+		if (timeOfDaySwitch && scene !== 's1')
+			throw new Error('--time-of-day moves the day cycle of S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${impostors}${calls}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${impostors}${calls}${timeOfDaySwitch}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts

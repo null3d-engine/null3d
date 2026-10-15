@@ -413,7 +413,7 @@ export default defineSketch(async ({ scene, assets, post }) => {
 });
 ```
 
-A third argument is an object that the call fills, in place of making one: `timeOfDay(hour, {}, day)` writes the new settings into `day`, and a day cycle that moves the time in every frame then allocates nothing. `emptyTimeOfDay()` makes the first such object. The [atmosphere demo](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere) passes one and moves the hour with the pointer.
+A third argument is an object that the call fills, in place of making one: `timeOfDay(hour, {}, day)` writes the new settings into `day`, and a day cycle that moves the time in every frame then allocates nothing. `bun run bench:allocation --time-of-day` checks it. `emptyTimeOfDay()` makes the first such object. The [atmosphere demo](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere) passes one and moves the hour with the pointer.
 
 [Lighting and environment](../concepts/lighting.md#time-of-day) explains each value, the presets and the sun's path. A value that is not a finite number, or an unknown preset, throws a `RangeError`. The [time of day demo](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day) passes a whole day over a lighthouse in 40 seconds, and lights its windows and its lamp at dusk.
 

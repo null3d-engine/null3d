@@ -62,6 +62,8 @@
 // other switch makes: a raycast, a mesh's vertex update, a camera's ray through the pointer and
 // its screen point of a place, the orbit and fly controls' update, and the sketch's read of the
 // frame's figures, for the allocation sample of each.
+// The `timeOfDay` switch moves a day cycle's hour in every frame, through the object that its
+// first call made, for the allocation sample of the helper's per-frame form.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -77,10 +79,12 @@ import { createFlyControls, createOrbitControls } from '@null3d/controls';
 import {
 	defineSketch,
 	type Environment,
+	emptyTimeOfDay,
 	type PerspectiveCamera,
 	type RaycastHit,
 	type SketchContext,
 	type Texture,
+	timeOfDay,
 } from '@null3d/engine';
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
@@ -207,6 +211,7 @@ export default defineSketch(async (context) => {
 		? await createImpostorField(context, camera)
 		: undefined;
 	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
+	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -286,6 +291,7 @@ export default defineSketch(async (context) => {
 			setValues?.();
 			pickViews?.();
 			makeCalls?.();
+			moveDay?.();
 			for (let k = 0; k < particles.length; k++) particles[k]?.update();
 		},
 	};
@@ -587,6 +593,19 @@ async function createImpostorField(
 	return () => {
 		camera.getWorldPosition(eye);
 		cards.update(eye);
+	};
+}
+
+/**
+ * The `timeOfDay` switch: a day cycle that moves its hour in every frame. Returns the frame's step,
+ * which fills the object that the first call made, so the cycle allocates nothing. A call without
+ * that object makes an object tree in every frame.
+ */
+function createTimeOfDay(now: Float64Array): () => void {
+	const day = emptyTimeOfDay();
+	const options = {};
+	return () => {
+		timeOfDay(17 + (now[0] as number) * 0.01, options, day);
 	};
 }
 

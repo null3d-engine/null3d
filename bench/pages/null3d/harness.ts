@@ -126,6 +126,7 @@ const SKETCH_SWITCHES = [
 	'setters',
 	'impostors',
 	'calls',
+	'timeOfDay',
 	'frames',
 ] as const;
 
