@@ -52,10 +52,10 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `~/.cache/null3d` by
-default, each in a named subfolder: `cargo-target`, `shader-modules`, `shader-cache` and
-`wasm-artifacts`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still
-name one folder. Clearing the root is always safe, because every entry is a pure function of its
-inputs, so re-checking a branch on a moved main is cheap.
+default, each in a named subfolder: `shader-modules`, `shader-cache`, `wasm-artifacts` and, when
+sccache is installed, `sccache`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache
+variables still name one folder. Clearing the root is always safe, because every entry is a pure
+function of its inputs, so re-checking a branch on a moved main is cheap.
 [D-176](decisions/D-176-wasm-artifact-cache.md) and
 [D-177](decisions/D-177-build-cache-module.md) give the keys, and
 [Benchmarks](benchmarks.md#build-caches) the figures.
@@ -68,15 +68,26 @@ inputs, so re-checking a branch on a moved main is cheap.
   absent.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
-  output in a folder of its own, named for the build's process, and Cargo locks the target folder that
-  they share. A size check takes a machine-wide lock, because it also builds the base commit with that
-  commit's own build script, which may stage into the shared target folder.
-- The shared `cargo-target` folder holds one compiled object for each crate name. A build in one copy
-  can therefore leave files that another copy's build reuses. On 15 October 2026 that gave a merged
-  branch a core without its own feature. The feature bit was missing from the material's flags, and
-  the generated shader modules were newer than the core. When a core change seems to be ignored,
-  touch the crate sources and build with `NULL3D_NO_CACHE=1`. Check the flags word that a material
-  row holds before looking anywhere else.
+  output in a folder of its own, named for the build's process, and Cargo locks a target folder while
+  it writes. A size check takes the checkout's own lock, `target/build.lock`. The base commit is built
+  with that commit's own build script, in a base tree under this checkout's target folder. Size checks
+  of two checkouts therefore run at the same time.
+- Each checkout builds Rust into its own `target` folder. Never point two checkouts at one Rust build
+  folder, with `CARGO_TARGET_DIR` or `NULL3D_CARGO_TARGET`. Cargo finds the engine's crates at the
+  same workspace paths in every checkout and judges them fresh by file times. So a shared folder lets
+  one checkout compile or link against another checkout's build of `null3d-gpu`, `null3d-render` or
+  the shader compiler. The caches above then store that output under the right key, and the bad entry
+  outlives the build. On 14 and 15 October 2026 this gave branches a stale shader compiler, another
+  branch's GPU constants, and a core without its own feature.
+  [D-177](decisions/D-177-build-cache-module.md#addendum-15-october-2026-one-rust-build-folder-per-checkout)
+  gives the reasons.
+- sccache, when installed, compiles the dependency crates once for every checkout. The build uses it
+  through `RUSTC_WRAPPER` when it finds `sccache` on the `PATH` and no wrapper is set; an empty
+  `RUSTC_WRAPPER` turns it off. sccache keys each compile by the contents of its sources, flags and
+  dependencies, never by file times, so sharing it across checkouts is safe. Without sccache the
+  build runs as before, as in CI.
+- When a core change seems to be ignored, build with `NULL3D_NO_CACHE=1`, and check the flags word
+  that a material row holds before looking anywhere else.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
 shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the
