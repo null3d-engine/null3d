@@ -714,11 +714,17 @@ export const REFERENCE_PRESET_SWITCH = 'preset=high';
  * more switches. A three.js twin that copies the preset's settings reads the same switch.
  */
 /**
- * Switches that a scene's hold page always gets, whatever the command asks for. S5 gives a far
- * character a longer update interval by default, which steps its pose; a hold frame that parity or
- * the image tests compare must hold every character at every frame, so the twin's pose matches.
+ * The switch that holds every animated character at every frame. S5 gives a far character a longer
+ * update interval by default, which steps its pose and does less work than the three.js twin, which
+ * poses every character in every frame. A hold frame that parity or the image tests compare, and a
+ * comparison that measures equal work (D-52), both need every character posed in every frame.
  */
-const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'anim=every' };
+export const HOLD_EVERY_FRAME_SWITCH = 'anim=every';
+
+/**
+ * Switches that a scene's hold page always gets, whatever the command asks for.
+ */
+const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: HOLD_EVERY_FRAME_SWITCH };
 
 export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
 	// Only the null3D page takes the scene's own switches; the twin ignores them.
