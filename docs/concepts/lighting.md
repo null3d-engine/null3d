@@ -278,11 +278,11 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 
 ## Light probe grid
 
-An environment map lights every surface the same way. A light probe grid varies the light by place: a grid of probes holds the light that arrives at each point, so light bounced from a red wall or blocked by a corner reaches the surfaces near it. `scene.setLightProbeGrid` sets one, and [Scene](../api/scene.md#the-light-probe-grid) gives its options and the calls that make a grid.
+An environment map lights every surface the same way. A light probe grid varies the light by place. Its probes hold the light that arrives at each point, so light bounced from a red wall or blocked by a corner reaches the surfaces near it. `scene.setLightProbeGrid` sets one. [Scene](../api/scene.md#the-light-probe-grid) gives its options, and the calls that make a grid.
 
-Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. Standard materials read the grid per pixel, with three filtered reads, and its light takes the place of the environment's diffuse light. The environment keeps its reflections, and `environmentWeight` sets the share of the diffuse light that the grid takes over.
+Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. Standard materials read the grid per pixel, with three filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
 
-`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`: a direction that reaches the sky takes the environment's light, and a direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, its occlusion by the scene and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress, and `finish` bakes the rest at once.
+`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`. A direction that reaches the sky takes the environment's light. A direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, the scene's occlusion of it, and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
 ### What takes the grid's light
 
@@ -300,11 +300,11 @@ Such a mesh keeps the environment's diffuse light, and takes no light from the g
 ### Limits and cost
 
 - The grid's texture is a 3D texture of half floats, at most 256 texels along each side on every device. `LightProbeGridData.toTexture()` makes it.
-- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture holds three sub-volumes, one for each direction of L1, each with a padding slice at either end.
-- `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit: use a larger spacing, or a smaller box.
+- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture holds one sub-volume for each direction of L1. Each sub-volume has a padding slice at either end.
+- `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit. Use a larger spacing, or a smaller box.
 - The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes 110 KB.
 - Each lit pixel of a standard material reads the grid three times.
-- The grid's shaders load on first use, so a page that sets no grid downloads none of it. List `'probe_grid'` in `createEngine`'s `preload` option to load them before the first frame: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
+- The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
 
 ## Sky and backgrounds
 
