@@ -223,7 +223,7 @@ A feature that changes what a shader costs is a permutation bit, so a pipeline w
 The command knows which features and bits each model needs, because it has just walked its materials and meshes. It records them in the model's `asset.extras`, under `NULL3D_shaders`:
 
 ```json
-"NULL3D_shaders": { "permutations": ["VERTEX_COLOR", "ALPHA_MASK"], "features": ["cutout"] }
+"NULL3D_shaders": { "permutations": ["VERTEX_COLOR", "ALPHA_MASK"], "features": ["cutout", "coverage"] }
 ```
 
 The engine reads the list as it loads the file and downloads those shader files beside the textures. So `scene.warmUp()` builds only the pipelines that the model's objects need, and nothing new downloads while the game plays. The list names only what the model itself decides. Bits that a device fixes, such as half precision, and bits that the scene decides, such as receiving shadows, are not part of it.
