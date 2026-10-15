@@ -1873,7 +1873,9 @@ export class Light extends Object3D {
 		if (DEV) {
 			checkLive(call, this);
 			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
-			checkNumber(call, limits[0], value, this);
+			// A required setting that the options left out arrives as undefined, which the range
+			// test below reports in the light's own terms.
+			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
 			// The shadow distance 0 is 'auto', and it stands in for the default.
 			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
 			// Cascades are whole, and map sizes are powers of two.
@@ -1881,7 +1883,7 @@ export class Light extends Object3D {
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
 					? Number.isInteger(value)
 					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
-			if (!auto && !(value >= limits[1] && value <= limits[2] && whole))
+			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
 					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
