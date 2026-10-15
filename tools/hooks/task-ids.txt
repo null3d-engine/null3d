@@ -324,6 +324,7 @@ M3-F5
 M3-F6
 M3-F7
 M3-F8
+M3-T1
 M4-A1
 M4-A2
 M4-A3
@@ -345,3 +346,7 @@ M4-C8
 M4-C9
 M4-D1
 M4-D2
+
+# Process labels, accepted on 15 October 2026, that no plan file names.
+M2-process
+M3-plan

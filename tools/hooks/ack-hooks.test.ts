@@ -16,7 +16,7 @@ import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-ma
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
-import { knownTaskIds, TASK_RULE_SINCE, taskProblem } from './check-task';
+import { knownTaskIds, TASK_ID_SHAPE, TASK_RULE_SINCE, taskProblem } from './check-task';
 import { keptCommits } from './check-trailers';
 import { checkAck, findAckValue, findAckValues } from './commit-ack';
 
@@ -457,6 +457,12 @@ describe('taskProblem', () => {
 	it('reads the list beside the hook, where each line is a task ID', () => {
 		const ids = knownTaskIds();
 		expect(ids.has('M2-J4')).toBe(true);
-		expect([...ids].every((id) => /^M\d+-[A-Z]+\d+$/.test(id))).toBe(true);
+		expect([...ids].every((id) => TASK_ID_SHAPE.test(id))).toBe(true);
+	});
+
+	it('keeps the accepted process labels in the list', () => {
+		const ids = knownTaskIds();
+		expect(ids.has('M2-process')).toBe(true);
+		expect(ids.has('M3-plan')).toBe(true);
 	});
 });

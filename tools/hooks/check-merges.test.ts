@@ -67,13 +67,17 @@ describe('conflictsIn', () => {
 
 // The merges here are new, so each check passes an empty start to read merges of any age.
 describe('analyseMerge', () => {
-	it('passes a merge that only resolves its conflict from the two sides', () => {
+	// Each case builds a repository and merges in it, which starts many git processes. A loaded
+	// machine needs longer than the default test limit.
+	const gitCase = (name: string, fn: () => void) => it(name, fn, 30_000);
+
+	gitCase('passes a merge that only resolves its conflict from the two sides', () => {
 		const finding = analyseMerge(...mergeWith({ 'scene.ts': resolved }), '');
 		expect(finding?.words).toBe(0);
 		expect(finding && mergeProblem(finding)).toBeNull();
 	});
 
-	it('passes a merge that moves lines or renumbers them', () => {
+	gitCase('passes a merge that moves lines or renumbers them', () => {
 		const moved = resolved
 			.replace('export const LIMIT = 32; // the default\n\n', '')
 			.concat('export const LIMIT = 48; // the default\n');
@@ -81,7 +85,7 @@ describe('analyseMerge', () => {
 		expect(finding && mergeProblem(finding)).toBeNull();
 	});
 
-	it('refuses a merge that writes a new function outside its conflict', () => {
+	gitCase('refuses a merge that writes a new function outside its conflict', () => {
 		const feature = `${resolved}
 export function volume(width: number, height: number, depth: number): number {
 	// The box's volume, for the culling pass that sorts boxes by how much space they fill.
@@ -95,14 +99,14 @@ export function volume(width: number, height: number, depth: number): number {
 		expect(finding && mergeProblem(finding)).toContain('words of new work');
 	});
 
-	it('refuses new shader code in a merge, however short', () => {
+	gitCase('refuses new shader code in a merge, however short', () => {
 		const shading = SHADER.replace('return color;', 'return color * 0.5;\n    // dimmer');
 		const finding = analyseMerge(...mergeWith({ 'scene.ts': resolved, 'lit.wgsl': shading }), '');
 		expect(finding?.shaderLines).toBe(1);
 		expect(finding && mergeProblem(finding)).toContain('line(s) of new shader code');
 	});
 
-	it('passes new work that a Merge-Edit trailer explains', () => {
+	gitCase('passes new work that a Merge-Edit trailer explains', () => {
 		const feature = `${resolved}\nexport function volume(width: number, height: number, depth: number): number {\n\treturn area(width, height) * depth * VOLUME_SCALE_FOR_THE_CULLING_PASS_OF_BOXES;\n}\n`;
 		const message =
 			'Merge branch side\n\nMerge-Edit: scene.ts volume() follows the area() rename that main made';
@@ -111,7 +115,7 @@ export function volume(width: number, height: number, depth: number): number {
 		expect(finding && mergeProblem(finding)).toBeNull();
 	});
 
-	it('does not accept a bare Merge-Edit trailer', () => {
+	gitCase('does not accept a bare Merge-Edit trailer', () => {
 		const feature = `${resolved}\nexport function volume(width: number, height: number, depth: number): number {\n\t// The box's volume, for the culling pass that sorts boxes by how much space they fill.\n\treturn area(width, height) * depth;\n}\n`;
 		const finding = analyseMerge(
 			...mergeWith({ 'scene.ts': feature }, 'Merge branch side\n\nMerge-Edit: yes'),
@@ -121,7 +125,7 @@ export function volume(width: number, height: number, depth: number): number {
 		expect(finding && mergeProblem(finding)).not.toBeNull();
 	});
 
-	it('skips a merge committed before the rule', () => {
+	gitCase('skips a merge committed before the rule', () => {
 		expect(analyseMerge(...mergeWith({ 'scene.ts': resolved }), '2999-01-01T00:00:00Z')).toBeNull();
 	});
 });
