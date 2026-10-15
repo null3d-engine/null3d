@@ -319,7 +319,8 @@ fn effect(input: EffectInput) -> vec4f {
 		const built = material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT));
 		expect(built.functions).toEqual(['surface']);
 		// Each build has a twin that skins, for skinned meshes, and each build has a twin that reads
-		// the row values of instance batches.
+		// the row values of instance batches. No build does its math at half precision, so the
+		// material's sets of builds (material-builds.ts) are not split by the half bit.
 		const plain = [
 			'webgl2',
 			'webgl2_alpha_mask',
