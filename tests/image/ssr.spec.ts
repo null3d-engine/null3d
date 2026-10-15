@@ -1,8 +1,9 @@
 // Screen-space reflections on a steel floor that reflects no environment, on every tier: the ssr
 // tests of the image test manifest. A trace that misses, a reprojection into the wrong place or a
 // reflection read upside down still draws a plausible picture, which a new reference could take in.
-// This spec checks that each box's reflection hangs below it on its own side, and that the floor
-// shows none without the reflections. So it fails even before a test has references.
+// This spec checks that each box's reflection hangs below it on its own side, that the floor shows
+// none without the reflections, and that a planar reflection on the floor's left half keeps the red
+// box's reflection there. So it fails even before a test has references.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import { IMAGE_RUNS } from './manifest.ts';
@@ -70,7 +71,14 @@ function runsOf(name: string) {
 	return runs;
 }
 
-for (const name of ['ssr-floor', 'ssr-quarter', 'ssr-scale-50', 'ssr-ao', 'ssr-glass'])
+for (const name of [
+	'ssr-floor',
+	'ssr-quarter',
+	'ssr-scale-50',
+	'ssr-ao',
+	'ssr-planar',
+	'ssr-glass',
+])
 	test(`${name}: each box's reflection hangs below it on its own side`, async ({ page }) => {
 		test.setTimeout(180_000);
 		for (const run of runsOf(name)) {

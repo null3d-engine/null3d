@@ -4,8 +4,8 @@
 // reflects only the environment, which the sketch leaves dark, so the floor stays dark. ?rough
 // makes the floor rough, so the reflections blur; ?wet makes it a dark, smooth plastic floor, which
 // reflects little straight down and much at a low angle, as wet asphalt does. ?ao turns ambient
-// screen-space reflections there. ?ao turns ambient
-// occlusion on too, which draws on the same grid. ?glass puts a glass ball
+// occlusion on too, which draws on the same grid. ?planar mirrors the floor's left half with a
+// planar reflection pass, which wins over the screen's reflection there. ?glass puts a glass ball
 // in front, which draws through the copy of the opaque colors that the reflections read too.
 // ?scale= draws at that render scale.
 //
@@ -15,7 +15,23 @@ import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
 
-export default defineSketch(({ scene, materials, geometry, post, quality }) => {
+/** The floor's left half takes the planar reflection, the right half the screen's. */
+const planarWgsl = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, vec2f(0.0));
+    let left = select(0.0, 1.0, input.worldPosition.x < 0.0);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, left);
+    return s;
+}
+`;
+
+export default defineSketch(({ scene, materials, geometry, post, quality, render, textures }) => {
 	if (params.has('ssr')) {
 		quality.set({ ssrScale: params.get('ssrscale') === '0.25' ? 0.25 : 0.5, ssrSteps: 64 });
 		post.set({ ssr: { maxDistance: 30, thickness: 0.6 } });
@@ -63,7 +79,17 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	const floorLook = wet
 		? { color: '#151719', roughness: 0.03, metalness: 0 }
 		: { color: '#c8ccd0', roughness: rough ? 0.3 : 0.04, metalness: 1 };
-	const floorMaterial = materials.standard(floorLook);
+	const floorMaterial = params.has('planar')
+		? materials.shader({
+				wgsl: planarWgsl,
+				...floorLook,
+				textures: {
+					mirror: textures.fromPass(
+						render.addPass({ kind: 'reflection', writes: 'mirror', plane: { point: [0, 0, 0] } }),
+					),
+				},
+			})
+		: materials.standard(floorLook);
 	const floor = scene.createMesh({
 		mesh: geometry.plane({ width: 30, height: 30 }),
 		material: floorMaterial,

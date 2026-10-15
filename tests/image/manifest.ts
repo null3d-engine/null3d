@@ -680,10 +680,10 @@ const SSR_SIZE = [480, 270] as const;
  * Screen-space reflections on a smooth steel floor, which reflects no environment, so it shows only
  * what the reflections find on the screen, on every tier: off, on, on a rough floor, which blurs
  * them, on a wet plastic floor, which reflects most at a low angle, at a quarter of the render
- * size, at half the render scale, with ambient occlusion on the same grid, and with a glass ball
- * that draws through the color copy that the reflections read too. The held frame draws twice, so
- * the reflections read the frame before it. The reflection spec checks where the boxes' reflections
- * land.
+ * size, at half the render scale, with ambient occlusion on the same grid, with a planar reflection
+ * on the floor's left half, which wins there, and with a glass ball that draws through the color
+ * copy that the reflections read too. The held frame draws twice, so the reflections read the frame
+ * before it. The reflection spec checks where the boxes' reflections land.
  */
 function ssrTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -700,6 +700,7 @@ function ssrTests(): ImageTest[] {
 		test('ssr-quarter', '?ssr&ssrscale=0.25'),
 		test('ssr-scale-50', '?ssr&scale=0.5'),
 		test('ssr-ao', '?ssr&ao'),
+		test('ssr-planar', '?ssr&planar'),
 		test('ssr-glass', '?ssr&glass'),
 	];
 }
