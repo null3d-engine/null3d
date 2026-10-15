@@ -73,6 +73,11 @@
 // cards around S1, which pick their views from the camera in every frame. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--prepass` turns the depth prepass on, in any scene.
+// `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
+// the Mac on 15 October 2026, the terrain's update allocated 1908 bytes per frame in the heightfield
+// sampling, 1871 in the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and
+// the impostors' batch update allocated 187 KB per frame with 23 KB in the sampling beside it. Both
+// add-ons must stop allocating in their per-frame update, which their owners owe.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -227,12 +232,17 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the sketch worker's reading of pointer events. It runs at the input's rate, not the frame's,
  *   so the browser may keep it in a lower tier, where each fraction it computes is a new number.
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
+ * - the wake path's slot change, which the sketch worker reads each frame: measured on the Mac at
+ *   High on 15 October 2026, it took 17.5 bytes per frame, up to 19.7;
+ * - the frame's pending reads, which the render worker maps after it submits: each read makes a
+ *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
+ *   per frame, up to 20.4.
  */
 export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
-		'slotChange shared/wake.ts': 16,
+		'slotChange shared/wake.ts': 20,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
@@ -254,6 +264,7 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'then (built-in)': 128,
 		'Uint8Array (built-in)': 64,
 		'submit webgpu/backend.ts': 32,
+		'flushReads webgpu/backend.ts': 24,
 		'afterSubmit gpu/completion.ts': 160,
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
@@ -345,10 +356,12 @@ type WorkerBudgets = Partial<Record<(typeof WORKERS)[number], Record<string, num
 
 /**
  * The bytes per frame that the WebGPU replay may allocate for each render pass or compute pass that
- * a switch or a scene adds on top of S1's: the browser's encoder of the pass, about 17 bytes, which
- * it makes for each pass, with room for sampling noise.
+ * a switch or a scene adds on top of S1's: the browser's encoder of the pass, which it makes for
+ * each pass. Measured on the Mac at High: (2026-10-15) the pass-heavy switches added 25.5 to 34.4
+ * bytes per pass over S1's own figure — 24 for `--tile-shadows`, 28 for `--bloom`, 26 for `--dof`,
+ * 34 for `--fog` and 25 for `--passes` — so 32 covers them with room for sampling noise.
  */
-const PASS_REPLAY_BYTES = 64;
+const PASS_REPLAY_BYTES = 32;
 
 /**
  * The render passes that the sun's contact shadows add, in scenes whose sun casts shadows (S4, and
@@ -366,6 +379,15 @@ const CONTACT_PASSES = 5;
  */
 const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
 	'render-worker': { 'generateMipmaps webgpu/backend.ts': 11 * 32 },
+};
+
+/**
+ * What `--weighted` writes through the staging ring each frame: the blended rows' weights, which the
+ * page uploads as its rows move. Measured on the Mac on 15 October 2026: the write took 123.5 bytes
+ * per frame against the 96 that a page without the switch takes, up to 124.1.
+ */
+const WEIGHTED_BUDGETS: WorkerBudgets = {
+	'render-worker': { 'write webgpu/staging.ts': 32 },
 };
 
 /** A switch of the check that S1's page takes as a switch of its sketch. */
@@ -442,7 +464,7 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 		budgets: TRANSMISSION_MIPS_BUDGETS,
 	},
 	{ flag: '--coat-sheen', query: '&coatSheen' },
-	{ flag: '--weighted', query: '&weighted' },
+	{ flag: '--weighted', query: '&weighted', budgets: WEIGHTED_BUDGETS },
 	{ flag: '--decals', query: '&decals', passes: 1 },
 	{ flag: '--particles', query: '&particles', passes: 1 },
 	{ flag: '--passes', query: '&passes', passes: 2 },
