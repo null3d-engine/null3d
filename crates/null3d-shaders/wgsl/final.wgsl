@@ -10,6 +10,11 @@
 // colors, after the tone mapping: a filter over HDR color would let a small share of a very bright
 // texel turn its neighbors almost white.
 //
+// A frame below the whole canvas's scale may instead draw in two steps. The first build, whose
+// settings hold RESOLVE, draws one texel for each render pixel into a target of the render size,
+// with FXAA, and leaves the dither to the second. The second build reads that target as display
+// color and scales it up as the pass above does.
+//
 // The scene color holds color multiplied by its coverage. Where it is only partly covered, as over
 // a transparent canvas's background, the pass maps the color that covers it and keeps the coverage
 // as the canvas's premultiplied alpha. WebGL2 keeps GL's row order, bottom row first, in the scene
@@ -41,8 +46,13 @@
 // below it, the chain would run on each of the four texels that a pixel blends.
 //
 // The vignette multiplies HDR color before the tone mapping, as Filament, URP, Bevy and Babylon.js
-// do, so bright corners darken as dark ones do instead of turning gray. The 8-bit path has no HDR
-// color, so there the pass multiplies the linear value of the display color, before the outline.
+// do, so bright corners darken as dark ones do instead of turning gray. On the 8-bit path the scene
+// shaders darken their light by it before their tone mapping, and the pass applies none.
+//
+// With automatic exposure, the pass multiplies the HDR color by the exposure that the meter wrote
+// into one texel this frame: the scene's texels, the folded effects' output and bloom's glow, each
+// before they meet. FXAA, the vignette and the tone mapping then see the adapted color. The flag
+// is clear on the 8-bit path, and the texel's read is skipped while it is clear.
 //
 // Last, the pass grades each pixel's display color with a color grading table while its flag is
 // set, as three.js's LUTPass does after its OutputPass, then dithers it. The table is a 3D texture
@@ -51,7 +61,7 @@
 // path the scene shaders dithered already, and the pass dithers again only where it changes the
 // color. Grading and the dither work on the color that a pixel's coverage divides out, and
 // multiply it back after.
-#import null3d::color::{limit_hdr, linear_to_srgb, srgb_to_linear}
+#import null3d::color::{limit_hdr, linear_to_srgb}
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
@@ -62,6 +72,16 @@ const VIGNETTE: u32 = 2u;
 const LUT: u32 = 4u;
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
+/// The settings flag that multiplies the HDR color by the automatic exposure's texel.
+const AUTO_EXPOSURE: u32 = 16u;
+/// The settings flag that says the pass is the first of two steps below the whole canvas's render
+/// scale: it draws one texel for each render pixel into a target of the render size, so its frame
+/// is the render size and it leaves the dither to the second step.
+const RESOLVE: u32 = 32u;
+/// The settings flag that makes the pass dither even where it holds display color. The second step
+/// sets it when the first step's target came from high dynamic range color, since that path would
+/// otherwise dither in the first step.
+const DITHER: u32 = 64u;
 
 /// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
 /// roundness, then the scale and the offset that place a display color in the table, with the
@@ -82,6 +102,20 @@ struct Settings {
 @group(0) @binding(9) var lut: texture_3d<f32>;
 @group(0) @binding(10) var lut_sampler: sampler;
 @group(0) @binding(11) var outline_mask: texture_2d<f32>;
+@group(0) @binding(12) var exposure_texel: texture_2d<f32>;
+
+/// The factor of the automatic exposure for this frame, or 1 while the flag is clear. The fragment
+/// shader reads it once, at its start.
+var<private> eye_factor: f32 = 1.0;
+
+/// The automatic exposure's factor from its texel, or 1 while the flag is clear.
+fn eye_exposure() -> f32 {
+    return select(
+        1.0,
+        textureLoad(exposure_texel, vec2i(0), 0).x,
+        (settings.output.flags & AUTO_EXPOSURE) != 0u,
+    );
+}
 
 /// Where a texture of `size` texels that a pass drew at the render size halved `halvings` times
 /// holds `uv`, a place on the drawn corner from 0 to 1. The place stays within that corner's texel
@@ -158,7 +192,7 @@ fn glow(uv: vec2f) -> vec4f {
     let origin = vec2f(0.0);
 #endif
     let at = (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
-    let light = bloom.glow.z * textureSampleLevel(bloom_base, bloom_sampler, at, 0.0).rgb;
+    let light = bloom.glow.z * eye_factor * textureSampleLevel(bloom_base, bloom_sampler, at, 0.0).rgb;
     return vec4f(light, max(light.r, max(light.g, light.b)));
 }
 
@@ -319,8 +353,8 @@ fn tone_curve_hook(color: vec3f) -> vec3f {
 #endif
 }
 
-/// The scene color's texel at `texel` after the folded effects, no brighter than a 16-bit float
-/// holds, as `scene_texel` reads it.
+/// The scene color's texel at `texel` after the folded effects and the automatic exposure, no
+/// brighter than a 16-bit float holds, as `scene_texel` reads it.
 fn effected_texel(texel: vec2i) -> vec4f {
     let first = effect_blocks.blocks[0];
     let position = vec2f(texel) + 0.5;
@@ -336,7 +370,7 @@ fn effected_texel(texel: vec2i) -> vec4f {
     input.uv = from_top / first.size.xy;
     input.time = first.clock.x;
     let color = effect_chain(input);
-    return vec4f(limit_hdr(color.rgb), color.a);
+    return vec4f(limit_hdr(color.rgb * eye_factor), color.a);
 }
 #endif
 
@@ -345,45 +379,27 @@ fn display_color() -> bool {
     return (settings.output.flags & DISPLAY_COLOR) != 0u;
 }
 
-/// The vignette's factor at canvas pixel `position` of a canvas of `size` pixels: 1 at the center,
-/// falling toward the edges by the intensity. The place from the center is scaled by the size, and
-/// across by the canvas's shape as the roundness sets it: 0 follows the canvas, 1 makes a circle.
-/// The factor is 1 everywhere while the flag is clear.
+/// The vignette's factor at canvas pixel `position` of a canvas of `size` pixels, on the HDR path:
+/// see `null3d::tonemap::vignette`. The factor is 1 everywhere while the flag is clear, as on the
+/// 8-bit path, whose scene shaders apply the vignette.
 fn vignette(position: vec2f, size: vec2f) -> f32 {
     if (settings.output.flags & VIGNETTE) == 0u {
         return 1.0;
     }
-    let shape = settings.vignette;
-    var d = (position / size - 0.5) * shape.y;
-    d.x *= mix(1.0, size.x / size.y, shape.w);
-    // The smallest value keeps the power's logarithm finite at the edges, on every GPU.
-    let light = pow(max(1.0 - dot(d, d), 1e-6), shape.z);
-    return max(mix(1.0 - shape.x, 1.0, light), 0.0);
+    return null3d::tonemap::vignette(position, size, settings.vignette);
 }
 
-/// Scene color `texel` darkened by the vignette's factor `shade` where it holds HDR color. Display
-/// color stays as it is, and `shaded_display` darkens it.
+/// Scene color `texel` darkened by the vignette's factor `shade`.
 fn shaded(texel: vec4f, shade: f32) -> vec4f {
-    return vec4f(texel.rgb * select(shade, 1.0, display_color()), texel.a);
+    return vec4f(texel.rgb * shade, texel.a);
 }
 
-/// Canvas color `color`, multiplied by its coverage, darkened by the vignette's factor `shade` on
-/// the 8-bit path: the linear value of its display color times the factor. The HDR path's color
-/// stays as it is, because `shaded` darkened it.
-fn shaded_display(color: vec4f, shade: f32) -> vec4f {
-    if !display_color() || shade >= 1.0 || color.a <= 0.0 {
-        return color;
-    }
-    let c = linear_to_srgb(srgb_to_linear(color.rgb / color.a) * shade);
-    return vec4f(c * color.a, color.a);
-}
-
-/// The scene color's texel at `pixel`, no brighter than a 16-bit float holds. The scene shaders
-/// write no brighter color, but additive blending can add past it, and some GPUs store the sum as
-/// infinity, which the tone mapping curves would turn into black.
+/// The scene color's texel at `pixel` after the automatic exposure, no brighter than a 16-bit
+/// float holds. The scene shaders write no brighter color, but additive blending can add past it,
+/// and some GPUs store the sum as infinity, which the tone mapping curves would turn into black.
 fn scene_texel(pixel: vec2i) -> vec4f {
     let texel = textureLoad(scene_color, pixel, 0);
-    return vec4f(limit_hdr(texel.rgb), texel.a);
+    return vec4f(limit_hdr(texel.rgb * eye_factor), texel.a);
 }
 
 @vertex
@@ -523,7 +539,9 @@ fn display(texel: vec4f) -> vec4f {
 fn finish(color: vec4f, position: vec2f) -> vec4f {
     let flags = settings.output.flags;
     let grades = (flags & (LUT | VIGNETTE)) != 0u;
-    if (display_color() && !grades) || color.a <= 0.0 {
+    // A pass that holds display color and grades nothing leaves the color as it is, unless the
+    // second step of the high dynamic range path asks for the dither (DITHER).
+    if (display_color() && !grades && (flags & DITHER) == 0u) || color.a <= 0.0 {
         return color;
     }
     var c = color.rgb / color.a;
@@ -532,7 +550,10 @@ fn finish(color: vec4f, position: vec2f) -> vec4f {
         let graded = textureSampleLevel(lut, lut_sampler, at, 0.0).rgb;
         c = mix(c, graded, settings.lut_scale.w);
     }
-    c = saturate(c + null3d::tonemap::dither(position));
+    // The first of the two steps leaves the dither to the second, which runs at the canvas size.
+    if (flags & RESOLVE) == 0u {
+        c = saturate(c + null3d::tonemap::dither(position));
+    }
     return vec4f(c * color.a, color.a);
 }
 
@@ -547,15 +568,29 @@ fn corner_texel(place: vec2f, size: vec2f) -> vec2i {
 
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let size = vec2f(textureDimensions(scene_color));
+    eye_factor = eye_exposure();
     let packed = settings.output.render_size;
     let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));
+    // The first of the two steps draws one texel for each render pixel into a target of the render
+    // size, so its frame is the render size. Every other build draws the canvas, so its frame is
+    // the scene color's size, which is the canvas's.
+    let resolving = (settings.output.flags & RESOLVE) != 0u;
+    let scene = vec2f(textureDimensions(scene_color));
+    // WebGL2 counts rows from the bottom and draws the render corner into the scene color's top
+    // rows, so the first step's fragments start at that corner's own origin.
+#ifdef WEBGL2
+    let origin = select(vec2f(0.0), vec2f(0.0, scene.y - render.y), resolving);
+#else
+    let origin = vec2f(0.0);
+#endif
+    let local = position.xy - origin;
+    let size = select(scene, render, resolving);
     let whole = all(render == size);
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
     // target of the frame shares.
-    let uv = position.xy / size;
+    let uv = local / size;
     let light = glow(uv);
-    let shade = vignette(position.xy, size);
+    let shade = vignette(local, size);
     var color = vec4f(0.0);
     if whole {
         color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
@@ -587,5 +622,5 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
 #endif
         color += weights.x * weights.y * display(shaded(texel_color, shade));
     }
-    return finish(outlined(shaded_display(color, shade), uv, size, render), position.xy);
+    return finish(outlined(color, uv, size, render), position.xy);
 }

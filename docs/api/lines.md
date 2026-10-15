@@ -92,7 +92,7 @@ export default defineSketch(async ({ scene, time }) => {
 | `metalness`, `roughness` | 0, 1 | With `lit`, how metallic and how rough the lines' surface is |
 | `emissive`, `emissiveIntensity` | Black, 1 | With `lit`, the light that the lines give off |
 | `alphaMode` | `'opaque'` | `'blend'` blends each segment over what lies behind it, with `opacity`. `'opaque'` ignores the opacity |
-| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and lasers, or `'multiply'` |
+| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and lasers, or `'multiply'`. Lines do not take `'weighted'`, which throws E1217 |
 | `fog` | `true` | `false` keeps the lines out of the scene's fog |
 | `depthWrite` | `true` | `false` writes no depth, so a line hides nothing behind it |
 | `depthTest` | `true` | `false` draws the lines in front of everything |
@@ -103,7 +103,7 @@ export default defineSketch(async ({ scene, time }) => {
 
 A strip or a loop needs at least 2 points, and `segments` an even number of points. Positions whose length is not a multiple of 3, or `colors` of another length than `positions`, throw [E1206](../errors/E1206.md). An unknown mode throws [E1217](../errors/E1217.md). A width that is not above 0, or a negative dash or gap, throws [E1108](../errors/E1108.md), and a number that is not finite throws [E1203](../errors/E1203.md).
 
-The call `lines.material.set` changes the look of every segment at any time. It takes `color`, `opacity` and the four dash values. For lit lines, it also takes `metalness`, `roughness`, `emissive` and `emissiveIntensity`. A change of the dashes alone converts nothing and allocates nothing, so you can move the dashes in every frame. To change the width, call `lines.setWidth(width)`. Every segment then updates once. The other options are fixed when the batch is created.
+The call `lines.material.set` changes the look of every segment at any time. It takes `color`, `opacity` and the four dash values. For lit lines, it also takes `metalness`, `roughness`, `emissive` and `emissiveIntensity`. A change of the dashes alone converts nothing, and the line keeps them in the engine's own memory. The call does read the options object that you pass. The browser boxes each number of it where the same call has seen objects of a few shapes, so a change in every frame costs a few bytes a frame. To change the width, call `lines.setWidth(width)`. Every segment then updates once. The other options are fixed when the batch is created.
 
 ## The point arrays
 

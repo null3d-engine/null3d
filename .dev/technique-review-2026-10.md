@@ -176,7 +176,7 @@ The lit shader's fragment stage reads 13 of the 16 units once environment light 
 1. AO and any other screen-space result share one RG8 texture. Contact shadows run inline and need none.
 2. All probe grids share one 3D texture.
 3. Reflection probes are octahedral maps in one 2D array. Compatibility mode has no cube arrays.
-4. The two LTC tables of area lights are one 2-layer array.
+4. The two LTC tables of area lights are one 2-layer array. As built, they share the split-sum table's array with the lights' images ([D-145](decisions/D-145-area-lights.md)).
 5. Decals and light maps take layers of the shared texture arrays.
 6. The shader build counts the units of each build and fails at 16.
 
@@ -342,7 +342,7 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | M2, in M2-EX26 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 | 25 | Automatic exposure | Godot, Unity, Filament | M | M2, in M2-EX31 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 | 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
-| 27 | Weighted blended transparency | | M | M2, in M2-EX33, opt-in for particle scenes ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+| 27 | Weighted blended transparency | | M | M2, in M2-EX33, opt-in for particle scenes ([D-142](decisions/D-142-more-techniques-before-1-0.md)): the `weighted` blending per material ([D-150](decisions/D-150-weighted-blended-transparency.md)) |
 | 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | Before 1.0: light shafts and lit fog in M2-EX21 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)), and no TAA for 1.0 ([D-129](decisions/D-129-temporal-anti-aliasing.md)); per-object motion vectors before 1.0, in M2-EX25 ([D-142](decisions/D-142-more-techniques-before-1-0.md)); screen-space reflections before 1.0, in M2-EX22 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | After 1.0. XR needs the thread mode that draws on the main thread, so keep that mode working |

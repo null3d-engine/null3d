@@ -26,10 +26,11 @@ use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
+use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
-use null3d_core::lights::LightTable;
+use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
@@ -52,7 +53,9 @@ use null3d_render::effects::{
     EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES as MAX_EFFECT_TEXTURES,
 };
 use null3d_render::environment::Environment;
+use null3d_render::exposure::{AutoExposure, Meter as ExposureMeter, Metering};
 use null3d_render::fog::Fog;
+use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
@@ -62,16 +65,20 @@ use null3d_render::gpu_driven::{
 };
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
-use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::light_tables;
+use null3d_render::materials::{self, CustomShading, LayerMap, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
+use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
+use null3d_render::probe_grid::ProbeGrid;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
+use null3d_render::sky_maps::MapSky;
 use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
@@ -82,9 +89,9 @@ pub mod constants;
 mod heap;
 
 use constants::{
-    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
-    debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
-    scene_field, shading, texture_option, texture_stat,
+    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, call_value,
+    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query,
+    ring_field, scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -163,6 +170,8 @@ mod render_detail {
     pub const SKINNED_PAGES_FULL: u32 = 13;
     /// The second detail is the most views a frame builder draws, the camera's included.
     pub const TOO_MANY_VIEWS: u32 = 14;
+    /// The second detail is the most rectangle lights with images at once.
+    pub const LIGHT_IMAGES_FULL: u32 = 16;
     /// Levels of detail that a mesh cannot take; the second detail says why
     /// (`constants::level_problem`).
     pub const BAD_LEVELS: u32 = 15;
@@ -183,10 +192,15 @@ struct Engine {
     /// The numbers of the next play of a clip or a blend (`constants::play_arg`), which
     /// TypeScript writes.
     play_args: [f32; play_arg::COUNT],
+    /// The numbers of the next setter call (`constants::call_value`), which TypeScript writes.
+    call_values: [f64; call_value::COUNT as usize],
     /// The debug lines of the next frame, which only development builds of the engine write.
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// Matrix buffers that a growth of the animation table replaced, each with the frame from
+    /// which no frame's draw list reads them.
+    retired_matrices: Vec<(u32, [Box<[f32]>; 2])>,
     /// The morph weights of morphed objects, which TypeScript writes.
     morphs: MorphWeights,
     /// The ids of meshes that `destroyMeshes` removed, counting from 1, which the next frame
@@ -211,6 +225,7 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    light_probe_values: Box<[f32; constants::light_probe_value::COUNT as usize]>,
     /// The block of the background's values, which TypeScript writes before it calls
     /// `setBackgroundSource`.
     background_values: Box<[f32; constants::background_value::COUNT as usize]>,
@@ -236,12 +251,15 @@ struct Engine {
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
 /// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
 /// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
-/// 2% of the image's height and round aperture, with no focus point.
+/// 2% of the image's height and round aperture, with no focus point, then the automatic
+/// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
+/// per second, range of 4 stops either way and no compensation.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
+        3.0, 1.0, -4.0, 4.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -253,6 +271,11 @@ const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
 };
 
 impl Engine {
+    /// The first `N` numbers of the next setter call, as 32-bit floats.
+    fn call_values<const N: usize>(&self) -> [f32; N] {
+        std::array::from_fn(|k| self.call_values[k] as f32)
+    }
+
     /// The post-processing value at `place` (`constants::post_value`).
     fn post_value(&self, place: u32) -> f32 {
         self.post_values[place as usize]
@@ -446,7 +469,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
 /// largest storage binding of the device the engine draws with, and the capability flags say
 /// whether it has transient attachments. On WebGL2 (`webgl2`), the capability flags say whether
-/// the device has multi-draw, and `max_texture_size` is its largest texture. Scene passes draw
+/// the device has multi-draw and draws into targets of 16-bit floats, and `max_texture_size` is its
+/// largest texture. Scene passes draw
 /// into a target of format `scene_color`: a float format for HDR color, or the canvas's for the
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
@@ -531,6 +555,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                float16_targets: capabilities.contains(Capabilities::FLOAT16_TARGETS),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
@@ -559,8 +584,10 @@ pub fn init_engine(
         world_matrix: [0.0; 12],
         staging: Vec::new(),
         play_args: [0.0; play_arg::COUNT],
+        call_values: [0.0; call_value::COUNT as usize],
         lines: LineStore::default(),
         animations: None,
+        retired_matrices: Vec::new(),
         morphs: MorphWeights::new(),
         removed_meshes: Vec::new(),
         clip_jobs: Vec::new(),
@@ -570,6 +597,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
         effect_textures: Box::new([0; MAX_EFFECT_TEXTURES]),
@@ -585,6 +613,13 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of the block of the light probe grid's values (`LIGHT_PROBE_VALUE_*`), 32-bit floats
+/// that TypeScript writes before it calls `setLightProbeGrid`.
+#[wasm_bindgen(js_name = lightProbeValues)]
+pub fn light_probe_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.light_probe_values[..])))
 }
 
 /// The address of the block of the background's values (`background_value`), which TypeScript
@@ -925,6 +960,12 @@ pub fn world_matrix_address() -> u32 {
     value_with_engine(|e| Ok(address(&e.world_matrix)))
 }
 
+/// The address of the numbers of the next setter call (`constants::call_value`): 64-bit floats.
+#[wasm_bindgen(js_name = callValues)]
+pub fn call_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.call_values)))
+}
+
 /// The command ring (see `constants::ring_field`): the record array's address, its capacity in
 /// records, or the address of the write index TypeScript advances or of the read index the core
 /// advances.
@@ -953,6 +994,10 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
         grow_ahead(e);
+        if !e.retired_matrices.is_empty() {
+            e.retired_matrices
+                .retain(|(free_at, _)| frame_after(*free_at, frame));
+        }
         e.structure_changed |= e.scene.take_structure_changed();
         if !e.removed_meshes.is_empty() {
             release_mesh_ids(e);
@@ -1276,16 +1321,19 @@ pub fn create_line_batch(
     })
 }
 
-/// Sets the width of a line batch's segments: CSS pixels, or world units for a batch made with
-/// world units. Every segment updates and uploads again.
+/// Sets the width of a line batch's segments to the first call value: CSS pixels, or world units
+/// for a batch made with world units. Every segment updates and uploads again.
 #[wasm_bindgen(js_name = setLineWidth)]
-pub fn set_line_width(batch: u32, width: f32) -> u32 {
-    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
-        Ok(batch) => {
-            batch.set_line_width(width);
-            0
+pub fn set_line_width(batch: u32) -> u32 {
+    with_engine(|e| {
+        let [width] = e.call_values();
+        match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => {
+                batch.set_line_width(width);
+                0
+            }
+            Err(error) => core_failure(error),
         }
-        Err(error) => core_failure(error),
     })
 }
 
@@ -1437,16 +1485,19 @@ pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
     })
 }
 
-/// Places a batch's origin, which its rows' positions are relative to, in 64-bit floats, and marks
-/// every row for update.
+/// Places a batch's origin, which its rows' positions are relative to, at the first three call
+/// values in 64-bit floats, and marks every row for update.
 #[wasm_bindgen(js_name = setBatchOrigin)]
-pub fn set_batch_origin(batch: u32, x: f64, y: f64, z: f64) -> u32 {
-    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
-        Ok(batch) => {
-            batch.set_origin([x, y, z]);
-            0
+pub fn set_batch_origin(batch: u32) -> u32 {
+    with_engine(|e| {
+        let [x, y, z, ..] = e.call_values;
+        match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => {
+                batch.set_origin([x, y, z]);
+                0
+            }
+            Err(error) => core_failure(error),
         }
-        Err(error) => core_failure(error),
     })
 }
 
@@ -2017,6 +2068,7 @@ pub fn create_material(
         shading::SPRITE => Shading::Sprite,
         shading::LINE => Shading::Line,
         shading::LINE_LIT => Shading::LineLit,
+        shading::PARTICLE => Shading::Particle,
         custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
@@ -2058,14 +2110,14 @@ pub fn destroy_material(material: u32) -> u32 {
 }
 
 /// Changes one value of a material, by the float where the value starts in the material's row
-/// (`constants::material_param`), and keeps the others. The value takes as many of `x`, `y` and
-/// `z` as it has floats. Colors are linear.
+/// (`constants::material_param`), and keeps the others. The value takes as many of the first three
+/// call values as it has floats. Colors are linear.
 #[wasm_bindgen(js_name = setMaterialValue)]
-pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> u32 {
+pub fn set_material_value(material: u32, param: u32) -> u32 {
     with_engine(|e| {
+        let values: [f32; 3] = e.call_values();
         let table = e.renderer.settings_mut().materials_mut();
         let at = param as usize;
-        let values = [x, y, z];
         let width = materials::param::width(at).unwrap_or(0);
         match table.set(material.wrapping_sub(1), at, &values[..width]) {
             Ok(()) => 0,
@@ -2074,22 +2126,14 @@ pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> 
     })
 }
 
-/// Changes `count` custom values of a material, 1 to 4 of `x`, `y`, `z` and `w`, from float `at`
-/// of its row of custom values, and keeps the others: a custom material's uniform, as the shader
+/// Changes `count` custom values of a material, the first 1 to 4 call values, from float `at` of
+/// its row of custom values, and keeps the others: a custom material's uniform, as the shader
 /// compiler placed it.
 #[wasm_bindgen(js_name = setMaterialValues)]
-pub fn set_material_values(
-    material: u32,
-    at: u32,
-    count: u32,
-    x: f32,
-    y: f32,
-    z: f32,
-    w: f32,
-) -> u32 {
+pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
     with_engine(|e| {
+        let values: [f32; 4] = e.call_values();
         let table = e.renderer.settings_mut().materials_mut();
-        let values = [x, y, z, w];
         let width = (count as usize).min(values.len());
         match table.set_values(material.wrapping_sub(1), at as usize, &values[..width]) {
             Ok(()) => 0,
@@ -2100,13 +2144,19 @@ pub fn set_material_values(
 
 // Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
 // map changes the draw tables, as a new material does.
-/// Gives a material a map in a slot (`constants::map_slot`), which the shader reads at the second
-/// texture coordinates when `second_uv` is 1.
+/// Gives a material a map in a slot (`constants::map_slot`), or one of a layered material's maps
+/// after the slots, which the shader reads at the second texture coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
-    // The engine's own calls name only the slots that exist.
-    let Some(&slot) = MapSlot::ALL.get(slot as usize) else {
-        return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
+    // The engine's own calls name only the slots and layer maps that exist.
+    let slot = slot as usize;
+    let layer = slot
+        .checked_sub(MapSlot::ALL.len())
+        .map(|k| LayerMap::ALL.get(k));
+    let (slot, layer) = match (MapSlot::ALL.get(slot), layer) {
+        (Some(&slot), _) => (slot, None),
+        (None, Some(Some(&layer))) => (layer.slot(), Some(layer)),
+        _ => return render_failure(render_detail::UNKNOWN_MATERIAL, 0),
     };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
@@ -2114,10 +2164,14 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
             Ok(map) => map,
             Err(failure) => return failure,
         };
-        match settings
-            .materials_mut()
-            .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
-        {
+        let table = settings.materials_mut();
+        let id = material.wrapping_sub(1);
+        let second_uv = second_uv != 0;
+        let set = match layer {
+            Some(layer) => table.set_layer_map(id, layer, map, second_uv),
+            None => table.set_map(id, slot, map, second_uv),
+        };
+        match set {
             Ok(()) => {
                 e.structure_changed = true;
                 0
@@ -2416,6 +2470,7 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
             texture_option::MEMORY_BUDGET_KIB => {
                 textures.set_memory_budget(u64::from(value) * 1024)
             }
+            texture_option::KEEP_COPIES => textures.set_keep_copies(value != 0),
             _ => textures.upload_all_next_frame(),
         }
         0
@@ -2424,63 +2479,58 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
 
 // --- Camera, lights and background ---
 
-/// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
-/// objects whose layer masks share a bit with `layers`. With `target` the shadows' camera
-/// (`constants::camera_target`), the camera fits the main directional light's cascades instead.
+/// Draws from this camera object with a perspective lens, the objects whose layer masks share a
+/// bit with `layers`. The call values give the vertical field of view in degrees, the near
+/// distance and the far distance. With `target` the shadows' camera (`constants::camera_target`),
+/// the camera fits the main directional light's cascades instead.
 #[wasm_bindgen(js_name = setPerspectiveCamera)]
-pub fn set_perspective_camera(
-    camera: u32,
-    fov_degrees: f32,
-    near: f32,
-    far: f32,
-    layers: u32,
-    target: u32,
-) -> u32 {
+pub fn set_perspective_camera(camera: u32, layers: u32, target: u32) -> u32 {
     set_camera(
         camera,
-        Lens::Perspective(Perspective {
-            fov_degrees,
-            near,
-            far,
-        }),
+        |[fov_degrees, near, far]| {
+            Lens::Perspective(Perspective {
+                fov_degrees,
+                near,
+                far,
+            })
+        },
         layers,
         target,
     )
 }
 
-/// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
-/// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
-/// axis by `center_x` and `center_y`. It draws the objects whose layer masks share a bit with
-/// `layers`. With `target` the shadows' camera, it fits the main directional light's cascades.
+/// Draws from this camera object with an orthographic lens. The call values give the view's height
+/// and width, with a width of 0 following the canvas's aspect ratio, how far right of and above
+/// the camera's axis it is centered, and the near and far distances. It draws the objects whose
+/// layer masks share a bit with `layers`. With `target` the shadows' camera, it fits the main
+/// directional light's cascades.
 #[wasm_bindgen(js_name = setOrthographicCamera)]
-#[allow(clippy::too_many_arguments)]
-pub fn set_orthographic_camera(
-    camera: u32,
-    height: f32,
-    width: f32,
-    center_x: f32,
-    center_y: f32,
-    near: f32,
-    far: f32,
-    layers: u32,
-    target: u32,
-) -> u32 {
+pub fn set_orthographic_camera(camera: u32, layers: u32, target: u32) -> u32 {
     set_camera(
         camera,
-        Lens::Orthographic(Orthographic {
-            height,
-            width: (width > 0.0).then_some(width),
-            center: [center_x, center_y],
-            near,
-            far,
-        }),
+        |[height, width, center_x, center_y, near, far]| {
+            Lens::Orthographic(Orthographic {
+                height,
+                width: (width > 0.0).then_some(width),
+                center: [center_x, center_y],
+                near,
+                far,
+            })
+        },
         layers,
         target,
     )
 }
 
-fn set_camera(camera: u32, lens: Lens, layers: u32, target: u32) -> u32 {
+/// Gives a camera the lens that `lens` makes of the first `N` call values.
+fn set_camera<const N: usize>(
+    camera: u32,
+    lens: impl FnOnce([f32; N]) -> Lens,
+    layers: u32,
+    target: u32,
+) -> u32 {
     with_engine(|e| {
+        let lens = lens(e.call_values());
         let settings = e.renderer.settings_mut();
         let camera = Handle::from_raw(camera);
         if target == camera_target::SHADOWS {
@@ -2703,15 +2753,27 @@ fn add_view_of(
     })
 }
 
-/// Sets the share of the render size each way, 1, 0.5 or 0.25, that the targets of reflection
+/// Sets the share of the render size each way, the first call value of 1, 0.5 or 0.25, that the
+/// targets of reflection
 /// passes without a scale of their own take, from the next frame on: the quality preset's
 /// reflection scale.
 #[wasm_bindgen(js_name = setReflectionScale)]
-pub fn set_reflection_scale(scale: f32) -> u32 {
+pub fn set_reflection_scale() -> u32 {
     with_engine(|e| {
+        let [scale] = e.call_values();
         e.renderer
             .settings_mut()
             .set_mirror_halvings(halvings_of(scale));
+        0
+    })
+}
+
+/// Sets the most area lights that one frame shades, from the next frame on: the quality preset's
+/// `areaLights`. Past it, the area lights nearest the camera shade.
+#[wasm_bindgen(js_name = setAreaLightCap)]
+pub fn set_area_light_cap(cap: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_area_light_cap(cap);
         0
     })
 }
@@ -2848,51 +2910,144 @@ pub fn destroy_light(light: u32) -> u32 {
     with_engine(|e| e.lights.destroy(light).map_or_else(core_failure, |()| 0))
 }
 
-/// Sets one of a light's linear colors.
+/// Sets one of a light's linear colors to the first three call values.
 #[wasm_bindgen(js_name = setLightColor)]
-pub fn set_light_color(light: u32, which: u32, r: f32, g: f32, b: f32) -> u32 {
+pub fn set_light_color(light: u32, which: u32) -> u32 {
     with_engine(|e| {
+        let rgb = e.call_values();
         e.lights
-            .set_color(light, which, [r, g, b])
+            .set_color(light, which, rgb)
             .map_or_else(core_failure, |()| 0)
     })
 }
 
-/// Sets one of a light's numbers.
+/// Sets one of a light's numbers to the first call value.
 #[wasm_bindgen(js_name = setLightValue)]
-pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
+pub fn set_light_value(light: u32, which: u32) -> u32 {
     with_engine(|e| {
+        let [value] = e.call_values();
         e.lights
             .set_value(light, which, value)
             .map_or_else(core_failure, |()| 0)
     })
 }
 
-/// Sets the number that each light created from now on starts with, such as the shadow cascades
-/// of the quality preset.
+/// Sets the number that each light created from now on starts with to the first call value, such
+/// as the shadow cascades of the quality preset.
 #[wasm_bindgen(js_name = setLightDefault)]
-pub fn set_light_default(which: u32, value: f32) -> u32 {
+pub fn set_light_default(which: u32) -> u32 {
     with_engine(|e| {
+        let [value] = e.call_values();
         e.lights
             .set_default(which, value)
             .map_or_else(core_failure, |()| 0)
     })
 }
 
-/// The linear background color.
-#[wasm_bindgen(js_name = setBackground)]
-pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
+// The area lights' two tables load on first use: TypeScript fetches them when the sketch makes its
+// first area light, writes their half floats at the address that `areaLightTables` gives, and
+// calls `finishAreaLightTables`. Area lights light frames from the next frame on. A rectangle
+// light's image goes the same way, through `areaLightImage` and `finishAreaLightImage`.
+/// Makes room for the area lights' tables, and returns the address of their half floats.
+#[wasm_bindgen(js_name = areaLightTables)]
+pub fn area_light_tables() -> u32 {
+    value_with_engine(|e| {
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        match tables.area_texels_mut() {
+            Some(texels) => Ok(address(texels)),
+            None => Err(out_of_memory(light_tables::AREA_HALVES as u64 * 2)),
+        }
+    })
+}
+
+/// Marks the area lights' tables as written, so the next frame uploads them and lists area
+/// lights.
+#[wasm_bindgen(js_name = finishAreaLightTables)]
+pub fn finish_area_light_tables() -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_background([r, g, b]);
+        e.renderer.settings_mut().light_tables_mut().finish_area();
         0
     })
 }
 
-/// The device pixels per CSS pixel that the canvas draws with, which sizes sprites given in pixels
-/// of the screen.
-#[wasm_bindgen(js_name = setPixelRatio)]
-pub fn set_pixel_ratio(ratio: f32) -> u32 {
+/// Makes room for rectangle light `light`'s image, and returns the address of its half floats.
+/// Fails with E1501 when every place for an image is taken.
+#[wasm_bindgen(js_name = areaLightImage)]
+pub fn area_light_image(light: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights.object(light).map_err(core_failure)?;
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        match tables.image_texels_mut(light) {
+            Some(texels) => Ok(address(texels)),
+            None => Err(render_failure(
+                render_detail::LIGHT_IMAGES_FULL,
+                light_tables::MAX_IMAGES as u32,
+            )),
+        }
+    })
+}
+
+/// Marks rectangle light `light`'s image as written, so the next frame uploads it and the light
+/// shows it.
+#[wasm_bindgen(js_name = finishAreaLightImage)]
+pub fn finish_area_light_image(light: u32) -> u32 {
     with_engine(|e| {
+        let layer = e
+            .renderer
+            .settings_mut()
+            .light_tables_mut()
+            .finish_image(light);
+        let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
+        e.lights
+            .set_value(light, light_value::IMAGE, image)
+            .map_or_else(core_failure, |()| 0)
+    })
+}
+
+/// Takes rectangle light `light`'s image away, so it lights with its color alone.
+#[wasm_bindgen(js_name = removeAreaLightImage)]
+pub fn remove_area_light_image(light: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .light_tables_mut()
+            .remove_image(light);
+        match e.lights.kind(light) {
+            light_kind::NONE => 0,
+            _ => e
+                .lights
+                .set_value(light, light_value::IMAGE, 0.0)
+                .map_or_else(core_failure, |()| 0),
+        }
+    })
+}
+
+/// The linear background color: the first three call values.
+#[wasm_bindgen(js_name = setBackground)]
+pub fn set_background() -> u32 {
+    with_engine(|e| {
+        let rgb = e.call_values();
+        e.renderer.settings_mut().set_background(rgb);
+        0
+    })
+}
+
+/// Sets the layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+/// layer shows no decals: it draws again after them, over its own pixels.
+#[wasm_bindgen(js_name = setDecalLayers)]
+pub fn set_decal_layers(mask: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_decal_layers(mask);
+        0
+    })
+}
+
+/// The device pixels per CSS pixel that the canvas draws with, the first call value, which sizes
+/// sprites given in pixels of the screen.
+#[wasm_bindgen(js_name = setPixelRatio)]
+pub fn set_pixel_ratio() -> u32 {
+    with_engine(|e| {
+        let [ratio] = e.call_values();
         e.renderer.settings_mut().set_pixel_ratio(ratio);
         0
     })
@@ -2972,13 +3127,14 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
     })
 }
 
-/// How objects and batches pick their meshes' levels of detail, from the next frame on: the error
-/// in pixels under which a coarser level draws, 0 for none, what shadow views multiply it by, and
-/// whether two levels hand over in a fading band. Turning the bands on or off rebuilds the draw
-/// tables.
+/// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
+/// values give the error in pixels under which a coarser level draws, 0 for none, and what shadow
+/// views multiply it by. `fades` says whether two levels hand over in a fading band. Turning the
+/// bands on or off rebuilds the draw tables.
 #[wasm_bindgen(js_name = setLevelQuality)]
-pub fn set_level_quality(threshold: f32, shadow_factor: f32, fades: bool) -> u32 {
+pub fn set_level_quality(fades: bool) -> u32 {
     with_engine(|e| {
+        let [threshold, shadow_factor] = e.call_values();
         let quality = LevelQuality {
             threshold,
             shadow_factor,
@@ -2993,11 +3149,12 @@ pub fn set_level_quality(threshold: f32, shadow_factor: f32, fades: bool) -> u32
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the
 /// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
-/// draws in every frame while a moving caster touches it, and the share of each cascade's length
-/// over which it blends into the next. The TypeScript API checks them.
+/// draws in every frame while a moving caster touches it, and, as the first call value, the share
+/// of each cascade's length over which it blends into the next. The TypeScript API checks them.
 #[wasm_bindgen(js_name = setShadowQuality)]
-pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool, blend: f32) -> u32 {
+pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool) -> u32 {
     with_engine(|e| {
+        let [blend] = e.call_values();
         let quality = ShadowQuality {
             filter,
             far_interval,
@@ -3046,6 +3203,74 @@ pub fn set_bloom(on: bool) -> u32 {
     })
 }
 
+/// Makes a particle system of `capacity` records for the object in scene slot `slot`, whose
+/// material has the particle shading, and returns its id: 0 when the scene holds the most systems
+/// already. The records and values start at 0, which draws nothing.
+#[wasm_bindgen(js_name = createParticles)]
+pub fn create_particles(slot: u32, capacity: u32) -> u32 {
+    value_with_engine(|e| {
+        let bytes = u64::from(capacity) * u64::from(null3d_render::particles::RECORD_BYTES);
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .create(slot, capacity)
+            .map_err(|_| out_of_memory(bytes))
+    })
+}
+
+/// Forgets a particle system. Its object draws nothing from then on.
+#[wasm_bindgen(js_name = destroyParticles)]
+pub fn destroy_particles(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().destroy(id);
+        0
+    })
+}
+
+/// The address of a particle system's records in engine memory, or 0 for no such system.
+#[wasm_bindgen(js_name = particleRecords)]
+pub fn particle_records(id: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().particles().records_address(id)))
+}
+
+/// The address of a particle system's values in engine memory, then its frame's values, or 0 for
+/// no such system.
+#[wasm_bindgen(js_name = particleValues)]
+pub fn particle_values(id: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().particles().values_address(id)))
+}
+
+/// Marks `count` records of a particle system from `start` on, which TypeScript wrote, for the
+/// next frame's upload.
+#[wasm_bindgen(js_name = markParticleRecords)]
+pub fn mark_particle_records(id: u32, start: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        let table = e.renderer.settings_mut().particles_mut();
+        table.mark_records(id, start, count);
+        0
+    })
+}
+
+/// Marks a particle system's values, which TypeScript wrote, for the next frame's upload.
+#[wasm_bindgen(js_name = markParticleValues)]
+pub fn mark_particle_values(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().mark_values(id);
+        0
+    })
+}
+
+/// Lets particle systems with a soft fade fade near the surfaces behind them, which copies the
+/// camera's opaque depth while one draws, or draws them with hard edges: the quality preset's soft
+/// particles.
+#[wasm_bindgen(js_name = setSoftParticles)]
+pub fn set_soft_particles(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().set_soft(on);
+        0
+    })
+}
+
 /// Turns depth of field on with its focus, aperture, focal length, largest blur, blades and focus
 /// point from the post-processing values, or off, from the next frame on. The TypeScript API checks
 /// the values.
@@ -3064,6 +3289,46 @@ pub fn set_dof(on: bool) -> u32 {
             blades: value(place::DOF_BLADES) as u32,
         });
         e.renderer.settings_mut().set_dof(dof);
+        0
+    })
+}
+
+/// Turns automatic exposure on with its metering, percentiles, center weight, speeds, range and
+/// compensation from the post-processing values, or off, from the next frame on. The TypeScript
+/// API checks the values.
+#[wasm_bindgen(js_name = setAutoExposure)]
+pub fn set_auto_exposure(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let auto_exposure = on.then(|| AutoExposure {
+            metering: Metering::from_code(value(place::AUTO_EXPOSURE_METERING) as u32)
+                .unwrap_or_default(),
+            percentiles: [
+                value(place::AUTO_EXPOSURE_PERCENTILES),
+                value(place::AUTO_EXPOSURE_PERCENTILES + 1),
+            ],
+            center_weight: value(place::AUTO_EXPOSURE_CENTER_WEIGHT),
+            speed_up: value(place::AUTO_EXPOSURE_SPEED_UP),
+            speed_down: value(place::AUTO_EXPOSURE_SPEED_DOWN),
+            min_ev: value(place::AUTO_EXPOSURE_MIN_EV),
+            max_ev: value(place::AUTO_EXPOSURE_MAX_EV),
+            compensation: value(place::AUTO_EXPOSURE_COMPENSATION),
+        });
+        e.renderer.settings_mut().set_auto_exposure(auto_exposure);
+        0
+    })
+}
+
+/// Sets the meter of automatic exposure, which the quality settings set, from the next frame on:
+/// 0 the downsample, 1 the histogram where the GPU path has compute shaders. Other codes keep the
+/// meter as it was.
+#[wasm_bindgen(js_name = setExposureMeter)]
+pub fn set_exposure_meter(meter: u32) -> u32 {
+    with_engine(|e| {
+        if let Some(meter) = ExposureMeter::from_code(meter) {
+            e.renderer.settings_mut().set_exposure_meter(meter);
+        }
         0
     })
 }
@@ -3205,6 +3470,37 @@ pub fn set_environment(texture: u32) -> u32 {
     })
 }
 
+/// Lights the scene with the light probe grid whose coefficients are 3D texture `texture`, or with
+/// none when `texture` is 0, from the next frame on. The grid's placement, spacing, counts, factor
+/// and the share of the environment's diffuse light it takes come from the block that
+/// `lightProbeValues` gives. The TypeScript API checks the values. Fails for a texture that is not
+/// live.
+#[wasm_bindgen(js_name = setLightProbeGrid)]
+pub fn set_light_probe_grid(texture: u32) -> u32 {
+    with_engine(|e| {
+        use constants::light_probe_value as at;
+        let values = &e.light_probe_values;
+        let value = |place: u32| values[place as usize];
+        let origin = std::array::from_fn(|k| value(at::ORIGIN + k as u32));
+        let spacing = std::array::from_fn(|k| value(at::SPACING + k as u32));
+        let counts = std::array::from_fn(|k| value(at::COUNTS + k as u32) as u32);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        settings.set_probe_grid((!texture.is_none()).then_some(ProbeGrid {
+            texture,
+            origin,
+            spacing,
+            counts,
+            intensity: value(at::INTENSITY),
+            environment_weight: value(at::ENVIRONMENT_WEIGHT),
+        }));
+        0
+    })
+}
+
 /// Turns the vignette on with its intensity, size, falloff and roundness from the post-processing
 /// values, or off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setVignette)]
@@ -3285,7 +3581,7 @@ pub fn set_occlusion_buffer(pixels: u32) -> u32 {
 
 // Draws the source `kind` (`background_kind`) behind every object in the camera's view, with the
 // background's values, or only the background color for `NONE`. A texture, an environment or a
-// cube map is cube texture or texture `texture`; the sky takes none. The TypeScript API checks the
+// cube map is cube texture or texture `texture`; the analytic and the physical sky take none. The TypeScript API checks the
 // values. Fails for a texture that is not live.
 /// Draws a background source behind every object, or none.
 #[wasm_bindgen(js_name = setBackgroundSource)]
@@ -3296,6 +3592,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
         let value = |place: u32| values[place as usize];
         let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
         let sky = sky_of(&values[..]);
+        let atmosphere = atmosphere_of(&values[..]);
         let (intensity, blur, rotation) =
             (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
@@ -3309,10 +3606,15 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             kind_of::ENVIRONMENT => Some(BackgroundSource::Environment(texture)),
             kind_of::CUBEMAP => Some(BackgroundSource::Cubemap(texture)),
             kind_of::SKY => Some(BackgroundSource::Sky(sky)),
+            kind_of::ATMOSPHERE => Some(BackgroundSource::Atmosphere(atmosphere)),
             _ => None,
         };
-        let draws = source
-            .filter(|source| matches!(source, BackgroundSource::Sky(_)) || !texture.is_none());
+        let draws = source.filter(|source| {
+            matches!(
+                source,
+                BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_)
+            ) || !texture.is_none()
+        });
         settings.set_background_source(draws.map(|source| Background {
             source,
             intensity,
@@ -3345,6 +3647,45 @@ fn sky_of(values: &[f32]) -> Sky {
     }
 }
 
+/// The physical sky's settings in the background's values.
+fn atmosphere_of(values: &[f32]) -> Atmosphere {
+    use constants::background_value as at;
+    let value = |place: u32| values[place as usize];
+    let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
+    Atmosphere {
+        sun_position: three(at::SUN_POSITION),
+        sun_intensity: value(at::SUN_INTENSITY),
+        sun_disc: value(at::SUN_DISC) > 0.0,
+        rayleigh: value(at::RAYLEIGH),
+        haze: value(at::HAZE),
+        ozone: value(at::OZONE),
+        mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+        ground_albedo: value(at::GROUND_ALBEDO),
+        altitude: value(at::ALTITUDE),
+        meters_per_unit: value(at::METERS_PER_UNIT),
+        aerial_perspective: value(at::AERIAL_PERSPECTIVE),
+        cloud_scale: value(at::CLOUD_SCALE),
+        cloud_speed: value(at::CLOUD_SPEED),
+        cloud_coverage: value(at::CLOUD_COVERAGE),
+        cloud_density: value(at::CLOUD_DENSITY),
+        cloud_elevation: value(at::CLOUD_ELEVATION),
+        time: value(at::TIME),
+        moon_position: three(at::MOON_POSITION),
+        moon_intensity: value(at::MOON_INTENSITY),
+        stars: value(at::STARS),
+    }
+}
+
+/// Draws the physical sky while `on`, else the analytic sky in its place, from the next frame on,
+/// as the quality settings choose.
+#[wasm_bindgen(js_name = setPhysicalSky)]
+pub fn set_physical_sky(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_physical_sky(on);
+        0
+    })
+}
+
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
 // frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
@@ -3365,7 +3706,7 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         }
         let maps = settings.sky_maps_mut();
         if maps.sky().is_none() {
-            maps.set_sky(sky);
+            maps.set_sky(MapSky::analytic(sky));
         }
         maps.add(texture, stages);
         0
@@ -3387,36 +3728,64 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
-/// The scene's fog: its curve (`constants::fog_curve`), or no fog, its linear color, the density of
-/// exponential and exponential squared fog, the near and far distances of linear fog, the height
-/// where the fog has that density, its height falloff, its sun glow and the glow's exponent.
+/// The scene's fog: its curve (`constants::fog_curve`), or no fog. The call values give its linear
+/// color, the density of exponential and exponential squared fog, the near and far distances of
+/// linear fog, the height where the fog has that density, its height falloff, its sun glow and the
+/// glow's exponent.
 #[wasm_bindgen(js_name = setFog)]
-#[allow(clippy::too_many_arguments)]
-pub fn set_fog(
-    curve: u32,
-    r: f32,
-    g: f32,
-    b: f32,
-    density: f32,
-    near: f32,
-    far: f32,
-    height: f32,
-    height_falloff: f32,
-    sun_glow: f32,
-    sun_exponent: f32,
-) -> u32 {
+pub fn set_fog(curve: u32) -> u32 {
     with_engine(|e| {
-        let values = [
-            density,
-            near,
-            far,
-            height,
-            height_falloff,
-            sun_glow,
-            sun_exponent,
-        ];
+        let [r, g, b, values @ ..]: [f32; 10] = e.call_values();
         let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
+        0
+    })
+}
+
+/// Turns the volumetric fog on, or off, from the next frame on: the light of the sun and the point
+/// and spot lights that the scene's fog scatters toward the camera, through their shadows. The call
+/// values give how much light the fog scatters, Henyey-Greenstein's anisotropy, the distance that
+/// its grid reaches, and the fog's density. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setFogVolume)]
+pub fn set_fog_volume(on: bool) -> u32 {
+    with_engine(|e| {
+        let [intensity, anisotropy, distance, density]: [f32; 4] = e.call_values();
+        let volumetric = on.then_some(Volumetric {
+            intensity,
+            anisotropy,
+            distance,
+            density,
+        });
+        e.renderer.settings_mut().set_fog_volume(volumetric);
+        0
+    })
+}
+
+/// Sets the slices of the volumetric fog's grid, which the quality settings set, from the next
+/// frame on: one of 32, 64 or 96, or 0, which draws no volumetric fog. Other counts take the next
+/// count up, at most 96.
+#[wasm_bindgen(js_name = setFogSlices)]
+pub fn set_fog_slices(slices: u32) -> u32 {
+    with_engine(|e| {
+        let counts = fog_volume::SLICE_COUNTS;
+        let slices = match slices {
+            0 => 0,
+            _ => counts
+                .into_iter()
+                .find(|&count| count >= slices)
+                .unwrap_or(counts[counts.len() - 1]),
+        };
+        e.renderer.settings_mut().set_fog_slices(slices);
+        0
+    })
+}
+
+/// Sets the frame-budget governor's halvings of the slices that each frame draws of the
+/// volumetric fog's grid, from the next frame on. A halving makes no GPU object.
+#[wasm_bindgen(js_name = setFogHalvings)]
+pub fn set_fog_halvings(halvings: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_fog_halvings(halvings);
         0
     })
 }
@@ -3693,14 +4062,43 @@ pub fn destroy_skeleton(skeleton: u32) -> u32 {
 /// id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
 pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
-    with_animations(|animations, _| {
+    value_with_engine(|e| {
+        let Some(animations) = e.animations.as_mut() else {
+            return Err(fail(codes::NOT_READY, [2, 0]));
+        };
+        let skeleton = skeleton.wrapping_sub(1);
+        // A full table doubles what it lacks, up to the joints that the joint texture holds. The
+        // old matrix buffers stay until no frame that a thread may still replay reads them.
+        if let Some((instances, joints)) =
+            animations.growth_for(skeleton, skinning::MAX_TABLE_JOINTS)
+        {
+            e.retired_matrices
+                .try_reserve(1)
+                .map_err(|_| out_of_memory(size_of::<(u32, [Box<[f32]>; 2])>() as u64))?;
+            let old = animations
+                .try_grow(instances, joints)
+                .map_err(animation_failure)?;
+            let free_at = next_frame(next_frame(e.scene.frame()));
+            e.retired_matrices.push((free_at, old));
+        }
         let instance = animations
-            .add_instance(skeleton.wrapping_sub(1))
+            .add_instance(skeleton)
             .map_err(animation_failure)?;
         animations
             .set_object(instance, object)
             .map_err(animation_failure)?;
         Ok(instance + 1)
+    })
+}
+
+/// The most animated instances that the animation table holds now, or 0 before it exists. The
+/// table grows as instances need it, which moves its arrays.
+#[wasm_bindgen(js_name = animationCapacity)]
+pub fn animation_capacity() -> u32 {
+    value_with_engine(|e| {
+        Ok(e.animations
+            .as_ref()
+            .map_or(0, Animations::instance_capacity))
     })
 }
 
@@ -3758,6 +4156,7 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
             animation_field::TIME_SCALES => address(animations.time_scales()),
+            animation_field::UPDATE_INTERVALS => address(animations.update_intervals()),
             animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
             animation_field::EVENTS => address(animations.event_buffer()),
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
@@ -3784,6 +4183,7 @@ pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
             time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
             weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
             join: flags & play_flag::JOIN != 0,
+            inertial: flags & play_flag::INERTIAL != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)
@@ -3828,14 +4228,14 @@ pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) ->
     })
 }
 
-/// Stops clip `clip` on instance `instance`, or every clip when `clip` is 0, fading out over
-/// `fade` seconds.
+/// Stops clip `clip` on instance `instance`, or every clip when `clip` is 0, fading out over the
+/// seconds of the next play's fade (`PLAY_ARGS`).
 #[wasm_bindgen(js_name = animatorStop)]
-pub fn animator_stop(instance: u32, clip: u32, fade: f32) -> u32 {
-    with_animations(|animations, _| {
+pub fn animator_stop(instance: u32, clip: u32) -> u32 {
+    with_play_args(|animations, _, args| {
         let clip = clip.checked_sub(1);
         animations
-            .stop(instance.wrapping_sub(1), clip, fade)
+            .stop(instance.wrapping_sub(1), clip, args[play_arg::FADE])
             .map_err(animation_failure)?;
         Ok(0)
     })

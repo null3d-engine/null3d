@@ -6,7 +6,6 @@
 // page again, and the ramp does too: it runs on the engine that runs, keeps the result for the
 // session, loads the page with the other engine, runs there, and shows both results.
 
-import { dressStage } from './compare/busy-page/page';
 import type { Comparison } from './compare/comparisons';
 import {
 	type ComparisonRun,
@@ -29,11 +28,13 @@ import {
 } from './lib/compare-scene';
 import {
 	countToSlider,
+	FLOOR_FPS,
 	noFrameText,
 	type RampResult,
 	SLIDER_STEPS,
 	sliderToCount,
 	startCount,
+	stopText,
 } from './lib/ramp';
 import { sourceUrl } from './lib/source';
 
@@ -73,22 +74,34 @@ function keepRamps(comparison: Comparison, mode: CompareMode, ramps: KeptRamp[])
 
 const other = (engine: EngineName): EngineName => (engine === 'null3d' ? 'threejs' : 'null3d');
 
-/** The headline: each engine's largest count held at the display rate, on this device. */
+/**
+ * The headline: each engine's largest count at the ramp's floor or above, on this device, then
+ * where and why each engine's ramp stopped.
+ */
 function rampLine(comparison: Comparison, ramps: KeptRamp[]): string {
-	const held = (engine: EngineName) => ramps.find((ramp) => ramp.engine === engine);
+	const kept = (engine: EngineName) => ramps.find((ramp) => ramp.engine === engine);
 	const parts = (['null3d', 'threejs'] as const)
 		.map((engine) => {
-			const ramp = held(engine);
+			const ramp = kept(engine);
 			return ramp
 				? `${ENGINE_TITLES[engine]} held ${ramp.result.held.toLocaleString('en-US')}`
 				: '';
 		})
 		.filter(Boolean);
-	const hz = ramps[0]?.result.displayHz;
-	const failures = ramps.map((ramp) =>
-		noFrameText(ENGINE_TITLES[ramp.engine], ramp.result, comparison.countUnit),
-	);
-	return [`${parts.join(', ')} ${comparison.countUnit} at ${hz} fps on this device.`, ...failures]
+	const floor = ramps[0]?.result.floorFps ?? FLOOR_FPS;
+	const stops = ramps.map((ramp) => {
+		const title = ENGINE_TITLES[ramp.engine];
+		return [
+			stopText(title, ramp.result, comparison.countUnit),
+			noFrameText(title, ramp.result, comparison.countUnit),
+		]
+			.filter(Boolean)
+			.join(' ');
+	});
+	return [
+		`${parts.join(', ')} ${comparison.countUnit} at ${floor} fps or more on this device.`,
+		...stops,
+	]
 		.filter(Boolean)
 		.join(' ');
 }
@@ -191,7 +204,6 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	links.append(code);
 	caption.append(links);
 	stage.append(canvas, caption);
-	dressStage(comparison, stage, canvas);
 
 	const kept = keptRamps(comparison, mode);
 	if (kept.length > 0) result.textContent = rampLine(comparison, kept);

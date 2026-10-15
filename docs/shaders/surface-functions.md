@@ -3,12 +3,12 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; vertex-offset functions; values per row of a batch; second texture coordinates, pixel position and instance index."
+summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; values per row of a batch; second texture coordinates, pixel position and instance index."
 ---
 
 # Surface functions
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the second texture coordinates, the pixel's position and the instance's index. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -83,8 +83,13 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `thickness` | `f32` | The thickness of the volume under the point, in the mesh's own units, which bends the light that passes through |
 | `diffuseTransmission` | `f32` | How much of the point's diffuse light passes through to the other side, from 0 to 1, in a material that lets light through thin surfaces ([Light through thin surfaces](#light-through-thin-surfaces)) |
 | `diffuseTransmissionColor` | `vec3f` | The linear color that tints the light that passes through to the other side |
+| `clearcoat` | `f32` | How much of a clear coat covers the point, from 0 to 1 ([Clear coat and sheen](#clear-coat-and-sheen)) |
+| `clearcoatRoughness` | `f32` | The coat's perceptual roughness, from 0 to 1 |
+| `clearcoatNormal` | `vec3f` | The coat's unit normal in world space. It starts as the input's normal, before any normal map bends the surface under it |
+| `sheenColor` | `vec3f` | The linear color of the sheen of cloth and velvet. Black gives none |
+| `sheenRoughness` | `f32` | The sheen's perceptual roughness, from 0 to 1 |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color are the material's. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -256,6 +261,30 @@ const grass = materials.shader({
 
 - Only WGSL that sets or reads the surface's `diffuseTransmission` or `diffuseTransmissionColor` builds the shaders that light the back. The material also needs the `diffuseTransmission` option at creation. Without the WGSL, the option throws E1217.
 - The base color does not tint the light from behind. To tint it, set the color from the base color, as above.
+
+## Clear coat and sheen
+
+A surface can have a clear coat and a sheen above it, as [Clear coat and sheen](../api/materials.md#clear-coat-and-sheen) on the Materials page describes. A surface function sets them per point. A stone that is wet in its hollows needs a coat there, over a darker, smoother surface:
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz * 2.0;
+    let wet = smoothstep(0.1, 0.5, sin(p.x + sin(p.y * 1.3)) * sin(p.y + sin(p.x * 0.7)));
+    s.baseColor *= mix(1.0, 0.45, wet);
+    s.roughness = mix(s.roughness, 0.3, wet);
+    s.clearcoat = wet;
+    s.clearcoatRoughness = 0.04;
+    return s;
+}
+```
+
+```ts
+const stone = materials.shader({ wgsl: wet, color: '#8d8a84', roughness: 0.85 });
+```
+
+- Only WGSL that sets or reads one of the five fields builds the shaders that light the layers. Such a material always has them, and its layer options give `defaultSurface` their values. A layer option on a material whose WGSL never names the fields throws E1217.
+- Ripples on the water of a wet surface only need `clearcoatNormal`: the coat then shows them while the stone under it stays still.
 
 ## Vertex offsets
 

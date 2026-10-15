@@ -80,6 +80,7 @@ pub(super) fn bind_frame(
     atlas: u32,
     occlusion: u32,
     environment: u32,
+    probe_grid: u32,
     transmission: u32,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
@@ -87,14 +88,14 @@ pub(super) fn bind_frame(
         entry(0, resource_kind::BUFFER, ids::frame(view)),
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
         entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
-        entry(3, resource_kind::TEXTURE, ids::DFG),
+        entry(3, resource_kind::TEXTURE, ids::LIGHT_TABLES),
         entry(4, resource_kind::TEXTURE, shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
         entry(7, resource_kind::BUFFER, ids::light_grid(lights)),
         entry(8, resource_kind::BUFFER, ids::lights(lights)),
         entry(9, resource_kind::TEXTURE, atlas),
-        entry(10, resource_kind::BUFFER, ids::SHADOW_TILES),
+        entry(10, resource_kind::TEXTURE, probe_grid),
         entry(11, resource_kind::TEXTURE, occlusion),
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
         entry(transmission::BINDING, resource_kind::TEXTURE, transmission),
@@ -106,11 +107,12 @@ pub(super) fn bind_frame(
         ),
     ];
     let listed = 5 * entries.len();
+    // One spare entry, so an extra binding does not change the array's size.
     let mut words = [0u32; 3 + 5 * 16 + environment::ENTRY_WORDS];
     let count = (entries.len() + environment::ENTRY_WORDS / 5) as u32;
     words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, count]);
     words[3..3 + listed].copy_from_slice(entries.as_flattened());
-    words[3 + listed..]
+    words[3 + listed..3 + listed + environment::ENTRY_WORDS]
         .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())

@@ -7,14 +7,15 @@
 // runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
 // WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`
 // runs at that count in place of a ramp, and measures the frames over `?seconds=` (5 by default)
-// and then the whole page's memory. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
+// and then the whole page's memory, which `?memory=off` leaves out, as the browser can take a
+// minute or more to measure it. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
 // most the count reaches, in place of the device class's ramp maximum. `?warmup=` sets the seconds
 // the page runs before a ramp or a measurement starts, so a scene that makes its objects over many
 // frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
 // for 0.4 of each step and measures the rest.
 import { measurePageMemory } from '@null3d/engine/stats';
-import { dressStage } from '../../examples/compare/busy-page/page';
 import { COMPARISONS } from '../../examples/compare/comparisons';
+import type { SceneSignature } from '../../examples/compare/scene-signature';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
 import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
 import { run, toBase64 } from './lib/result';
@@ -56,8 +57,6 @@ run('compare', async () => {
 	const [width, height] = (params.get('size') ?? '').split('x').map(Number);
 	if (width && height) Object.assign(canvas.style, { width: `${width}px`, height: `${height}px` });
 	const gpu = params.get('gpu') === 'webgl2' ? 'webgl2' : 'webgpu';
-	// A comparison that dresses its stage, such as the Busy page, does so beside the canvas.
-	const dressed = dressStage(comparison, document.body, canvas, true);
 	const hold = params.has('hold') ? Number(params.get('hold')) : undefined;
 	const full = params.get('ramp') === 'full';
 	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
@@ -100,24 +99,30 @@ run('compare', async () => {
 	if (started.held) {
 		const { width, height, pixels } = started.held;
 		await started.destroy();
-		dressed?.stop();
 		return { ...report, width, height, pixels: toBase64(pixels) };
 	}
 	if (fixed !== undefined) {
 		started.collapseStats(true);
 		await new Promise((resolve) => setTimeout(resolve, (warmup ?? 2) * 1000));
 		const frames = await started.measure(Number(params.get('seconds') ?? 5));
-		const memory = await started.measureMemory();
-		const parts = await memoryParts();
+		const skipMemory = params.get('memory') === 'off';
+		const memory = skipMemory ? null : await started.measureMemory();
+		const parts = skipMemory ? null : await memoryParts();
 		await started.destroy();
-		dressed?.stop();
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
 	}
 	const step = Number(params.get('step') ?? 1);
+	// `?probe=1` asks the sketch for its scene signature at each ramp step, which the ramp's tests
+	// read to check that the scene keeps moving.
+	const probing = params.has('probe');
+	const signatures: Promise<SceneSignature | null>[] = [];
+	const onStep = probing
+		? () => signatures.push(started.sceneSignature?.() ?? Promise.resolve(null))
+		: undefined;
 	const ramp = await rampComparison(
 		started,
 		full
-			? { warmupSeconds: warmup }
+			? { warmupSeconds: warmup, onStep }
 			: {
 					// A run with a limit below the short ramp's top, such as three.js's light limit on
 					// WebGLRenderer, stops there.
@@ -125,9 +130,10 @@ run('compare', async () => {
 					warmupSeconds: warmup ?? 1,
 					stepSeconds: step,
 					settleSeconds: step * 0.4,
+					onStep,
 				},
 	);
 	await started.destroy();
-	dressed?.stop();
+	if (probing) return { ...report, ramp, signatures: await Promise.all(signatures) };
 	return { ...report, ramp };
 });

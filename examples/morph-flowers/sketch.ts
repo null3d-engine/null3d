@@ -36,8 +36,8 @@ export default defineSketch(async (ctx) => {
 	scene.setBackground({ sky }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
 	scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
-	const exposure = day.exposure * 1.3;
-	post.set({ exposure, bloom: { threshold: 1.2 }, ao: { radius: 0.1 }, vignette: {} });
+	const effects = { bloom: { threshold: 1.2 }, ao: { radius: 0.1 }, vignette: {} };
+	post.set({ toneMapping: 'aces', exposure: day.exposure * 1.3, ...effects });
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 6 } });
 	const lens = { fov: 35, near: 0.05, far: 5000, position: [0.55, 0.8, 2.05] } as const;
 	const camera = scene.createPerspectiveCamera(lens);
@@ -78,7 +78,7 @@ export default defineSketch(async (ctx) => {
 	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn.
 	const data = new Uint8Array(64 * 64 * 4).fill(255);
 	for (let i = 0, w = Math.PI / 32; i < 64 * 64; i++) {
-		const [x, y, r] = [i % 64, i >> 6, Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1)];
+		const [x, y, r] = [i % 64, i >> 6, math.random()];
 		const clod = (0.6 + 0.5 * r) * (0.85 + 0.2 * Math.sin(6 * w * x) * Math.sin(7 * w * y));
 		data.set(r > 0.97 ? [140, 128, 112] : [92 * clod, 62 * clod, 42 * clod], i * 4);
 	}

@@ -2,7 +2,8 @@
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
 // occlusion, which darkens the ambient light of the camera's opaque objects, outlines, the
 // vignette, which the final pass applies before the tone mapping, the color grading table, which
-// it applies after, and depth of field, which blurs by distance before bloom. The core takes one
+// it applies after, depth of field, which blurs by distance before bloom, and automatic exposure,
+// which adapts the final pass's exposure to the scene's brightness. The core takes one
 // exposure: the sketch's exposure times the camera
 // exposure of its EV100. The sketch's custom effects and custom tone curve come through here too
 // (see `effects.ts`).
@@ -10,27 +11,26 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import { fromHex } from '../math/color';
-import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
-import { type ColorInput, isComponent } from './color';
+import { type ColorInput, writeLinearColor } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
 import { Lut } from './lut';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import type { UniformValues } from './wgsl-uniforms';
 
 /**
- * How the engine maps the scene's high dynamic range color to the screen, with three.js's
- * formulas. The curves are three.js's `ACESFilmicToneMapping` (`'aces'`), `AgXToneMapping`
- * (`'agx'`) and `NeutralToneMapping` (`'neutral'`). The value `'none'` clips the exposed color at
- * 1, as `LinearToneMapping` does.
+ * How the engine maps the scene's high dynamic range color to the screen. Three curves use
+ * three.js's formulas: `AgXToneMapping` (`'agx'`), `NeutralToneMapping` (`'neutral'`) and
+ * `ACESFilmicToneMapping` (`'aces'`). `'agx-punchy'` is AgX with Filament's punchy look, which adds
+ * contrast and color. `'aces'` serves ports of three.js scenes that set it. The value `'none'`
+ * clips the exposed color at 1, as `LinearToneMapping` does.
  *
  * @category api/post
  */
-export type ToneMapping = 'aces' | 'agx' | 'neutral' | 'none';
+export type ToneMapping = 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none';
 
 /**
  * A custom tone curve: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the
@@ -46,6 +46,7 @@ export type ToneCurve = CompiledWgsl | `${string}toneCurve${string}`;
 const CODES: Readonly<Record<ToneMapping, number>> = {
 	aces: C.TONE_MAPPING_ACES,
 	agx: C.TONE_MAPPING_AGX,
+	'agx-punchy': C.TONE_MAPPING_AGX_PUNCHY,
 	neutral: C.TONE_MAPPING_NEUTRAL,
 	none: C.TONE_MAPPING_NONE,
 };
@@ -62,6 +63,7 @@ const SETTINGS = [
 	'vignette',
 	'outline',
 	'dof',
+	'autoExposure',
 ] as const;
 const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
 /** Each way of blending bloom's glow, by its code in the core. */
@@ -89,7 +91,24 @@ const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const DOF_NUMBERS = ['focusDistance', 'aperture', 'focalLength', 'maxBlur', 'blades'] as const;
 /** The most blur that depth of field takes, as a share of the image's height. */
 const MAX_DOF_BLUR = 0.1;
-const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
+/**
+ * Automatic exposure's number settings, in the order of their places in the core's block from its
+ * center weight on.
+ */
+const EXPOSURE_NUMBERS = [
+	'centerWeight',
+	'speedUp',
+	'speedDown',
+	'minEv',
+	'maxEv',
+	'compensation',
+] as const;
+const EXPOSURE_SETTINGS = [...EXPOSURE_NUMBERS, 'metering', 'percentiles'] as const;
+/** Each metering's code in the core. */
+const METERINGS = { mean: 0, percentile: 1 } as const;
+/** The most stops that automatic exposure's range and compensation take either way. */
+const MAX_EXPOSURE_STOPS = 20;
+const TONE_MAPPINGS = "'agx', 'agx-punchy', 'neutral', 'aces' or 'none'";
 
 /** The lowest and highest EV100 that `post.set` takes. */
 const EV100_MIN = -20;
@@ -293,6 +312,65 @@ export interface DofSettings {
 }
 
 /**
+ * How automatic exposure averages the scene's brightness. `'mean'` takes the weighted mean of
+ * every part of the image. `'percentile'` leaves out its darkest and brightest parts, by the
+ * `percentiles` setting, so a bright window or a black corner moves the exposure less.
+ *
+ * @category api/post
+ */
+export type ExposureMetering = 'mean' | 'percentile';
+
+/**
+ * Automatic exposure's settings. The engine meters the scene's brightness on the GPU in each
+ * frame, and moves the exposure toward it, as an eye or a camera adapts. Brightness counts in
+ * stops from the camera's exposure: at 0 the scene shows as the `exposure` and `ev100` settings
+ * show it, and each stop is twice as bright. A setting that a call leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface AutoExposureSettings {
+	/** How the meter averages the scene's brightness. It is `'percentile'` by default. */
+	metering?: ExposureMetering;
+	/**
+	 * For `'percentile'` metering, the shares of the image, from the darkest, that the mean starts
+	 * and ends at: two numbers from 0 to 1, the first no larger, and `[0.1, 0.9]` by default.
+	 * `[0.5, 0.5]` takes the median.
+	 */
+	percentiles?: readonly [number, number];
+	/**
+	 * How much more the center of the image counts than its edges: 0 counts every part the same,
+	 * and 1 counts the edges very little. It is 0.5 by default.
+	 */
+	centerWeight?: number;
+	/**
+	 * How fast the eye adapts while the scene grows brighter, in stops per second: 0 or more, and
+	 * 3 by default. Within one stop of the target it slows down, so it settles smoothly.
+	 */
+	speedUp?: number;
+	/**
+	 * How fast the eye adapts while the scene grows darker, in stops per second: 0 or more, and 1
+	 * by default. Eyes adapt to the dark more slowly than to the light.
+	 */
+	speedDown?: number;
+	/**
+	 * The darkest scene that the eye adapts to, in stops from the camera's exposure: -4 by
+	 * default. A darker scene shows darker. With `ev100`, the eye adapts down to a scene of about
+	 * `ev100 + minEv`.
+	 */
+	minEv?: number;
+	/**
+	 * The brightest scene that the eye adapts to, in stops from the camera's exposure: 4 by
+	 * default, and no lower than `minEv`. A brighter scene shows brighter.
+	 */
+	maxEv?: number;
+	/**
+	 * Stops added to the adapted exposure: 1 shows the picture twice as bright, and -1 half as
+	 * bright. It is 0 by default.
+	 */
+	compensation?: number;
+}
+
+/**
  * Settings for `post.set`. A setting that the call leaves out keeps its value.
  *
  * @category api/post
@@ -300,9 +378,10 @@ export interface DofSettings {
 export interface PostSettings {
 	/**
 	 * How the engine maps high dynamic range color to the screen: a built-in curve's name, or a
-	 * custom tone curve's WGSL. The default is `'aces'`. three.js uses no tone mapping by default,
-	 * so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR color, as
-	 * bloom does; on a device without an HDR target the built-in curve stays.
+	 * custom tone curve's WGSL. The default is `'agx-punchy'`, which keeps the hues of bright colors
+	 * on their way to white and keeps the picture's contrast. three.js uses no tone mapping by
+	 * default, so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR
+	 * color, as bloom does; on a device without an HDR target the built-in curve stays.
 	 */
 	toneMapping?: ToneMapping | ToneCurve;
 	/**
@@ -362,6 +441,15 @@ export interface PostSettings {
 	 * `dofSamples` is above 0.
 	 */
 	dof?: DofSettings | false;
+	/**
+	 * Automatic exposure: the picture adapts to the scene's brightness over time, as an eye does,
+	 * so a dark hall brightens after a sunny street. The engine meters each frame on the GPU, and
+	 * the final pass multiplies the color by the adapted exposure before the tone mapping. The
+	 * scene draws at the camera's `exposure` and `ev100`, and the eye adapts from there. Settings
+	 * turn it on, `{}` with the values it had, and `false` turns it off. It is off by default. It
+	 * needs HDR color, as bloom does.
+	 */
+	autoExposure?: AutoExposureSettings | false;
 }
 
 /**
@@ -374,36 +462,14 @@ function writeNumber(values: Float32Array, place: number, value: unknown): void 
 	if (typeof value === 'number') values[place] = value;
 }
 
-/** Scratch for a hex color's linear components, so reading one allocates nothing. */
-const linear = [0, 0, 0];
-
-/**
- * Writes a color input's linear components into the post-processing values from `place` on. It
- * throws E1204 for a color it cannot read.
- */
-function writeColor(values: Float32Array, place: number, color: ColorInput, call: string): void {
-	if (typeof color === 'string' || typeof color === 'number') {
-		if (hexValue(color) < 0) throw invalidColor(color, call);
-		fromHex(linear, color);
-		values[place] = linear[0] as number;
-		values[place + 1] = linear[1] as number;
-		values[place + 2] = linear[2] as number;
-		return;
-	}
-	if (color?.length !== 3 || !color.every(isComponent)) throw invalidColor(color, call);
-	values[place] = color[0];
-	values[place + 1] = color[1];
-	values[place + 2] = color[2];
-}
-
 /**
  * The post-processing settings, as `ctx.post`. The engine applies them to every pixel of the scene,
  * the background included, after lighting and before the canvas shows it.
  *
  * @category api/post
  */
-export class Post {
-	private toneMapping = C.TONE_MAPPING_ACES;
+export class Post implements ViewHolder {
+	private toneMapping = C.TONE_MAPPING_AGX_PUNCHY;
 	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
 	private exposure = 1;
 	private ev100: number | false = false;
@@ -416,6 +482,8 @@ export class Post {
 	private outline = false;
 	private dof = false;
 	private warnedNoDof = false;
+	private autoExposure = false;
+	private warnedNoExposure = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -448,6 +516,12 @@ export class Post {
 		joinEffects = true,
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
+		core.holdViews(this);
+	}
+
+	/** Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
 	}
 
 	/**
@@ -504,8 +578,19 @@ export class Post {
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
-			settings;
+		const {
+			toneMapping,
+			exposure,
+			ev100,
+			bloom,
+			ao,
+			lut,
+			lutIntensity,
+			vignette,
+			outline,
+			dof,
+			autoExposure,
+		} = settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
@@ -556,15 +641,17 @@ export class Post {
 		}
 		if (ao !== undefined) this.setAo(ao, values);
 		if (dof !== undefined) this.setDof(dof, values);
+		if (autoExposure !== undefined) this.setAutoExposure(autoExposure, values);
 		if (outline !== undefined) {
 			this.outline = outline !== false;
 			if (outline !== false) {
 				const { color, hiddenColor, width } = outline;
-				if (color !== undefined) writeColor(values, C.POST_VALUE_OUTLINE_COLOR, color, 'post.set');
+				if (color !== undefined)
+					writeLinearColor(values, color, 'post.set', C.POST_VALUE_OUTLINE_COLOR);
 				if (hiddenColor !== undefined) {
 					values[C.POST_VALUE_OUTLINE_HIDDEN] = hiddenColor === false ? 0 : 1;
 					if (hiddenColor !== false)
-						writeColor(values, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, hiddenColor, 'post.set');
+						writeLinearColor(values, hiddenColor, 'post.set', C.POST_VALUE_OUTLINE_HIDDEN_COLOR);
 				}
 				if (width !== undefined) values[C.POST_VALUE_OUTLINE_WIDTH] = width;
 			}
@@ -622,6 +709,34 @@ export class Post {
 		this.core.check(this.core.glue.setDof(this.dof), 'post.set', undefined, true);
 	}
 
+	/** Turns automatic exposure on with the settings that `settings` gives, or off with `false`. */
+	private setAutoExposure(settings: AutoExposureSettings | false, values: Float32Array): void {
+		this.autoExposure = settings !== false;
+		if (settings) {
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_CENTER_WEIGHT, settings.centerWeight);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_SPEED_UP, settings.speedUp);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_SPEED_DOWN, settings.speedDown);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_MIN_EV, settings.minEv);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_MAX_EV, settings.maxEv);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_COMPENSATION, settings.compensation);
+			const { metering, percentiles } = settings;
+			if (metering !== undefined && Object.hasOwn(METERINGS, metering))
+				values[C.POST_VALUE_AUTO_EXPOSURE_METERING] = METERINGS[metering];
+			if (percentiles !== undefined) {
+				values[C.POST_VALUE_AUTO_EXPOSURE_PERCENTILES] = percentiles[0];
+				values[C.POST_VALUE_AUTO_EXPOSURE_PERCENTILES + 1] = percentiles[1];
+			}
+		}
+		if (DEV && this.autoExposure && !this.hdrEffects && !this.warnedNoExposure) {
+			this.warnedNoExposure = true;
+			console.warn(
+				'null3D: automatic exposure stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
+			);
+		}
+		if (this.autoExposure && this.hdrEffects) this.shaders.need('exposure');
+		this.core.check(this.core.glue.setAutoExposure(this.autoExposure), 'post.set', undefined, true);
+	}
+
 	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
 	private setAo(ao: AoSettings | false, values: Float32Array): void {
 		this.ao = ao !== false;
@@ -663,11 +778,17 @@ export class Post {
 	}
 
 	/**
-	 * @internal True while the sketch uses something that needs HDR color: bloom, depth of field, a
-	 * custom effect or a custom tone curve.
+	 * @internal True while the sketch uses something that needs HDR color: bloom, depth of field,
+	 * automatic exposure, a custom effect or a custom tone curve.
 	 */
 	get needsHdr(): boolean {
-		return this.bloom || this.dof || this.toneCurve !== undefined || this.effects.any;
+		return (
+			this.bloom ||
+			this.dof ||
+			this.autoExposure ||
+			this.toneCurve !== undefined ||
+			this.effects.any
+		);
 	}
 
 	/**
@@ -730,11 +851,12 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline and dof.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof and autoExposure.`,
 			);
 	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
 		settings;
 	checkDof(dof);
+	checkAutoExposure(settings.autoExposure);
 	checkGroup(
 		'ao',
 		ao,
@@ -770,7 +892,7 @@ function checkSettings(settings: PostSettings): void {
 	)
 		throw new EngineError(
 			'E1213',
-			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness.",
+			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness. Under AgX, keep intensity at 1 or less and set falloff to 3.",
 		);
 	checkGroup('vignette', vignette, VIGNETTE_SETTINGS, 'intensity, size, falloff and roundness');
 	if (vignette) {
@@ -864,7 +986,63 @@ function checkDof(dof: DofSettings | false | undefined): void {
 		);
 }
 
+/** Throws the error of the first automatic exposure setting that `post.set` cannot take. */
+function checkAutoExposure(settings: AutoExposureSettings | false | undefined): void {
+	checkGroup(
+		'autoExposure',
+		settings,
+		EXPOSURE_SETTINGS,
+		'metering, percentiles, centerWeight, speedUp, speedDown, minEv, maxEv and compensation',
+	);
+	if (!settings) return;
+	const { metering, percentiles, centerWeight, speedUp, speedDown, minEv, maxEv, compensation } =
+		settings;
+	if (metering !== undefined && !Object.hasOwn(METERINGS, metering))
+		throw new EngineError(
+			'E1213',
+			`post.set() got the metering ${JSON.stringify(metering)}, which is not 'mean' or 'percentile'.`,
+		);
+	if (percentiles !== undefined) {
+		if (!Array.isArray(percentiles) || percentiles.length !== 2)
+			throw new EngineError(
+				'E1213',
+				`post.set() got ${String(percentiles)} for autoExposure.percentiles, which takes two numbers from 0 to 1, such as [0.1, 0.9].`,
+			);
+		checkNumber('the first of autoExposure.percentiles', percentiles[0], 1);
+		checkNumber('the second of autoExposure.percentiles', percentiles[1], 1);
+		if (percentiles[0] > percentiles[1])
+			throw new EngineError(
+				'E1213',
+				`post.set() got [${percentiles[0]}, ${percentiles[1]}] for autoExposure.percentiles. Give the lower share first.`,
+			);
+	}
+	checkNumber('autoExposure.centerWeight', centerWeight, 1);
+	checkNumber('autoExposure.speedUp', speedUp);
+	checkNumber('autoExposure.speedDown', speedDown);
+	checkStops('autoExposure.minEv', minEv);
+	checkStops('autoExposure.maxEv', maxEv);
+	checkStops('autoExposure.compensation', compensation);
+	if (minEv !== undefined && maxEv !== undefined && minEv > maxEv)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${minEv} for autoExposure.minEv and ${maxEv} for maxEv. Give minEv no higher than maxEv.`,
+		);
+}
+
+/** Throws E1203 for stops that are not a finite number, and E1213 for stops out of their range. */
+function checkStops(name: string, value: number | undefined): void {
+	if (value === undefined) return;
+	if (typeof value !== 'number' || !Number.isFinite(value))
+		throw new EngineError('E1203', `post.set() got ${String(value)} for ${name}.`);
+	if (Math.abs(value) > MAX_EXPOSURE_STOPS)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${value} for ${name}, outside ${-MAX_EXPOSURE_STOPS} to ${MAX_EXPOSURE_STOPS} stops.`,
+		);
+}
+
 /** Throws E1203 for an EV100 that is not a number or `false`, and E1213 for one out of its range. */
+
 function checkEv100(ev100: number | false | undefined): void {
 	if (ev100 === undefined || ev100 === false) return;
 	if (typeof ev100 !== 'number' || !Number.isFinite(ev100))

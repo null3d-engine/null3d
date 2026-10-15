@@ -3,10 +3,15 @@ import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_COAT,
+	MAP_SLOT_COAT_NORMAL,
+	MAP_SLOT_COAT_ROUGHNESS,
 	MAP_SLOT_DIFFUSE_TRANSMISSION,
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
+	MAP_SLOT_SHEEN_COLOR,
+	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
@@ -14,18 +19,28 @@ import {
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_COAT_SHEEN,
+	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_CLEARCOAT,
+	MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
+	MATERIAL_PARAM_CLEARCOAT_ROUGHNESS,
 	MATERIAL_PARAM_COLOR,
+	MATERIAL_PARAM_DECAL_EDGE_FADE,
+	MATERIAL_PARAM_DECAL_FADE_END,
+	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
@@ -38,6 +53,8 @@ import {
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_REFLECTANCE,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_SHEEN_COLOR,
+	MATERIAL_PARAM_SHEEN_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
 	MATERIAL_PARAM_SUBSURFACE_COLOR,
@@ -54,6 +71,7 @@ import {
 	SHADING_UNLIT_MAP,
 } from '../generated/core';
 import {
+	PERMUTATION_COAT_SHEEN,
 	PERMUTATION_TRANSLUCENCY,
 	SIZE_MATERIAL_BYTES,
 	TEMPLATE_CUSTOM_FIRST,
@@ -63,8 +81,10 @@ import {
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
+import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
 
@@ -95,6 +115,14 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION, 1],
 	[MATERIAL_PARAM_SUBSURFACE_COLOR, 3],
 	[MATERIAL_PARAM_SUBSURFACE_RADIUS, 1],
+	[MATERIAL_PARAM_CLEARCOAT, 1],
+	[MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
+	[MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, 2],
+	[MATERIAL_PARAM_SHEEN_COLOR, 3],
+	[MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
+	[MATERIAL_PARAM_DECAL_FADE_START, 1],
+	[MATERIAL_PARAM_DECAL_FADE_END, 1],
+	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
 ]);
 
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
@@ -171,8 +199,9 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	return {
+		core,
 		table,
 		features,
 		shadings,
@@ -329,12 +358,42 @@ describe('Material.set', () => {
 		materials.unlit({ alphaMode: 'blend', blending: 'additive', depthWrite: false });
 		materials.unlit({ alphaMode: 'blend', blending: 'multiply' });
 		materials.unlit({ alphaMode: 'blend', blending: 'normal' });
+		materials.standard({ alphaMode: 'blend', blending: 'weighted', doubleSided: true });
 		expect(features).toEqual([
 			MATERIAL_FEATURE_BLEND,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_ADDITIVE | MATERIAL_FEATURE_NO_DEPTH_WRITE,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
+			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_WEIGHTED | MATERIAL_FEATURE_DOUBLE_SIDED,
 		]);
+	});
+
+	test('makes a shadow catcher a lit material that blends, with its own feature', () => {
+		const { features, shadings, table, materials } = fakeCore();
+		const catcher = materials.shadowCatcher({ color: '#ffffff', opacity: 0.5 });
+		expect(shadings).toEqual([SHADING_LIT]);
+		expect(features).toEqual([MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_SHADOW_CATCHER]);
+		expect(table[0]?.slice(0, 4)).toEqual([1, 1, 1, 0.5]);
+		catcher.set({ opacity: 0.25 });
+		expect(table[0]?.[MATERIAL_PARAM_OPACITY]).toBe(0.25);
+	});
+
+	test('refuses the weighted blending beside transmission, and on custom materials', () => {
+		const { features, materials } = fakeCore();
+		const glass = thrown(() =>
+			materials.standard({ alphaMode: 'blend', blending: 'weighted', transmission: 1 }),
+		);
+		expect(glass.code).toBe('E1217');
+		expect(glass.message).toStartWith(
+			"E1217: materials.standard() got transmission with the 'weighted' blending;",
+		);
+		const custom = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), alphaMode: 'blend', blending: 'weighted' }),
+		);
+		expect(custom.message).toStartWith(
+			"E1217: materials.shader() got the 'weighted' blending, which custom materials do not take.",
+		);
+		expect(features).toEqual([]);
 	});
 
 	test('maps go into their slots, on the coordinates of their texture', () => {
@@ -484,6 +543,23 @@ describe('Material.set', () => {
 		expect(table).toEqual([]);
 	});
 
+	test('refuses diffuse transmission beside layers and the weighted blending', () => {
+		const { table, materials } = fakeCore();
+		const velvet = thrown(() =>
+			materials.standard({ diffuseTransmission: 0.5, sheenColor: '#ff7a8f' }),
+		);
+		expect(velvet.message).toStartWith(
+			'E1217: materials.standard() got diffuseTransmission with a clear coat or a sheen;',
+		);
+		const smoke = thrown(() =>
+			materials.standard({ diffuseTransmission: 0.5, alphaMode: 'blend', blending: 'weighted' }),
+		);
+		expect(smoke.message).toStartWith(
+			"E1217: materials.standard() got diffuseTransmission with the 'weighted' blending;",
+		);
+		expect(table).toEqual([]);
+	});
+
 	test('refuses an index of refraction below 1 and a specular intensity above 1', () => {
 		const { table, materials } = fakeCore();
 		const glass = materials.standard();
@@ -496,6 +572,80 @@ describe('Material.set', () => {
 			expect(thrown(() => glass.set(values)).code).toBe('E1108');
 		expect(thrown(() => glass.set({ specularColor: [-1, 0, 0] })).code).toBe('E1204');
 		expect(table[0]).toEqual(before);
+	});
+
+	test('gives a material with any layer option its layers, and writes their values', () => {
+		const { table, features, materials } = fakeCore();
+		const paint = materials.standard({
+			clearcoat: 1,
+			clearcoatRoughness: 0.1,
+			clearcoatNormalScale: [0.5, -0.5],
+		});
+		const velvet = materials.standard({ sheenColor: [0.5, 0.25, 1], sheenRoughness: 0.4 });
+		materials.standard({ clearcoat: 0 });
+		materials.standard({ roughness: 0.5 });
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_COAT_SHEEN)).toEqual([
+			MATERIAL_FEATURE_COAT_SHEEN,
+			MATERIAL_FEATURE_COAT_SHEEN,
+			MATERIAL_FEATURE_COAT_SHEEN,
+			0,
+		]);
+		const row = (k: number) => table[k] as number[];
+		expect(row(0)[MATERIAL_PARAM_CLEARCOAT]).toBe(1);
+		expect(row(0)[MATERIAL_PARAM_CLEARCOAT_ROUGHNESS]).toBe(0.1);
+		const scale = MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE;
+		expect(row(0).slice(scale, scale + 2)).toEqual([0.5, -0.5]);
+		const sheen = MATERIAL_PARAM_SHEEN_COLOR;
+		expect(row(1).slice(sheen, sheen + 3)).toEqual([0.5, 0.25, 1]);
+		expect(row(1)[MATERIAL_PARAM_SHEEN_ROUGHNESS]).toBe(0.4);
+		paint.set({ clearcoat: 0.25 });
+		velvet.set({ sheenColor: '#ffffff' });
+		expect(row(0)[MATERIAL_PARAM_CLEARCOAT]).toBe(0.25);
+		expect(row(1).slice(sheen, sheen + 3)).toEqual([1, 1, 1]);
+		for (const values of [{ clearcoat: 1.5 }, { clearcoatRoughness: -1 }, { sheenRoughness: 2 }])
+			expect(thrown(() => paint.set(values)).code).toBe('E1108');
+		expect(thrown(() => paint.set({ clearcoatNormalScale: [Number.NaN, 1] })).code).toBe('E1108');
+	});
+
+	test('puts the layer maps in their places, and refuses the maps whose slots they take', () => {
+		const { maps, features, materials } = fakeCore();
+		const coat = texture(5);
+		const sheen = texture(7, 1);
+		materials.standard({
+			clearcoatMap: coat,
+			clearcoatRoughnessMap: coat,
+			clearcoatNormalMap: texture(6),
+			sheenColorMap: sheen,
+			sheenRoughnessMap: sheen,
+		});
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_COAT_SHEEN).toBe(MATERIAL_FEATURE_COAT_SHEEN);
+		expect(maps).toEqual([
+			[1, MAP_SLOT_COAT, 5, 0],
+			[1, MAP_SLOT_COAT_ROUGHNESS, 5, 0],
+			[1, MAP_SLOT_COAT_NORMAL, 6, 0],
+			[1, MAP_SLOT_SHEEN_COLOR, 7, 1],
+			[1, MAP_SLOT_SHEEN_ROUGHNESS, 7, 1],
+		]);
+		const light = thrown(() => materials.standard({ clearcoat: 1, lightMap: texture(8) }));
+		expect(light.code).toBe('E1217');
+		expect(light.message).toStartWith(
+			'E1217: materials.standard() got lightMap with a clear coat or a sheen,',
+		);
+		const specular = thrown(() =>
+			materials.standard({ sheenColor: '#ffffff', specularColorMap: texture(8) }),
+		);
+		expect(specular.code).toBe('E1217');
+		const pair = thrown(() =>
+			materials.standard({ clearcoatMap: texture(8), clearcoatRoughnessMap: texture(9) }),
+		);
+		expect(pair.message).toStartWith(
+			'E1217: materials.standard() got a clearcoatMap and a clearcoatRoughnessMap that are two textures.',
+		);
+		const sheens = thrown(() =>
+			materials.standard({ sheenColorMap: texture(8), sheenRoughnessMap: texture(9) }),
+		);
+		expect(sheens.code).toBe('E1217');
+		expect(features).toHaveLength(1);
 	});
 
 	test('checks the map values before it changes any', () => {
@@ -576,7 +726,7 @@ describe('Material.set', () => {
 		);
 		expect(blending.code).toBe('E1217');
 		expect(blending.message).toStartWith(
-			`E1217: materials.unlit() got the blending "screen"; it takes 'normal', 'additive' or 'multiply'.`,
+			`E1217: materials.unlit() got the blending "screen"; it takes 'normal', 'additive', 'multiply' or 'weighted'.`,
 		);
 		const bias = thrown(() => materials.unlit({ depthBias: { slopeScale: Number.NaN } }));
 		expect(bias.code).toBe('E1203');
@@ -593,6 +743,70 @@ describe('Material.set', () => {
 		expect(error.message).toStartWith(
 			'E1103: materials.unlit.set() got a material that is not from this engine.',
 		);
+	});
+});
+
+describe('materials.decal', () => {
+	test('makes a standard material with the decal feature, its maps and its fades', () => {
+		const { table, features, shadings, maps, materials } = fakeCore();
+		const scorch = materials.decal({
+			map: texture(3),
+			normalMap: texture(4),
+			roughness: 0.9,
+			angleFade: [0, Math.PI / 2],
+			edgeFade: 0.5,
+		});
+		expect(shadings).toEqual([SHADING_LIT]);
+		expect(features).toEqual([MATERIAL_FEATURE_DECAL]);
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_ROUGHNESS]).toBe(0.9);
+		// The fades go in as the cosines of their angles.
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_START]).toBe(1);
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_END]).toBeCloseTo(0, 12);
+		expect(row()[MATERIAL_PARAM_DECAL_EDGE_FADE]).toBe(0.5);
+		expect(maps).toEqual([
+			[1, MAP_SLOT_BASE_COLOR, 3, 0],
+			[1, MAP_SLOT_NORMAL, 4, 0],
+		]);
+		scorch.set({ angleFade: [Math.PI / 3, Math.PI / 3], edgeFade: 0 });
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_START]).toBeCloseTo(0.5, 12);
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_END]).toBeCloseTo(0.5, 12);
+		expect(row()[MATERIAL_PARAM_DECAL_EDGE_FADE]).toBe(0);
+	});
+
+	test('leaves the fades to the engine core when they are not given', () => {
+		const { table, materials } = fakeCore();
+		materials.decal();
+		expect(table[0]?.[MATERIAL_PARAM_DECAL_FADE_START]).toBe(0);
+		expect(table[0]?.[MATERIAL_PARAM_DECAL_EDGE_FADE]).toBe(0);
+	});
+
+	test('refuses fades out of range, and changes nothing', () => {
+		const { table, materials } = fakeCore();
+		const mud = materials.decal();
+		const before = [...(table[0] as number[])];
+		for (const values of [
+			{ angleFade: [-0.1, 1] as const },
+			{ angleFade: [1, 0.5] as const },
+			{ angleFade: [0, 4] as const },
+			{ edgeFade: 1.5 },
+			{ edgeFade: -1 },
+		])
+			expect(thrown(() => mud.set(values)).code).toBe('E1108');
+		expect(table[0]).toEqual(before);
+		expect(thrown(() => materials.decal({ angleFade: [2, 1] })).code).toBe('E1108');
+	});
+
+	test("asks for the decals' shader file with the first decal material, once", () => {
+		const asked: string[][] = [];
+		const preloads = new ShaderPreloads((features) => asked.push([...features]));
+		const { core } = fakeCore();
+		const materials = new Materials(core, new ShaderTemplates(), preloads);
+		materials.standard();
+		expect(asked).toEqual([]);
+		materials.decal();
+		materials.decal();
+		expect(asked).toEqual([['decals']]);
 	});
 });
 
@@ -754,6 +968,28 @@ describe('materials.shader', () => {
 		expect(row()[MATERIAL_PARAM_ROUGHNESS]).toBe(0.75);
 		const error = thrown(() => custom.set({ roughness: 2 }));
 		expect(error.message).toStartWith('E1108: materials.shader.set() got the roughness 2');
+	});
+
+	test('gives custom materials their layers only where the WGSL names them', () => {
+		const { features, materials } = fakeCore();
+		const plain = compiledMaterial();
+		const wet = {
+			...compiledMaterial(),
+			variants: { webgpu_layers: { permutation: PERMUTATION_COAT_SHEEN } },
+		};
+		materials.shader({ wgsl: wet });
+		materials.shader({ wgsl: wet, clearcoat: 0.5 });
+		materials.shader({ wgsl: plain });
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_COAT_SHEEN)).toEqual([
+			MATERIAL_FEATURE_COAT_SHEEN,
+			MATERIAL_FEATURE_COAT_SHEEN,
+			0,
+		]);
+		const refused = thrown(() => materials.shader({ wgsl: plain, sheenColor: '#ffffff' }));
+		expect(refused.code).toBe('E1217');
+		expect(refused.message).toStartWith(
+			"E1217: materials.shader() got a clear coat or a sheen, but its WGSL never names the surface's layers,",
+		);
 	});
 
 	test('refuses WGSL that the Vite plugin did not compile, and whole shaders', () => {

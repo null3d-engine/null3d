@@ -36,6 +36,18 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
+/** The layers that the `coatSheen` switch gives the swarm's boxes. */
+export type SwarmCoatSheen = 'coat' | 'sheen' | 'both';
+
+/** The standard options of the swarm's layers: a clear car-paint coat, a velvet sheen, or both. */
+function layerOptions(layers: SwarmCoatSheen | undefined) {
+	const coat = { clearcoat: 1, clearcoatRoughness: 0.05 };
+	const sheen = { sheenColor: '#ffc0d0', sheenRoughness: 0.5 };
+	if (layers === 'coat') return coat;
+	if (layers === 'sheen') return sheen;
+	return layers === 'both' ? { ...coat, ...sheen } : {};
+}
+
 /**
  * Makes S1's instances as one batch, each placed at a time by `instanceAt`: S1's own by default.
  * With `blend`, the boxes see through, so each frame sorts every visible row back to front. With
@@ -43,6 +55,7 @@ fn surface(input: SurfaceInput) -> Surface {
  * values of its own, which the pose writes in every frame, and a custom material sways and tints
  * each box by its values. With `levels`, the box has lower levels of detail, so each row picks a
  * level, and fades between two, as its distance to the camera changes.
+ * With `coatSheen`, the boxes take a clear coat, a sheen or both.
  */
 export function createSwarm(
 	{ scene, materials, geometry }: SketchContext,
@@ -55,7 +68,14 @@ export function createSwarm(
 		rowValues = false,
 		translucent = false,
 		levels = false,
-	}: { shadows?: boolean; rowValues?: boolean; translucent?: boolean; levels?: boolean } = {},
+		layers,
+	}: {
+		shadows?: boolean;
+		rowValues?: boolean;
+		translucent?: boolean;
+		levels?: boolean;
+		layers?: SwarmCoatSheen;
+	} = {},
 ): Swarm {
 	const data = createS1(count);
 	// The boxes that let light through to their other side light their backs too.
@@ -66,7 +86,7 @@ export function createSwarm(
 		? materials.shader({ wgsl: SWAY, color: S1_COLOR })
 		: blend
 			? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
-			: materials.standard({ color: S1_COLOR, ...through });
+			: materials.standard({ color: S1_COLOR, ...through, ...layerOptions(layers) });
 	const box = () => geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE });
 	const mesh = box();
 	if (levels)

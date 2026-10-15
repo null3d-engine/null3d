@@ -634,6 +634,8 @@ jobs:
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
     # a missing adapter is reported as a skip. The shards split the plan by each page's expected
     # time in Safari, and a unit test fails when a shard's pages would pass 10 minutes there.
+    # Safari compiles the shader builds without the coat and sheen bit and a sample of those with
+    # it, and Firefox compiles every build (D-147).
     # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
     # count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
@@ -648,8 +650,8 @@ jobs:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1, 2, 3, 4, 5]
-        shards: [5]
+        shard: [1, 2, 3, 4, 5, 6, 7]
+        shards: [7]
     env:
       HUSKY: "0"
     steps:
@@ -667,7 +669,7 @@ jobs:
         with:
           mode: download
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:

@@ -4,13 +4,13 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use super::actions::{Action, Advance, EventSink, flag};
+use super::actions::{Action, Advance, EventSink, flag, start_time};
 use super::joints::{self, BLOCK_FLOATS};
 use super::pose::{
-    add_additive, add_weights, apply_additive, blend, clear_additive, layer_shares, local_matrices,
-    rest_shares, start_weights,
+    add_additive, add_weights, apply_additive, blend, clear_additive, dead_blend, layer_shares,
+    local_matrices, rest_shares, smoothstep, start_weights,
 };
-use super::{AnimationError, Clip, NO_PARENT, POSE_FIELDS, Skeleton, filled, out_of_memory};
+use super::{AnimationError, Clip, NO_PARENT, POSE_FIELDS, Skeleton, field, filled, out_of_memory};
 use crate::error::{CoreError, Resource};
 use crate::jobs::{JobSystem, WorkerId};
 use crate::math::{Affine, Affine64, invert64, mul};
@@ -50,8 +50,8 @@ const FRESH: u32 = u32::MAX;
 /// The sample slots of every instance: slot `k` of instance `i` sits at `i * MAX_BLEND + k`. Each
 /// frame, every slot with a weight above 0 samples its clip at its time, and the instance's pose
 /// is the blend of those samples. A slot whose clip belongs to another skeleton, or whose weight
-/// is not a positive number, is skipped. The arrays never move, so another thread's view of them
-/// stays valid. A slot that [`Animations::play`] fills also advances its time and fades its
+/// is not a positive number, is skipped. The arrays move only when the table grows, so another
+/// thread's view of them stays valid until then. A slot that [`Animations::play`] fills also advances its time and fades its
 /// weight in each frame step.
 #[derive(Debug)]
 pub struct SampleSlots {
@@ -93,6 +93,11 @@ pub struct Play {
     pub weight: Option<f32>,
     /// True to play the clip beside the other clips of its layer; false to fade them out.
     pub join: bool,
+    /// True to switch the layer with an inertial transition instead of a weighted cross-fade: the
+    /// pose the layer leaves extrapolates and decays into the new clip, which is the only clip
+    /// sampled while the transition runs. Needs a fade above 0, no `join` and no `weight`; without
+    /// them the play fades as usual.
+    pub inertial: bool,
 }
 
 impl Default for Play {
@@ -106,6 +111,7 @@ impl Default for Play {
             time: None,
             weight: None,
             join: false,
+            inertial: false,
         }
     }
 }
@@ -164,6 +170,38 @@ struct Scratch {
     path: Box<[u32]>,
 }
 
+/// The dead blends running in a frame step, one per instance and layer. `pose` and `vel` hold
+/// `stride` floats for each of an instance's [`MAX_LAYERS`] layers, where `stride` is a pose of
+/// the largest skeleton; `time` and `len` hold one number per layer. They are absent until a play
+/// asks for an inertial transition, and a play that never does pays nothing.
+#[derive(Clone, Copy)]
+pub(super) struct Transition {
+    /// The extrapolated outgoing pose of each layer's dead blend.
+    pub pose: Option<SharedMut<f32>>,
+    /// Its velocity: a rate per second for translations and scales, and a scaled axis (radians
+    /// per second) for rotations.
+    pub vel: Option<SharedMut<f32>>,
+    /// Seconds elapsed in each dead blend.
+    pub time: Option<SharedMut<f32>>,
+    /// Seconds a dead blend lasts; 0 when none runs on the layer.
+    pub len: Option<SharedMut<f32>>,
+    /// The floats of one pose of the largest skeleton.
+    pub stride: usize,
+}
+
+impl Transition {
+    /// A transition whose buffers are absent, for a table that has no dead blends.
+    pub(super) fn empty() -> Self {
+        Transition {
+            pose: None,
+            vel: None,
+            time: None,
+            len: None,
+            stride: 0,
+        }
+    }
+}
+
 /// A thread's [`Scratch`], which only that thread's chunks touch.
 struct ThreadScratch(UnsafeCell<Scratch>);
 
@@ -180,6 +218,13 @@ fn boxed<T: Clone>(len: usize, value: T) -> Result<Box<[T]>, AnimationError> {
 #[inline]
 pub(super) fn counts(weight: f32) -> bool {
     weight > 0.0
+}
+
+/// A copy of `old` lengthened to `len` with copies of `value`.
+fn grown<T: Clone>(old: &[T], len: usize, value: T) -> Result<Box<[T]>, AnimationError> {
+    let mut v = filled(len, value)?;
+    v[..old.len()].clone_from_slice(old);
+    Ok(v.into_boxed_slice())
 }
 
 /// An empty vector with room for `len` values, so pushes up to that many allocate nothing.
@@ -213,8 +258,8 @@ struct Entry {
     additive: bool,
 }
 
-/// Skeletons, clips and animated instances, with fixed capacities for instances and their joints.
-/// See [`crate::animation`].
+/// Skeletons, clips and animated instances, with capacities for instances and their joints that
+/// grow on request ([`Animations::try_grow`]). See [`crate::animation`].
 pub struct Animations {
     skeletons: Vec<Skeleton>,
     pub(super) clips: Vec<Clip>,
@@ -247,6 +292,11 @@ pub struct Animations {
     pub(super) slots: SampleSlots,
     /// How each slot that a play filled advances.
     pub(super) actions: Box<[Action]>,
+    /// The frames between two frame steps of each instance's pose: 1 by default, which poses it
+    /// every frame. A value of `n` poses the instance once every `n` frame steps and leaves its
+    /// matrices as they were in between, so a far crowd samples and skins less often. TypeScript
+    /// writes it ([`Animations::update_intervals_mut`], [`Animations::update_intervals`]).
+    update_intervals: Box<[u32]>,
     /// The rate of each instance's time; TypeScript writes it.
     time_scales: Box<[f32]>,
     /// The weight of each layer of each instance, [`MAX_LAYERS`] per instance; TypeScript writes
@@ -267,6 +317,9 @@ pub struct Animations {
     step: u32,
     /// The last frame step that changed each instance's skinning matrices, or [`FRESH`].
     pose_steps: Box<[u32]>,
+    /// The last frame step that posed each instance, or [`FRESH`]: the rate's schedule reads it, so
+    /// a held pose with the same matrices still counts its frames.
+    sampled_steps: Box<[u32]>,
     /// The last frame step that changed some instance's skinning matrices.
     changed_step: u32,
     /// True once the running frame step has changed some instance's matrices.
@@ -292,11 +345,28 @@ pub struct Animations {
     /// Each instance's look-at target in its object's space, which
     /// [`Animations::resolve_look_targets`] writes for the frame step.
     look_local: Box<[f32]>,
+    /// The extrapolated outgoing pose of each instance's dead blends, [`MAX_LAYERS`] layers of
+    /// `POSE_FIELDS * scratch_lanes` floats each. Empty until a play asks for an inertial
+    /// transition.
+    inertial_pose: Box<[f32]>,
+    /// The velocity of each of those poses, laid out as `inertial_pose`.
+    inertial_vel: Box<[f32]>,
+    /// The floats of one pose in `inertial_pose`, `POSE_FIELDS * scratch_lanes`; 0 until the
+    /// buffers exist.
+    inertial_stride: usize,
+    /// The seconds elapsed in each dead blend, [`MAX_LAYERS`] per instance.
+    inertial_time: Box<[f32]>,
+    /// The length in seconds of each dead blend, [`MAX_LAYERS`] per instance; 0 when none runs.
+    inertial_len: Box<[f32]>,
+    /// The last frame step of each instance's own time, in seconds, which an inertial capture
+    /// divides by to get the outgoing velocity.
+    last_steps: Box<[f32]>,
 }
 
 impl Animations {
     /// A table for up to `instances` animated instances with `joints` joints between them, whose
-    /// frame step runs on `jobs`. The capacities fix the arrays that other threads view.
+    /// frame step runs on `jobs`. The capacities fix the arrays that other threads view until the
+    /// table grows.
     pub fn new(jobs: &JobSystem, instances: u32, joints: u32) -> Result<Self, AnimationError> {
         let n = instances as usize;
         let slots = n * MAX_BLEND;
@@ -329,6 +399,7 @@ impl Animations {
                 source: boxed(slots, NO_SOURCE)?,
             },
             actions: boxed(slots, Action::default())?,
+            update_intervals: boxed(n, 1)?,
             time_scales: boxed(n, 1.0)?,
             layer_weights: boxed(n * MAX_LAYERS, 1.0)?,
             layer_masks: boxed(n * MAX_LAYERS, 0)?,
@@ -340,6 +411,7 @@ impl Animations {
             written: 0,
             step: 0,
             pose_steps: boxed(n, FRESH)?,
+            sampled_steps: boxed(n, FRESH)?,
             changed_step: 0,
             pose_changed: AtomicBool::new(false),
             events: boxed(EVENT_CAPACITY, [0; EVENT_WORDS])?,
@@ -353,7 +425,135 @@ impl Animations {
             overrides: Box::default(),
             look_targets: Box::default(),
             look_local: Box::default(),
+            inertial_pose: Box::default(),
+            inertial_vel: Box::default(),
+            inertial_stride: 0,
+            inertial_time: Box::default(),
+            inertial_len: Box::default(),
+            last_steps: boxed(n, 1.0 / 60.0)?,
         })
+    }
+
+    /// The most instances that the table holds now.
+    pub fn instance_capacity(&self) -> u32 {
+        self.instance_skeletons.len() as u32
+    }
+
+    /// The capacities, instances and joints, that the table needs for one more instance of
+    /// `skeleton`: each doubles from its current one until the instance fits, and the joints stop
+    /// at `max_joints`. `None` when the instance fits as the table is, or when its joints cannot
+    /// fit within `max_joints`.
+    pub fn growth_for(&self, skeleton: u32, max_joints: u32) -> Option<(u32, u32)> {
+        let joints = self.skeleton(skeleton)?.joints();
+        let instances = self.instance_capacity();
+        let room_for_instance = !self.free_instances.is_empty() || self.instances < instances;
+        let free_run = self.free_joints.iter().any(|&(_, len)| len >= joints);
+        let needed = self.joints.saturating_add(joints);
+        let room_for_joints = free_run || needed <= self.joint_capacity();
+        if room_for_instance && room_for_joints {
+            return None;
+        }
+        if !room_for_joints && needed > max_joints {
+            return None;
+        }
+        let instances = if room_for_instance {
+            instances
+        } else {
+            instances.saturating_mul(2).max(1)
+        };
+        let mut capacity = self.joint_capacity().max(1);
+        while !room_for_joints && capacity < needed {
+            capacity = capacity.saturating_mul(2).min(max_joints);
+        }
+        Some((instances, capacity))
+    }
+
+    /// Grows the table to hold `instances` instances and `joints` joints, keeping every instance,
+    /// its plays and its last pose. Each array moves to new memory, so views of the old arrays
+    /// must be made again. Returns the old matrix buffers, which a frame's draw list that a
+    /// thread still replays may read: the caller keeps them until no such list remains. A
+    /// capacity no larger than the current one stays as it is. On failure the table is unchanged.
+    pub fn try_grow(
+        &mut self,
+        instances: u32,
+        joints: u32,
+    ) -> Result<[Box<[f32]>; 2], AnimationError> {
+        let n = (instances as usize).max(self.instance_skeletons.len());
+        let joint_floats = (joints as usize * MATRIX_FLOATS).max(self.matrices[0].len());
+        let slots = n * MAX_BLEND;
+        let layers = n * MAX_LAYERS;
+        let overrides = if self.overrides.is_empty() {
+            0
+        } else {
+            n * BLOCK_FLOATS
+        };
+        let looks = if self.overrides.is_empty() { 0 } else { n * 3 };
+        // Every allocation comes first, so a failure leaves each array as it was.
+        let mut free_instances = reserved(n)?;
+        free_instances.extend_from_slice(&self.free_instances);
+        let mut free_joints = reserved(n)?;
+        free_joints.extend_from_slice(&self.free_joints);
+        let instance_skeletons = grown(&self.instance_skeletons, n, REMOVED)?;
+        let first_joints = grown(&self.first_joints, n, 0)?;
+        let slot_clip = grown(&self.slots.clip, slots, 0)?;
+        let slot_time = grown(&self.slots.time, slots, 0.0)?;
+        let slot_weight = grown(&self.slots.weight, slots, 0.0)?;
+        let slot_source = grown(&self.slots.source, slots, NO_SOURCE)?;
+        let actions = grown(&self.actions, slots, Action::default())?;
+        let time_scales = grown(&self.time_scales, n, 1.0)?;
+        let layer_weights = grown(&self.layer_weights, layers, 1.0)?;
+        let layer_masks = grown(&self.layer_masks, layers, 0)?;
+        let blend_values = grown(&self.blend_values, layers, 0.0)?;
+        let pose_steps = grown(&self.pose_steps, n, FRESH)?;
+        let sampled_steps = grown(&self.sampled_steps, n, FRESH)?;
+        let update_intervals = grown(&self.update_intervals, n, 1)?;
+        let objects = grown(&self.objects, n, u32::MAX)?;
+        let new_overrides = grown(&self.overrides, overrides, 0.0)?;
+        let look_targets = grown(&self.look_targets, looks, 0.0)?;
+        let look_local = grown(&self.look_local, looks, f32::NAN)?;
+        let inertial = if self.inertial_pose.is_empty() {
+            0
+        } else {
+            n * MAX_LAYERS * self.inertial_stride
+        };
+        let new_inertial_pose = grown(&self.inertial_pose, inertial, 0.0)?;
+        let new_inertial_vel = grown(&self.inertial_vel, inertial, 0.0)?;
+        let new_inertial_time = grown(&self.inertial_time, layers, 0.0)?;
+        let new_inertial_len = grown(&self.inertial_len, layers, 0.0)?;
+        let new_last_steps = grown(&self.last_steps, n, 1.0 / 60.0)?;
+        let matrices = [
+            grown(&self.matrices[0], joint_floats, 0.0)?,
+            grown(&self.matrices[1], joint_floats, 0.0)?,
+        ];
+
+        self.free_instances = free_instances;
+        self.free_joints = free_joints;
+        self.instance_skeletons = instance_skeletons;
+        self.first_joints = first_joints;
+        self.slots = SampleSlots {
+            clip: slot_clip,
+            time: slot_time,
+            weight: slot_weight,
+            source: slot_source,
+        };
+        self.actions = actions;
+        self.time_scales = time_scales;
+        self.layer_weights = layer_weights;
+        self.layer_masks = layer_masks;
+        self.blend_values = blend_values;
+        self.pose_steps = pose_steps;
+        self.sampled_steps = sampled_steps;
+        self.update_intervals = update_intervals;
+        self.objects = objects;
+        self.overrides = new_overrides;
+        self.look_targets = look_targets;
+        self.look_local = look_local;
+        self.inertial_pose = new_inertial_pose;
+        self.inertial_vel = new_inertial_vel;
+        self.inertial_time = new_inertial_time;
+        self.inertial_len = new_inertial_len;
+        self.last_steps = new_last_steps;
+        Ok(std::mem::replace(&mut self.matrices, matrices))
     }
 
     /// Makes the table of joint overrides, once: [`BLOCK_FLOATS`] floats per instance, all 0, and
@@ -368,6 +568,31 @@ impl Animations {
         self.overrides = boxed(n * BLOCK_FLOATS, 0.0)?;
         self.look_targets = look_targets;
         self.look_local = look_local;
+        Ok(())
+    }
+
+    /// Makes the table of dead blends, once: [`MAX_LAYERS`] extrapolated poses of the largest
+    /// skeleton, their velocities, and a timer per layer for every instance. Until a play asks for
+    /// an inertial transition the buffers stay empty and the frame step does no dead-blend work,
+    /// so a scene that never uses one pays nothing.
+    pub fn enable_inertial(&mut self) -> Result<(), AnimationError> {
+        if !self.inertial_pose.is_empty() {
+            return Ok(());
+        }
+        let n = self.instance_skeletons.len();
+        let stride = POSE_FIELDS * self.scratch_lanes as usize;
+        let poses = n * MAX_LAYERS * stride;
+        let times = n * MAX_LAYERS;
+        // Every allocation comes first, so a failure leaves the table without the buffers.
+        let pose = boxed(poses, 0.0)?;
+        let vel = boxed(poses, 0.0)?;
+        let time = boxed(times, 0.0)?;
+        let len = boxed(times, 0.0)?;
+        self.inertial_pose = pose;
+        self.inertial_vel = vel;
+        self.inertial_time = time;
+        self.inertial_len = len;
+        self.inertial_stride = stride;
         Ok(())
     }
 
@@ -462,6 +687,15 @@ impl Animations {
         }
         self.ones = boxed(lanes as usize, 1.0)?;
         self.scratch_lanes = lanes;
+        // A dead blend's pose is a pose of the largest skeleton, so a later skeleton with more
+        // lanes moves its buffers. A transition in flight then starts afresh, which is rare.
+        if !self.inertial_pose.is_empty() {
+            let n = self.instance_skeletons.len();
+            let stride = POSE_FIELDS * lanes as usize;
+            self.inertial_pose = boxed(n * MAX_LAYERS * stride, 0.0)?;
+            self.inertial_vel = boxed(n * MAX_LAYERS * stride, 0.0)?;
+            self.inertial_stride = stride;
+        }
         Ok(())
     }
 
@@ -768,10 +1002,12 @@ impl Animations {
         self.instance_skeletons[instance] = skeleton;
         self.first_joints[instance] = first;
         self.pose_steps[instance] = FRESH;
+        self.sampled_steps[instance] = FRESH;
         let slots = instance * MAX_BLEND..(instance + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
         self.slots.source[slots.clone()].fill(NO_SOURCE);
         self.actions[slots].fill(Action::default());
+        self.update_intervals[instance] = 1;
         self.time_scales[instance] = 1.0;
         let layers = instance * MAX_LAYERS..(instance + 1) * MAX_LAYERS;
         self.layer_weights[layers.clone()].fill(1.0);
@@ -796,6 +1032,8 @@ impl Animations {
         let slots = i * MAX_BLEND..(i + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
         self.slots.source[slots].fill(NO_SOURCE);
+        self.update_intervals[i] = 1;
+        self.sampled_steps[i] = FRESH;
         self.clear_overrides(i);
         Ok(())
     }
@@ -860,6 +1098,21 @@ impl Animations {
         self.actions[instance as usize * MAX_BLEND + slot]
     }
 
+    /// The frames between two frame steps of each instance's pose, one per instance; 1 by
+    /// default, which poses it every frame. A value of `n` poses the instance once every `n` frame
+    /// steps. Set it before the frame step: a value of 0 or 1 poses every frame, and a larger value
+    /// skips the sampling and composing of the frames in between, and leaves `pose_step` unchanged
+    /// so the skinning pass skips the held pose too. A change of the value takes effect on the next
+    /// frame step.
+    pub fn update_intervals_mut(&mut self) -> &mut [u32] {
+        &mut self.update_intervals
+    }
+
+    /// The frames between two frame steps of each instance's pose, one per instance.
+    pub fn update_intervals(&self) -> &[u32] {
+        &self.update_intervals
+    }
+
     /// The rate of each instance's time, one per instance; 1 by default.
     pub fn time_scales_mut(&mut self) -> &mut [f32] {
         &mut self.time_scales
@@ -894,8 +1147,8 @@ impl Animations {
     }
 
     /// The skinning matrices of every instance, [`MATRIX_FLOATS`] floats per joint, from the last
-    /// frame step. The two buffers never move, and the steps take turns between them, so the
-    /// address changes with each step.
+    /// frame step. The two buffers move only when the table grows, and the steps take turns
+    /// between them, so the address changes with each step.
     pub fn matrices(&self) -> &[f32] {
         &self.matrices[self.written]
     }
@@ -976,7 +1229,10 @@ impl Animations {
     /// collects the events it passes, then samples, blends and composes every instance's pose
     /// and writes its skinning matrices into the buffer that the step before did not write, in
     /// parallel on `jobs`. An instance whose matrices differ from the step before's, or that no
-    /// step has posed yet, gets this step as its pose step. It allocates nothing.
+    /// step has posed yet, gets this step as its pose step. An instance whose
+    /// [`update_intervals`](Self::update_intervals) value is above 1 is posed on the steps of
+    /// that interval alone; on the others its matrices carry over and it is left out of the
+    /// sampling, the blending and the compose. It allocates nothing.
     ///
     /// # Panics
     /// When `jobs` has more threads than the job system the table was made for.
@@ -993,11 +1249,25 @@ impl Animations {
             self.pose_changed.store(false, Ordering::Relaxed);
             let step = self.step;
             let pose_steps = SharedMut::new(&mut self.pose_steps);
+            let sampled_steps = SharedMut::new(&mut self.sampled_steps);
             let out = SharedMut::new(&mut self.matrices[self.written]);
             let times = SharedMut::new(&mut self.slots.time);
             let weights = SharedMut::new(&mut self.slots.weight);
             let sources = SharedMut::new(&mut self.slots.source);
             let actions = SharedMut::new(&mut self.actions);
+            let last_steps = SharedMut::new(&mut self.last_steps);
+            let inertial_stride = self.inertial_stride;
+            let transition = if inertial_stride == 0 {
+                Transition::empty()
+            } else {
+                Transition {
+                    pose: Some(SharedMut::new(&mut self.inertial_pose)),
+                    vel: Some(SharedMut::new(&mut self.inertial_vel)),
+                    time: Some(SharedMut::new(&mut self.inertial_time)),
+                    len: Some(SharedMut::new(&mut self.inertial_len)),
+                    stride: inertial_stride,
+                }
+            };
             let sink = EventSink {
                 records: SharedMut::new(&mut self.events),
                 count: &self.event_count,
@@ -1022,16 +1292,37 @@ impl Animations {
                         let at = i * MAX_BLEND;
                         // SAFETY: instances own disjoint runs of the matrix buffer, from their
                         // first joint for as many joints as their skeleton has, and their own
-                        // slots; each instance is in one chunk.
-                        let (matrices, time, weight, source, action) = unsafe {
+                        // slots; each instance is in one chunk, so no other thread touches its
+                        // pose step either.
+                        let (matrices, time, weight, source, action, pose_step) = unsafe {
                             (
                                 out.slice(first, len),
                                 times.slice(at, MAX_BLEND),
                                 weights.slice(at, MAX_BLEND),
                                 sources.slice(at, MAX_BLEND),
                                 actions.slice(at, MAX_BLEND),
+                                pose_steps.slice(i, 1),
                             )
                         };
+                        let pose_step = &mut pose_step[0];
+                        // The step before wrote the other buffer, which no thread writes now.
+                        let before = &this.matrices[1 - this.written][first..first + len];
+                        // A slower update rate leaves the instance in the pose of the last step
+                        // that posed it: its matrices carry over unchanged, and its pose step
+                        // stays, so the skinning pass skips the held pose too. The gaps between an
+                        // instance's poses come from the step that last posed it, so a change of
+                        // the interval takes effect at the next pose. An instance that no step has
+                        // posed yet always poses, whatever its interval.
+                        // SAFETY: each instance is in one chunk, so no other thread touches its
+                        // sampled step.
+                        let sampled = unsafe { sampled_steps.read(i) };
+                        let interval = this.update_intervals[i].max(1);
+                        let gap = step.wrapping_sub(sampled);
+                        let held = sampled != FRESH;
+                        if held && gap < interval {
+                            matrices.copy_from_slice(before);
+                            continue;
+                        }
                         let mut advance = Advance {
                             instance: i as u32,
                             time,
@@ -1042,17 +1333,21 @@ impl Animations {
                             sink: &sink,
                             order: 0,
                         };
-                        this.advance(&mut advance, dt * this.time_scales[i]);
-                        this.pose_instance(i, skeleton, scratch, &advance);
+                        // The clip covers the frames the instance skipped too, so its time keeps
+                        // the rate it was asked for, however many frames lie between two of its
+                        // poses. The first pose of an instance skips nothing.
+                        let rate = if held { gap as f32 } else { 1.0 };
+                        let step_now = dt * this.time_scales[i] * rate;
+                        // SAFETY: each instance is in one chunk.
+                        unsafe { last_steps.slice(i, 1)[0] = step_now };
+                        this.advance(&mut advance, step_now);
+                        this.pose_instance(i, skeleton, scratch, &advance, step_now, transition);
                         if !this.overrides.is_empty() {
                             this.override_joints(i, skeleton, scratch);
                         }
                         this.compose(skeleton, scratch, matrices);
-                        // The step before wrote the other buffer, which no thread writes now.
-                        let before = &this.matrices[1 - this.written][first..first + len];
-                        // SAFETY: each instance is in one chunk, so no other thread touches its
-                        // pose step.
-                        let pose_step = unsafe { &mut pose_steps.slice(i, 1)[0] };
+                        // SAFETY: as for the sampled step above.
+                        unsafe { sampled_steps.write(i, step) };
                         if *pose_step == FRESH || *matrices != *before {
                             *pose_step = step;
                             this.pose_changed.store(true, Ordering::Relaxed);
@@ -1073,13 +1368,16 @@ impl Animations {
 
     /// Blends instance `i`'s clips into the pose in its scratch memory, from its slots' times and
     /// weights. Each slot's weight is its own weight times its fade, times its share of its
-    /// layer's blend.
+    /// layer's blend. A layer with a running dead blend has its pose moved from the extrapolated
+    /// outgoing pose toward the blend's own pose by the fade's ease.
     fn pose_instance(
         &self,
         i: usize,
         skeleton: &Skeleton,
         scratch: &mut Scratch,
         slots: &Advance<'_, '_>,
+        step: f32,
+        transition: Transition,
     ) {
         let (time, weight) = (&*slots.time, &*slots.weight);
         let lanes = skeleton.lanes() as usize;
@@ -1158,7 +1456,17 @@ impl Animations {
                 if rest_shares(weights, shares, masked) {
                     blend(pose, skeleton.rest().values(), shares, lanes);
                 }
+            }
+            // A running dead blend moves the layer's own pose from the pose the layer left toward
+            // the pose its clips make now. Layer 0 blends it straight into the pose; each layer
+            // above does so before it replaces the pose below by its weight.
+            let layer_pose = if layer == 0 {
+                &mut *pose
             } else {
+                &mut scratch.layer[..len]
+            };
+            self.apply_dead_blend(i, layer, layer_pose, step, lanes, transition);
+            if layer > 0 {
                 layer_shares(weights, shares, layer_weight);
                 blend(pose, &scratch.layer[..len], shares, lanes);
             }
@@ -1188,6 +1496,185 @@ impl Animations {
         if added {
             apply_additive(pose, &scratch.add[..len], lanes);
         }
+    }
+
+    /// Moves `pose` from the dead blend's extrapolated outgoing pose toward itself by the fade's
+    /// ease, and advances the blend's timer. Does nothing when no blend runs on the layer.
+    fn apply_dead_blend(
+        &self,
+        i: usize,
+        layer: usize,
+        pose: &mut [f32],
+        step: f32,
+        lanes: usize,
+        transition: Transition,
+    ) {
+        let (Some(poses), Some(vs), Some(times), Some(lengths)) = (
+            transition.pose,
+            transition.vel,
+            transition.time,
+            transition.len,
+        ) else {
+            return;
+        };
+        let at = i * MAX_LAYERS + layer;
+        // SAFETY: `at` names this instance's own layer, which one chunk writes.
+        let length: f32 = unsafe { lengths.read(at) };
+        if length <= 0.0 || length.is_nan() {
+            return;
+        }
+        let len = POSE_FIELDS * lanes;
+        let base = i * MAX_LAYERS * transition.stride + layer * transition.stride;
+        // SAFETY: the range is inside this layer's own pose, which one chunk writes.
+        let (ext, vel) = unsafe { (poses.slice(base, len), vs.slice(base, len)) };
+        let time = unsafe { times.read(at) } + step;
+        unsafe { times.write(at, time) };
+        let alpha = smoothstep(time / length);
+        dead_blend(pose, ext, vel, alpha, step, lanes);
+        if time >= length {
+            // SAFETY: as above.
+            unsafe { lengths.write(at, 0.0) };
+        }
+    }
+
+    /// The pose that layer `layer` of instance `i` makes now, or `step` seconds earlier, written
+    /// into `out`: its base clips blended as three.js's mixer blends them, by their weights and
+    /// the layer's mask. Layer 0 also takes the rest pose's share. Returns false when the layer
+    /// plays no base clip. `sample`, `weights` and `shares` are scratch.
+    #[allow(clippy::too_many_arguments)]
+    fn layer_pose(
+        &self,
+        i: usize,
+        layer: usize,
+        lanes: usize,
+        step: f32,
+        out: &mut [f32],
+        sample: &mut [f32],
+        weights: &mut [f32],
+        shares: &mut [f32],
+    ) -> bool {
+        let skeleton = &self.skeletons[self.instance_skeletons[i] as usize];
+        let rest = skeleton.rest().values();
+        let len = POSE_FIELDS * lanes;
+        out[..len].copy_from_slice(&rest[..len]);
+        let layer_weight = self.layer_weights[i * MAX_LAYERS + layer];
+        let base_scale = if layer == 0 { layer_weight } else { 1.0 };
+        let mask = self.mask_of(i, layer, lanes);
+        let first = i * MAX_BLEND;
+        let mut any = false;
+        let mut lead = true;
+        for k in 0..MAX_BLEND {
+            let s = first + k;
+            let action = self.actions[s];
+            if !action.plays_on(layer, 0) {
+                continue;
+            }
+            let clip = &self.clips[self.slots.clip[s] as usize];
+            let duration = clip.duration();
+            let looping = action.flags & flag::LOOP != 0;
+            let time = start_time(self.slots.time[s] - step, duration, looping);
+            let weight = self.slots.weight[s] * action.factor() * base_scale;
+            any = true;
+            if lead {
+                clip.sample(time, out);
+                start_weights(weights, clip.channels(), mask, weight);
+                lead = false;
+            } else {
+                clip.sample(time, sample);
+                add_weights(weights, shares, clip.channels(), mask, weight);
+                blend(out, sample, shares, lanes);
+            }
+        }
+        if !any {
+            return false;
+        }
+        if layer == 0 {
+            let masked = self.layer_masks[i * MAX_LAYERS] != 0;
+            if rest_shares(weights, shares, masked) {
+                blend(out, &rest[..len], shares, lanes);
+            }
+        }
+        true
+    }
+
+    /// Starts a dead blend on layer `layer` of instance `instance` over `fade` seconds: the pose
+    /// and velocity of the layer's outgoing base clips become the extrapolated pose that the blend
+    /// decays from, and those clips leave their slots at once, so only the new clip is sampled.
+    /// Returns false when the layer plays no base clip to switch from, or runs a 1D blend, whose
+    /// clips keep weighted blending.
+    pub(super) fn start_inertial(
+        &mut self,
+        instance: u32,
+        layer: usize,
+        fade: f32,
+    ) -> Result<bool, AnimationError> {
+        let i = instance as usize;
+        let first = i * MAX_BLEND;
+        let mut any = false;
+        for k in 0..MAX_BLEND {
+            let action = self.actions[first + k];
+            if action.plays_on(layer, 0) && action.flags & flag::BLEND != 0 {
+                return Ok(false);
+            }
+            if action.plays_on(layer, 0) && self.slots.source[first + k] != NO_SOURCE {
+                any = true;
+            }
+        }
+        if !any {
+            return Ok(false);
+        }
+        let skeleton = self.live_skeleton(instance)?;
+        let lanes = self.skeletons[skeleton as usize].lanes() as usize;
+        self.enable_inertial()?;
+        let stride = self.inertial_stride;
+        let len = POSE_FIELDS * lanes;
+        let step = self.last_steps[i];
+        // SAFETY: a play runs between frame steps, so no worker holds worker 0's scratch.
+        let scratch = unsafe { &mut *self.scratch[0].0.get() };
+        let now = self.layer_pose(
+            i,
+            layer,
+            lanes,
+            0.0,
+            &mut scratch.pose[..len],
+            &mut scratch.sample[..len],
+            &mut scratch.weights[..3 * lanes],
+            &mut scratch.shares[..3 * lanes],
+        );
+        let before = self.layer_pose(
+            i,
+            layer,
+            lanes,
+            step,
+            &mut scratch.add[..len],
+            &mut scratch.sample[..len],
+            &mut scratch.weights[..3 * lanes],
+            &mut scratch.shares[..3 * lanes],
+        );
+        if !now || !before {
+            return Ok(false);
+        }
+        let base = i * MAX_LAYERS * stride + layer * stride;
+        let at = i * MAX_LAYERS + layer;
+        {
+            let (pose, vel) = (
+                &mut self.inertial_pose[base..base + len],
+                &mut self.inertial_vel[base..base + len],
+            );
+            pose.copy_from_slice(&scratch.pose[..len]);
+            fill_velocity(&scratch.pose[..len], &scratch.add[..len], step, lanes, vel);
+        }
+        self.inertial_time[at] = 0.0;
+        self.inertial_len[at] = fade;
+        for k in 0..MAX_BLEND {
+            let s = first + k;
+            if self.actions[s].plays_on(layer, 0) {
+                self.actions[s] = Action::default();
+                self.slots.weight[s] = 0.0;
+                self.slots.source[s] = NO_SOURCE;
+            }
+        }
+        Ok(true)
     }
 
     /// Applies instance `i`'s rotation overrides, then its look-at, to the pose in its scratch
@@ -1222,6 +1709,54 @@ impl Animations {
     fn compose(&self, skeleton: &Skeleton, scratch: &mut Scratch, out: &mut [f32]) {
         let len = POSE_FIELDS * skeleton.lanes() as usize;
         skinning_matrices(skeleton, &scratch.pose[..len], &mut scratch.matrices, out);
+    }
+}
+
+/// Writes into `vel` the rate at which each lane of pose `now` moves from pose `before`, over
+/// `step` seconds: translations and scales at their difference over the step, and rotations at the
+/// scaled axis of `now * before⁻¹`. All 0 when the step is not a positive number.
+fn fill_velocity(now: &[f32], before: &[f32], step: f32, lanes: usize, vel: &mut [f32]) {
+    vel.fill(0.0);
+    if !step.is_finite() || step <= 0.0 {
+        return;
+    }
+    let inverse = 1.0 / step;
+    for f in (0..field::ROTATION).chain(field::SCALE..POSE_FIELDS) {
+        for j in 0..lanes {
+            let at = f * lanes + j;
+            vel[at] = (now[at] - before[at]) * inverse;
+        }
+    }
+    let r = field::ROTATION * lanes;
+    for j in 0..lanes {
+        let read = |pose: &[f32], k: usize| pose[r + k * lanes + j];
+        let a = [read(now, 0), read(now, 1), read(now, 2), read(now, 3)];
+        let b = [
+            read(before, 0),
+            read(before, 1),
+            read(before, 2),
+            read(before, 3),
+        ];
+        // The change from `before` to `now`, as a quaternion `a * conj(b)`.
+        let conj = [-b[0], -b[1], -b[2], b[3]];
+        let mut d = [
+            a[3] * conj[0] + a[0] * conj[3] + a[1] * conj[2] - a[2] * conj[1],
+            a[3] * conj[1] - a[0] * conj[2] + a[1] * conj[3] + a[2] * conj[0],
+            a[3] * conj[2] + a[0] * conj[1] - a[1] * conj[0] + a[2] * conj[3],
+            a[3] * conj[3] - a[0] * conj[0] - a[1] * conj[1] - a[2] * conj[2],
+        ];
+        // The shorter arc: a negated quaternion is the same rotation.
+        if d[3] < 0.0 {
+            d = [-d[0], -d[1], -d[2], -d[3]];
+        }
+        let length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        if length > 1e-8 {
+            // The scaled axis: the axis times the angle, which is `2 * atan2(|v|, w)`.
+            let scale = 2.0 * length.atan2(d[3]) / length * inverse;
+            for k in 0..3 {
+                vel[r + k * lanes + j] = d[k] * scale;
+            }
+        }
     }
 }
 

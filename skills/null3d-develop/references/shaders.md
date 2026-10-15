@@ -60,6 +60,11 @@ struct Surface {
   thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
   diffuseTransmission: f32,      // (0.2) share of the diffuse light that passes to the other side; WGSL that names it builds the shaders that light the back
   diffuseTransmissionColor: vec3f,  // (0.2) linear tint of that light; the base color does not tint it
+  clearcoat: f32,          // (0.2) clear coat, 0 to 1; WGSL that names a layer field builds the layered shaders
+  clearcoatRoughness: f32, // (0.2) the coat's roughness
+  clearcoatNormal: vec3f,  // (0.2) the coat's normal, world space; starts as the mesh's normal
+  sheenColor: vec3f,       // (0.2) cloth and velvet glow, linear RGB; black gives none
+  sheenRoughness: f32,     // (0.2) how wide the sheen spreads
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -332,7 +337,7 @@ Water that shows its bed (0.2): give the custom material `transmission: 1`, `thi
 
 ## 8. Portable WGSL rules
 
-These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4 or 9, and warns on rule 10, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
+These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4, 9 or 11, and warns on rule 10, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
@@ -344,6 +349,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 8. No storage buffers or storage textures in vertex shaders: per-instance data arrives as vertex attributes.
 9. Do not copy an array out of a uniform buffer: no `let` or by-value argument of an array, or of a struct that holds one. Some phone GPUs leave the copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`.
 10. Do not call `atomicCompareExchangeWeak`. Safari 27.0 cannot compile it, so the shader fails on Apple devices with that version. The build warns but still builds it. To claim a slot, store into a free slot with `atomicStore`, call `workgroupBarrier()`, then read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also work everywhere.
+11. Do not name anything `gl`, or with a name that starts with `gl_`. GLSL ES reserves names that start with `gl_`, and the WebGL2 build turns the second of two names `gl` in one shader into `gl_1`. The build rejects such a shader and names it.
 
 ## 9. Imports from the shader library
 
@@ -356,7 +362,7 @@ The build resolves imports before translating, and adds only the functions the s
 
 - `null3d::math`: constants such as `PI`, `modulo` with GLSL's sign rule, `remap` and rotations.
 - `null3d::noise`: integer hashes, `random`, and value, Perlin, simplex, Worley and fractal noise. Each noise has a 2D and a 3D form, such as `simplex2` and `fbm3(p, octaves)`. The hashes give the same bits on every GPU, so a pattern looks the same everywhere.
-- `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx` and `tone_map_neutral`.
+- `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx`, `tone_map_agx_punchy` and `tone_map_neutral`.
 - `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
 - `null3d::fog`: the curves `fog_linear` and `fog_exp2`, with three.js's formulas, and `fog_exponential`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
 - `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
@@ -368,6 +374,7 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 ## 10. Debugging shaders
 
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
+- The plugin caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build compiles only what changed. Set `NULL3D_NO_CACHE=1` to ignore the cache. (`getting-started/install`, "Builds")
 - A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene, in development builds. A debug view ignores custom shaders.

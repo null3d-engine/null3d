@@ -2,8 +2,9 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material, MaterialRow, MaterialTransmission}
+#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission}
 #import null3d::lighting::{ambient_irradiance}
+#import null3d::sky_scattering::{aerial_perspective}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -379,7 +380,7 @@ fn material_of(id: u32) -> Material {
 /// let light through a thin surface read them.
 fn material_translucency(id: u32) -> vec4f {
 #ifdef WEBGL2
-    return textureLoad(materials, vec2u(11u, id), 0);
+    return textureLoad(materials, vec2u(13u, id), 0);
 #else
     return materials[id].translucency;
 #endif
@@ -391,7 +392,7 @@ fn material_translucency(id: u32) -> vec4f {
 /// radius. Only the skin pass's builds read them.
 fn material_subsurface(id: u32) -> vec4f {
 #ifdef WEBGL2
-    return textureLoad(materials, vec2u(12u, id), 0);
+    return textureLoad(materials, vec2u(14u, id), 0);
 #else
     return materials[id].subsurface;
 #endif
@@ -410,6 +411,35 @@ fn material_transmission(id: u32) -> MaterialTransmission {
     return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
 #endif
 }
+
+#ifdef COAT_SHEEN
+/// The values of material `id`'s clear coat and sheen, which only the builds of layered
+/// materials read.
+fn material_coat_sheen(id: u32) -> MaterialCoatSheen {
+#ifdef WEBGL2
+    return MaterialCoatSheen(
+        textureLoad(materials, vec2u(11u, id), 0),
+        textureLoad(materials, vec2u(12u, id), 0),
+    );
+#else
+    return MaterialCoatSheen(materials[id].coat, materials[id].sheen);
+#endif
+}
+#endif
+
+#ifdef DECAL
+/// The values of decal material `id`: the cosines of the angles from the decal's direction at
+/// which it starts and stops fading, and the share of the box's depth over which it fades at each
+/// end. They take the place of the values that let light through, which a decal material never
+/// has.
+fn decal_values(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(9u, id), 0);
+#else
+    return materials[id].transmission;
+#endif
+}
+#endif
 
 /// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
 /// holds a custom material's uniforms. Vertex and fragment shaders can both read it. On WebGL2 the
@@ -433,11 +463,12 @@ fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
     if ((u32(m.strengths.z) & NO_FOG) != 0u) {
         return c;
     }
+    let hazed = aerial_perspective(frame.aerial, c, relative);
     let factor = fog_factor(frame.fog, relative);
     if (factor == 0.0) {
-        return c;
+        return hazed;
     }
-    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
+    return mix(hazed, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.
@@ -474,10 +505,15 @@ const MAP_LINEAR_FLAG: u32 = 16u;
 /// them, so this divides the encoded colors by the alpha again; a linear map's colors divide as
 /// they are. The map then lights, fogs, tone maps and blends as the same image with straight
 /// colors does, on both output paths. A material that does not blend shows a premultiplied map's
-/// colors as they are, as three.js does. A texel with no alpha stays as it is.
+/// colors as they are, as three.js does. A decal always blends. A texel with no alpha stays as it
+/// is.
 fn straight_texel(m: Material, texel: vec4f) -> vec4f {
     let flags = u32(m.strengths.z);
+#ifdef DECAL
+    let blended_map = MAP_PREMULTIPLIED_FLAG;
+#else
     let blended_map = MAP_PREMULTIPLIED_FLAG | BLEND_FLAG;
+#endif
     if (flags & blended_map) != blended_map || texel.a <= 0.0 {
         return texel;
     }
@@ -681,7 +717,13 @@ fn finish(c: vec3f, pixel: vec2f) -> vec4f {
 /// The color a fragment writes for exposed linear color `c`, such as light from the frame's lights,
 /// at framebuffer position `pixel`, as `finish` writes it.
 fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
-    return null3d::tonemap::finish(c, pixel, frame.output);
+    return null3d::tonemap::finish(
+        c,
+        pixel,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.

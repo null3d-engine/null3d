@@ -105,7 +105,7 @@ Garbage collection pauses the thread that allocated the memory. The render worke
 - Keep reused arrays at their size. Setting `length = 0` frees an array's storage, so the next write allocates it again.
 - Do not wrap a browser promise in an `async` function every frame. Each call makes a promise of its own.
 - Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into a function of its own.
-- Change a light's intensity every frame, not its color. `setDirection` and `setIntensity` allocate nothing, but `setColor` converts the color and allocates.
+- A light's, the camera's, a line's and the background's setters write their numbers into the engine's memory. They call the core with whole numbers only, so they allocate nothing, a color included. Call them from a small function of their own, as a game's update does. The browser then inlines each setter, and a fraction that it does not inline becomes an object. A material's `set` and a line material's `set` read the options object that you pass. The browser boxes that read where the call has seen objects of a few shapes, so set their values up front.
 
 Decimal numbers are a special case. Until the browser optimizes a function, the numbers it computes are stored as small objects. Code that runs once per frame gets optimized only after thousands of frames, so judge allocation after about 30 seconds of play.
 
@@ -185,13 +185,13 @@ Each frame's list of GPU commands grows with the scene, so no count of objects o
 
 Animated characters also cost skinning work and memory:
 
-- WebGPU skins each character that some view draws once per frame, in a compute pass. So a crowd costs GPU time in proportion to the vertices of the characters that move. A character out of every view costs no skinning work. Neither does a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
-- In a crowd where many characters wait or stand guard, pause them with `setTimeScale(0)` while they wait. On WebGPU a still pose costs no skinning work, and a moving one costs its vertices in every frame, even when it barely moves.
-- Each skinned copy keeps its own skinned vertices in GPU memory, even when copies share a mesh. The S5 benchmark's 500 knights take about 50 MB: 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
-- WebGPU skinning holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
-- WebGL2 skins in the vertex shader of each pass, so shadows skin a character again. Copies that share a mesh and a material draw in one instanced draw.
+- Both paths skin each character in the vertex shader of each pass that draws it, so shadows skin a character again. A crowd costs GPU time in proportion to the vertices that each pass draws. A character out of every view costs no skinning work. Copies that share a mesh and a material draw in one instanced draw, custom materials included.
+- On WebGPU, the skinning pass skins morphed characters once per frame instead, and each one draws on its own. It skips a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
+- Each copy that the skinning pass skins keeps its own skinned vertices in GPU memory, even when copies share a mesh. A knight of the S5 benchmark takes 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
+- The skinning pass holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
+- The job workers sample and blend each character's clips in every frame. Give a far character more frames between its updates with [`animator.setUpdateInterval`](../api/animation.md#crowds), and hold the ones near the camera at 1. The `farAnimationInterval` quality setting gives the interval for far characters, and the governor raises it when frames take too long.
 
-For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
+For a large crowd, use models with fewer vertices, give far characters a longer update interval, and draw fewer shadow cascades on phones.
 
 ## See-through objects
 
@@ -235,6 +235,8 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 - A frame uploads its lights when the lights or the camera moved: 64 bytes for each light. On WebGL2 it also uploads the lists: 14 KB for the clusters, and 4 bytes for each light in each cluster. A still scene seen from a still camera uploads nothing.
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
+
+Rectangle and tube lights join the same clusters, and cost a pixel several times what a point light costs. Each takes two integrals over the light's outline, and the first area light of a pixel's cluster reads their tables. A light with an image adds two more reads. The quality preset's `areaLights` caps how many shade in a frame, the ones that give the camera the most light first. The caps are 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. A light that crosses the cap fades over 8 frames, and while it fades, it shades beside the lights that the cap keeps. Give area lights short ranges, as for point lights. A pixel whose cluster holds no area light pays nothing for them. A scene without area lights draws with shaders that leave their code out.
 
 The S3 benchmark lights 20,000 still boxes with 256 moving point lights. In Chrome on a MacBook Pro, the engine's own work took 0.07 ms per frame on WebGPU, where the GPU lists the lights. The compute pass that lists them took about 0.2 ms of GPU time. three.js's WebGL renderer cannot draw this scene on that Mac. Its shader for 256 point lights needs more uniforms than the GPU gives a fragment shader.
 

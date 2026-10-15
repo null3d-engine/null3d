@@ -3,7 +3,7 @@
 // and reports what it found. The held frames of both engines are image tests in the manifest.
 import { expect, test } from '@playwright/test';
 import { NIGHT_HOLD } from '../../examples/compare/night-town/scene.ts';
-import type { RampResult } from '../../examples/lib/ramp.ts';
+import { FLOOR_FPS, type RampResult } from '../../examples/lib/ramp.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 // CI's software GPU draws a few frames a second, and the scene builds its surfaces in code. The
@@ -58,7 +58,7 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 				expect(result.build).toBe(mode);
 				expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
 				const { ramp } = result;
-				expect(ramp.displayHz).toBeGreaterThan(0);
+				expect(ramp.floorFps).toBe(FLOOR_FPS);
 				expect(ramp.steps.length).toBeGreaterThanOrEqual(2);
 				expect(ramp.steps.map((step) => step.count)).toEqual(
 					[100, 200, 400].slice(0, ramp.steps.length),
@@ -148,34 +148,6 @@ for (const engine of ['null3d', 'threejs'] as const)
 			}
 			expect(errors).toEqual([]);
 		});
-
-for (const engine of ['null3d', 'threejs'] as const)
-	test(`Busy page measures ${engine} beside a busy page, with the page thread's figures`, async ({
-		page,
-	}) => {
-		const seconds = softwareGpu() ? 0.5 : 3;
-		await page.goto(
-			`compare.html?compare=busy-page&engine=${engine}&gpu=webgpu&effects=&measure=120&seconds=${seconds}${quick()}`,
-		);
-		// Typing into the busy page's search box during the measurement gives the browser input to
-		// time.
-		await page.locator('.busy-search').pressSequentially('lanterns by the harbor', { delay: 40 });
-		const result = await pageResult<{
-			error?: string;
-			label: string;
-			measured: {
-				count: number;
-				fps: number;
-				mainThread: { longTasks: number; inputDelayMs: number | null } | null;
-			};
-		}>(page, 100_000);
-		expect(result.error).toBeUndefined();
-		expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
-		expect(result.measured.count).toBe(120);
-		// Chrome reports long tasks, so the page thread's figures are there for both engines.
-		expect(result.measured.mainThread).not.toBeNull();
-		expect(result.measured.mainThread?.longTasks).toBeGreaterThanOrEqual(0);
-	});
 
 // Battle loads two models and draws thousands of skinned triangles per unit, so on the software GPU
 // the page runs the scene graph mode alone, each engine on one GPU path. The image tests hold both

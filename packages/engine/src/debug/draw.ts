@@ -18,7 +18,7 @@ import { linearToSrgb } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
 import { type ColorInput, isComponent } from '../scene/color';
-import type { CoreMemory } from '../scene/memory';
+import type { CoreMemory, ViewHolder } from '../scene/memory';
 import {
 	type Camera,
 	type DirectionalLight,
@@ -124,7 +124,7 @@ function viewCode(view: DebugView): number {
 	}
 }
 
-export class DebugDraw extends SketchDebug {
+export class DebugDraw extends SketchDebug implements ViewHolder {
 	private positions: Float64Array<ArrayBufferLike> = new Float64Array(0);
 	private colors: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
 	/** The points the arrays have room for. */
@@ -160,6 +160,14 @@ export class DebugDraw extends SketchDebug {
 		private readonly scene: Scene,
 	) {
 		super(host);
+		core.holdViews(this);
+	}
+
+	/** Forgets the arrays' views, which the next point makes again. */
+	dropViews(): void {
+		this.generation = -1;
+		this.positions = new Float64Array(0);
+		this.colors = new Uint32Array(0);
 	}
 
 	view(view: DebugView): void {

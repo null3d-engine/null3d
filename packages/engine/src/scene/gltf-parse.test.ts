@@ -588,6 +588,28 @@ describe('materials, textures and lights', () => {
 		expect(data.materials[3]?.diffuseTransmission).toBeUndefined();
 	});
 
+	test('a clear coat or a sheen wins over KHR_materials_diffuse_transmission', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_diffuse_transmission')
+			.uses('KHR_materials_sheen');
+		const [velvet] = b.json.materials as [GltfJson];
+		velvet.extensions = {
+			KHR_materials_diffuse_transmission: {
+				diffuseTransmissionFactor: 0.5,
+				diffuseTransmissionTexture: { index: 0 },
+			},
+			KHR_materials_sheen: { sheenColorFactor: [1, 0.5, 0.5] },
+		};
+		const data = parse(b.glb());
+		const [first] = data.materials;
+		expect(first?.layers?.sheenColor).toEqual([1, 0.5, 0.5]);
+		expect(first?.diffuseTransmission).toBeUndefined();
+		expect(first?.maps.diffuseTransmissionMap).toBeUndefined();
+		expect(data.notes).toContain(
+			"material 0's diffuse transmission, which the engine does not draw beside a clear coat or a sheen",
+		);
+	});
+
 	test('KHR_materials_volume_scatter gives each channel the attenuation distance times its color', () => {
 		const b = specularBuilder().uses('KHR_materials_volume_scatter').uses('KHR_materials_volume');
 		const [skin, endless, black] = b.json.materials as [GltfJson, GltfJson, GltfJson];
@@ -637,6 +659,126 @@ describe('materials, textures and lights', () => {
 			[
 				{ KHR_materials_specular: { specularTexture: { index: 9 } } },
 				"material 0's specularTexture",
+			],
+		];
+		for (const [extensions, message] of cases) {
+			const [code, text] = refusal(withExtensions(extensions));
+			expect([code, text.includes(message)]).toEqual(['E1416', true]);
+		}
+	});
+
+	/** The ship with three images and a texture of each, and the given layer extensions. */
+	const layered = (extensions: GltfJson, more: GltfJson = {}) => {
+		const b = shipBuilder()
+			.uses('KHR_materials_clearcoat')
+			.uses('KHR_materials_sheen')
+			.uses('KHR_materials_specular');
+		b.json.images = [0, 1, 2].map((k) => ({
+			bufferView: b.view(new Uint8Array([0x89, 0x50, 0x4e, 0x47, k])),
+			mimeType: 'image/png',
+		}));
+		b.json.textures = [{ source: 0 }, { source: 1 }, { source: 2 }];
+		b.json.materials[0].extensions = extensions;
+		Object.assign(b.json.materials[0], more);
+		return parse(b.glb());
+	};
+
+	test('KHR_materials_clearcoat and KHR_materials_sheen give the layers, each pair one texture', () => {
+		const data = layered({
+			KHR_materials_clearcoat: {
+				clearcoatFactor: 0.8,
+				clearcoatRoughnessFactor: 0.2,
+				clearcoatTexture: { index: 0 },
+				clearcoatRoughnessTexture: { index: 0 },
+				clearcoatNormalTexture: { index: 1, scale: 0.5 },
+			},
+			KHR_materials_sheen: {
+				sheenColorFactor: [1, 0.5, 0],
+				sheenRoughnessFactor: 0.3,
+				sheenColorTexture: { index: 2 },
+				sheenRoughnessTexture: { index: 2 },
+			},
+		});
+		const [material] = data.materials;
+		expect(material?.layers).toEqual({
+			clearcoat: 0.8,
+			clearcoatRoughness: 0.2,
+			clearcoatNormalScale: 0.5,
+			sheenColor: [1, 0.5, 0],
+			sheenRoughness: 0.3,
+		});
+		const maps = material?.maps ?? {};
+		expect(maps.clearcoatRoughnessMap).toBe(maps.clearcoatMap as number);
+		expect(maps.sheenRoughnessMap).toBe(maps.sheenColorMap as number);
+		expect(data.textures[maps.clearcoatMap ?? -1]).toMatchObject({
+			image: 0,
+			colorSpace: 'linear',
+		});
+		expect(data.textures[maps.clearcoatNormalMap ?? -1]).toMatchObject({
+			image: 1,
+			colorSpace: 'linear',
+		});
+		// An sRGB texture keeps its alpha linear, so the sheen's roughness reads the color's texture.
+		expect(data.textures[maps.sheenColorMap ?? -1]).toMatchObject({ image: 2, colorSpace: 'srgb' });
+		expect(data.notes).toEqual([]);
+	});
+
+	test('a material without the layer extensions has no layers, and either one gives them', () => {
+		expect(parse(shipBuilder().glb()).materials[0]?.layers).toBeUndefined();
+		const [sheen] = layered({ KHR_materials_sheen: {} }).materials;
+		expect(sheen?.layers).toEqual({
+			clearcoat: 0,
+			clearcoatRoughness: 0,
+			clearcoatNormalScale: 1,
+			sheenColor: [0, 0, 0],
+			sheenRoughness: 0,
+		});
+	});
+
+	test('a layered material keeps one texture of each pair, goes without specular maps, and notes both', () => {
+		const data = layered({
+			KHR_materials_clearcoat: {
+				clearcoatFactor: 1,
+				clearcoatTexture: { index: 0 },
+				clearcoatRoughnessTexture: { index: 1 },
+			},
+			KHR_materials_sheen: { sheenRoughnessTexture: { index: 2 } },
+			KHR_materials_specular: { specularColorTexture: { index: 2 } },
+		});
+		const maps = data.materials[0]?.maps ?? {};
+		expect(data.textures[maps.clearcoatMap ?? -1]?.image).toBe(0);
+		expect(maps.clearcoatRoughnessMap).toBeUndefined();
+		expect(data.textures[maps.sheenRoughnessMap ?? -1]?.image).toBe(2);
+		expect(maps.specularColorMap).toBeUndefined();
+		expect(data.notes).toEqual([
+			"material 0's specular textures, which the engine does not draw beside a clear coat or a sheen",
+			"material 0's clearcoatRoughnessTexture, which is not the texture of its pair and is not drawn",
+		]);
+	});
+
+	test('clearcoat and sheen values outside their ranges give E1416', () => {
+		const withExtensions = (extensions: GltfJson) => {
+			const b = shipBuilder().uses('KHR_materials_clearcoat').uses('KHR_materials_sheen');
+			b.json.materials[0].extensions = extensions;
+			return b.glb();
+		};
+		const cases: [GltfJson, string][] = [
+			[{ KHR_materials_clearcoat: { clearcoatFactor: 2 } }, "material 0's clearcoatFactor is 2"],
+			[
+				{ KHR_materials_clearcoat: { clearcoatRoughnessFactor: -1 } },
+				"material 0's clearcoatRoughnessFactor is -1",
+			],
+			[
+				{ KHR_materials_sheen: { sheenColorFactor: [1, 2, 0] } },
+				"material 0's sheenColorFactor has a component outside 0 to 1",
+			],
+			[
+				{ KHR_materials_sheen: { sheenRoughnessFactor: 1.5 } },
+				"material 0's sheenRoughnessFactor is 1.5",
+			],
+			[
+				{ KHR_materials_clearcoat: { clearcoatTexture: { index: 9 } } },
+				"material 0's clearcoatTexture",
 			],
 		];
 		for (const [extensions, message] of cases) {
@@ -1223,5 +1365,32 @@ describe('stored trees and blockers', () => {
 			},
 		}));
 		expect(refusal(past.glb())[1]).toContain('blocker has the index 3, past its 3 corners');
+	});
+});
+
+describe("the asset tool's shader list", () => {
+	test('reads the recorded bits and files, and leaves out a name that is not text', () => {
+		const builder = shipBuilder();
+		builder.json.asset.extras = {
+			NULL3D_shaders: {
+				permutations: ['ALPHA_MASK', 7],
+				features: ['cutout', 'skinning'],
+			},
+			other: true,
+		};
+		expect(parse(builder.glb()).shaders).toEqual({
+			permutations: ['ALPHA_MASK'],
+			features: ['cutout', 'skinning'],
+		});
+	});
+
+	test('gives no list for a file without one, or one that holds nothing', () => {
+		expect(parse(shipBuilder().glb()).shaders).toBeUndefined();
+		const empty = shipBuilder();
+		empty.json.asset.extras = { NULL3D_shaders: { permutations: [], features: [] } };
+		expect(parse(empty.glb()).shaders).toBeUndefined();
+		const wrong = shipBuilder();
+		wrong.json.asset.extras = { NULL3D_shaders: 'skinning' };
+		expect(parse(wrong.glb()).shaders).toBeUndefined();
 	});
 });

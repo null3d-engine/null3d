@@ -91,6 +91,8 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type {
+	AtmosphereBackground,
+	AtmosphereOptions,
 	BackgroundOptions,
 	BackgroundSource,
 	Cubemap,
@@ -105,8 +107,11 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { FogCurve, FogOptions } from './scene/fog';
+export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
+export type { LightImagePixels } from './scene/light-images';
+export type { BakeProbesOptions, LightProbeGridOptions } from './scene/light-probes';
+export { bakeProbes, LightProbeGridData, ProbeBake } from './scene/light-probes';
 export type {
 	LineBatch,
 	LineMaterial,
@@ -116,15 +121,27 @@ export type {
 } from './scene/lines';
 export type { Lut, LutData, LutDomain } from './scene/lut';
 export type {
+	ParticleBuffer,
+	ParticleBufferOptions,
+	ParticleFacing,
+	ParticleFlipbook,
+	ParticleGroundMode,
+	ParticleLook,
+	ParticleMotion,
+	ParticleValues,
+} from './scene/particles';
+export type {
 	ObjectEventHandler,
 	ObjectEventType,
 	ObjectPointerEvent,
 } from './scene/pointer-events';
 export type {
 	AoSettings,
+	AutoExposureSettings,
 	BloomBlend,
 	BloomSettings,
 	DofSettings,
+	ExposureMetering,
 	OutlineSettings,
 	Post,
 	PostSettings,
@@ -162,6 +179,8 @@ export type {
 	CompiledWgsl,
 	ConeOptions,
 	CylinderOptions,
+	DecalOptions,
+	DecalValues,
 	DepthBias,
 	Geometry,
 	IntegerArray,
@@ -178,6 +197,8 @@ export type {
 	RingOptions,
 	ShaderOptions,
 	ShaderValues,
+	ShadowCatcherOptions,
+	ShadowCatcherValues,
 	SphereOptions,
 	StandardBaseOptions,
 	StandardMaps,
@@ -221,9 +242,13 @@ export type {
 	PointLightOptions,
 	PrefabInstance,
 	Quat,
+	RectAreaLight,
+	RectAreaLightOptions,
 	Scene,
 	SpotLight,
 	SpotLightOptions,
+	TubeLight,
+	TubeLightOptions,
 	Vec3,
 } from './scene/scene';
 export type {

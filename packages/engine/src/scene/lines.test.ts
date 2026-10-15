@@ -13,6 +13,7 @@ import {
 	SHADING_LINE_LIT,
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { LineBatch, type LineBatchRows, type LineChecks, lineParts } from './lines';
 import { CoreMemory } from './memory';
 import { Geometry, Materials } from './resources';
@@ -58,7 +59,7 @@ function fakeCore() {
 		lastErrorDetail: () => 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const makers = { geometry: new Geometry(core), materials: new Materials(core) };
 	const scene = new Scene(core, { frame: 1 }, false, undefined, undefined, makers);
 	return { core, makers, scene, materials, meshes, batches, widths, memory };
@@ -209,6 +210,10 @@ describe('scene.createLines', () => {
 			scene.createLines({ positions: SQUARE, mode: 'fan' as 'strip' }),
 		);
 		expect(mode.code).toBe('E1217');
+		const weighted = await rejected(() =>
+			scene.createLines({ positions: SQUARE, blending: 'weighted' as 'normal' }),
+		);
+		expect(weighted.code).toBe('E1217');
 		expect((await rejected(() => scene.createLines({ positions: SQUARE, width: 0 }))).code).toBe(
 			'E1108',
 		);

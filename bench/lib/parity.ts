@@ -31,6 +31,18 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /**
+ * The shadow-catcher scene's limit, in percent of the pixels. The material draws nothing where the
+ * light reaches it, so the sun's shadow fills the frame and its softness sets the material's alpha.
+ * Core WebGPU and WebGL2 match three.js closely. Compatibility mode runs at its Medium ceiling,
+ * whose FXAA smooths the shadow's edge; the smoothing then shows across the whole penumbra, where an
+ * opaque surface would show only a brightness change. The `shadows` scene's limit of 0.5% therefore
+ * does not hold there. On 15 October 2026 with the 3 x 3 filter, on the Mac's GPU, 0.019% of the
+ * pixels differed on core WebGPU and 0.017% on WebGL2, and 2.382% in compatibility mode.
+ * `.dev/image-tests.md` records the figures.
+ */
+export const SHADOW_CATCHER_MAX_DIFFERENT_PERCENT = 2.5;
+
+/**
  * The limit for ambient occlusion. null3D finds the occlusion at half the render size from the depth
  * alone, and three.js at the whole size with a normal pass of its own, so the soft edges of the
  * darkened areas differ a little. With GTAOPass's defaults under 0.1% of the pixels differ, which
@@ -82,12 +94,32 @@ export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
 
 /**
  * The limit for the vignette, a sanity comparison: null3D multiplies HDR color before the tone curve,
- * with `VignetteShader`'s offset and darkness mapped onto its size and intensity (D-77), where
- * three.js blends display color toward a gray. With a darkness above 1, three.js's corners pass
- * black sooner, so only the outer corners differ: 1.1% of the grading scene's pixels on the Mac. A
- * missing or misplaced vignette differs in tens of percent.
+ * with `VignetteShader`'s offset and darkness mapped onto its size, intensity and falloff (D-77),
+ * where three.js blends display color toward a gray. Under AgX the mapping matches three.js in all
+ * but 0.000% of the grading scene's pixels. A vignette of a size 0.1 off differs in 2.2 to 40%,
+ * and a missing one in 52 to 67%.
  */
 export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
+
+/**
+ * The limits of the lit scenes whose curved, glossy surfaces show specular anti-aliasing (D-79), in
+ * percent of the pixels. null3D widens a highlight where the normal changes fast across a pixel by
+ * Filament's kernel, and three.js by its own term, so the highlights of the smoothest surfaces and
+ * the rims of glossy spheres differ. The other lighting terms match. Each limit sits just above the
+ * scene's largest share on SwiftShader and on the Mac's GPU, which `.dev/image-tests.md` records.
+ */
+export const SPECULAR_AA_LIMITS = {
+	'standard-grid': 0.25,
+	'environment-room': 0.55,
+	'environment-venice': 0.17,
+	'environment-venice-rotated': 0.3,
+	'environment-venice-hdr': 0.17,
+	'environment-room-hemisphere': 0.56,
+	'lights-16': 0.15,
+	'gltf-metal-rough': 0.34,
+	'gltf-specular': 0.16,
+	'gltf-ior': 0.21,
+} as const;
 
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
@@ -245,9 +277,9 @@ const PAGES = {
 		switches: 'gpu=webgpu&sky=texture&backgroundFirst',
 		api: 'webgpu',
 	},
-	'null3d-webgpu-skin-vertex': {
+	'null3d-webgpu-skin-compute': {
 		folder: 'null3d',
-		switches: 'gpu=webgpu&skinning=vertex',
+		switches: 'gpu=webgpu&skinning=compute',
 		api: 'webgpu',
 	},
 	'null3d-webgpu-skin-full': {
@@ -359,22 +391,28 @@ export interface FeatureScene {
 }
 
 const TWINS = '/bench/pages/threejs';
-/** The sketch switch that turns off tone mapping, for sketches whose image tests keep ACES. */
+/** The sketch switch that turns off tone mapping, for sketches whose image tests keep the default curve. */
 const NO_TONE = 'tone=none';
 
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's stained glass takes its transmission from a map, which null3D does not draw, and a clear
- * coat: 0.39% of the pixels differ, all on the glass. The instanced cubes have black faces beside
- * white ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes
- * the colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with
- * meshopt take the same limit, for the same edges.
+ * lamp's stained glass takes its transmission from a map, which null3D does not draw: 0.16% to
+ * 0.18% of the pixels differ, all on the glass. The instanced cubes have black faces beside white
+ * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
+ * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
+ * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
+ * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere. The glossy spheres of the metal-rough, specular and IOR scenes take
+ * specular anti-aliasing's limits.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 0.5,
 	instancing: 0.5,
+	clearcoat: 0.2,
 	'meshopt-ext': 0.5,
+	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
+	specular: SPECULAR_AA_LIMITS['gltf-specular'],
+	ior: SPECULAR_AA_LIMITS['gltf-ior'],
 };
 
 /**
@@ -399,7 +437,12 @@ const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
  * tile's color with anti-aliasing on.
  */
 export const FEATURE_SCENES: readonly FeatureScene[] = [
-	{ test: 'standard-grid', twin: `${TWINS}/standard-grid.html`, sketchSwitches: NO_TONE },
+	{
+		test: 'standard-grid',
+		twin: `${TWINS}/standard-grid.html`,
+		sketchSwitches: NO_TONE,
+		limit: SPECULAR_AA_LIMITS['standard-grid'],
+	},
 	// The grid lit by an environment alone, against three.js's scene.environment from
 	// PMREMGenerator: its RoomEnvironment, and an HDR file with a low sun, as it is and turned.
 	...(['room', 'venice', 'venice-rotated'] as const).map(
@@ -407,6 +450,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			test: `environment-${env}`,
 			twin: `${TWINS}/environment.html?env=${env.replace('-rotated', '&rotate')}`,
 			sketchSwitches: NO_TONE,
+			limit: SPECULAR_AA_LIMITS[`environment-${env}`],
 		}),
 	),
 	// The sunset again, from its Radiance file, which the engine filters at load, against three.js's
@@ -417,14 +461,16 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		test: 'environment-venice-hdr',
 		twin: `${TWINS}/environment.html?env=venice`,
 		sketchSwitches: NO_TONE,
+		limit: SPECULAR_AA_LIMITS['environment-venice-hdr'],
 	},
 	// The room with a hemisphere light, whose light adds to the environment's in both engines.
 	{
 		test: 'environment-room-hemisphere',
 		twin: `${TWINS}/environment.html?env=room&hemisphere`,
 		sketchSwitches: NO_TONE,
+		limit: SPECULAR_AA_LIMITS['environment-room-hemisphere'],
 	},
-	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
+	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html`, sketchSwitches: NO_TONE },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{
 		test: 'alpha-coverage',
@@ -445,7 +491,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	},
 	// alpha-coverage-shadows has no twin: three.js cuts the shadow of alpha to coverage at 0.5, and
 	// null3D at each card's own cutoff, which glTF's alpha mode MASK means (D-82).
-	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
+	{ test: 'transparency', twin: `${TWINS}/transparency.html`, sketchSwitches: NO_TONE },
 	{ test: 'transparency-solids', twin: `${TWINS}/transparency.html?solids` },
 	// Glass balls against three.js's MeshPhysicalMaterial transmission: each bends the striped wall
 	// through each ball, blurs it by its roughness and tints it by its volume, as three.js does.
@@ -474,13 +520,20 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			twin: `${TWINS}/backgrounds.html?bg=${bg}`,
 		}),
 	),
-	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
+	{
+		test: 'lights-16',
+		twin: `${TWINS}/lights.html?lights=16`,
+		sketchSwitches: NO_TONE,
+		limit: SPECULAR_AA_LIMITS['lights-16'],
+	},
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
 	{
 		test: 'lights-hemisphere',
 		twin: `${TWINS}/lights.html?scene=hemisphere`,
 		sketchSwitches: NO_TONE,
 	},
+	// Rectangle lights against three.js's RectAreaLight, with the same fitted tables and formulas.
+	{ test: 'lights-rect', twin: `${TWINS}/lights.html?scene=rect`, sketchSwitches: NO_TONE },
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
 	{ test: 'fog-exp2', twin: `${TWINS}/fog.html?fog=exp2` },
 	...TONE_MAPPINGS.flatMap((tone) =>
@@ -507,6 +560,18 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/shadows.html`,
 		sketchSwitches: NO_TONE,
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+	// A shadow-catcher plane against three.js's ShadowMaterial: both show the directional light's
+	// shadow in the material's color and nothing where the light reaches the plane. The shadow edges
+	// differ as the other shadow scenes' do, so core WebGPU and WebGL2 take that limit. Compatibility
+	// mode has one of its own, because the surface shows nothing where the light reaches it: the
+	// edges its Medium ceiling smooths with FXAA change the material's alpha over the whole penumbra,
+	// where the `shadows` scene changes only the brightness of an opaque surface.
+	{
+		test: 'shadow-catcher',
+		twin: `${TWINS}/shadow-catcher.html`,
+		sketchSwitches: NO_TONE,
+		limit: SHADOW_CATCHER_MAX_DIFFERENT_PERCENT,
 	},
 	// Skinning against three.js's SkinnedMesh.
 	{
@@ -648,11 +713,20 @@ export const REFERENCE_PRESET_SWITCH = 'preset=high';
  * The dev-server path of the page that draws one scene's hold frame, at the references' preset, with
  * more switches. A three.js twin that copies the preset's settings reads the same switch.
  */
+/**
+ * Switches that a scene's hold page always gets, whatever the command asks for. S5 gives a far
+ * character a longer update interval by default, which steps its pose; a hold frame that parity or
+ * the image tests compare must hold every character at every frame, so the twin's pose matches.
+ */
+const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'anim=every' };
+
 export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
+	// Only the null3D page takes the scene's own switches; the twin ignores them.
+	const sceneSwitch = isNull3dPage(kind) ? SCENE_HOLD_SWITCHES[scene] : undefined;
 	return pagePath(
 		scene,
 		kind,
-		['hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
+		[sceneSwitch, 'hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
 	);
 }
 
