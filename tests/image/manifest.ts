@@ -2096,9 +2096,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
-	// Impostors of the impostors add-on: cards around an origin far from the world's, each showing
-	// the atlas cell its direction to the eye picks, and a merged row of a plain, a turned and a
-	// mirrored panel, which draws only when the merge reverses the mirrored copy's winding.
+	// Impostors of the impostors add-on: cards around an origin far from the world's, each drawing
+	// an atlas cell, and a merged row of a plain, a turned and a mirrored panel, which draws only
+	// when the merge reverses the mirrored copy's winding. The frame each card picks from its
+	// direction to the eye is checked by the package's unit test, which the picture cannot show.
 	{
 		name: 'impostors',
 		sketch: 'tests/pages/sketches/impostors-sketch.ts',
