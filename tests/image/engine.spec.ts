@@ -374,6 +374,7 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	coat_sheen: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv',
 	weighted: 'tests/pages/sketches/weighted-sketch.ts',
 	decals: 'tests/pages/sketches/decal-first-use-sketch.ts',
+	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
 };
 
 /** Page switches that a feature needs besides its sketch: the test switches that turn it on. */

@@ -1800,6 +1800,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// A light probe grid that the sketch bakes in the browser, in a room with a red wall at the left
+	// and a green wall at the right (D-146): the grey spheres take red light at the left and green
+	// at the right. The same room without the grid, and with a mirror on the floor, whose reflection
+	// pass reads the grid at each reflected sphere's own place. The room's environment makes its
+	// map in the held frame, so the runs take the room's longer limit.
+	...(['', 'off', 'mirror'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `probe-grid-${variant}` : 'probe-grid',
+			sketch: `tests/pages/sketches/probe-grid-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: 0,
+			size: [320, 180],
+			timeoutSeconds: 60,
+		}),
+	),
 	// The room's light with a hemisphere light added, which the parity test compares with three.js:
 	// the hemisphere light adds to the environment's light, and the environment's intensity does
 	// not scale it.

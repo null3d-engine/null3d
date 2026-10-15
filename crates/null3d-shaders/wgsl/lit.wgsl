@@ -1110,7 +1110,8 @@ fn light_surface(
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
         if has_probe_grid(engine_frame.probe_grid) {
-            let world = engine_frame.camera_world.xyz + relative + engine_frame.shadow_origin.xyz;
+            // `relative` is from this view's own camera, so a reflection's view reads its own place.
+            let world = engine_frame.camera_world.xyz + relative;
             irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal), engine_frame.probe_grid.params.y);
         }
 #endif

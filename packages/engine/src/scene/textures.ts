@@ -550,12 +550,28 @@ export class Textures {
 	 * fastest, then green, then blue. Color grading tables are such textures.
 	 */
 	fromVolume(size: number, texels: Uint8Array, call: string): Texture {
+		return this.fromVolumeData(size, size, size, 'rgba8unorm', texels, call);
+	}
+
+	/**
+	 * @internal A 3D texture of `width` x `height` x `depth` texels in `format`, read with a linear
+	 * filter and clamped at its edges, filled with `texels`: four numbers per texel, in rows from
+	 * the bottom up, slice after slice. Light probe grids are such textures.
+	 */
+	fromVolumeData(
+		width: number,
+		height: number,
+		depth: number,
+		format: TextureFormat,
+		texels: TextureDataArray,
+		call: string,
+	): Texture {
 		const { core } = this;
 		const handle = core.checkGrowth(
-			core.glue.createVolumeTexture(size, size, size, TEXTURE_FORMAT_LINEAR),
+			core.glue.createVolumeTexture(width, height, depth, FORMAT_CODES[format][0]),
 			call,
 		);
-		const texture = new Texture(handle, size, size, size, 'rgba8unorm', 'linear', 0, this);
+		const texture = new Texture(handle, width, height, depth, format, 'linear', 0, this);
 		try {
 			this.setData(texture, texels, call);
 		} catch (error) {
