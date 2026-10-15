@@ -1,9 +1,10 @@
 // The forest's trees and land, made in code. Three firs and a broadleaf tree are each built from
 // one surface formula, sampled on finer or coarser grids for the four levels of detail. Each fir's
 // tiers keep their branch tips on every level, and every level has the same normals, so the outline
-// and the shading hold when a tree switches. One texture holds bark, needles and leaves; another
-// holds a cut-out picture of each tree for the far cards. The hills rise into wooded ridges.
-import { type InstanceBatch, math } from '@null3d/engine';
+// and the shading hold when a tree switches. A low understory of bushes covers the ground between
+// the trunks, in the same four levels. One texture holds bark, needles and leaves; another holds a
+// cut-out picture of each tree for the far cards. The hills rise into wooded ridges.
+import { type Geometry, type InstanceBatch, math } from '@null3d/engine';
 
 const TURN = Math.PI * 2;
 const frac = (x: number) => x - Math.floor(x);
@@ -46,7 +47,12 @@ const trunk = (top: number, radius: number): Part => ({
 
 /** A fir: its tiers, the height of its lowest branches, its width, branches per tier, droop. */
 export type Fir = { tiers: number; low: number; width: number; branches: number; droop: number };
-export type Broadleaf = { crown: number; width: number };
+/** A broadleaf tree: the top of its bare trunk, its crown's width, and its crown's grids. */
+export type Broadleaf = {
+	crown: number;
+	width: number;
+	grids?: readonly (readonly [number, number])[];
+};
 export type Kind = Fir | Broadleaf;
 
 /** The tiers of a fir 1 high, each a ring of drooping branches around the trunk. */
@@ -79,8 +85,16 @@ function firParts({ tiers, low, width, branches, droop }: Fir): Part[] {
 	return [trunk(0.95, 0.02 + width * 0.05), ...parts];
 }
 
+/** A crown's columns and rows at each level, from the base level down, for a tree of its size. */
+const CROWN_GRIDS = [
+	[28, 14],
+	[14, 7],
+	[8, 4],
+	[5, 3],
+] as const;
+
 /** A broadleaf tree 1 high: a trunk, and a lumpy crown of leaves. */
-function broadleafParts({ crown, width }: Broadleaf): Part[] {
+function broadleafParts({ crown, width, grids = CROWN_GRIDS }: Broadleaf): Part[] {
 	const at: At = (u, v) => {
 		const [a, t] = [u * TURN, v * Math.PI];
 		const [sin, cos] = [Math.sin(t), Math.cos(t)];
@@ -93,12 +107,6 @@ function broadleafParts({ crown, width }: Broadleaf): Part[] {
 		const uv = [u * 5, band(LEAVES, 1 - v)];
 		return [Math.cos(a) * r, crown + y, Math.sin(a) * r, ...lean(a, 1.6 * cos), ...uv, shade];
 	};
-	const grids = [
-		[28, 14],
-		[14, 7],
-		[8, 4],
-		[5, 3],
-	] as const;
 	return [trunk(crown, 0.03), { at, grids }];
 }
 
@@ -161,6 +169,19 @@ export function treeLevels(kind: Kind) {
 		last = level === 0 ? 0 : Math.max(error(parts, level), last * 1.25);
 		return { arrays: build(parts, level), error: last };
 	});
+}
+
+/**
+ * A kind's costliest mesh, which names the three coarser ones with their errors. Every row of an
+ * instance batch of this kind then picks its own level.
+ */
+export function meshOf(geometry: Geometry, kind: Kind) {
+	const [base, ...coarser] = treeLevels(kind).map(({ arrays, error }) => ({
+		mesh: geometry.fromArrays(arrays),
+		error,
+	}));
+	base?.mesh.setLevels(coarser);
+	return base?.mesh ?? geometry.box();
 }
 
 /** The widest a tree of this kind reaches from its trunk, and its outline at height y. */
@@ -305,10 +326,11 @@ export function landArrays(far: number, edge: number) {
 			uvs.push(x / 8, z / 8);
 			const wood = smooth(edge * 0.85, edge * 1.35, d);
 			const patch = 0.82 + 0.18 * Math.sin(x * 0.03) * Math.sin(z * 0.025);
-			// Needle litter under the trees, then a dark canopy with tree-top bumps on the ridges.
+			// Needle litter under the trees, in the shade the canopy keeps over it, then a dark canopy
+			// with tree-top bumps on the ridges.
 			const tops = wood > 0 && d > edge ? 0.78 + 0.42 * Math.sin(x * 0.16) * Math.sin(z * 0.19) : 1;
 			const shade = (near: number, far: number) => (near * (1 - wood) + far * wood) * patch * tops;
-			colors.push(shade(0.34, 0.03), shade(0.26, 0.05), shade(0.15, 0.024));
+			colors.push(shade(0.19, 0.03), shade(0.155, 0.05), shade(0.085, 0.024));
 			const i = r * (around + 1) + c;
 			if (r < out && c < around)
 				indices.push(i, i + around + 1, i + 1, i + 1, i + around + 1, i + around + 2);
@@ -393,6 +415,55 @@ export function plantRows(count: number, radius: number): Rows {
 	return rows;
 }
 
+/**
+ * The bush of the understory: a broad crown, low enough that it reaches the ground, sampled on
+ * coarser grids than a tree's, because a bush covers few pixels.
+ */
+export const BUSH: Broadleaf = {
+	crown: 0.22,
+	width: 0.42,
+	grids: [
+		[14, 7],
+		[8, 4],
+		[5, 3],
+		[4, 2],
+	],
+};
+
+/** Heights in meters of the understory, from and to. */
+const BUSH_HEIGHTS = [1.6, 4.5] as const;
+
+/**
+ * Scatters `count` bushes over a disc `radius` meters out, from a fixed seed. Every row is kind 0,
+ * so one call fills the batch. The bushes are jittered across both axes, unlike the trees, so the
+ * ground cover does not follow the trees' spiral.
+ */
+export function bushRows(count: number, radius: number): Rows {
+	math.seed(29);
+	const rows: Rows = {
+		kind: new Uint8Array(count),
+		place: new Float32Array(count * 4),
+		size: new Float32Array(count * 2),
+		tint: new Float32Array(count * 4),
+	};
+	for (let k = 0; k < count; k++) {
+		const out = Math.sqrt((k + 0.5) / count);
+		const angle = k * 2.39996 + math.randFloat(-0.3, 0.3);
+		const [x, z] = [
+			Math.cos(angle) * out * radius + math.randFloat(-3, 3),
+			Math.sin(angle) * out * radius + math.randFloat(-3, 3),
+		];
+		const [lo, hi] = BUSH_HEIGHTS;
+		rows.place.set([x, ground(x, z) - 0.15, z, math.randFloat(0, Math.PI)], k * 4);
+		rows.size.set([math.randFloat(lo, hi), math.randFloat(0.8, 1.3)], k * 2);
+		const b = math.randFloat(0.55, 0.9);
+		const tint =
+			math.random() > 0.78 ? [0.85, 0.6, 0.24] : [b * 0.95, b, b * 0.72 * math.randFloat(0.8, 1.2)];
+		rows.tint.set([...tint, 1], k * 4);
+	}
+	return rows;
+}
+
 /** Writes the rows of one kind into a batch, skipping the first `skip` of them. */
 export function fillRows(batch: InstanceBatch, rows: Rows, kind: number, skip = 0) {
 	const { positions, rotations, scales, colors } = batch;
@@ -424,8 +495,8 @@ export function countRows(rows: Rows, near: number) {
 
 /** The four kinds: a tall narrow spruce, a fir, a young broad fir, and a broadleaf tree. */
 export const KINDS: readonly Kind[] = [
-	{ tiers: 7, low: 0.1, width: 0.2, branches: 8, droop: 0.3 },
-	{ tiers: 5, low: 0.14, width: 0.27, branches: 10, droop: 0.2 },
-	{ tiers: 4, low: 0.06, width: 0.36, branches: 6, droop: 0.35 },
+	{ tiers: 7, low: 0.1, width: 0.225, branches: 8, droop: 0.3 },
+	{ tiers: 5, low: 0.14, width: 0.3, branches: 10, droop: 0.2 },
+	{ tiers: 4, low: 0.06, width: 0.4, branches: 6, droop: 0.35 },
 	{ crown: 0.62, width: 0.3 },
 ];
