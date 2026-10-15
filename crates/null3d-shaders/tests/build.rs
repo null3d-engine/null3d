@@ -1318,7 +1318,8 @@ fn declares_structure(line: &str, name: &str) -> bool {
     false
 }
 
-/// A shader whose helpers take, return and hold structures.
+/// A shader whose helpers take, return and hold structures, take pointers to them, and read
+/// `modf` and `frexp` results, with a private structure that has an initial value.
 const STRUCTURED: &str = r"#import null3d::math
 
 struct Values {
@@ -1331,11 +1332,26 @@ struct VertexOut {
     @location(0) uv: vec2f,
 }
 
+var<private> tint: Values = Values(vec3f(0.25, 0.5, 0.75), 3.0);
+
 fn bright(v: Values) -> Values {
     var out: Values;
     out.color = v.color * 2.0;
     out.alpha = v.alpha;
     return out;
+}
+
+fn brighten(s: ptr<function, Values>) {
+    (*s).color = (*s).color * 2.0;
+}
+
+fn halve(s: ptr<function, Values>) {
+    brighten(s);
+    (*s).alpha = (*s).alpha * 0.5;
+}
+
+fn fade(s: ptr<private, Values>) {
+    (*s).alpha = (*s).alpha * 0.5;
 }
 
 @vertex
@@ -1348,8 +1364,14 @@ fn vs_main(@location(0) position: vec3f) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
-    let v = bright(Values(vec3f(in.uv, 0.5), 1.0));
-    return vec4f(v.color, v.alpha) * null3d::math::square(1.0);
+    var v = bright(Values(vec3f(in.uv, 0.5), 1.0));
+    brighten(&v);
+    halve(&v);
+    fade(&tint);
+    let parts = modf(in.uv.x * 4.0);
+    let split = frexp(in.uv * 8.0);
+    let mixed = vec3f(parts.fract, parts.whole, f32(split.exp.x)) * split.fract.y;
+    return vec4f(v.color * tint.color * tint.alpha + mixed, v.alpha) * null3d::math::square(1.0);
 }
 ";
 
@@ -1373,6 +1395,47 @@ fn glsl_declares_no_structure_variable() {
             found.join("\n")
         );
     }
+    let fragment = &program.fragment.source;
+    // The private structure's members keep its initial value.
+    for member in ["tint_0_ = vec3(0.25, 0.5, 0.75);", "tint_1_ = 3.0;"] {
+        assert!(
+            fragment.contains(member),
+            "`{member}` is missing:\n{fragment}"
+        );
+    }
+    // The `modf` and `frexp` results are worked out member by member, with no helper.
+    for helper in ["naga_modf", "naga_frexp"] {
+        assert!(
+            !fragment.contains(helper),
+            "`{helper}` is called:\n{fragment}"
+        );
+    }
+}
+
+/// An array of structures stays one value, and a structure inside it is composed in place.
+#[test]
+fn glsl_builds_an_array_of_structures() {
+    let shader = r"struct Values {
+    color: vec3f,
+    alpha: f32,
+}
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> @builtin(position) vec4f {
+    return vec4f(position, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {
+    var list = array<Values, 2>(Values(vec3f(0.25), 0.5), Values(vec3f(0.75), 1.0));
+    list[1] = Values(at.xyz, at.w);
+    let picked = list[u32(at.x) % 2u];
+    return vec4f(picked.color, picked.alpha);
+}
+";
+    let output = build(&project(shader, &[("v", "{ targets = [\"glsl\"] }")], &[]))
+        .expect("the shader builds");
+    assert!(output.shaders["shader"]["v"].glsl.is_some());
 }
 
 #[test]
