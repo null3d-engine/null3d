@@ -2,7 +2,7 @@
 
 Status: proposed on 15 October 2026, for the owner's ruling. Nothing is built. The refactor starts only when the coordinator says so, after the open feature branches EX22, EX25, EX32, EX36, F11 and J4 have landed. Task: code review findings M-9, R-16, R-17 and GPU-8 of 15 October 2026.
 
-Summary: A renderer feature today touches 10 to 15 Rust files, 20 to 30 places in `frame_graph.rs`, two hand-chained id tables and two hand-written template lists. In 117 merges with hand resolutions, 200 of the 305 conflict hunks in renderer files (66%) fell in those places. The proposal gives each frame-graph step one module behind one internal trait. GPU ids come from one table with an overlap test, and both GPU backends read one template descriptor with a parity test. Twelve small landings, each with unchanged draw lists and image references, take about 13 helper-days.
+Summary: A renderer feature today touches 10 to 15 Rust files, 20 to 30 places in `frame_graph.rs`, two hand-chained id tables and two hand-written template lists. In 117 merges with hand resolutions, 200 of the 305 conflict hunks in renderer files (66%) fell in those places. The proposal gives each frame-graph step one module behind one internal trait. GPU ids come from one table with an overlap test, and both GPU backends read one template descriptor with a parity test. Twelve small landings, each with unchanged draw lists and image references, take about 14 helper-days.
 
 ## Question
 
@@ -12,7 +12,7 @@ How should the renderer hold its features, so that a new feature lives in one pl
 
 The design and each step of the migration must meet all of these:
 
-1. One place per feature ([D-173](D-173-addon-hooks.md)). A new frame-graph step adds one module and a short line in each of at most three lists. It adds no field, branch or match arm to `frame_graph.rs` or to either builder.
+1. One place per feature ([D-173](D-173-addon-hooks.md)). A new frame-graph step adds one module, one line in the step list and one row per template. It adds no field, branch or match arm to `frame_graph.rs` or to either builder.
 2. No change in what the GPU draws. Each landing keeps every draw list the same, after the GPU object ids are renamed in order of first use. Every image reference stays unchanged on both reference sets.
 3. No per-frame allocation (hard rule 1) and no dynamic dispatch in the frame loop. The step list is fixed when the code compiles.
 4. Both GPU paths stay first-class (design principle 9). A template on one path only names its fallback.
@@ -75,7 +75,7 @@ The two builders share 335 distinct lines of more than 25 characters. They call 
 
 ### Merge conflicts
 
-`git merge-tree` ran each of the 117 merges with hand resolutions again. These are the merges that reached main between 7 and 15 October 2026, which the code review of 15 October listed. 111 of them conflicted, in 617 files. 41 merges conflicted in the renderer's registration files, with 305 conflict hunks. Each hunk was sorted by the item that holds it.
+`git merge-tree` ran each of the 117 merges with hand resolutions again. These are the merges that reached main between 7 and 15 October 2026, which the code review of 15 October listed. 111 of them conflicted, with 617 file conflicts in all. 41 merges conflicted in the renderer's registration files, with 305 conflict hunks. Each hunk was sorted by the item that holds it.
 
 | Where the hunk was | Hunks | Removed by this plan |
 | --- | --- | --- |
@@ -90,7 +90,7 @@ The two builders share 335 distinct lines of more than 25 characters. They call 
 | `drawlist.rs`: permutation bits and sizes | 14 | no ([D-156](D-156-template-scoped-permutation-bits.md) owns the bits) |
 | Shader manifest, `frame.rs` settings, `materials.rs` feature bits, the WebAssembly setters, `generated/core.ts`, backend details | 76 | `frame.rs` partly, step 10 |
 
-So 200 of the 305 hunks (66%) fell in places that this plan removes. The id tables alone conflicted in 27 merges. The review also names eight merges that chained `SAMPLERS`, `FOG_GROUPS`, `EXPOSURE_*` or `SKY_*` again by hand, and `9130ce783`, which fixed two objects under one id (E1305 on the GPU). On 15 October two more branches added ids to the same tables: a present group for the two-step pass and a decal frame group.
+So 200 of the 305 hunks (66%) fell in places that this plan removes or makes regenerate-only. The id tables alone conflicted in 27 merges. The review also names eight merges that chained `SAMPLERS`, `FOG_GROUPS`, `EXPOSURE_*` or `SKY_*` again by hand. And `9130ce783` fixed two objects under one id (E1305 on the GPU). On 15 October two more branches added ids to the same tables: a present group for the two-step pass and a decal frame group.
 
 ### Repeated setup
 
@@ -101,7 +101,7 @@ So 200 of the 305 hunks (66%) fell in places that this plan removes. The id tabl
 
 ### The test fixture's ids clash
 
-The frame graph's own tests build it from a hand-written `GraphIds`. In it, buffer 14 belongs to three steps, group 60 to the fog and the transmission copy, group 70 to the exposure meter and the weighted layer, and textures 905 and 906 to two steps each. The tests check the order of passes, so they pass. But they can never catch an id clash, and the next feature copies the habit.
+The frame graph's own tests build it from a hand-written `GraphIds`. In it, buffer 14 belongs to three steps, and textures 905 and 906 to two steps each. Group 60 belongs to the fog and the transmission copy, and group 70 to the exposure meter and the weighted layer. The tests check the order of passes, so they pass. But they can never catch an id clash, and the next feature copies the habit.
 
 ## Proposal
 
@@ -161,7 +161,7 @@ The macro writes the `Steps` struct, a `StepId` enum, and the loops in `request_
 
 The post chain gets one place too. One ordered list names the steps that read and write the scene's color: the fog, the effects, depth of field, then bloom and the final pass. `declare` walks it, and each step reads the output of the step before it. A new post step adds one line to the chain.
 
-Some passes need the builder: the fog's light step binds the camera's frame group, and the weighted pass draws sorted rows. The builder's record callback then gets a hook by kind, such as `Hook::FrameGroup(ViewId)` or `Hook::SortedDraws(Rows)`, not by feature. A builder gains an arm only for a new kind of hook, not for each feature.
+Some passes need the builder: the fog's light step binds the camera's frame group, and the weighted pass draws sorted rows. The builder's record callback then gets a hook named by its kind, such as `Hook::FrameGroup(ViewId)` or `Hook::SortedDraws(Rows)`. A builder gains an arm only for a new kind of hook.
 
 ### 2. One module per feature
 
@@ -190,9 +190,9 @@ Each step declares what it owns:
 pub(crate) struct IdNeeds { pub buffers: u32, pub textures: u32, pub samplers: u32, pub groups: u32, pub pipelines: u32 }
 ```
 
-A `const fn` lays out a list of needs from a first id of each kind, and returns one `IdRange` per entry. The step list supplies the steps' needs, so a new step needs no line in an id table. Each builder keeps one table of its own objects (its views' buffers and groups, its blank textures, its compute pipelines), written as entries of needs in one list, one entry per line. `GraphIds` comes from one shared function that both builders call with their layout.
+A `const fn` lays out a list of needs from a first id of each kind, and returns one `IdRange` per entry. The step list supplies the steps' needs, so a new step needs no line in an id table. Each builder keeps one table of its own objects, such as its views' buffers and groups, its blank textures and its compute pipelines. The table is one list of needs, one entry per line. `GraphIds` comes from one shared function that both builders call with their layout.
 
-A unit test in each builder walks the whole layout per kind of id and fails when two ranges overlap, when a range passes a fixed limit such as `TEXTURE_ARRAYS`, or when a range is empty. The frame graph's test fixture uses the same layout, so its tests run with ids that do not clash.
+A unit test in each builder walks the whole layout for each kind of id. It fails when two ranges overlap, when a range is empty, or when a range passes a fixed limit such as `TEXTURE_ARRAYS`. The frame graph's test fixture uses the same layout, so its tests run with ids that do not clash.
 
 The ids stay numbers that the compiler works out. Nothing allocates at run time, and the GPU sees the same kinds of objects in the same order. Only the numbers change, once, in step 3.
 
@@ -219,7 +219,7 @@ export interface TemplateRow {
 
 `webgpu/pipelines.ts` defines its templates from the rows, and `webgl2/programs.ts` builds its programs from the same rows. Details that only one backend has, such as a blend state for two targets, stay in that backend. The `HDR_FEATURES` set moves into the shader manifest as an `hdr = true` flag on the first-use entry.
 
-A unit test compares the two paths. Every `TEMPLATE_` constant, apart from the compute templates and `CUSTOM_FIRST`, has exactly one row. Each row's shader exists in both paths' device shaders, or the row names its WebGL2 fallback, as the multisampled `_MS` templates do. Each layout id exists. A template on one path only can no longer hide until an image test runs.
+A unit test compares the two paths. Every `TEMPLATE_` constant, apart from the compute templates and `CUSTOM_FIRST`, has exactly one row. Each row's shader exists in both paths' device shaders, or the row names its WebGL2 fallback, as the multisampled `_MS` templates do. Each layout id exists. So the unit tests find a template on one path only, before any image test runs.
 
 `generated/gpu.ts` stays in git, as [D-105](D-105-generated-files-out-of-git.md) decided. Its conflicts become regenerate-only: take main's copy and run the Rust tests that write it, as the merge rule for generated files already says.
 
@@ -238,7 +238,7 @@ The migration moves code without changing behaviour, so it needs a check that se
 
 - **Trait objects in a list (`Vec<Box<dyn FrameStep>>`).** It blocks inlining in the frame loop and splits borrows of the graph. A list fixed at compile time costs nothing at run time.
 - **A link-time registry, such as the `inventory` crate.** It adds a dependency and start-up code, and its order is not fixed. The frame's step order matters.
-- **Ids from `IdAllocator` at run time.** The numbers would then depend on which feature a sketch turns on first, which makes draw lists harder to compare and debug.
+- **Ids from `IdAllocator` at run time.** The numbers would then depend on which feature a sketch turns on first. Draw lists would be harder to compare and debug.
 - **Template numbers and descriptors from the shader manifest.** It would move the source of Rust's template numbers out of Rust. The Rust template macro and a TypeScript table read by both backends reach the same goal with a smaller change.
 - **Splitting `frame_graph.rs` into files only.** Each feature would still live in 20 to 30 places, now across several files.
 - **One large change.** It would conflict with every open branch and could not keep the draw lists checked step by step.
@@ -262,9 +262,9 @@ Each step lands alone, by direct push, with the full local checks of D-157. Thes
 | 11 | The frame graph's tests move beside their steps; `frame_graph.rs` keeps the views, the order and the record loop | `frame_graph.rs`, the modules | 0.5 | |
 | 12 | The checklist "Add a renderer feature" in the implementation notes, and this record set to decided | `.dev/implementation-notes.md`, this record | 0.5 | |
 
-Total: about 13 helper-days. With step 2 and step 4 run by a second helper beside the chain, about 10 working days.
+Total: about 14 helper-days. With steps 2 and 4 run by a second helper beside the chain, about 12 working days.
 
-The order has reasons. The fingerprint test comes first, because every later step relies on it. The id layout comes before the trait, because it removes the largest class of conflicts and the trait's `IdRange` needs it. The fog moves first because it is the newest and most self-contained step. The final pass moves last because it holds the two-step pass, where R-02 and R-04 come from.
+The fingerprint test comes first, because every later step relies on it. The id layout comes before the trait, because it removes the largest class of conflicts and the trait's `IdRange` needs it. The fog moves first because it is the newest and most self-contained step. The final pass moves last because it holds the two-step pass, where R-02 and R-04 come from.
 
 ## Expected merge-clash reduction
 
@@ -274,15 +274,15 @@ After step 5, a new post step changes no hub function. Two branches then conflic
 - The `frame_graph.rs`, role arm and wiring conflicts (79 hunks) fall to the one-line lists.
 - The template list conflicts (28 hunks) fall to adjacent rows, and the generated constants become regenerate-only.
 
-Over the measured merges, that would remove about 60% of the renderer's conflict hunks: most of the 200 hunks in these classes, less the conflicts of adjacent list lines. The remaining 105 hunks belong to the permutation bits, the shader manifest, the materials' feature bits and the public setters. D-156 and D-173's hooks cover those.
+Over the measured merges, that would remove 55% to 60% of the renderer's conflict hunks. That is the 184 hunks of the first three classes, less some conflicts of adjacent list lines. The 16 generated ones still conflict, but need no hand merge. The remaining 105 hunks belong to the permutation bits, the shader manifest, the materials' feature bits and the public setters. D-156 and D-173's hooks cover those.
 
 ## Not covered
 
-- The TypeScript spread of a quality feature (presets, governor steps, the runner, `shared/core.ts`, `Scene` fields) is review finding GPU-8's second half and ENG findings of the same review. It needs its own record.
+- A quality feature also spreads over the engine's TypeScript: the presets, the governor's steps, the runner, `shared/core.ts` and the `Scene` fields. The same review lists this beside GPU-8. It needs its own record.
 - The WebGPU fragment stage now reads 16 of its 16 sampled textures. The descriptor could later carry each template's texture count for a budget test, as review findings R-07 and H-6 ask.
 
 ## Rulings needed
 
-1. Approve the design: the step trait, one module per feature, ids from one table with an overlap test, and one template descriptor that both GPU paths read with a parity test.
+1. Approve the design: the step trait and one module per feature. Ids come from one table with an overlap test, and both GPU paths read one template descriptor with a parity test.
 2. Approve the plan: twelve landings in the order above, each with unchanged draw lists and image references, starting after the open feature branches land.
-3. Whether step 1, the fingerprint and overlap tests, may land at once. It touches only test files and catches id clashes from today.
+3. Whether step 1, the fingerprint and overlap tests, may land at once. It adds only tests, and it catches id clashes from today.
