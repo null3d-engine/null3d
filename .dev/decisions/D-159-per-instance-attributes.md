@@ -1,6 +1,6 @@
 # D-159: Per-row values and the instance index close custom per-instance attributes
 
-Status: decided by the helper of M2-K2 on 13 October 2026, for the owner's review. Date: 2026-10-13. Task: M2-K2.
+Status: decided by the helper of M2-K2 on 13 October 2026, for the owner's review. Built: custom per-instance attributes are on main (`0480c50fd`). The owner's review is pending. Date: 2026-10-13. Task: M2-K2.
 
 Summary: M2-K2 asked for named per-instance attributes of any size and type, which custom materials read. Work that landed after the task already answers the need. Per-row values give four numbers for each row, read as `object.values` on all three GPU paths. The instance index gives the row's place in its batch, as `input.instance`. D-127 rejected the named map for a stated reason. The review closes K2, with no engine, docs or skill change, and names what would reopen it.
 
