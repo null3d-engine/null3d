@@ -254,38 +254,70 @@ Each call sets both options, and an option left out takes its default. The call 
 
 `setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from coloured walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, three filtered reads each, and its light takes the place of the environment's diffuse light; the environment keeps its reflections.
 
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x.
+
 ```ts
-const grid = new LightProbeGrid({
-  origin: [-12, 0, -12],
-  spacing: [1, 2, 1],
-  counts: [24, 8, 24],
-  coefficients: baked, // 12 numbers per probe, packed by `packProbes`
+const grid = new LightProbeGridData(
+  new Float32Array([-12, 0, -12]), // origin
+  new Float32Array([1, 2, 1]), // spacing in meters
+  [25, 5, 25], // probes along each axis
+  baked, // 25 * 5 * 25 * 12 numbers
+);
+scene.setLightProbeGrid({
+  texture: grid.toTexture(textures),
+  origin: grid.origin,
+  spacing: grid.spacing,
+  counts: grid.counts,
 });
-scene.setLightProbeGrid({ ...grid, texture: textures.fromData({ ...grid.texture }) });
 ```
 
 | Option | Default | What it sets |
 | --- | --- | --- |
-| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients, from `textures.fromData` |
-| `origin` | required | The grid's corner of least x, y and z, in the world |
+| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients, from `LightProbeGridData.toTexture` |
+| `origin` | required | The grid's corner of least x, y and z, in the world. This and the next two take an array or a typed array |
 | `spacing` | required | The distance between probes along each axis, in meters |
 | `counts` | required | The probes along each axis, each 2 or more |
 | `intensity` | 1 | The factor of the grid's light, 0 or more |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` colour for one coloured bounce. Bake a few probes a frame so a loading screen can show progress.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`. A ray that reaches the sky takes the environment's light from its direction. Give `environmentOptions` the intensity and rotation that `setEnvironment` got, so the baked sky matches the scene's. Where a ray hits a surface, `albedo` gives the surface's colour for one coloured bounce: the surface sends back that share of the environment's light, as a matte surface does. The bake counts no lamps, so the grid holds sky light, its occlusion and its bounce. Bake a few probes a frame so a loading screen can show progress.
+
+`spacing` sets the distance between probes along each axis, in meters, or one number for every axis. The default is 2. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
 
 ```ts
-const bake = bakeProbes(scene, {
-  box: { min: [-12, 0, -12], max: [12, 8, 12] },
-  resolution: [24, 8, 24],
-  environment,
-  albedo: (object) => (object as Mesh).material.baseColor,
+import { bakeProbes, defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, textures }) => {
+  const environment = await assets.skyEnvironment();
+  const environmentOptions = { intensity: 0.8 };
+  scene.setEnvironment(environment, environmentOptions);
+  // ... build the room here ...
+  const grey = [0.8, 0.8, 0.8] as const; // every surface a light grey
+  const bake = bakeProbes(scene, {
+    box: { min: [-12, 0, -12], max: [12, 8, 12] },
+    spacing: [1, 2, 1],
+    environment,
+    environmentOptions,
+    albedo: () => grey,
+  });
+  let baking = true;
+  return {
+    onUpdate() {
+      if (!baking || !bake.step(4)) return;
+      baking = false;
+      const grid = bake.grid;
+      scene.setLightProbeGrid({
+        texture: grid.toTexture(textures),
+        origin: grid.origin,
+        spacing: grid.spacing,
+        counts: grid.counts,
+      });
+    },
+  };
 });
-onUpdate(() => { if (bake.step(4)) scene.setLightProbeGrid({ ...bake.grid.toTexture(textures), origin: bake.grid.origin, spacing: bake.grid.spacing, counts: bake.grid.counts }); });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. [Lighting and environment](../concepts/lighting.md) says how the grid lights a surface, and what it costs.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times.
 
 ## Fog
 

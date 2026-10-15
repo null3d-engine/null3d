@@ -179,3 +179,14 @@ The rule now, built the same day:
 - `docs/getting-started/hosting.md` gives the policy and the headers, and drops the claim that workers may come from another origin.
 - AGENTS.md's rules for add-on modules point here.
 - The record is in the table in [README.md](README.md).
+
+## Addendum, 15 October 2026: one place per feature, public API only, and publishing
+
+[D-173](D-173-addon-hooks.md) adds to the line between core and add-ons. The owner ruled on 15 October 2026:
+
+- **One place per feature.** A feature lives in the core or in one add-on, never both. An add-on extends or replaces a core feature only through that feature's own settings. Flat clouds stay in the core sky, and a water add-on owns all water.
+- **Public API only.** Add-ons and examples reach the engine only through `@null3d/engine` and `@null3d/engine/stats`. `bun tools/check-addon-imports.ts`, which `bun run check` runs, enforces it. Particles are no exception: their add-on uses the public `scene.createParticleBuffer`.
+- **Foundations.** The engine's team builds physics, Gaussian splats, MSDF text, particles, terrain, water, controls, geometry, impostors and `three-compat`. M3's content add-ons are example add-ons in `examples/addons/`.
+- **Publishing.** Each foundation add-on is its own npm package, never a sub-path of the engine package. It keeps this record's rule: its version stays in step with the engine's, through an exact pin. It also checks the engine's version at run time.
+- **WGSL compiled when packed.** An add-on's package ships its shaders compiled, because a browser cannot import a `.wgsl` file from a CDN, which this record promises. The fresh-project test installs terrain and particles, and the CDN test loads one add-on.
+- **Versions for other developers.** Their add-ons get a plugin interface version and a listing check in M4, before the API freezes at 1.0.
