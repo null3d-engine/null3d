@@ -83,6 +83,6 @@ Option C, with these generated pages:
 
 ## Consequences
 
-- A branch from before this change conflicts once when it merges main. [Pull requests](../pull-requests.md#a-branch-from-before-generated-files-left-git) gives the steps.
+- A branch from before this change conflicts once when it merges main. [Branches and parallel work](../pull-requests.md#a-branch-from-before-generated-files-left-git) gives the steps.
 - On GitHub, main has no generated page, so a relative link to one finds no file there. The `generated` branch and each release tag have every page.
-- [AGENTS.md](../../AGENTS.md#docs-and-skills-stay-in-sync), [Pull requests](../pull-requests.md#generated-files) and [Releases](../releases.md) describe the new steps.
+- [AGENTS.md](../../AGENTS.md#docs-and-skills-stay-in-sync), [Branches and parallel work](../pull-requests.md#generated-files) and [Releases](../releases.md) describe the new steps.

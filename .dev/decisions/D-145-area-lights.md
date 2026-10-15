@@ -1,6 +1,6 @@
 # D-145: Area lights
 
-Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Date: 2026-10-12. Task: M2-EX28.
+Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Built: area lights are on main (`efb65024b`). The owner's review of the design is pending. Date: 2026-10-12. Task: M2-EX28.
 
 Summary: Rectangle and tube lights light the standard material with linearly transformed cosines (LTC). A rectangle light matches three.js's `RectAreaLight`: it uses the same formulas and fitted tables. A tube shades as the rectangle through its axis that faces the surface, at the same cost. Area lights share the 64-byte records and the clusters of point and spot lights, and each quality preset caps how many shade in a frame. The tables load on first use from a 19.3 KB gzip file. They share the split-sum table's binding, so WebGPU gains no binding and WebGL2 one texture unit.
 
