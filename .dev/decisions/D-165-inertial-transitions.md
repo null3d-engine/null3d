@@ -80,3 +80,31 @@ looks. The flip is one line in `Animator.playOptions`.
 - S5 keeps its clip-weight blend; no benchmark scene changes.
 - Prototype A4's frames and the owner's pick decide the default. The result is recorded here or in
   an addendum when the iPad run is done.
+
+## Addendum, 15 October 2026: what a running transition follows
+
+The code review of 15 October 2026 found five ways a running transition left the behaviour above
+(finding M-2). The fix ties the blend to the instance that started it, and follows the clip's own
+speed and the screen:
+
+- The timers sat in a buffer laid out per instance slot, and nothing cleared them with the instance.
+  A unit that died mid-fade therefore passed its running blend to whatever took its id, even a unit
+  of another skeleton. `add_instance` and `remove_instance` now end the instance's blends.
+- A skeleton with more lanes than any before remakes the pose and velocity buffers, and the remake
+  zeroed the pose a running blend decayed from. Its timer ran on, so the layer sank toward a pose of
+  nothing. Every blend now ends with those buffers.
+- The layer sampled its clip's own time one step back by the bare step. A clip at speed 2, a clip
+  that plays backward, or a play-once clip held at its end then gave the wrong outgoing velocity,
+  and the limbs overshot. It now steps back by `step * speed`, and by nothing at all for a clip that
+  ended.
+- The timer advanced by the signed step. A negative time scale therefore left the fade running for
+  ever, and the layer showed the pose it had left. The timer now runs on the size of the step.
+- A second switch during a fade captured the bare clip pose instead of the pose on screen, and
+  jumped by most of the first switch's difference. A capture now takes the pose that the frame
+  showed.
+
+Two cases of the same finding stay open. A layer above 0 still takes its shares from the new clip's
+channels only, so a joint that only the outgoing clip animated falls away at the switch rather than
+fading. The pose buffers are also laid out for every instance slot, not for the transitions that
+run. That is finding M-4, and the summary's "20 floats per joint for as long as a transition runs"
+already promises it.
