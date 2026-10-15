@@ -304,7 +304,14 @@ describe('WebGPUBackend', () => {
 			),
 		);
 		const events = log.filter((entry) => !entry.startsWith('background'));
-		expect(events).toEqual(['submit', `destroy ${256 * 8}`]);
+		// Each copy passes through a buffer of its own, and the smaller one goes once its copies
+		// are submitted, because the device may still hold them.
+		expect(events).toEqual([
+			'copy 8 x 8 to buffer 0 at 0, 256 per row, 8 rows',
+			'copy 32 x 32 to buffer 1 at 0, 256 per row, 32 rows',
+			'submit',
+			`destroy ${256 * 8}`,
+		]);
 		// The buffer that stays counts as GPU memory, with its rows padded to 256 bytes, and the
 		// one destroyed no longer does.
 		expect(backend.gpuMemory.bytes[1]).toBe(256 * 32);
