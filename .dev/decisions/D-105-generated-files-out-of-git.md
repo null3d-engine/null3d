@@ -64,7 +64,7 @@ Option C, with these generated pages:
 - `bun run docs:check` writes the files first, then checks. It also refuses a written API page without its link to the reference page. CI's docs job checks that the generators wrote no file that git keeps.
 - The engine package's pack step writes the docs before it copies them.
 - After each full run on main passes, the CI job `generated-branch` pushes main's commit with every generated file to the `generated` branch. Only that job has write access to the repository's contents, and main's rules cover only main. Engine error messages and the README link to the error pages and the mapping page there.
-- Release Publish tags a commit that adds every generated file to the merge commit of the release. Main never holds that commit. Its parent is on main, so the next release's changelog starts after it. The plugin, `bunx skills add` and the zips read the tagged commit.
+- Release Publish tags a commit that adds every generated file to the release branch's commit. Main never holds that commit. The release branch starts on main, so the next release's notes start after the released commit. The plugin, `bunx skills add` and the zips read the tagged commit.
 
 ### Generated files that git keeps
 

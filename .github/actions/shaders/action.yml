@@ -9,8 +9,11 @@ description: >-
   key no longer matches. A new compiler restores nothing. The tools check every entry's key
   themselves, so a restored entry is never used for other inputs. Only the current stamp's entries
   and the current module set are saved, so the cache does not grow with old ones. A failed or
-  cancelled build still saves the entries it finished, under a key of its own, since each entry is
-  written whole. The cache saves only when the workflow's SAVE_CACHES is true.
+  cancelled build still saves the entries it finished, under a key of its own for the run and the
+  job, since each entry is written whole. The cache saves only when the workflow's SAVE_CACHES is true.
+  Each run records in its job summary how long the command took, how many entries the shader build
+  compiled and reused, and how many entries and modules the caches hold, so the build's growth shows
+  from run to run.
 
 inputs:
   run:
@@ -22,7 +25,9 @@ runs:
   steps:
     - id: keys
       shell: bash
-      run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
+      run: |
+        bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
+        echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@v4
       id: restore
       with:
@@ -33,7 +38,32 @@ runs:
         restore-keys: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
     - id: build
       shell: bash
-      run: ${{ inputs.run }}
+      # The command may be several lines; the group keeps their output for the record below.
+      run: |
+        {
+        ${{ inputs.run }}
+        } 2>&1 | tee "$RUNNER_TEMP/shader-build.log"
+    - name: Record the shader build
+      if: always() && steps.keys.outcome == 'success'
+      shell: bash
+      env:
+        STARTED: ${{ steps.keys.outputs.started }}
+        OUTCOME: ${{ steps.build.outcome }}
+        RESTORED: ${{ steps.restore.outputs.cache-matched-key }}
+        ENTRIES: ${{ steps.keys.outputs.entries-dir }}/${{ steps.keys.outputs.stamp }}
+        MODULES: ${{ steps.keys.outputs.modules-dir }}/${{ steps.keys.outputs.inputs }}
+      run: |
+        count() { find "$1" -maxdepth 1 -type f 2>/dev/null | wc -l; }
+        size() { du -sh "$1" 2>/dev/null | cut -f1; }
+        stats=$(grep -ho 'compiled [0-9]* entries and reused [0-9]*' "$RUNNER_TEMP/shader-build.log" | tail -1)
+        {
+          echo "### Shader build"
+          echo "- Outcome: $OUTCOME, after $(( ($(date +%s) - STARTED) / 60 )) min"
+          echo "- Restored from: ${RESTORED:-nothing}"
+          echo "- Shader build: ${stats:-no summary line, so it did not finish}"
+          echo "- Entry cache: $(count "$ENTRIES") entries, $(size "$ENTRIES")"
+          echo "- Module set: $(count "$MODULES") modules, $(size "$MODULES")"
+        } | tee -a "$GITHUB_STEP_SUMMARY"
     - name: Keep only this build's module set and compiler stamp
       if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
       shell: bash
@@ -53,4 +83,4 @@ runs:
         path: |
           ${{ steps.keys.outputs.modules-dir }}
           ${{ steps.keys.outputs.entries-dir }}
-        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) || '' }}

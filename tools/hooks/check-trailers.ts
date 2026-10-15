@@ -1,10 +1,12 @@
-// Checks the trailers on every commit in a range that main's squash keeps, so a commit made with
-// --no-verify cannot skip them: the acknowledgement trailers, that each Size-Growth trailer names a
-// file and gives a reason, that a pull request that changes how the GPU draws records its GPU
-// check, that one that remakes SwiftShader references remakes the real-GPU ones or says why not,
-// and that each Task: footer names a listed task or says none. CI runs it on pull requests:
+// Checks every commit in a range that main keeps, so a commit made with --no-verify cannot skip the
+// commit gates: that each subject reads well as a line of the release notes, the acknowledgement
+// trailers, that each Size-Growth trailer names a file and gives a reason, that a branch that
+// changes how the GPU draws records its GPU check, that one that remakes SwiftShader references
+// remakes the real-GPU ones or says why not, and that each Task: footer names a listed task or says
+// none. Run it before a push to main:
 //   bun tools/hooks/check-trailers.ts origin/main..HEAD
 import { execFileSync } from 'node:child_process';
+import { checkSubject } from '../lib/docs-style';
 import { DOCS_ACK_RULE } from './check-docs-ack';
 import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem } from './check-mac-references';
@@ -63,6 +65,8 @@ function main(): void {
 			if (!result.ok) failures.push(`${commit}: ${result.error}`);
 		}
 		for (const problem of sizeGrowthProblems(message)) failures.push(`${commit}: ${problem}`);
+		for (const finding of checkSubject(message.split('\n')[0] ?? ''))
+			if (finding.severity === 'error') failures.push(`${commit}: ${finding.message}`);
 		const task = taskProblem(message, tasks, authoredAt);
 		if (task) failures.push(`${commit}: ${task}`);
 	}
