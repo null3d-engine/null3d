@@ -62,6 +62,10 @@ inputs, so re-checking a branch on a moved main is cheap.
 
 - `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
   landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
+- A cache is used only when its entry is whole. The shader modules cache, for example, requires every
+  module that `shaders.ts` loads, from its imports and the device module names its tables hold. A set
+  that misses one is a miss, so the build runs again rather than reporting "up to date" while a file is
+  absent.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
   output in a folder of its own, named for the build's process, and Cargo locks the target folder that
