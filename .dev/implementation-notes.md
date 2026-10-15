@@ -393,6 +393,28 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Plugin errors count columns from 1, as editors do. Rollup counts its own from 0, but Vite and Rolldown only print the place, and Vite's overlay opens the editor at it.
 - naga turns off its checks of uniform control flow for derivatives and `textureSample`, because they reject valid shaders. The build therefore cannot catch `textureSample` in a branch that differs between pixels, which Chrome rejects when it creates the shader module.
 
+## Tests that build a bundle
+
+Some unit tests build a bundle of engine code with Vite inside the test process, such as
+`math/tree-shaking.test.ts`. Build it the way a page is built, with a single input, and never with
+`build.lib`.
+
+- A library build inlines every asset as a base64 data URL, and does not copy it as a file. Vite's
+  `shouldInline` returns true on `config.build.lib` before it reads `assetsInlineLimit`, so
+  `new URL('./x.js', import.meta.url)` becomes a data URL.
+- The engine's generated shaders are around 850 MB of assets. A worker build inherits the parent's
+  `lib` setting, so each worker bundle encodes that payload again inside itself.
+- One such build of a sketch that imports `vec3` took 22 s and 13.8 GB of memory footprint. The
+  same build without `lib` took 4.8 s and 4.1 GB. A test file that builds twice held 18.6 GB against
+  5.1 GB.
+- The unit suite is one process on a 16 GB machine. A library build in it is killed without a
+  message of its own: the log of 15 October 2026 shows only a runner shutdown and SIGKILL.
+- `rollupOptions.external` cannot avoid this. Vite resolves a `new URL(...)` on the filesystem in
+  `vite:asset-import-meta-url`, not through Rollup's module resolution, so `external` never sees it.
+- `debug/release.test.ts` still builds with `lib`, because its production case needs the tree
+  shaking that a library build gives. Its memory footprint is about 11 GB and its bundle about
+  1.2 GB of minified code.
+
 ## Meshes on both GPU paths
 
 - WebGL2 always reads the largest value of the index type as a primitive restart, because WebGL 2.0 keeps `PRIMITIVE_RESTART_FIXED_INDEX` on. A triangle that uses 16-bit index 65,535 draws nothing. Pages and mesh parts therefore hold at most 65,535 vertices on both paths.
