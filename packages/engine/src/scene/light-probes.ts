@@ -8,6 +8,7 @@ import {
 	LIGHT_PROBE_VALUE_ORIGIN,
 	LIGHT_PROBE_VALUE_SPACING,
 } from '../generated/core';
+import type { Environment, EnvironmentOptions } from './environment';
 import { toHalfFloat } from './half-float';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { QueryTarget, RaycastBatchHits } from './queries';
@@ -207,20 +208,20 @@ export function packProbes(
 
 /**
  * The options of `scene.setLightProbeGrid`: a grid of irradiance probes, baked by `bakeProbes`
- * or elsewhere, whose texture the sketch uploads with `textures.fromData({ ..., format:
- * 'rgba16float' })`.
+ * or elsewhere. `LightProbeGridData` gives the texture and the grid's three-number values, which
+ * pass in as they are.
  *
  * @category api/scene
  */
 export interface LightProbeGridOptions {
-	/** The 3D texture of the probes' coefficients, from `textures.fromData`. */
+	/** The 3D texture of the probes' coefficients, from `LightProbeGridData.toTexture`. */
 	texture: Texture;
-	/** The grid's corner of least x, y and z, in the world. */
-	origin: readonly [number, number, number];
-	/** The distance between probes along each axis, in meters. */
-	spacing: readonly [number, number, number];
-	/** The probes along each axis. */
-	counts: readonly [number, number, number];
+	/** The grid's corner of least x, y and z, in the world: three numbers. */
+	origin: ArrayLike<number>;
+	/** The distance between probes along each axis, in meters: three numbers. */
+	spacing: ArrayLike<number>;
+	/** The probes along each axis: three whole numbers. */
+	counts: ArrayLike<number>;
 	/** The factor of the grid's light on every surface. The default is 1. */
 	intensity?: number;
 	/**
@@ -293,18 +294,18 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 		['spacing', grid.spacing],
 		['counts', grid.counts],
 	] as const) {
-		if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite))
+		if (!isTriple(value))
 			throw new EngineError(
 				'E1203',
 				`${CALL}() got ${String(value)} for ${name}, which takes three finite numbers.`,
 			);
 	}
-	if (grid.spacing.some((s) => s <= 0))
+	if (Array.from(grid.spacing).some((s) => s <= 0))
 		throw new EngineError(
 			'E1108',
 			`${CALL}() got a spacing of 0 or less; probes need a positive spacing.`,
 		);
-	if (grid.counts.some((c) => !Number.isInteger(c) || c < 2))
+	if (Array.from(grid.counts).some((c) => !Number.isInteger(c) || c < 2))
 		throw new EngineError(
 			'E1108',
 			`${CALL}() got a count below 2 or a fraction; give whole numbers of 2 or more.`,
@@ -320,6 +321,15 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 		);
 }
 
+/** True for three finite numbers in an array or a typed array. */
+function isTriple(value: unknown): boolean {
+	if (!Array.isArray(value) && !ArrayBuffer.isView(value)) return false;
+	const list = value as unknown as ArrayLike<unknown>;
+	if (list.length !== 3) return false;
+	for (let k = 0; k < 3; k++) if (!Number.isFinite(list[k])) return false;
+	return true;
+}
+
 /**
  * The options of `bakeProbes`: the box the probes cover, how fine they are, and where the light
  * comes from.
@@ -329,21 +339,33 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 export interface BakeProbesOptions {
 	/** The box the probes cover, in the world. */
 	box: { min: readonly [number, number, number]; max: readonly [number, number, number] };
-	/** The probes along each axis, or one number for every axis. The default is one per 2 m. */
-	resolution?: number | readonly [number, number, number];
+	/**
+	 * The distance between probes along each axis, in meters, or one number for every axis. The
+	 * default is 2. The grid starts at the box's least corner and takes as many probes as fit the
+	 * box at that spacing, at least two along each axis.
+	 */
+	spacing?: number | readonly [number, number, number];
 	/** The directions cast from each probe: 8 to 1024, the default 64. */
 	samples?: number;
 	/** How far a ray reaches before it counts as the sky, in meters. The default is the box's diagonal. */
 	distance?: number;
 	/**
-	 * The scene's environment, whose nine RGB coefficients are taken as the sky's radiance, as
-	 * `scene.setEnvironment` set it. A ray that reaches the sky takes it. Without one, sky rays
-	 * give no light.
+	 * The scene's environment. A ray that reaches the sky takes the environment's diffuse light
+	 * from its direction, from its nine RGB coefficients. Without one, sky rays give no light.
 	 */
-	environment?: { readonly sh: Float32Array } | null;
+	environment?: Environment | null;
 	/**
-	 * The colour a ray takes when it hits a surface, for one coloured bounce. A ray whose hit has
-	 * no colour gives none, so a scene without this bakes sky light and its occlusion alone.
+	 * The intensity and rotation that `scene.setEnvironment` got, so the baked sky matches the
+	 * scene's. The defaults are those of `scene.setEnvironment`.
+	 */
+	environmentOptions?: EnvironmentOptions;
+	/**
+	 * The colour a ray takes when it hits a surface, for one coloured bounce: the surface sends
+	 * back that share of the environment's light at its normal, as a matte surface does. The
+	 * bounce sees the whole sky, so the light of a hit has no occlusion of its own, and the bake
+	 * counts no lamps. A ray whose hit has no colour gives none, so a scene without this bakes sky
+	 * light and its occlusion alone. `normal` is reused from hit to hit, so copy what you keep,
+	 * and return the same array each time where you can: the bake calls this for every hit.
 	 */
 	albedo?: (
 		object: QueryTarget | null,
@@ -378,10 +400,69 @@ export class LightProbeGridData {
 	}
 }
 
-/** The projection scales of the L0 and each L1 coefficient, for radiance to irradiance. */
-const FOUR_PI_HALF = 2 * Math.PI;
+// The constants of the real spherical harmonics of the first three bands, in three.js's order.
 const Y00 = 0.282095;
 const Y1 = 0.488603;
+const Y2 = 1.092548;
+const Y20 = 0.315392;
+const Y22 = 0.546274;
+
+/** The radiance toward unit direction `(x, y, z)` from nine RGB coefficients, into `out`. */
+function shRadiance(sh: Float32Array, x: number, y: number, z: number, out: Float32Array): void {
+	for (let c = 0; c < 3; c++)
+		out[c] =
+			(sh[c] as number) * Y00 +
+			Y1 * ((sh[3 + c] as number) * y + (sh[6 + c] as number) * z + (sh[9 + c] as number) * x) +
+			Y2 *
+				((sh[12 + c] as number) * x * y +
+					(sh[15 + c] as number) * y * z +
+					(sh[21 + c] as number) * x * z) +
+			(sh[18 + c] as number) * Y20 * (3 * z * z - 1) +
+			(sh[24 + c] as number) * Y22 * (x * x - y * y);
+}
+
+/**
+ * The irradiance at a surface of unit normal `(x, y, z)` from nine RGB coefficients of radiance,
+ * into `out`, as the shader's `sh_irradiance`.
+ */
+function shIrradiance(sh: Float32Array, x: number, y: number, z: number, out: Float32Array): void {
+	for (let c = 0; c < 3; c++)
+		out[c] =
+			(sh[c] as number) * L0_SCALE +
+			L1_SCALE *
+				((sh[3 + c] as number) * y + (sh[6 + c] as number) * z + (sh[9 + c] as number) * x) +
+			2 *
+				0.429043 *
+				((sh[12 + c] as number) * x * y +
+					(sh[15 + c] as number) * y * z +
+					(sh[21 + c] as number) * x * z) +
+			(sh[18 + c] as number) * (0.743125 * z * z - 0.247708) +
+			(sh[24 + c] as number) * 0.429043 * (x * x - y * y);
+}
+
+/**
+ * The rows that turn a direction in the world back into the environment map's own, for Euler
+ * angles in the order X, Y, Z: the same matrix as the renderer gives the shaders' `map_direction`.
+ */
+function inverseRotation(rotation: readonly [number, number, number], out: Float32Array): void {
+	const a = Math.cos(rotation[0]);
+	const b = Math.sin(rotation[0]);
+	const c = Math.cos(rotation[1]);
+	const d = Math.sin(rotation[1]);
+	const e = Math.cos(rotation[2]);
+	const f = Math.sin(rotation[2]);
+	out.set([
+		c * e,
+		a * f + b * e * d,
+		b * f - a * e * d,
+		-c * f,
+		a * e - b * f * d,
+		b * e + a * f * d,
+		d,
+		-b * c,
+		a * c,
+	]);
+}
 
 /**
  * A progressive bake of a light probe grid: `step` bakes the next probes and `finish` gives the
@@ -406,6 +487,12 @@ export class ProbeBake {
 	private readonly instances: Int32Array;
 	private readonly hits: RaycastBatchHits;
 	private readonly sky: Float32Array | null;
+	private readonly intensity: number;
+	/** The rows that turn a world direction into the environment map's. */
+	private readonly turn = new Float32Array(9);
+	private readonly rayOptions: { maxDistance: number };
+	/** The hit normal that the albedo callback reads, reused from hit to hit. */
+	private readonly hitNormal = new Float32Array(3);
 	private next = 0;
 
 	/** @internal */
@@ -415,8 +502,8 @@ export class ProbeBake {
 	) {
 		const min = options.box.min;
 		const max = options.box.max;
-		const resolution = options.resolution ?? 2;
-		const per = typeof resolution === 'number' ? [resolution, resolution, resolution] : resolution;
+		const step = options.spacing ?? 2;
+		const per = typeof step === 'number' ? [step, step, step] : step;
 		const spacing = new Float32Array(3);
 		const counts = [FEWEST_PROBES, FEWEST_PROBES, FEWEST_PROBES];
 		let diagonal = 0;
@@ -452,6 +539,9 @@ export class ProbeBake {
 			normals: this.normals,
 		};
 		this.sky = options.environment ? options.environment.sh : null;
+		this.intensity = options.environmentOptions?.intensity ?? 1;
+		inverseRotation(options.environmentOptions?.rotation ?? [0, 0, 0], this.turn);
+		this.rayOptions = { maxDistance: this.distance };
 	}
 
 	/** How many probes are baked. */
@@ -488,9 +578,11 @@ export class ProbeBake {
 			rays[s * 6 + 4] = directions[s * 3 + 1] as number;
 			rays[s * 6 + 5] = directions[s * 3 + 2] as number;
 		}
-		this.scene.raycastBatch(rays, { maxDistance: this.distance }, this.hits);
+		this.scene.raycastBatch(rays, this.rayOptions, this.hits);
 		const at = index * PROBE_FLOATS;
-		const scale = FOUR_PI_HALF / this.samples;
+		// Monte Carlo projection over the whole sphere: each direction stands for 4 pi / samples.
+		const scale = (4 * Math.PI) / this.samples;
+		const { normals, hitNormal } = this;
 		for (let s = 0; s < this.samples; s++) {
 			const dx = directions[s * 3] as number;
 			const dy = directions[s * 3 + 1] as number;
@@ -499,21 +591,30 @@ export class ProbeBake {
 			let green = 0;
 			let blue = 0;
 			if ((this.distances[s] as number) < 0) {
-				const sky = this.skyRadiance(dx, dy, dz);
+				const sky = this.skyLight(dx, dy, dz, shRadiance);
 				red = sky[0] as number;
 				green = sky[1] as number;
 				blue = sky[2] as number;
 			} else if (this.options.albedo) {
+				hitNormal[0] = normals[s * 3] as number;
+				hitNormal[1] = normals[s * 3 + 1] as number;
+				hitNormal[2] = normals[s * 3 + 2] as number;
 				const albedo = this.options.albedo(
 					this.objects[s] as QueryTarget | null,
 					this.instances[s] as number,
-					this.normals.subarray(s * 3, s * 3 + 3) as Float32Array,
+					hitNormal,
 				);
 				if (albedo) {
-					const light = this.hitIrradiance(s);
-					red = (albedo[0] as number) * (light[0] as number);
-					green = (albedo[1] as number) * (light[1] as number);
-					blue = (albedo[2] as number) * (light[2] as number);
+					// A matte surface sends back albedo times its irradiance over pi.
+					const light = this.skyLight(
+						hitNormal[0] as number,
+						hitNormal[1] as number,
+						hitNormal[2] as number,
+						shIrradiance,
+					);
+					red = ((albedo[0] as number) * (light[0] as number)) / Math.PI;
+					green = ((albedo[1] as number) * (light[1] as number)) / Math.PI;
+					blue = ((albedo[2] as number) * (light[2] as number)) / Math.PI;
 				}
 			}
 			// The four coefficients, in the shader's order: L0, then L1 along y, z and x.
@@ -535,34 +636,23 @@ export class ProbeBake {
 		}
 	}
 
-	/** The sky's radiance toward `(x, y, z)`, from the environment's coefficients. */
-	private skyRadiance(x: number, y: number, z: number): Float32Array {
+	/**
+	 * The environment's light for world direction `(x, y, z)`, turned and scaled as the scene's:
+	 * its radiance toward that direction with `shRadiance`, or its irradiance at that normal with
+	 * `shIrradiance`. Zero without an environment.
+	 */
+	private skyLight(x: number, y: number, z: number, light: typeof shRadiance): Float32Array {
 		const sky = this.sky;
 		if (!sky) return ZERO;
-		for (let c = 0; c < 3; c++) {
-			SKY[c] =
-				(sky[c] as number) * Y00 +
-				(sky[3 + c] as number) * Y1 * y +
-				(sky[6 + c] as number) * Y1 * z +
-				(sky[9 + c] as number) * Y1 * x;
-		}
-		return SKY;
-	}
-
-	/** The irradiance at a hit's normal, from the environment's coefficients. */
-	private hitIrradiance(sample: number): Float32Array {
-		const sky = this.sky;
-		if (!sky) return ZERO;
-		const { normals } = this;
-		const at = sample * 3;
-		l1Irradiance(
+		const t = this.turn;
+		light(
 			sky,
-			0,
-			normals[at] as number,
-			normals[at + 1] as number,
-			normals[at + 2] as number,
+			(t[0] as number) * x + (t[1] as number) * y + (t[2] as number) * z,
+			(t[3] as number) * x + (t[4] as number) * y + (t[5] as number) * z,
+			(t[6] as number) * x + (t[7] as number) * y + (t[8] as number) * z,
 			SKY,
 		);
+		for (let c = 0; c < 3; c++) SKY[c] = (SKY[c] as number) * this.intensity;
 		return SKY;
 	}
 }

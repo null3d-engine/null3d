@@ -1,11 +1,15 @@
 // Commit-msg guard: the mechanical half of the writing rules, on published Markdown the commit
-// changes and on the commit's subject, which becomes a changelog line. `--all` checks every
-// published file, which CI runs because a hook can be skipped. `--subject <text>` checks one line
-// as a changelog entry, which CI runs on the line a squash merge puts on main. Errors block;
-// warnings print and never block.
+// changes and on the commit's subject, which becomes a line of the release notes. `--all` checks
+// every published file, which CI runs because a hook can be skipped. `--subject <text>` checks one
+// line as a release-notes entry. Errors block; warnings print and never block.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { checkDocsStyle, type DocsAudience, type StyleFinding } from '../lib/docs-style';
+import {
+	checkDocsStyle,
+	checkSubject,
+	type DocsAudience,
+	type StyleFinding,
+} from '../lib/docs-style';
 import { docsFiles, guideFiles, isGuide, walkFiles } from '../lib/files';
 import { ROOT_LINKED_FILES } from '../lib/links';
 import { effectiveMessage, isExemptCommit, stagedFiles } from './commit-ack';
@@ -90,7 +94,7 @@ function main(): void {
 	if (subjectFlag !== -1) {
 		const subject = args[subjectFlag + 1] ?? '';
 		report(
-			[{ file: 'subject', findings: checkDocsStyle(subject) }],
+			[{ file: 'subject', findings: checkSubject(subject) }],
 			'rejected: this line becomes a public changelog entry and breaks the writing rules.',
 		);
 		return;
@@ -113,7 +117,7 @@ function main(): void {
 	const messageFile = args.find((a) => !a.startsWith('--'));
 	const subject = messageFile ? subjectOf(readFileSync(messageFile, 'utf8')) : null;
 	if (subject !== null) {
-		const findings = checkDocsStyle(subject);
+		const findings = checkSubject(subject);
 		if (findings.length > 0) results.push({ file: 'commit subject', findings });
 	}
 
