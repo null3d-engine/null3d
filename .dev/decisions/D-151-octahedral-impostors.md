@@ -52,3 +52,13 @@ The demo, the image references and these figures follow in this task.
 - **The demo:** a forest of impostor trees with a merged far cluster. Its look matches the forest demo's bar, and it has image references on both sets.
 - **Later steps:** blending the nearest three views, a bake helper that uses the engine's scene passes, and an `assets impostor` command for the command line tool.
 - **Related records:** [D-142](D-142-more-techniques-before-1-0.md) moved the technique into M2. [D-54](D-54-addon-modules.md) sets the add-on form. The level of detail that a merge builds on is [D-132](D-132-showcase-look-and-features-2026-10-11.md)'s M2-I4.
+
+## Addendum, 15 October 2026: review fixes
+
+A code review of the first build found five faults. Each fix has a unit test in the package, and the image test `impostors` draws the cards and a merged row on every GPU tier.
+
+- **The origin.** The sprite batch reads each card's position relative to the batch's `origin`, but `update` took those positions as world positions. A forest far from the world's origin then showed one view on every card. `ImpostorBatch` now keeps the origin and subtracts it from the eye.
+- **The upload.** The batch was dynamic, so the engine uploaded every card's row in every frame, about 880 KB for 20,000 cards, though only the frame numbers change. The batch is static now. `update` writes a frame only when it changes, and marks the changed cards dirty in ranges, joining cards that lie a few rows apart. It returns at once while the eye stays where it was. A sketch that moves cards calls `markDirty` on the impostor batch, which also makes the next `update` pick every view again.
+- **The back pole.** The fold of the back half used `Math.sign`, which gives 0 for 0. So the back pole landed on the front pole's cell, and back directions with x or y at 0 landed on front or side cells. The fold now counts 0 as positive, as other octahedral encoders do. The back pole lands on the corner (1, 1).
+- **Tangents and mirrored copies.** `mergeFarGeometry` copied tangents without turning them, so a turned copy lit its normal map from the wrong side. It now turns each tangent by the copy's transform. A copy whose transform has a negative determinant is mirrored: the merge reverses its triangles' winding and negates its tangents' fourth number, so its front faces stay outward.
+- **The docs.** The docs page, the doc comment of `update` and the develop skill called `update(camera.position)`, which does not exist. They now fill one kept array with `camera.getWorldPosition(eye)`.
