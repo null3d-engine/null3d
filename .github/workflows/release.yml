@@ -111,13 +111,19 @@ jobs:
           trailers="$(printf '%s\n%s' \
             'Docs-Checked: release commit; it changes only version numbers and CHANGELOG.md' \
             'Skills-Checked: release commit; no skill shows the version number')"
-          # The release writes version numbers into files that git keeps, so only tracked files
-          # change.
-          git add -u
+          # The release writes version numbers into files that git keeps, and the first release
+          # creates CHANGELOG.md. Any other new file would be one that git does not keep.
+          git add -A
           if git diff --cached --quiet; then
             echo "::notice::main already holds ${VERSION}; nothing to land."
             echo "released=${base}" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          added="$(git diff --cached --name-only --diff-filter=A | grep -v '^CHANGELOG\.md$' || true)"
+          if [ -n "$added" ]; then
+            echo "::error::the release would add files that git does not keep:"
+            echo "$added" | sed 's/^/  /'
+            exit 1
           fi
           echo "The release commit changes:"
           git diff --cached --name-only | sed 's/^/  /'
@@ -149,9 +155,9 @@ jobs:
             echo "::error::Tag ${VERSION} already exists."
             exit 1
           fi
-          # The tagged commit holds every generated file, which main does not keep (D-105). Only
-          # the tag points to it, and its parent is the released commit, so the next release's
-          # notes start after that commit.
+          # The tagged commit holds every generated file, which main does not keep (D-105), and it
+          # sits on the released commit. Only the tag points to it, so the next release's notes
+          # start after the released commit whatever main gained meanwhile.
           git checkout -q "$RELEASED"
           bun tools/generate.ts --stage
           git config user.name "github-actions[bot]"
