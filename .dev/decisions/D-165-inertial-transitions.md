@@ -49,10 +49,10 @@ Their difference over `step` is the outgoing velocity. The outgoing clips then l
 once, so the frame step samples only the new clip. Each step, the outgoing pose moves at its
 velocity. The layer's pose eases from it toward the new pose by `smoothstep(t / fade)`.
 
-The buffers are made on the first inertial play, as the joint-override table is. They hold
-[`MAX_LAYERS`] poses of the largest skeleton and their velocities per instance, and one timer per
-layer. A scene that never asks for an inertial transition keeps empty buffers, and the frame step
-skips the work with one read.
+The pool is made on the first inertial play, as the joint-override table is. It holds a small set
+of transition records, each a pose of the largest skeleton with its velocity, and an index per
+instance layer saying which record that layer's blend runs in. A scene that never asks for an
+inertial transition keeps no pool, and the frame step skips the work with one read.
 
 ### Why opt-in, and the default
 
@@ -103,8 +103,27 @@ speed and the screen:
   jumped by most of the first switch's difference. A capture now takes the pose that the frame
   showed.
 
-Two cases of the same finding stay open. A layer above 0 still takes its shares from the new clip's
-channels only, so a joint that only the outgoing clip animated falls away at the switch rather than
-fading. The pose buffers are also laid out for every instance slot, not for the transitions that
-run. That is finding M-4, and the summary's "20 floats per joint for as long as a transition runs"
-already promises it.
+Two cases of the same finding stayed open at that point. A layer above 0 took its shares from the
+new clip's channels only. The pose buffers were also laid out for every instance slot, rather than
+for the transitions that ran. Both are closed below.
+
+## Addendum, 15 October 2026: the pool, and a layer above the first
+
+Finding M-4 measured what those buffers cost. At 1,024 instance slots and a rig of 100 lanes they
+were about 33 MB. The table made them at the first inertial play whether or not a slot ever
+transitioned. Battle's grown table (16,384 to 32,768 slots) reached 357 to 714 MB. Each growth
+copied the whole of it again, so a phone refused the play with E1109.
+
+The transitions now live in a pool. `transition_of` holds one record index per instance layer, and
+[`NO_TRANSITION`] says that no blend runs there. A pool of eight records is made with the index,
+and it doubles as blends need more. A crowd therefore pays for the transitions that run at once,
+not for its size. A record frees when its blend ends, when its instance is removed, or when a wider
+skeleton remakes the pool's records. The first inertial play of that crowd allocates about 74 KB,
+against the 33 MB it replaces, and its growth follows the blends that run.
+
+M-2's sixth case was the layer above the first. Its shares come from the channels its own clips
+animate, and the outgoing clips had left their slots. A joint that only they animated therefore
+dropped to the pose below at the switch instead of fading. Each record now keeps the outgoing
+clips' channel weights. The layer gives those lanes `layer_weight * (1 - alpha)` until the fade
+ends, where `alpha` is the fade's own ease. The pose the blend decays from shows at the switch, and
+the pose below takes over by the end. That is what a cross-fade on the layer does.

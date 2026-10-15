@@ -47,6 +47,13 @@ pub const NO_SOURCE: u32 = u32::MAX;
 /// its pose as changed, whatever the matrices it replaces.
 const FRESH: u32 = u32::MAX;
 
+/// The dead-blend record of a layer that runs no blend ([`Animations::transition_of`]).
+const NO_TRANSITION: u32 = u32::MAX;
+
+/// The dead-blend records a table's pool starts with. A record costs one pose of the largest
+/// skeleton, so the pool starts small and doubles as blends start ([`Animations::grow_pool`]).
+const SEED_TRANSITIONS: usize = 8;
+
 /// The sample slots of every instance: slot `k` of instance `i` sits at `i * MAX_BLEND + k`. Each
 /// frame, every slot with a weight above 0 samples its clip at its time, and the instance's pose
 /// is the blend of those samples. A slot whose clip belongs to another skeleton, or whose weight
@@ -170,20 +177,24 @@ struct Scratch {
     path: Box<[u32]>,
 }
 
-/// The dead blends running in a frame step, one per instance and layer. `pose` and `vel` hold
-/// `stride` floats for each of an instance's [`MAX_LAYERS`] layers, where `stride` is a pose of
-/// the largest skeleton; `time` and `len` hold one number per layer. They are absent until a play
-/// asks for an inertial transition, and a play that never does pays nothing.
+/// The dead blends running in a frame step. Each instance's layers name a record of the pool
+/// through `of`, and a record holds `stride` floats of the extrapolated pose it decays from, its
+/// velocity, the channels the outgoing clips animated, and its timer. The buffers are absent until
+/// a play asks for an inertial transition, and a play that never does pays nothing.
 #[derive(Clone, Copy)]
 pub(super) struct Transition {
-    /// The extrapolated outgoing pose of each layer's dead blend.
+    /// The extrapolated outgoing pose of each running record.
     pub pose: Option<SharedMut<f32>>,
     /// Its velocity: a rate per second for translations and scales, and a scaled axis (radians
     /// per second) for rotations.
     pub vel: Option<SharedMut<f32>>,
-    /// Seconds elapsed in each dead blend.
+    /// The record each instance layer's blend runs in, or [`NO_TRANSITION`].
+    pub of: Option<SharedMut<u32>>,
+    /// The channels the outgoing clips animated, 3 rows of lanes per record.
+    pub cover: Option<SharedMut<f32>>,
+    /// Seconds elapsed in each record's blend.
     pub time: Option<SharedMut<f32>>,
-    /// Seconds a dead blend lasts; 0 when none runs on the layer.
+    /// Seconds each record's blend lasts; 0 when the record is free.
     pub len: Option<SharedMut<f32>>,
     /// The floats of one pose of the largest skeleton.
     pub stride: usize,
@@ -195,6 +206,8 @@ impl Transition {
         Transition {
             pose: None,
             vel: None,
+            of: None,
+            cover: None,
             time: None,
             len: None,
             stride: 0,
@@ -214,10 +227,38 @@ fn boxed<T: Clone>(len: usize, value: T) -> Result<Box<[T]>, AnimationError> {
     filled(len, value).map(Vec::into_boxed_slice)
 }
 
+/// A pool of dead-blend records: each record's extrapolated pose, its velocity, the channels its
+/// outgoing clips animated, its timer and its length.
+type Pool = (Box<[f32]>, Box<[f32]>, Box<[f32]>, Box<[f32]>, Box<[f32]>);
+
+/// The arrays of a pool of `records` dead-blend records. No blend runs in any of them, so every
+/// record starts free.
+fn pool_of(records: usize, stride: usize, lanes: usize) -> Result<Pool, AnimationError> {
+    // Every allocation comes first, so a failure leaves no pool behind.
+    let pose = boxed(records * stride, 0.0)?;
+    let vel = boxed(records * stride, 0.0)?;
+    let cover = boxed(records * 3 * lanes, 0.0)?;
+    let time = boxed(records, 0.0)?;
+    let len = boxed(records, 0.0)?;
+    Ok((pose, vel, cover, time, len))
+}
+
 /// True when a weight counts in a blend: above 0. NaN does not count.
 #[inline]
 pub(super) fn counts(weight: f32) -> bool {
     weight > 0.0
+}
+
+/// Raises the share of the lanes that `cover` names, which the outgoing clips of a layer above the
+/// first animated and its new clips do not: the pose the blend decays from shows there while the
+/// blend runs, by `layer_weight` less the fade's ease `alpha`.
+fn cover_shares(weights: &[f32], cover: &[f32], shares: &mut [f32], layer_weight: f32, alpha: f32) {
+    let share = layer_weight * (1.0 - alpha);
+    for ((slot, &covered), &weight) in shares.iter_mut().zip(cover).zip(weights) {
+        if covered > 0.0 && !counts(weight) {
+            *slot = share;
+        }
+    }
 }
 
 /// A copy of `old` lengthened to `len` with copies of `value`.
@@ -349,19 +390,24 @@ pub struct Animations {
     /// Each instance's look-at target in its object's space, which
     /// [`Animations::resolve_look_targets`] writes for the frame step.
     look_local: Box<[f32]>,
-    /// The extrapolated outgoing pose of each instance's dead blends, [`MAX_LAYERS`] layers of
-    /// `POSE_FIELDS * scratch_lanes` floats each. Empty until a play asks for an inertial
-    /// transition.
-    inertial_pose: Box<[f32]>,
-    /// The velocity of each of those poses, laid out as `inertial_pose`.
-    inertial_vel: Box<[f32]>,
-    /// The floats of one pose in `inertial_pose`, `POSE_FIELDS * scratch_lanes`; 0 until the
-    /// buffers exist.
+    /// The dead-blend record of each layer of each instance, [`MAX_LAYERS`] per instance, or
+    /// [`NO_TRANSITION`] where no blend runs. Empty until a play asks for an inertial transition.
+    transition_of: Box<[u32]>,
+    /// The extrapolated outgoing pose of each dead-blend record in the pool,
+    /// `POSE_FIELDS * scratch_lanes` floats each.
+    pool_pose: Box<[f32]>,
+    /// The velocity of each of those poses, laid out as `pool_pose`.
+    pool_vel: Box<[f32]>,
+    /// The channels the outgoing clips of each record's layer animated, 3 rows of lanes per record,
+    /// 1 where they did. A layer above the first keeps those lanes' shares while its blend runs, so
+    /// the pose it decays from shows instead of snapping away at the switch.
+    pool_cover: Box<[f32]>,
+    /// The seconds elapsed in each record's blend.
+    pool_time: Box<[f32]>,
+    /// The seconds each record's blend lasts; 0 when the record holds no blend and is free.
+    pool_len: Box<[f32]>,
+    /// The floats of one pose in the pool, `POSE_FIELDS * scratch_lanes`; 0 until the pool exists.
     inertial_stride: usize,
-    /// The seconds elapsed in each dead blend, [`MAX_LAYERS`] per instance.
-    inertial_time: Box<[f32]>,
-    /// The length in seconds of each dead blend, [`MAX_LAYERS`] per instance; 0 when none runs.
-    inertial_len: Box<[f32]>,
     /// The last frame step of each instance's own time, in seconds, which an inertial capture
     /// divides by to get the outgoing velocity.
     last_steps: Box<[f32]>,
@@ -430,11 +476,13 @@ impl Animations {
             overrides: Box::default(),
             look_targets: Box::default(),
             look_local: Box::default(),
-            inertial_pose: Box::default(),
-            inertial_vel: Box::default(),
+            transition_of: Box::default(),
+            pool_pose: Box::default(),
+            pool_vel: Box::default(),
+            pool_cover: Box::default(),
+            pool_time: Box::default(),
+            pool_len: Box::default(),
             inertial_stride: 0,
-            inertial_time: Box::default(),
-            inertial_len: Box::default(),
             last_steps: boxed(n, 1.0 / 60.0)?,
         })
     }
@@ -517,15 +565,11 @@ impl Animations {
         let new_overrides = grown(&self.overrides, overrides, 0.0)?;
         let look_targets = grown(&self.look_targets, looks, 0.0)?;
         let look_local = grown(&self.look_local, looks, f32::NAN)?;
-        let inertial = if self.inertial_pose.is_empty() {
-            0
+        let transition_of = if self.inertial_stride == 0 {
+            Box::default()
         } else {
-            n * MAX_LAYERS * self.inertial_stride
+            grown(&self.transition_of, layers, NO_TRANSITION)?
         };
-        let new_inertial_pose = grown(&self.inertial_pose, inertial, 0.0)?;
-        let new_inertial_vel = grown(&self.inertial_vel, inertial, 0.0)?;
-        let new_inertial_time = grown(&self.inertial_time, layers, 0.0)?;
-        let new_inertial_len = grown(&self.inertial_len, layers, 0.0)?;
         let new_last_steps = grown(&self.last_steps, n, 1.0 / 60.0)?;
         let matrices = [
             grown(&self.matrices[0], joint_floats, 0.0)?,
@@ -555,10 +599,7 @@ impl Animations {
         self.overrides = new_overrides;
         self.look_targets = look_targets;
         self.look_local = look_local;
-        self.inertial_pose = new_inertial_pose;
-        self.inertial_vel = new_inertial_vel;
-        self.inertial_time = new_inertial_time;
-        self.inertial_len = new_inertial_len;
+        self.transition_of = transition_of;
         self.last_steps = new_last_steps;
         Ok(std::mem::replace(&mut self.matrices, matrices))
     }
@@ -578,29 +619,62 @@ impl Animations {
         Ok(())
     }
 
-    /// Makes the table of dead blends, once: [`MAX_LAYERS`] extrapolated poses of the largest
-    /// skeleton, their velocities, and a timer per layer for every instance. Until a play asks for
-    /// an inertial transition the buffers stay empty and the frame step does no dead-blend work,
-    /// so a scene that never uses one pays nothing.
+    /// Makes the pool of dead blends, once: a record for each instance layer, all free, and a small
+    /// pool of records that grows with the number of blends that run at once. Until a play asks for
+    /// an inertial transition the pool stays absent and the frame step does no dead-blend work, so
+    /// a scene that never uses one pays nothing.
     pub fn enable_inertial(&mut self) -> Result<(), AnimationError> {
-        if !self.inertial_pose.is_empty() {
+        if self.inertial_stride != 0 {
+            return Ok(());
+        }
+        let lanes = self.scratch_lanes as usize;
+        if lanes == 0 {
+            // No skeleton yet, so no pose is big enough to decay from. The play that needs the pool
+            // makes it, once a skeleton gives the lanes.
             return Ok(());
         }
         let n = self.instance_skeletons.len();
-        let stride = POSE_FIELDS * self.scratch_lanes as usize;
-        let poses = n * MAX_LAYERS * stride;
-        let times = n * MAX_LAYERS;
-        // Every allocation comes first, so a failure leaves the table without the buffers.
-        let pose = boxed(poses, 0.0)?;
-        let vel = boxed(poses, 0.0)?;
-        let time = boxed(times, 0.0)?;
-        let len = boxed(times, 0.0)?;
-        self.inertial_pose = pose;
-        self.inertial_vel = vel;
-        self.inertial_time = time;
-        self.inertial_len = len;
+        let stride = POSE_FIELDS * lanes;
+        // Every allocation comes first, so a failure leaves the table without the pool.
+        let of = boxed(n * MAX_LAYERS, NO_TRANSITION)?;
+        let (pose, vel, cover, time, len) = pool_of(SEED_TRANSITIONS, stride, lanes)?;
+        self.transition_of = of;
+        self.pool_pose = pose;
+        self.pool_vel = vel;
+        self.pool_cover = cover;
+        self.pool_time = time;
+        self.pool_len = len;
         self.inertial_stride = stride;
         Ok(())
+    }
+
+    /// The first record of the pool that holds no blend, or `None` when every record runs one.
+    fn free_record(&self) -> Option<u32> {
+        self.pool_len
+            .iter()
+            .position(|&len| len <= 0.0)
+            .map(|record| record as u32)
+    }
+
+    /// Doubles the pool of dead-blend records, keeping every blend that runs, and returns a record
+    /// that holds none. Runs between frame steps, so no worker holds a record meanwhile.
+    fn grow_pool(&mut self) -> Result<u32, AnimationError> {
+        let records = self.pool_len.len().max(1) * 2;
+        let stride = self.inertial_stride;
+        let lanes = self.scratch_lanes as usize;
+        // Every allocation comes first, so a failure leaves the pool as it was.
+        let pose = grown(&self.pool_pose, records * stride, 0.0)?;
+        let vel = grown(&self.pool_vel, records * stride, 0.0)?;
+        let cover = grown(&self.pool_cover, records * 3 * lanes, 0.0)?;
+        let time = grown(&self.pool_time, records, 0.0)?;
+        let len = grown(&self.pool_len, records, 0.0)?;
+        self.pool_pose = pose;
+        self.pool_vel = vel;
+        self.pool_cover = cover;
+        self.pool_time = time;
+        self.pool_len = len;
+        // The records past the old ones hold no blend.
+        Ok((records / 2) as u32)
     }
 
     /// The joint overrides of every instance, [`BLOCK_FLOATS`] floats each, laid out as
@@ -695,17 +769,22 @@ impl Animations {
         self.ones = boxed(lanes as usize, 1.0)?;
         self.scratch_lanes = lanes;
         // A dead blend's pose is a pose of the largest skeleton, so a later skeleton with more
-        // lanes moves its buffers, and the poses they held are gone. Every blend therefore ends
-        // here: a layer that switched inertially plays its clips as it would after a fade, which
-        // is rare, and no layer decays toward a pose of nothing.
-        if !self.inertial_pose.is_empty() {
-            let n = self.instance_skeletons.len();
-            let stride = POSE_FIELDS * lanes as usize;
-            self.inertial_pose = boxed(n * MAX_LAYERS * stride, 0.0)?;
-            self.inertial_vel = boxed(n * MAX_LAYERS * stride, 0.0)?;
+        // lanes moves the pool's records, and the poses they held are gone. Every blend therefore
+        // ends here: a layer that switched inertially plays its clips as it would after a fade,
+        // which is rare, and no layer decays toward a pose of nothing.
+        if self.inertial_stride != 0 {
+            let lanes = lanes as usize;
+            let records = self.pool_len.len();
+            let stride = POSE_FIELDS * lanes;
+            // Every allocation comes first, so a failure leaves the pool as it was.
+            let (pose, vel, cover, time, len) = pool_of(records, stride, lanes)?;
+            self.pool_pose = pose;
+            self.pool_vel = vel;
+            self.pool_cover = cover;
+            self.pool_time = time;
+            self.pool_len = len;
             self.inertial_stride = stride;
-            self.inertial_time.fill(0.0);
-            self.inertial_len.fill(0.0);
+            self.transition_of.fill(NO_TRANSITION);
         }
         Ok(())
     }
@@ -1053,16 +1132,19 @@ impl Animations {
         Ok(())
     }
 
-    /// Ends the dead blends of instance `i`, when the table of them exists: a blend the instance
-    /// left running must not decay the pose of the instance that takes its id next.
+    /// Ends the dead blends of instance `i`, when the pool exists: a blend the instance left
+    /// running must not decay the pose of the instance that takes its id next.
     fn clear_transitions(&mut self, i: usize) {
         let at = i * MAX_LAYERS;
-        if let Some(times) = self.inertial_time.get_mut(at..at + MAX_LAYERS) {
-            times.fill(0.0);
+        let Some(of) = self.transition_of.get_mut(at..at + MAX_LAYERS) else {
+            return;
+        };
+        for &record in of.iter() {
+            if record != NO_TRANSITION {
+                self.pool_len[record as usize] = 0.0;
+            }
         }
-        if let Some(lengths) = self.inertial_len.get_mut(at..at + MAX_LAYERS) {
-            lengths.fill(0.0);
-        }
+        of.fill(NO_TRANSITION);
     }
 
     /// Empties the joint overrides and the look-at of instance `i`, when the table exists.
@@ -1259,10 +1341,12 @@ impl Animations {
             return Transition::empty();
         }
         Transition {
-            pose: Some(SharedMut::new(&mut self.inertial_pose)),
-            vel: Some(SharedMut::new(&mut self.inertial_vel)),
-            time: Some(SharedMut::new(&mut self.inertial_time)),
-            len: Some(SharedMut::new(&mut self.inertial_len)),
+            pose: Some(SharedMut::new(&mut self.pool_pose)),
+            vel: Some(SharedMut::new(&mut self.pool_vel)),
+            of: Some(SharedMut::new(&mut self.transition_of)),
+            cover: Some(SharedMut::new(&mut self.pool_cover)),
+            time: Some(SharedMut::new(&mut self.pool_time)),
+            len: Some(SharedMut::new(&mut self.pool_len)),
             stride: self.inertial_stride,
         }
     }
@@ -1504,9 +1588,16 @@ impl Animations {
             } else {
                 &mut scratch.layer[..len]
             };
-            self.apply_dead_blend(i, layer, layer_pose, step, lanes, transition);
+            let running = self.apply_dead_blend(i, layer, layer_pose, step, lanes, transition);
             if layer > 0 {
                 layer_shares(weights, shares, layer_weight);
+                // A joint that only the outgoing clips animated has no weight in the layer now, so
+                // the pose below covers it. While the blend runs, the pose it decays from shows
+                // there instead, and by the end of the fade the pose below takes over.
+                if let Some(alpha) = running {
+                    let cover = self.cover_of(i, layer, lanes, transition);
+                    cover_shares(weights, cover, shares, layer_weight, alpha);
+                }
                 blend(pose, &scratch.layer[..len], shares, lanes);
             }
         }
@@ -1538,7 +1629,8 @@ impl Animations {
     }
 
     /// Moves `pose` from the dead blend's extrapolated outgoing pose toward itself by the fade's
-    /// ease, and advances the blend's timer. Does nothing when no blend runs on the layer.
+    /// ease, and advances the blend's timer. Returns that ease, or `None` when no blend runs on the
+    /// layer.
     fn apply_dead_blend(
         &self,
         i: usize,
@@ -1547,33 +1639,58 @@ impl Animations {
         step: f32,
         lanes: usize,
         transition: Transition,
-    ) {
-        let (Some(poses), Some(vs), Some(times), Some(lengths)) = (
+    ) -> Option<f32> {
+        let (Some(poses), Some(vs), Some(times), Some(lengths), Some(of)) = (
             transition.pose,
             transition.vel,
             transition.time,
             transition.len,
+            transition.of,
         ) else {
-            return;
+            return None;
         };
         let at = i * MAX_LAYERS + layer;
         // SAFETY: `at` names this instance's own layer, which one chunk writes.
-        let length: f32 = unsafe { lengths.read(at) };
+        let record = unsafe { of.read(at) };
+        if record == NO_TRANSITION {
+            return None;
+        }
+        let record = record as usize;
+        // SAFETY: the running blend's own record, which one chunk writes.
+        let length: f32 = unsafe { lengths.read(record) };
         if length <= 0.0 || length.is_nan() {
-            return;
+            return None;
         }
         let len = POSE_FIELDS * lanes;
-        let base = i * MAX_LAYERS * transition.stride + layer * transition.stride;
-        // SAFETY: the range is inside this layer's own pose, which one chunk writes.
+        let base = record * transition.stride;
+        // SAFETY: the range is inside this record's own pose, which one chunk writes.
         let (ext, vel) = unsafe { (poses.slice(base, len), vs.slice(base, len)) };
-        let time = unsafe { times.read(at) } + step.abs();
-        unsafe { times.write(at, time) };
+        let time = unsafe { times.read(record) } + step.abs();
+        unsafe { times.write(record, time) };
         let alpha = smoothstep(time / length);
         dead_blend(pose, ext, vel, alpha, step, lanes);
         if time >= length {
             // SAFETY: as above.
-            unsafe { lengths.write(at, 0.0) };
+            unsafe { lengths.write(record, 0.0) };
+            unsafe { of.write(at, NO_TRANSITION) };
         }
+        Some(alpha)
+    }
+
+    /// The channels the outgoing clips of instance `i`'s layer `layer` animated, 3 rows of lanes,
+    /// from the record its running blend holds; nothing when no blend runs there.
+    fn cover_of(&self, i: usize, layer: usize, lanes: usize, transition: Transition) -> &[f32] {
+        let (Some(of), Some(covers)) = (transition.of, transition.cover) else {
+            return &[];
+        };
+        let at = i * MAX_LAYERS + layer;
+        // SAFETY: `at` names this instance's own layer, which one chunk reads.
+        let record = unsafe { of.read(at) };
+        if record == NO_TRANSITION {
+            return &[];
+        }
+        // SAFETY: the running blend's own record, which one chunk reads.
+        unsafe { covers.slice(record as usize * 3 * lanes, 3 * lanes) }
     }
 
     /// The pose that layer `layer` of instance `i` makes now, or `step` seconds earlier, written
@@ -1707,18 +1824,36 @@ impl Animations {
         let transition = self.transitions();
         self.apply_dead_blend(i, layer, &mut scratch.pose[..len], 0.0, lanes, transition);
         self.apply_dead_blend(i, layer, &mut scratch.add[..len], 0.0, lanes, transition);
-        let base = i * MAX_LAYERS * stride + layer * stride;
+        // The layer keeps the record its blend already runs in, and takes a free one otherwise.
         let at = i * MAX_LAYERS + layer;
+        let record = match self.transition_of[at] {
+            NO_TRANSITION => {
+                let record = match self.free_record() {
+                    Some(record) => record,
+                    None => self.grow_pool()?,
+                };
+                self.transition_of[at] = record;
+                record
+            }
+            record => record,
+        };
+        let record = record as usize;
+        let base = record * stride;
         {
-            let (pose, vel) = (
-                &mut self.inertial_pose[base..base + len],
-                &mut self.inertial_vel[base..base + len],
-            );
+            let pose = &mut self.pool_pose[base..base + len];
             pose.copy_from_slice(&scratch.pose[..len]);
-            fill_velocity(&scratch.pose[..len], &scratch.add[..len], step, lanes, vel);
+            fill_velocity(
+                &scratch.pose[..len],
+                &scratch.add[..len],
+                step,
+                lanes,
+                &mut self.pool_vel[base..base + len],
+            );
         }
-        self.inertial_time[at] = 0.0;
-        self.inertial_len[at] = fade;
+        self.pool_cover[record * 3 * lanes..(record + 1) * 3 * lanes]
+            .copy_from_slice(&scratch.weights[..3 * lanes]);
+        self.pool_time[record] = 0.0;
+        self.pool_len[record] = fade;
         for k in 0..MAX_BLEND {
             let s = first + k;
             if self.actions[s].plays_on(layer, 0) {
@@ -1828,5 +1963,54 @@ fn skinning_matrices(skeleton: &Skeleton, pose: &[f32], matrices: &mut [Affine],
         }
         let skin = mul(&matrices[j], &binds[j]);
         out[j * MATRIX_FLOATS..(j + 1) * MATRIX_FLOATS].copy_from_slice(&skin);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A chain of `joints` joints, each one above its parent along +Y, with the inverse bind
+    /// matrices of that rest pose.
+    fn chain(joints: u32) -> Skeleton {
+        let parents: Vec<u32> = std::iter::once(NO_PARENT).chain(0..joints - 1).collect();
+        let rest = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(joints as usize);
+        let binds = crate::math::IDENTITY.repeat(joints as usize);
+        Skeleton::new(&parents, &rest, &binds).unwrap()
+    }
+
+    /// The pool a table makes holds a few dead-blend records, not one pose for every instance slot
+    /// and every layer: a crowd of many characters must not pay megabytes for the few blends that
+    /// run at once.
+    #[test]
+    fn the_dead_blend_pool_starts_small() {
+        let jobs = JobSystem::new(0);
+        let mut animations = Animations::new(&jobs, 1024, 8).unwrap();
+        animations.add_skeleton(chain(8)).unwrap();
+        animations.enable_inertial().unwrap();
+        let stride = animations.inertial_stride;
+        assert_eq!(animations.pool_len.len(), SEED_TRANSITIONS);
+        assert_eq!(animations.pool_time.len(), SEED_TRANSITIONS);
+        assert_eq!(animations.pool_pose.len(), SEED_TRANSITIONS * stride);
+        assert_eq!(animations.pool_vel.len(), SEED_TRANSITIONS * stride);
+        assert_eq!(animations.transition_of.len(), 1024 * MAX_LAYERS);
+        assert!(
+            animations.pool_pose.len() * 50 < 1024 * MAX_LAYERS * stride,
+            "the pool is a small share of one pose per slot and layer"
+        );
+    }
+
+    /// A play that asks for the pool before any skeleton gives the lanes makes it at the play that
+    /// needs it, with the lanes of a real skeleton.
+    #[test]
+    fn the_pool_waits_for_a_skeleton() {
+        let jobs = JobSystem::new(0);
+        let mut animations = Animations::new(&jobs, 4, 8).unwrap();
+        animations.enable_inertial().unwrap();
+        assert_eq!(animations.inertial_stride, 0);
+        animations.add_skeleton(chain(8)).unwrap();
+        animations.enable_inertial().unwrap();
+        assert_eq!(animations.inertial_stride, POSE_FIELDS * 8);
+        assert_eq!(animations.pool_len.len(), SEED_TRANSITIONS);
     }
 }

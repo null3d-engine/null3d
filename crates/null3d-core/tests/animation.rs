@@ -2056,11 +2056,19 @@ fn joint_overrides_turn_only_their_joints_and_those_below() {
 /// A chain of four joints, each 1 above its parent along +Y, with the inverse bind matrices of
 /// that rest pose.
 fn upright_chain() -> Skeleton {
-    let parents = [NO_PARENT, 0, 1, 2];
-    let rest = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(4);
-    let mut rest = rest;
+    upright_chain_of(4)
+}
+
+/// A chain of `joints` joints, each 1 above its parent along +Y, with the inverse bind matrices of
+/// that rest pose. A skeleton's lanes are its joint count rounded up to a multiple of four, so a
+/// chain wider than four joints needs more than four joints.
+fn upright_chain_of(joints: usize) -> Skeleton {
+    let parents: Vec<u32> = std::iter::once(NO_PARENT)
+        .chain(0..joints as u32 - 1)
+        .collect();
+    let mut rest = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(joints);
     rest[1] = 0.0;
-    let binds: Vec<f32> = (0..4)
+    let binds: Vec<f32> = (0..joints)
         .flat_map(|j| {
             let mut m = null3d_core::math::IDENTITY;
             m[7] = -(j as f32);
@@ -2153,22 +2161,46 @@ fn single_joint() -> Skeleton {
     .unwrap()
 }
 
+/// Two joints that both hang from the root, with the identity bind matrix, so neither one's pose
+/// moves the other's skinning matrix: a joint's matrix holds its own local pose.
+fn two_roots() -> Skeleton {
+    let rest = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(2);
+    let binds = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0].repeat(2);
+    Skeleton::new(&[NO_PARENT, NO_PARENT], &rest, &binds).unwrap()
+}
+
 /// A one-second clip of one joint whose translation moves along x at `speed` per second from
 /// `start`, so a sample is exactly `start + speed * t`.
 fn sliding(skeleton: &Skeleton, start: f32, speed: f32) -> Clip {
-    let track = SourceTrack {
-        joint: 0,
-        channel: Channel::Translation,
-        interpolation: Interpolation::Linear,
-        times: &[0.0, 1.0],
-        values: &[start, 0.0, 0.0, start + speed, 0.0, 0.0],
-    };
-    resample(skeleton, &[track], DEFAULT_RATE).unwrap()
+    moving(skeleton, &[0], start, speed)
+}
+
+/// A one-second clip of the named joints, each moving along x at `speed` per second from `start`,
+/// so a sample of a joint is exactly `start + speed * t`.
+fn moving(skeleton: &Skeleton, joints: &[u32], start: f32, speed: f32) -> Clip {
+    let times = [0.0, 1.0];
+    let values: Vec<f32> = vec![start, 0.0, 0.0, start + speed, 0.0, 0.0];
+    let tracks: Vec<SourceTrack> = joints
+        .iter()
+        .map(|&joint| SourceTrack {
+            joint,
+            channel: Channel::Translation,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values: &values,
+        })
+        .collect();
+    resample(skeleton, &tracks, DEFAULT_RATE).unwrap()
 }
 
 /// The joint's local x translation from the last frame step.
 fn x_of(animations: &Animations, instance: u32) -> f32 {
-    animations.instance_matrices(instance)[3]
+    x_of_joint(animations, instance, 0)
+}
+
+/// The local x translation of joint `joint` of an instance, from the last frame step.
+fn x_of_joint(animations: &Animations, instance: u32, joint: usize) -> f32 {
+    animations.instance_matrices(instance)[joint * MATRIX_FLOATS + 3]
 }
 
 /// A play that switches its layer with an inertial transition over `fade` seconds.
@@ -2442,10 +2474,17 @@ fn a_wider_skeleton_ends_the_dead_blends() {
     }
     // A fade long enough to run across the wider skeleton.
     animations.play(instance, run, inertial(4.0)).unwrap();
+    assert_eq!(
+        playing_slots(&animations, instance),
+        1,
+        "only the run plays"
+    );
     animations.update(&jobs, dt);
     assert!(x_of(&animations, instance) < 1.0, "the blend still runs");
 
-    animations.add_skeleton(upright_chain()).unwrap();
+    // A skeleton of more lanes than the one before moves the dead blend's buffers, and the pose it
+    // held is gone, so the blend ends: the layer plays its new clip alone.
+    animations.add_skeleton(upright_chain_of(8)).unwrap();
     animations.update(&jobs, dt);
     let got = x_of(&animations, instance);
     let expected = 10.0 + 2.0 * (2.0 * dt);
@@ -2569,4 +2608,106 @@ fn a_second_inertial_switch_carries_on_from_the_pose_on_screen() {
         (got - on_screen).abs() < 0.05,
         "the second switch jumps from {on_screen} to {got}"
     );
+}
+
+/// A joint that only the outgoing clip of a layer above the first animated keeps the pose the
+/// blend decays from while the fade runs, and the pose below covers it once the fade ends.
+#[test]
+fn a_layer_above_zero_keeps_what_only_the_outgoing_clip_animated() {
+    let jobs = JobSystem::new(0);
+    let skeleton = two_roots();
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    // The outgoing clip moves both joints; the new one moves joint 0 alone.
+    let both = animations
+        .add_clip(id, moving(&skeleton, &[0, 1], 0.0, 1.0))
+        .unwrap();
+    let one = animations
+        .add_clip(id, moving(&skeleton, &[0], 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    let on_layer_one = |play: Play| Play { layer: 1, ..play };
+    animations
+        .play(instance, both, on_layer_one(Play::default()))
+        .unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let before = x_of_joint(&animations, instance, 1);
+    assert!(before > 0.1, "the outgoing clip moves joint 1: {before}");
+
+    animations
+        .play(instance, one, on_layer_one(inertial(2.0)))
+        .unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of_joint(&animations, instance, 1);
+    assert!(
+        got >= before,
+        "joint 1 snaps from {before} to {got} at the switch"
+    );
+
+    // Past the fade the layer holds nothing on joint 1, so the pose below shows: the rest pose,
+    // whose x is 0.
+    for _ in 0..200 {
+        animations.update(&jobs, dt);
+    }
+    let after = x_of_joint(&animations, instance, 1);
+    assert!(after.abs() < 1e-3, "joint 1 settles at {after}");
+    assert!(
+        x_of_joint(&animations, instance, 0) > 9.0,
+        "the new clip poses joint 0"
+    );
+}
+
+/// A crowd that runs more dead blends at once than the pool starts with grows the pool, and every
+/// blend keeps the pose it decays from.
+#[test]
+fn more_dead_blends_than_the_pool_holds_grow_it() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 24, 24).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let dt = 1.0 / 60.0;
+    let instances: Vec<u32> = (0..24)
+        .map(|_| {
+            let instance = animations.add_instance(id).unwrap();
+            animations.play(instance, walk, Play::default()).unwrap();
+            instance
+        })
+        .collect();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    for &instance in &instances {
+        animations.play(instance, run, inertial(2.0)).unwrap();
+    }
+    // Half a second into a two-second fade, so every instance still decays from its old pose.
+    for _ in 0..30 {
+        animations.update(&jobs, dt);
+    }
+    for &instance in &instances {
+        let x = x_of(&animations, instance);
+        assert!(x > 0.0 && x < 8.0, "instance {instance} is at {x}");
+    }
+    // Past the fade every layer plays its new clip alone, whose x is between 10 and 12.
+    for _ in 0..200 {
+        animations.update(&jobs, dt);
+    }
+    let settled: Vec<f32> = instances
+        .iter()
+        .map(|&instance| x_of(&animations, instance))
+        .collect();
+    for (instance, &x) in instances.iter().zip(&settled) {
+        assert!((10.0..12.0).contains(&x), "instance {instance} is at {x}");
+    }
+    let low = settled.iter().copied().fold(f32::MAX, f32::min);
+    let high = settled.iter().copied().fold(f32::MIN, f32::max);
+    assert!(high - low < 1e-3, "the crowd drifts from {low} to {high}");
 }
