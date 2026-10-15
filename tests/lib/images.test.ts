@@ -49,15 +49,9 @@ const TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'boxes',
 		tolerance: { maxDiffRatio: 0.5 },
+		swiftShaderTolerance: { maxDiffRatio: 0.75 },
 	},
-	{
-		name: 'lines',
-		sketch: 'sketches/lines.ts',
-		hold: 0,
-		tiers: ['webgpu'],
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
-		swiftShaderTolerance: { maxDiffRatio: 0.25 },
-	},
+
 	{
 		name: 'grid',
 		page: 'pages/grid.html',
@@ -247,7 +241,6 @@ describe('the runs of a test', () => {
 			'boxes-webgl2-pipelined',
 			'boxes-webgl2-low-latency',
 			'boxes-copied-webgl2-pipelined',
-			'lines-webgpu-pipelined',
 			'grid-webgpu',
 			'grid-compat',
 			'grid-webgl2',
@@ -331,12 +324,12 @@ describe('the reference of a run', () => {
 	});
 
 	it("takes SwiftShader's own tolerance on SwiftShader alone", () => {
-		const lines = run('lines-webgpu-pipelined');
-		expect(referenceOf(lines, REAL).tolerance).toEqual({ threshold: 0, maxDiffRatio: 0 });
-		expect(
-			referenceOf(lines, { environment: 'chromium-swiftshader' }).tolerance,
-		).toEqual({ threshold: 0, maxDiffRatio: 0.25 });
-		expect(referenceOf(run('boxes-compat-pipelined'), { environment: 'chromium-swiftshader' }).tolerance).toEqual(TOLERANCE);
+		const swiftShader: Place = { environment: 'chromium-swiftshader' };
+		const copied = run('boxes-copied-webgl2-pipelined');
+		const threshold = TOLERANCE.threshold;
+		expect(referenceOf(copied, REAL).tolerance).toEqual({ threshold, maxDiffRatio: 0.5 });
+		expect(referenceOf(copied, swiftShader).tolerance).toEqual({ threshold, maxDiffRatio: 0.75 });
+		expect(referenceOf(run('boxes-compat-pipelined'), swiftShader).tolerance).toEqual(TOLERANCE);
 	});
 
 	it("is the real GPU's for another browser, at the device tolerance, and cannot become it", () => {

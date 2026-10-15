@@ -6,7 +6,13 @@
 // list. Each test waits for a quiet computer, within a time limit, and prints the load beside its
 // figures (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
-import { type CostResult, costTimeout, loadNow, sideLine, waitForQuiet } from '../lib/effect-cost.ts';
+import {
+	type CostResult,
+	costTimeout,
+	loadNow,
+	sideLine,
+	waitForQuiet,
+} from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 const count = process.env.NULL3D_LOD_COUNT ?? '40000';

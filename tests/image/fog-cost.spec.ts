@@ -5,7 +5,13 @@
 // NULL3D_FOG_COST=1 bun run test:browser -- fog-cost.spec.ts. Each test waits for a quiet computer,
 // within a time limit, and prints the load beside its figures (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
-import { type CostResult, costTimeout, loadNow, sideLine, waitForQuiet } from '../lib/effect-cost.ts';
+import {
+	type CostResult,
+	costTimeout,
+	loadNow,
+	sideLine,
+	waitForQuiet,
+} from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)

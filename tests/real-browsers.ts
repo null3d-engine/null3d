@@ -611,7 +611,11 @@ export const timesOnThisMachine = (options: Options) =>
 
 function runnersOf(options: Options): LaunchedRunner[] {
 	const machine = options.apps.length > 0 ? appMachine() : 'mac';
-	const window = appWindow(options.front === true, Boolean(process.env.CI), timedPlan(options.plan));
+	const window = appWindow(
+		options.front === true,
+		Boolean(process.env.CI),
+		timedPlan(options.plan),
+	);
 	const runners: LaunchedRunner[] = options.apps.map((app) => ({
 		name: `${machine}-${slug(app)}`,
 		device: machine,

@@ -59,7 +59,8 @@ const showsMap = (pixel: readonly number[]) =>
 const showsWhite = (pixel: readonly number[]) => {
 	const [red, green, blue] = pixel as [number, number, number];
 	return (
-		Math.min(red, green, blue) >= 200 && Math.max(red, green, blue) - Math.min(red, green, blue) <= 8
+		Math.min(red, green, blue) >= 200 &&
+		Math.max(red, green, blue) - Math.min(red, green, blue) <= 8
 	);
 };
 
