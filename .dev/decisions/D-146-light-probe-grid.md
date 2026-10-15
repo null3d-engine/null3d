@@ -63,6 +63,17 @@ The coordinator ruled on three faults in the grid's public API and docs, found w
 - `setLightProbeGrid`'s development check took only plain arrays for `origin`, `spacing` and `counts`, while the bake's grid holds typed arrays. The documented bake example therefore threw E1203. The setter now takes any three finite numbers, in an array or a typed array. A unit test runs the documented bake calls through the setter's check.
 - The docs examples used a class that does not exist and an internal packing function, and set a new texture in every frame after the bake ended. They now use `LightProbeGridData` and set the grid once.
 
+## Addendum, 15 October 2026: the bake's light scale, from the code review
+
+The code review of 15 October 2026 (H-3, M-17, FEAT-15) found the bake's light on the wrong scale. The coordinator assigned the fixes to the same task.
+
+- **Projection weight.** The Fibonacci directions cover the whole sphere, so each stands for 4 pi / N of solid angle. The bake used 2 pi / N, so an open surface lost half its sky light under a grid. A probe under a uniform sky now takes exactly the environment's own irradiance, and a unit test checks it.
+- **Bounce.** A matte surface sends back albedo times its irradiance over pi. The bake took albedo times the irradiance, so a coloured wall bled pi times too much. A probe that matte walls of albedo 0.5 enclose now takes half the sky's irradiance, which a unit test checks.
+- **The scene's environment.** The bake now reads the environment's nine coefficients, as the shader's `sh_irradiance` does, where it read four. It turns them by the environment's rotation and scales them by its intensity, from a new `environmentOptions` option. The bake cannot read them from the scene, so the sketch passes what `setEnvironment` got. The grid replaces the environment's diffuse light, which carries that rotation and intensity, so the bake must carry them too. A unit test turns a sky a quarter turn and doubles it.
+- **The option's type.** `environment` took an object with an `sh` field, which the published types strip. It now takes an `Environment`.
+- **Allocation.** The bake made a ray options object per probe and a view of the hit normal per hit. Both are now made once. The `albedo` callback's normal is one array reused from hit to hit.
+- **What the bake leaves out.** The bake counts no lamps, and a hit's light sees the whole sky, with no occlusion of its own. The docs say so.
+
 ## Addendum, 15 October 2026: the grid becomes M3's global illumination
 
 The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), rulings 12 and 13):

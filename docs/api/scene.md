@@ -280,7 +280,7 @@ scene.setLightProbeGrid({
 | `intensity` | 1 | The factor of the grid's light, 0 or more |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` colour for one coloured bounce. Bake a few probes a frame so a loading screen can show progress.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`. A ray that reaches the sky takes the environment's light from its direction. Give `environmentOptions` the intensity and rotation that `setEnvironment` got, so the baked sky matches the scene's. Where a ray hits a surface, `albedo` gives the surface's colour for one coloured bounce: the surface sends back that share of the environment's light, as a matte surface does. The bake counts no lamps, so the grid holds sky light, its occlusion and its bounce. Bake a few probes a frame so a loading screen can show progress.
 
 `spacing` sets the distance between probes along each axis, in meters, or one number for every axis. The default is 2. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
 
@@ -289,13 +289,16 @@ import { bakeProbes, defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets, textures }) => {
   const environment = await assets.skyEnvironment();
-  scene.setEnvironment(environment);
+  const environmentOptions = { intensity: 0.8 };
+  scene.setEnvironment(environment, environmentOptions);
   // ... build the room here ...
+  const grey = [0.8, 0.8, 0.8] as const; // every surface a light grey
   const bake = bakeProbes(scene, {
     box: { min: [-12, 0, -12], max: [12, 8, 12] },
     spacing: [1, 2, 1],
     environment,
-    albedo: () => [0.8, 0.8, 0.8], // every surface a light grey
+    environmentOptions,
+    albedo: () => grey,
   });
   let baking = true;
   return {
