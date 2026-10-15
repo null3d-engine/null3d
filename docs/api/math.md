@@ -3,7 +3,7 @@ id: api/math
 title: Math helpers
 status: experimental
 since: "0.1"
-summary: "vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds."
+summary: "vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; seeded value noise."
 ---
 
 # Math helpers
@@ -106,6 +106,34 @@ Each row's color multiplies its material's base color and opacity, as [Instances
 - `math.seed(n)` starts it again from the seed `n`, and the same numbers follow on every run. `math.seed(n)` followed by `math.random()` gives what three.js's `MathUtils.seededRandom(n)` gives.
 - Hold mode seeds it before the sketch loads, and makes `Math.random` draw from it too. A held frame is then the same on every run. See [Testing your sketch](../guides/testing.md).
 - `math.randFloat`, `math.randInt` and `math.randFloatSpread` draw their numbers from it.
+
+`math.generator(seed)` gives a generator of its own, which starts from `seed`. It gives the same numbers as `math.seed(seed)` followed by `math.random()`, but it leaves the thread's generator alone. Use it for content that must not change when other code draws random numbers:
+
+```ts
+import { math } from '@null3d/engine';
+
+const next = math.generator(42);
+const x = next() * 100; // the same on every run
+```
+
+## Noise
+
+`Noise` gives seeded value noise, for content made in code: heights, texture maps and scatter patterns. It works on the CPU, in the sketch or on the page:
+
+```ts
+import { Noise } from '@null3d/engine';
+
+const noise = new Noise(7);
+const height = (x: number, z: number) => 40 * noise.fbm2(x * 0.004, z * 0.004, 5);
+```
+
+- `value2(x, y)` and `value3(x, y, z)` give noise from -1 to 1. Each whole number of `x`, `y` and `z` is a cell.
+- `fbm2(x, y, octaves)` and `fbm3(x, y, z, octaves)` add octaves, each twice as fine and half as strong.
+- `value2` and `fbm2` take a period, a whole number of cells. The noise then repeats after it, so a texture made from it tiles.
+- The same seed gives the same noise on every run and every machine. The noise comes from a seeded table, not from a sine, so every GPU and CPU agree.
+- A call allocates nothing.
+
+three.js's `ImprovedNoise` gives Perlin noise, whose cells blend by their slopes. `Noise` gives value noise, which is cheaper and a little more blocky. Its octaves hide the difference in most terrain and textures. On the GPU, use `null3d::noise` in WGSL.
 
 ## API reference
 

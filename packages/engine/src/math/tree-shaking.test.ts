@@ -63,6 +63,7 @@ describe('the math helpers', () => {
 		`);
 		expect(helpersIn(code)).toEqual([
 			'math',
+			'math.mulberry32',
 			'math.randFloat',
 			'math.random',
 			'math.randomState',

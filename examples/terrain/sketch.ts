@@ -4,7 +4,7 @@
 // layers, grass, soil, rock and snow, blend by a splat map that the add-on fills from the height
 // and the slope. Boulders made in code stand on the ground, placed with `terrain.heightAt`, and the
 // camera flies a slow circle over the valley. The terrain carries no collision of its own.
-import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
+import { defineSketch, math, Noise, timeOfDay, vec3 } from '@null3d/engine';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
 import { interact } from '../lib/interact';
 
@@ -12,46 +12,13 @@ import { interact } from '../lib/interact';
 const SIZE = 1200;
 const BOULDERS = 900;
 
-const hash = (x: number, y: number) => {
-	let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
-	h = Math.imul(h ^ (h >>> 13), 1274126177);
-	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-};
-const smooth = (t: number) => t * t * (3 - 2 * t);
-
-/** Value noise, from -1 to 1. */
-function noise(x: number, y: number): number {
-	const xi = Math.floor(x);
-	const yi = Math.floor(y);
-	const u = smooth(x - xi);
-	const v = smooth(y - yi);
-	return (
-		math.lerp(
-			math.lerp(hash(xi, yi), hash(xi + 1, yi), u),
-			math.lerp(hash(xi, yi + 1), hash(xi + 1, yi + 1), u),
-			v,
-		) *
-			2 -
-		1
-	);
-}
-
-/** Octaves of noise, each twice as fine and half as strong. */
-function fbm(x: number, y: number, octaves: number): number {
-	let sum = 0;
-	let amplitude = 0.5;
-	let scale = 1;
-	for (let o = 0; o < octaves; o++) {
-		sum += amplitude * noise(x * scale, y * scale);
-		amplitude *= 0.5;
-		scale *= 2;
-	}
-	return sum;
-}
+/** The seeded noise that shapes the hills. */
+const noise = new Noise(9);
 
 /** The height of the ground at a point: rolling hills with a valley that runs along z. */
 function ground(x: number, z: number): number {
-	const hills = 62 * fbm(x * 0.0021, z * 0.0021, 5) + 7 * fbm(x * 0.014 + 3, z * 0.014, 3);
+	const hills =
+		62 * noise.fbm2(x * 0.0021, z * 0.0021, 5) + 7 * noise.fbm2(x * 0.014 + 3, z * 0.014, 3);
 	const valley = -34 * Math.exp(-(z * z) / (2 * 260 * 260));
 	return hills + valley + 12;
 }

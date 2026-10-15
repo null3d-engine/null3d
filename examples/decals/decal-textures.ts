@@ -2,7 +2,8 @@
 // and bare bricks, posters, graffiti and water stains for the walls. Each comes as
 // texel data for `textures.fromData`: a base color map with alpha in sRGB, a map with roughness in
 // green and metalness in blue, and a normal map, each `size` texels on a side. Every pattern comes
-// from a seeded hash, so each run makes the same images.
+// from the engine's seeded noise and a seeded hash, so each run makes the same images.
+import { math, Noise } from '@null3d/engine';
 
 /** The texels of one decal: base color with alpha, roughness and metalness, and normals. */
 export interface DecalTexels {
@@ -30,15 +31,17 @@ function hash(x: number, y: number, seed: number): number {
 	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+/** The engine's seeded value noise of each seed, made on first use. */
+const noises = new Map<number, Noise>();
+
 /** Smooth value noise from 0 to 1, which repeats every `period` units. */
 function noise(x: number, y: number, seed: number, period: number): number {
-	const [x0, y0] = [Math.floor(x), Math.floor(y)];
-	const [fx, fy] = [x - x0, y - y0];
-	const [u, v] = [fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy)];
-	const at = (i: number, j: number) => hash((x0 + i) % period, (y0 + j) % period, seed);
-	const top = at(0, 0) + (at(1, 0) - at(0, 0)) * u;
-	const bottom = at(0, 1) + (at(1, 1) - at(0, 1)) * u;
-	return top + (bottom - top) * v;
+	let made = noises.get(seed);
+	if (!made) {
+		made = new Noise(seed);
+		noises.set(seed, made);
+	}
+	return made.value2(x, y, period) * 0.5 + 0.5;
 }
 
 /** Fractal noise from 0 to 1: `octaves` layers of value noise, each twice as fine. */
@@ -53,10 +56,9 @@ function fbm(x: number, y: number, seed: number, octaves = 5, base = 4): number 
 	return sum / total;
 }
 
-/** A share from 0 at `low` to 1 at `high`, smoothed at both ends. */
+/** A share from 0 at `low` to 1 at `high`, smoothed at both ends, with `low` above `high` too. */
 function ramp(low: number, high: number, x: number): number {
-	const t = Math.min(1, Math.max(0, (x - low) / (high - low)));
-	return t * t * (3 - 2 * t);
+	return low < high ? math.smoothstep(x, low, high) : 1 - math.smoothstep(x, high, low);
 }
 
 /** Linear color to an 8-bit sRGB value. */

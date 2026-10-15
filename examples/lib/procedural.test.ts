@@ -1,32 +1,9 @@
-// The showcase scenes' generators: the same seed gives the same detail, tiled noise repeats, and
-// the meshes have the sizes their settings ask for.
+// The showcase scenes' generators: the meshes have the sizes their settings ask for. The noise and
+// the seeded generator are the engine's, which its own tests cover.
 import { describe, expect, test } from 'bun:test';
-import { Noise, random, rock, terrain, within } from './procedural';
+import { rock, terrain, within } from './procedural';
 
 describe('procedural', () => {
-	test('a seed gives the same numbers on every run, and another seed others', () => {
-		const [a, b, c] = [random(7), random(7), random(8)];
-		const first = Array.from({ length: 5 }, a);
-		expect(Array.from({ length: 5 }, b)).toEqual(first);
-		expect(Array.from({ length: 5 }, c)).not.toEqual(first);
-		expect(first.every((n) => n >= 0 && n < 1)).toBe(true);
-	});
-
-	test('noise with a period repeats after it, at every octave', () => {
-		const noise = new Noise(3);
-		for (const [x, y] of [
-			[0.3, 0.7],
-			[2.25, 5.5],
-		] as const) {
-			expect(noise.value2(x + 8, y, 8)).toBeCloseTo(noise.value2(x, y, 8), 6);
-			expect(noise.fbm2(x, y + 4, 4, 4)).toBeCloseTo(noise.fbm2(x, y, 4, 4), 6);
-		}
-		const values = Array.from({ length: 200 }, (_, i) =>
-			noise.value3(i * 0.37, i * 0.11, i * 0.53),
-		);
-		expect(Math.max(...values.map(Math.abs))).toBeLessThanOrEqual(1);
-	});
-
 	test('a terrain has a vertex at each corner of its quads, and two triangles in each quad', () => {
 		const grid = terrain({
 			size: 10,

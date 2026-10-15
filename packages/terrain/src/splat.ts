@@ -1,7 +1,7 @@
 // The weights of the ground's layers: a splat map whose red, green, blue and alpha channels say
 // how much each layer shows. A caller may give a function or take the default, which puts grass
 // low and gentle, soil drier, rock on the steep slopes and snow on the high ground.
-import type { SketchContext, Texture } from '@null3d/engine';
+import { math, type SketchContext, type Texture } from '@null3d/engine';
 import type { Heightfield } from './heightfield';
 
 /**
@@ -10,12 +10,6 @@ import type { Heightfield } from './heightfield';
  * @category api/terrain
  */
 export type SplatFunction = (x: number, z: number, out: number[]) => void;
-
-/** The smooth ends of a ramp from 0 below `edge0` to 1 above `edge1`, as WGSL's smoothstep. */
-function smoothstep(value: number, edge0: number, edge1: number): number {
-	const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1);
-	return t * t * (3 - 2 * t);
-}
 
 /**
  * The default weights, from the ground's height and slope: grass on the low, gentle ground, soil
@@ -27,9 +21,9 @@ export function defaultSplat(field: Heightfield): SplatFunction {
 	return (x, z, out) => {
 		const high = (field.heightAt(x, z) - field.min) / range;
 		const slope = field.slopeAt(x, z);
-		const snow = smoothstep(high, 0.62, 0.85);
-		const rock = smoothstep(slope, 0.5, 0.85);
-		const dry = smoothstep(high, 0.35, 0.62);
+		const snow = math.smoothstep(high, 0.62, 0.85);
+		const rock = math.smoothstep(slope, 0.5, 0.85);
+		const dry = math.smoothstep(high, 0.35, 0.62);
 		out[0] = (1 - snow) * (1 - rock) * (1 - dry);
 		out[1] = (1 - snow) * (1 - rock) * dry;
 		out[2] = (1 - snow) * rock;

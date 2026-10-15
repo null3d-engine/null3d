@@ -85,12 +85,28 @@ export function euclideanModulo(n: number, m: number): number {
  * draws the same frame on every run. The generator is mulberry32, as in three.js's `seededRandom`.
  */
 export function random(): number {
-	const s = state ?? randomState();
+	return mulberry32(state ?? randomState());
+}
+
+/** Steps the mulberry32 state in `s[0]`, and returns its next number from 0 up to but not including 1. */
+function mulberry32(s: Uint32Array): number {
 	const next = ((s[0] as number) + 0x6d2b79f5) >>> 0;
 	s[0] = next;
 	let t = Math.imul(next ^ (next >>> 15), next | 1);
 	t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
 	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/**
+ * A random generator of its own, which starts from `seed`, an integer. Each call of the function it
+ * returns gives the next number from 0 up to but not including 1: the numbers that `math.seed(seed)`
+ * and then `math.random()` give, without touching the thread's generator. Content made in code
+ * from a seed draws the same on every run, whatever else draws random numbers.
+ */
+export function generator(seed: number): () => number {
+	const s = new Uint32Array(1);
+	s[0] = seed;
+	return () => mulberry32(s);
 }
 
 /**

@@ -28,6 +28,7 @@ export * as mat4 from './math/mat4';
  * @category api/math
  */
 export * as math from './math/math';
+export { Noise } from './math/noise';
 /**
  * Rotations as quaternions (x, y, z, w) in plain arrays, with angles in radians:
  * `quat.setAxisAngle(out, [0, 1, 0], angle)` writes the rotation into `out` and returns `out`.

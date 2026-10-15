@@ -7,6 +7,7 @@
 // (D-143). The helper only works out values: the sketch applies them to its own light, fog and
 // post settings (D-118).
 
+import { smoothstep } from '../math/math';
 import type { AtmosphereOptions } from './background';
 
 /**
@@ -226,11 +227,11 @@ export function timeOfDay(
 	const moon = atElevation(scale(sun, -1), Math.max(-elevation, MOON_FLOOR));
 	// After sunset the sky keeps its sun just under the horizon. As night falls the moon's sky
 	// fades in over it as a second sky, and once night has fallen the sky's sun is the moon.
-	const nightfall = smoothstep(NIGHTFALL[0], NIGHTFALL[1], elevation);
+	const nightfall = 1 - smoothstep(elevation, NIGHTFALL[1], NIGHTFALL[0]);
 	const skySun = nightfall === 1 ? moon : elevation < DUSK_SUN ? atElevation(sun, DUSK_SUN) : sun;
 	// Haze and scattering grow as the sky's sun nears the horizon, which warms a low sun. The moon's
 	// sky, whose sun stands high, has clear air, and the air clears as it fades in.
-	const air = mix(smoothstep(2, 15, Math.asin(skySun[1]) / DEGREE), 1, nightfall);
+	const air = mix(smoothstep(Math.asin(skySun[1]) / DEGREE, 2, 15), 1, nightfall);
 	const sky = {
 		sunPosition: skySun,
 		turbidity: mix(4, 2.5, air),
@@ -279,20 +280,20 @@ export function timeOfDay(
 		light = {
 			direction: [-sun[0], -sun[1], -sun[2]],
 			color: scale(fex, 1 / peak),
-			intensity: SUN_INTENSITY * peak * smoothstep(-1, 6, elevation),
+			intensity: SUN_INTENSITY * peak * smoothstep(elevation, -1, 6),
 		};
 	} else {
 		// The moon, brightening as the dusk deepens.
 		light = {
 			direction: scale(moon, -1),
 			color: [...MOON_COLOR],
-			intensity: MOON_INTENSITY * smoothstep(0, 6, -elevation),
+			intensity: MOON_INTENSITY * smoothstep(-elevation, 0, 6),
 		};
 	}
 
 	// The fog takes the sky's color along the horizon, and turns to its average color at dusk,
 	// when only the side of the sunset glows. The ambient light takes the sky's average.
-	const dusk = smoothstep(0, -6, elevation);
+	const dusk = 1 - smoothstep(elevation, -6, 0);
 	const fogOf = (m: SkyModel) => {
 		const horizon = m.horizon();
 		const average = m.average();
@@ -444,10 +445,10 @@ function physicalDay(
 	// light fades over the twilight once it sets, and the moon's rises over the same stretch. The
 	// two stand opposite, so the direction sweeps about the horizon and its height passes between
 	// them, and neither the direction nor the light jumps or falls to zero.
-	const handover = 1 - smoothstep(MOON_LIGHT[1], MOON_LIGHT[0], elevation);
+	const handover = 1 - smoothstep(elevation, MOON_LIGHT[1], MOON_LIGHT[0]);
 	const [setThrough] = physicalAt(Math.max(elevation, 0));
 	const sunPeak = Math.max(...setThrough);
-	const sunIntensity = sunLight * sunPeak * smoothstep(SUN_TWILIGHT[1], SUN_TWILIGHT[0], elevation);
+	const sunIntensity = sunLight * sunPeak * smoothstep(elevation, SUN_TWILIGHT[1], SUN_TWILIGHT[0]);
 	const moonIntensity = PHYSICAL_MOON * handover;
 	const sunColor = scale(setThrough, 1 / Math.max(sunPeak, 1e-9));
 	const bearing = Math.atan2(sun[2], sun[0]) + Math.PI * handover;
@@ -480,7 +481,7 @@ function physicalDay(
 	const [, dayMean] = physicalAt(15);
 	const ratio = luminance(dayMean) / Math.max(luminance(mean), 1e-12);
 	const adapted = Math.min(ratio ** PHYSICAL_ADAPTATION, PHYSICAL_EXPOSURE_LIMIT);
-	const nightShare = smoothstep(0, MOON_EXPOSURE_RISE, moonHeight);
+	const nightShare = smoothstep(moonHeight, 0, MOON_EXPOSURE_RISE);
 	const exposure = Math.exp(mix(Math.log(adapted), Math.log(NIGHT_EXPOSURE), nightShare));
 	return {
 		hours,
@@ -549,11 +550,6 @@ function luminance(v: Vec3): number {
 
 function mix(a: number, b: number, t: number): number {
 	return a + (b - a) * t;
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-	const t = Math.min(Math.max((x - edge0) / (edge1 - edge0), 0), 1);
-	return t * t * (3 - 2 * t);
 }
 
 /** three.js's sky without its clouds, as null3d::atmosphere draws it, with its sun's disc left out. */

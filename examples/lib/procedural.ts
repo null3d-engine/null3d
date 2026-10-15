@@ -1,19 +1,13 @@
 // Detail made in code for the showcase scenes: seeded noise, tiling PBR texture sets from numbers,
 // a height-field terrain and rough rocks. Every generator takes a seed, so a scene draws the same
 // on every run and its held frames stay the same. The generators run once, in a sketch's setup.
-import type { MeshArrays, SketchContext, Texture } from '@null3d/engine';
+import { type MeshArrays, math, Noise, type SketchContext, type Texture } from '@null3d/engine';
 
-/** A seeded generator of numbers from 0 to 1 (mulberry32). */
-export function random(seed: number): () => number {
-	let state = seed >>> 0;
-	return () => {
-		state = (state + 0x6d2b79f5) >>> 0;
-		let t = state;
-		t = Math.imul(t ^ (t >>> 15), t | 1);
-		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-}
+/** A seeded generator of numbers from 0 to 1: the engine's own, apart from `math.random`. */
+export const random = math.generator;
+
+/** Seeded value noise in two and three dimensions, from -1 to 1: the engine's. */
+export { Noise };
 
 /** A circle on the ground: its middle's x and z, and its radius. */
 export interface Footprint {
@@ -27,94 +21,6 @@ export const within =
 	(footprints: readonly Footprint[]) =>
 	(x: number, z: number): boolean =>
 		footprints.some((f) => (x - f.x) ** 2 + (z - f.z) ** 2 < f.r * f.r);
-
-const smooth = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-/**
- * Value noise in two and three dimensions, from -1 to 1. The two-dimensional noise can repeat
- * after a whole number of cells, so a texture made from it tiles.
- */
-export class Noise {
-	private readonly perm = new Uint8Array(512);
-	private readonly values = new Float32Array(256);
-
-	constructor(seed: number) {
-		const next = random(seed);
-		const order = Array.from({ length: 256 }, (_, i) => i);
-		for (let i = 255; i > 0; i--) {
-			const j = Math.floor(next() * (i + 1));
-			[order[i], order[j]] = [order[j] as number, order[i] as number];
-		}
-		for (let i = 0; i < 512; i++) this.perm[i] = order[i & 255] as number;
-		for (let i = 0; i < 256; i++) this.values[i] = next() * 2 - 1;
-	}
-
-	private lattice(x: number, y: number, z = 0): number {
-		const { perm } = this;
-		return this.values[
-			perm[(perm[(perm[x & 255] as number) + (y & 255)] as number) + (z & 255)] as number
-		] as number;
-	}
-
-	/** Noise at a point of the plane. With a period, the noise repeats every `period` cells. */
-	value2(x: number, y: number, period = 256): number {
-		const fx = Math.floor(x);
-		const fy = Math.floor(y);
-		const tx = smooth(x - fx);
-		const ty = smooth(y - fy);
-		const x0 = ((fx % period) + period) % period;
-		const y0 = ((fy % period) + period) % period;
-		const x1 = (x0 + 1) % period;
-		const y1 = (y0 + 1) % period;
-		return lerp(
-			lerp(this.lattice(x0, y0), this.lattice(x1, y0), tx),
-			lerp(this.lattice(x0, y1), this.lattice(x1, y1), tx),
-			ty,
-		);
-	}
-
-	/** Noise at a point of space. */
-	value3(x: number, y: number, z: number): number {
-		const fx = Math.floor(x);
-		const fy = Math.floor(y);
-		const fz = Math.floor(z);
-		const [tx, ty, tz] = [smooth(x - fx), smooth(y - fy), smooth(z - fz)];
-		const plane = (zi: number) =>
-			lerp(
-				lerp(this.lattice(fx, fy, zi), this.lattice(fx + 1, fy, zi), tx),
-				lerp(this.lattice(fx, fy + 1, zi), this.lattice(fx + 1, fy + 1, zi), tx),
-				ty,
-			);
-		return lerp(plane(fz), plane(fz + 1), tz);
-	}
-
-	/** Octaves of plane noise, each twice as fine and half as strong. With a period, it tiles. */
-	fbm2(x: number, y: number, octaves: number, period = 256): number {
-		let sum = 0;
-		let amplitude = 0.5;
-		let scale = 1;
-		for (let o = 0; o < octaves; o++) {
-			sum += amplitude * this.value2(x * scale, y * scale, period * scale);
-			amplitude *= 0.5;
-			scale *= 2;
-		}
-		return sum;
-	}
-
-	/** Octaves of space noise, each twice as fine and half as strong. */
-	fbm3(x: number, y: number, z: number, octaves: number): number {
-		let sum = 0;
-		let amplitude = 0.5;
-		let scale = 1;
-		for (let o = 0; o < octaves; o++) {
-			sum += amplitude * this.value3(x * scale, y * scale, z * scale);
-			amplitude *= 0.5;
-			scale *= 2;
-		}
-		return sum;
-	}
-}
 
 /** What a texture set's sampler gives for one texel. Colors are sRGB, from 0 to 1. */
 export interface TexelSample {

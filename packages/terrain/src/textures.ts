@@ -1,7 +1,7 @@
 // The ground's layer maps, made in code: grass, soil, rock and snow as tiling color maps, each
 // built once from seeded noise so every run gives the same ground. A caller may use these, give
 // its own maps, or mix the two.
-import type { SketchContext, Texture } from '@null3d/engine';
+import { math, Noise, type SketchContext, type Texture } from '@null3d/engine';
 
 /**
  * How to make the layer maps.
@@ -29,72 +29,6 @@ export interface TerrainTextures {
 	rock: Texture;
 	/** Near-white, faintly blue snow with a little grain: the layer of the high ground. */
 	snow: Texture;
-}
-
-/** A seeded generator of numbers from 0 to 1 (mulberry32). */
-function random(seed: number): () => number {
-	let state = seed >>> 0;
-	return () => {
-		state = (state + 0x6d2b79f5) >>> 0;
-		let t = state;
-		t = Math.imul(t ^ (t >>> 15), t | 1);
-		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-}
-
-const smooth = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-/** Tiling value noise in two dimensions, from -1 to 1, so a map made from it repeats. */
-class Noise {
-	private readonly perm = new Uint8Array(512);
-	private readonly values = new Float32Array(256);
-
-	constructor(seed: number) {
-		const next = random(seed);
-		const order = Array.from({ length: 256 }, (_, i) => i);
-		for (let i = 255; i > 0; i--) {
-			const j = Math.floor(next() * (i + 1));
-			[order[i], order[j]] = [order[j] as number, order[i] as number];
-		}
-		for (let i = 0; i < 512; i++) this.perm[i] = order[i & 255] as number;
-		for (let i = 0; i < 256; i++) this.values[i] = next() * 2 - 1;
-	}
-
-	private lattice(x: number, y: number): number {
-		const { perm } = this;
-		return this.values[perm[(perm[x & 255] as number) + (y & 255)] as number] as number;
-	}
-
-	private value2(x: number, y: number, period: number): number {
-		const fx = Math.floor(x);
-		const fy = Math.floor(y);
-		const tx = smooth(x - fx);
-		const ty = smooth(y - fy);
-		const x0 = ((fx % period) + period) % period;
-		const y0 = ((fy % period) + period) % period;
-		const x1 = (x0 + 1) % period;
-		const y1 = (y0 + 1) % period;
-		return lerp(
-			lerp(this.lattice(x0, y0), this.lattice(x1, y0), tx),
-			lerp(this.lattice(x0, y1), this.lattice(x1, y1), tx),
-			ty,
-		);
-	}
-
-	/** Octaves of tiling noise, each twice as fine and half as strong. */
-	fbm2(x: number, y: number, octaves: number, period: number): number {
-		let sum = 0;
-		let amplitude = 0.5;
-		let scale = 1;
-		for (let o = 0; o < octaves; o++) {
-			sum += amplitude * this.value2(x * scale, y * scale, period * scale);
-			amplitude *= 0.5;
-			scale *= 2;
-		}
-		return sum;
-	}
 }
 
 /** Makes a tiling sRGB color map, calling `sample` once per texel with the texel's u and v. */
@@ -144,7 +78,7 @@ export function terrainTextures(
 	const soil = colorMap(textures, size, (u, v, out) => {
 		const clods = noise.fbm2(u * 10, v * 10, 4, 10);
 		const grit = noise.fbm2(u * 36, v * 36, 2, 36);
-		const stone = smooth(Math.min(Math.max(grit * 0.5 + 0.5, 0), 1));
+		const stone = math.smoothstep(grit * 0.5 + 0.5, 0, 1);
 		const tone = 0.62 + 0.2 * clods + 0.16 * stone;
 		out[0] = 0.45 * tone;
 		out[1] = 0.36 * tone;

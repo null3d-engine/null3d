@@ -4,7 +4,7 @@
 // granite curb on a moss lawn. A plaster wall closes the back and the left side, with bamboo and
 // pines beyond it. Each object in the garden casts and receives shadows, so contact shadows show
 // wherever things touch.
-import { type MeshArrays, math, quat, type SketchContext } from '@null3d/engine';
+import { type MeshArrays, math, Noise, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
 import { type Arrays, grid, TURN } from '../lib/pines';
 import { random } from '../lib/procedural';
@@ -60,19 +60,13 @@ function rake(x: number, z: number): number {
 	return math.lerp(wave(ring), wave(z), math.smoothstep(ring, 0.75, 0.95));
 }
 
-/** Value noise in 0..1 on `size` x `size` texels, from `cells` random points per side. It tiles. */
-function noise(size: number, cells: number): Float32Array {
-	const points = Float32Array.from({ length: cells * cells }, math.random);
+/** Value noise in 0..1 on `size` x `size` texels, from `cells` cells per side. It tiles. */
+function noise(size: number, cells: number, seed: number): Float32Array {
+	const field = new Noise(seed);
 	const out = new Float32Array(size * size);
-	const at = (i: number, j: number) => points[(j % cells) * cells + (i % cells)];
 	for (let y = 0; y < size; y++)
-		for (let x = 0; x < size; x++) {
-			const [fx, fy] = [(x / size) * cells, (y / size) * cells];
-			const [i, j] = [Math.floor(fx), Math.floor(fy)];
-			const [tx, ty] = [math.smoothstep(fx - i, 0, 1), math.smoothstep(fy - j, 0, 1)];
-			const top = math.lerp(at(i, j), at(i + 1, j), tx);
-			out[y * size + x] = math.lerp(top, math.lerp(at(i, j + 1), at(i + 1, j + 1), tx), ty);
-		}
+		for (let x = 0; x < size; x++)
+			out[y * size + x] = field.value2((x / size) * cells, (y / size) * cells, cells) * 0.5 + 0.5;
 	return out;
 }
 
@@ -157,7 +151,7 @@ export function garden(ctx: SketchContext): void {
 	});
 
 	// Granite: broad patches, finer mottling and dark and light grains, which tiles over the stone.
-	const [broad, fine] = [noise(GRANITE, 6), noise(GRANITE, 40)];
+	const [broad, fine] = [noise(GRANITE, 6, 1), noise(GRANITE, 40, 2)];
 	const stone = new Uint8Array(GRANITE * GRANITE * 4).fill(255);
 	for (let i = 0; i < GRANITE * GRANITE; i++) {
 		const grain = math.random();
