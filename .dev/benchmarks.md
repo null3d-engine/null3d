@@ -33,13 +33,15 @@ The benchmarks measure the engine as developers ship it. A production build leav
 ### Build caches
 
 The build caches live under one root, `~/.cache/null3d` by default, each in a named subfolder:
-`cargo-target` for the compiled Rust dependency crates and the WebAssembly builds, `shader-modules`
-for the built shader modules, `shader-cache` for the per-entry shader build, and `wasm-artifacts` for
-the built wasm and tool modules. `NULL3D_BUILD_CACHE` names another root and moves them all; the older
-per-cache variables still name one folder. Clearing the root is always safe, because every entry is a
-pure function of its inputs and a missing entry only costs the build time.
+`shader-modules` for the built shader modules, `shader-cache` for the per-entry shader build,
+`wasm-artifacts` for the built wasm and tool modules, and `sccache` for the compiled Rust crates when
+sccache is installed. `NULL3D_BUILD_CACHE` names another root and moves them all; the older per-cache
+variables still name one folder. Clearing the root is always safe, because every entry is a pure
+function of its inputs and a missing entry only costs the build time. Each checkout builds Rust into
+its own `target` folder ([D-177](decisions/D-177-build-cache-module.md)).
 
-Figures from the Mac on 14 October 2026, with the shared cargo target warm:
+Figures from the Mac on 14 October 2026, measured with a Rust build folder that every checkout
+shared, which D-177's addendum of 15 October withdrew:
 
 | build or edit | run again | from the cache |
 | --- | --- | --- |
@@ -48,8 +50,7 @@ Figures from the Mac on 14 October 2026, with the shared cargo target warm:
 | a worktree's shader modules | about 3 min | about 0.2 s |
 | one shader's edit | about 500 s | about 10 s |
 
-A library module's edit rebuilds only the entries that import it: 31 of 54 in one measurement. The
-dependency crates compile once for every checkout on the machine rather than once per worktree.
+A library module's edit rebuilds only the entries that import it: 31 of 54 in one measurement.
 
 CI keeps the two shader folders in the Actions cache ([CI's jobs](pull-requests.md#cis-jobs)). On 15
 October 2026 a cold shader build on a CI runner took longer than 34 minutes. One stopped run left
@@ -396,7 +397,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 
 - The size report builds the engine test page for production with hidden source maps, which leave the built files unchanged. Vite names each file after a module and adds a hash. The report therefore names each file of the engine's JavaScript by the engine module that it holds. The list of parts is `ENGINE_PARTS` in `tools/lib/size-report.ts`. A new file of engine code fails the report until the list names it.
 - The report measures each file three ways: uncompressed, after gzip at level 9 and after Brotli at quality 11. Most hosts send Brotli. GitHub Pages and nginx with its gzip module alone send gzip, and a plain static server sends files as they are. Each budget has a size in each column, and a file over any of them fails the build.
-- The report gives two budgets for the engine's JavaScript. [D-14](decisions/D-14-js-budget.md#m2-the-start-and-the-files-that-load-later) gives the Brotli column, and [a later section](decisions/D-14-js-budget.md#m2-gzip-and-uncompressed-budgets) the others. The owner approved them for M2 on 2026-10-04, and raised the start's Brotli figure on 2026-10-14 and again on 2026-10-15. What a page downloads at its start may take 165 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed. That holds in each thread mode on each GPU path, and the report prints a row for each. A row holds the mode's files, its GPU path's renderers and the largest shader file of that path. Each file that no mode downloads at its start may take 16 KB after Brotli, 24 KB after gzip and 64 KB uncompressed. Such a file loads on a feature's first use, as the glTF loader does with the first glTF file. Or it loads after the first frame, as the preset check does. The report lists these files in a section of their own, and no start counts them. `LATER_PARTS` in `tools/lib/size-report.ts` names them.
+- The report gives two budgets for the engine's JavaScript. [D-14](decisions/D-14-js-budget.md#m2-the-start-and-the-files-that-load-later) gives the Brotli column, and [a later section](decisions/D-14-js-budget.md#m2-gzip-and-uncompressed-budgets) the others. The owner approved them for M2 on 2026-10-04, and raised the start's Brotli figure and the first-use shader files' on 2026-10-14, then the start's Brotli figure again on 2026-10-15. What a page downloads at its start may take 165 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed. That holds in each thread mode on each GPU path, and the report prints a row for each. A row holds the mode's files, its GPU path's renderers and the largest shader file of that path. Each file that no mode downloads at its start may take 16 KB after Brotli, 24 KB after gzip and 64 KB uncompressed. Such a file loads on a feature's first use, as the glTF loader does with the first glTF file. Or it loads after the first frame, as the preset check does. The report lists these files in a section of their own, and no start counts them. `LATER_PARTS` in `tools/lib/size-report.ts` names them.
 - Shader files that load on a feature's first use have a budget of their own. Each may take 48 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. The owner set the budget on 2026-10-04, as one start shader file's size, and on 2026-10-05 raised its Brotli limit from 24 KB and its gzip limit from 224 KB ([D-14](decisions/D-14-js-budget.md#first-use-shader-files)). On 2026-10-14 the owner raised the Brotli limit again, from 32 KB to 48 KB, as the GLSL first-use files had grown past it ([D-14](decisions/D-14-js-budget.md#the-figures-raised-on-14-and-15-october-2026)). Each holds every build of one feature for one value of the bits that a device fixes. So it cannot fit the limits of other files that load later. Each `[first_use.<feature>]` table of the shader manifest declares one feature's files ([D-56](decisions/D-56-first-use-shader-files.md)); the WebGL2 morph builds are one such feature ([D-51](decisions/D-51-morph-targets.md)). The texture generators' shaders load on first use as a whole, one file per GPU path (`first_use = true` on the shader in the manifest), and count against the same budget. `isFirstUseShaderPart` in `tools/lib/size-report.ts` finds them, and the report lists them in a section of their own.
 - A feature that a page does not use adds nothing to the page's start. Its code loads on first use, in a part of its own: add the part to `ENGINE_PARTS` with the part that loads it. A file that loads on a feature's first use must not load on a page that does not use the feature. An engine test checks each such part: "a page that uses no feature that loads on first use downloads none of their files". It runs in every thread mode on both GPU paths, on the dev server and in a production build. Mark a part that every page loads after its first frame with `afterFirstFrame`, and the test leaves it out.
 - The thread that draws loads the renderers of its GPU path on demand, as soon as the probe has chosen the path. A page downloads one path's renderers, and the test above checks that it downloads no file of the other path's. `drawingParts` in `tools/lib/size-report.ts` names each drawing thread's files. They are `<thread>-webgpu.js` and `<thread>-webgl2.js`, and `<thread>-gpu-shared.js` with the code that both paths use. In a worker, the null3D Vite plugin starts the shared file's download together with the path's file, as Vite does on the page. A file that loads on demand reads the development constant itself. Its development checks then keep no code of the start's files alive. On 9 October 2026 the split saved 8.5 to 9.2 KB after Brotli in each start ([D-14](decisions/D-14-js-budget.md#one-gpu-paths-renderers-for-each-page-9-october-2026)).

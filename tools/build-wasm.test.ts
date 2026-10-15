@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
 	addReleaseInstance,
 	artifactFiles,
+	cargoTargetBase,
 	checkHeapStart,
 	lockedVersion,
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
+	sizeCheckLock,
 	type ToolVersions,
 	toolInputs,
 	toolsKey,
@@ -18,6 +20,11 @@ import {
 	variantStagingFolder,
 	writeArtifacts,
 } from './build-wasm';
+import { CACHE_ROOT } from './lib/build-cache';
+import { inputFiles } from './lib/shader-modules';
+
+/** The crate folders of the build tools' modules, whose files key their cache entry. */
+const TOOL_FOLDERS = ['crates/null3d-shaders-wasm', 'crates/null3d-assets-wasm'];
 
 describe('parseOptions', () => {
 	it('reads the size check, its base, the base build, the names build, the pages build, an earlier build and the base alone', () => {
@@ -175,17 +182,40 @@ describe('variantKey', () => {
 });
 
 describe('variantStagingFolder', () => {
-	it('stages inside the checkout, apart from the shared cargo target, in a folder of its own', () => {
-		// Two builds in different worktrees share the cargo target. If they also staged there, one
-		// build's rm -rf would take the other's half-written core out from under wasm-opt. The process
-		// id keeps two builds from sharing one staging folder even in the same checkout, which is what
-		// lets ordinary builds run at the same time.
+	it('stages inside the checkout, in a folder of its own', () => {
+		// A shared staging folder lets one build's rm -rf take another's half-written core out from
+		// under wasm-opt. The process id keeps two builds from sharing one staging folder even in the
+		// same checkout, which is what lets ordinary builds run at the same time.
 		for (const variant of VARIANTS) {
 			const staged = variantStagingFolder(variant);
 			expect(staged.startsWith(`${process.cwd()}/target/`)).toBe(true);
-			expect(staged).not.toContain('cargo-target');
 			expect(staged.endsWith(`out-${process.pid}`)).toBe(true);
 		}
+	});
+});
+
+describe('cargoTargetBase', () => {
+	it('gives two checkouts two Rust build folders by default, each inside its checkout', () => {
+		// Cargo finds the engine's crates at the same workspace paths in every checkout and judges
+		// them fresh by file times, so a shared folder lets one checkout link another's crates.
+		for (const override of [undefined, '', 'local']) {
+			const one = cargoTargetBase('/work/one', override);
+			const two = cargoTargetBase('/work/two', override);
+			expect(one).toBe('/work/one/target');
+			expect(two).toBe('/work/two/target');
+		}
+		expect(cargoTargetBase(process.cwd()).startsWith(CACHE_ROOT)).toBe(false);
+		expect(cargoTargetBase('/work/one', '/elsewhere')).toBe('/elsewhere');
+	});
+});
+
+describe('sizeCheckLock', () => {
+	it('gives two checkouts two lock files, each inside its own target folder', () => {
+		// A lock in the shared cache root serialised the whole machine: every size check on the Mac
+		// waited on one file, and a size check holds it across its base build.
+		expect(sizeCheckLock('/work/one')).toBe('/work/one/target/build.lock');
+		expect(sizeCheckLock('/work/two')).not.toBe(sizeCheckLock('/work/one'));
+		expect(sizeCheckLock(process.cwd()).startsWith(CACHE_ROOT)).toBe(false);
 	});
 });
 
@@ -207,6 +237,34 @@ describe('toolInputs', () => {
 		expect(shaders).toMatch(/^[0-9a-f]{64}$/);
 		expect(assets).toMatch(/^[0-9a-f]{64}$/);
 		expect(shaders).not.toBe(assets);
+	});
+});
+
+describe('the cache keys', () => {
+	it("come from the checkout's own crate files alone, never from its path or another checkout", () => {
+		// A key is a hash of the files that a checkout's build compiles, by their paths inside the
+		// checkout, and the build compiles them into that checkout's own Rust build folder. So an
+		// entry's key and its contents come from one checkout's crates, and two checkouts with the
+		// same crates share the entry.
+		const files = [...new Set(TOOL_FOLDERS.flatMap((folder) => inputFiles(process.cwd(), folder)))];
+		const copies = mkdtempSync(join(tmpdir(), 'null3d-keys-'));
+		try {
+			const [one, two] = ['one', 'two'].map((name) => join(copies, name));
+			for (const checkout of [one!, two!])
+				for (const file of files) cpSync(join(process.cwd(), file), join(checkout, file));
+			const here = toolInputs(process.cwd());
+			expect(toolInputs(one!)).toEqual(here);
+			expect(toolInputs(two!)).toEqual(here);
+			// A crate that the shader compiler depends on, edited in one checkout only.
+			const gpu = files.find((file) => file.startsWith('crates/null3d-gpu/src/'));
+			expect(gpu).toBeDefined();
+			writeFileSync(join(two!, gpu!), "// another checkout's edit\n", { flag: 'a' });
+			expect(toolInputs(two!)[0]).not.toBe(here[0]);
+			expect(toolInputs(one!)).toEqual(here);
+			expect(dirname(cargoTargetBase(two!))).toBe(two!);
+		} finally {
+			rmSync(copies, { recursive: true, force: true });
+		}
 	});
 });
 

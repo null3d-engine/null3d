@@ -241,11 +241,21 @@ describe('fitReleaseText', () => {
 });
 
 describe('the notes of a history with branch merges', () => {
-	// It runs many git commands and the release command, which take seconds on a busy machine.
+	// It runs many git commands and the release command. A busy machine slows a whole file's tests
+	// to a crawl, and a loaded Mac runs them at background priority, so the limit is generous.
 	it('list every commit since the last release once, whichever branch brought it', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'null3d-release-notes-'));
 		// The user's own git settings, such as commit signing and hooks, stay out of the test.
-		const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+		const env: NodeJS.ProcessEnv = {
+			...process.env,
+			GIT_CONFIG_GLOBAL: '/dev/null',
+			GIT_CONFIG_SYSTEM: '/dev/null',
+		};
+		// The release command links its commits when it knows the repository, and the notes built in
+		// this process are told nothing of one. A runner sets that knowledge in the environment, so
+		// it comes out here: both sides then render the same history the same way.
+		for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL'])
+			delete env[name];
 		const git = (...args: string[]) =>
 			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
 				cwd: dir,
@@ -322,7 +332,7 @@ describe('the notes of a history with branch merges', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
-	}, 30_000);
+	}, 120_000);
 
 	it('fails when git cannot read the range', async () => {
 		const read = async () => {

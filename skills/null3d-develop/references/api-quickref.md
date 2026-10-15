@@ -513,6 +513,7 @@ const controls = createOrbitControls(ctx, camera, {   // three.js's OrbitControl
 controls.update(dt);                    // every frame in onUpdate; true when the camera moved
 vec3.set(controls.target, 0, 2, 0);     // change the target in place; set any property at any time
 controls.rotateLeft(a); controls.pan(dx, dy); controls.dollyIn(0.9);   // from code: keys, a gamepad
+controls.stop();                        // drop the motion damping still carries, as a handover to a route does
 createMapControls(ctx, camera);         // pans over the ground
 // (0.2) createFlyControls(ctx, camera, { movementSpeed, rollSpeed, dragToLook, autoForward }): WASD RF move, arrows QE turn, the pointer steers
 // (0.2) createFirstPersonControls(ctx, camera, { movementSpeed, lookSpeed, pointerSpeed, minPolarAngle, maxPolarAngle }):
