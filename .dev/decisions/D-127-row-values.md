@@ -1,6 +1,6 @@
 # D-127: Colors and values per row of an instance batch
 
-Status: decided by the helper of M2-EX13 on 10 October 2026, for the owner's review. Date: 2026-10-10. Task: M2-EX13.
+Status: decided by the helper of M2-EX13 on 10 October 2026, for the owner's review. Built: row colors and values are on main (`f662b3de8`). The owner's review is pending. Date: 2026-10-10. Task: M2-EX13.
 
 Summary: `createInstances` takes `colors: true`, which now draws, and `values: true`, which gives each row four numbers of the sketch's own. A row's color multiplies the base color and opacity, as vertex colors do. A custom material reads the row's numbers as `object.values` in its surface function and its vertex offset. Both reach the vertex shaders through a data texture, two texels per row. They draw on all three GPU paths, in GPU-culled and in CPU-culled batches. A custom material with a vertex offset now casts with it, so swaying grass casts swaying shadows. Nothing changes for batches without colors or values, and their shader builds load on first use.
 

@@ -131,26 +131,9 @@ In hold mode, the engine draws one frame, which waits for its pipelines, so `sce
 
 ## Loading everything up front
 
-Most shaders come with the engine's start. The shaders of a feature that many games leave out download the first time the sketch uses it. So a page that never uses the feature never downloads them. These features are:
+Most shaders come with the engine's start. The shaders of a feature that many games leave out download the first time the sketch uses it. So a page that never uses the feature never downloads them. [Shaders that load on first use](first-use-shaders.md) lists every such feature and the moment its shaders download. For example, `'skinning'` downloads with the first skinned mesh, and `'bloom'` when `post.set` turns bloom on.
 
-| Feature | Its shaders download |
-| --- | --- |
-| `'skinning'` | with the first skinned mesh, or as soon as the sketch reads a glTF file with skins |
-| `'morph'` | with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders |
-| `'bloom'` | when `post.set` turns bloom on |
-| `'ao'` | when `post.set` turns ambient occlusion on |
-| `'sprites'` | with the first sprite batch |
-| `'lines'` | with the first line batch |
-| `'background'` | with the first texture, environment or cube map background |
-| `'sky'` | with the first sky background |
-| `'occlusion'` | with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders |
-| `'coverage'` | with the first masked material that MSAA smooths with alpha to coverage |
-| `'hash'` | with the first material whose alpha mode is `'hash'` |
-| `'cutout'` | with the first masked object that casts shadows. It casts none until its shaders are built |
-| `'views'` | with the first scene pass. Its texture shows nothing until its shaders are built |
-| `'effect_groups'` | the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own |
-
-Each feature's file is 1 to 19 KB after Brotli. Shaders that need two such features, such as a skinned mesh with a hashed material, sit in a file of their own of up to 22 KB. A page downloads it only when it uses both. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A model that `assets optimize` wrote carries a list of the features its draws need. The engine asks for those files as it reads the model, so such a model needs no `preload` entry ([The asset pipeline](assets-pipeline.md#the-shader-list)). A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
+Each feature has a file for each GPU path and each device's settings. Each such file takes at most 48 KB after Brotli. A WebGL2 file is larger than its WebGPU twin, and many WebGL2 files take more than 32 KB. Shaders that need two such features, such as a skinned mesh with a hashed material, sit in a file of their own. A page downloads it only when it uses both. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A model that `assets optimize` wrote carries a list of the features its draws need. The engine asks for those files as it reads the model, so such a model needs no `preload` entry ([The asset pipeline](assets-pipeline.md#the-shader-list)). A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 
 A game that must fetch nothing while it plays lists its features in `createEngine`:
 

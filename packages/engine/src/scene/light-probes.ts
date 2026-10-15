@@ -360,10 +360,10 @@ export interface BakeProbesOptions {
 	 */
 	environmentOptions?: EnvironmentOptions;
 	/**
-	 * The colour a ray takes when it hits a surface, for one coloured bounce: the surface sends
+	 * The color a ray takes when it hits a surface, for one colored bounce: the surface sends
 	 * back that share of the environment's light at its normal, as a matte surface does. The
 	 * bounce sees the whole sky, so the light of a hit has no occlusion of its own, and the bake
-	 * counts no lamps. A ray whose hit has no colour gives none, so a scene without this bakes sky
+	 * counts no lamps. A ray whose hit has no color gives none, so a scene without this bakes sky
 	 * light and its occlusion alone. `normal` is reused from hit to hit, so copy what you keep,
 	 * and return the same array each time where you can: the bake calls this for every hit.
 	 */
