@@ -37,3 +37,17 @@ The engine measures completed scene updates. `engine.measure` gains `updatedFps`
 - The comparison page and the ramp judge the scene's rate. The page says which reason stopped each ramp.
 - [D-121](D-121-comparison-tier.md) marks every null3D Battle figure above 1,024 units invalid, until a run with this fix replaces them.
 - The browser tests run a comparison's ramp on null3D and check that the scene keeps moving. They read a camera signature at each step and check that no step reports a failed update.
+
+## Addendum, 15 October 2026: views follow the grown table
+
+The code review of 15 October 2026 found that the growth left the animator's views behind (finding C-3). A growth gives every array of the table new memory and frees the old arrays. The animator kept its views until the memory grew, and each view held 1,024 objects.
+
+- When the new arrays fit in free memory, the memory does not grow. The animator then wrote time scales, update intervals, weights, joint overrides and look-at targets into freed memory. That memory may hold other engine data by then.
+- Each view held 1,024 objects, even after the animator made it again. Writes for later objects were lost, and `lookAt` threw a `RangeError`.
+- Battle's ramp passes 1,024, 2,048 and 4,096 units, and D-161's crowd rates call `setUpdateInterval` on far units in every frame.
+
+The fix:
+
+- The core counts each move of arrays that TypeScript views (`ARRAYS_MOVED`). A growth of the table steps the count, as a growth of the scene does, and so does the first table of joint overrides.
+- The animator makes its views again when the count changes. It sizes each view from the table's capacity (`animationCapacity`), not from the start figure.
+- The Rust test `each_move_of_the_animation_tables_arrays_steps_the_count` checks the count. The unit test in `scene/animation.test.ts` grows a fake table past 1,024 objects without memory growth. It checks that the views move, and that object 1,025's time scale, update interval and look-at reach the new arrays.

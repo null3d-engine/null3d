@@ -821,6 +821,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createAnimatedInstance(skeleton: number, object: number): number;
 	/**
+	 * The most animated instances that the animation table holds now. A new instance that does not
+	 * fit grows the table, which moves its arrays.
+	 */
+	animationCapacity(): number;
+	/**
 	 * Makes the table of joint overrides and look-at targets (`ANIMATION_FIELD_JOINT_OVERRIDES`
 	 * and `ANIMATION_FIELD_LOOK_TARGETS`), once. Until then, the frame step does no override work.
 	 */
@@ -1055,6 +1060,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resampledClips',
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
+	'animationCapacity',
 	'removeAnimatedInstance',
 	'enableJointOverrides',
 	'createMorphWeights',

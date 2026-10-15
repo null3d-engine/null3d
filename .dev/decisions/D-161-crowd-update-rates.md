@@ -67,7 +67,7 @@ task's shared-pose wording is met by the vertex-shader default and M2-C8's pose 
 
 ## Costs
 
-- One 32-bit word per animated instance (4 KB at the table's 1,024 instances) and one more per
+- One 32-bit word per animated instance (4 KB at the 1,024 instances that the table starts with) and one more per
   instance for the step that last posed it.
 - On a frame that skips an instance, the engine copies its matrices from the previous frame's
   buffer into this one, 48 bytes per joint. That is a memcpy against a full sample, blend and

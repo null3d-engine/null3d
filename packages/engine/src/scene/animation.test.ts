@@ -23,6 +23,7 @@ const AT = {
 	layerWeights: 4096,
 	events: 20_480,
 	totals: 36_864,
+	moved: 36_880,
 	staging: 40_960,
 	sceneArrays: 131_072,
 	ring: 196_608,
@@ -35,13 +36,30 @@ const AT = {
 };
 /** Object slots of the fake scene. */
 const CAPACITY = 7;
+/** The animated objects that the fake animation table holds at the start. */
+const ANIMATED = 1024;
+/** Each array of the animation table with one row per object, and its bytes per object. */
+const PER_OBJECT: [number, number][] = [
+	[C.ANIMATION_FIELD_LOOK_TARGETS, 24],
+	[C.ANIMATION_FIELD_TIME_SCALES, 4],
+	[C.ANIMATION_FIELD_UPDATE_INTERVALS, 4],
+	[C.ANIMATION_FIELD_LAYER_WEIGHTS, 4 * C.ANIMATION_MAX_LAYERS],
+	[C.ANIMATION_FIELD_BLEND_VALUES, 4 * C.ANIMATION_MAX_LAYERS],
+	[C.ANIMATION_FIELD_SLOT_SOURCES, 4 * C.ANIMATION_MAX_BLEND],
+	[C.ANIMATION_FIELD_SLOT_WEIGHTS, 4 * C.ANIMATION_MAX_BLEND],
+	[C.ANIMATION_FIELD_JOINT_OVERRIDES, 4 * C.JOINT_OVERRIDE_BLOCK],
+];
+/** Where a growth of the fake animation table puts its arrays: past every array of the start. */
+const GROWN_AT = 1 << 20;
 
 /**
  * A core whose animation calls record their arguments and the staging words they read. Its ids
- * count up from 1, as the core's ids plus one do.
+ * count up from 1, as the core's ids plus one do. With `grows`, animated instances take ids of
+ * their own from 1, and the instance past the table's capacity doubles the table as the core
+ * does: every array with a row per object moves, and the memory stays as it is.
  */
-function fakeCore() {
-	const memory = new WebAssembly.Memory({ initial: 16 });
+function fakeCore(grows = false) {
+	const memory = new WebAssembly.Memory({ initial: 64 });
 	const calls: [string, ...number[]][] = [];
 	const staged: number[][] = [];
 	let stagedWords = 0;
@@ -65,6 +83,8 @@ function fakeCore() {
 			calls.push([name, ...args]);
 			return next++;
 		};
+	let animated = 0;
+	let capacity = ANIMATED;
 	const fields: Record<number, number> = {
 		[C.ANIMATION_FIELD_TIME_SCALES]: AT.timeScales,
 		[C.ANIMATION_FIELD_LAYER_WEIGHTS]: AT.layerWeights,
@@ -76,6 +96,16 @@ function fakeCore() {
 		[C.ANIMATION_FIELD_PLAY_ARGS]: AT.playArgs,
 		[C.ANIMATION_FIELD_JOINT_OVERRIDES]: AT.jointOverrides,
 		[C.ANIMATION_FIELD_LOOK_TARGETS]: AT.lookTargets,
+	};
+	const grow = () => {
+		capacity *= 2;
+		let at = GROWN_AT;
+		for (const [field, bytes] of PER_OBJECT) {
+			fields[field] = at;
+			at += capacity * bytes;
+		}
+		const moved = new Uint32Array(memory.buffer, AT.moved, 1);
+		moved[0] = (moved[0] as number) + 1;
 	};
 	/** The play numbers at the `ANIMATION_ARG_*` places `at`. */
 	const args = (at: number[]) => {
@@ -101,7 +131,14 @@ function fakeCore() {
 			calls.push(['setClipEvents', clip, count]);
 			return 0;
 		},
-		createAnimatedInstance: created('createAnimatedInstance'),
+		createAnimatedInstance: grows
+			? (...given: number[]) => {
+					calls.push(['createAnimatedInstance', ...given]);
+					if (++animated > capacity) grow();
+					return animated;
+				}
+			: created('createAnimatedInstance'),
+		animationCapacity: () => capacity,
 		enableJointOverrides: record('enableJointOverrides'),
 		removeAnimatedInstance: record('removeAnimatedInstance'),
 		animatorPlay: (...given: number[]) => {
@@ -125,12 +162,19 @@ function fakeCore() {
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
-	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
+	const core = new CoreMemory(
+		withCallValues(glue, memory) as unknown as CoreGlue,
+		memory,
+		AT.moved,
+	);
 	const scene = new Scene(core, { frame: 5 }, false);
 	return {
 		scene,
 		calls,
 		staged,
+		memory,
+		/** The address of each animation table array now. */
+		fields,
 		fail(code: number, details: [number, number]) {
 			failure = { code, details };
 			glue.animatorPlay = () => code;
@@ -658,6 +702,44 @@ describe('the animator', () => {
 		expect(
 			thrown(() => animator.lookAt([0, 0, 0], { joints: ['Spine', 'Head'], limit: [1] })).message,
 		).toContain('1 limits for 2 joints');
+	});
+
+	test('follows the table past its first objects when its arrays move and the memory does not grow', () => {
+		const fake = fakeCore(true);
+		const { f32, f64, fields } = fake;
+		const rig = createAnimationRig(fake.scene, RIG);
+		const hero = new Group(fake.scene, 3, 'Hero');
+		const AIM = Object.freeze({ joints: ['Spine', 'Head'] });
+		const first = animateObject(hero, rig);
+		first.setTimeScale(0.5);
+		first.lookAt([1, 2, 3], AIM);
+		const bytes = fake.memory.buffer.byteLength;
+		let last = first;
+		for (let k = 0; k < ANIMATED; k++) last = animateObject(hero, rig);
+		expect(last.instance).toBe(ANIMATED + 1);
+		expect(fake.memory.buffer.byteLength).toBe(bytes);
+		expect(fields[C.ANIMATION_FIELD_TIME_SCALES]).not.toBe(AT.timeScales);
+
+		// Each write reaches the moved arrays, the object past the first ones included.
+		first.setTimeScale(2);
+		last.setTimeScale(0.25);
+		last.setUpdateInterval(4);
+		last.lookAt([4, 5, 6], AIM, 0.5);
+		const n = ANIMATED + 1;
+		const at = (field: number) => fields[field] as number;
+		const scales = f32(at(C.ANIMATION_FIELD_TIME_SCALES), n);
+		expect([scales[0], scales[ANIMATED]]).toEqual([2, 0.25]);
+		expect(last.timeScale).toBe(0.25);
+		expect(last.updateInterval).toBe(4);
+		expect(
+			new Uint32Array(fake.memory.buffer, at(C.ANIMATION_FIELD_UPDATE_INTERVALS), n)[ANIMATED],
+		).toBe(4);
+		expect(f64(at(C.ANIMATION_FIELD_LOOK_TARGETS) + ANIMATED * 24, 3)).toEqual([4, 5, 6]);
+		const block = at(C.ANIMATION_FIELD_JOINT_OVERRIDES) + ANIMATED * C.JOINT_OVERRIDE_BLOCK * 4;
+		expect(f32(block + C.JOINT_OVERRIDE_LOOK_WEIGHT * 4, 2)).toEqual([0.5, 2]);
+		// The arrays that the growth freed see no write.
+		expect(f32(AT.timeScales, 1)).toEqual([0.5]);
+		expect(f64(AT.lookTargets, 3)).toEqual([1, 2, 3]);
 	});
 
 	test('leaves the core when its object is destroyed', () => {

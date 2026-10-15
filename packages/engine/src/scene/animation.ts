@@ -183,7 +183,10 @@ export type AnimationEventHandler = (event: AnimationEvent) => void;
 const LOOP = 'loop';
 const FINISHED = 'finished';
 
-/** The animated objects and joints that the animation table holds. */
+/**
+ * The animated objects and joints that the animation table holds at the start. The core grows it
+ * when an object does not fit, so the views follow its capacity, never these figures.
+ */
 const ANIMATED_OBJECTS = 1024;
 const ANIMATED_JOINTS = 65_536;
 
@@ -401,28 +404,25 @@ export class SceneAnimations implements ViewHolder {
 	}
 
 	/**
-	 * The arrays of the animation table, made again after the engine's memory grew. Sketches set
-	 * weights every frame, so this check stays small enough for the browser to inline into their
-	 * code, and creates no closure: either way, each number passed to it would allocate.
+	 * The arrays of the animation table, made again after the engine's memory grew or the table's
+	 * arrays moved. Sketches set weights every frame, so this check stays small enough for the
+	 * browser to inline into their code, and creates no closure: either way, each number passed to
+	 * it would allocate.
 	 */
 	private views(): void {
 		if (this.generation !== this.core.generation) this.makeViews();
 	}
 
+	/** Makes every view of the table's arrays, each as long as the table's capacity needs. */
 	private makeViews(): void {
 		const { core } = this;
 		const at = (field: number) => core.glue.animationArrays(field);
-		this.scales = core.f32(at(C.ANIMATION_FIELD_TIME_SCALES), ANIMATED_OBJECTS);
-		this.intervals = core.u32(at(C.ANIMATION_FIELD_UPDATE_INTERVALS), ANIMATED_OBJECTS);
-		this.weights = core.f32(
-			at(C.ANIMATION_FIELD_LAYER_WEIGHTS),
-			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
-		);
-		this.blends = core.f32(
-			at(C.ANIMATION_FIELD_BLEND_VALUES),
-			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
-		);
-		const slots = ANIMATED_OBJECTS * C.ANIMATION_MAX_BLEND;
+		const objects = core.glue.animationCapacity();
+		this.scales = core.f32(at(C.ANIMATION_FIELD_TIME_SCALES), objects);
+		this.intervals = core.u32(at(C.ANIMATION_FIELD_UPDATE_INTERVALS), objects);
+		this.weights = core.f32(at(C.ANIMATION_FIELD_LAYER_WEIGHTS), objects * C.ANIMATION_MAX_LAYERS);
+		this.blends = core.f32(at(C.ANIMATION_FIELD_BLEND_VALUES), objects * C.ANIMATION_MAX_LAYERS);
+		const slots = objects * C.ANIMATION_MAX_BLEND;
 		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
 		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
 		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
@@ -434,9 +434,9 @@ export class SceneAnimations implements ViewHolder {
 		if (this.overridesMade) {
 			this.overrides = core.f32(
 				at(C.ANIMATION_FIELD_JOINT_OVERRIDES),
-				ANIMATED_OBJECTS * C.JOINT_OVERRIDE_BLOCK,
+				objects * C.JOINT_OVERRIDE_BLOCK,
 			);
-			this.targets = core.f64(at(C.ANIMATION_FIELD_LOOK_TARGETS), ANIMATED_OBJECTS * 3);
+			this.targets = core.f64(at(C.ANIMATION_FIELD_LOOK_TARGETS), objects * 3);
 		}
 		this.generation = core.generation;
 	}
