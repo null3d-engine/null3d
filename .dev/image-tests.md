@@ -35,6 +35,8 @@ This guide covers the image test manifest, its references, and the review that m
 
 A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
+A test that compares two of its own frames rather than a reference, as `showcase-hud.spec.ts` does for the HUD's switches, must read them while the canvas holds still: a scene whose camera flies, or whose look eases, changes every pixel between two reads, so a difference carries no meaning. Wait for two frames in a row to match, then compare. Two traps came with that reading on 15 October 2026. `page.locator(...).screenshot()` returns a PNG that Chromium writes as RGB, which `decodePng` refuses, so use `decodePngRgba` from `packages/cli/src/png.js`. And a screenshot taken a frame after a control moved can still show the scene mid-ease, so take the reading that a switch is judged against before the control is clicked, not after.
+
 ## The feature demos
 
 Each demo in `examples/` is a sketch that the examples page runs live and the manifest holds at one time. These rules keep the held frame and the live page in step:
