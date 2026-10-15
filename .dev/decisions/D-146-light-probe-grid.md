@@ -54,3 +54,11 @@ The grid's sampling sits in its own first-use templates, `probe_grid` and `probe
 The engine keeps a CPU copy of the grid's irradiance formula (`l1Irradiance` and `sampleGrid` in `packages/engine/src/scene/light-probes.ts`), and the bake uses it for the light at a ray's hit. Its first version read only the first L1 coefficient and paired it with the normal's x. It never read the L1 coefficients along z and x. The unit test of that time set the first L1 coefficient and checked it against a normal along x, so it pinned the fault. The other tests compared the CPU grid sampling with the same CPU formula, so they could not see it.
 
 The fix reads all four coefficients in the shader's order: L0, then L1 along y, z and x, as `probe_grid.wgsl` and `sh_irradiance` read them, and as the bake writes them. A unit test now compares the CPU result with the shader's formula for normals along each axis, both ways, and a diagonal. Each term and channel has its own value, so a swapped or missing term fails. The bake's light at a hit now calls the same function, so the formula lives once on the CPU. No shader or image changed: the GPU path was always right.
+
+## Addendum, 15 October 2026: the bake's spacing, and the grid setter takes the bake's arrays
+
+The coordinator ruled on three faults in the grid's public API and docs, found while the CPU formula was fixed. Nothing is released yet, so the API changed without a shim.
+
+- The bake's `resolution` option was described as the probes along each axis, but the bake used it as the distance between probes. A docs example that asked for 24 probes along an axis got two. The option is now `spacing`, in meters, 2 by default, which is what the code always did. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
+- `setLightProbeGrid`'s development check took only plain arrays for `origin`, `spacing` and `counts`, while the bake's grid holds typed arrays. The documented bake example therefore threw E1203. The setter now takes any three finite numbers, in an array or a typed array. A unit test runs the documented bake calls through the setter's check.
+- The docs examples used a class that does not exist and an internal packing function, and set a new texture in every frame after the bake ended. They now use `LightProbeGridData` and set the grid once.
