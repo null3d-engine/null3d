@@ -7,6 +7,7 @@ use crate::environment::EnvironmentUniform;
 use crate::fog::FogUniform;
 use crate::output::OutputUniform;
 use crate::physical_sky::AerialUniform;
+use crate::probe_grid::ProbeGridUniform;
 
 /// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
 /// include the intensity. Shaders work in positions relative to the camera.
@@ -52,6 +53,8 @@ pub struct FrameUniform {
     pub occlusion: [f32; 4],
     /// The scene's environment: see [`crate::environment`].
     pub environment: EnvironmentUniform,
+    /// The scene's light probe grid: see [`crate::probe_grid`].
+    pub probe_grid: ProbeGridUniform,
     /// The light that the hemisphere lights add along each world axis, x, y and z, each in the
     /// first three floats: a surface with unit normal `n` gets `ambient` plus `n.x` times the
     /// first, `n.y` times the second and `n.z` times the third (see

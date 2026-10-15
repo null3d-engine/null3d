@@ -125,6 +125,7 @@ use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
 use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
+use crate::probe_grid;
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
@@ -169,8 +170,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 1;
     /// The final pass's settings.
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
+    /// The first step of the two-step pass's settings.
+    pub const OUTPUT_SETTINGS: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
-    pub const BLOOM: u32 = FINAL_SETTINGS + 1;
+    pub const BLOOM: u32 = OUTPUT_SETTINGS + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
     /// The uniform buffer of the background's values.
@@ -225,9 +228,15 @@ mod ids {
     /// The blank cube that the frame's groups bind while the scene has no environment.
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
-    pub const BLANK_OUTLINE: u32 = BLANK_ENVIRONMENT + 1;
+    /// The blank 3D texture that the frame's groups bind while the scene has no light probe grid.
+    pub const BLANK_PROBE_GRID: u32 = BLANK_ENVIRONMENT + 1;
+    pub const BLANK_OUTLINE: u32 = BLANK_PROBE_GRID + 1;
+    /// The first step of the two-step pass's own blank color grading table and outline texture,
+    /// which it owns so that it never destroys the final pass's.
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_OUTLINE + 1;
+    pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = BLANK_OUTLINE + 1;
+    pub const JOINTS: u32 = OUTPUT_BLANK_OUTLINE + 1;
     /// The first joint of the instance that skins each source row, then the first texel of the
     /// morph weights of each source row.
     pub const FIRST_JOINTS: u32 = JOINTS + 1;
@@ -285,14 +294,19 @@ mod ids {
     pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The linear sampler of the automatic exposure's meter.
     pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
+    /// The linear sampler of the first step of the two-step pass's color grading table, which it
+    /// owns so that it never destroys the final pass's.
+    pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
+    pub const SAMPLERS: u32 = OUTPUT_LUT_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
     const GROUPS_PER_VIEW: u32 = RING + 1 + RING * RING;
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEW_IDS as u32;
+    /// The first step of the two-step pass's group, after the final pass's.
+    pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1;
 
     /// The frame group of the light textures' first ring slot: slot `s` has the group `s` after
     /// it.
@@ -308,7 +322,7 @@ mod ids {
         draws_group(view) + 1
     }
     /// The bind group of each step of bloom, after the final pass's group.
-    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
+    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
@@ -493,6 +507,8 @@ pub struct CpuCulledRenderer {
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
     bound_environment: u32,
+    /// The 3D texture that the frame groups bind: the grid's, or the blank one.
+    bound_probe_grid: u32,
 }
 
 impl CpuCulledRenderer {
@@ -541,6 +557,13 @@ impl CpuCulledRenderer {
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        output_pass: FinalIds {
+                            settings: ids::OUTPUT_SETTINGS,
+                            group: ids::OUTPUT_GROUP,
+                            blank_lut: ids::OUTPUT_BLANK_LUT,
+                            lut_sampler: ids::OUTPUT_LUT_SAMPLER,
+                            blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
@@ -659,6 +682,7 @@ impl CpuCulledRenderer {
             created: false,
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
+            bound_probe_grid: ids::BLANK_PROBE_GRID,
         }
     }
 
@@ -1103,6 +1127,7 @@ impl CpuCulledRenderer {
             ],
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
+        probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         self.settings
@@ -1404,6 +1429,7 @@ impl CpuCulledRenderer {
             atlas,
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
             environment: self.bound_environment,
+            probe_grid: self.bound_probe_grid,
             lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
         };
@@ -1496,9 +1522,19 @@ impl CpuCulledRenderer {
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
+        let (probe_grid, grid_uniform) = self.settings.probe_grid_map(ids::BLANK_PROBE_GRID);
+        if probe_grid != self.bound_probe_grid {
+            self.bound_probe_grid = probe_grid;
+            lit.probe_grid = probe_grid;
+            for index in 0..self.opaque.views() {
+                let view = ViewId::from_index(index);
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
+            }
+        }
         for index in 0..views {
             if let Some(frame) = self.culling.frame_mut(ViewId::from_index(index)) {
                 frame.uniform.environment = uniform;
+                frame.uniform.probe_grid = grid_uniform;
             }
         }
         if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
@@ -1976,11 +2012,16 @@ impl FrameBuilder for CpuCulledRenderer {
         let area_switched = self
             .settings
             .update_area_shading(&mut self.pipelines, input.pipelines_built);
+        // Lit meshes switch to or from the light probe grid's templates.
+        let probe_switched = self
+            .settings
+            .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         if particles_changed
             || input.structure_changed
             || !self.layout.built
             || area_switched
+            || probe_switched
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || prepass_changed
@@ -2155,6 +2196,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.bound_probe_grid = ids::BLANK_PROBE_GRID;
         self.background.reset_gpu();
         self.particles.reset_gpu();
         self.physical_sky.reset_gpu();

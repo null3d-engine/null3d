@@ -62,11 +62,21 @@ inputs, so re-checking a branch on a moved main is cheap.
 
 - `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
   landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
+- A cache is used only when its entry is whole. The shader modules cache, for example, requires every
+  module that `shaders.ts` loads, from its imports and the device module names its tables hold. A set
+  that misses one is a miss, so the build runs again rather than reporting "up to date" while a file is
+  absent.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
   output in a folder of its own, named for the build's process, and Cargo locks the target folder that
   they share. A size check takes a machine-wide lock, because it also builds the base commit with that
   commit's own build script, which may stage into the shared target folder.
+- The shared `cargo-target` folder holds one compiled object for each crate name. A build in one copy
+  can therefore leave files that another copy's build reuses. On 15 October 2026 that gave a merged
+  branch a core without its own feature. The feature bit was missing from the material's flags, and
+  the generated shader modules were newer than the core. When a core change seems to be ignored,
+  touch the crate sources and build with `NULL3D_NO_CACHE=1`. Check the flags word that a material
+  row holds before looking anywhere else.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
 shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the

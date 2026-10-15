@@ -41,6 +41,9 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `coatSheen` switch gives the swarm's boxes a clear coat and a sheen, for the allocation sample
+// and the cost of their shading: `coatSheen=coat` and `coatSheen=sheen` give one of them, and the switch
+// alone both.
 // The `weighted` switch puts a column of smoke over the swarm's middle: puffs of the weighted
 // blending in a sprite batch that rise and swell in every frame, for the allocation sample and the
 // cost of the camera's weighted layer. `weighted=sorted` gives the same smoke the normal blending,
@@ -77,7 +80,7 @@ import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
-import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
+import { createLineSwarm, createSpriteSwarm, createSwarm, type SwarmCoatSheen } from './swarm';
 
 export default defineSketch(async (context) => {
 	const { time } = context;
@@ -94,6 +97,7 @@ export default defineSketch(async (context) => {
 					shadows: switches.has('batchShadows'),
 					rowValues: switches.has('rowValues'),
 					levels: switches.has('levels'),
+					layers: readCoatSheen(switches.get('coatSheen')),
 				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
@@ -564,6 +568,14 @@ function createWater(
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** The layers that the `coatSheen` switch asks for, or none without it. */
+function readCoatSheen(value: string | null): SwarmCoatSheen | undefined {
+	if (value === null) return undefined;
+	if (value === '') return 'both';
+	if (value === 'coat' || value === 'sheen' || value === 'both') return value;
+	throw new Error(`coatSheen=${value} names no layers: take coat, sheen or both`);
 }
 
 /** Adds the `transmission` switch's clear water under the swarm, which lets the light below through. */

@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use null3d_gpu::drawlist::{permutation, vertex};
+use null3d_gpu::drawlist::vertex;
 
 use crate::manifest::{Manifest, Pipeline, Shader, Target, Variant};
 use crate::position::locate;
@@ -348,14 +348,8 @@ pub struct MaterialOutput {
     pub uniforms: Vec<Uniform>,
     /// The textures that the WGSL declares, in the order of their slots: none without any.
     pub textures: Vec<Texture>,
-    /// The template's variants with the WGSL, or the full shader's, by name, without those of
-    /// `skin_variants`.
+    /// The template's variants with the WGSL, or the full shader's, by name.
     pub variants: BTreeMap<String, VariantOutput>,
-    /// The template's WebGPU builds that skin in the vertex shader, by name. They load on first
-    /// use, when the material first draws a skinned mesh, so the Vite plugin puts them in a module
-    /// of their own, which pages without such a mesh never download. Empty for a full shader.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub skin_variants: BTreeMap<String, VariantOutput>,
     /// The vertex shader locations that the vertex stage reads from a mesh's vertices, in order.
     pub locations: Vec<u32>,
     /// The optional vertex attributes (`vertex::*` bits) that those locations read, which a mesh
@@ -443,6 +437,24 @@ fn sets_transmission(tokens: &[Token]) -> bool {
         .any(|pair| pair[0].text == "." && pair[1].text == "transmission")
 }
 
+/// The fields of the surface record that a layered material's builds light: the clear coat's and
+/// the sheen's values.
+const LAYER_FIELDS: [&str; 5] = [
+    "clearcoat",
+    "clearcoatRoughness",
+    "clearcoatNormal",
+    "sheenColor",
+    "sheenRoughness",
+];
+
+/// True when a custom material's WGSL sets or reads one of the surface's layer values, so the
+/// material can have a clear coat or a sheen.
+fn names_coat_sheen(tokens: &[Token]) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == "." && LAYER_FIELDS.contains(&pair[1].text))
+}
+
 /// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
 /// draw index in `null3d::mesh`, and the directive goes at the top of the file.
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
@@ -509,6 +521,7 @@ impl Compiler {
         }
 
         let transmits = sets_transmission(&tokens);
+        let layered = names_coat_sheen(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let inputs = read_inputs(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
@@ -534,14 +547,14 @@ impl Compiler {
                 // Custom materials draw at full precision, so their builds stay half as many. They
                 // keep the SKIN builds on both paths, as the vertex shaders skin by default, and
                 // skinned objects of one mesh and material then share an instanced draw (decision
-                // record D-20). The WebGPU ones load on first use (`skin_variants`). They have no
-                // MORPH builds, which would double their WebGL2 builds again: on WebGL2 they draw
-                // morphed meshes at rest (decision record D-51). They read their
-                // instances from the culling shader's copies on every path, so they have no
-                // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
+                // record D-20). They have no MORPH builds, which would double their WebGL2 builds
+                // again: on WebGL2 they draw morphed meshes at rest (decision record D-51). They
+                // read their instances from the culling shader's copies on every path, so they
+                // have no INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
                 // Only WGSL that sets the surface's transmission has the builds that let light
-                // through, so other materials keep their builds as few as before. Every material
+                // through, and only WGSL that names a layer's value has the builds of the clear
+                // coat and the sheen, so other materials keep their builds as few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies. They have no builds of a fading level of
                 // detail, so their levels switch at once. They have no builds of the weighted
@@ -565,6 +578,7 @@ impl Compiler {
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
+                    .filter(|bit| layered || *bit != "COAT_SHEEN")
                     .cloned()
                     .collect();
                 let variant = Variant {
@@ -601,15 +615,11 @@ impl Compiler {
         // A mesh without second texture coordinates offers its first set in their place, so the
         // second set is no attribute that a mesh needs.
         let attributes = attributes & !vertex::UV1;
-        let (skin_variants, variants) = built.into_iter().partition(|(_, variant)| {
-            variant.wgsl.is_some() && variant.permutation & permutation::SKIN != 0
-        });
         errors.or(MaterialOutput {
             functions: declared.iter().map(|hook| hook.name.to_owned()).collect(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             textures: texture_fields,
-            variants,
-            skin_variants,
+            variants: built,
             locations,
             attributes,
             base_color: true,
@@ -698,7 +708,6 @@ impl Compiler {
             uniforms: Vec::new(),
             textures: Vec::new(),
             variants: built,
-            skin_variants: BTreeMap::new(),
             locations,
             attributes,
             base_color: false,

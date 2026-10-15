@@ -49,6 +49,8 @@ import {
 	TEMPLATE_PARTICLE,
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PROBE_GRID,
+	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
@@ -237,6 +239,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 		meshPrepass: true,
 	});
 	templates[TEMPLATE_INSTANCED_LIT] = mesh(shaders.lit);
+	templates[TEMPLATE_PROBE_GRID] = mesh(shaders.probe_grid);
+	templates[TEMPLATE_PROBE_GRID_MAPS] = mesh(shaders.probe_grid_maps);
 	templates[TEMPLATE_INSTANCED_UNLIT] = mesh(shaders.unlit);
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);

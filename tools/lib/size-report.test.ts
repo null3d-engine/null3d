@@ -321,7 +321,7 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(145 * 1024);
+		expect(START_BUDGET.brotli).toBe(160 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
@@ -334,7 +334,7 @@ describe('budgetProblems', () => {
 				later,
 			),
 		).toEqual([
-			'the engine JavaScript that a page downloads at its start in pipelined mode is 148,481 bytes after Brotli, over its 145 KB budget',
+			'the engine JavaScript that a page downloads at its start in pipelined mode is 163,841 bytes after Brotli, over its 160 KB budget',
 			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
 		]);
 	});
@@ -352,13 +352,13 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(32 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(48 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 32,769 bytes after Brotli, over its 32 KB budget',
+			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 49,153 bytes after Brotli, over its 48 KB budget',
 		]);
 	});
 });

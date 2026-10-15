@@ -14,9 +14,12 @@
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
 // not arrived yet builds once it has. On the dev server, a hot update sends a template's shader
 // again: the table lists the template as replaced, and the backend builds its pipelines again.
-// A custom material's WebGPU builds that skin in the vertex shader load on first use: the first
-// pipeline that needs one asks the sketch thread for them, back through the same way, and waits
-// until they arrive, as a pipeline waits for a shader file.
+// A custom material's builds load on first use, in sets: one for each value of the permutation
+// bits that a device fixes and of skinning. The sketch thread sends its device's set as soon as it
+// first uses the material. A pipeline that needs a build of another set, such as one without tone
+// mapping once bloom turns on, or one that skins, asks the sketch thread for that set, back through
+// the same way, and waits until it arrives, as a pipeline waits for a shader file. Equal text in
+// the sets that arrive is kept once.
 //
 // So do the names of features whose shader files the sketch will need, such as skinning when a
 // glTF file with skins loads. The thread that draws starts to download each feature's file then,
@@ -24,13 +27,53 @@
 // shaders the same way, while an HDR file still downloads.
 
 import { messageOf } from '../errors/message';
-import { PERMUTATION_SKIN } from '../generated/gpu';
+import { PERMUTATION_DRAW_INDEX, PERMUTATION_SKIN, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { EffectPieces } from '../gpu/effect-join';
 import { variantFor } from '../gpu/variants';
 import type { Panorama } from '../scene/panorama-files';
 import { frameAfter, Slot } from './control';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
+
+/**
+ * The permutation bits that pick a set of a custom material's builds: those that a device fixes,
+ * and skinning.
+ */
+const SET_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP | PERMUTATION_SKIN;
+
+/**
+ * The builds of `builds`, whose texts take the equal string of `texts` where it has one, so the
+ * thread keeps each distinct text once. A message gives each build its own copy of the text that
+ * WebGL2's builds share.
+ */
+function keepTextOnce(builds: ShaderVariants, texts: Map<string, string>): ShaderVariants {
+	const once = (text: string) => {
+		const kept = texts.get(text);
+		if (kept !== undefined) return kept;
+		texts.set(text, text);
+		return text;
+	};
+	const out: Record<string, ShaderVariants[string]> = {};
+	for (const [name, build] of Object.entries(builds)) {
+		const { wgsl, glsl } = build;
+		out[name] = {
+			...build,
+			wgsl: wgsl && { ...wgsl, source: once(wgsl.source) },
+			glsl:
+				glsl &&
+				Object.fromEntries(
+					Object.entries(glsl).map(([pipeline, program]) => [
+						pipeline,
+						{
+							vertex: { ...program.vertex, source: once(program.vertex.source) },
+							fragment: { ...program.fragment, source: once(program.fragment.source) },
+						},
+					]),
+				),
+		};
+	}
+	return out;
+}
 
 /** An effect of a group or a fold: the template of its own shader, and the slot of its block. */
 export interface JoinedEffect {
@@ -60,10 +103,10 @@ export interface CustomShader {
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
 	readonly textures: number;
 	/**
-	 * True while a custom material's WebGPU builds that skin in the vertex shader have not arrived.
-	 * They load on first use, which the table asks the sketch thread for.
+	 * True for a custom material whose builds load on first use, in sets that the sketch thread
+	 * sends: its variants hold the sets that arrived.
 	 */
-	readonly skinBuilds?: boolean;
+	readonly builds?: boolean;
 	/** An effect's or a tone curve's pieces, which groups and folds join. */
 	readonly pieces?: EffectPieces;
 	/** A group's or a fold's effects, in the order they run. */
@@ -101,52 +144,65 @@ export class ImageTable {
 	setShader(template: number, shader: CustomShader): void {
 		if (this.shaders.has(template)) this.replaced.push(template);
 		this.shaders.set(template, shader);
+		// A hot update's shader brings its builds, so sets of the old shader that still come are dropped.
+		this.sets.delete(template);
 	}
 
-	/** Asks the sketch thread for the builds of a template that load on first use. */
-	askBuilds: (template: number) => void = () => {};
-	/** The templates whose builds the table asked for. */
-	private readonly asked = new Set<number>();
-	/** Why the builds of each template that failed to load failed. */
-	private readonly buildFailures = new Map<number, string>();
+	/** Asks the sketch thread for a set of the builds of a template that load on first use. */
+	askBuilds: (template: number, set: number) => void = () => {};
+	/**
+	 * The sets of each template's builds that the table asked for or that arrived, by their bits:
+	 * true once a set arrived, false while it is on its way, or why it failed to load.
+	 */
+	private readonly sets = new Map<number, Map<number, boolean | string>>();
+	/** Each distinct text of the builds that arrived, so that equal text is kept once. */
+	private readonly texts = new Map<string, string>();
 
 	/**
-	 * True when the shader of `template` holds the build of `permutation`, as far as its builds that
-	 * load on first use go: the WebGPU builds that skin, which a custom material's shader may lack
-	 * until the sketch thread sends them. The first call that needs them asks for them, and the
-	 * calls return false until they arrive. Throws when they failed to load.
+	 * True when the shader of `template` can build the pipeline of `permutation` with output for
+	 * `target`, as far as its builds that load on first use go: it holds the build, or the set that
+	 * would hold it has arrived, so the backend builds the pipeline or reports its error. The first
+	 * call that needs a set asks for it, and the calls return false until it arrives. Throws E1424
+	 * when the set failed to load.
 	 */
-	buildsReady(template: number, permutation: number): boolean {
+	buildsReady(template: number, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		const shader = this.shaders.get(template);
-		if (!shader?.skinBuilds || !(permutation & PERMUTATION_SKIN)) return true;
-		if (variantFor(shader.variants, permutation, 'wgsl')) return true;
-		const failure = this.buildFailures.get(template);
-		if (failure !== undefined)
-			throw new Error(
-				`the engine could not download the builds of a custom material that skin: ${failure}. Check the network, and that the page's build is deployed whole`,
-			);
-		if (!this.asked.has(template)) {
-			this.asked.add(template);
-			this.askBuilds(template);
+		if (!shader?.builds || variantFor(shader.variants, permutation, target)) return true;
+		const set = permutation & SET_BITS;
+		let sets = this.sets.get(template);
+		if (!sets) {
+			sets = new Map();
+			this.sets.set(template, sets);
 		}
-		return false;
+		const state = sets.get(set);
+		if (typeof state === 'string')
+			throw new Error(`E1424: the builds of a custom material did not load: ${state}.`);
+		if (state === undefined) {
+			sets.set(set, false);
+			this.askBuilds(template, set);
+		}
+		return state === true;
 	}
 
 	/**
-	 * Adds builds that loaded on first use to the shader of `template`, whose pipelines then build
-	 * from them, or keeps why they failed to load.
+	 * Adds a set of builds that loaded on first use to the shader of `template`, whose pipelines then
+	 * build from them, or keeps why the set failed to load.
 	 */
-	addBuilds(template: number, builds: ShaderVariants | string): void {
+	addBuilds(template: number, set: number, builds: ShaderVariants | string): void {
 		const shader = this.shaders.get(template);
-		// A hot update may have brought the template a newer shader, with its builds, meanwhile.
-		if (!shader?.skinBuilds) return;
+		if (!shader?.builds) return;
+		let sets = this.sets.get(template);
+		if (!sets) {
+			sets = new Map();
+			this.sets.set(template, sets);
+		}
 		if (typeof builds === 'string') {
-			this.buildFailures.set(template, builds);
+			sets.set(set, builds);
 			return;
 		}
+		sets.set(set, true);
 		// The backends' templates hold the shader's object of variants, so they see the new builds.
-		Object.assign(shader.variants, builds);
-		this.shaders.set(template, { ...shader, skinBuilds: false });
+		Object.assign(shader.variants, keepTextOnce(builds, this.texts));
 	}
 
 	/** The features whose shader files the sketch asked for, which every renderer loads. */
@@ -303,8 +359,8 @@ export class ImageTable {
 		this.generators.clear();
 		this.shaders.clear();
 		this.replaced.length = 0;
-		this.asked.clear();
-		this.buildFailures.clear();
+		this.sets.clear();
+		this.texts.clear();
 		// The listener belongs to a renderer: a table that kept it would keep that renderer, and the
 		// engine's memory with it, for as long as the port that fills the table lives. The ask for
 		// builds can reach the sketch's objects, so it goes too.
@@ -323,10 +379,13 @@ export type ShaderSender = (template: number, shader: CustomShader) => void;
 export type PreloadSender = (features: readonly string[]) => void;
 
 /**
- * Sends a shader's builds that loaded on first use, under its template, to the thread that draws,
- * or why they did not load.
+ * Sends a set of a shader's builds that loaded on first use, under its template and the set's
+ * permutation bits, to the thread that draws, or why the set did not load.
  */
-export type BuildsSender = (template: number, builds: ShaderVariants | string) => void;
+export type BuildsSender = (template: number, set: number, builds: ShaderVariants | string) => void;
+
+/** Answers an ask of the thread that draws for a set of a template's builds. */
+export type BuildsAsker = (template: number, set: number) => void;
 
 /**
  * A message that carries an image, a custom material's shader or features to preload to the
@@ -336,12 +395,13 @@ type DrawingMessage =
 	| { id: number; image: ImageBitmap }
 	| { id: number; generator: GeneratorSource }
 	| { template: number; shader: CustomShader }
-	| { template: number; builds: ShaderVariants | string }
+	| { template: number; set: number; builds: ShaderVariants | string }
 	| { preload: readonly string[] };
 
-/** The message in which the thread that draws asks for a template's builds that load on first use. */
+/** The message in which the thread that draws asks for a set of a template's builds. */
 interface AskBuilds {
 	askBuilds: number;
+	set: number;
 }
 
 /**
@@ -375,14 +435,14 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 		if (held) held.push([message, transfer]);
 		else port.postMessage(message, transfer);
 	};
-	let answer: (template: number) => void = () => {};
+	let answer: BuildsAsker = () => {};
 	port.onmessage = (event: MessageEvent<unknown>) => {
 		const data = event.data as ({ type?: string } & Partial<AskBuilds>) | null;
 		if (held && data?.type === RECEIVING.type) {
 			for (const [message, transfer] of held) port.postMessage(message, transfer);
 			held = undefined;
 		}
-		if (data?.askBuilds !== undefined) answer(data.askBuilds);
+		if (data?.askBuilds !== undefined) answer(data.askBuilds, data.set ?? 0);
 		wakeWaiters();
 	};
 	return {
@@ -392,7 +452,7 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 			else post({ id, generator: image }, [image.texels.buffer]);
 		},
 		sendShader: (template, shader) => post({ template, shader }),
-		sendBuilds: (template, builds) => post({ template, builds }),
+		sendBuilds: (template, set, builds) => post({ template, set, builds }),
 		sendPreload: (features) => port.postMessage({ preload: features } satisfies DrawingMessage),
 		onAskBuilds(handler) {
 			answer = handler;
@@ -446,8 +506,8 @@ export interface DrawingSenders {
 	sendShader: ShaderSender;
 	sendBuilds: BuildsSender;
 	sendPreload: PreloadSender;
-	/** Answers each ask of the thread that draws for a template's builds that load on first use. */
-	onAskBuilds(handler: (template: number) => void): void;
+	/** Answers each ask of the thread that draws for a set of a template's builds. */
+	onAskBuilds(handler: BuildsAsker): void;
 }
 
 /**
@@ -464,7 +524,7 @@ export function drawingSenders(
 		: {
 				sendImage: sendToTable(table, slots),
 				sendShader: shadersToTable(table),
-				sendBuilds: (template, builds) => table.addBuilds(template, builds),
+				sendBuilds: (template, set, builds) => table.addBuilds(template, set, builds),
 				sendPreload: (features) => table.preload(features),
 				onAskBuilds(handler) {
 					table.askBuilds = handler;
@@ -484,11 +544,12 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	port.onmessageerror = () => {
 		throw new Error('a texture image or shader that the sketch sent could not be read');
 	};
-	table.askBuilds = (template) => port.postMessage({ askBuilds: template } satisfies AskBuilds);
+	table.askBuilds = (template, set) =>
+		port.postMessage({ askBuilds: template, set } satisfies AskBuilds);
 	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
 		const data = event.data;
 		if ('shader' in data) table.setShader(data.template, data.shader);
-		else if ('builds' in data) table.addBuilds(data.template, data.builds);
+		else if ('builds' in data) table.addBuilds(data.template, data.set, data.builds);
 		else if ('preload' in data) table.preload(data.preload);
 		else arrive(data.id, 'generator' in data ? data.generator : data.image);
 	};

@@ -3,10 +3,11 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, eleven `vec4f`s, which the WGSL struct
-//! `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine into a
-//! `Material`, and only the builds that let light through read the last two, the transmission's
-//! values. The [`param`] module names where each
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, thirteen `vec4f`s, which the WGSL
+//! struct `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine
+//! into a `Material`. Only the builds that let light through read the next two, the transmission's
+//! values, and only the builds of layered materials read the last two, the clear coat's and the
+//! sheen's values. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
 //! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
@@ -177,6 +178,16 @@ impl Shading {
         }
     }
 
+    /// True when its shader has the builds that light layers above the base: the standard
+    /// material's, with or without maps, and a custom material's. A custom material has the
+    /// feature only when its WGSL has such builds, which the engine checks when it creates it.
+    pub const fn layers(self) -> bool {
+        matches!(
+            self,
+            Shading::Lit | Shading::StandardMaps | Shading::Custom(_)
+        )
+    }
+
     /// True when its shader reads the material's base color and opacity, which vertex colors
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {
@@ -260,6 +271,10 @@ pub mod feature {
     /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. Custom materials have no such
     /// builds, and test their alpha against the cutoff.
     pub const ALPHA_HASH: u32 = 2048;
+    /// The surface draws only the shadows that fall on it, as three.js's `ShadowMaterial`: its own
+    /// color where the main directional light's shadows fall, and nothing where the light reaches
+    /// it. It takes the lit template, whose `shade` branches on the material's flag.
+    pub const SHADOW_CATCHER: u32 = 2_097_152;
     /// A double-sided surface that blends draws in one draw, both faces in the mesh's order, as
     /// three.js's `forceSinglePass` does. Without it the transparent pass draws such a surface's
     /// back faces first, then its front faces.
@@ -278,6 +293,12 @@ pub mod feature {
     /// occlusion mapping, so relief finer than the mesh's vertices hides and shows the surface
     /// behind it. Only opaque and masked surfaces take it.
     pub const PARALLAX: u32 = 32768;
+    /// The surface has layers above its base, as three.js's `MeshPhysicalMaterial` draws them: a
+    /// clear coat, a sheen or both, whose values sit at the end of the material's row. It picks
+    /// the shader builds that light them, so a material without layers pays nothing for them. In
+    /// a layered material, the map slots of the light map and the specular maps hold the layers'
+    /// maps ([`LayerMap`]).
+    pub const COAT_SHEEN: u32 = 65536;
     /// With [`BLEND`] and normal blending, the surface blends with the other such surfaces in any
     /// order, by a weighted average, in the camera's weighted layer (see [`crate::weighted`]).
     /// Elsewhere it draws back to front with the blended surfaces. A surface that lets light
@@ -305,6 +326,8 @@ pub mod feature {
         | TRANSMISSION
         | WIREFRAME
         | PARALLAX
+        | SHADOW_CATCHER
+        | COAT_SHEEN
         | WEIGHTED
         | DECAL;
 
@@ -360,6 +383,16 @@ pub mod flag {
     pub const HEIGHT_NORMALS: u32 = 64;
     /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
     pub const SECOND_UV: u32 = 256;
+    /// The shader draws only the shadows that fall on the surface, as three.js's `ShadowMaterial`.
+    pub const SHADOW_CATCHER: u32 = 128;
+    /// In a layered material, the red of the coat map multiplies the clear coat.
+    pub const COAT_MAP: u32 = 1 << 16;
+    /// In a layered material, the green of the coat map multiplies the coat's roughness.
+    pub const COAT_ROUGHNESS_MAP: u32 = 1 << 17;
+    /// In a layered material, the color of the sheen map multiplies the sheen color.
+    pub const SHEEN_COLOR_MAP: u32 = 1 << 18;
+    /// In a layered material, the alpha of the sheen map multiplies the sheen's roughness.
+    pub const SHEEN_ROUGHNESS_MAP: u32 = 1 << 19;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
@@ -375,10 +408,13 @@ const fn row_flags(features: u32) -> u32 {
     if features & feature::NO_FOG != 0 {
         flags |= flag::NO_FOG;
     }
+    if features & feature::SHADOW_CATCHER != 0 {
+        flags |= flag::SHADOW_CATCHER;
+    }
     flags
 }
 
-/// Floats in each material's row: eleven `vec4f`s.
+/// Floats in each material's row: thirteen `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
 /// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
 /// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
@@ -442,6 +478,16 @@ pub mod param {
     /// The distance through the volume over which light takes [`ATTENUATION_COLOR`], in world
     /// units, or 0 for light that the volume does not absorb.
     pub const ATTENUATION_DISTANCE: usize = 43;
+    /// How much of the clear coat covers the surface, from 0 to 1, in layered materials.
+    pub const CLEARCOAT: usize = 44;
+    /// The perceptual roughness of the clear coat, from 0 to 1.
+    pub const CLEARCOAT_ROUGHNESS: usize = 45;
+    /// How strongly the coat normal map bends the coat's normals along u and along v: 2 floats.
+    pub const CLEARCOAT_NORMAL_SCALE: usize = 46;
+    /// The color of the sheen, linear: 3 floats. Black gives no sheen.
+    pub const SHEEN_COLOR: usize = 48;
+    /// The perceptual roughness of the sheen, from 0 to 1.
+    pub const SHEEN_ROUGHNESS: usize = 51;
     /// A decal material's values take the place of the transmission's, which a decal never has.
     /// The cosine of the angle from the decal's direction at which it starts to fade.
     pub const DECAL_FADE_START: usize = TRANSMISSION;
@@ -454,11 +500,14 @@ pub mod param {
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         match at {
-            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR | ATTENUATION_COLOR => Some(3),
-            NORMAL_SCALE => Some(2),
+            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR | ATTENUATION_COLOR | SHEEN_COLOR => {
+                Some(3)
+            }
+            NORMAL_SCALE | CLEARCOAT_NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
             | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
-            | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE => Some(1),
+            | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE
+            | CLEARCOAT | CLEARCOAT_ROUGHNESS | SHEEN_ROUGHNESS => Some(1),
             _ => None,
         }
     }
@@ -503,6 +552,56 @@ pub enum MapSlot {
     SpecularIntensity = 6,
     /// The specular color, in sRGB, which multiplies the specular color value.
     SpecularColor = 7,
+}
+
+/// A map of a layered material ([`feature::COAT_SHEEN`]). Such a material has no light map and no
+/// specular maps, so the layers' maps take those slots, packed as glTF packs them: the coat in red
+/// and its roughness in green of one map, the coat's normals in another, and the sheen's color in
+/// RGB and its roughness in alpha of a third. A row flag says which channels of a shared map apply.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayerMap {
+    /// The clear coat in red, in linear color.
+    Coat,
+    /// The coat's roughness in green, in linear color, in the coat map's slot.
+    CoatRoughness,
+    /// The coat's normals in tangent space, in linear color.
+    CoatNormal,
+    /// The sheen color in RGB, in sRGB.
+    SheenColor,
+    /// The sheen's roughness in alpha, in the sheen color map's slot.
+    SheenRoughness,
+}
+
+impl LayerMap {
+    /// Every layer map, in the order that `setMaterialMap` numbers them after the map slots.
+    pub const ALL: [LayerMap; 5] = [
+        LayerMap::Coat,
+        LayerMap::CoatRoughness,
+        LayerMap::CoatNormal,
+        LayerMap::SheenColor,
+        LayerMap::SheenRoughness,
+    ];
+
+    /// The slot that holds the map.
+    pub const fn slot(self) -> MapSlot {
+        match self {
+            LayerMap::Coat | LayerMap::CoatRoughness => MapSlot::Light,
+            LayerMap::CoatNormal => MapSlot::SpecularIntensity,
+            LayerMap::SheenColor | LayerMap::SheenRoughness => MapSlot::SpecularColor,
+        }
+    }
+
+    /// The row flag (`flag::*`) that says the map's channel applies, or 0 for a map whose slot
+    /// holds nothing else.
+    pub const fn flag(self) -> u32 {
+        match self {
+            LayerMap::Coat => flag::COAT_MAP,
+            LayerMap::CoatRoughness => flag::COAT_ROUGHNESS_MAP,
+            LayerMap::CoatNormal => 0,
+            LayerMap::SheenColor => flag::SHEEN_COLOR_MAP,
+            LayerMap::SheenRoughness => flag::SHEEN_ROUGHNESS_MAP,
+        }
+    }
 }
 
 /// The number of map slots in a row.
@@ -586,9 +685,10 @@ impl MapSlot {
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
 /// identity texture coordinate transform, a white specular color at full intensity with glTF's
-/// index of refraction, no maps, and no transmission through a thin wall that absorbs nothing. The
-/// metalness and roughness are three.js's `MeshStandardMaterial` defaults; the alpha cutoff, the
-/// index of refraction and the volume's values are glTF's.
+/// index of refraction, no maps, no transmission through a thin wall that absorbs nothing, no clear
+/// coat and a black sheen of full roughness. The metalness and roughness are three.js's
+/// `MeshStandardMaterial` defaults; the alpha cutoff, the index of refraction and the volume's
+/// values are glTF's, and the layers' values three.js's `MeshPhysicalMaterial` defaults.
 const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut row = [0.0; MATERIAL_FLOATS];
     let mut k = 0;
@@ -623,6 +723,9 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
         row[param::ATTENUATION_COLOR + k] = 1.0;
         k += 1;
     }
+    row[param::CLEARCOAT_NORMAL_SCALE] = 1.0;
+    row[param::CLEARCOAT_NORMAL_SCALE + 1] = 1.0;
+    row[param::SHEEN_ROUGHNESS] = 1.0;
     row
 };
 
@@ -1099,6 +1202,25 @@ impl MaterialTable {
         }
     }
 
+    /// Gives a layered material one of its layers' maps: a texture, or none with `Handle::NONE`.
+    /// The map takes its slot ([`LayerMap::slot`]), and its row flag says that its channel
+    /// applies while it has a texture. Two maps that share a slot share its texture, so the last
+    /// one given names it.
+    pub fn set_layer_map(
+        &mut self,
+        id: u32,
+        map: LayerMap,
+        texture: Handle,
+        second_uv: bool,
+    ) -> Result<(), MaterialError> {
+        self.set_map(id, map.slot(), texture, second_uv)?;
+        let flags = &mut self.rows[id as usize * MATERIAL_FLOATS + param::FLAGS];
+        let bit = map.flag();
+        let on = if texture.is_none() { 0 } else { bit };
+        *flags = ((*flags as u32 & !bit) | on) as f32;
+        Ok(())
+    }
+
     /// A material's maps by slot, `Handle::NONE` where it has none.
     pub fn maps(&self, id: u32) -> [Handle; MAP_SLOTS] {
         self.maps
@@ -1358,6 +1480,18 @@ mod tests {
             &[1.0; 3]
         );
         assert_eq!(row[param::SPECULAR_INTENSITY], 1.0);
+        // No clear coat, a coat normal map at full strength, and a black sheen of full roughness,
+        // as three.js's MeshPhysicalMaterial starts.
+        assert_eq!(
+            [row[param::CLEARCOAT], row[param::CLEARCOAT_ROUGHNESS]],
+            [0.0, 0.0]
+        );
+        assert_eq!(
+            &row[param::CLEARCOAT_NORMAL_SCALE..param::CLEARCOAT_NORMAL_SCALE + 2],
+            &[1.0; 2]
+        );
+        assert_eq!(&row[param::SHEEN_COLOR..param::SHEEN_COLOR + 3], &[0.0; 3]);
+        assert_eq!(row[param::SHEEN_ROUGHNESS], 1.0);
     }
 
     #[test]
@@ -1380,6 +1514,16 @@ mod tests {
             (param::MAP_LAYERS, MAP_SLOTS),
             (param::SPECULAR_COLOR, 3),
             (param::SPECULAR_INTENSITY, 1),
+            (param::TRANSMISSION, 1),
+            (param::THICKNESS, 1),
+            (param::IOR, 1),
+            (param::ATTENUATION_COLOR, 3),
+            (param::ATTENUATION_DISTANCE, 1),
+            (param::CLEARCOAT, 1),
+            (param::CLEARCOAT_ROUGHNESS, 1),
+            (param::CLEARCOAT_NORMAL_SCALE, 2),
+            (param::SHEEN_COLOR, 3),
+            (param::SHEEN_ROUGHNESS, 1),
         ];
         starts.sort();
         for pair in starts.windows(2) {
@@ -1488,6 +1632,53 @@ mod tests {
     }
 
     #[test]
+    fn layer_maps_take_the_slots_of_the_light_and_specular_maps_and_flag_their_channels() {
+        let mut table = MaterialTable::with_capacity(1);
+        let id = table
+            .create(Shading::Lit, feature::COAT_SHEEN, [1.0; 4])
+            .unwrap();
+        assert_eq!(table.features(id), feature::COAT_SHEEN);
+        let coat = Handle::from_raw(5);
+        let sheen = Handle::from_raw(7);
+        table
+            .set_layer_map(id, LayerMap::Coat, coat, false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::CoatRoughness, coat, false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::SheenRoughness, sheen, true)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::CoatNormal, Handle::from_raw(6), false)
+            .unwrap();
+        assert_eq!(table.map(id, MapSlot::Light), coat);
+        assert_eq!(table.map(id, MapSlot::SpecularColor), sheen);
+        assert_eq!(
+            table.map(id, MapSlot::SpecularIntensity),
+            Handle::from_raw(6)
+        );
+        let flags = row(&table, id)[param::FLAGS] as u32;
+        let channels = flag::COAT_MAP | flag::COAT_ROUGHNESS_MAP | flag::SHEEN_ROUGHNESS_MAP;
+        assert_eq!(flags & !(flag::SECOND_UV * 0xff), channels);
+        assert_ne!(
+            flags & (flag::SECOND_UV << MapSlot::SpecularColor as u32),
+            0,
+            "the sheen map reads the second coordinates"
+        );
+        // A map taken away turns its channel off.
+        table
+            .set_layer_map(id, LayerMap::CoatRoughness, Handle::NONE, false)
+            .unwrap();
+        let flags = row(&table, id)[param::FLAGS] as u32;
+        assert_eq!(flags & flag::COAT_ROUGHNESS_MAP, 0);
+        assert_eq!(flags & flag::COAT_MAP, flag::COAT_MAP);
+        // The flags fit the float of the row exactly, above the second coordinates' bits.
+        const { assert!(flag::SHEEN_ROUGHNESS_MAP < 1 << 24) };
+        const { assert!(flag::COAT_MAP > flag::SECOND_UV << (MAP_SLOTS - 1)) };
+    }
+
+    #[test]
     fn the_new_features_are_kept_and_leave_the_row_flags_alone() {
         let mut table = MaterialTable::with_capacity(2);
         let hashed = feature::ALPHA_MASK | feature::ALPHA_HASH;
@@ -1502,6 +1693,23 @@ mod tests {
         assert_eq!(row(&table, 1)[param::FLAGS], flag::BLEND as f32);
         assert!(feature::masks(hashed));
         assert!(!feature::masks(feature::ALPHA_MASK | feature::BLEND));
+    }
+
+    #[test]
+    fn a_shadow_catcher_sets_its_row_flag_beside_blend() {
+        let mut table = MaterialTable::with_capacity(1);
+        table
+            .create(
+                Shading::Lit,
+                feature::BLEND | feature::SHADOW_CATCHER,
+                [0.0, 0.0, 0.0, 0.6],
+            )
+            .unwrap();
+        assert_eq!(table.features(0), feature::BLEND | feature::SHADOW_CATCHER);
+        assert_eq!(
+            row(&table, 0)[param::FLAGS],
+            (flag::BLEND | flag::SHADOW_CATCHER) as f32
+        );
     }
 
     #[test]
