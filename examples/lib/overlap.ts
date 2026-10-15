@@ -172,7 +172,10 @@ export function findOverlaps(
 				continue;
 			const parallel = Math.abs(dot(first.normal, second.normal)) > 1 - 1e-6;
 			if (parallel) {
-				if (Math.abs(first.plane - second.plane) > tol) continue;
+				// Two faces on the one plane that look opposite ways have planes `d` and `-d`, so the
+				// second plane is measured with its own normal's sign.
+				const facing = dot(first.normal, second.normal) < 0 ? -1 : 1;
+				if (Math.abs(first.plane - facing * second.plane) > tol) continue;
 				if (coplanarOverlap(first, second, tol))
 					found.push({ a: first.part, b: second.part, at: first.a, kind: 'coplanar' });
 				continue;
