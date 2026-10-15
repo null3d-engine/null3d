@@ -47,7 +47,9 @@
 // boxes levels of detail, so each frame picks a level for every row, and fades rows between two.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
+// turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
+// S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
+// adds two hemisphere lights to S1,
 // one of them tilted, and changes their intensities every frame. `--area-lights` adds eight
 // rectangle lights, two with images, and four tube lights to S1, which circle the swarm and change
 // their intensities every frame. `--setters` calls, every frame, each setter that a sketch may
@@ -529,6 +531,7 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--row-values', query: '&rowValues' },
 	{ flag: '--levels', query: '&levels' },
 	{ flag: '--environment', query: '&environment' },
+	{ flag: '--probes', query: '&probes' },
 	{ flag: '--hemisphere', query: '&hemisphere', budgets: SETTER_BUDGETS },
 	{ flag: '--area-lights', query: '&areaLights' },
 	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },
