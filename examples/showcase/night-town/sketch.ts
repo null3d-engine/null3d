@@ -10,16 +10,8 @@
 // with depth of field. For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { createCinematic, type Shot } from '../../lib/cinematic';
-import {
-	ATMOSPHERE,
-	LIGHTING,
-	POST,
-	QUALITY,
-	radioGroup,
-	TIMES_OF_DAY,
-	toggleGroup,
-} from '../../lib/controls';
 import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
 import { createAir } from './air';
 import { createHouses } from './houses';
@@ -121,111 +113,59 @@ export default defineSketch(async (ctx) => {
 	const start = params.get('mood');
 	stage.set(isMood(start) ? start : 'Night');
 
-	// The scene's own controls: the effects that its HUD offers, and the state of each.
-	const effects: Record<string, boolean> = {
-		sky: true,
-		fog: true,
-		snow: true,
-		shadows: true,
-		contact: true,
-		ao: true,
-		environment: true,
-		bloom: false,
-		dof: false,
-		exposure: false,
-		vignette: false,
-	};
-	// The "DSLR" lens: a 50 mm lens wide open, which focuses on the point that the camera looks at.
-	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
-	let dslr = false;
-	const setLens = (on: boolean) => {
-		dslr = on;
-		effects.dof = on;
-		if (on) camera.setFocalLength(DSLR_FOCAL_LENGTH);
-		else camera.setFov(FOV);
-		post.set(on ? lens : { dof: false });
-	};
-	if (params.has('dslr')) setLens(true);
-
-	const setEffect = (id: string, on: boolean): void => {
-		effects[id] = on;
-		switch (id) {
-			case 'sky':
-			case 'fog':
-			case 'environment':
-				stage.show(id, on);
-				break;
-			case 'snow':
-				air.setSnow(on);
-				break;
-			case 'shadows':
-				sun.setCastShadows(on);
-				break;
-			case 'contact':
-				sun.setShadow({ contactDistance: on ? 0.25 : 0 });
-				break;
-			case 'ao':
-				post.set({ ao: on ? { radius: 0.7 } : false });
-				break;
-			case 'bloom':
-				post.set({ bloom: on ? { blend: 'add', intensity: 0.7, threshold: 1 } : false });
-				break;
-			case 'dof':
-				setLens(on);
-				break;
-			case 'exposure':
-				post.set({ autoExposure: on ? {} : false });
-				break;
-			case 'vignette':
-				post.set({ vignette: on ? {} : false });
-				break;
-		}
-	};
-	const groups = () => [
-		radioGroup('mood', 'Time of day', TIMES_OF_DAY, stage.mood),
-		toggleGroup(
-			'atmosphere',
-			'Atmosphere',
-			ATMOSPHERE,
-			['sky', 'fog', 'snow'],
-			(id) => effects[id] ?? false,
-		),
-		toggleGroup(
-			'lighting',
-			'Lighting',
-			LIGHTING,
-			['shadows', 'contact', 'ao', 'environment'],
-			(id) => effects[id] ?? false,
-		),
-		toggleGroup(
-			'post',
-			'Post',
-			POST,
-			['bloom', 'dof', 'exposure', 'vignette'],
-			(id) => effects[id] ?? false,
-		),
-		radioGroup('quality', 'Quality', QUALITY, quality.preset),
-	];
+	// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
+	// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
+	// lives in `createShowcaseEffects`.
+	const controls = createShowcaseEffects(ctx, {
+		camera,
+		sun,
+		stage,
+		start: {
+			sky: true,
+			fog: true,
+			snow: true,
+			shadows: true,
+			contact: true,
+			ao: true,
+			environment: true,
+			bloom: false,
+			dof: false,
+			exposure: false,
+			vignette: false,
+		},
+		supported: {
+			atmosphere: ['sky', 'fog', 'snow'],
+			lighting: ['shadows', 'contact', 'ao', 'environment'],
+			post: ['bloom', 'dof', 'exposure', 'vignette'],
+		},
+		apply(id, on) {
+			switch (id) {
+				case 'snow':
+					air.setSnow(on);
+					break;
+				case 'contact':
+					sun.setShadow({ contactDistance: on ? 0.25 : 0 });
+					break;
+				case 'ao':
+					post.set({ ao: on ? { radius: 0.7 } : false });
+					break;
+				case 'bloom':
+					post.set({ bloom: on ? { blend: 'add', intensity: 0.7, threshold: 1 } : false });
+					break;
+			}
+		},
+		mood: (picked) => stage.set(picked),
+		film: () => film,
+		fov: FOV,
+		focalLength: DSLR_FOCAL_LENGTH,
+		focus: target,
+		dslr: params.has('dslr'),
+	});
 
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
-		groups,
-	});
-
-	page.onMessage((name, value) => {
-		const picked = String(value);
-		if (name === 'camera') film.select(picked);
-		else if (name === 'mood' && isMood(value)) {
-			stage.set(value);
-			film.refresh();
-		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
-			setEffect(picked, !(effects[picked] ?? false));
-			film.refresh();
-		} else if (name === 'quality') {
-			void quality.setPreset(picked as QualityPreset);
-			film.refresh();
-		}
+		groups: controls.groups,
 	});
 
 	return {
@@ -233,7 +173,8 @@ export default defineSketch(async (ctx) => {
 			const t = time.now;
 			stage.update(dt);
 			film.update(dt);
-			if (dslr) post.set(lens);
+			const lens = controls.lens();
+			if (lens) post.set(lens);
 			air.update(t);
 		},
 	};
