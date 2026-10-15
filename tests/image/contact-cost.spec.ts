@@ -9,7 +9,13 @@
 // Medium, so it runs Medium's 4 steps alone. Each test waits for a quiet computer, within a time
 // limit, and prints the load beside its figures (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
-import { type CostResult, costTimeout, loadNow, sideLine, waitForQuiet } from '../lib/effect-cost.ts';
+import {
+	type CostResult,
+	costTimeout,
+	loadNow,
+	sideLine,
+	waitForQuiet,
+} from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 /** Each case: the GPU path, the preset, the steps per march and whether the prepass stays on. */
