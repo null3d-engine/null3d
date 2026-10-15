@@ -479,10 +479,6 @@ jobs:
       HUSKY: "0"
       # S6's image tests, which load the city's files: the browser-city job runs them.
       CITY_TESTS: '\bs6 on '
-      # Playwright loads every test file before it runs anything, and one of them asks for every
-      # generated shader, so collecting the tests alone needs more than Node's default heap. This
-      # entry stands until that file sizes its work without loading the shaders; remove it then.
-      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -544,9 +540,6 @@ jobs:
     timeout-minutes: 20
     env:
       HUSKY: "0"
-      # As in the browser job: collecting the tests loads every generated shader, because one test
-      # file sizes its parts by asking for them all. This entry comes out with that file's fix.
-      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
