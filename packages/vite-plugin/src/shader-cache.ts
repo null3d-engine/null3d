@@ -1,12 +1,13 @@
 // A persistent cache of compiled shaders, so a project builds its shaders once. A shader compile
-// takes the CPU for most of a second, and every `vite build` and `vite dev` used to compile the
-// same WGSL again from nothing. The plugin keeps each result in `node_modules/.cache/null3d-shaders`,
-// as the asset tool keeps its own results in `node_modules/.cache/null3d-assets`. A cache entry is
-// keyed by everything that decides the output: the WGSL, the path it came from, the variant spec
-// that the compiler is given, and the compiler's version. The version is the engine's version with
-// the shader build's own stamp, so an engine or compiler upgrade misses every entry. A changed
-// source, spec or compiler therefore misses, and the plugin never serves a wrong shader. Set
-// `NULL3D_NO_CACHE=1`, or run Vite with `--force`, to ignore the cache.
+// takes the CPU for most of a second, and without the cache every `vite build` and `vite dev`
+// compiles the same WGSL again from nothing. The plugin keeps each result in
+// `node_modules/.cache/null3d-shaders`, as the asset tool keeps its own results in
+// `node_modules/.cache/null3d-assets`. A cache entry is keyed by everything that decides the
+// output: the WGSL, the path it came from, the variant spec that the compiler is given, and the
+// compiler's version. The version is the engine's version with the shader build's own stamp, so
+// an engine or compiler upgrade misses every entry. A changed source, spec or compiler therefore
+// misses, and the plugin never serves a wrong shader. Set `NULL3D_NO_CACHE=1`, or run Vite with
+// `--force`, to ignore the cache.
 //
 // A game project's cache is not one of the repository's own build caches: it lives in the project,
 // not under `~/.cache/null3d`, and a project that installs this package cannot load repository
@@ -36,7 +37,7 @@ export const SHADER_CACHE_FOLDER = 'null3d-shaders';
 /** The canonical opt-out, the same name that turns off the repository's own build caches. */
 export const NO_CACHE = 'NULL3D_NO_CACHE';
 
-/** The plugin's older opt-out name, which still works as an alias. */
+/** A second name that turns the cache off, as `NO_CACHE` does. */
 export const NO_SHADER_CACHE = 'NULL3D_NO_SHADER_CACHE';
 
 /** Every name that turns the cache off, as `tools/lib/build-cache.ts` lists them. */
