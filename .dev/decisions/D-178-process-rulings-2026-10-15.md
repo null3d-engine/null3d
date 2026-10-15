@@ -2,7 +2,7 @@
 
 Status: decided. Date: 15 October 2026. Task: none (process).
 
-Summary: On 15 October 2026 the owner moved the helper agents to Claude Code subagents. The coordination works with more than one agent tool: one setting picks Claude Code or opencode, and no script may start an opencode server. Cloud device runs never wait for the owner's go-ahead. They have a one-slot lane in the load limiter, and no longer hold a browser slot for up to 85 minutes.
+Summary: On 15 October 2026 the owner moved the helper agents to Claude Code subagents. The coordination works with more than one agent tool: one setting picks Claude Code or opencode, and no script may start an opencode server. Cloud device runs never wait for the owner's go-ahead. They have a one-slot lane in the load limiter, and no longer hold a browser slot for up to 85 minutes. Later that day the owner approved a quick lane for short jobs and a check before each push to main.
 
 ## Question
 
@@ -33,8 +33,20 @@ How the data was produced: the coordinator's log of 15 October 2026, the process
 ## Consequences
 
 - A helper waits for its own jobs inside its turn, through a wait that records each job's process and exit status. When a tool call stops before the job ends, the helper waits on the same job again by name ([Coordinating helper agents](../pull-requests.md#coordinating-helper-agents)).
-- The check-in gives each job to the copy of the repository that it works in, and counts a task as landed only on firm evidence. Before, a subagent's job looked like the coordinator's, and a `Task:` trailer alone counted a task as landed.
+- The check-in gives each job to the copy of the repository that it works in. It counts a task as landed only when its audit says done. Before, a subagent's job looked like the coordinator's, and a `Task:` trailer alone counted a task as landed.
 - The coordinator's own test suite checks the waits, the check-in's attribution, the milestone count and the cloud lane. It also runs the helper scripts under both tools, with a stand-in for opencode.
 - [Device sessions](../devices.md#browserstack-automate) says that cloud runs need no go-ahead. Runs still happen by hand or on request, never on a timer or in CI.
 - The cloud lane went into use at 11:00 the same day. From 10:30 until then, the load limiter had one extra browser slot to make up for the slot that a cloud run held. That extra slot was removed at 11:04.
 - The same day, the owner ruled that each copy of the repository builds Rust into a folder of its own. [Builds](../pull-requests.md#builds) and [D-177](D-177-build-cache-module.md) record it.
+
+## Addendum: later rulings of 15 October 2026
+
+The owner approved these changes to the process later the same day. [Coordinating helper agents](../pull-requests.md#coordinating-helper-agents) gives the rules.
+
+| Change | State at the end of 15 October 2026 |
+| --- | --- |
+| A quick lane in the load limiter for short jobs: installs, lint, docs checks, and unit tests that build nothing. It has 2 slots, does not wait for a low load, and stops a job after 5 minutes | In use. Approved at 12:25, after a docs check of a few seconds waited about 2 hours behind 30 builds |
+| A check before each push to main: the trailers, `cargo check --workspace`, and the tests of the Rust crates that the push changes, with heavy steps through the load limiter | Being built. On 15 October three branches held merged trees that did not compile |
+| CI: higher time limits as a stopgap, built shaders kept in the Actions cache, the test that builds every shader in a job of its own, and Rust tests with `--no-fail-fast` | In use. [CI's jobs](../pull-requests.md#cis-jobs) gives the details |
+| The shader build compiles its builds on every core, not on one | Being built. The shader builds grew from 5,078 to 21,148 in about 13 hours, and CI's build job passed its time limit |
+| Each copy of the repository builds Rust into a folder of its own, and shares compiled dependencies through a compiler cache | Partly in use: the load limiter no longer shares a Rust folder between copies, and uses the compiler cache. The WebAssembly build's own folder per copy is being built. [Builds](../pull-requests.md#builds) and [D-177](D-177-build-cache-module.md) record it as it lands |
