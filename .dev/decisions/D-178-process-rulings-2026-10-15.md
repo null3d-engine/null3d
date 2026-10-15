@@ -28,13 +28,13 @@ How the data was produced: the coordinator's log of 15 October 2026, the process
 ## Decision
 
 1. The helpers moved to Claude Code subagents of the coordinator's session at 09:55. The owner's words: "forget the deepseek model service - run them in this session with claude". At 11:00 the owner added that the setup must not be specific to Claude: "make it tool-neutral". So one setting of the coordinator picks the helpers' tool, Claude Code or opencode, and only one is used at a time. The waits, the load limiter and the check-ins work the same with both. The scripts call opencode only with the address of a server that the coordinator started, and stop when nothing answers there.
-2. Cloud device runs never wait for the owner's go-ahead. They get a lane of their own in the load limiter with one slot, which the owner approved on 15 October 2026. A run in that lane takes no browser slot and no CPU slot.
+2. Cloud device runs never wait for the owner's go-ahead. They get a lane of their own in the load limiter with one slot, which the owner approved on 15 October 2026. A run in that lane takes no browser slot and no CPU slot, and never waits for the load limit or the quiet window.
 
 ## Consequences
 
 - A helper waits for its own jobs inside its turn, through a wait that records each job's process and exit status. When a tool call stops before the job ends, the helper waits on the same job again by name ([Coordinating helper agents](../pull-requests.md#coordinating-helper-agents)).
 - The check-in gives each job to the copy of the repository that it works in, and counts a task as landed only on firm evidence. Before, a subagent's job looked like the coordinator's, and a `Task:` trailer alone counted a task as landed.
-- The coordinator's own test suite checks the waits, the check-in's attribution, the milestone count, and the helper scripts under both tools with a stand-in for opencode.
+- The coordinator's own test suite checks the waits, the check-in's attribution, the milestone count, the cloud lane, and the helper scripts under both tools with a stand-in for opencode.
 - [Device sessions](../devices.md#browserstack-automate) says that cloud runs need no go-ahead. Runs still happen by hand or on request, never on a timer or in CI.
-- The cloud lane is being built. Until it lands, the coordinator gives the load limiter one extra browser slot while a cloud run holds one.
+- The cloud lane went into use at 11:00 the same day. From 10:30 until then, the load limiter had one extra browser slot to make up for the slot that a cloud run held. That extra slot was removed at 11:04.
 - The same day, the owner ruled that each copy of the repository builds Rust into a folder of its own. [Builds](../pull-requests.md#builds) and [D-177](D-177-build-cache-module.md) record it.
