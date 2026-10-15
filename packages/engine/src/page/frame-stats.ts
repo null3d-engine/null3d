@@ -61,8 +61,7 @@ export interface FrameSummary {
 	frames: number;
 	/**
 	 * Frames per second whose scene update ran to its end. A frame whose sketch update threw still
-	 * presents, so `presentedFps` hides it; this figure falls to 0 as the engine fails to update.
-	 * The ramp of a comparison judges this figure, not the presented rate.
+	 * presents, so `presentedFps` hides it, and this figure falls to 0 when every update fails.
 	 */
 	updatedFps: number;
 	/** Frames of the measurement whose scene update did not run to its end. */

@@ -1,11 +1,14 @@
 // The night town's route must stay clear of the town's geometry ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)).
-// The test samples the whole route, as the player does each frame, and fails when a sample comes
-// within the clearance of a house or the tower, so a route edit cannot reintroduce a clip.
+// The test samples the whole route through the player's own interpolation, and fails when a sample
+// comes within the clearance of a house or the tower, so a route edit cannot reintroduce a clip.
 import { expect, test } from 'bun:test';
-import type { Shot } from '../../lib/cinematic';
+import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { LOTS, TOWER } from './houses';
 import { SHOTS } from './sketch';
 
+/** How many points of the loop the check samples. A spline bends between the shots, so the
+ * checks sample finely enough to catch a bulge that a shot's own pose does not show. */
+const SAMPLES = 2000;
 /** How far a route must keep from a surface, in meters, as the clearance guard does. */
 const CLEARANCE = 0.5;
 /** The height of one floor, as `houses.ts` builds it. */
@@ -35,40 +38,9 @@ function houseBoxes(): Box[] {
 	});
 }
 
-/** The route's position at a phase, as `cinematic.ts` interpolates it. */
-function place(
-	shots: readonly Shot[],
-	starts: readonly number[],
-	seconds: readonly number[],
-	phase: number,
-): [number, number, number] {
-	const total = starts[starts.length - 1]! + seconds[seconds.length - 1]!;
-	const a = ((phase % total) + total) % total;
-	let index = 0;
-	for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
-	const shot = shots[index] as Shot;
-	const next = shots[(index + 1) % shots.length] as Shot;
-	const along = (a - (starts[index] as number)) / (seconds[index] as number);
-	const f = shot.move === 'hold' ? 0 : along * along * (3 - 2 * along);
-	return [
-		(shot.position[0] as number) +
-			((next.position[0] as number) - (shot.position[0] as number)) * f,
-		(shot.position[1] as number) +
-			((next.position[1] as number) - (shot.position[1] as number)) * f,
-		(shot.position[2] as number) +
-			((next.position[2] as number) - (shot.position[2] as number)) * f,
-	];
-}
-
 test('the night town route stays clear of its houses and its tower', () => {
-	const starts: number[] = [];
-	const seconds: number[] = [];
-	let total = 0;
-	for (const shot of SHOTS) {
-		starts.push(total);
-		seconds.push(shot.seconds);
-		total += shot.seconds;
-	}
+	const route = routeTimeline(SHOTS);
+	const pose = new Float32Array(6);
 	const tower: Box = {
 		minX: TOWER.x - TOWER.width / 2,
 		maxX: TOWER.x + TOWER.width / 2,
@@ -77,8 +49,10 @@ test('the night town route stays clear of its houses and its tower', () => {
 		height: TOWER.height + TOWER.width * 1.6,
 	};
 	const boxes = [...houseBoxes(), tower];
-	for (let step = 0; step <= 400; step++) {
-		const at = place(SHOTS, starts, seconds, (step / 400) * total);
+	for (let step = 0; step <= SAMPLES; step++) {
+		// The sample through the player's own interpolation: what it plays is what is checked.
+		routePosition(route, (step / SAMPLES) * route.total, pose);
+		const at = [pose[0] as number, pose[1] as number, pose[2] as number];
 		for (const box of boxes) {
 			const inside =
 				at[0] > box.minX - CLEARANCE &&
