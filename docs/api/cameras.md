@@ -44,7 +44,7 @@ The field of view goes from 0 to 180 degrees, and the near plane must lie in fro
 
 ### Focal length
 
-A photographer picks a lens by its focal length. `setFocalLength(millimetres)` sets the field of view of that lens on a full-frame camera. That camera's sensor is 36 by 24 mm. A lens of 24 mm is wide, one of 50 mm is normal, and one of 85 mm suits portraits. The `focalLength` property reads the focal length back from the field of view. The default field of view of 50 degrees is a lens of about 25.7 mm.
+A photographer picks a lens by its focal length. `setFocalLength(millimeters)` sets the field of view of that lens on a full-frame camera. That camera's sensor is 36 by 24 mm. A lens of 24 mm is wide, one of 50 mm is normal, and one of 85 mm suits portraits. The `focalLength` property reads the focal length back from the field of view. The default field of view of 50 degrees is a lens of about 25.7 mm.
 
 ```ts
 const camera = scene.createPerspectiveCamera({ position: [0, 1.6, 4], target: [0, 1, 0] });
