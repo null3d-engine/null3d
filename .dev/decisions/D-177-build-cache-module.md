@@ -65,3 +65,16 @@ waiting cost was measured.
 
 The lock also names its holder while a build waits (`waiting for the lock at <path>, held by pid N`),
 which is what made the 94-second wait visible rather than mysterious.
+
+## Addendum: a partial module set is a miss (15 October 2026)
+
+The shader modules cache handed a fresh checkout a set that missed `shaders-wgsl-combos-half.ts` and
+`shaders-glsl-combos-half.ts`, and `bun tools/shaders.ts` still said "up to date". The build writes one
+combos table for each target and each value of the half-precision bit, and `shaders.ts` loads both, but
+the module-name test matched only the unsuffixed `shaders-<target>-combos.ts`. The save, the restore and
+the "up to date" hash therefore all ignored the suffixed tables, and a set without them looked complete.
+
+Two changes make a stale or partial entry a miss. The name test matches every combos table, suffixed or
+not. And a completeness check requires every module that `shaders.ts` loads, from its imports and the
+device module names its tables hold, so a set that misses one is never fresh, is never restored and is
+never stored. A build that writes an incomplete set throws instead of recording it as up to date.
