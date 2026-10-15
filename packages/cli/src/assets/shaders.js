@@ -39,6 +39,7 @@ export const ASSET_PERMUTATIONS = /** @type {const} */ ([
  */
 export const ASSET_SHADER_FILES = /** @type {const} */ ([
 	'cutout',
+	'coverage',
 	'lod_fade',
 	'morph',
 	'skinning',
@@ -182,7 +183,9 @@ function needsOf({ prim, material, skinned, levels }) {
 	if (layered(material)) bits.push('COAT_SHEEN');
 	if (skinned) files.push('skinning');
 	if (morph) files.push('morph');
-	if (masked) files.push('cutout');
+	// A masked material's edges fade by alpha to coverage on a page that draws with MSAA, as the
+	// engine's materials from glTF files do by default.
+	if (masked) files.push('cutout', 'coverage');
 	if (transmits(material)) files.push('transmission');
 	if (levels) files.push('lod_fade');
 	if (layered(material)) files.push('coat_sheen');

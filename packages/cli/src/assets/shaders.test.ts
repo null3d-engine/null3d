@@ -92,7 +92,7 @@ describe('shaderList', () => {
 		);
 		const list = shaderList(doc, { lodOf });
 		expect(list.permutations).toEqual(['ALPHA_MASK', 'VERTEX_TANGENT', 'TRANSMISSION']);
-		expect(list.features).toEqual(['cutout', 'transmission']);
+		expect(list.features).toEqual(['cutout', 'coverage', 'transmission']);
 		expect(list.buckets).toEqual([
 			{
 				template: 'lit',
@@ -196,14 +196,20 @@ describe('shaderList', () => {
 					),
 			);
 		writeShaderList(doc, shaderList(doc, { lodOf }));
-		expect(recordedShaderList(doc)).toEqual({ permutations: ['ALPHA_MASK'], features: ['cutout'] });
+		expect(recordedShaderList(doc)).toEqual({
+			permutations: ['ALPHA_MASK'],
+			features: ['cutout', 'coverage'],
+		});
 		const glb = new Uint8Array(await new NodeIO().writeBinary(doc));
 		const container = readContainer(glb, 'file:///a.glb');
 		expect(container.json.asset?.extras).toMatchObject({
-			NULL3D_shaders: { permutations: ['ALPHA_MASK'], features: ['cutout'] },
+			NULL3D_shaders: { permutations: ['ALPHA_MASK'], features: ['cutout', 'coverage'] },
 		});
 		const parsed = parseGltf(container, new Map(), 'file:///a.glb');
-		expect(parsed.shaders).toEqual({ permutations: ['ALPHA_MASK'], features: ['cutout'] });
+		expect(parsed.shaders).toEqual({
+			permutations: ['ALPHA_MASK'],
+			features: ['cutout', 'coverage'],
+		});
 	});
 });
 
