@@ -200,7 +200,7 @@ The `Docs-Checked:` trailer names the `.dev` page that holds the reason, or says
 
 ## Commit gates
 
-`bun install` sets up git hooks that keep the docs in line with the code. Never skip them with `--no-verify`: CI runs the same checks and fails the pull request.
+`bun install` sets up git hooks that keep the docs in line with the code. Never skip them with `--no-verify`: CI runs the same checks on a push to main, and the pre-push check reads the commits that the push adds.
 
 Before each commit:
 
@@ -209,6 +209,13 @@ Before each commit:
 - The generators run clean. The hook writes the generated files, and fails when a public export lacks the doc comments that the API reference needs. It also fails when git would keep a generated file.
 - Every command in `package.json` is in the table under "Commands", and every command that this file, the README and the guides in `.dev/` run with `bun run` exists.
 - Every decision record starts with its title, then a `Status:` and a `Summary:` paragraph, and no two records share a number.
+
+Before each push to main (`tools/hooks/pre-push.ts`; a push to another branch runs nothing):
+
+- The messages and trailers of every commit that the push adds to main, as CI's `commits` job checks them: commitlint, then the trailer check.
+- When the push changes Rust code or Cargo settings: `cargo check --workspace`, then the tests of each crate that it changes, with `--no-fail-fast`. The test that builds every shader runs in CI only.
+- On a machine whose git setting `null3d.jobQueue` names a job queue script, the steps run through that queue.
+- Only in an emergency, a `Push-Check-Skipped: <reason>` trailer on a commit of the push skips the check. The owner approved the check on 15 October 2026 ([D-157](.dev/decisions/D-157-direct-pushes-to-main.md)).
 
 On each commit message:
 

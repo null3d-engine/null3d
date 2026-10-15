@@ -35,3 +35,14 @@ The owner chose direct pushes to main. The rule on main ("main: CI must pass") s
 - Each branch is still pushed to its own remote branch while it is worked on, to save the work; only finished work goes to main.
 - Nobody waits for main's CI before pushing (owner, 13 October 2026): not for a running run, and not for a red one. When a finished run on main is red, whoever's push broke it fixes it at once, while others keep pushing.
 - [Pull requests and parallel work](../pull-requests.md) and [AGENTS.md](../../AGENTS.md) describe this flow. [D-99](D-99-no-merge-queue.md), which merged pull requests when CI passed, no longer applies.
+
+## Addendum, 15 October 2026: a check before each push to main
+
+The owner approved it on 15 October 2026, through the coordinator: "OWNER APPROVED (15 Oct) the local pre-push check: build it. On every push to main (and only then, so branch saves stay fast)". A code review that day found that nothing checked the commits that reached main. CI's commit check ran only on pull requests. On 14 October a branch landed with five failing tests of a crate whose test files it never changed. Three merged trees held structs and constants that did not compile.
+
+- `tools/hooks/pre-push.ts` runs before each push to main, through the git hooks that `bun install` sets up. A push to another branch runs nothing.
+- It runs the commit message and trailer checks over the commits that the push adds to main, the same checks as CI's `commits` job: commitlint, then the trailer check. When the push changes Rust code or Cargo settings, it runs `cargo check --workspace`, then the tests of each changed crate with `--no-fail-fast`. It prints each command and the reason, and refuses the push when one fails.
+- Where git's `null3d.jobQueue` setting names a job queue script, the steps run through it, so a push does not load a busy machine.
+- The bypass is for emergencies only: a `Push-Check-Skipped: <reason>` trailer on a commit of the push, which names the emergency in the commit body.
+- CI's `commits` job runs the commit message and trailer checks on each push to main too, over the commits after main's commit before the push.
+- [Pull requests and parallel work](../pull-requests.md#commit-messages-and-pushes) gives the details.
