@@ -1,0 +1,56 @@
+name: Build with the shader caches
+description: >-
+  Runs a command that builds the shader modules, with the two shared shader caches of
+  tools/lib/shader-modules.ts kept in the Actions cache: the built module sets, by the hash of
+  their inputs, and the per-entry cache, under the compiler's stamp. The Actions key holds the same
+  stamp and input hash that the tools read their caches by, from `bun tools/shaders.ts
+  --cache-keys`. A run whose inputs match restores the whole module set and compiles nothing. A run
+  with the same compiler restores that stamp's entries, and compiles only the entries whose own
+  key no longer matches. A new compiler restores nothing. The tools check every entry's key
+  themselves, so a restored entry is never used for other inputs. Only the current stamp's entries
+  and the current module set are saved, so the cache does not grow with old ones. A failed or
+  cancelled build still saves the entries it finished, under a key of its own, since each entry is
+  written whole. The cache saves only when the workflow's SAVE_CACHES is true.
+
+inputs:
+  run:
+    description: The command that builds the shader modules.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - id: keys
+      shell: bash
+      run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@v4
+      id: restore
+      with:
+        path: |
+          ${{ steps.keys.outputs.modules-dir }}
+          ${{ steps.keys.outputs.entries-dir }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}
+        restore-keys: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
+    - id: build
+      shell: bash
+      run: ${{ inputs.run }}
+    - name: Keep only this build's module set and compiler stamp
+      if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        MODULES: ${{ steps.keys.outputs.modules-dir }}
+        ENTRIES: ${{ steps.keys.outputs.entries-dir }}
+        INPUTS: ${{ steps.keys.outputs.inputs }}
+        STAMP: ${{ steps.keys.outputs.stamp }}
+      run: |
+        mkdir -p "$MODULES" "$ENTRIES"
+        find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$INPUTS" -exec rm -rf {} +
+        find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$STAMP" -exec rm -rf {} +
+        du -sh "$MODULES" "$ENTRIES"
+    - uses: actions/cache/save@v4
+      if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ${{ steps.keys.outputs.modules-dir }}
+          ${{ steps.keys.outputs.entries-dir }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
