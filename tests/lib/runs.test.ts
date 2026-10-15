@@ -925,6 +925,9 @@ describe('the checks plan', () => {
 		expect(workflow).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
 		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
 		expect(count).toBeGreaterThan(0);
+		// The matrix must list every shard from 1 to the count, or a shard never runs.
+		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflow)?.[1]?.split(',').map(Number);
+		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 	});
