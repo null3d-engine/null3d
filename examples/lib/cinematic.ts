@@ -96,6 +96,55 @@ export function keyTable(scene: readonly SceneKey[] = []): readonly SceneKey[] {
 	return table;
 }
 
+/** The timeline of a route: where each shot starts, how long it lasts, and the loop's length. */
+export interface Route {
+	readonly shots: readonly Shot[];
+	readonly starts: readonly number[];
+	readonly lengths: readonly number[];
+	/** The length of the whole loop, in seconds. */
+	readonly total: number;
+}
+
+/**
+ * Makes a route's timeline. A shot's length below a millisecond is raised to one, so the phase never
+ * divides by zero and never stands still for a whole shot.
+ */
+export function routeTimeline(shots: readonly Shot[]): Route {
+	const starts: number[] = [];
+	const lengths: number[] = [];
+	let total = 0;
+	for (const shot of shots) {
+		starts.push(total);
+		const length = Math.max(0.001, Number.isFinite(shot.seconds) ? shot.seconds : 0.001);
+		lengths.push(length);
+		total += length;
+	}
+	return { shots, starts, lengths, total };
+}
+
+/**
+ * Writes the route's pose at a phase into `out`: the camera's position, then the point it looks at.
+ * The phase wraps around the loop, and a shot that holds keeps its own pose for its whole length.
+ * This is the one interpolation of a route, so a test that samples the route checks what the player
+ * plays.
+ */
+export function routePosition(route: Route, phase: number, out: Float32Array): void {
+	const { shots, starts, lengths, total } = route;
+	const a = ((phase % total) + total) % total || 0;
+	let index = 0;
+	for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
+	const shot = shots[index] as Shot;
+	const next = shots[(index + 1) % shots.length] as Shot;
+	const along = (a - (starts[index] as number)) / (lengths[index] as number);
+	const f = shot.move === 'hold' ? 0 : smooth(Math.min(1, Math.max(0, along)));
+	for (let c = 0; c < 3; c++) {
+		const p = shot.position[c] as number;
+		const t = shot.target[c] as number;
+		out[c] = p + ((next.position[c] as number) - p) * f;
+		out[3 + c] = t + ((next.target[c] as number) - t) * f;
+	}
+}
+
 /** How `createCinematic` is called. */
 export interface CinematicOptions {
 	/** The shots of the route, in the order that the loop plays them. */
@@ -148,17 +197,8 @@ export function createCinematic(
 	const { input, time, page } = ctx;
 	const { shots, keys = [] } = options;
 	keyTable(keys);
-	// The route's timeline: each shot's start and its length. A length below a millisecond is raised
-	// to one, so the phase never divides by zero and never stands still for a whole shot.
-	const starts: number[] = [];
-	const lengths: number[] = [];
-	let total = 0;
-	for (const shot of shots) {
-		starts.push(total);
-		const length = Math.max(0.001, Number.isFinite(shot.seconds) ? shot.seconds : 0.001);
-		lengths.push(length);
-		total += length;
-	}
+	const route = routeTimeline(shots);
+	const { starts, total } = route;
 	// The pose of the route at a phase: camera position, then the point it looks at.
 	const sample = new Float32Array(6);
 	const pose = new Float32Array(6);
@@ -223,21 +263,7 @@ export function createCinematic(
 	};
 
 	/** Writes the route's pose at a phase into `out`. */
-	const routePose = (phase: number, out: Float32Array): void => {
-		const a = ((phase % total) + total) % total || 0;
-		let index = 0;
-		for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
-		const shot = shots[index] as Shot;
-		const next = shots[(index + 1) % shots.length] as Shot;
-		const along = (a - (starts[index] as number)) / (lengths[index] as number);
-		const f = shot.move === 'hold' ? 0 : smooth(Math.min(1, Math.max(0, along)));
-		for (let c = 0; c < 3; c++) {
-			const p = shot.position[c] as number;
-			const t = shot.target[c] as number;
-			out[c] = p + ((next.position[c] as number) - p) * f;
-			out[3 + c] = t + ((next.target[c] as number) - t) * f;
-		}
-	};
+	const routePose = (phase: number, out: Float32Array): void => routePosition(route, phase, out);
 
 	/** The shot that a phase falls in. */
 	const shotAt = (phase: number): Shot => {
@@ -309,11 +335,21 @@ export function createCinematic(
 	const toggleMode = (): void => {
 		if (mode === 'auto') {
 			// The route's motion stops at once, and the user takes the camera exactly where it is:
-			// the pose is the route's own this moment, never a snap to a shot. The controls take
-			// their target from what the shot was looking at, so the camera holds still until the
-			// user moves it.
-			routePose(time.now + phaseShift, pose);
-			apply(pose);
+			// never a snap to a shot. A takeover during the glide back onto the route keeps the
+			// mid-glide pose, so the camera never jumps either. The controls take their target from
+			// what the shot was looking at, so the camera holds still until the user moves it.
+			if (glide < 1) {
+				camera.getPosition(pose);
+				pose[3] = options.target[0];
+				pose[4] = options.target[1];
+				pose[5] = options.target[2];
+			} else {
+				routePose(time.now + phaseShift, pose);
+				apply(pose);
+			}
+			// A fling that damping still carries is dropped, so the camera is still from the first
+			// frame of the switch.
+			controls.stop();
 			controls.target[0] = pose[3] as number;
 			controls.target[1] = pose[4] as number;
 			controls.target[2] = pose[5] as number;
@@ -321,8 +357,10 @@ export function createCinematic(
 			glide = 1;
 			controls.enabled = true;
 		} else {
-			// Auto glides: find the nearest point of the route, then ease onto it.
+			// Auto glides: find the nearest point of the route, then ease onto it. The motion the
+			// controls still carry is dropped, so no fling resumes when the user takes over again.
 			mode = 'auto';
+			controls.stop();
 			controls.enabled = false;
 			primed = false;
 			camera.getPosition(from);

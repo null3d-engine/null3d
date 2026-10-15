@@ -267,7 +267,6 @@ export default defineSketch(async (ctx) => {
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
-		speed: 7,
 		groups,
 	});
 	page.onMessage((name, value) => {

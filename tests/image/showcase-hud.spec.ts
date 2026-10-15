@@ -99,7 +99,11 @@ test('the showcase HUD names each group change in a toast at the top centre', as
 	).toBeLessThan(3);
 	expect(toast?.y ?? 0).toBeLessThan(80);
 
-	// Time of day is a radio group too.
+	// Time of day is a radio group too. Its last entry is the studio, which is not an hour: every
+	// mood the stage supports is reachable here and checked.
+	await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
+	await pick(page, 'Time of day', 'mood', 'Studio', 'time of day: studio');
+	// Back to an hour, so the switches below are checked against the sky, not the studio backdrop.
 	await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
 	// Atmosphere, Lighting and Post are toggles: each names the effect, with its label's own case,
 	// and its new state. The snow goes off first, so the scene holds still between frames.

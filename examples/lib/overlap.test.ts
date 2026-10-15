@@ -22,6 +22,16 @@ test('two coplanar quads that share an area overlap', () => {
 	expect(found[0]?.kind).toBe('coplanar');
 });
 
+test('two coplanar quads that face opposite ways overlap', () => {
+	// Two double-sided faces on the one plane, away from the origin, shimmer: their planes are `d`
+	// and `-d`, which the check once read as two different planes.
+	const front = quad('front', 1, 0, 2, 0, 2);
+	const back: OverlapPart = { ...quad('back', 1, 1, 3, 1, 3), indices: [0, 2, 1, 0, 3, 2] };
+	const found = findOverlaps([front, back]);
+	expect(found.length).toBeGreaterThan(0);
+	expect(found[0]?.kind).toBe('coplanar');
+});
+
 test('two quads that share only an edge do not overlap', () => {
 	expect(findOverlaps([quad('a', 0, 0, 1, 0, 1), quad('b', 0, 1, 2, 0, 1)])).toEqual([]);
 });

@@ -106,6 +106,9 @@ export default defineSketch(async (ctx) => {
 		air.fit(quality.preset);
 	};
 	fit();
+	// The preset changes under the scene: the frame-budget governor and the Quality buttons both
+	// set it, so the counts follow it.
+	quality.onChange(fit);
 
 	// The mood: night at its start, with a little cloud and a light fog for depth. `Auto` moves the
 	// sun and the moon across the sky; the other moods hold an hour.
@@ -207,7 +210,6 @@ export default defineSketch(async (ctx) => {
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
-		speed: 8,
 		groups,
 	});
 
