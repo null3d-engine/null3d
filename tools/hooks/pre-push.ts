@@ -11,6 +11,9 @@
 // NULL3D_JOB_QUEUE, names its script: the trailer check in its quick lane, the cargo steps in its
 // CPU lane, so a push does not load a busy machine outside the queue. Elsewhere the steps run
 // directly. The emergency bypass is a `Push-Check-Skipped: <reason>` trailer on a pushed commit.
+// The check compares with the commit that git reports for main before the push. When the remote
+// holds no such commit to compare with, and no local main ref meets the pushed commit, it refuses
+// the push and asks for a fetch, since it cannot say what the push adds.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -155,13 +158,38 @@ function hasNextest(): boolean {
 	return spawnSync('cargo', ['nextest', '--version'], { stdio: 'ignore' }).status === 0;
 }
 
+/**
+ * The commit that main held before the push, if this checkout can name it: the commit git reports, a
+ * case that needs no other ref, or the point where the pushed commit and the local main ref meet.
+ */
+export function baseOf(push: PushedRef): string | undefined {
+	if (!NO_COMMIT.test(push.remoteSha)) {
+		const known = spawnSync('git', ['cat-file', '-e', `${push.remoteSha}^{commit}`], {
+			stdio: 'ignore',
+		});
+		if (known.status === 0) return push.remoteSha;
+	}
+	for (const ref of ['origin/main', 'main']) {
+		const mergeBase = spawnSync('git', ['merge-base', ref, push.localSha], { encoding: 'utf8' });
+		if (mergeBase.status === 0 && mergeBase.stdout.trim()) return mergeBase.stdout.trim();
+	}
+	return undefined;
+}
+
 function main(): void {
 	const push = pushToMain(parsePush(readFileSync(0, 'utf8')));
 	if (!push) return;
-	const known =
-		!NO_COMMIT.test(push.remoteSha) &&
-		spawnSync('git', ['cat-file', '-e', `${push.remoteSha}^{commit}`]).status === 0;
-	const base = known ? push.remoteSha : git('merge-base', 'origin/main', push.localSha);
+	const base = baseOf(push);
+	if (!base) {
+		console.error(
+			'pre-push: the push replaces main with a history that this checkout does not hold, so the check has nothing to compare with.',
+		);
+		console.error('Fetch main (`git fetch origin main`) and push again.');
+		console.error(
+			`Only in an emergency, add a \`${SKIP_TRAILER}: <reason>\` trailer to a commit of the push; see .dev/pull-requests.md.\n`,
+		);
+		process.exit(1);
+	}
 	const range = `${base}..${push.localSha}`;
 	const reason = skipReason(keptCommits(range).map(({ message }) => message));
 	if (reason) {

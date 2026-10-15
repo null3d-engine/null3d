@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'bun:test';
-import { changedCrates, parsePush, plan, pushToMain, SKIP_TRAILER, skipReason } from './pre-push';
+import { execFileSync } from 'node:child_process';
+import {
+	baseOf,
+	changedCrates,
+	parsePush,
+	plan,
+	pushToMain,
+	SKIP_TRAILER,
+	skipReason,
+} from './pre-push';
 
 const MAIN = 'refs/heads/main';
 const ZERO = '0000000000000000000000000000000000000000';
@@ -23,6 +32,23 @@ describe('pushToMain', () => {
 		expect(pushToMain(parsePush(line('refs/heads/work')))).toBeUndefined();
 		expect(pushToMain(parsePush(line(MAIN, ZERO)))).toBeUndefined();
 		expect(pushToMain(parsePush(''))).toBeUndefined();
+	});
+});
+
+describe('baseOf', () => {
+	const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+	it('takes the commit that git reports for main', () => {
+		expect(baseOf({ localRef: 'HEAD', localSha: head, remoteRef: MAIN, remoteSha: head })).toBe(
+			head,
+		);
+	});
+
+	it('gives nothing when no ref can meet a commit this checkout does not hold', () => {
+		const absent = 'a'.repeat(40);
+		expect(
+			baseOf({ localRef: 'HEAD', localSha: absent, remoteRef: MAIN, remoteSha: absent }),
+		).toBeUndefined();
 	});
 });
 
