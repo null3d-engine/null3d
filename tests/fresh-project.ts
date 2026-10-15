@@ -47,6 +47,7 @@ const DEPENDENCIES = [
 	'@null3d/engine',
 	'@null3d/controls',
 	'@null3d/geometry',
+	'@null3d/impostors',
 	'@null3d/particles',
 	'@null3d/terrain',
 ];

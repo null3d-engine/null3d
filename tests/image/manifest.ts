@@ -2096,6 +2096,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Impostors of the impostors add-on: cards around an origin far from the world's, each showing
+	// the atlas cell its direction to the eye picks, and a merged row of a plain, a turned and a
+	// mirrored panel, which draws only when the merge reverses the mirrored copy's winding.
+	{
+		name: 'impostors',
+		sketch: 'tests/pages/sketches/impostors-sketch.ts',
+		hold: 0,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
