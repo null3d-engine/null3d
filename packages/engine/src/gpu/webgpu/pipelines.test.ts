@@ -1,8 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import * as G from '../../generated/gpu';
-import type { DeviceShaders, ShaderVariants } from '../../generated/shaders';
+import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { Pipelines } from './pipelines';
 
@@ -12,6 +10,9 @@ beforeAll(() => Object.assign(scope, GLOBALS));
 afterAll(() => {
 	for (const name of Object.keys(GLOBALS)) delete scope[name];
 });
+
+/** Every shader build the shader compiler wrote, as this device's pipeline builders see them. */
+const SHADERS = await everyShader();
 
 /** WebGPU's default limits, which every device offers and the engine stays within. */
 const LIMITS = {
@@ -28,17 +29,12 @@ const LIMITS = {
 
 const STAGES = { vertex: 1, fragment: 2, compute: 4 };
 
-/** The permutation bits that change a template's pipeline layout. */
-const LAYOUT_BITS: Readonly<Record<string, number>> = {
+/** The permutation bits of a custom shader that change its pipeline layout. */
+const CUSTOM_BITS = {
 	SKIN: G.PERMUTATION_SKIN,
 	INSTANCE_INDEX: G.PERMUTATION_INSTANCE_INDEX,
 	DEPTH_MULTISAMPLED: G.PERMUTATION_DEPTH_MULTISAMPLED,
 };
-
-/** Each shader's WebGPU permutation bits that change its pipeline layout, from the manifest. */
-const manifest = Bun.TOML.parse(
-	readFileSync(join(import.meta.dir, '../../../../../crates/null3d-shaders/shaders.toml'), 'utf8'),
-) as { shaders: Record<string, { variants?: { webgpu?: { permutations?: string[] } } }> };
 
 /** Every combination of the bits of `bits`. */
 function combinations(bits: number): number[] {
@@ -48,8 +44,11 @@ function combinations(bits: number): number[] {
 	return words;
 }
 
-/** A shader with a build for each combination of `bits`, whose every pipeline has entry points. */
-function shaderWith(name: string, bits: number): ShaderVariants {
+/**
+ * A shader a sketch wrote: a build for each combination of `bits`, whose every pipeline has the
+ * entry points that the templates ask for.
+ */
+function customShaders(name: string, bits: number): ShaderVariants {
 	const pipelines = new Proxy({}, { get: () => ({ vertex: 'vs', fragment: 'fs' }) });
 	return Object.fromEntries(
 		combinations(bits).map((permutation) => [
@@ -59,21 +58,13 @@ function shaderWith(name: string, bits: number): ShaderVariants {
 	) as ShaderVariants;
 }
 
-/** The device's shaders, by the manifest's names, each with the builds that the manifest lists. */
+/** The device's shaders, by name, from the builds that the shader compiler wrote. */
 function deviceShaders(): DeviceShaders {
-	const made = new Map<string, ShaderVariants>();
 	return new Proxy({} as DeviceShaders, {
 		get(_, name) {
 			if (typeof name !== 'string') return undefined;
-			let shader = made.get(name);
-			if (!shader) {
-				const entry = manifest.shaders[name];
-				if (!entry) throw new Error(`the shader manifest has no shader ${name}`);
-				const listed = entry.variants?.webgpu?.permutations ?? [];
-				const bits = listed.reduce((sum, bit) => (sum | (LAYOUT_BITS[bit] ?? 0)) >>> 0, 0);
-				shader = shaderWith(name, bits);
-				made.set(name, shader);
-			}
+			const shader = SHADERS[name];
+			if (!shader) throw new Error(`the shader compiler wrote no shader ${name}`);
 			return shader;
 		},
 	});
@@ -104,7 +95,9 @@ function stageCounts(entries: readonly GPUBindGroupLayoutEntry[], stage: number)
 
 /**
  * The faults of a pipeline layout against the default limits: each stage's resources summed over
- * its groups, its groups with the vertex buffers, and its dynamic buffers.
+ * its groups, its groups with the vertex buffers, and its dynamic buffers. WebGPU counts a stage's
+ * resources over every entry of every group of the layout, whether or not the shader reads them,
+ * so this is what the device validates.
  */
 function faults(layout: GPUPipelineLayoutDescriptor, vertexBuffers: number): string[] {
 	const groups = [...layout.bindGroupLayouts] as unknown as GPUBindGroupLayoutDescriptor[];
@@ -137,9 +130,12 @@ function faults(layout: GPUPipelineLayoutDescriptor, vertexBuffers: number): str
 	return found;
 }
 
-/** The descriptor of a pipeline of render template `id` that draws color and depth. */
+/**
+ * The descriptor of a pipeline of render template `id` that draws color and depth, with a vertex
+ * format that offers every attribute a shader can read.
+ */
 function renderDescriptor(pipelines: Pipelines, id: number, permutation: number) {
-	return pipelines.render(id, permutation, 'rgba8unorm', 'depth32float', 1, 0, 0, 0, 0);
+	return pipelines.render(id, permutation, 'rgba8unorm', 'depth32float', 1, 0, G.VERTEX_ALL, 0, 0);
 }
 
 /** The layout of a pipeline that the fake device made, as its descriptor. */
@@ -147,10 +143,14 @@ function layoutOf(descriptor: GPURenderPipelineDescriptor | GPUComputePipelineDe
 	return descriptor.layout as unknown as GPUPipelineLayoutDescriptor;
 }
 
-/** The faults of every build of render template `id` that its shader has, by build. */
+/**
+ * The faults of every build of render template `id` that its shader has on this device, by build.
+ * A build the shader lacks is one the engine never makes a pipeline from, so it is no fault.
+ */
 function templateFaults(pipelines: Pipelines, id: number): string[] {
 	const found: string[] = [];
-	for (const { permutation } of Object.values(pipelines.variants(id))) {
+	for (const { permutation, wgsl } of Object.values(pipelines.variants(id))) {
+		if (!wgsl) continue;
 		const descriptor = renderDescriptor(pipelines, id, permutation);
 		const buffers = [...(descriptor.vertex.buffers ?? [])].length;
 		for (const fault of faults(layoutOf(descriptor), buffers))
@@ -168,16 +168,17 @@ function renderTemplates(pipelines: Pipelines): number[] {
 
 /** A custom shader of `kind` that declares `textures` textures, with builds for `bits`. */
 function custom(kind: CustomShader['kind'], textures: number, bits: number): CustomShader {
-	return { kind, variants: shaderWith(`custom ${kind}`, bits), locations: [0, 1, 2], textures };
+	return { kind, variants: customShaders(`custom ${kind}`, bits), locations: [0, 1, 2], textures };
 }
 
 describe('the WebGPU pipeline layouts', () => {
+	// Every template's every build, which is a few thousand pipelines, so this takes seconds.
 	it('keep every build of every template within the default limits per shader stage', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
 		const templates = renderTemplates(pipelines);
 		expect(templates).toContain(G.TEMPLATE_DECAL_MAPS);
 		expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
-	});
+	}, 120_000);
 
 	it('keep custom materials and effects with textures within the default limits', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
