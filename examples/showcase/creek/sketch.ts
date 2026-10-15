@@ -14,7 +14,7 @@ import { createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
-import { createMoods, isMood, type Mood } from '../../lib/stage';
+import { createMoods, isMood, type Mood, nearestMood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
@@ -148,6 +148,7 @@ export default defineSketch(async (ctx) => {
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
+	/** The mood whose look the scene shows. In Auto it is the fixed mood nearest to the hour. */
 	let current: Mood = 'Afternoon';
 	// Shafts of light at golden hour, at High and above: below, their march costs too much.
 	const light = () => {
@@ -161,13 +162,19 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
-	const choose = (mood: Mood) => {
+	/** Gives the scene the look of a mood: its fireflies, its air and its water. */
+	const showLook = (mood: Mood): void => {
 		current = mood;
-		stage.set(mood);
 		flora.nightLights(mood === 'Night' || mood === 'Dusk');
 		air.setMood(mood);
 		water.setCaustics(CAUSTICS[mood]);
 		light();
+	};
+	const choose = (mood: Mood) => {
+		stage.set(mood);
+		// Auto moves the hour through the day, so it takes the look of the hour rather than one look
+		// that then sits under a moonlit sky.
+		showLook(mood === 'Auto' ? nearestMood(stage.hours) : mood);
 	};
 	// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
 	// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
@@ -230,6 +237,12 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
+			// next time of day as the sun does.
+			if (stage.auto) {
+				const at = nearestMood(stage.hours);
+				if (at !== current) showLook(at);
+			}
 			film.update(dt);
 			const lens = controls.lens();
 			if (lens) post.set(lens);
