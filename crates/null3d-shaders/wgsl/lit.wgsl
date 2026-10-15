@@ -990,7 +990,6 @@ fn light_surface(
 #endif
     let env = engine_frame.environment;
     let mirrored = saturate(reflection.a);
-#ifdef CUSTOM
 #ifdef PROBE_GRID
     if has_environment(env) || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
 #else
@@ -1000,16 +999,6 @@ fn light_surface(
         var irradiance = environment_irradiance(env, normal) * strength;
         let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
         let radiance = mix(surrounding, reflection.rgb, mirrored);
-#else
-#ifdef PROBE_GRID
-    if has_environment(env) || has_probe_grid(engine_frame.probe_grid) {
-#else
-    if has_environment(env) {
-#endif
-        let strength = material_row.uv_u.w;
-        var irradiance = environment_irradiance(env, normal) * strength;
-        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
-#endif
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
         if has_probe_grid(engine_frame.probe_grid) {
@@ -1024,11 +1013,7 @@ fn light_surface(
         let share = layered_ambient(irradiance, n_dot_v, occlusion);
         image.diffuse *= share;
         image.specular *= share;
-#ifdef CUSTOM
         let coat_radiance = mix(coat_environment(env, to_view, strength), reflection.rgb, mirrored);
-#else
-        let coat_radiance = coat_environment(env, to_view, strength);
-#endif
         layered_environment(coat_radiance, to_view, occlusion);
 #endif
         let fading = horizon_occlusion(to_view, normal, vertex_normal);
