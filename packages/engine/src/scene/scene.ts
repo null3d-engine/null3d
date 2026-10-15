@@ -4071,8 +4071,8 @@ export class Scene implements ViewHolder {
 	 * Lights the scene with a grid of irradiance probes, or with none for null. The grid's light
 	 * takes the place of the environment's diffuse light where `environmentWeight` says so, so
 	 * light that changes with a surface's place, bounced from coloured walls or sky, reaches it.
-	 * The probes' coefficients come from a 3D texture that the sketch uploads with
-	 * `textures.fromData({ ..., format: 'rgba16float' })`, packed as `packProbes` packs them.
+	 * The probes' coefficients come from a 3D texture that `LightProbeGridData.toTexture` packs
+	 * and uploads, from `bakeProbes` or from a grid baked elsewhere.
 	 * Throws the errors that `scene.setEnvironment` throws for a value out of range, E1213 for
 	 * something that is not a texture, and E1101 for a texture that was destroyed.
 	 */

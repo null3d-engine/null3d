@@ -223,10 +223,10 @@ A feature that changes what a shader costs is a permutation bit, so a pipeline w
 The command knows which features and bits each model needs, because it has just walked its materials and meshes. It records them in the model's `asset.extras`, under `NULL3D_shaders`:
 
 ```json
-"NULL3D_shaders": { "permutations": ["VERTEX_COLOR", "ALPHA_MASK"], "features": ["cutout"] }
+"NULL3D_shaders": { "permutations": ["VERTEX_COLOR", "ALPHA_MASK"], "features": ["cutout", "coverage"] }
 ```
 
-The engine reads the list as it loads the file and downloads those shader files beside the textures. So `scene.warmUp()` builds only the pipelines that the model's objects need, and nothing new downloads while the game plays. The list names only what the model itself decides. Bits that a device fixes, such as half precision, and bits that the scene decides, such as receiving shadows, are not part of it.
+The engine reads the list as it loads the file and downloads those shader files beside the textures. It holds back a file that the page's settings cannot use. Alpha to coverage (`coverage`) needs MSAA, and the fading levels (`lod_fade`) need the `lodFade` setting, which Low turns off. When the settings change to use one, its file downloads then. So `scene.warmUp()` builds only the pipelines that the model's objects need, and nothing new downloads while the game plays. The list names only what the model itself decides. Bits that a device fixes, such as half precision, and bits that the scene decides, such as receiving shadows, are not part of it.
 
 The report ends with the list and the pipeline keys it gives. It warns for each quality preset whose texture memory budget the model's textures pass. Phones and tablets run the Low and Medium presets, where the textures take their ETC2 or ASTC bytes. Computers run High and Ultra, where they take their BC7 bytes. The warning is a guide: a scene that loads several models adds their texture memory together.
 

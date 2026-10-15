@@ -487,8 +487,10 @@ mod ids {
     pub const fn prepass_group(view: ViewId) -> u32 {
         FINAL_GROUP + 1 + MAX_VIEWS as u32 + view.index() as u32
     }
+    /// The second step of the two-step pass's group, which reads the first step's target.
+    pub const PRESENT_GROUP: u32 = OUTPUT_GROUP + 1;
     /// The bind group of each step of bloom, after the groups of the depth prepass.
-    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
+    pub const BLOOM_GROUPS: u32 = PRESENT_GROUP + 1;
     /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
@@ -744,6 +746,7 @@ impl GpuDrivenRenderer {
                             lut_sampler: ids::OUTPUT_LUT_SAMPLER,
                             blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
+                        present_group: ids::PRESENT_GROUP,
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
@@ -1196,6 +1199,8 @@ impl GpuDrivenRenderer {
             .set_decals(!self.decal_layout.is_empty(), redraws);
         self.graph
             .set_soft_particles(self.settings.particles().wants_depth());
+        // The render scale's range decides which of the final pass's pipelines the frame asks for.
+        self.graph.set_scaling(self.settings.render_scaling());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.graph
@@ -1234,7 +1239,6 @@ impl GpuDrivenRenderer {
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
-        self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
         let graph = &self.graph;
         self.settings

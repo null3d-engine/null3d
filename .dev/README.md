@@ -16,7 +16,7 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Pull requests and parallel work](pull-requests.md) | Merging main into a branch and its generated files, commit messages and pushes, merging a pull request, what CI runs where, CI's jobs, several copies of the repository on one machine, and coordinating helper agents |
 | [Releases](releases.md) | How a release is made, versions, and the one-time setup |
 | [Sample content](sample-content.md) | The large models, textures and environments that tests and benchmarks load: where they live, how to fetch and use them, how to add one, and why they are not in this repository |
-| [Technique review, October 2026](technique-review-2026-10.md) | The comparison of null3D's techniques with eight engines' source: the ranked changes, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the gaps, the web search results with their sources, and where earlier reports were wrong |
+| [Technique review, October 2026](technique-review-2026-10.md) | The comparison of null3D's techniques with eight engines' source: the ranked changes, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the gaps, the web search results with their sources, where earlier reports were wrong, and the newer techniques of October 2026 with what three.js gained |
 | [Tested devices](tested-devices.md) | Every device and browser that null3D has run on, with the facts and the known issues, a folder of runs for each, and how to add a run |
 
 A guide or a decision record follows AGENTS.md's writing rules, as a contributor file.

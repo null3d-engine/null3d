@@ -48,8 +48,8 @@ has not run, so no phone figure exists yet.
 The two steps ship, as follows.
 
 1. Step 1 is a new full-screen pass that draws at the render size, one texel for each render pixel.
-   It runs the output transform, which is the tone curve and the sRGB encode. It also runs FXAA,
-   bloom and the folded effects. It writes an 8-bit display-colour target named `outputColor`. The
+   It runs the output transform, which is the tone curve and the sRGB encode. It also runs FXAA and
+   bloom. It writes an 8-bit display-colour target named `outputColor`. The
    pass is today's `final.wgsl` with the new `RESOLVE` settings flag. That flag makes the shader use
    the render size as its frame, so its `whole` test holds. The four-tap loop is then skipped, and
    the dither waits for step 2.
@@ -60,18 +60,25 @@ The two steps ship, as follows.
    range color in step 1 and display color in step 2. The outline keeps its canvas-space frame and
    stays in step 2.
 3. The split runs only when the render scale can drop below the whole canvas and the frame draws
-   below it. A crossing declares the passes again inside the frame's preparation, so no frame mixes
-   the two shapes. At the whole canvas's scale the pass is exactly the one pass's again.
-4. Effects that may fold into the final pass no longer fold while the render scale can drop, since
-   step 2 reads display color.
+   below it. While the render scale can drop, the declarations hold both shapes, and every frame
+   keeps the bind groups of both ready. A crossing then only picks which passes draw: it declares
+   nothing, allocates nothing and makes no GPU object. At the whole canvas's scale the frame draws
+   exactly the one final pass, bloom build included. Until the second step's pipeline is built, a
+   frame below the whole canvas keeps to the one pass, which scales the image up by itself.
+4. The two steps ask for their pipelines only while the render scale can drop. A sketch whose
+   scale cannot drop builds no pipeline for them.
+5. Effects that may fold into the final pass no longer fold while the render scale can drop, since
+   step 2 reads display color. A custom tone curve runs in step 1.
 
 The upscaler is today's bilinear scale-up, which step 2 already draws. GSR 1, the EASU choice and
 the `sharpen` RCAS value follow, once prototype P1 measures them on the phones.
 
 ## What the questions were
 
-1. **Per-frame scale routing.** The frame now holds the two-step pass only below the whole canvas's
-   scale. It re-declares on a crossing, so the extra target is absent at scale 1.
+1. **Per-frame scale routing.** The declarations hold the two-step pass whenever the render scale
+   can drop, so the first step's target exists at scale 1 too. Declaring again at each crossing
+   allocated in the frame loop, which dynamic resolution runs every frame, so the frame picks the
+   passes that draw instead (15 October 2026).
 2. **Where the outline draws.** Step 2, unchanged in its canvas-space frame. The line's width is
    still in canvas pixels.
 3. **Bloom's frame.** Bloom draws in step 1. Its base covers the same corner, so its read did not
@@ -90,3 +97,34 @@ the `sharpen` RCAS value follow, once prototype P1 measures them on the phones.
 - The frames below the whole canvas's scale can change by up to one step of the 8-bit target, since
   step 1 rounds before step 2 blends. The image manifest's tolerance should cover that. The scale-0.5
   tests are compared against their references before this lands.
+
+## Addendum, 15 October 2026: the shape is held for the whole time the scale can drop
+
+Item 3 was written as if the declarations followed the frame: the two-step shape existing only while
+a frame draws below the whole canvas. The code that shipped (011310ee7) holds the two-step shape
+whenever the render scale *can* drop, which the default presets allow. A crossing of the whole
+canvas's scale then declares nothing, allocates nothing and makes no GPU object, as item 3 wants.
+Two costs come with that, and the code review of 15 October 2026 (M-1, R-09, N-02) asked for them
+here:
+
+- The plan keeps `outputColor`, an 8-bit target the size of the canvas, while the frame draws at the
+  whole canvas's scale and nothing writes it. That is 4 bytes for each canvas pixel, about 33 MB at
+  3840x2160. The target enters the plan as soon as the render scale can drop, whether or not a frame
+  draws below the whole canvas.
+- While the scale can drop, no effect joins and none folds into either step (frame_graph's
+  `plan_effects`). A sketch whose per-pixel effects would join into one pass therefore runs each of
+  them in a pass of its own, at every scale. Step 1 reads the effects' own passes' output, and over it
+  runs the output transform and FXAA. No folded effect reaches either step, which is what item 1's
+  earlier wording got wrong.
+
+A sketch that sets `quality.set({ minRenderScale: 1 })` gives up the drop and with it both costs. The
+two-step shape is then not declared, so no `outputColor` target exists, and effects join and fold as
+they did before this change.
+
+Prototype P1 has still not run, so the split ships on the Mac's GPU check alone.
+
+The code review also asked this record to say that FXAA below the whole canvas's scale is intended
+(T-4, M-41). It is: before the split the pass skipped the FXAA smoothing path below scale 1, so the
+edges of an upscaled frame were never smoothed. Step 1 now runs FXAA at the render size, and the
+three compatibility-mode scale-0.5 references that move with it were remade in both sets
+(14661f028, 1528a0feb), with the diffs on edges alone.
