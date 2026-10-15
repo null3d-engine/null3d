@@ -56,3 +56,18 @@ The owner chose (b) on 8 October 2026.
 - 0.1.0 is the first public release. So the README's roadmap leaves before 0.1.0, and the agent skills are announced at 0.1.0. Today the release script refuses a README with the roadmap only from 1.0.0 (`tools/lib/release.ts`). M3 changes it to refuse from 0.1.0.
 - The README's quickstart and roadmap say that 0.1.0 is the first release, after the 0.3 step. The roadmap's 0.3 row names the four add-ons.
 - [D-54](D-54-addon-modules.md) names `@null3d/particles` among the add-ons.
+
+## Addendum: every change goes into the release notes, 15 October 2026
+
+Status: decided by the owner. Date: 2026-10-15.
+
+Main lands by direct push since [D-157](D-157-direct-pushes-to-main.md). Branches merge into main without a squash, so main's history holds each branch's commits and the merge commits. The release notes were written for the squash, where each line was one pull request. The owner ruled, in writing: "any and all changes should go into release notes and be able to do a new release."
+
+So the release notes list every commit that is not a merge, whichever branch brought it to main. A release lists each commit that the released commit reaches and the last release tag does not. The release command (`tools/release.ts`) reads git's log as it streams, so the notes have no size limit.
+
+- The notes group the lines by type (features, bug fixes, performance, refactors, documentation, tests, build and tooling, other), with breaking changes first. Inside each type, they group the lines by package, such as `@null3d/engine`, then the examples, the docs and the repository's own work.
+- Commits with the same words in one group share one line, which links each commit.
+- Each line drops the maintainers' references that readers cannot look up: task IDs, decision record numbers, review threads and milestones. The commit link leads to the full message.
+- The commit hook and the range check before a push (`bun tools/hooks/check-trailers.ts origin/main..HEAD`) block those references in a new commit subject.
+- The GitHub Release text stops at GitHub's limit of 125,000 characters, with a link to the release's full list in `CHANGELOG.md`. The first release lists about 850 lines, and its notes are about 176,000 characters.
+- A test builds the notes of a small repository with branch merges (`tools/lib/release.test.ts`). One branch starts before a release and lands after it, and two branches land the same subject.
