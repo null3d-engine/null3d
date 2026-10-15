@@ -48,3 +48,10 @@ The grid's sampling sits in its own first-use templates, `probe_grid` and `probe
 - **Tests and size:** image references of a baked grid on the three GPU paths, and an allocation check of the bake and the frame. A download-size check proves that a page without a grid pays nothing.
 - **Docs, mapping and skills:** a docs page, the three.js `LightProbeGrid` mapping entry, and the skill lines, with the showcase scenes able to set a grid.
 - **Later:** the GPU bake over six capture views joins with M2-EX32's capture, and a validity mask for the strong leaks the normal offset cannot fix.
+
+## Addendum, 15 October 2026: the grid becomes M3's global illumination
+
+The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), rulings 12 and 13):
+
+- **M3's global illumination is a leak-free probe volume on this grid.** Each probe gains a validity mask for the leaks that the normal offset cannot stop. A separate sky-occlusion term holds how much sky each probe sees. The live sky colour multiplies it, so time of day needs no new bake. Both were this record's "later" items. The grid's format for a grid baked elsewhere becomes a stable, documented format (hook H6 of [D-173](D-173-addon-hooks.md)).
+- **Probe detail stays L1.** three.js's `LightProbeGrid` stores L2, and a port maps it onto this grid and lists the difference.
