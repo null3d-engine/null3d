@@ -62,3 +62,10 @@ The coordinator ruled on three faults in the grid's public API and docs, found w
 - The bake's `resolution` option was described as the probes along each axis, but the bake used it as the distance between probes. A docs example that asked for 24 probes along an axis got two. The option is now `spacing`, in meters, 2 by default, which is what the code always did. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
 - `setLightProbeGrid`'s development check took only plain arrays for `origin`, `spacing` and `counts`, while the bake's grid holds typed arrays. The documented bake example therefore threw E1203. The setter now takes any three finite numbers, in an array or a typed array. A unit test runs the documented bake calls through the setter's check.
 - The docs examples used a class that does not exist and an internal packing function, and set a new texture in every frame after the bake ended. They now use `LightProbeGridData` and set the grid once.
+
+## Addendum, 15 October 2026: the grid becomes M3's global illumination
+
+The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), rulings 12 and 13):
+
+- **M3's global illumination is a leak-free probe volume on this grid.** Each probe gains a validity mask for the leaks that the normal offset cannot stop. A separate sky-occlusion term holds how much sky each probe sees. The live sky colour multiplies it, so time of day needs no new bake. Both were this record's "later" items. The grid's format for a grid baked elsewhere becomes a stable, documented format (hook H6 of [D-173](D-173-addon-hooks.md)).
+- **Probe detail stays L1.** three.js's `LightProbeGrid` stores L2, and a port maps it onto this grid and lists the difference.

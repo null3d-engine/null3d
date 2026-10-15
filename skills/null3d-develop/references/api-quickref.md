@@ -83,7 +83,7 @@ await engine.destroy({ release: true }); // (0.2) also frees the memory that the
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
 await engine.requestPointerLock();                // (0.2) in a click handler, for first-person controls; E1425 when refused
-// engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
+// engine.registerVideo and textures.fromVideo come in 0.3; recipe 14 shows the workaround
 ```
 
 In hold mode, `createEngine` resolves after the held frame, and `engine.captureFrame()` returns that frame. The page's `?hold=<seconds>` switch does the same and wins over the option (`guides/testing`).
@@ -144,8 +144,8 @@ export default defineSketch(async (ctx) => {
 | `createParticles(ctx, { rate, bursts, lifetime, shape, speed, direction, spread, velocity, follow, subEmitters, gravity, drag, wind, turbulence, groundHeight, groundMode, size, sizeOverLife, colors, colorOverLife, alphaOverLife, intensity, facing, stretch, spin, blending, map, flipbook, softness, nearFade })` from `@null3d/particles` (0.2) | Promise<ParticleSystem> | A GPU particle system: the GPU moves each particle in closed form, and the CPU writes only births. Call `system.update()` every frame in `onLateUpdate`; it allocates nothing. `shape`: `point`, `sphere`, `cone`, `box`, `disc`. `facing`: `camera`, `velocity` (sparks, rain), `ground`, `tumble` (leaves). `colors` takes one color input or two that particles mix; `intensity` above 1 blooms; curves over life up to 16 steps. `follow: object` leaves trails in the world. `particleTextures.glow`, `spark`, `smoke`, `flame`, `rain`, `leaves` make maps in code: spread them into the options. `system.burst(n)`, `system.rate`, `system.emitting`, `system.set(values)`, `system.destroy()`. Docs `api/particles` |
 | `createImpostors(scene, { texture, atlas, positions, size, center, colors, alphaMode, color, origin, layers })` and `mergeFarGeometry(parts)` from `@null3d/impostors` (0.2) | Promise<ImpostorBatch>, MeshArrays | Far objects as one sprite batch of camera-facing cards: each card shows the atlas cell nearest the camera. Call `update(camera.position)` every frame; it writes only frames and allocates nothing. `octahedralAtlas(views)` gives `{ columns, rows }`; `impostorFrame(direction, atlas)` and `frameDirection(frame, atlas)` are inverses a bake and the cards share. `mergeFarGeometry([{ arrays, transform }])` writes copies of a mesh into one mesh's arrays; `farCellGroups(centres, cellSize)` groups by grid cell. `alphaMode: 'mask'` cuts the cards out; one view shows, with no blend yet. Docs `api/impostors` |
 | `createTerrain(ctx, { size, height, resolution, layers, splat, splatResolution, chunkQuads, maxLevel, split, skirt, metalness, castShadows, receiveShadows, maxBlocks })` from `@null3d/terrain` (0.2) | Terrain | A height field drawn as a camera-centred quadtree of blocks with a splat-mapped surface, built on public APIs. `height` is a function or a `Float32Array` height map; `layers` is one to four `{ map, tile, roughness }`. Call `terrain.update(x, z)` with the camera's ground position in `onUpdate`; it rebuilds only when the camera crosses a cell. `terrain.heightAt(x, z)`, `terrain.normalAt(x, z, out)`, `terrain.drawn`, `terrain.triangles`, `terrain.destroy()`. `terrainTextures(textures, { size, seed })` makes grass, soil, rock and snow maps in code. No collision. Docs `api/terrain` |
-| `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
-| `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
+| `scene.createView({ camera, rect })` (1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
+| `scene.animateProperty(target, path, keyframes)` (1.0) | Animation | Until then, animate values in `onUpdate` |
 | `scene.raycast(...)` and other queries (0.2) | | Section 13 |
 | `await scene.warmUp()` | | Resolves when every pipeline the scene needs is built, hidden objects included |
 
@@ -470,7 +470,7 @@ const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.
 
 // (0.2, not built yet): joint overrides for procedural aiming
-// after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
+// (1.0): scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
 
 Sampling and blending run on job workers; there is no update call. Playing a clip that already plays keeps its time, so calling `play` again costs nothing. Event handlers get one reused object, so copy what you keep. They run at the start of the next frame, before `onUpdate`.
