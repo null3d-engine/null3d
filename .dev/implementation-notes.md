@@ -277,9 +277,9 @@ The built-in room environment is the first cube that the engine makes on the GPU
 M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work at once do not collide. The task that adds a command moves its number from `reserved` into `Op` in `drawlist.rs`.
 
 - 43, `DISPATCH_INDIRECT`: workgroup counts from a buffer. Skinning on WebGPU (M2-C3) skins only the meshes that culling found visible. Two-phase occlusion culling (M2-I1) dispatches its second phase from the first phase's count.
-- 50, `COPY_TEXTURE_TO_BUFFER`: held since M1-A3, for GPU picking (M2-D6).
+- 50, `COPY_TEXTURE_TO_BUFFER`: held since M1-A3, for GPU picking (M2-D6). It is in `Op` now, as "Draw-list readback" says.
 - 52, `DESTROY_PIPELINE`: `material.destroy()` (M2-J3) and shader hot reload (M2-J2) release pipelines. Today a pipeline lives until its id is used again.
-- 53, `READ_BUFFER`: GPU picking (M2-D6) reads the ids under the pointer back into engine memory a frame later.
+- 53, `READ_BUFFER`: GPU picking (M2-D6) reads the ids under the pointer back into engine memory a frame later. It is in `Op` now too.
 - The new format code is 19, `RGB9E5_UFLOAT`, and the new view codes are 2, `CUBE`, and 3, `D3`.
 
 ## Texture uploads
@@ -665,6 +665,27 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - So `capture()` in hold mode now encodes the held frame's pixels, which the page keeps, and the GPU draws nothing more. A browser test loses the GPU after the hold and still gets the held image from `capture()`.
 - Safari gives the same "map async was not successful" for every failed map, so the message named no cause. A WebGPU readback now makes its texture, its drawing, its buffer and the copy inside an out-of-memory error scope. When the map fails, the error names an allocation that ran out of memory, or else a loss of the device with its reason. The loss can come just after the failed map, so the readback waits briefly for it. Unit tests in `gpu/readback.test.ts` give a fake device each failure.
 - The back-to-back capture test runs in every thread mode on both GPU paths. Before the change it failed in all 10 on the Mac's GPU and in all 10 on SwiftShader. Each gave the same shade 6 times, such as 84, 84, 84, 84, 84, 84. With the change, on 6 October 2026, all 10 pass on each set, and so does the held-frame test after a GPU loss, on WebGPU and on WebGL2.
+
+## Draw-list readback
+
+GPU picking copies its small id target into a buffer (`CopyTextureToBuffer`), then reads the buffer back into engine memory (`ReadBuffer`). No frame emits either command yet. The 15 October 2026 code review found that the two GPU paths disagreed, and that the contract let the core emit lists that WebGPU rejects. The contract in `drawlist.rs` and the mock now state and check these rules:
+
+- The copy reads an `RGBA8_UNORM` or `RGBA32_UINT` texture. WebGL2 copies with `readPixels`, whose required format and type give WebGPU's bytes for these two formats only. A half-float target, for example, reads back as 32-bit floats on WebGL2.
+- The copy's buffer offset and bytes per row are multiples of 256, as WebGPU requires. WebGL2 ignored the bytes per row and packed its rows tightly. It now sets `PACK_ROW_LENGTH` from them around the `readPixels`, so row `r` lands at the same place on both paths.
+- The copy's x and y address texels as stored, as every other copy does. In a texture that a render pass drew, WebGL2's first stored row is the bottom row. So the code that emits a pick flips y and the row order on that path, as shaders flip their texture coordinates.
+- A read's offset is a multiple of 8 and its size a multiple of 4, as `mapAsync` requires. The read names its control slot, the fifth word. The doc had named four words, and the backends read five.
+- A buffer waits from its read until the read's slot rises: nothing writes it, copies into it or reads it. On WebGPU, a copy into a buffer whose map is pending is a validation error, which drops the whole frame. On WebGL2, the old code dropped a pending read when the next copy came, so a pick in every frame never landed. Code that reads in every frame keeps a ring of buffers, one for each read in flight. The mock refuses any use of a waiting buffer until a test calls `finish_reads`.
+- A capture replays a frame that the frame loop drew already. Its copies into buffers and its reads would land a second time, perhaps in memory that the sketch uses for something else by then. Both backends skip them while they draw a capture.
+
+How each backend runs a read:
+
+- WebGL2 puts a fence after the commands before the read. At the end of each later replay, it collects the reads whose fences have signalled, with `getBufferSubData`. The bytes pass through an array of its own, since WebGL may refuse a view on shared memory. A read never stalls on the GPU.
+- WebGPU maps each read's buffer once the frame's commands are submitted. It copies the bytes into engine memory, unmaps the buffer, and only then raises the slot. So the code that waits for the slot can use the buffer again at once.
+- Both deliver through one `ReadSink` (`gpu/readback.ts`), which the frame replay makes from its own memory views. Each backend keeps its read records in a pool, so a read in every frame allocates nothing of its own. The one exception is WebGPU's view of the mapped bytes.
+- A WebGPU map fails when the buffer is destroyed during it, which drops the read on purpose. It also fails when the device is lost, which the loss path reports. A map that WebGPU rejects also raises a validation error, which the renderer's error watch reports in every build. Development builds also log each failure that is not a destroyed buffer's.
+- `gpu/webgl2/backend.test.ts` and `gpu/webgpu/backend.test.ts` replay a copy and a read with fake contexts. They check the row spacing, the bytes in engine memory and one rise of the slot. They also check the skip in a capture, and the dropped read of a destroyed buffer.
+
+The pick template (`pick.wgsl`) tests the scene's depth for equality. It has SKIN and MORPH builds. A custom material with a vertex offset has PICK builds of its own (`lit.wgsl`). So each object picks where it draws. On WebGL2, [D-43](decisions/D-43-webgl2-prepass.md) found that two programs can place a vertex a rounding step apart. That was in Chrome on the Mac, though both programs mark the position invariant. So the pick pass needs a page that reads back its own picks on that path before it ships, as `pick.wgsl` says.
 
 ## Canvas size
 

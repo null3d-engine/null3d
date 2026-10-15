@@ -410,14 +410,15 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VI
 # id target, where the scene's depth leaves it. The pass runs after the opaque pass, uses the
 # scene's depth with an EQUAL test that writes no depth, so a fragment that a material's mask
 # discarded (which wrote no depth) never matches. The fragment writes the id that the table of
-# object ranges gives, which the OBJECT_IDS def adds to the vertex shader. It loads on first use,
-# when a sketch first asks for GPU picking.
+# object ranges gives, which the OBJECT_IDS def adds to the vertex shader. The SKIN and MORPH builds
+# move each vertex as the lit templates' do. It loads on first use, when a sketch first asks for GPU
+# picking.
 [shaders.pick]
 file = "pick.wgsl"
 first_use = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["OBJECT_IDS"], permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "OBJECT_IDS"], permutations = ["DRAW_INDEX", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "OBJECT_IDS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and
