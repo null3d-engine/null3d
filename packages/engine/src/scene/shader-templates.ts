@@ -6,9 +6,11 @@
 // their new shaders, which the thread that draws swaps in.
 //
 // The thread that draws gets the builds of its GPU path only, so it never holds the other path's
-// text. A custom material's WebGPU builds that skin in the vertex shader load on first use: the
-// thread that draws asks for a template's builds when a pipeline first needs one, and the sketch
-// thread imports them then and sends them on.
+// text. A custom material's builds load on first use, in sets by the permutation bits that a
+// device fixes and by skinning. When the sketch first uses the material, this thread imports the
+// set of its device's bits that does not skin and sends it on. The thread that draws asks for
+// another set when a pipeline first needs one, and this thread imports that set then. It imports
+// and sends each set of a template once.
 
 import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
@@ -20,8 +22,8 @@ import type { BuildsSender, CustomShader, ShaderSender } from '../shared/images'
 /** The GPU path whose builds a page draws with. */
 export type ShaderTarget = 'wgsl' | 'glsl';
 
-/** Imports a compiled shader's builds that load on first use. */
-export type BuildsLoader = () => Promise<{ readonly variants: ShaderVariants }>;
+/** Imports a set of a compiled shader's builds that load on first use, by its permutation bits. */
+export type BuildsLoader = (target: ShaderTarget, set: number) => Promise<ShaderVariants>;
 
 /** The builds of `builds` that have output for `target`. */
 function only<T extends { readonly wgsl: unknown; readonly glsl: unknown }>(
@@ -47,25 +49,30 @@ export class ShaderTemplates {
 	private readonly hotFirsts = new Map<string, number>();
 	/** In development builds, the newest shaders under each hot update key that an update brought. */
 	private readonly hotShaders = new Map<string, readonly CustomShader[]>();
-	/** The import of each template's builds that load on first use, until the thread asks. */
+	/** The import of each template's builds that load on first use. */
 	private readonly later = new Map<number, BuildsLoader>();
+	/** The sets of each template's builds that this thread imports or sent, by their bits. */
+	private readonly sent = new Map<number, Set<number>>();
 
 	/**
 	 * `send` gives each template's shader to the thread that draws, with the builds of `target`, or
-	 * of both paths without it. `sendBuilds` gives it the builds that load on first use.
+	 * of both paths without it. `sendBuilds` gives it the sets of builds that load on first use,
+	 * from the set of `deviceSet`, the permutation bits that the device fixes, at a material's
+	 * first use.
 	 */
 	constructor(
 		private readonly send: ShaderSender = () => {},
 		private readonly target?: ShaderTarget,
 		private readonly sendBuilds: BuildsSender = () => {},
+		private readonly deviceSet = 0,
 	) {}
 
 	/**
 	 * The first template of `compiled`. The first call for it takes a template for each shader that
 	 * `shaders` gives, in order, and sends each one to the thread that draws. On the dev server,
 	 * WGSL under the hot update key `hot` shares the templates of the first WGSL under it, and the
-	 * newest shaders under it go first. `later` imports the first shader's builds that load on
-	 * first use.
+	 * newest shaders under it go first. `later` imports the sets of the first shader's builds,
+	 * which load on first use: the device's set starts to load at once.
 	 */
 	of(
 		compiled: object,
@@ -83,7 +90,10 @@ export class ShaderTemplates {
 			this.next += made.length;
 			for (let k = 0; k < made.length; k++) this.give(first + k, made[k] as CustomShader);
 			if (key !== undefined) this.hotFirsts.set(key, first);
-			if (later && made[0]?.skinBuilds && this.target !== 'glsl') this.later.set(first, later);
+			if (later && made[0]?.builds) {
+				this.later.set(first, later);
+				this.answer(first, this.deviceSet);
+			}
 		}
 		this.firsts.set(compiled, first);
 		return first;
@@ -117,39 +127,42 @@ export class ShaderTemplates {
 	}
 
 	/**
-	 * Imports the builds of `template` that load on first use, which the thread that draws asked
-	 * for, and sends them, or why they did not load.
+	 * Imports the set `set` of the builds of `template` that load on first use, which the thread
+	 * that draws asked for or which the template's first use sends, and sends it, or why it did not
+	 * load. A set that this thread imports or sent already is not sent again.
 	 */
-	answer(template: number): void {
+	answer(template: number, set: number): void {
+		let sent = this.sent.get(template);
+		if (sent?.has(set)) return;
+		if (!sent) {
+			sent = new Set();
+			this.sent.set(template, sent);
+		}
+		sent.add(set);
 		const load = this.later.get(template);
-		this.later.delete(template);
-		if (!load) {
-			this.sendBuilds(template, 'the sketch holds no such builds');
+		const { target } = this;
+		if (!load || !target) {
+			this.sendBuilds(template, set, 'the sketch holds no such builds');
 			return;
 		}
-		load().then(
-			({ variants }) =>
-				this.sendBuilds(template, this.target ? only(variants, this.target) : variants),
-			(error: unknown) => this.sendBuilds(template, messageOf(error)),
+		load(target, set).then(
+			(variants) => this.sendBuilds(template, set, variants),
+			(error: unknown) => this.sendBuilds(template, set, messageOf(error)),
 		);
 	}
 
-	/**
-	 * Sends `shader` under `template`, with the builds and pieces of the page's GPU path. Only
-	 * WebGPU has builds that load on first use.
-	 */
+	/** Sends `shader` under `template`, with the builds and pieces of the page's GPU path. */
 	private give(template: number, shader: CustomShader): void {
 		const { target } = this;
 		if (!target) {
 			this.send(template, shader);
 			return;
 		}
-		const { pieces, skinBuilds, ...rest } = shader;
+		const { pieces, ...rest } = shader;
 		const piecesOf = (builds: PieceBuilds) => only<ShaderPiece>(builds, target);
 		this.send(template, {
 			...rest,
 			variants: only(shader.variants, target),
-			...(skinBuilds && target === 'wgsl' && { skinBuilds }),
 			...(pieces && { pieces: { group: piecesOf(pieces.group), fold: piecesOf(pieces.fold) } }),
 		});
 	}

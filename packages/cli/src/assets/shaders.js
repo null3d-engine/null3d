@@ -6,7 +6,11 @@
 // The bits are the ones an asset itself turns on. Bits that a device fixes (DRAW_INDEX, TONE_MAP
 // and HALF) and bits that the scene decides during play (RECEIVE_SHADOWS, PREPASS, FXAA, BLOOM
 // and the rest) are not part of a file's list.
-import { KHRMaterialsTransmission } from '@gltf-transform/extensions';
+import {
+	KHRMaterialsClearcoat,
+	KHRMaterialsSheen,
+	KHRMaterialsTransmission,
+} from '@gltf-transform/extensions';
 
 /** The asset field that holds the list, beside the engine's other fields in `asset.extras`. */
 export const NULL3D_SHADERS = 'NULL3D_shaders';
@@ -25,6 +29,7 @@ export const ASSET_PERMUTATIONS = /** @type {const} */ ([
 	'MORPH',
 	'TRANSMISSION',
 	'LOD_FADE',
+	'COAT_SHEEN',
 ]);
 
 /**
@@ -34,10 +39,12 @@ export const ASSET_PERMUTATIONS = /** @type {const} */ ([
  */
 export const ASSET_SHADER_FILES = /** @type {const} */ ([
 	'cutout',
+	'coverage',
 	'lod_fade',
 	'morph',
 	'skinning',
 	'transmission',
+	'coat_sheen',
 ]);
 
 /**
@@ -97,6 +104,18 @@ function transmits(material) {
 		material?.getExtension(KHRMaterialsTransmission.EXTENSION_NAME) ?? null
 	);
 	return extension !== null && extension.getTransmissionFactor() > 0;
+}
+
+/**
+ * True when the material has a clear coat or a sheen: it holds KHR_materials_clearcoat or
+ * KHR_materials_sheen, as the engine's glTF reader gives the material the layers then.
+ *
+ * @param {import('@gltf-transform/core').Material | null} material
+ */
+function layered(material) {
+	const coat = material?.getExtension(KHRMaterialsClearcoat.EXTENSION_NAME) ?? null;
+	const sheen = material?.getExtension(KHRMaterialsSheen.EXTENSION_NAME) ?? null;
+	return coat !== null || sheen !== null;
 }
 
 /**
@@ -161,11 +180,15 @@ function needsOf({ prim, material, skinned, levels }) {
 	if (morph) bits.push('MORPH');
 	if (transmits(material)) bits.push('TRANSMISSION');
 	if (levels) bits.push('LOD_FADE');
+	if (layered(material)) bits.push('COAT_SHEEN');
 	if (skinned) files.push('skinning');
 	if (morph) files.push('morph');
-	if (masked) files.push('cutout');
+	// A masked material's edges fade by alpha to coverage on a page that draws with MSAA, as the
+	// engine's materials from glTF files do by default.
+	if (masked) files.push('cutout', 'coverage');
 	if (transmits(material)) files.push('transmission');
 	if (levels) files.push('lod_fade');
+	if (layered(material)) files.push('coat_sheen');
 	return { bits, files };
 }
 

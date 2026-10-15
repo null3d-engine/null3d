@@ -38,6 +38,9 @@ impl Capabilities {
     pub const FLOAT32_BLENDABLE: Self = Self(1 << 13);
     /// Subgroup operations in shaders.
     pub const SUBGROUPS: Self = Self(1 << 14);
+    /// Drawing and blending into color targets of 16-bit floats with one sample: every WebGPU
+    /// device, and WebGL2 with `EXT_color_buffer_float` or `EXT_color_buffer_half_float`.
+    pub const FLOAT16_TARGETS: Self = Self(1 << 16);
     /// Reserved for 64-bit atomics; no browser offers them yet, so always off.
     pub const ATOMIC64: Self = Self(1 << 32);
     /// Reserved for bindless resources; always off.

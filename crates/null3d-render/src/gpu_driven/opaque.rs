@@ -76,6 +76,7 @@ pub(super) fn bind_frame(
     atlas: u32,
     occlusion: u32,
     environment: u32,
+    probe_grid: u32,
     transmission: u32,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
@@ -90,6 +91,7 @@ pub(super) fn bind_frame(
         entry(7, resource_kind::BUFFER, ids::light_grid(lights)),
         entry(8, resource_kind::BUFFER, ids::lights(lights)),
         entry(9, resource_kind::TEXTURE, atlas),
+        entry(10, resource_kind::TEXTURE, probe_grid),
         entry(11, resource_kind::TEXTURE, occlusion),
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
         entry(transmission::BINDING, resource_kind::TEXTURE, transmission),

@@ -88,11 +88,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			loadedBy: drawing,
 		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
-		...(['wgsl', 'glsl'] as const).map((target) => ({
-			name: `${prefix}-shaders-${target}-combos.js`,
-			module: `generated/shaders-${target}-combos.ts`,
-			loadedBy: drawing,
-		})),
+		...(['wgsl', 'glsl'] as const).flatMap((target) =>
+			['', '-half'].map((half) => ({
+				name: `${prefix}-shaders-${target}-combos${half}.js`,
+				module: `generated/shaders-${target}-combos${half}.ts`,
+				loadedBy: drawing,
+			})),
+		),
 	];
 }
 
@@ -541,11 +543,11 @@ export function downloadSizes(
 /**
  * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
- * Brotli's budget is the owner's. The gzip and raw budgets hold today's start with about a tenth to
- * spare. The shader file fills most of it, so per-feature shader files bring both down. Until then
- * they stop a start that grows on a gzip host, or on a host that sends files as they are.
+ * Each column's budget is the owner's, and decision record D-14 holds its figures and approvals.
+ * The gzip and raw budgets stop a start that grows on a gzip host, or on a host that sends files as
+ * they are. The start's shader file fills most of each column.
  */
-export const START_BUDGET: Budget = { raw: 3_448 * 1024, gzip: 464 * 1024, brotli: 145 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 165 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
@@ -567,17 +569,15 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
 
 /**
  * The budget for each device module of a feature that loads on first use. Such a module is shader
- * data, as the modules of the start are, so its limits started at the size of a start shader
- * file. Shader text shrinks far more under compression than code does, so these limits do not keep
- * the start budget's proportions. The owner set them on 4 October 2026, and on 5 October raised
- * the Brotli limit for the shadow filter's growth and the gzip limit, which only hosts without
- * Brotli meet, for the skinning and morph files of environment lighting (decision records D-14
- * and D-56).
+ * data, as the modules of the start are. Shader text shrinks far more under compression than code
+ * does, so these limits do not keep the start budget's proportions. Only hosts without Brotli meet
+ * the gzip limit. Each limit is the owner's, and decision record D-14 holds its figures and
+ * approvals.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_536 * 1024,
 	gzip: 320 * 1024,
-	brotli: 32 * 1024,
+	brotli: 49 * 1024,
 };
 
 /**

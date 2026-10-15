@@ -5,7 +5,7 @@
 
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
-import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
+import { EngineError, errorOfMessage, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
@@ -320,9 +320,9 @@ export interface EngineOptions {
 	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
 	 * while the engine runs. The error's message holds the failure, such as `E1102: ...`. The engine
 	 * keeps drawing and presenting frames, so the error alone does not stop it: a frame whose update
-	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`, which
-	 * the comparison ramps judge. `engine.onSketchError` adds more handlers once the engine has
-	 * started. Without a handler, the error also reaches the console.
+	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`.
+	 * `engine.onSketchError` adds more handlers once the engine has started. Without a handler, the
+	 * error also reaches the console.
 	 */
 	onSketchError?: (error: Error) => void;
 	/**
@@ -348,7 +348,9 @@ export interface EngineOptions {
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
 	 * until its shaders are built, `'transmission'` with the first material that lets light
-	 * through, and `'occlusion'` with the first object that `setOccluder(true)`
+	 * through, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'`
+	 * with the first material of the `weighted` blending, and `'occlusion'` with the first object that
+	 * `setOccluder(true)`
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
@@ -543,11 +545,12 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the
-	 * engine draws no new frames: destroy it and start a new one. On WebGPU, the GPU can also run out
-	 * of memory (E1304) or reject the engine's work (E1305), and the engine draws on without the
-	 * objects that failed. The engine reports each failure once. Without a handler, it logs the
-	 * failure to the console. Returns a function that removes the handler.
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom material's
+	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
+	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
+	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
+	 * draws on without the objects that failed. The engine reports each failure once. Without a
+	 * handler, it logs the failure to the console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -694,13 +697,19 @@ type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) =
  * other failure becomes E1405.
  */
 export function startError(role: string, message: string): EngineError {
-	const code = /^(E\d{4}): /.exec(message)?.[1];
-	if (code && isErrorCode(code)) {
-		const error = new EngineError(code, '');
-		error.message = message;
-		return error;
-	}
-	return new EngineError('E1405', `the ${role} worker did not start: ${message}.`);
+	return (
+		errorOfMessage(message) ??
+		new EngineError('E1405', `the ${role} worker did not start: ${message}.`)
+	);
+}
+
+/**
+ * The error of an engine thread, or of the drawing on the page, that failed after the start,
+ * where `what` names it. An engine error keeps its code and message, such as E1424 for a custom
+ * material's builds that did not download; any other failure becomes E1404.
+ */
+export function failureError(what: string, message: string): EngineError {
+	return errorOfMessage(message) ?? new EngineError('E1404', `${what} failed: ${message}.`);
 }
 
 type RunnerModule = typeof import('../sketch/runner');
@@ -749,7 +758,8 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
- * A failure that a started worker reports, or that ends it, reaches the page as E1404.
+ * A failure that a started worker reports, or that ends it, reaches the page as E1404, or with its
+ * own code when it is an engine error.
  */
 export class EngineWorker {
 	private readonly waiting: Pending[] = [];
@@ -786,8 +796,7 @@ export class EngineWorker {
 		const failed = (message: string) => {
 			this.stoppedCleanly = false;
 			this.waiting.shift()?.reject(startError(role, message));
-			if (this.started)
-				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
+			if (this.started) events.failure(failureError(`the ${role} worker`, message));
 		};
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
@@ -1776,10 +1785,7 @@ async function startEngine(
 				...images,
 				presented: () => labels.update(),
 				fail: pageLoss,
-				fault: (error) =>
-					onFailure(
-						new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`),
-					),
+				fault: (error) => onFailure(failureError('the drawing on the page', messageOf(error))),
 				gpuError: (outOfMemory, message) =>
 					onFailure(gpuFailure('the page', outOfMemory, message), false),
 			});

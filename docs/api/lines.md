@@ -92,7 +92,7 @@ export default defineSketch(async ({ scene, time }) => {
 | `metalness`, `roughness` | 0, 1 | With `lit`, how metallic and how rough the lines' surface is |
 | `emissive`, `emissiveIntensity` | Black, 1 | With `lit`, the light that the lines give off |
 | `alphaMode` | `'opaque'` | `'blend'` blends each segment over what lies behind it, with `opacity`. `'opaque'` ignores the opacity |
-| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and lasers, or `'multiply'` |
+| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and lasers, or `'multiply'`. Lines do not take `'weighted'`, which throws E1217 |
 | `fog` | `true` | `false` keeps the lines out of the scene's fog |
 | `depthWrite` | `true` | `false` writes no depth, so a line hides nothing behind it |
 | `depthTest` | `true` | `false` draws the lines in front of everything |

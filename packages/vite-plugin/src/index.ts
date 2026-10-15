@@ -32,6 +32,7 @@ import {
 	WGSL_UPDATE_EVENT,
 	type WgslUpdate,
 } from './hot.ts';
+import { MATERIAL_BUILDS_ADDRESS, MaterialBuilds, ModuleBuilds } from './material-builds.ts';
 import {
 	FILES_LIST,
 	listedFiles,
@@ -42,7 +43,6 @@ import {
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
 import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
-import { SKIN_BUILDS_ADDRESS, SkinBuilds } from './skin-builds.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -353,8 +353,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const compiler = new CompilerPool();
 	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
 	const shaders = new ShaderCache(() => root, compiler, { disabled: () => noShaderCache });
-	/** Custom materials' builds that skin, which load on first use from modules of their own. */
-	const skinBuilds = new SkinBuilds();
+	/** Custom materials' builds, which load on first use from modules of their own by device. */
+	const materialBuilds = new MaterialBuilds();
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
@@ -435,10 +435,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		// early script imports nothing, so it runs as soon as it arrives, and the core's download
 		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: [HOT_CLIENT_ADDRESS, SKIN_BUILDS_ADDRESS, /^@null3d\/engine$/] },
+			filter: { id: [HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS, /^@null3d\/engine$/] },
 			async handler(source, importer) {
 				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
-				if (SKIN_BUILDS_ADDRESS.test(source))
+				if (MATERIAL_BUILDS_ADDRESS.test(source))
 					return source.startsWith('\0') ? source : `\0${source}`;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
@@ -472,15 +472,17 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		load: {
 			filter: {
-				id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS, SKIN_BUILDS_ADDRESS] },
+				id: {
+					include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS],
+				},
 			},
 			async handler(id) {
 				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
-				if (SKIN_BUILDS_ADDRESS.test(id))
+				if (MATERIAL_BUILDS_ADDRESS.test(id))
 					return (
-						skinBuilds.module(id) ??
+						materialBuilds.module(id) ??
 						this.error(
-							`null3D has no skin builds named ${id.slice(1)}. Reload the page so the dev server compiles its WGSL again.`,
+							`null3D has no custom material builds named ${id.slice(1)}. Reload the page so the dev server compiles its WGSL again.`,
 						)
 					);
 				// Another plugin's virtual module whose name ends like a WGSL file.
@@ -530,8 +532,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					}
 				}
 				const pack = new ShaderPack();
+				const builds = new ModuleBuilds();
+				const value = builds.value(pack, compiled.shader, key);
 				return {
-					code: `export default ${skinBuilds.value(pack, compiled.shader, key)};\n${pack.unpacker()}`,
+					code: `export default ${value};\n${pack.unpacker()}${materialBuilds.finish(id, builds)}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -551,13 +555,15 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
 					const pack = new ShaderPack();
+					const builds = new ModuleBuilds();
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, skinBuilds.value(pack, shader, key));
+						out.overwrite(start, end, builds.value(pack, shader, key));
 					}
-					if (out && !pack.empty) out.append(pack.unpacker());
+					if (out && !pack.empty)
+						out.append(`${pack.unpacker()}${materialBuilds.finish(file, builds)}`);
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
 				}

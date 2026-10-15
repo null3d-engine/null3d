@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture } from './fixture';
 import {
 	applyOverride,
+	type ChangelogOptions,
 	computeBump,
 	extractReleaseNotes,
+	fitReleaseText,
+	isReleaseCommit,
 	nextVersion,
+	notesProblems,
 	type PageStatus,
 	type ParsedCommit,
+	packageFolders,
 	parseCommit,
 	prependChangelog,
+	readCommits,
 	readVersion,
 	releaseProblems,
 	renderChangelog,
+	userWording,
 	type VersionCopy,
 	versionCopies,
 	writeVersion,
@@ -22,6 +31,13 @@ import {
 const repoRoot = join(import.meta.dir, '../..');
 const commit = (subject: string, body = '', hash = 'abc1234') =>
 	parseCommit({ subject, body, hash });
+
+/** The lines under a heading of the notes, up to the next heading of the same level. */
+function extractSection(notes: string, heading: string): string {
+	const rest = notes.slice(notes.indexOf(heading) + heading.length);
+	const end = rest.indexOf('\n### ');
+	return (end === -1 ? rest : rest.slice(0, end)).trim();
+}
 
 describe('parseCommit', () => {
 	it('reads the type, scope and description', () => {
@@ -83,57 +99,246 @@ describe('versions', () => {
 });
 
 describe('renderChangelog', () => {
+	const packages = ['engine', 'cli'];
 	const commits: ParsedCommit[] = [
-		commit('fix(engine): keep frames paced (#3)'),
-		commit('feat(tools): add releases (#2)'),
-		commit('feat!: rename the scene call (#4)'),
-		commit('ci: cache the toolchain'),
-		commit('Plain subject'),
+		commit('fix(engine): keep frames paced (#3)', '', 'a'.repeat(40)),
+		commit('feat(tools): add releases (#2)', '', 'b'.repeat(40)),
+		commit('feat!: rename the scene call (#4)', '', 'c'.repeat(40)),
+		commit('ci: cache the toolchain', '', 'd'.repeat(40)),
+		commit('Plain subject', '', 'e'.repeat(40)),
+		commit('fix(render): clear the stripes', '', 'f'.repeat(40)),
 	];
-
-	it('groups commits by type, with breaking changes first and empty sections left out', () => {
-		const out = renderChangelog({
+	const render = (list: readonly ParsedCommit[], extra: Partial<ChangelogOptions> = {}) =>
+		renderChangelog({
 			version: '0.0.2',
 			date: '2026-10-01',
-			commits,
+			commits: list,
+			packages,
 			previousTag: null,
+			...extra,
 		});
+
+	it('groups commits by type, with breaking changes first and empty sections left out', () => {
+		const out = render(commits);
 		expect(out).toStartWith('## 0.0.2 - 2026-10-01\n');
-		const order = ['### Breaking changes', '### Features', '### Bug fixes', '### Other'].map((h) =>
-			out.indexOf(h),
-		);
+		const order = [
+			'### Breaking changes',
+			'### Features',
+			'### Bug fixes',
+			'### Build and tooling',
+			'### Other',
+		].map((h) => out.indexOf(h));
 		expect(order.every((i, n) => i > 0 && (n === 0 || i > (order[n - 1] ?? 0)))).toBe(true);
 		expect(out).not.toContain('### Performance');
-		expect(out).toContain('- **engine:** keep frames paced (#3)');
-		expect(out).toContain('- cache the toolchain');
-		expect(out).toContain('- Plain subject');
+		expect(out).toContain('- Cache the toolchain (ddddddddd)');
+		expect(out).toContain('- Plain subject (eeeeeeeee)');
 	});
 
-	it('links pull requests and the comparison when it knows the repository', () => {
+	it("puts each line under its package, and a part's scope under the package it belongs to", () => {
+		const fixes = extractSection(render(commits), '### Bug fixes');
+		expect(fixes).toBe(
+			'#### @null3d/engine\n\n- Keep frames paced (#3, aaaaaaaaa)\n- Clear the stripes (fffffffff)',
+		);
+		expect(render([commit('feat(tools): add releases')])).toContain(
+			'### Features\n\n#### Repository and tooling\n\n- Add releases',
+		);
+		expect(render([commit('docs: fix a link')])).toContain('### Documentation\n\n- Fix a link');
+	});
+
+	it('lists commits with the same words in one area once, with a link to each', () => {
+		const out = render(
+			[
+				commit("feat(engine): switch a layer's clip", '', '839dc6e24'),
+				commit("feat(engine): Switch a layer's clip", '', 'd64502690'),
+				commit("feat(examples): switch a layer's clip", '', '945e5365d'),
+			],
+			{ repoUrl: 'https://github.com/o/r' },
+		);
+		expect(out).toContain(
+			"- Switch a layer's clip ([839dc6e24](https://github.com/o/r/commit/839dc6e24), [d64502690](https://github.com/o/r/commit/d64502690))",
+		);
+		expect(out.match(/Switch a layer's clip/g)).toHaveLength(2);
+	});
+
+	it('keeps the scope of a part the notes do not know', () => {
+		expect(render([commit('feat(widgets): add a dial')])).toContain(
+			'#### Other parts\n\n- **widgets:** Add a dial',
+		);
+	});
+
+	it('links commits, pull requests and the comparison when it knows the repository', () => {
 		const repoUrl = 'https://github.com/o/r';
-		const first = renderChangelog({
-			version: '0.0.1',
-			date: 'd',
-			commits,
-			previousTag: null,
-			repoUrl,
-		});
-		expect(first).toContain('([#2](https://github.com/o/r/pull/2))');
+		const first = render(commits, { version: '0.0.1', repoUrl });
+		expect(first).toContain(
+			`([#2](https://github.com/o/r/pull/2), [bbbbbbbbb](https://github.com/o/r/commit/${'b'.repeat(40)}))`,
+		);
 		expect(first).toContain('**Full changelog**: https://github.com/o/r/commits/0.0.1');
-		const next = renderChangelog({
-			version: '0.0.2',
-			date: 'd',
-			commits,
-			previousTag: '0.0.1',
-			repoUrl,
-		});
+		const next = render(commits, { previousTag: '0.0.1', repoUrl });
 		expect(next).toContain('https://github.com/o/r/compare/0.0.1...0.0.2');
 	});
 
 	it('says so when a release has no entries', () => {
-		expect(
-			renderChangelog({ version: '0.0.2', date: 'd', commits: [], previousTag: '0.0.1' }),
-		).toContain('_No notable changes._');
+		expect(render([], { previousTag: '0.0.1' })).toContain('_No notable changes._');
+	});
+});
+
+describe('userWording', () => {
+	it("takes out the maintainers' task IDs, decision records and milestones", () => {
+		const cases: [string, string][] = [
+			['the EX8 HUD follow-ups', 'The HUD follow-ups'],
+			['wire up M2-EX8 in the demo', 'Wire up in the demo'],
+			[
+				"split a long sentence in D-174's benchmarks bullet",
+				'Split a long sentence in the benchmarks bullet',
+			],
+			['record D-174, the Apple GPU direct-draw path', 'Record the Apple GPU direct-draw path'],
+			['bring D-19, D-20 and D-21 up to date', 'Bring the records up to date'],
+			['bring decision records D-08 to D-13 up to date', 'Bring the records up to date'],
+			['link D-133 to the showcase ruling D-132', 'Link the record to the showcase ruling'],
+			['load the shaders of the GPU path (D-13)', 'Load the shaders of the GPU path'],
+			['time S6 with culling off and on, for T-36', 'Time S6 with culling off and on'],
+			['add the depth record row, which closes T-29', 'Add the depth record row'],
+			["record M2's tier A smoke run", 'Record the tier A smoke run'],
+			['record the gate and M2 rulings', 'Record the gate and rulings'],
+		];
+		for (const [description, wording] of cases) expect(userWording(description)).toBe(wording);
+	});
+
+	it('keeps names that share the form: chips, phones, formats, error codes and scenes', () => {
+		for (const text of [
+			'Run on the MacBook Pro M5 Max and the Apple M4',
+			'Read every L1 coefficient',
+			'Record the Tab A9+ and the M32 runs',
+			'Load KTX2 files, and report E1405',
+			'Time S6 on the S25',
+		])
+			expect(userWording(text)).toBe(text);
+	});
+});
+
+describe('notesProblems', () => {
+	it('names each line that breaks the writing rules, which the docs check holds the changelog to', () => {
+		expect(notesProblems('### Features\n\n- Add a fast path\n')).toEqual([]);
+		const problems = notesProblems('### Features\n\n- Rename to null3d\n- Reach a milestone\n');
+		expect(problems).toHaveLength(2);
+		expect(problems[0]).toStartWith('line 3: ');
+	});
+});
+
+describe('fitReleaseText', () => {
+	const notes = `## 1.0.0\n\n${Array.from({ length: 50 }, (_, n) => `- change ${n}`).join('\n')}\n`;
+
+	it('leaves notes that fit unchanged', () => {
+		expect(fitReleaseText(notes, notes.length, 'u')).toBe(notes);
+	});
+
+	it('cuts long notes at the end of a line and links the full list', () => {
+		const fitted = fitReleaseText(notes, 300, 'https://x/CHANGELOG.md');
+		expect(fitted.length).toBeLessThanOrEqual(300);
+		expect(fitted).toMatch(/- change \d+\n\n_GitHub limits the length/);
+		expect(fitted).toContain('[CHANGELOG.md](https://x/CHANGELOG.md)');
+	});
+});
+
+describe('the notes of a history with branch merges', () => {
+	// It runs many git commands and the release command. A busy machine slows a whole file's tests
+	// to a crawl, and a loaded Mac runs them at background priority, so the limit is generous.
+	it('list every commit since the last release once, whichever branch brought it', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-release-notes-'));
+		// The user's own git settings, such as commit signing and hooks, stay out of the test.
+		const env: NodeJS.ProcessEnv = {
+			...process.env,
+			GIT_CONFIG_GLOBAL: '/dev/null',
+			GIT_CONFIG_SYSTEM: '/dev/null',
+		};
+		// The release command links its commits when it knows the repository, and the notes built in
+		// this process are told nothing of one. A runner sets that knowledge in the environment, so
+		// it comes out here: both sides then render the same history the same way.
+		for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL'])
+			delete env[name];
+		const git = (...args: string[]) =>
+			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+				cwd: dir,
+				env,
+				encoding: 'utf8',
+			}).trim();
+		const commitOn = (subject: string) => {
+			git('commit', '--quiet', '--allow-empty', '-m', subject);
+			return git('rev-parse', 'HEAD');
+		};
+		try {
+			git('init', '--quiet', '--initial-branch=main');
+			writeFileSync(join(dir, 'README.md'), '# Fake\n');
+			mkdirSync(join(dir, 'packages/engine'), { recursive: true });
+			writeFileSync(join(dir, 'packages/engine/package.json'), '{ "version": "0.1.0" }\n');
+			git('add', '.');
+			commitOn('chore: start');
+			commitOn('feat(engine): ship the first release');
+
+			// A branch that starts before the release and lands after it.
+			git('switch', '--quiet', '-c', 'late');
+			const late = commitOn('fix(engine): keep frames paced');
+			git('switch', '--quiet', 'main');
+			git('tag', '0.1.0');
+			const onMain = commitOn('perf(render): skip empty passes');
+
+			// Two branches that land the same change under the same subject.
+			git('switch', '--quiet', '-c', 'one');
+			const firstCopy = commitOn('feat(engine): blend clips with inertia');
+			git('switch', '--quiet', 'main');
+			git('merge', '--quiet', '--no-ff', 'one', '-m', 'Merge branch one');
+			git('switch', '--quiet', '-c', 'two', 'main~1');
+			const docs = commitOn('docs(dev): record D-174, the probe');
+			const secondCopy = commitOn('feat(engine): blend clips with inertia');
+			git('merge', '--quiet', '--no-ff', 'main', '-m', 'Merge main into two');
+			git('switch', '--quiet', 'main');
+			git('merge', '--quiet', '--no-ff', 'two', '-m', 'Merge branch two');
+			git('merge', '--quiet', '--no-ff', 'late', '-m', 'Merge branch late');
+			commitOn('chore(release): 0.2.0');
+
+			const commits: ParsedCommit[] = [];
+			for await (const c of readCommits(dir, '0.1.0..HEAD'))
+				if (!isReleaseCommit(c)) commits.push(c);
+			expect(commits.map((c) => c.hash).sort()).toEqual(
+				[late, onMain, firstCopy, secondCopy, docs].sort(),
+			);
+
+			const notes = renderChangelog({
+				version: '0.2.0',
+				date: 'd',
+				commits,
+				packages: packageFolders(dir),
+				previousTag: '0.1.0',
+			});
+			expect(notes).not.toContain('Merge');
+			expect(notes).not.toContain('Ship the first release');
+			expect(notes).toContain('- Keep frames paced');
+			expect(notes).toContain('- Skip empty passes');
+			expect(notes).toContain('- Record the probe');
+			const blended = notes.split('\n').filter((l) => l.includes('Blend clips with inertia'));
+			expect(blended).toHaveLength(1);
+			for (const hash of [firstCopy, secondCopy]) expect(blended[0]).toContain(hash.slice(0, 9));
+
+			// The release command, run in the same history, prints the same notes.
+			const printed = execFileSync('bun', [join(repoRoot, 'tools/release.ts')], {
+				cwd: dir,
+				env,
+				encoding: 'utf8',
+				stdio: ['ignore', 'pipe', 'ignore'],
+			});
+			expect(printed).toStartWith('version: 0.1.1 (bump: patch, previous: 0.1.0)');
+			const body = (text: string) => text.slice(text.indexOf('\n###')).trimEnd();
+			expect(body(printed)).toBe(body(notes));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}, 120_000);
+
+	it('fails when git cannot read the range', async () => {
+		const read = async () => {
+			for await (const _ of readCommits(repoRoot, 'no-such-tag..HEAD'));
+		};
+		await expect(read()).rejects.toThrow('git log no-such-tag..HEAD failed');
 	});
 });
 
@@ -236,5 +441,27 @@ describe('version copies', () => {
 		}));
 		const engine = found.find((f) => f.path === 'packages/engine/package.json')?.version;
 		expect(found.filter((f) => f.version === null || f.version !== engine)).toEqual([]);
+	});
+});
+
+describe('the release guide', () => {
+	// Packages that npm already holds, which need no first publish by hand.
+	const onNpm = new Set(['cli']);
+
+	it('names every public package, with its first publish by hand', () => {
+		const guide = readFileSync(join(repoRoot, '.dev/releases.md'), 'utf8');
+		const isPublic = (folder: string) =>
+			JSON.parse(readFileSync(join(repoRoot, 'packages', folder, 'package.json'), 'utf8'))
+				.private !== true;
+		const missing = packageFolders(repoRoot)
+			.filter(isPublic)
+			.flatMap((folder) => [
+				...(guide.includes(`| \`@null3d/${folder}\` |`) ? [] : [`${folder}: table row`]),
+				...(onNpm.has(folder) ||
+				guide.includes(`npm publish target/packages/null3d-${folder}-0.0.0.tgz`)
+					? []
+					: [`${folder}: first publish`]),
+			]);
+		expect(missing).toEqual([]);
 	});
 });

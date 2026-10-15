@@ -210,6 +210,10 @@ describe('scene.createLines', () => {
 			scene.createLines({ positions: SQUARE, mode: 'fan' as 'strip' }),
 		);
 		expect(mode.code).toBe('E1217');
+		const weighted = await rejected(() =>
+			scene.createLines({ positions: SQUARE, blending: 'weighted' as 'normal' }),
+		);
+		expect(weighted.code).toBe('E1217');
 		expect((await rejected(() => scene.createLines({ positions: SQUARE, width: 0 }))).code).toBe(
 			'E1108',
 		);

@@ -228,7 +228,7 @@ Status: decided, 2026-10-12, by the coordinator for the owner (ruling C).
 
 **How the engine loads them.** The main shader module's `firstUseFile(shader, permutation)` gives the key of the file that holds a build: its features' names, sorted and joined by `+`, such as `hash+skinning`. A pipeline whose build is missing loads the file of that key, once, and nothing else.
 
-The addresses of the combined files do not sit in the main module. There, 157 hashed file names grew the renderer that every page loads at its start by about 2 KB after Brotli: 24% for the page's renderer and 18% for the render worker. So each GPU path has a small table of its own, `shaders-wgsl-combos.ts` and `shaders-glsl-combos.ts`. The engine loads it the first time it needs a combined file. The main module keeps only the keys. Once a page has asked for the own file of each feature of a combined key, the table starts to download beside that file. A combined build then mostly waits for its own file alone. A preload, from `createEngine`'s `preload` list or from the sketch, loads each feature's own file. It also loads each file of several features once the preloads so far have named all of them (`filesFor` in `gpu/device-shaders.ts`). So a page that uses X and Y loads X's file, Y's file and the X and Y file, and no other. The offline file list (D-102) puts a file of several features under each of them, so a game that caches either feature has it.
+The addresses of the combined files do not sit in the main module. There, 157 hashed file names grew the renderer that every page loads at its start by about 2 KB after Brotli: 24% for the page's renderer and 18% for the render worker. So each GPU path has small tables of its own, `shaders-wgsl-combos.ts` and `shaders-glsl-combos.ts` and their half-precision halves ([Addendum, 2026-10-16](#addendum-2026-10-16-the-combos-tables-split-by-the-half-precision-bit)). The engine loads it the first time it needs a combined file. The main module keeps only the keys. Once a page has asked for the own file of each feature of a combined key, the table starts to download beside that file. A combined build then mostly waits for its own file alone. A preload, from `createEngine`'s `preload` list or from the sketch, loads each feature's own file. It also loads each file of several features once the preloads so far have named all of them (`filesFor` in `gpu/device-shaders.ts`). So a page that uses X and Y loads X's file, Y's file and the X and Y file, and no other. The offline file list (D-102) puts a file of several features under each of them, so a game that caches either feature has it.
 
 **Figures.** Measured on 12 October 2026, on the merge of main at 3f8825965, before displacement merges.
 
@@ -304,4 +304,16 @@ The folder held 499 MB after the cold run, because an entry's record holds the W
 - `crates/null3d-shaders/src/cache.rs` holds the cache, `crates/null3d-shaders/src/lib.rs` builds each entry through it, and `--cache`, `--stamp` and `--no-cache` reach `shader-build`.
 - `tools/lib/shader-modules.ts` passes the folder and the compiler stamp, and turns the cache off for `NULL3D_NO_SHADER_CACHE=1`.
 - The build output does not change. A warm run writes the same modules as a cold one, which the tests in `crates/null3d-shaders/tests/cache.rs` and `tests/cli.rs` check.
-- [Pull requests and parallel work](../pull-requests.md#builds) notes the cache and its figures beside the repository's other caches.
+- [Branches and parallel work](../pull-requests.md#builds) notes the cache and its figures beside the repository's other caches.
+
+## Addendum, 2026-10-16: the combos tables split by the half-precision bit
+
+Status: decided, 2026-10-16, by the coordinator for the owner (the owner raised the start budget on 2026-10-14, D-14).
+
+**Question.** The combos table of each GPU path holds one entry for each set of features that builds need together, and one module address for each value of the device's fixed bits. The COAT_SHEEN bit (M2-EX30) joins every other bit, and AREA_LIGHTS joins it too. Their cross-product made 82 keys and 598 module addresses in the WebGL2 table, 79,783 bytes of text. The page's copy, `js/page-shaders-glsl-combos.js`, then took 76,563 bytes uncompressed, over the 64 KB cap of a file that loads after the start.
+
+**Rule.** Each combos table is two files: the builds of a device without half precision, and those with it. The main module's loader picks the file by the half bit of the device's fixed bits. The keys stay in the main module, so the early preload check and the offline file list (D-102) are unchanged.
+
+**Why not split by shader.** A device module file holds the builds that need one set of features, for every template that needs it, so the `lit` and `standard_maps` builds of a key share one file. A table per shader would list the same addresses twice and shrink nothing. The half bit partitions the addresses instead.
+
+**Figures.** The WebGL2 tables are 39.6 KB and 38.6 KB uncompressed (3.7 and 3.3 KB after Brotli); the WebGPU tables are 13.0 and 12.7 KB. `bun run build:check-size` prints each beside its cap.

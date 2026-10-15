@@ -62,9 +62,9 @@ fn ggx(alpha: f16, n_dot_h: f16, normal_cross_half: vec3h) -> f16 {
 /// `null3d::lighting::v_ggx_smith_correlated` gives it.
 fn smith_visibility(alpha: f16, n_dot_l: f16, n_dot_v: f16) -> f16 {
     let a2 = alpha * alpha;
-    let gv = n_dot_l * sqrt(a2 + (1.0h - a2) * n_dot_v * n_dot_v);
-    let gl = n_dot_v * sqrt(a2 + (1.0h - a2) * n_dot_l * n_dot_l);
-    return 0.5h / max(gv + gl, SMITH_FLOOR);
+    let lambda_v = n_dot_l * sqrt(a2 + (1.0h - a2) * n_dot_v * n_dot_v);
+    let lambda_l = n_dot_v * sqrt(a2 + (1.0h - a2) * n_dot_l * n_dot_l);
+    return 0.5h / max(lambda_v + lambda_l, SMITH_FLOOR);
 }
 
 /// The light that a PBR surface reflects from one direct light, as

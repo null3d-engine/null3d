@@ -5,6 +5,7 @@ import { fixture } from './fixture';
 import {
 	crateFolders,
 	ensureShaderModules,
+	folderIsComplete,
 	inputHash,
 	isShaderModule,
 	MODULE_DIR,
@@ -36,6 +37,9 @@ describe('the shader modules', () => {
 		expect(isShaderModule('shaders.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.js')).toBe(true);
 		expect(isShaderModule('shaders-wgsl-combos.ts')).toBe(true);
+		// Each target's combos table is split by the half-precision bit, and the suffixed files count.
+		expect(isShaderModule('shaders-wgsl-combos-half.ts')).toBe(true);
+		expect(isShaderModule('shaders-glsl-combos-half.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('shader-features.ts')).toBe(true);
 		expect(isShaderModule('shaders-environment-wgsl.ts')).toBe(true);
@@ -73,6 +77,34 @@ describe('the shader modules', () => {
 		writeFileSync(join(root, MODULE_DIR, 'gpu.ts'), 'export const A = 1;\n');
 		expect(moduleHash(root)).toBe(two);
 		expect(moduleHash(fixture({ [`${MODULE_DIR}/gpu.ts`]: '' }))).toBeNull();
+	});
+
+	it('are incomplete when the main module loads a module that is missing', () => {
+		const root = repository();
+		// The build's main module loads each target's combos table for the half-precision bit too.
+		writeFileSync(
+			join(root, MODULE_DIR, 'shaders.ts'),
+			"const load = () => import('./shaders-wgsl-combos-half');\n",
+		);
+		expect(folderIsComplete(join(root, MODULE_DIR))).toBe(false);
+		expect(moduleHash(root)).toBeNull();
+		writeFileSync(
+			join(root, MODULE_DIR, 'shaders-wgsl-combos-half.ts'),
+			'export const FILES = {};\n',
+		);
+		expect(folderIsComplete(join(root, MODULE_DIR))).toBe(true);
+		expect(moduleHash(root)).not.toBeNull();
+	});
+
+	it('change the cache key with the manifest feature list', () => {
+		const root = repository();
+		writeFileSync(join(root, 'crates/null3d-shaders/shaders.toml'), '[features]\n');
+		const before = inputHash(root);
+		writeFileSync(
+			join(root, 'crates/null3d-shaders/shaders.toml'),
+			'[features]\n[first_use.new]\n',
+		);
+		expect(inputHash(root)).not.toBe(before);
 	});
 
 	it('skip the build when the record matches the inputs and the modules', () => {

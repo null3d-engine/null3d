@@ -5,13 +5,13 @@
     {
       "id": 1,
       "prompt": "Set up a null3d scene for a turntable product viewer: the sneaker model is at /models/sneaker.glb. I want soft studio lighting, an orbit camera that can't go below the floor, and a soft shadow on the floor. It has to run well on phones.",
-      "expected_output": "A page.ts and sketch.ts pair for engine 0.1: the page creates the engine; the sketch loads the sneaker with assets.loadGltf and scene.instantiate, lights it with a directional light and a soft fill such as assets.builtinEnvironment('room'), and sets up orbit controls limited above the floor, a floor that receives the light's shadow, and warm-up behind a loading step. The answer marks materials.shadowCatcher as not built yet if it names it, and gives asset advice for phones.",
+      "expected_output": "A page.ts and sketch.ts pair for engine 0.1: the page creates the engine; the sketch loads the sneaker with assets.loadGltf and scene.instantiate, lights it with a directional light and a soft fill such as assets.builtinEnvironment('room'), and sets up orbit controls limited above the floor, a floor that receives the light's shadow, and warm-up behind a loading step. A floor that shows only the shadow uses materials.shadowCatcher. The answer gives asset advice for phones.",
       "files": [],
       "expectations": [
         "page.ts calls createEngine with the canvas and the sketch module, and sketch.ts uses defineSketch",
         "Loads the sneaker with assets.loadGltf and places it with scene.instantiate, with no placeholder mesh",
         "Orbit controls come from @null3d/controls and limit maxPolarAngle to below half of pi",
-        "The floor mesh receives shadows and the directional light casts them; materials.shadowCatcher, if named, is marked as not built yet",
+        "The floor mesh receives shadows and the directional light casts them; a floor that shows only the shadow uses materials.shadowCatcher({ color, opacity }) on a mesh that receives shadows, presented as built",
         "Lighting uses a directional light with a soft fill: an environment such as assets.builtinEnvironment('room'), an ambient light or a hemisphere light; none of them is presented as not built",
         "The code awaits scene.warmUp() or preloads assets before showing the model",
         "No DOM access appears in sketch.ts and onUpdate allocates nothing",

@@ -5,7 +5,11 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { Document, NodeIO } from '@gltf-transform/core';
-import { EXTMeshGPUInstancing, KHRMaterialsTransmission } from '@gltf-transform/extensions';
+import {
+	EXTMeshGPUInstancing,
+	KHRMaterialsClearcoat,
+	KHRMaterialsTransmission,
+} from '@gltf-transform/extensions';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import { lodOf } from './lod-extension.js';
 import { budgetWarnings, PRESET_TEXTURE_MEMORY_MIB } from './report.js';
@@ -88,7 +92,7 @@ describe('shaderList', () => {
 		);
 		const list = shaderList(doc, { lodOf });
 		expect(list.permutations).toEqual(['ALPHA_MASK', 'VERTEX_TANGENT', 'TRANSMISSION']);
-		expect(list.features).toEqual(['cutout', 'transmission']);
+		expect(list.features).toEqual(['cutout', 'coverage', 'transmission']);
 		expect(list.buckets).toEqual([
 			{
 				template: 'lit',
@@ -143,6 +147,24 @@ describe('shaderList', () => {
 		);
 	});
 
+	it('names the clear coat and sheen of a layered material', () => {
+		const doc = new Document();
+		const clearcoat = doc
+			.createExtension(KHRMaterialsClearcoat)
+			.createClearcoat()
+			.setClearcoatFactor(1);
+		const coated = doc.createMaterial('coated').setExtension('KHR_materials_clearcoat', clearcoat);
+		doc
+			.createScene()
+			.addChild(
+				doc.createNode('ball').setMesh(doc.createMesh('ball').addPrimitive(triangle(doc, coated))),
+			);
+		const list = shaderList(doc, { lodOf });
+		expect(list.permutations).toEqual(['COAT_SHEEN']);
+		expect(list.features).toEqual(['coat_sheen']);
+		expect(list.buckets[0]?.key).toBe('lit uv0 COAT_SHEEN');
+	});
+
 	it('counts each instance of an instancing node as one object', () => {
 		const doc = new Document();
 		const instancing = doc.createExtension(EXTMeshGPUInstancing).setRequired(false);
@@ -174,14 +196,20 @@ describe('shaderList', () => {
 					),
 			);
 		writeShaderList(doc, shaderList(doc, { lodOf }));
-		expect(recordedShaderList(doc)).toEqual({ permutations: ['ALPHA_MASK'], features: ['cutout'] });
+		expect(recordedShaderList(doc)).toEqual({
+			permutations: ['ALPHA_MASK'],
+			features: ['cutout', 'coverage'],
+		});
 		const glb = new Uint8Array(await new NodeIO().writeBinary(doc));
 		const container = readContainer(glb, 'file:///a.glb');
 		expect(container.json.asset?.extras).toMatchObject({
-			NULL3D_shaders: { permutations: ['ALPHA_MASK'], features: ['cutout'] },
+			NULL3D_shaders: { permutations: ['ALPHA_MASK'], features: ['cutout', 'coverage'] },
 		});
 		const parsed = parseGltf(container, new Map(), 'file:///a.glb');
-		expect(parsed.shaders).toEqual({ permutations: ['ALPHA_MASK'], features: ['cutout'] });
+		expect(parsed.shaders).toEqual({
+			permutations: ['ALPHA_MASK'],
+			features: ['cutout', 'coverage'],
+		});
 	});
 });
 
@@ -189,11 +217,14 @@ describe('the names and budgets that the list names', () => {
 	const read = (path: string) => readFileSync(new URL(path, ROOT), 'utf8');
 
 	it('names permutation bits and mesh templates that the engine builds', () => {
-		const names = read('crates/null3d-gpu/src/drawlist.rs')
-			.split('pub const NAMES: [(&str, u32); 27] = [')[1]
-			?.split('];')[0];
-		const bits = [...String(names).matchAll(/\("([A-Z_]+)", [A-Z_]+\)/g)].map((m) => m[1]);
-		expect(bits.length).toBe(27);
+		const table = /pub const NAMES: \[\(&str, u32\); (\d+)\] = \[([^\]]*)\];/.exec(
+			read('crates/null3d-gpu/src/drawlist.rs'),
+		);
+		expect(table).not.toBeNull();
+		const declared = Number(table?.[1]);
+		const bits = [...String(table?.[2]).matchAll(/\("([A-Z_]+)", [A-Z_]+\)/g)].map((m) => m[1]);
+		expect(declared).toBeGreaterThan(0);
+		expect(bits.length).toBe(declared);
 		for (const bit of ASSET_PERMUTATIONS) expect(bits).toContain(bit);
 		const shaders = [
 			...read('crates/null3d-shaders/shaders.toml').matchAll(/^\[shaders\.([a-z_0-9]+)\]/gm),

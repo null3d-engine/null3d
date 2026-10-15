@@ -374,6 +374,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The build drops the function names and skips wasm-opt. On this module, wasm-opt took longer than the whole build and saved 0.4% after Brotli, with no speed gain.
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
 - naga renames a name that two modules share, in every program that joins them. That makes the text longer, and it once renamed a custom material's own argument. So library code gives each name its own word. It uses plain early returns too, because naga writes an `||` in GLSL as a local variable and an if-else ([D-74](decisions/D-74-native-fog.md)).
+- GLSL ES reserves every name that starts with `gl_`, apart from its built-ins, which all go on with a capital letter, such as `gl_Position`. naga's GLSL writer adds `_1` to the second of two names that clash in one shader, so a local `gl` in two functions of one build became `gl_1`. Every WebGL2 build that joined the clear coat with half precision then failed to compile in Chrome, Firefox and Safari: 2,592 programs (D-147). The GLSL build now fails on any such name, with the program, the pipeline and the fix in its message. So never name a WGSL value `gl`, or anything that starts with `gl_`.
 
 ## The asset tool
 
@@ -391,6 +392,30 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Each project shader builds for WebGPU and, with the shader def `WEBGL2`, for WebGL2. It has one render pipeline for each `@fragment` entry point, with its one `@vertex` entry point. The plugin finds the entry points in the WGSL text, because the compiler takes the pipelines with the source.
 - Plugin errors count columns from 1, as editors do. Rollup counts its own from 0, but Vite and Rolldown only print the place, and Vite's overlay opens the editor at it.
 - naga turns off its checks of uniform control flow for derivatives and `textureSample`, because they reject valid shaders. The build therefore cannot catch `textureSample` in a branch that differs between pixels, which Chrome rejects when it creates the shader module.
+
+## Tests that build a bundle
+
+Some unit tests build a bundle of engine code with Vite inside the test process, such as
+`math/tree-shaking.test.ts`. Build it the way a page is built, with a single input, and never with
+`build.lib`.
+
+- A library build inlines every asset as a base64 data URL, and does not copy it as a file. Vite's
+  `shouldInline` returns true on `config.build.lib` before it reads `assetsInlineLimit`, so
+  `new URL('./x.js', import.meta.url)` becomes a data URL.
+- The engine's generated shaders are around 850 MB of assets. A worker build inherits the parent's
+  `lib` setting, so each worker bundle encodes that payload again inside itself.
+- One such build of a sketch that imports `vec3` took 22 s and 13.8 GB of memory footprint. The
+  same build without `lib` took 4.8 s and 4.1 GB. A test file that builds twice held 18.6 GB against
+  5.1 GB.
+- The unit suite is one process on a 16 GB machine. A library build in it is killed without a
+  message of its own: the log of 15 October 2026 shows only a runner shutdown and SIGKILL.
+- `rollupOptions.external` cannot avoid this. Vite resolves a `new URL(...)` on the filesystem in
+  `vite:asset-import-meta-url`, not through Rollup's module resolution, so `external` never sees it.
+- A build that must keep the entry's exports, as the shipped library has them, takes
+  `rollupOptions.preserveEntrySignatures: 'strict'` instead of `lib`. Without it the entry's exports
+  go and so does the code under test.
+- A test that reads the shader text finds it in a copied file, not in the code, once the build is a
+  page's. `debug/release.test.ts` reads both.
 
 ## Meshes on both GPU paths
 
@@ -681,6 +706,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 
 ## Failures on the GPU
 
+- A derivative call (`dpdx`, `dpdy`, `fwidth`, or `textureSample` without a level) must run in uniform control flow. In October 2026 the shadow catcher branched in the lit fragment on the material's row, a `var<private>`; WebGPU then rejected every lit build with `'dpdy' must only be called from uniform control flow`, naming the branch. The lit fragment deliberately reads each derivative before a run-time branch on the material, and its per-material map branches sample with explicit gradients (`textureSampleGrad`). The shadow-catcher branch now sits after the specular anti-aliasing kernel, with the alpha hash's threshold and alpha to coverage's width hoisted above it ([D-163](decisions/D-163-shadow-catcher-material.md)).
 - WebGL2 counts a context as lost at once, but the `webglcontextlost` event comes later, in a task of its own. The rest of a frame then runs on the lost context. In Chromium 153, `checkFramebufferStatus` answers `FRAMEBUFFER_UNSUPPORTED` (0x8cdd), and the WebGL specification says `getProgramParameter` answers null. Before October 2026 the backend threw on those answers, and the engine ended with E1404 instead of recovering. The WebGL2 scene renderer now drops an error from a frame only while `isContextLost()` is true; any other error still ends the loop ([D-58](decisions/D-58-failure-handling.md)).
 - Without a listener that calls `preventDefault()`, the browser never offers a lost WebGL2 context back. So `createRenderer` listens before its first wait, the shader download. A loss in that wait waits for the restore, and the renderer then listens for itself in the same task.
 - A stopped engine loses its WebGL2 context on purpose, with `WEBGL_lose_context`. The GPU then frees the engine's memory at once, not when the browser collects the context. A canvas keeps one context for good, so the next engine on the canvas gets that same context, lost. The `WEBGL_lose_context` specification lets `restoreContext()` bring it back only after the `webglcontextlost` event has run and was cancelled. A lost context also answers no extensions. Before October 2026 the renderer stopped listening before it lost the context, so nobody cancelled the event. The next engine waited 5 s for a restore that never came, and failed with E1405, "the WebGL2 context did not come back". Now `releaseContext` keeps the extension and cancels the event. Then `reclaimContext`, in the next `createRenderer`, waits for that event and asks for the context back. Until a next engine asks, the context stays lost and holds no GPU memory. The test of engines that follow one another on one canvas (`tests/image/failures.spec.ts`) runs on WebGPU, compatibility mode and WebGL2, in every thread mode.
@@ -923,3 +949,53 @@ Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that retur
 - WebGL2 on the iPad costs about three times WebGPU's GPU time per pixel, at every preset. On 6 October 2026, S4 at Medium took 62 ms per frame on WebGL2. On WebGPU it took 17 ms, with 18 to 19 ms of GPU time. The frame followed the pixel count: 37 ms with the pixel ratio capped at 1.5, and 27 ms at Low. Fewer cascades, the far cascade's interval, the cascade blend and occlusion culling each changed it by 1 ms or less. This cost, not the shadow reads, made WebGL2 slow on the iPad.
 - In S4, WebGL2 shaded hidden pixels on the iPad, and a depth prepass restores their early rejection. The cause is under investigation. ANGLE's helper sample mask costs hidden surface removal on the Mac. The owner reported it on 7 October 2026 as [WebKit bug 326660](https://bugs.webkit.org/show_bug.cgi?id=326660) and [ANGLE issue 570876469](https://issues.angleproject.org/issues/570876469). A standalone WebGL2 page on the iPad kept it, so the engine's own shaders are being checked ([D-43](decisions/D-43-webgl2-prepass.md#why-webgl2-was-slow-on-the-ipad-under-investigation)). So every preset draws the depth prepass on WebGL2. On the iPad, S4 went from 38 to 60 fps at Low, and from 17.3 to 37.1 fps at Medium. WebGPU keeps it off, where it costs up to 4 ms ([D-43](decisions/D-43-webgl2-prepass.md#addendum-2026-10-07-the-prepass-on-for-webgl2-at-every-preset)).
 - S4 at Medium on WebGL2 still takes about 27 ms per frame on the iPad, against WebGPU's 15 ms. The MSAA resolve and the 5 x 5 shadow filter are the likely costs, and not measured yet.
+
+## The generated shader set's weight
+
+The build writes the engine's shader modules into `packages/engine/src/generated`. On 15 October 2026
+that set held 1,343 files and 847 MB: 987 GLSL modules at 775 MB, 352 WGSL modules at 72 MB, and four
+small framework files. The weight is a build, checkout and memory cost. It is not a download cost,
+because a page fetches the modules its features need and a module compresses about twenty times over.
+
+Two facts organise everything else.
+
+**The start file is not the problem.** The module a page needs before its first frame is 8.5 MB, one
+per cent of the set. The other 99 per cent already sits in modules that load on first use, so moving
+more shaders into first-use files saves almost nothing ([D-56](decisions/D-56-first-use-shader-files.md)).
+
+**The device permutations multiply what is left.** A device fixes three bits: whether the draw index
+comes from a texture, whether tone mapping runs in the shader, and whether half precision applies.
+GLSL has all three, so the build writes eight targets of about 96 MB each. WGSL has no draw-index
+bit, so it writes four of about 18 MB. No GLSL target is more than two per cent larger than any
+other. The draw-index targets alone are 387 MB, 46 per cent of the set, and they differ from their
+pairs by about one per cent of text.
+
+**Most of the rest is duplication.** Inside one device target, the tables of shader paragraphs repeat
+82 per cent of their text: 408,882 stored copies hold 15,374 distinct paragraphs, so one paragraph is
+stored about ten times over, once per feature set. The texture binding lists repeat 91 per cent and
+the uniform block lists 98 per cent. No two module files are byte-identical, so no file can be
+dropped as a duplicate.
+
+### What would help
+
+- **One shared paragraph table per device target.** Twelve tables replace the copy in each feature
+  set. It saves 255 MB of 847, 30 per cent, or 294 MB, 35 per cent, if the binding lists ride along,
+  taking the set to about 553 MB. The build already removes repeated paragraphs inside one file, so
+  extending that to a target is a small change to the generator. The risk is medium, because the
+  table becomes one more file that a pipeline waits for ([D-56](decisions/D-56-first-use-shader-files.md)).
+- **Derive the draw-index build from its pair.** This has the highest ceiling, up to 387 MB or 46 per
+  cent. The difference is a require line, a draw variable, an instance lookup, and a swap of the draw
+  table from a uniform block to a texture. All of it sits inside generated text rather than beside it.
+  The risk is high, so it wants a probe before a change.
+
+Both change the output of the shader build, which changes the compiler stamp that the cache is keyed
+by. Either one means a full rebuild on every checkout and a cold shader build in CI.
+
+### What would not help
+
+- **Shipping the text compressed.** The whole set is about 40 MB on the wire. It saves nothing on
+  build time, memory or checkout size, because the build still writes 847 MB and Vite still reads it.
+- **Dropping permutations that draw the same picture.** Measured: no two module files are identical,
+  so the saving is zero.
+- **More first-use files.** The start file is one per cent of the set, and a page that uses two
+  features would fetch two modules whose contents overlap. That is the merge problem in another form.

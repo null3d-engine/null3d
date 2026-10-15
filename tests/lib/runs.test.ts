@@ -6,7 +6,12 @@ import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
-import { glslProgramsOf, wgslModulesOf } from '../pages/lib/shader-list.ts';
+import {
+	glslProgramsOf,
+	inShaderSet,
+	type ShaderSet,
+	wgslModulesOf,
+} from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -21,6 +26,7 @@ import { isLoadPath } from './load-routes.ts';
 import {
 	benchPlan,
 	benchSummary,
+	type Check,
 	checksPlan,
 	depthPlan,
 	depthSummary,
@@ -866,24 +872,26 @@ describe('the checks plan', () => {
 		]);
 	});
 
-	/** The checks plan's shards in Safari, as `--shard <i>/<count>` gives each. */
+	/** The checks plan's shards in CI's Safari, as `--shard <i>/<count>` gives each. */
 	const shardsOf = (count: number) =>
 		Array.from(
 			{ length: count },
-			(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
+			(_, i) =>
+				planItems(parseArgs(['--shaders', 'sampled', '--shard', `${i + 1}/${count}`, 'Safari'])) ??
+				[],
 		);
+	const sampled = checksPlan({ shaders: 'sampled' });
 	const secondsOf = (shard: { id: string }[]) =>
 		shard.reduce((sum, item) => sum + expectedSeconds(item), 0);
 
 	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
-		const shaderParts = items.filter((item) => item.check.kind === 'shaders');
-		expect(shaderParts.length).toBe(SHADER_PARTS);
+		const shaderParts = sampled.filter((item) => item.check.kind === 'shaders');
 		for (const count of [2, 3, 4, 5]) {
 			const shards = shardsOf(count);
 			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
 			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
-			expect(ids(once.flat())).toEqual(ids(items));
+			expect(ids(once.flat())).toEqual(ids(sampled));
 			// The longest group is the shaders page's parts; each later shard adds the capabilities
 			// page.
 			const seconds = shards.map(secondsOf);
@@ -895,7 +903,7 @@ describe('the checks plan', () => {
 				for (const item of shard)
 					for (const id of itemsTogether(item)) expect(inShard).toContain(id);
 				// Each shard keeps the plan's order.
-				expect(shard).toEqual(items.filter(({ id }) => inShard.has(id)));
+				expect(shard).toEqual(sampled.filter(({ id }) => inShard.has(id)));
 			}
 		}
 		// The shard with the capabilities page's second load ends with it.
@@ -907,14 +915,19 @@ describe('the checks plan', () => {
 
 	// CI runs the plan in each browser in the shards that its workflow names. A job should take at
 	// most about 12 minutes, and about 2 of them go to its setup, the dev server's start and the
-	// judging. .dev/devices.md says what to do when the pages need more.
+	// judging. .dev/devices.md says what to do when the pages need more. Safari compiles the sampled
+	// set of the shaders page, which this model counts.
 	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
+		expect(workflow).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
 		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
 		expect(count).toBeGreaterThan(0);
+		// The matrix must list every shard from 1 to the count, or a shard never runs.
+		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflow)?.[1]?.split(',').map(Number);
+		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 	});
@@ -1048,28 +1061,72 @@ describe('the checks plan', () => {
 	});
 
 	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
-		const parts = items.filter((item) => item.check.kind === 'shaders');
 		const all = await everyShader();
-		const programs = glslProgramsOf(all).length;
-		expect(programs).toBeGreaterThan(100);
-		expect(parts.length).toBe(SHADER_PARTS);
-		expect(SHADER_PARTS).toBeGreaterThan(1);
-		expect(parts.map(({ id, path }) => [id, path])).toEqual(
-			parts.map((_, i) => [
-				`shaders-${i + 1}`,
-				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
-			]),
+		const names = glslProgramsOf(all).map(([name]) => name);
+		expect(names.length).toBeGreaterThan(100);
+		const inSet = (set: ShaderSet) => names.filter((name) => inShaderSet(name, set));
+		const [base, coat, sample] = [inSet('base'), inSet('coat'), inSet('coat-sample')];
+		// The base and coat sets split every program, and the sample is some of the coat's.
+		expect(base.length + coat.length).toBe(names.length);
+		expect(sample.length).toBeGreaterThan(0);
+		expect(sample.length).toBeLessThanOrEqual(400);
+		for (const name of sample) expect(coat).toContain(name);
+		// The sample pairs the coat with shadows, row values and half precision, alone and together.
+		const pairs = (bits: string[]) =>
+			sample.some((name) => bits.every((bit) => name.includes(`_${bit}_`)));
+		for (const bit of ['receive_shadows', 'row_values', 'half', 'alpha_mask', 'vertex_tangent'])
+			expect(pairs([bit]), bit).toBe(true);
+		expect(pairs(['receive_shadows', 'row_values', 'half'])).toBe(true);
+		const partsOf = (plan: PlanItem<Check>[], set: string) =>
+			plan.filter((item) => item.check.kind === 'shaders' && item.path.endsWith(`set=${set}`));
+		const sampled = checksPlan({ shaders: 'sampled' });
+		for (const [plan, sets] of [
+			[items, { base: base.length, coat: coat.length }],
+			[sampled, { base: base.length, 'coat-sample': sample.length }],
+		] as const) {
+			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
+				Object.values(sets).reduce((sum, programs) => sum + Math.ceil(programs / 400), 0),
+			);
+			for (const [set, programs] of Object.entries(sets) as [ShaderSet, number][]) {
+				const parts = partsOf(plan, set);
+				expect(parts.length).toBe(Math.ceil(programs / 400));
+				expect(parts[0]?.id).toBe(set === 'base' ? 'shaders-1' : `shaders-${set}-1`);
+				expect(parts.map(({ path }) => path)).toEqual(
+					parts.map(
+						(_, i) => `/tests/pages/shaders.html?part=${i + 1}&parts=${parts.length}&set=${set}`,
+					),
+				);
+				// Each part downloads its share of the builds and keeps the set's among them, so the
+				// parts together check every build of the set, and no part compiles more than a few
+				// hundred programs in one WebGL2 context.
+				const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, parts.length)));
+				const kept = new Set(
+					shares
+						.flatMap(glslProgramsOf)
+						.map(([name]) => name)
+						.filter((name) => inShaderSet(name, set)),
+				);
+				expect(kept).toEqual(new Set(inSet(set)));
+				for (const share of shares)
+					expect(
+						glslProgramsOf(share).filter(([name]) => inShaderSet(name, set)).length,
+					).toBeLessThanOrEqual(600);
+				for (const part of parts) {
+					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
+					expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / parts.length / 4);
+				}
+			}
+		}
+		// The generator's own split covers every build in SHADER_PARTS shares, each under the limit.
+		const shares = await Promise.all(
+			Array.from({ length: SHADER_PARTS }, (_, i) => everyShader(i + 1, SHADER_PARTS)),
 		);
-		// The parts together check every build, and no part compiles more than a few hundred
-		// programs in one WebGL2 context.
-		const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, SHADER_PARTS)));
-		const names = (lists: (readonly [string, unknown])[]) => new Set(lists.map(([name]) => name));
-		expect(names(shares.flatMap(glslProgramsOf))).toEqual(names(glslProgramsOf(all)));
-		expect(names(shares.flatMap(wgslModulesOf))).toEqual(names(wgslModulesOf(all)));
-		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
+		const sharedNames = (lists: (readonly [string, unknown])[]) =>
+			new Set(lists.map(([name]) => name));
+		expect(sharedNames(shares.flatMap(glslProgramsOf))).toEqual(new Set(names));
+		expect(sharedNames(shares.flatMap(wgslModulesOf))).toEqual(sharedNames(wgslModulesOf(all)));
+		expect(names.length / SHADER_PARTS).toBeLessThanOrEqual(400);
 		for (const share of shares) expect(glslProgramsOf(share).length).toBeLessThanOrEqual(600);
-		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
-		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {

@@ -19,8 +19,24 @@ const VIEWS_SHADER = 'depth_gray';
 /** The engine's files that debug drawing reaches, each of which a production build keeps whole. */
 const ENTRIES = ['sketch/runner.ts', 'render/draw.ts'];
 
-async function bundleOne(entry: string, mode: 'production' | 'development'): Promise<string> {
-	const output = (await build({
+/** One build's code, and the files that it copies rather than holds in its code. */
+interface Built {
+	/** The code of every chunk the build wrote. */
+	code: string;
+	/** The text of every file the build copied beside its code, such as the device's shaders. */
+	files: string[];
+}
+
+/**
+ * Builds one of the engine's files for production or development.
+ *
+ * The build is the page's, not a library's, and it keeps the entry's exports as a library build
+ * does. A library build copies nothing as a file: it inlines every one as a data URL, and the
+ * development build's shaders alone are about 850 MB of them, which no machine running this suite
+ * should hold at once.
+ */
+async function bundleOne(entry: string, mode: 'production' | 'development'): Promise<Built> {
+	const built = await build({
 		configFile: false,
 		logLevel: 'silent',
 		mode,
@@ -28,31 +44,57 @@ async function bundleOne(entry: string, mode: 'production' | 'development'): Pro
 		build: {
 			write: false,
 			minify: true,
-			lib: { entry: join(SOURCE, entry), formats: ['es'], fileName: 'entry' },
+			rollupOptions: {
+				input: join(SOURCE, entry),
+				output: { format: 'es' },
+				preserveEntrySignatures: 'strict',
+			},
 		},
-	})) as Rollup.RollupOutput[];
-	return output
-		.flatMap((o) => o.output)
-		.map((chunk) => (chunk.type === 'chunk' ? chunk.code : ''))
-		.join('\n');
+	});
+	const output = (Array.isArray(built) ? built : [built]) as Rollup.RollupOutput[];
+	const parts = output.flatMap((o) => o.output);
+	return {
+		code: parts.map((part) => (part.type === 'chunk' ? part.code : '')).join('\n'),
+		files: parts
+			.filter((part): part is Rollup.OutputAsset => part.type === 'asset')
+			.map((part) => String(part.source)),
+	};
 }
 
-async function bundle(mode: 'production' | 'development'): Promise<string> {
-	const files = await Promise.all(ENTRIES.map((entry) => bundleOne(entry, mode)));
-	return files.join('\n');
+async function bundle(mode: 'production' | 'development'): Promise<Built[]> {
+	const builds: Built[] = [];
+	for (const entry of ENTRIES) builds.push(await bundleOne(entry, mode));
+	return builds;
+}
+
+/** Whether a build's code, or any file it copied, holds `text`. */
+function holds(builds: Built[], text: string | RegExp): boolean {
+	const found = (where: string) =>
+		typeof text === 'string' ? where.includes(text) : text.test(where);
+	return builds.some((build) => found(build.code) || build.files.some(found));
+}
+
+/** The bytes a build writes, its code and its copied files together. */
+function sizeOf(builds: Built[]): number {
+	return builds.reduce(
+		(total, build) =>
+			total + build.code.length + build.files.reduce((sum, file) => sum + file.length, 0),
+		0,
+	);
 }
 
 describe('release builds', () => {
 	it('hold none of the debug drawing code and none of its shaders', async () => {
-		const [release, development] = await Promise.all([bundle('production'), bundle('development')]);
-		expect(development).toContain(DRAWING_CODE);
-		expect(development).toMatch(LINES_SHADER);
-		expect(development).toContain(VIEWS_SHADER);
-		expect(release).not.toContain(DRAWING_CODE);
-		expect(release).not.toMatch(LINES_SHADER);
-		expect(release).not.toContain(VIEWS_SHADER);
+		const release = await bundle('production');
+		const development = await bundle('development');
+		expect(holds(development, DRAWING_CODE)).toBe(true);
+		expect(holds(development, LINES_SHADER)).toBe(true);
+		expect(holds(development, VIEWS_SHADER)).toBe(true);
+		expect(holds(release, DRAWING_CODE)).toBe(false);
+		expect(holds(release, LINES_SHADER)).toBe(false);
+		expect(holds(release, VIEWS_SHADER)).toBe(false);
 		console.log(
-			`sketch runner and renderer, minified: ${development.length} bytes with debug drawing, ${release.length} without`,
+			`sketch runner and renderer, minified: ${sizeOf(development)} bytes with debug drawing, ${sizeOf(release)} without`,
 		);
 	}, 120_000);
 });

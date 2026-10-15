@@ -1,6 +1,6 @@
 # D-145: Area lights
 
-Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Date: 2026-10-12. Task: M2-EX28.
+Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Built: area lights are on main (`efb65024b`). The owner's review of the design is pending. Date: 2026-10-12. Task: M2-EX28.
 
 Summary: Rectangle and tube lights light the standard material with linearly transformed cosines (LTC). A rectangle light matches three.js's `RectAreaLight`: it uses the same formulas and fitted tables. A tube shades as the rectangle through its axis that faces the surface, at the same cost. Area lights share the 64-byte records and the clusters of point and spot lights, and each quality preset caps how many shade in a frame. The tables load on first use from a 19.3 KB gzip file. They share the split-sum table's binding, so WebGPU gains no binding and WebGL2 one texture unit.
 
@@ -43,7 +43,7 @@ How they ship (sizes in bytes; the tables' six used channels as half floats):
 | Six channels, one plane each | 49,152 | 32,874 | 37,544 |
 | The same, each value less its left and upper neighbors, low and high bytes apart | 49,152 | 16,976 | 19,244 |
 
-The engine ships the last form, gzipped, as `vendor/ltc/area-light-tables.bin` in the engine's package: 19,299 bytes with three.js's own half floats. Browsers unpack gzip with `DecompressionStream`. So every server and CDN sends 19.3 KB, whether or not it compresses files itself. A JavaScript module of the same data would need a text form, which compresses worse. It would also count against the 16 KB limit of first-use code. `bun tools/area-light-tables.ts` writes the file from the engine's three.js, and a unit test checks it.
+The engine ships the last form, gzipped, as `vendor/ltc/area-light-tables.bin` in the engine's package: 19,299 bytes with three.js's own half floats. Browsers unpack gzip with `DecompressionStream`. So every server and CDN sends 19.3 KB, whether or not it compresses files itself. A JavaScript module of the same data would need a text form, which compresses worse. It would also count against the 16 KB limit of first-use code. `bun tools/area-light-tables.ts` writes the file from the engine's three.js, and a unit test checks it. The test and `--check` compare the unpacked bytes, never the gzip bytes. A gzip header names the system that wrote it: 19 on the Mac, 3 on Linux. So the packed bytes differ between machines.
 
 The third channel of the second table is zero. Its fourth holds the form factor of a horizon-clipped sphere, which three.js replaces by an approximation (`LTC_ClippedSphereFormFactor`). So the file holds six channels.
 

@@ -4,7 +4,6 @@
 import { expect, test } from 'bun:test';
 import { createOrbitControls } from '@null3d/controls';
 import { type RaycastHit, type SketchContext, vec3 } from '@null3d/engine';
-import { InputRing } from '../../packages/engine/src/page/input-ring';
 import { controlViews, createControlBuffer, Slot } from '../../packages/engine/src/shared/control';
 import { KEY_CODES } from '../../packages/engine/src/shared/key-codes';
 import { InputReader } from '../../packages/engine/src/sketch/input';
@@ -36,6 +35,17 @@ test('the guard stops a move into a wall', () => {
 	const out = vec3.create();
 	expect(guardAt(10).move(point(0, 0, 0), point(12, 0, 0), out)).toBe(true);
 	expect(out[0]).toBeCloseTo(9.5, 5);
+});
+
+test('the guard stops a step shorter than the margin, so a per-frame move keeps it', () => {
+	const out = vec3.create();
+	// A frame of the route moves far less than the margin. The guard used to skip such a step, so
+	// the camera drew closer to the wall every frame; it now stops at the margin.
+	expect(guardAt(10).move(point(9.2, 0, 0), point(9.55, 0, 0), out)).toBe(true);
+	expect(out[0]).toBeCloseTo(9.5, 5);
+	// A short step whose end already keeps the margin is not clamped.
+	expect(guardAt(10).move(point(9.2, 0, 0), point(9.45, 0, 0), out)).toBe(false);
+	expect(out[0]).toBeCloseTo(9.45, 5);
 });
 
 test('the guard never stops a move away from a surface, or a move already clear', () => {
