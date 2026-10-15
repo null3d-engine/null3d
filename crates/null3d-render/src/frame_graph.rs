@@ -1286,12 +1286,19 @@ impl FrameGraph {
     /// resolve into the canvas, that switches the final pass on in place of the resolve pass, and
     /// the graph compiles again.
     pub(crate) fn set_scaling(&mut self, scales: bool) {
-        self.scales = scales;
+        if scales != self.scales {
+            // The declarations hold the two-step pass only while the render scale can drop below
+            // the whole canvas, so a change declares them again. This is a sketch setting, so it
+            // changes rarely, never in a frame loop.
+            self.scales = scales;
+            self.redeclare();
+        }
         self.enable_outputs();
     }
 
     /// Declares the passes again from the last views, for a change that only the declarations
-    /// follow, such as the render scale crossing the whole canvas.
+    /// follow, such as the render scale's range changing. It allocates, so it stays off the frame
+    /// loop: a frames' render scale changing must not declare anything again.
     fn redeclare(&mut self) {
         if self.declared_views.is_empty() {
             self.declared = false;
@@ -1302,10 +1309,11 @@ impl FrameGraph {
         }
     }
 
-    /// True when the frame's declared steps are the two-step pass: the render scale can drop below
-    /// the whole canvas and the frame draws below it.
-    fn two_step(&self) -> bool {
-        self.scales && self.scale != RenderScale::FULL
+    /// True when the frame draws the two-step pass: the render scale can drop below the whole
+    /// canvas and the frame draws below it. The declarations hold the pass whenever the render
+    /// scale can drop, so a crossing changes only this answer and declares nothing again.
+    fn two_step_runs(&self) -> bool {
+        self.two_step_declared && self.scale != RenderScale::FULL
     }
 
     /// Says whether the sketch sets a color grading table or the vignette. Where the scene could
@@ -2216,7 +2224,7 @@ impl FrameGraph {
         // Below the whole canvas's render scale the final pass draws in two steps: the first step
         // draws the scene's display color at the render size into OUTPUT_COLOR, and the plain final
         // pass then scales that up to the canvas.
-        self.two_step_declared = self.two_step();
+        self.two_step_declared = self.scales;
         let two_step = self.two_step_declared;
         let output = if two_step {
             [
@@ -2734,11 +2742,9 @@ impl FrameGraph {
         } else {
             RenderScale::FULL
         };
-        // The two-step pass runs only below the whole canvas's scale, so a crossing declares the
-        // passes again now, before the plan compiles.
-        if self.two_step() != self.two_step_declared {
-            self.redeclare();
-        }
+        // The two-step pass runs below the whole canvas's scale; the declarations hold it whenever
+        // the render scale can drop, so a crossing changes what the frame draws without declaring
+        // anything again.
         let rescaled = self.scale != previous;
         let compiled = self.graph.compile().map_err(RecordError::Graph)?
             | std::mem::take(&mut self.compiled_early);
@@ -3024,7 +3030,7 @@ impl FrameGraph {
             }),
             None => None,
         };
-        if self.two_step_declared {
+        if self.two_step_runs() {
             // Two steps: the first draws the display color at the render size, with the bloom, and
             // the second scales it up to the canvas, with the grading and the outline. The vignette
             // darkens high dynamic range color in the first step and display color in the second.
@@ -3623,7 +3629,7 @@ impl FrameGraph {
                         let role = self.roles[pass.index()];
                         // The two-step pass reads the meter's texel in its first step, so the meter
                         // records before that step.
-                        if self.two_step_declared {
+                        if self.two_step_runs() {
                             matches!(role, Role::Output | Role::OutputBloom)
                         } else {
                             matches!(role, Role::Final | Role::FinalBloom)
@@ -3646,7 +3652,7 @@ impl FrameGraph {
                     for &pass in plan.passes(step) {
                         match self.roles[pass.index()] {
                             Role::Final => {
-                                if self.two_step_declared {
+                                if self.two_step_runs() {
                                     self.final_pass.record_present(list)?
                                 } else {
                                     self.final_pass.record(list, false)?
@@ -3734,6 +3740,9 @@ impl FrameGraph {
     fn draws(&self, role: Role) -> bool {
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
+            // The first step runs only below the whole canvas's scale; at the whole canvas the final
+            // pass reads the scene color as it always did.
+            (Role::Output | Role::OutputBloom, _) => self.two_step_runs(),
             (Role::FogLight(parity), _) => self
                 .fog_pass
                 .as_ref()
@@ -4993,7 +5002,9 @@ mod tests {
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         let plan = frames.graph().plan().unwrap();
-        assert_eq!(plan.textures().len(), without + LEVELS - 1);
+        // The chain's levels, and the two-step pass's own target, which the declarations hold
+        // whenever the render scale can drop.
+        assert_eq!(plan.textures().len(), without + LEVELS - 1 + 1);
         assert!(frames.graph().find_pass(BLOOM_DOWN[LEVELS - 1]).is_none());
 
         // Off again, the steps and their targets are gone.
@@ -5002,7 +5013,7 @@ mod tests {
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
-        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), without + 1);
     }
 
     #[test]
