@@ -144,8 +144,9 @@ jobs:
     needs: commits
     if: needs.commits.outputs.new != ''
     runs-on: ubuntu-latest
-    # The job takes 4 to 8 minutes. Every CI job should take at most 15 minutes, and stops at 20.
-    timeout-minutes: 20
+    # The job took 4 to 8 minutes. Every CI job should take at most 15 minutes. This one stops at 35
+    # while a build that compiles every shader can take longer than 20.
+    timeout-minutes: 35
     strategy:
       matrix:
         build: [baseline, new]
@@ -180,7 +181,14 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - run: bun run build
+      # CI's shader caches serve this build too. An older commit, without the action, builds every
+      # shader.
+      - if: hashFiles('.github/actions/shaders/action.yml') != ''
+        uses: ./.github/actions/shaders
+        with:
+          run: bun run build
+      - if: hashFiles('.github/actions/shaders/action.yml') == ''
+        run: bun run build
       # The engine's WebAssembly files, the shader compiler and the shader modules with the record
       # of their inputs. An older commit may keep its shader modules in git, or lack the record.
       - name: Pack the build
