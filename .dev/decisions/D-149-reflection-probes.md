@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-EX32 on 12 October 2026, for the owner's review. Date: 2026-10-12. Task: M2-EX32.
 
-Summary: `scene.createReflectionProbe({ box, position })` captures the scene around a point on the GPU, through six square views, and filters it for each roughness as the environment's map is. Each probe is an octahedral map in one layer of one half-float texture array. A surface inside a probe's box reflects along a ray that meets the box's sides, so a room's walls and a street's houses reflect where they stand. Up to two probes blend at their boxes' edges, inner probes first, and the environment takes the rest. Mirror reflections win over the probes, and screen-space reflections will sit between them. The array takes the texture slot of the split-sum table on WebGPU, which moves into the columns of an existing data texture, as on WebGL2. So probes add no texture slot to the main pass on WebGPU, and one texture unit on WebGL2. A scene without probes draws as before and pays one uniform test per lit pixel.
+Summary: `scene.createReflectionProbe({ box, position })` captures the scene around a point on the GPU, through six square views, and filters it for each roughness as the environment's map is. Each probe is an octahedral map in one layer of one half-float texture array. A surface inside a probe's box reflects along a ray that meets the box's sides, so a room's walls and a street's houses reflect where they stand. Up to two probes blend at their boxes' edges, inner probes first, and the environment takes the rest. Mirror reflections win over the probes, and screen-space reflections will sit between them. The array takes the texture slot of the split-sum table on WebGPU, which moves into the columns of an existing data texture, as on WebGL2. So probes add no texture slot to the main pass on WebGPU, and one texture unit on WebGL2. A scene without probes draws as before, and its pages download no probe sampling: that loads on first use with the light probe grid's templates (addendum of 15 October).
 
 ## Question
 
@@ -87,3 +87,20 @@ array at binding 3, the probes' maps first and the light tables' layers between 
 images, so binding 10 stays for the light probe grid (D-146). [D-146](D-146-light-probe-grid.md)
 records the choice and the copy on a regrow. The probes' maps, the blend, the capture and the API are
 unchanged.
+
+## Addendum, 2026-10-15: the probe sampling loads on first use
+
+After main took the light probe grid's templates (D-146) and the two-step output, the branch's start
+went over its 160 KB budget on WebGL2: the pipelined start measured 164.2 KB after Brotli. The probes'
+sampling sat in every lit build of the start, and the GLSL text of each build carries it again.
+
+The reflection probes' sampling now builds only with the PROBES def. The light probe grid's two
+first-use templates build with it too, so one template pair carries both kinds of probe, and the
+engine draws lit meshes through them while the scene sets a grid or a reflection probe (`ProbeShading`
+in `crates/null3d-render/src/probe_shading.rs`). A page with no probe downloads no probe code, and a
+scene without probes no longer tests for them in each lit pixel. Custom materials build with PROBES
+always, as their builds load with the page that draws them.
+
+The limit is the grid's: the probe templates have no area light, transmission, weighted, level of
+detail fade or coat and sheen builds, so a mesh that needs one of those draws without probes. No
+permutation bit is free to do better (the rule above).

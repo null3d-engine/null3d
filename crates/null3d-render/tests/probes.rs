@@ -1,15 +1,17 @@
-//! Reflection probes on both frame builders: a probe adds the six capture views, captures once
-//! the thread that draws holds the filter's generator, and filters in the same frame, between the
-//! capture views' passes and the camera's. Checked through the mock backend, which also checks
-//! that the probes' textures and the filter's command are valid on both paths.
+//! Reflection probes on both frame builders: a probe adds the six capture views, turns the lit
+//! meshes to the probe templates, captures once the thread that draws holds the filter's
+//! generator, and filters in the same frame, between the capture views' passes and the camera's.
+//! Checked through the mock backend, which also checks that the probes' textures and the filter's
+//! command are valid on both paths.
 
 mod common;
 
 use common::World;
-use null3d_gpu::drawlist::Op;
+use null3d_gpu::drawlist::{Op, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
+use null3d_render::pipelines::{DepthBias, DrawKey};
 use null3d_render::probes::ProbeSettings;
 
 /// The filter commands that a frame records, with the place of each among the frame's commands.
@@ -20,6 +22,18 @@ fn filters(commands: &[(Op, Vec<u32>)]) -> Vec<(usize, Vec<u32>)> {
         .filter(|(_, (op, _))| *op == Op::ProbeFilter)
         .map(|(k, (_, o))| (k, o.clone()))
         .collect()
+}
+
+/// The template that a plain lit pair draws through in the scene's passes.
+fn lit_template<B: FrameBuilder>(world: &World<B>) -> u32 {
+    let lit = DrawKey {
+        template: template::INSTANCED_LIT,
+        permutation: 0,
+        vertex_format: 0,
+        state: 0,
+        bias: DepthBias::NONE,
+    };
+    world.renderer.settings().area_key(lit).template
 }
 
 fn check_probes<B: FrameBuilder>(mut world: World<B>) {
@@ -42,10 +56,13 @@ fn check_probes<B: FrameBuilder>(mut world: World<B>) {
     let generator = settings.textures_mut().take_image_id();
     settings.probes_mut().set_generator(generator);
 
-    // Until the thread that draws holds the filter's generator, no probe captures.
+    // Until the thread that draws holds the filter's generator, no probe captures. The lit
+    // meshes already draw through the probe templates.
+    assert_eq!(lit_template(&world), template::INSTANCED_LIT);
     let commands = world.step(&mut mock, true);
     assert!(filters(&commands).is_empty());
     assert!(world.renderer.settings().probes().waiting());
+    assert_eq!(lit_template(&world), template::PROBE_GRID);
 
     // Once it arrived, the probe captures as soon as its views' targets exist: on WebGPU, once
     // the pipeline that copies a view's image into its target is built. It filters in the frame
@@ -98,6 +115,11 @@ fn check_probes<B: FrameBuilder>(mut world: World<B>) {
     );
     world.step(&mut mock, true);
     world.step(&mut mock, false);
+    assert_eq!(
+        lit_template(&world),
+        template::INSTANCED_LIT,
+        "with no probe left, lit meshes draw through the plain templates"
+    );
 }
 
 #[test]

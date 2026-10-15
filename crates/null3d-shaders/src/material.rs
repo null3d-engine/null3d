@@ -96,9 +96,10 @@ fn caster_variant(shading: &Variant) -> Variant {
     }
 }
 
-/// The shader defs of every custom material's build: the custom material's built-in values, and
-/// the first texture coordinates.
-const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
+/// The shader defs of every custom material's build: the custom material's built-in values, the
+/// first texture coordinates, and the reflection probes' sampling, which a custom material's own
+/// build carries, as it loads with the page that draws it.
+const CUSTOM_DEFS: [&str; 3] = ["CUSTOM", "PROBES", "UV0"];
 
 /// An input of custom materials that costs something, which only WGSL that reads it gets.
 struct Input {

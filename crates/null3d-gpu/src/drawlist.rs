@@ -1742,9 +1742,10 @@ pub mod template {
     pub const DECAL: u32 = 61;
     /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
     pub const DECAL_MAPS: u32 = 62;
-    /// The lit material with the scene's light probe grid (D-146): the standard material with the
-    /// grid's sampling in the light's loop, in a template of its own so a page that sets no grid
-    /// loads none of it. The engine draws lit meshes through it while the scene sets a grid.
+    /// The lit material with the scene's probes: the standard material with the light probe grid's
+    /// sampling (D-146) and the reflection probes' (D-149) in the light's loop, in a template of its
+    /// own so a page that sets no probe loads none of it. The engine draws lit meshes through it
+    /// while the scene sets a grid or a reflection probe.
     pub const PROBE_GRID: u32 = 71;
     /// The same with the material's texture maps.
     pub const PROBE_GRID_MAPS: u32 = 72;

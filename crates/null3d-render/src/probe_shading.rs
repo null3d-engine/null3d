@@ -1,30 +1,26 @@
-//! Whether the lit meshes draw through the light probe grid's templates (D-146). Their builds hold
-//! the grid's sampling in the light's loop and load on first use. The plain lit templates carry no
-//! grid code, so a page that sets no grid never downloads it.
+//! Whether the lit meshes draw through the probe templates. Their builds hold the light probe
+//! grid's sampling (D-146) and the reflection probes' (D-149) in the light's loop, and load on
+//! first use. The plain lit templates carry no probe code, so a page that sets no probe never
+//! downloads it.
 //!
-//! Probe shading turns on once the scene sets a grid whose texture is on the GPU and the pipelines
-//! in use have their grid builds. Until then frames draw with the plain lit templates, and the
-//! frame's values name no grid, so no build meets a grid it cannot read. It turns off as soon as
-//! the scene sets no grid, since the plain builds are there.
-//!
-//! The grid templates build a smaller set of permutation bits than the plain lit templates do, so a
-//! pair that carries one of the bits they leave out keeps its plain template and draws without grid
-//! light (H-2 of the 15 October review).
+//! Probe shading turns on once the scene sets a reflection probe, or a grid whose texture is on the
+//! GPU, and the pipelines in use have their probe builds. Until then frames draw with the plain lit
+//! templates, which read neither, and the frame's values name no grid, so no build meets a grid it
+//! cannot read. It turns off as soon as the scene sets neither, since the plain builds are there.
 use null3d_gpu::drawlist::{permutation, template};
 
 use crate::pipelines::{DrawKey, PipelineCache, PipelineKey};
 
-/// The permutation bits of the lit templates that the grid templates build without, at most. A
-/// pair with one of them keeps its plain template while probe shading is on, and draws without grid
-/// light.
+/// The permutation bits of the lit templates that the probe templates build without. A pair with
+/// one of them keeps its plain template while probe shading is on, and draws without probes.
 pub const NO_PROBE_BUILD: u32 = permutation::AREA_LIGHTS
     | permutation::TRANSMISSION
     | permutation::LOD_FADE
     | permutation::WEIGHTED
     | permutation::COAT_SHEEN;
 
-/// The grid template that a pair of `template` and `permutation` draws through while probe shading
-/// is on, or `template` when it has no grid build.
+/// The probe template that a pair of `template` and `permutation` draws through while probe
+/// shading is on, or `template` when it has no probe build.
 pub const fn probe_template(template: u32, permutation: u32) -> u32 {
     if permutation & NO_PROBE_BUILD != 0 {
         return template;
@@ -36,27 +32,27 @@ pub const fn probe_template(template: u32, permutation: u32) -> u32 {
     }
 }
 
-/// Whether lit meshes draw through the grid's templates, and the pipelines that the switch waits
+/// Whether lit meshes draw through the probe templates, and the pipelines that the switch waits
 /// for.
 #[derive(Debug, Default)]
 pub struct ProbeShading {
-    /// True while lit meshes draw through the grid's templates.
+    /// True while lit meshes draw through the probe templates.
     on: bool,
-    /// The ids of the grid pipelines that must be built before probe shading turns on.
+    /// The ids of the probe pipelines that must be built before probe shading turns on.
     waiting: Vec<u32>,
 }
 
 impl ProbeShading {
-    /// True while lit meshes draw through the grid's templates.
+    /// True while lit meshes draw through the probe templates.
     pub fn on(&self) -> bool {
         self.on
     }
 
-    /// Moves toward `wanted`: on when the scene sets a grid whose texture is on the GPU. Before the
-    /// first frame, while `pipelines_built` is 0, it turns on at once, as that frame waits for
-    /// every pipeline. After it, it first asks `pipelines` for the grid build of each lit pipeline
-    /// that exists, and turns on once all of them are built. Returns true when it turns on or off,
-    /// so the layouts take their keys again. It allocates only while it asks.
+    /// Moves toward `wanted`: on when the scene sets a reflection probe, or a grid whose texture is
+    /// on the GPU. Before the first frame, while `pipelines_built` is 0, it turns on at once, as
+    /// that frame waits for every pipeline. After it, it first asks `pipelines` for the probe build
+    /// of each lit pipeline that exists, and turns on once all of them are built. Returns true when
+    /// it turns on or off, so the layouts take their keys again. It allocates only while it asks.
     pub fn update(
         &mut self,
         wanted: bool,
@@ -95,7 +91,7 @@ impl ProbeShading {
         true
     }
 
-    /// The key that a pair draws with: through a grid template while probe shading is on.
+    /// The key that a pair draws with: through a probe template while probe shading is on.
     pub fn key(&self, key: DrawKey) -> DrawKey {
         if self.on {
             DrawKey {

@@ -100,7 +100,10 @@ enable draw_index;
 #import null3d::globals::{Material}
 #import null3d::gtao::{screen_occlusion, screen_values}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
+#ifdef PROBES
 #import null3d::ibl::{reflected_direction}
+#import null3d::probes::{has_probes, probe_light}
+#endif
 #ifdef PROBE_GRID
 #import null3d::probe_grid::{has_probe_grid, probe_grid_irradiance}
 #endif
@@ -115,7 +118,6 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
-#import null3d::probes::{has_probes, probe_light}
 #ifdef OBJECT_IDS
 #import null3d::mesh::{object_ids}
 #endif
@@ -927,6 +929,19 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 }
 #endif
 
+/// True while the view lists a reflection probe or the scene sets a light probe grid, in the builds
+/// that read them. Only the probe templates read them, so a page with no probes loads no probe code.
+fn has_local_probes() -> bool {
+    var any = false;
+#ifdef PROBES
+    any = any || has_probes();
+#endif
+#ifdef PROBE_GRID
+    any = any || has_probe_grid(engine_frame.probe_grid);
+#endif
+    return any;
+}
+
 /// The light around a surface, from the scene's reflection probes and its environment, times the
 /// material's factor of it: the light that it reflects along its view's reflection, and its
 /// irradiance. Probes light the surfaces inside their boxes, and the environment the share that
@@ -949,12 +964,14 @@ fn probe_surrounding(
         radiance = environment_radiance(env, to_view, normal, roughness);
         irradiance = environment_irradiance(env, normal);
     }
+#ifdef PROBES
     if has_probes() {
         let reflected = reflected_direction(to_view, normal, roughness);
         let local = probe_light(relative, reflected, normal, roughness);
         radiance = local.radiance + radiance * (1.0 - local.weight);
         irradiance = local.irradiance + irradiance * (1.0 - local.weight);
     }
+#endif
     let strength = material_row.uv_u.w;
     return Surrounding(radiance * strength, irradiance * strength);
 }
@@ -1027,20 +1044,12 @@ fn light_surface(
     let env = engine_frame.environment;
 #ifdef CUSTOM
     let mirrored = saturate(reflection.a);
-#ifdef PROBE_GRID
-    if has_environment(env) || has_probes() || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
-#else
-    if has_environment(env) || has_probes() || mirrored > 0.0 {
-#endif
+    if has_environment(env) || has_local_probes() || mirrored > 0.0 {
         let around = probe_surrounding(relative, normal, to_view, m.roughness);
         var irradiance = around.irradiance;
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
 #else
-#ifdef PROBE_GRID
-    if has_environment(env) || has_probes() || has_probe_grid(engine_frame.probe_grid) {
-#else
-    if has_environment(env) || has_probes() {
-#endif
+    if has_environment(env) || has_local_probes() {
         let around = probe_surrounding(relative, normal, to_view, m.roughness);
         var irradiance = around.irradiance;
         let radiance = around.radiance;
