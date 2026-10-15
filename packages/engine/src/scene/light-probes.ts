@@ -342,8 +342,8 @@ export interface BakeProbesOptions {
 	 */
 	environment?: { readonly sh: Float32Array } | null;
 	/**
-	 * The colour a ray takes when it hits a surface, for one coloured bounce. A ray whose hit has
-	 * no colour gives none, so a scene without this bakes sky light and its occlusion alone.
+	 * The color a ray takes when it hits a surface, for one colored bounce. A ray whose hit has
+	 * no color gives none, so a scene without this bakes sky light and its occlusion alone.
 	 */
 	albedo?: (
 		object: QueryTarget | null,
