@@ -56,6 +56,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_ior',
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
+	'KHR_materials_clearcoat',
+	'KHR_materials_sheen',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
 	'MSFT_lod',
@@ -225,6 +227,76 @@ function indexOfRefraction(extension: Entry | undefined, what: string): number {
 	return ior;
 }
 
+/** The texture infos of a layered material's maps, each pair packed into one texture. */
+interface LayerTextures {
+	coat?: unknown;
+	coatRoughness?: unknown;
+	coatNormal?: unknown;
+	sheenColor?: unknown;
+	sheenRoughness?: unknown;
+}
+
+/** True when two texture infos read one texture the same way: its index, coordinates and transform. */
+function sameTexture(a: Entry, b: Entry): boolean {
+	return (
+		a.index === b.index &&
+		(a.texCoord ?? 0) === (b.texCoord ?? 0) &&
+		JSON.stringify(a.extensions ?? {}) === JSON.stringify(b.extensions ?? {})
+	);
+}
+
+/**
+ * The texture infos of a layered material's maps. glTF packs the clear coat and its roughness into
+ * the red and green of one texture, and the sheen's color and roughness into the color and alpha
+ * of one. The engine draws each pair from one texture, so a pair of two textures keeps the first,
+ * and `notes` says so.
+ */
+function layerTextures(coat: Entry, sheen: Entry, what: string, notes: string[]): LayerTextures {
+	const pair = (first: unknown, second: unknown, name: string): [unknown, unknown] => {
+		if (first === undefined || second === undefined) return [first, second];
+		if (sameTexture(entry(first, what), entry(second, what))) return [first, first];
+		notes.push(`${what}'s ${name}, which is not the texture of its pair and is not drawn`);
+		return [first, undefined];
+	};
+	const [coatMap, coatRoughness] = pair(
+		coat.clearcoatTexture,
+		coat.clearcoatRoughnessTexture,
+		'clearcoatRoughnessTexture',
+	);
+	const [sheenColor, sheenRoughness] = pair(
+		sheen.sheenColorTexture,
+		sheen.sheenRoughnessTexture,
+		'sheenRoughnessTexture',
+	);
+	return {
+		coat: coatMap,
+		coatRoughness,
+		coatNormal: coat.clearcoatNormalTexture,
+		sheenColor,
+		sheenRoughness,
+	};
+}
+
+/** A layered material's values from its KHR_materials_clearcoat and KHR_materials_sheen extensions. */
+function layersOf(coat: Entry, sheen: Entry, what: string): LayersData {
+	const color = numbers(sheen.sheenColorFactor, 3, [0, 0, 0], `${what}'s sheenColorFactor`);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s sheenColorFactor has a component outside 0 to 1`);
+	return {
+		clearcoat: unit(coat.clearcoatFactor ?? 0, `${what}'s clearcoatFactor`),
+		clearcoatRoughness: unit(
+			coat.clearcoatRoughnessFactor ?? 0,
+			`${what}'s clearcoatRoughnessFactor`,
+		),
+		clearcoatNormalScale: finite(
+			(coat.clearcoatNormalTexture as Entry | undefined)?.scale ?? 1,
+			`${what}'s clearcoat normal scale`,
+		),
+		sheenColor: [color[0] as number, color[1] as number, color[2] as number],
+		sheenRoughness: unit(sheen.sheenRoughnessFactor ?? 0, `${what}'s sheenRoughnessFactor`),
+	};
+}
+
 /**
  * How a material lets light through, from its KHR_materials_transmission and KHR_materials_volume
  * extensions, or none for a transmission factor of 0. A masked material lets no light through, as
@@ -391,6 +463,20 @@ export interface TransmissionData {
 	attenuationDistance: number;
 }
 
+/** A material's layers above its base, as KHR_materials_clearcoat and KHR_materials_sheen give them. */
+export interface LayersData {
+	/** The clear coat factor, from 0 to 1. */
+	clearcoat: number;
+	/** The clear coat roughness factor, from 0 to 1. */
+	clearcoatRoughness: number;
+	/** The scale of the clear coat normal texture. */
+	clearcoatNormalScale: number;
+	/** The sheen color factor: linear RGB, from 0 to 1. */
+	sheenColor: [number, number, number];
+	/** The sheen roughness factor, from 0 to 1. */
+	sheenRoughness: number;
+}
+
 /** Where a material's maps sit on the texture coordinates, as KHR_texture_transform gives it. */
 export interface UvTransformData {
 	offset: [number, number];
@@ -426,6 +512,8 @@ export interface MaterialData {
 	 * that lets light through: none for a factor of 0.
 	 */
 	transmission?: TransmissionData;
+	/** The clear coat and the sheen, for a material with either extension: none without. */
+	layers?: LayersData;
 	maps: {
 		map?: number;
 		metalnessRoughnessMap?: number;
@@ -434,6 +522,11 @@ export interface MaterialData {
 		emissiveMap?: number;
 		specularIntensityMap?: number;
 		specularColorMap?: number;
+		clearcoatMap?: number;
+		clearcoatRoughnessMap?: number;
+		clearcoatNormalMap?: number;
+		sheenColorMap?: number;
+		sheenRoughnessMap?: number;
 	};
 	uvTransform?: UvTransformData;
 }
@@ -985,6 +1078,15 @@ export function parseGltf(
 		);
 		if (specularColor.some((c) => c < 0))
 			broken(`${what}'s specularColorFactor has a component below 0`);
+		const coat = extensions.KHR_materials_clearcoat as Entry | undefined;
+		const sheen = extensions.KHR_materials_sheen as Entry | undefined;
+		const layered = coat !== undefined || sheen !== undefined;
+		// A layered material's maps take the slots of the specular maps, which it then goes without.
+		if (layered && (specular.specularTexture ?? specular.specularColorTexture) !== undefined)
+			notes.push(
+				`${what}'s specular textures, which the engine does not draw beside a clear coat or a sheen`,
+			);
+		const layerMaps = layered ? layerTextures(coat ?? {}, sheen ?? {}, what, notes) : {};
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -995,15 +1097,30 @@ export function parseGltf(
 			normalMap: useTexture(material.normalTexture, 'linear', `${what}'s normalTexture`),
 			aoMap: useTexture(material.occlusionTexture, 'linear', `${what}'s occlusionTexture`),
 			emissiveMap: useTexture(material.emissiveTexture, 'srgb', `${what}'s emissiveTexture`),
-			specularIntensityMap: useTexture(
-				specular.specularTexture,
+			specularIntensityMap: layered
+				? undefined
+				: useTexture(specular.specularTexture, 'linear', `${what}'s specularTexture`),
+			specularColorMap: layered
+				? undefined
+				: useTexture(specular.specularColorTexture, 'srgb', `${what}'s specularColorTexture`),
+			clearcoatMap: useTexture(layerMaps.coat, 'linear', `${what}'s clearcoatTexture`),
+			clearcoatRoughnessMap: useTexture(
+				layerMaps.coatRoughness,
 				'linear',
-				`${what}'s specularTexture`,
+				`${what}'s clearcoatRoughnessTexture`,
 			),
-			specularColorMap: useTexture(
-				specular.specularColorTexture,
+			clearcoatNormalMap: useTexture(
+				layerMaps.coatNormal,
+				'linear',
+				`${what}'s clearcoatNormalTexture`,
+			),
+			sheenColorMap: useTexture(layerMaps.sheenColor, 'srgb', `${what}'s sheenColorTexture`),
+			// An sRGB texture keeps its alpha linear, so the sheen's roughness shares the color's
+			// texture, as glTF packs them.
+			sheenRoughnessMap: useTexture(
+				layerMaps.sheenRoughness,
 				'srgb',
-				`${what}'s specularColorTexture`,
+				`${what}'s sheenRoughnessTexture`,
 			),
 		};
 		const maps: MaterialData['maps'] = {};
@@ -1049,6 +1166,7 @@ export function parseGltf(
 			maps,
 		};
 		if (transmission) data.transmission = transmission;
+		if (layered) data.layers = layersOf(coat ?? {}, sheen ?? {}, what);
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
 			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);

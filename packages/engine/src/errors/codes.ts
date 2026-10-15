@@ -408,9 +408,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
 		since: '0.2',
 	},
 	E1422: {
