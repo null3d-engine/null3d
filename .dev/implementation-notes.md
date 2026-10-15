@@ -461,6 +461,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
   - A build needs its template's feature and the feature of each of its bits that a table names. A build that needs one feature goes into that feature's file. A build that needs several, such as a SKIN build with ALPHA_HASH, goes into a file of its own for that set of features, which a page loads only once it uses each of them. So no feature's file grows by the builds of another feature ([D-56](decisions/D-56-first-use-shader-files.md#addendum-2026-10-12-builds-that-need-several-features)).
 - A value of the permutation word names one feature in each template, so two features can share a value ([D-156](decisions/D-156-template-scoped-permutation-bits.md)). `AREA_LIGHTS` shares `FXAA`'s value: only the lit templates list it, and only the final pass lists FXAA. The shader build refuses a template that lists two names of one value. A shared value's bit takes only the builds of the templates that list its name, and the generated main module's `FEATURE_MASKS` does the same at run time. An unshared bit counts for every template. Code that makes one template's key from another's keeps only the bits that it names, as `DrawKey::prepass` does.
 - The shader build writes the feature's builds to `generated/shaders-<feature>-<target>-<bits>.js`, and the builds of several features to `generated/shaders-<feature>-and-<feature>-<target>-<bits>.js`, with the names in alphabetical order. There is one file for each value of the device's fixed bits that the builds vary in, and none for a set of features without builds. The size report holds each one to the limits of one start shader file, in a section of its own.
+- A paragraph that at least twenty feature-set device modules of one kind hold is written once in that kind's table, `generated/shader-paragraphs-<target>[-<bit>...].js`, and each module imports the constants it uses. A kind is a target and one value of the device's bits, so there are twelve tables. A module of the start never names a table, so a page's first download holds none of it, and the Vite plugin emits each table beside the modules that name it. The size report holds each table to the same limits as a feature's shader file ([D-181](decisions/D-181-shared-shader-paragraphs.md)).
 - The main module's `firstUseFile(shader, permutation)` gives the key of the file that holds a build: the names of its features, sorted and joined by `+`, such as `hash+skinning`. A bit counts only for a template that lists its name, because a value can name another feature in another template (D-156). `DeviceShaderSet` loads the file of that key the first time a pipeline asks for one of its builds, and nothing else.
 - Device modules are plain JavaScript. With `new URL(address, import.meta.url)`, the main module imports each one by its address. Vite copies a file that an address names once, so the page's bundle and the workers' bundles share one copy. An `import()` by name would give each bundle a copy of its own. The null3D plugin keeps a small module from becoming a `data:` address, which a strict Content Security Policy blocks.
 - A pipeline whose build is in a feature's file waits for the file, and then builds. Before the first frame, the frame waits with it. After it, the pipeline's draws draw nothing until it is built. That suits an object of its own, such as a sprite batch, which then appears once it is built. On WebGPU a compute pipeline waits in the same way.
@@ -976,20 +977,44 @@ stored about ten times over, once per feature set. The texture binding lists rep
 the uniform block lists 98 per cent. No two module files are byte-identical, so no file can be
 dropped as a duplicate.
 
+### What helped: one table of shared paragraphs for each kind of device module
+
+Since 15 October 2026 the build writes a paragraph that at least twenty feature-set device modules of
+one kind hold once, in a table of its own, and each module imports the constants it uses. A kind is
+a GPU target and one value of the bits a device fixes, so there are twelve tables. Measured on the
+1,331 device modules, with the levels the size report uses:
+
+| | before | after | change |
+| --- | --- | --- | --- |
+| Uncompressed | 846.1 MB | 681.9 MB | 164.2 MB less, 19 per cent |
+| After gzip | 152.3 MB | 111.1 MB | 41.2 MB less, 27 per cent |
+| After Brotli | 41.9 MB | 31.7 MB | 10.2 MB less, 24 per cent |
+
+The twelve tables are 5.0 MB uncompressed and 294 KB after Brotli together. The largest is
+`shader-paragraphs-glsl-tone-map-half.js` at 593.0 KB uncompressed and 31.4 KB after Brotli, inside
+the 1,536 KB and 49 KB that a shader file of a feature that loads on first use may take.
+
+Only the feature-set modules changed. All twelve modules of the start are byte-identical to what the
+build wrote before, so a page that uses no feature downloads exactly what it did, and a kind's table
+loads with the first feature of that kind, not at the start. No image can change either: every
+feature-set module builds the same shader text it did, which a production build of the test project
+checked for every WebGPU module and a tenth of the WebGL2 ones.
+
+The count is the named constant `SHARED_PARAGRAPH_MIN_USES`. Lowering it saves more text and grows
+the tables; the ladder in [D-181](decisions/D-181-shared-shader-paragraphs.md) gives the figures.
+A table of a whole target rather than of one kind was measured too: 8.9 MB uncompressed and 192 KB
+after Brotli for WebGL2, over all three limits of a shader file.
+
 ### What would help
 
-- **One shared paragraph table per device target.** Twelve tables replace the copy in each feature
-  set. It saves 255 MB of 847, 30 per cent, or 294 MB, 35 per cent, if the binding lists ride along,
-  taking the set to about 553 MB. The build already removes repeated paragraphs inside one file, so
-  extending that to a target is a small change to the generator. The risk is medium, because the
-  table becomes one more file that a pipeline waits for ([D-56](decisions/D-56-first-use-shader-files.md)).
 - **Derive the draw-index build from its pair.** This has the highest ceiling, up to 387 MB or 46 per
   cent. The difference is a require line, a draw variable, an instance lookup, and a swap of the draw
   table from a uniform block to a texture. All of it sits inside generated text rather than beside it.
   The risk is high, so it wants a probe before a change.
 
-Both change the output of the shader build, which changes the compiler stamp that the cache is keyed
-by. Either one means a full rebuild on every checkout and a cold shader build in CI.
+That change, like the tables, changes the output of the shader build, which changes the compiler
+stamp that the cache is keyed by. Either one means a full rebuild on every checkout and a cold
+shader build in CI.
 
 ### What would not help
 

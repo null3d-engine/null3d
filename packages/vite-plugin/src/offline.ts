@@ -242,13 +242,17 @@ function textOf(fileName: string, source: string | Uint8Array): string | undefin
 /**
  * The files of a client build's bundle as the list reads them, with what the worker builds
  * recorded for the files that they made. A file copied from the engine's source, such as a shader
- * module, names no other file, so its text is left out.
+ * module, holds no script that names another file, so its text is left out; `tables` names the one
+ * file such a module does load, its target's shared table of shader paragraphs. A module of a
+ * feature that loads on first use names it, so the table joins that feature's files and never the
+ * start's, which is what keeps a page's first download free of it.
  */
 export function listedFiles(
 	bundle: Rollup.OutputBundle,
 	workerFiles: ReadonlyMap<string, WorkerFile>,
 	packageOf: (file: string) => Null3dPackage | undefined,
 	root: string,
+	tables: ReadonlyMap<string, string> = new Map(),
 ): ListedFile[] {
 	const modulesOf = (ids: readonly string[]) =>
 		ids.flatMap(
@@ -267,12 +271,13 @@ export function listedFiles(
 		const worker = workerFiles.get(file.fileName);
 		const modules = modulesOf(worker?.moduleIds ?? file.originalFileNames);
 		const copied = !worker?.chunk && modules.length > 0;
+		const table = tables.get(file.fileName);
 		return {
 			fileName: file.fileName,
 			entry: file.fileName.endsWith('.html'),
 			modules,
 			imports: worker?.imports ?? [],
-			loads: worker?.loads ?? [],
+			loads: [...(worker?.loads ?? []), ...(table ? [table] : [])],
 			text: copied ? undefined : textOf(file.fileName, file.source),
 		};
 	});
