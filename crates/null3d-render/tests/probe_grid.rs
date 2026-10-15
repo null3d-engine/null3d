@@ -7,7 +7,7 @@ mod common;
 
 use common::World;
 use null3d_core::handle::Handle;
-use null3d_gpu::drawlist::{Op, format, layout, view};
+use null3d_gpu::drawlist::{Op, format, layout, template, view};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
@@ -123,6 +123,53 @@ fn camera_grid(frame: Option<&ViewFrame>) -> Option<ProbeGridUniform> {
     frame.map(|frame| frame.uniform.probe_grid)
 }
 
+/// A grid that the sketch sets before the page's first frame draws that frame through the grid's
+/// templates, with the grid's values: hold mode and `engine.captureFrame` read a first frame, so a
+/// grid that waited for its texels to reach the GPU before its builds could show would never appear
+/// there.
+fn check_first_frame<B: FrameBuilder>(
+    mut world: World<B>,
+    frame_of: impl Fn(&B) -> Option<ProbeGridUniform>,
+) {
+    let mut mock = MockBackend::default();
+    let [width, height, depth] = texels();
+    // The setup makes the grid's 3D texture and fills it, before any frame draws.
+    let textures = world.renderer.settings_mut().textures_mut();
+    let volume = textures
+        .create_volume(width, height, depth, format::RGBA16_FLOAT)
+        .unwrap();
+    let (words, _) = textures.set_data(volume, width, height).unwrap();
+    words.fill(0x3c00_3c00);
+    world
+        .renderer
+        .settings_mut()
+        .set_probe_grid(Some(grid(volume)));
+    // The page's first frame: the thread that draws has built no pipeline yet.
+    world.pipelines_built = 0;
+    let commands = world.step(&mut mock, true);
+    let templates: Vec<u32> = operands(&commands, Op::CreateRenderPipeline)
+        .iter()
+        .map(|o| o[1])
+        .collect();
+    assert!(
+        templates.contains(&template::PROBE_GRID),
+        "the first frame creates the grid's builds, which its draws use: {templates:?}"
+    );
+    let made = operands(&commands, Op::CreateTexture);
+    let map = made
+        .iter()
+        .find(|o| o[8] == view::D3 && o[1] == width && o[2] == height && o[3] == depth)
+        .expect("the first frame makes the grid's 3D texture");
+    let maps = bound_maps(&commands);
+    assert!(
+        maps.contains(&map[0]),
+        "the frame that uploads the grid's texels binds them: {maps:?}, the grid's map is {}",
+        map[0]
+    );
+    let uniform = frame_of(&world.renderer).expect("the camera's view draws");
+    assert_eq!(uniform.origin, [-1.0, 0.0, -2.0, 1.0]);
+}
+
 #[test]
 fn a_grid_binds_its_3d_texture_once_its_texels_are_up_and_an_array_is_no_volume() {
     check_grid(World::new(), |r: &GpuDrivenRenderer| {
@@ -133,6 +180,20 @@ fn a_grid_binds_its_3d_texture_once_its_texels_are_up_and_an_array_is_no_volume(
         ..CpuCulledConfig::default()
     }));
     check_grid(webgl2, |r: &CpuCulledRenderer| {
+        camera_grid(r.view_frame(ViewId::CAMERA))
+    });
+}
+
+#[test]
+fn a_grid_set_before_the_first_frame_draws_that_frame_with_it() {
+    check_first_frame(World::new(), |r: &GpuDrivenRenderer| {
+        camera_grid(r.view_frame(ViewId::CAMERA))
+    });
+    let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    }));
+    check_first_frame(webgl2, |r: &CpuCulledRenderer| {
         camera_grid(r.view_frame(ViewId::CAMERA))
     });
 }
