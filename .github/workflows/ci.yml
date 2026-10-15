@@ -337,7 +337,8 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Its repository-wide shader test builds every shader, which can take longer than 20 minutes.
+    timeout-minutes: 35
     env:
       HUSKY: "0"
     steps:
