@@ -22,6 +22,8 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
 // changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `probes` switch sets a small light probe grid over the swarm, for the allocation sample of
+// the lit draws' reads of the grid.
 // The `areaLights` switch adds eight rectangle lights, two of which show images, and four tube
 // lights, which circle the swarm and change their intensities every frame, for the allocation
 // sample of area lights.
@@ -92,6 +94,7 @@ import {
 	defineSketch,
 	type Environment,
 	emptyTimeOfDay,
+	LightProbeGridData,
 	type PerspectiveCamera,
 	type RaycastHit,
 	type SketchContext,
@@ -231,6 +234,7 @@ export default defineSketch(async (context) => {
 	const now = new Float64Array(1);
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
 	const areas = switches.has('areaLights') ? createAreaLights(context, now) : undefined;
+	if (switches.has('probes')) createProbeGrid(context);
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
 	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
 	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
@@ -419,6 +423,33 @@ fn effect(input: EffectInput) -> vec4f {
     return vec4f(input.color.rgb + glow * input.color.a, input.color.a);
 }
 `;
+
+/**
+ * The `probes` switch: a small light probe grid of flat coefficients over the swarm's places, so
+ * the lit draws take the grid's templates and read it each pixel. Nothing steps it: the frame's
+ * cost of a grid is the point of the sample.
+ */
+function createProbeGrid({ scene, textures }: SketchContext): void {
+	const counts: [number, number, number] = [4, 2, 4];
+	const coefficients = new Float32Array(counts[0] * counts[1] * counts[2] * 12);
+	for (let at = 0; at < coefficients.length; at += 12) {
+		coefficients[at] = 0.3;
+		coefficients[at + 1] = 0.35;
+		coefficients[at + 2] = 0.4;
+	}
+	const grid = new LightProbeGridData(
+		new Float32Array([-S1_EXTENT, 0, -S1_EXTENT]),
+		new Float32Array([(2 * S1_EXTENT) / 3, S1_EXTENT, (2 * S1_EXTENT) / 3]),
+		counts,
+		coefficients,
+	);
+	scene.setLightProbeGrid({
+		texture: grid.toTexture(textures),
+		origin: grid.origin,
+		spacing: grid.spacing,
+		counts: grid.counts,
+	});
+}
 
 /**
  * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
