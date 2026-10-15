@@ -799,6 +799,7 @@ variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
 variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
 variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl", "glsl"] }
 variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
+variants.sky_scattering = { defs = ["SKY_SCATTERING"], targets = ["wgsl", "glsl"] }
 variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }
 
 # A test shader for the build itself.

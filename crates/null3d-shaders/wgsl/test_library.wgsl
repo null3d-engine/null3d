@@ -14,7 +14,6 @@
 // driver of the Pixel 11 could not build a pipeline from it.
 #ifdef ATMOSPHERE
 #import null3d::atmosphere
-#import null3d::sky_scattering
 #endif
 #ifdef COLOR
 #import null3d::color
@@ -39,6 +38,9 @@
 #endif
 #ifdef SDF
 #import null3d::sdf
+#endif
+#ifdef SKY_SCATTERING
+#import null3d::sky_scattering
 #endif
 #ifdef VERTEX
 #import null3d::vertex
@@ -330,7 +332,7 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 109u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
         case 110u: { return scalar(null3d::lighting::d_charlie(f[0].x, f[0].y)); }
 #endif
-#ifdef ATMOSPHERE
+#ifdef SKY_SCATTERING
         case 111u: {
             let air = null3d::sky_scattering::Aerial(f[0], f[1], f[2], f[3], f[4], f[5]);
             return triple(null3d::sky_scattering::aerial_perspective(air, f[6].xyz, f[7].xyz));
