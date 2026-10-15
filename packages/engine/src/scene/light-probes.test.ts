@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test';
+import { setErrorFixes } from '../errors/engine-error';
+import { ERROR_FIXES } from '../errors/fixes';
+import * as C from '../generated/core';
 import { toHalfFloat } from './half-float';
 import {
+	bakeProbes,
 	FEWEST_PROBES,
 	fibonacciDirections,
 	gridBytes,
@@ -8,8 +12,13 @@ import {
 	l1Irradiance,
 	PROBE_FLOATS,
 	packProbes,
+	SceneLightProbeGrid,
 	sampleGrid,
 } from './light-probes';
+import type { CoreMemory } from './memory';
+import type { RaycastBatchHits } from './queries';
+import type { Scene } from './scene';
+import type { Texture, Textures } from './textures';
 
 test('fibonacci directions are unit length and spread evenly', () => {
 	const count = 64;
@@ -200,4 +209,64 @@ test('the grid interpolates the light between two probes', () => {
 test('the byte count is 24 per probe plus the padding slices', () => {
 	expect(gridBytes([2, 2, 2])).toBe(2 * 2 * 12 * 8);
 	expect(gridBytes([16, 4, 16])).toBe(16 * 4 * (3 * 18) * 8);
+});
+
+test('the documented bake passes its grid to the grid setter as it is, and spaces probes by meters', () => {
+	setErrorFixes(ERROR_FIXES);
+	// A scene whose rays all reach the sky, and a core that records the grid's values.
+	const scene = {
+		raycastBatch(_rays: Float32Array, _options: unknown, hits: RaycastBatchHits) {
+			hits.distances.fill(-1);
+		},
+	} as unknown as Scene;
+	const block = new Float32Array(C.LIGHT_PROBE_VALUE_COUNT);
+	const handles: number[] = [];
+	const core = {
+		generation: 0,
+		f32: () => block,
+		check: (status: number) => status,
+		glue: {
+			lightProbeValues: () => 0,
+			setLightProbeGrid(texture: number) {
+				handles.push(texture);
+				return 0;
+			},
+		},
+		holdViews: () => {},
+	} as unknown as CoreMemory;
+	const textures = { fromData: () => ({ handle: 5 }) as unknown as Texture } as unknown as Textures;
+	const sh = new Float32Array(27);
+	sh[0] = 1;
+	// The calls of the scene page's bake example.
+	const bake = bakeProbes(scene, {
+		box: { min: [-12, 0, -12], max: [12, 8, 12] },
+		spacing: [1, 2, 1],
+		environment: { sh },
+		albedo: () => [0.8, 0.8, 0.8],
+	});
+	let baking = true;
+	for (let frame = 0; frame < 10000 && baking; frame++) if (bake.step(4096)) baking = false;
+	expect(baking).toBe(false);
+	const grid = bake.grid;
+	expect(grid.counts).toEqual([25, 5, 25]);
+	new SceneLightProbeGrid(core).set({
+		texture: grid.toTexture(textures),
+		origin: grid.origin,
+		spacing: grid.spacing,
+		counts: grid.counts,
+	});
+	expect(handles).toEqual([5]);
+	const at = (offset: number) => Array.from(block.subarray(offset, offset + 3));
+	expect(at(C.LIGHT_PROBE_VALUE_ORIGIN)).toEqual([-12, 0, -12]);
+	expect(at(C.LIGHT_PROBE_VALUE_SPACING)).toEqual([1, 2, 1]);
+	expect(at(C.LIGHT_PROBE_VALUE_COUNTS)).toEqual([25, 5, 25]);
+	// The development check still refuses a value that is not three finite numbers.
+	expect(() =>
+		new SceneLightProbeGrid(core).set({
+			texture: grid.toTexture(textures),
+			origin: new Float32Array([0, Number.NaN, 0]),
+			spacing: grid.spacing,
+			counts: grid.counts,
+		}),
+	).toThrow('E1203');
 });

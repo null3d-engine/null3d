@@ -207,20 +207,20 @@ export function packProbes(
 
 /**
  * The options of `scene.setLightProbeGrid`: a grid of irradiance probes, baked by `bakeProbes`
- * or elsewhere, whose texture the sketch uploads with `textures.fromData({ ..., format:
- * 'rgba16float' })`.
+ * or elsewhere. `LightProbeGridData` gives the texture and the grid's three-number values, which
+ * pass in as they are.
  *
  * @category api/scene
  */
 export interface LightProbeGridOptions {
-	/** The 3D texture of the probes' coefficients, from `textures.fromData`. */
+	/** The 3D texture of the probes' coefficients, from `LightProbeGridData.toTexture`. */
 	texture: Texture;
-	/** The grid's corner of least x, y and z, in the world. */
-	origin: readonly [number, number, number];
-	/** The distance between probes along each axis, in meters. */
-	spacing: readonly [number, number, number];
-	/** The probes along each axis. */
-	counts: readonly [number, number, number];
+	/** The grid's corner of least x, y and z, in the world: three numbers. */
+	origin: ArrayLike<number>;
+	/** The distance between probes along each axis, in meters: three numbers. */
+	spacing: ArrayLike<number>;
+	/** The probes along each axis: three whole numbers. */
+	counts: ArrayLike<number>;
 	/** The factor of the grid's light on every surface. The default is 1. */
 	intensity?: number;
 	/**
@@ -293,18 +293,18 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 		['spacing', grid.spacing],
 		['counts', grid.counts],
 	] as const) {
-		if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite))
+		if (!isTriple(value))
 			throw new EngineError(
 				'E1203',
 				`${CALL}() got ${String(value)} for ${name}, which takes three finite numbers.`,
 			);
 	}
-	if (grid.spacing.some((s) => s <= 0))
+	if (Array.from(grid.spacing).some((s) => s <= 0))
 		throw new EngineError(
 			'E1108',
 			`${CALL}() got a spacing of 0 or less; probes need a positive spacing.`,
 		);
-	if (grid.counts.some((c) => !Number.isInteger(c) || c < 2))
+	if (Array.from(grid.counts).some((c) => !Number.isInteger(c) || c < 2))
 		throw new EngineError(
 			'E1108',
 			`${CALL}() got a count below 2 or a fraction; give whole numbers of 2 or more.`,
@@ -320,6 +320,15 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 		);
 }
 
+/** True for three finite numbers in an array or a typed array. */
+function isTriple(value: unknown): boolean {
+	if (!Array.isArray(value) && !ArrayBuffer.isView(value)) return false;
+	const list = value as unknown as ArrayLike<unknown>;
+	if (list.length !== 3) return false;
+	for (let k = 0; k < 3; k++) if (!Number.isFinite(list[k])) return false;
+	return true;
+}
+
 /**
  * The options of `bakeProbes`: the box the probes cover, how fine they are, and where the light
  * comes from.
@@ -329,8 +338,12 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 export interface BakeProbesOptions {
 	/** The box the probes cover, in the world. */
 	box: { min: readonly [number, number, number]; max: readonly [number, number, number] };
-	/** The probes along each axis, or one number for every axis. The default is one per 2 m. */
-	resolution?: number | readonly [number, number, number];
+	/**
+	 * The distance between probes along each axis, in meters, or one number for every axis. The
+	 * default is 2. The grid starts at the box's least corner and takes as many probes as fit the
+	 * box at that spacing, at least two along each axis.
+	 */
+	spacing?: number | readonly [number, number, number];
 	/** The directions cast from each probe: 8 to 1024, the default 64. */
 	samples?: number;
 	/** How far a ray reaches before it counts as the sky, in meters. The default is the box's diagonal. */
@@ -415,8 +428,8 @@ export class ProbeBake {
 	) {
 		const min = options.box.min;
 		const max = options.box.max;
-		const resolution = options.resolution ?? 2;
-		const per = typeof resolution === 'number' ? [resolution, resolution, resolution] : resolution;
+		const step = options.spacing ?? 2;
+		const per = typeof step === 'number' ? [step, step, step] : step;
 		const spacing = new Float32Array(3);
 		const counts = [FEWEST_PROBES, FEWEST_PROBES, FEWEST_PROBES];
 		let diagonal = 0;
