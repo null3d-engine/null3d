@@ -574,6 +574,23 @@ Main's own build was over the budget. The pipelined WebGL2 start measured 162.2 
 
 The owner raised the start's Brotli budget from 160 KB to 165 KB, which leaves 2.8 KB of headroom, and chose that figure over trimming the start at once. The owner recorded the trim as a later task: "we can trim later on". The same day's earlier ruling returned the gzip and uncompressed figures to 448 KB and 3,328 KB, which the raise of 14 October had changed with no written words.
 
+### The first-use files raised, 15 October 2026: 48 KB to 49 KB
+
+The screen-space reflections work was over budget on two of its device modules rather than on the
+start: 49,684 and 49,567 bytes after Brotli against 48 KB, so 532 and 415 bytes over. Both are GLSL
+combination builds of main's area-lights feature, and the reflections' lit code sits in every lit
+build. That is the same cause that filled the start budget before the raise above.
+
+The owner raised each first-use shader file's Brotli budget from 48 KB to 49 KB. That clears both
+files with about half a kilobyte to spare. The alternative was to move the reflections' lit code into
+a first-use module of its own, which the branch had recorded as D-134's reflections bit: it would
+bring both files under the old figure, at about 900 extra GLSL programs and a rebalance of the Safari
+shard guard. The owner chose the raise, as they did for the start, because half a kilobyte is not
+worth 900 programs.
+
+`FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the new figure. The gzip and
+uncompressed figures for a first-use file are unchanged at 320 KB and 1,536 KB.
+
 ### The trend, and the task that tracks it
 
 The start budget rose from 140 KB to 145 KB in the morning and was over again within hours. Hours after the raise to 160 KB, the light probe grid's figures put the pipelined WebGL2 start at 159.6 KB, 99.8% of the new budget ([D-146](D-146-light-probe-grid.md)). Every raise so far went to the GLSL side, and the WebGL2 start module is the binding one. The next landing that adds a mesh-template permutation moves it again.
