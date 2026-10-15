@@ -508,10 +508,16 @@ export interface VertexLayout {
 /** The typed array class that holds values of a vertex type, as `INTEGER_ARRAYS` names them. */
 function arrayClass(type: number): HeapConstructor<Float32Array | IntegerArray> {
 	if (type === VERTEX_TYPE_F32) return Float32Array;
-	const integer = INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type);
-	if (!integer) throw new Error(`no typed array holds vertex type ${type}`);
-	return integer[0];
+	// A loop rather than a search with a callback, which would make a closure on every update.
+	for (let k = 0; k < INTEGER_ARRAYS.length; k++) {
+		const integer = INTEGER_ARRAYS[k] as (typeof INTEGER_ARRAYS)[number];
+		if (integer[1] === type || integer[2] === type) return integer[0];
+	}
+	throw new Error(`no typed array holds vertex type ${type}`);
 }
+
+/** The vertex types of an attribute that has none listed. */
+const NO_TYPES: readonly number[] = [];
 
 /**
  * What is wrong with an update of attribute `name` of a mesh, or undefined when it fits. Returns
@@ -525,12 +531,19 @@ function updateProblem(
 	count: number,
 	out: { spec?: ArraySpec; type: number; components: number },
 ): string | undefined {
-	const spec = ARRAYS.find((array) => array.name === name);
+	// Loops and reads by index rather than a search with a callback and array unpacking, which
+	// would each allocate on every update.
+	let spec: ArraySpec | undefined;
+	for (let k = 0; k < ARRAYS.length && !spec; k++)
+		if ((ARRAYS[k] as ArraySpec).name === name) spec = ARRAYS[k];
 	if (!spec || spec.location > LAST_UPDATABLE)
 		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors or tangents.`;
 	if (layout.format & POSED_BITS)
 		return 'got a mesh with joints or morph targets, whose vertices take no updates.';
-	const [bit = 0, , shift = 0, types = []] = VERTEX_ATTRIBUTES[spec.location] ?? [];
+	const attribute = VERTEX_ATTRIBUTES[spec.location];
+	const bit = attribute?.[0] ?? 0;
+	const shift = attribute?.[2] ?? 0;
+	const types: readonly number[] = attribute?.[3] ?? NO_TYPES;
 	if (bit !== 0 && (layout.format & bit) === 0) return `got ${name} for a mesh without ${name}.`;
 	const width = 32 - Math.clz32(Math.max(types.length - 1, 0));
 	const type = types[(layout.format >>> shift) & ((1 << width) - 1)] ?? VERTEX_TYPE_F32;

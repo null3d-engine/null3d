@@ -24,6 +24,7 @@
         "@null3d/cli": "workspace:*",
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
+        "@null3d/impostors": "workspace:*",
         "@null3d/particles": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",

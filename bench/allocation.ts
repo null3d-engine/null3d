@@ -69,7 +69,7 @@
 // with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
 // uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's color
 // at half the render size, whose texture a custom effect adds as a glow, and changes the pass's
-// uniform and keeps it on every frame. `--impostors` adds 16,384 impostor cards around S1, whose
+// uniform and keeps it on every frame. `--impostors` adds 4,096 impostor cards around S1, whose
 // views `update` picks from the camera's position every frame. `--calls` makes, every frame, the
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
 // update, a camera's ray through the pointer and its screen point of a place, the orbit and fly
@@ -798,8 +798,7 @@ async function main(): Promise<void> {
 				...BUDGETS[worker as (typeof WORKERS)[number]],
 				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
 			};
-			const statsBudgets =
-				stats || calls ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
+			const statsBudgets = stats || calls ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			const skyBudgets = skyLight
 				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
 				: {};

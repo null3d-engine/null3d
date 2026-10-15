@@ -237,14 +237,19 @@ export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	values[FIRST + 4] = fog.heightFalloff ?? 0;
 	values[FIRST + 5] = fog.sunGlow ?? 0;
 	values[FIRST + 6] = fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT;
-	// `volumetric: true` takes every default, so only the sketch's own options objects reach the
-	// reads, and each number goes into a local rather than a new object.
+	// `volumetric: true` takes every default. Each number of the sketch's own options goes into a
+	// local, read only where the object holds it: a read that can give `undefined` boxes a fraction.
 	const { volumetric } = fog;
 	const volume = volumetric && typeof volumetric === 'object' ? volumetric : undefined;
 	const on = volumetric === true || volume !== undefined;
-	const intensity = volume?.intensity ?? DEFAULT_VOLUME_INTENSITY;
-	const anisotropy = volume?.anisotropy ?? DEFAULT_ANISOTROPY;
-	const distance = volume?.distance ?? DEFAULT_VOLUME_DISTANCE;
+	let intensity = DEFAULT_VOLUME_INTENSITY;
+	let anisotropy = DEFAULT_ANISOTROPY;
+	let distance = DEFAULT_VOLUME_DISTANCE;
+	if (volume !== undefined) {
+		if ('intensity' in volume) intensity = volume.intensity ?? intensity;
+		if ('anisotropy' in volume) anisotropy = volume.anisotropy ?? anisotropy;
+		if ('distance' in volume) distance = volume.distance ?? distance;
+	}
 	if (DEV) {
 		checkFog(fog, values);
 		if (on) checkVolume(volume, intensity, anisotropy, distance);

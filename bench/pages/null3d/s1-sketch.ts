@@ -561,7 +561,7 @@ function createCalls(
 }
 
 /** The impostor cards along each side of the `impostors` switch's square field. */
-const IMPOSTOR_ROWS = 128;
+const IMPOSTOR_ROWS = 64;
 
 /**
  * The `impostors` switch: a square field of impostor cards across and beyond the swarm, with an

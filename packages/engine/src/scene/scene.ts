@@ -4071,22 +4071,29 @@ export class Scene implements ViewHolder {
 		return this.fogVolume;
 	}
 
-	/** The raycasts and overlap queries, made on the first call. */
+	/**
+	 * The raycasts and overlap queries, made on the first call. The closures that they take live in
+	 * a method of their own: one in the getter would make each call allocate a context.
+	 */
 	private get queries(): SceneQueries {
-		if (this.sceneQueries === undefined)
-			this.sceneQueries = new SceneQueries(this.core, {
-				objectAt: (slot) => this.objectSlots[slot],
-				batchAt: (id) => {
-					const batch = this.batchSlots[id & SLOT_MASK];
-					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
-				},
-				writeCamera: (input) => {
-					const camera = this.activeCamera;
-					const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
-					this.frameCameras.queryCamera(live, input);
-				},
-				writeRayCamera: (input) => this.frameCameras.rayCamera(input),
-			});
+		return this.sceneQueries ?? this.makeQueries();
+	}
+
+	/** Makes the raycasts and overlap queries. */
+	private makeQueries(): SceneQueries {
+		this.sceneQueries = new SceneQueries(this.core, {
+			objectAt: (slot) => this.objectSlots[slot],
+			batchAt: (id) => {
+				const batch = this.batchSlots[id & SLOT_MASK];
+				return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+			},
+			writeCamera: (input) => {
+				const camera = this.activeCamera;
+				const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+				this.frameCameras.queryCamera(live, input);
+			},
+			writeRayCamera: (input) => this.frameCameras.rayCamera(input),
+		});
 		return this.sceneQueries;
 	}
 
