@@ -1782,6 +1782,103 @@ function sendValue(core: CoreMemory, id: number, param: number, call: string): v
 	core.check(core.glue.setMaterialValue(id, param), call, undefined, true);
 }
 
+/**
+ * The core's parameter of each standard value that `setUniform` writes by name: the numbers and the
+ * colors that a sketch changes in every frame. A value that takes more than one parameter, as the
+ * texture transform, the normal scales, the angle fade and the index of refraction do, goes through
+ * `set`.
+ */
+const ONE_VALUE_PARAMS: ReadonlyMap<string, number> = new Map<string, number>([
+	['color', MATERIAL_PARAM_COLOR],
+	['emissive', MATERIAL_PARAM_EMISSIVE],
+	['specularColor', MATERIAL_PARAM_SPECULAR_COLOR],
+	['attenuationColor', MATERIAL_PARAM_ATTENUATION_COLOR],
+	['sheenColor', MATERIAL_PARAM_SHEEN_COLOR],
+	['opacity', MATERIAL_PARAM_OPACITY],
+	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF],
+	['metalness', MATERIAL_PARAM_METALNESS],
+	['roughness', MATERIAL_PARAM_ROUGHNESS],
+	['emissiveIntensity', MATERIAL_PARAM_EMISSIVE_INTENSITY],
+	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH],
+	['lightMapIntensity', MATERIAL_PARAM_LIGHT_MAP_INTENSITY],
+	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY],
+	['transmission', MATERIAL_PARAM_TRANSMISSION],
+	['thickness', MATERIAL_PARAM_THICKNESS],
+	['clearcoat', MATERIAL_PARAM_CLEARCOAT],
+	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS],
+	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS],
+	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE],
+]);
+
+/** The values of `ONE_VALUE_PARAMS` that take a color; every other takes a number. */
+const COLOR_VALUES: ReadonlySet<string> = new Set([
+	'color',
+	'emissive',
+	'specularColor',
+	'attenuationColor',
+	'sheenColor',
+]);
+
+/** The name that messages give `setUniform`, from a material's `set` call string. */
+function setUniformCall(call: string): string {
+	return call.replace(/\.set$/, '.setUniform');
+}
+
+/**
+ * Writes one standard value of material `id` by name, through the core's call values. It allocates
+ * nothing: the value crosses the call, where `set` reads it from a field of an options object.
+ * Throws E1216 for a name or a value that `setUniform` does not take, and, in a development build,
+ * E1203 or E1108 for a number that the value does not take.
+ */
+function writeOneValue(
+	core: CoreMemory,
+	id: number,
+	call: string,
+	name: string,
+	value: number | ColorInput,
+): void {
+	const param = ONE_VALUE_PARAMS.get(name);
+	if (param === undefined)
+		throw new EngineError(
+			'E1216',
+			`${call}() got ${name}, which it does not take: a number or a color that set() takes on its own, such as roughness or color, or a uniform of a custom material's WGSL.`,
+		);
+	if (COLOR_VALUES.has(name)) {
+		sendColor(
+			core,
+			id,
+			param,
+			writeLinearColor(core.callValues(), value as ColorInput, call),
+			call,
+		);
+		return;
+	}
+	if (DEV) {
+		if (typeof value !== 'number' || !Number.isFinite(value))
+			throw new EngineError(
+				'E1203',
+				`${call}() got ${String(value)} for ${name}, which takes a finite number.`,
+			);
+		for (let k = 0; k < RANGED.length; k++) {
+			const [key, most] = RANGED[k] as readonly [string, number];
+			if (key !== name) continue;
+			if (value < 0 || value > most) {
+				const label = RANGED_NAMES[k] as string;
+				throw new EngineError(
+					'E1108',
+					most === 1
+						? `${call}() got the ${label} ${value}, outside 0 to 1.`
+						: `${call}() got the ${label} ${value}; it takes 0 or more.`,
+				);
+			}
+			break;
+		}
+	}
+	core.callValues()[0] = value as number;
+	sendValue(core, id, param, call);
+}
+
 /** Sets material `id`'s color `param` to a linear color. */
 function sendColor(
 	core: CoreMemory,
@@ -2039,6 +2136,25 @@ function checkUniforms(
  * custom values, through the core's call values. It allocates nothing: a color converts into the
  * call values too.
  */
+/**
+ * Writes one uniform into material `id`'s row of custom values, through the core's call values,
+ * which `checkUniform` checked. It allocates nothing: a color converts into the call values too.
+ */
+function writeUniform(
+	core: CoreMemory,
+	id: number,
+	uniform: CompiledUniform,
+	value: UniformValue,
+	call: string,
+): void {
+	const numbers = core.callValues();
+	const count = UNIFORM_FLOATS[uniform.type];
+	if (typeof value === 'number') numbers[0] = value;
+	else if (Array.isArray(value)) for (let k = 0; k < count; k++) numbers[k] = value[k] as number;
+	else writeLinearColor(numbers, value as ColorInput, call);
+	core.check(core.glue.setMaterialValues(id, uniform.offset, count), call, undefined, true);
+}
+
 function writeUniforms(
 	core: CoreMemory,
 	id: number,
@@ -2101,6 +2217,8 @@ export function textureSlots(
 export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
+	/** The name that errors from `setUniform` give the call, made once. */
+	protected readonly oneCall: string;
 
 	/** @internal */
 	constructor(
@@ -2110,6 +2228,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		protected readonly call: string,
 	) {
 		this.liveId = id;
+		this.oneCall = setUniformCall(call);
 	}
 
 	/** @internal True until `destroy` runs. */
@@ -2129,10 +2248,10 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 
 	/**
 	 * Changes the values that it gets and keeps the others. Every object that uses the material
-	 * changes with it. It allocates nothing while the objects that give it any one value come in
-	 * at most four shapes, that is sets of keys, so a sketch that keeps its options objects and
-	 * changes them in place can change a value or a color in every frame. Throws E1101 once the
-	 * material is destroyed.
+	 * changes with it. Set up a material with it, and with `setUniform` change the values that a
+	 * frame changes: a value that changes in every frame crosses the `setUniform` call itself,
+	 * where this call reads it from a field of the options object, and a field that holds a
+	 * fraction holds a copy of it of its own. Throws E1101 once the material is destroyed.
 	 */
 	set(options: Values): void {
 		const { core, call } = this;
@@ -2145,6 +2264,21 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const attenuation = linearOrNone(values.attenuationColor, call, ATTENUATION);
 		const sheen = linearOrNone(values.sheenColor, call, SHEEN);
 		writeValues(core, id, call, values, color, emissive, specular, attenuation, sheen);
+	}
+
+	/**
+	 * Changes one value by name, and keeps the others: a number, such as `roughness`, `opacity` or
+	 * `emissiveIntensity`, or a color, such as `color`, `emissive` or `sheenColor`. It allocates
+	 * nothing, so a sketch can change a value in every frame. Every object that uses the material
+	 * changes with it. Throws E1101 once the material is destroyed, and E1216 for a name that it
+	 * does not take: a value that takes more than one parameter, as the texture transform, the
+	 * normal scales, the angle fade and the index of refraction do, goes through `set`.
+	 */
+	setUniform<Name extends keyof Values & string>(
+		name: Name,
+		value: NonNullable<Values[Name]>,
+	): void {
+		writeOneValue(this.core, this.id, this.oneCall, name, value as unknown as number | ColorInput);
 	}
 
 	/**
@@ -2185,6 +2319,25 @@ class ShaderMaterial extends Material<ShaderValues> {
 		checkUniforms(uniforms, options, call);
 		super.set(options);
 		writeUniforms(this.core, this.id, uniforms, options, call);
+	}
+
+	/**
+	 * Changes one of the material's uniforms, or one of the standard values, by name. It allocates
+	 * nothing, so a sketch can change a uniform in every frame. Throws E1216 for a name that is no
+	 * uniform of the WGSL and no standard value, and for a value of another kind than the uniform
+	 * takes.
+	 */
+	override setUniform<Name extends keyof ShaderValues & string>(
+		name: Name,
+		value: NonNullable<ShaderValues[Name]>,
+	): void {
+		const uniform = this.uniforms.get(name);
+		if (uniform) {
+			checkUniform(uniform, value as unknown as UniformValue, this.oneCall);
+			writeUniform(this.core, this.id, uniform, value as unknown as UniformValue, this.oneCall);
+			return;
+		}
+		super.setUniform(name, value);
 	}
 }
 

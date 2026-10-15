@@ -815,6 +815,51 @@ export class Object3D implements Described {
 		this.scene.markDirty(this.row);
 	}
 
+	/**
+	 * Sets the position and, when `rotation` is given, the rotation (a quaternion, x y z w), each
+	 * from an array of numbers. A caller that keeps a pose in arrays of its own writes it this way:
+	 * passing an array crosses the call without a number, where a number passed to a setter that
+	 * the browser does not inline becomes an object of its own. The controls write a camera's pose
+	 * so in every frame.
+	 */
+	setPose(position: Vec3Like, rotation?: QuatLike): void {
+		if (DEV) {
+			checkLive('setPose', this);
+			checkVector(
+				'setPose',
+				this,
+				position[0] as number,
+				position[1] as number,
+				position[2] as number,
+			);
+			if (rotation)
+				checkVector(
+					'setPose',
+					this,
+					rotation[0] as number,
+					rotation[1] as number,
+					rotation[2] as number,
+					rotation[3] as number,
+				);
+		}
+		const { scene } = this;
+		if (rotation) {
+			const r = scene.views.rotations;
+			const i = this.row * 4;
+			r[i] = rotation[0] as number;
+			r[i + 1] = rotation[1] as number;
+			r[i + 2] = rotation[2] as number;
+			r[i + 3] = rotation[3] as number;
+		}
+		scene.writePosition(
+			this.row,
+			position[0] as number,
+			position[1] as number,
+			position[2] as number,
+		);
+		scene.markDirty(this.row);
+	}
+
 	/** Sets the rotation as a quaternion (x, y, z, w). */
 	setRotation(x: number, y: number, z: number, w: number): void {
 		if (DEV) {
@@ -1800,35 +1845,43 @@ export class Light extends Object3D {
 					'E1108',
 					`${call}() got the shadow distance ${value} on ${this.describe()}, which must be above 0 or 'auto'.`,
 				);
-			this.write(call, which, value === 'auto' ? 0 : value);
+			this.writeValue(call, which, value === 'auto' ? 0 : value);
 		}
 	}
 
 	/**
-	 * @internal Sets one of the light's numbers, by its code in the light table. A per-frame setter
-	 * writes the number into the call values in its own small body and calls this with no number,
-	 * so no fraction crosses a call that the browser may not inline. Making a light, and its shadow
-	 * settings, pass the number itself.
+	 * @internal Sets one of the light's numbers, by its code in the light table, from the call
+	 * value: a per-frame setter writes the number into the call values in its own small body and
+	 * calls this with no number, so no fraction crosses a call that the browser may not inline.
 	 */
-	write(call: string, which: number, value?: number): void {
+	write(call: string, which: number): void {
+		this.applyLightValue(call, which, this.scene.core.callValues()[0] as number);
+	}
+
+	/**
+	 * @internal Sets one of the light's numbers from `value`: creating a light, its shadow settings
+	 * and its copy pass the number itself.
+	 */
+	writeValue(call: string, which: number, value: number): void {
+		this.scene.core.callValues()[0] = value;
+		this.applyLightValue(call, which, value);
+	}
+
+	/** @internal Checks one of the light's numbers and passes it to the core. */
+	private applyLightValue(call: string, which: number, value: number): void {
 		const { core } = this.scene;
-		// A per-frame setter writes the call value itself and passes no number; a light's creation
-		// and its shadow settings pass the number, which may be undefined for a required setting.
-		if (arguments.length < 3) value = core.callValues()[0] as number;
-		else core.callValues()[0] = value as number;
 		if (DEV) {
 			checkLive(call, this);
 			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
-			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
+			checkNumber(call, limits[0], value, this);
 			// The shadow distance 0 is 'auto', and it stands in for the default.
 			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
 			// Cascades are whole, and map sizes are powers of two.
-			const number = value as number;
 			const whole =
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
-					? Number.isInteger(number)
-					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
-			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
+					? Number.isInteger(value)
+					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
+			if (!auto && !(value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
 					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
@@ -2005,13 +2058,17 @@ export class AmbientLight extends Light {}
 export class RectAreaLight extends Light {
 	/** Sets the distance in meters from the light's middle where its light ends, above 0. */
 	setRange(range: number): void {
-		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets the width along the light's X axis and the height along its Y axis, in meters. */
 	setSize(width: number, height: number): void {
-		this.write('setSize', C.LIGHT_VALUE_WIDTH, width);
-		this.write('setSize', C.LIGHT_VALUE_HEIGHT, height);
+		const values = this.scene.core.callValues();
+		values[0] = width;
+		this.write('setSize', C.LIGHT_VALUE_WIDTH);
+		values[0] = height;
+		this.write('setSize', C.LIGHT_VALUE_HEIGHT);
 	}
 
 	/** Turns the light so that its light leaves along (x, y, z), relative to its parent. */
@@ -2046,7 +2103,7 @@ export class RectAreaLight extends Light {
 		scene.queueImage(
 			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
 				if (this.id !== id || this.pendingImage !== image) return;
-				const at = core.check(core.glue.areaLightImage(id), call, this.label);
+				const at = core.checkGrowth(core.glue.areaLightImage(id), call, this.label);
 				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
 				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
 			}),
@@ -2059,7 +2116,7 @@ export class RectAreaLight extends Light {
 	/** @internal A copy starts without the picture, which `setImage` gives it. */
 	override twin(handle: number): Object3D {
 		const twin = super.twin(handle) as RectAreaLight;
-		twin.write('twin', C.LIGHT_VALUE_IMAGE, 0);
+		twin.writeValue('twin', C.LIGHT_VALUE_IMAGE, 0);
 		return twin;
 	}
 
@@ -2092,13 +2149,17 @@ function checkLightImage(call: string, image: LightImagePixels, light: Light): v
 export class TubeLight extends Light {
 	/** Sets the distance in meters from the tube's middle where its light ends, above 0. */
 	setRange(range: number): void {
-		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets the tube's length along the light's -Z axis and its radius, in meters. */
 	setSize(length: number, radius: number): void {
-		this.write('setSize', C.LIGHT_VALUE_WIDTH, length);
-		this.write('setSize', C.LIGHT_VALUE_RADIUS, radius);
+		const values = this.scene.core.callValues();
+		values[0] = length;
+		this.write('setSize', C.LIGHT_VALUE_WIDTH);
+		values[0] = radius;
+		this.write('setSize', C.LIGHT_VALUE_RADIUS);
 	}
 
 	/** Turns the tube so that it runs along (x, y, z), relative to its parent. */
@@ -3904,9 +3965,9 @@ export class Scene implements ViewHolder {
 			if (which === C.LIGHT_VALUE_INTENSITY) {
 				// An intensity in another unit, even the default of 1, is that unit's.
 				if (value !== undefined || light.unitScale[0] !== 1)
-					light.write(call, which, (value ?? 1) * (light.unitScale[0] as number));
+					light.writeValue(call, which, (value ?? 1) * (light.unitScale[0] as number));
 			} else if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
-				light.write(call, which, value as number);
+				light.writeValue(call, which, value as number);
 		}
 		if (options.shadow) light.shadow(call, options.shadow);
 		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT || area) {
@@ -4042,8 +4103,8 @@ export class Scene implements ViewHolder {
 	 * Lights the scene with a grid of irradiance probes, or with none for null. The grid's light
 	 * takes the place of the environment's diffuse light where `environmentWeight` says so, so
 	 * light that changes with a surface's place, bounced from coloured walls or sky, reaches it.
-	 * The probes' coefficients come from a 3D texture that the sketch uploads with
-	 * `textures.fromData({ ..., format: 'rgba16float' })`, packed as `packProbes` packs them.
+	 * The probes' coefficients come from a 3D texture that `LightProbeGridData.toTexture` packs
+	 * and uploads, from `bakeProbes` or from a grid baked elsewhere.
 	 * Throws the errors that `scene.setEnvironment` throws for a value out of range, E1213 for
 	 * something that is not a texture, and E1101 for a texture that was destroyed.
 	 */

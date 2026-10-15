@@ -201,7 +201,7 @@ export default defineSketch(async (context) => {
 		});
 	const now = new Float64Array(1);
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
-	const areas = switches.has('areaLights') ? createAreaLights(context) : undefined;
+	const areas = switches.has('areaLights') ? createAreaLights(context, now) : undefined;
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
 	const pickViews = switches.has('impostors')
 		? await createImpostorField(context, camera)
@@ -222,14 +222,6 @@ export default defineSketch(async (context) => {
 		// The frame's time goes through a typed array: a step of its own takes no fraction, so no
 		// number crosses a call that the browser may not inline.
 		now[0] = t;
-		if (areas)
-			for (let k = 0; k < areas.length; k++) {
-				const angle = t * 0.3 + (k * Math.PI * 2) / areas.length;
-				const light = areas[k] as (typeof areas)[number];
-				light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
-				light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
-				light.setIntensity(4 + Math.sin(t + k));
-			}
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -290,6 +282,7 @@ export default defineSketch(async (context) => {
 		// stays in a register instead of becoming an object.
 		onLateUpdate() {
 			poseHemispheres?.();
+			areas?.();
 			setValues?.();
 			pickViews?.();
 			makeCalls?.();
@@ -459,10 +452,9 @@ async function createSetters(
 	scene.createMesh({ mesh: box, material: paint, position: [-3, 1, 0] });
 	scene.createMesh({ mesh: box, material: custom, position: [3, 1, 0] });
 	const fov = camera.fov;
-	// Every options object and color is made once and changed in place.
+	// Every options object and color is made once and changed in place. The materials' values go
+	// through setUniform in the frame, as a value that changes every frame does.
 	const color: [number, number, number] = [1, 1, 1];
-	const paintValues = { color, roughness: 0.5, metalness: 0.5, emissiveIntensity: 1 };
-	const customValues = { tint: color, strength: 0.5, roughness: 0.5 };
 	const lineValues = { color, dashOffset: 0.5 };
 	const fog = { color, density: 0.001 };
 	return () => {
@@ -484,12 +476,11 @@ async function createSetters(
 		lines.setWidth(2 + s);
 		lineValues.dashOffset = 0.5 + 0.5 * s;
 		lines.material.set(lineValues);
-		paintValues.roughness = 0.5 + 0.25 * s;
-		paintValues.emissiveIntensity = 1 + 0.5 * c;
-		paint.set(paintValues);
-		customValues.strength = 0.5 + 0.25 * c;
-		customValues.roughness = 0.5 + 0.25 * s;
-		custom.set(customValues);
+		paint.setUniform('roughness', 0.5 + 0.25 * s);
+		paint.setUniform('emissiveIntensity', 1 + 0.5 * c);
+		custom.setUniform('tint', color);
+		custom.setUniform('strength', 0.5 + 0.25 * c);
+		custom.setUniform('roughness', 0.5 + 0.25 * s);
 		fog.density = 0.001 + 0.0005 * s;
 		scene.setFog(fog);
 		scene.setBackground(color);
@@ -601,13 +592,15 @@ async function createImpostorField(
 
 /**
  * Eight rectangle lights, two of which show a striped image, and four tube lights for the
- * `areaLights` switch. The frames move them around the swarm.
+ * `areaLights` switch. Returns the frame's step, which moves them around the swarm. The step runs
+ * in `onLateUpdate`, apart from the large `pose`: the browser then inlines it and the setters it
+ * calls, so no fraction that it computes crosses a call as an object of its own.
  */
-function createAreaLights({ scene }: SketchContext) {
+function createAreaLights({ scene }: SketchContext, now: Float64Array): () => void {
 	const stripes = new Uint8Array(16 * 16 * 4).map((_, i) => ((i >> 6) % 2 ? 255 : 40));
 	const image = { width: 16, height: 16, data: stripes };
 	const range = S1_EXTENT * 3;
-	return Array.from({ length: 12 }, (_, k) =>
+	const lights = Array.from({ length: 12 }, (_, k) =>
 		k < 8
 			? scene.createRectAreaLight({
 					width: 4,
@@ -619,6 +612,16 @@ function createAreaLights({ scene }: SketchContext) {
 				})
 			: scene.createTubeLight({ length: 3, range, color: '#ff6ab0', dynamic: true }),
 	);
+	return () => {
+		const t = now[0] as number;
+		for (let k = 0; k < lights.length; k++) {
+			const angle = t * 0.3 + (k * Math.PI * 2) / lights.length;
+			const light = lights[k] as (typeof lights)[number];
+			light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
+			light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
+			light.setIntensity(4 + Math.sin(t + k));
+		}
+	};
 }
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
