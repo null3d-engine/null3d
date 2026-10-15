@@ -282,8 +282,6 @@ The quality setting `ssrScale` sets the size of the trace's grid, as a share of 
 
 Screen-space reflections and ambient occlusion share one grid, at the larger of their scales. Like ambient occlusion, the reflections need float targets, which WebGL2 draws into only with the `EXT_color_buffer_float` extension. On the 8-bit path the copy holds display color, so the reflections look a little grayer there.
 
-A surface that a custom material draws receives no screen-space reflection. The reflection that the material writes in `surface.reflection` stands in place of the environment's reflection there, and the screen's reflection does not join it. A planar reflection pass under such a surface still shows.
-
 ### Cost
 
 The reflections add the depth prepass, the depth copy, six small steps for the pyramid, the trace and the copy of the opaque colors with its mip levels. Transmission shares that copy. The opaque pass reads four texels of the screen texture at each pixel, the same reads that ambient occlusion and contact shadows use. It adds one filtered read to each pixel of a smooth enough surface. While the reflections are off, the frame has none of these passes or targets, and the shaders download only when a sketch first turns them on.

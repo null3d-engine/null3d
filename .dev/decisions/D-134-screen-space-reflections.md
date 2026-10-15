@@ -149,3 +149,14 @@ On the merge of main `ffcc098f`, both budgets that the owner raised on 14 Octobe
 - First-use shader files: two combination builds, `…area-lights-and-coat-sheen-and-morph-and-skinning-and-transmission-glsl-draw-index-tone-map-half.js` at 49,684 bytes and its `tone-map` sibling at 49,567 bytes, against the 48 KB budget.
 
 The merge itself is green everywhere else: it builds, typechecks, lints, passes the docs and generator checks, and its own image and behaviour tests. The `REFLECTIONS` first-use bit above is the cure that fits both figures, at about 900 extra GLSL programs and the Safari shader shard's guard. Raising the two budgets again is the other cure, and only the owner raises a budget.
+
+### Correction, 15 October 2026: the join works, and the case is back
+
+The addendum above is wrong on its conclusion, and this section says what to disregard. A surface that a custom material draws does receive the screen's reflection. The material's own reflection and the screen's join by the material's share, as the "Where the result goes" section describes. The reference images of 14 October show the same. The `ssr-planar` image test and its place in `ssr.spec.ts` are back, with both reference sets (commit `4dc112dfc`). `concepts/post-processing` no longer says that such a surface keeps none.
+
+The measurement: `ssr.spec.ts` on the current tree passes 7 of 7. The `ssr-planar` case is among them. It checks that the red box's reflection shows on the floor's planar half, and the green box's on its screen half.
+
+Two facts about the earlier failure:
+
+- The light mix was not its cause. `light_surface` mixed the reflection for every build on the 14 October evening trees too (`50e6e5e8d`, `9fb8f138e`, `d1baaa7ef`, `9c19ff3f6`). The mix line sits outside every `#ifdef CUSTOM`, which guards only the call site. The bisect's control run in this worktree failed with `E1408`, "a pipeline failed to build", so a stale build was present at the time. The shared cargo target folder had already produced a wrong core once that day (the note above). So the `m32` failure is unattributed: a stale build is the likeliest cause, and it has not reproduced.
+- The real fault of the same day is separate, and this branch fixes it. The merge of main at 06:54 (`c0cc37342`) resolved `lit.wgsl` to main's split. That split mixes the reflection under the custom-material bit alone, so a standard surface lost it in every build without that bit. Commit `630f39379` restores the mix for every build.
