@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { hashOf as sharedHashOf } from '../../../tools/lib/build-cache';
 import { fixture } from '../../../tools/lib/fixture';
 import { ShaderPack } from './pack';
-import { NO_SHADER_CACHE, ShaderCache, shaderCacheFolder, shaderCacheOff } from './shader-cache';
+import {
+	NO_CACHE,
+	NO_SHADER_CACHE,
+	ShaderCache,
+	shaderCacheFolder,
+	shaderCacheOff,
+} from './shader-cache';
 import type {
 	CompileResult,
 	EffectResult,
@@ -108,6 +115,8 @@ function moduleOf(shader: CompiledWgsl): string {
 }
 
 afterEach(() => {
+	delete process.env[NO_CACHE];
+	delete process.env.NULL3D_NO_BUILD_CACHE;
 	delete process.env[NO_SHADER_CACHE];
 });
 
@@ -116,14 +125,33 @@ describe('the shader cache folder', () => {
 		expect(shaderCacheFolder('/a/project')).toBe('/a/project/node_modules/.cache/null3d-shaders');
 	});
 
-	it('turns the cache off with the environment variable', () => {
+	it('turns the cache off with the canonical opt-out or the plugin alias', () => {
 		expect(shaderCacheOff()).toBe(false);
+		process.env[NO_CACHE] = '1';
+		expect(shaderCacheOff()).toBe(true);
+		delete process.env[NO_CACHE];
 		process.env[NO_SHADER_CACHE] = '1';
 		expect(shaderCacheOff()).toBe(true);
 	});
 });
 
 describe('the shader cache', () => {
+	it('keys an entry the way the shared build cache hashes its inputs', async () => {
+		const root = fixture({ 'package.json': '{}' });
+		const cache = new ShaderCache(() => root, new CountingCompiler(), { version: 'test-1' });
+		await cache.shader(request());
+		// The format number is `FORMAT` in shader-cache.ts, and the version is the test's own.
+		const key = sharedHashOf('1', 'test-1', 'shader', JSON.stringify(request()));
+		expect(readdirSync(shaderCacheFolder(root))).toEqual([`${key}.json`]);
+	});
+
+	it('leaves no partial file behind after a write', async () => {
+		const root = fixture({ 'package.json': '{}' });
+		const cache = new ShaderCache(() => root, new CountingCompiler(), { version: 'test-1' });
+		await cache.shader(request());
+		for (const name of readdirSync(shaderCacheFolder(root))) expect(name).not.toEndWith('.partial');
+	});
+
 	it('compiles a second identical shader no again, and gives the same module', async () => {
 		const root = fixture({ 'package.json': '{}' });
 		const inner = new CountingCompiler();
@@ -148,6 +176,15 @@ describe('the shader cache', () => {
 			SHADER.replace('vec4f(1.0)', 'vec4f(0.5)'),
 			cache,
 		);
+		expect(inner.calls).toBe(2);
+	});
+
+	it('compiles a shader again after its path changes', async () => {
+		const root = fixture({ 'package.json': '{}' });
+		const inner = new CountingCompiler();
+		const cache = new ShaderCache(() => root, inner, { version: 'test-1' });
+		await cache.shader(request());
+		await cache.shader(request({ path: 'src/other.wgsl' }));
 		expect(inner.calls).toBe(2);
 	});
 
@@ -182,7 +219,7 @@ describe('the shader cache', () => {
 			disabled: () => shaderCacheOff(),
 		});
 		await cache.shader(request());
-		process.env[NO_SHADER_CACHE] = '1';
+		process.env[NO_CACHE] = '1';
 		await cache.shader(request());
 		expect(inner.calls).toBe(2);
 	});

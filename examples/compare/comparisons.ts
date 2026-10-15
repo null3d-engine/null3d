@@ -58,11 +58,6 @@ export interface Comparison {
 	/** How each engine draws the scene, for the "about this comparison" panel. */
 	notes: readonly string[];
 	/**
-	 * True dresses the stage with the busy page beside the canvas, which
-	 * examples/compare/busy-page/page.ts lays out and runs.
-	 */
-	busyPage?: boolean;
-	/**
 	 * The comparison whose scene this one draws, whose image references its held frames share. It
 	 * holds no mode of its own, so the image tests draw its scene graph only.
 	 */
@@ -190,42 +185,6 @@ export const COMPARISONS: readonly Comparison[] = [
 			"null3D lists the point and spot lights near each part of the view in clusters, on WebGPU and WebGL2. three.js's WebGPURenderer does the same for point lights with its ClusteredLighting add-on, and shades every spot light in every pixel. three.js's WebGLRenderer shades every light in every pixel, in one shader, which holds only so many lights.",
 			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
 			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
-		],
-		effects: NIGHT_EFFECTS,
-		fasterThree: 'webgpu',
-	},
-	{
-		name: 'busy-page',
-		code: 'compare/busy-page/',
-		title: 'Busy page',
-		summary:
-			"Night town beside a page that scrolls, types and animates. null3D draws in its workers, and three.js on the page, as its examples run. The stats panel shows the page thread's long tasks and input delay.",
-		countUnit: 'lights',
-		sketch: new URL('./night-town/sketch.ts', import.meta.url),
-		startThree: () =>
-			new Worker(new URL('./night-town/three.ts', import.meta.url), {
-				type: 'module',
-				name: 'three.js',
-			}),
-		threeOnPage: true,
-		busyPage: true,
-		sameSceneAs: 'night-town',
-		ramps: NIGHT_RAMPS,
-		hold: NIGHT_HOLD,
-		swiftShaderHoldCount: NIGHT_HOLD.softwareCount,
-		holdTimeoutSeconds: NIGHT_HOLD.timeoutSeconds,
-		objectsAt: nightObjects,
-		shadowTiles: 0,
-		modes: {
-			'scene-graph':
-				"Scene graph builds Night town the usual way, as its own comparison does. The page beside it does a news page's work on the page's thread: it scrolls an article, types a search, adds a card to a live feed twice a second, and runs CSS animations.",
-			instanced:
-				'Instanced builds Night town with a batch of copies per part kind, as its own comparison does, beside the same busy page.',
-		},
-		notes: [
-			"null3D runs the scene's code and draws in its workers, so the page's thread keeps only the page's own work. three.js runs on the page's thread, as its official examples do, so every frame's work shares that thread with the page.",
-			"A long task is one that holds the page's thread for over 50 ms. Input delay is the wait from a key press or a tap until the page's code can answer it. The browser reports both, where it can.",
-			"The scene and its effects are Night town's, drawn the same way in each engine.",
 		],
 		effects: NIGHT_EFFECTS,
 		fasterThree: 'webgpu',

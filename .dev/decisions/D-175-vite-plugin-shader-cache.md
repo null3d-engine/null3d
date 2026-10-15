@@ -1,6 +1,6 @@
 # D-175: The Vite plugin caches the shaders that a project builds
 
-Status: decided. Date: 2026-10-14. Task: the build-speed work of 14 October 2026.
+Status: decided. Date: 2026-10-14. Task: the build-speed work of 14 October 2026. Extended by [D-177](D-177-build-cache-module.md): the plugin's cache stays in the project and repeats the repository's build-cache rules on its own.
 
 Summary: A project's `vite build` and `vite dev` run the engine's shader compiler over its WGSL. That covers every `.wgsl` file, every `/* wgsl */` literal, and every custom material and effect. The plugin kept no result, so each build compiled them all again. It now keeps each compiled shader in `node_modules/.cache/null3d-shaders`. The key of an entry is the WGSL, the variant spec and the compiler's version. On a small project of eight shaders, a cold build took 2.87 s. The next build took 0.30 s, about a tenth of the time.
 
@@ -37,11 +37,12 @@ Keep the compiled shaders in `node_modules/.cache/null3d-shaders`, as the asset 
 
 Store the compiler's whole result, so a hit gives the same records that a fresh compile gives. The module that the plugin packs from them is then the same too. A result that a read cannot trust is a miss; it does not parse, or it holds no `ok` field. Write each entry whole or not at all, and ignore a write that fails.
 
-The cache is on by default. `NULL3D_NO_SHADER_CACHE=1`, or Vite's `--force`, ignores it, so a build compiles everything again.
+The cache is on by default. `NULL3D_NO_CACHE=1`, or Vite's `--force`, ignores it, so a build compiles everything again. The plugin's older name, `NULL3D_NO_SHADER_CACHE=1`, still works, so the same variable that turns off the repository's shader build turns this cache off too.
 
 ## Consequences
 
 - `packages/vite-plugin/src/shader-cache.ts` holds the cache, and `index.ts` runs every compile path through it: `.wgsl` files, tagged literals, and the skin builds of custom materials.
+- After [D-177](D-177-build-cache-module.md), the module repeats the three rules that `tools/lib/build-cache.ts` keeps for the repository's caches. Its `hashOf` and one-step write mirror that module's helpers, and it accepts the same opt-out names. It keeps the project's own root and takes no lock, since a game project cannot import repository tooling and each entry is one atomic file.
 - `docs/getting-started/install.md` gains a "Builds" section, and the develop skill says where the cache lives and how to ignore it.
 - The escape hatch covers a cache that a reader suspects is stale, and a build that must not read a cache at all.
-- [Pull requests and parallel work](../pull-requests.md#builds) notes the new cache beside the repository's own caches.
+- [Branches and parallel work](../pull-requests.md#builds) notes the new cache beside the repository's own caches.

@@ -62,10 +62,13 @@
 // births every frame, one of them soft, so the frame copies the opaque depth for it.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--decals` puts a ground with a batch of decals under S1, which turn every frame, so the
-// decal pass culls, orders and uploads their rows in every frame. `--passes` adds a full-screen
-// pass that reads S1's color at half the render size, whose texture a custom effect adds as a glow,
-// and changes the pass's uniform every frame. `--prepass` turns the depth prepass on, in any scene.
+// frame. `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
+// materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
+// puffs rise in every frame, which the camera's weighted layer draws. `--decals` puts a ground
+// with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
+// uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's color
+// at half the render size, whose texture a custom effect adds as a glow, and changes the pass's
+// uniform every frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -114,6 +117,7 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --weighted --gpu webgl2
 //   bun run bench:allocation --decals --gpu webgl2
 //   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
@@ -635,6 +639,10 @@ async function main(): Promise<void> {
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const transmission = args.includes('--transmission') ? '&transmission' : '';
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
+		const coatSheen = args.includes('--coat-sheen') ? '&coatSheen' : '';
+		if (coatSheen && scene !== 's1') throw new Error('--coat-sheen coats the boxes of S1 only');
+		const weighted = args.includes('--weighted') ? '&weighted' : '';
+		if (weighted && scene !== 's1') throw new Error('--weighted puts smoke over S1 only');
 		const decals = args.includes('--decals') ? '&decals' : '';
 		if (decals && scene !== 's1') throw new Error('--decals puts decals under S1 only');
 		const particles = args.includes('--particles') ? '&particles' : '';
@@ -647,7 +655,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts

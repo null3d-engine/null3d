@@ -200,7 +200,7 @@ A game can play with no network after its first visit. Its own service worker ca
 }
 ```
 
-- `start` holds every file that a page may need to start. These are the pages and their scripts, the engine's workers, both engine builds and each GPU path's shaders.
+- `start` holds every file that a page may need to start. These are the pages and their scripts, the engine's workers, both engine builds, each GPU path's shaders and the files of your custom materials' builds (`material-*.js`).
 - The start holds the renderers of both GPU paths. A page downloads only its own path's renderers. But a cached game also starts offline on the other path, as on a device whose GPU or browser changed since its first visit. A page that switches paths, such as a benchmark page, downloads each path's renderers the first time it draws with that path. Later loads take them from the browser's cache.
 - `features` holds the files that each feature downloads on its first use, by the feature's name. A page that does not use a feature never downloads its files, so a game caches only the features that it uses.
 - `version` changes whenever a file of the build changes. Each address is relative to the list.
@@ -213,7 +213,7 @@ A game can play with no network after its first visit. Its own service worker ca
 | `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
 | `lut` | The readers and makers of color grading tables | `assets.loadLut` or `assets.lutFromData` |
 
-Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it. In this version, the start's files take about 6.7 MB, the skinning shaders 5.2 MB and the whole build 17.8 MB. These are the sizes of the files as they are, which the cache keeps. With compression, the downloads are about a fifth of that.
+Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it. The start's files and the skinning shaders are the largest groups, several MB each as the cache keeps them, uncompressed. Your build's output lists each file with its size. With compression, the downloads are about a fifth of that.
 
 This service worker caches the page, the start's files and the features that the game names:
 

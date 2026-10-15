@@ -69,7 +69,7 @@ The plugin compiles the WGSL in your project on each build and each start of the
 
 A compile can take most of a second, and a project has many. So the plugin keeps each compiled shader in `node_modules/.cache/null3d-shaders`. The key of an entry is the WGSL, the variant spec that the compiler is given, and the compiler's version. A later build of the same shader takes the cached result and starts no compiler. A changed shader, a changed variant or a newer compiler misses and compiles again, so the cache never serves a wrong shader.
 
-To ignore the cache, set `NULL3D_NO_SHADER_CACHE=1`, or start the dev server with Vite's `--force`. To clear it, delete the folder:
+To ignore the cache, set `NULL3D_NO_CACHE=1`, or start the dev server with Vite's `--force`. To clear it, delete the folder:
 
 ```sh
 rm -rf node_modules/.cache/null3d-shaders

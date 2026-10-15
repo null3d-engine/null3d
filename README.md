@@ -192,9 +192,9 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | The engine's own CPU time per frame on its busiest thread, 100,000 moving instances, desktop Chrome on WebGPU | At most 50% of three.js's |
 | CPU time per frame at phone scale, on WebGPU and WebGL2 phones and tablets | At most 100% of three.js |
 | Core download size | At most 600 KB after Brotli compression |
-| The engine's JavaScript that a page downloads at its start | At most 140 KB after Brotli compression, 448 KB after gzip |
+| The engine's JavaScript that a page downloads at its start | At most 165 KB after Brotli compression, 448 KB after gzip |
 | Each file of the engine's JavaScript that loads on a feature's first use | At most 16 KB after Brotli compression, 24 KB after gzip |
-| Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 32 KB after Brotli compression, 320 KB after gzip |
+| Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 48 KB after Brotli compression, 320 KB after gzip |
 
 An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
 
@@ -316,8 +316,8 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 | --- | --- |
 | 0.1, built | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds. A physical sky, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, reflection probes and order-independent transparency. Stand-in images and merged meshes for far objects, light through leaves and skin, and add-ons for particles and terrain |
-| 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, global illumination, and add-ons for Gaussian splats, MSDF text and physics |
-| 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
+| 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, and global illumination from a probe volume that light does not leak through. Video textures and light maps that store direction. Add-ons for Gaussian splats with detail levels and streaming, MSDF text, physics, water and three.js's tone curves |
+| 1.0 | A stable API, testing on many devices, size budgets and public benchmarks. Property animation, glTF's iridescence and anisotropy, multiple views, gizmos, spot-light cookies, CSS3D labels, a tone-mapping flag per material, an ocean for the water add-on, and a build for a plain script tag |
 
 ## Development
 

@@ -35,8 +35,8 @@ describe('the smoke plan', () => {
 	const smoke = smokePlan();
 	const ids = smoke.map(({ id }) => id);
 
-	it('keeps pages of the checks plan, in its order', () => {
-		const checks = checksPlan().map(({ id }) => id);
+	it("keeps pages of the checks plan that CI's Safari runs, in its order", () => {
+		const checks = checksPlan({ shaders: 'sampled' }).map(({ id }) => id);
 		expect(ids).toEqual(checks.filter((id) => ids.includes(id)));
 		expect(ids.length).toBeLessThan(checks.length / 5);
 	});
@@ -62,6 +62,7 @@ describe('the smoke plan', () => {
 			'capabilities',
 			'isolation',
 			'shaders-1',
+			'shaders-coat-sample-1',
 			'uploads',
 			'mip-levels',
 			'shader-library-webgpu',

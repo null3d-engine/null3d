@@ -144,7 +144,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<OrbitControls makeDefault />` | `createOrbitControls(ctx, camera, options)` |
 | drei `<Environment preset="studio" />` | Download the preset's HDR file, make it a map with `bunx @null3d/cli assets env studio.hdr studio.ktx2`, then `scene.setEnvironment(await assets.loadEnvironment('/studio.ktx2'))` (0.2). For neutral light with no file of your own: `scene.setEnvironment(await assets.builtinEnvironment('room'))` (0.2), three.js's `RoomEnvironment` |
 | drei `<Environment files="x.hdr" background />` | `assets.loadEnvironment('/x.hdr')`, or the map of `bunx @null3d/cli assets env x.hdr x.ktx2`, then `setEnvironment` and `setBackground` (0.2) |
-| drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2, not built yet); softer, blurred contact shadows are not built in |
+| drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2), which shows the directional light's own shadow; the blurred, distance-faded contact shadows of drei's addon are not built in |
 | drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
 | drei `<Text>`, `<Text3D>` | `<Text>`: the MSDF text add-on (0.3, not built yet). `<Text3D>`: not in 1.0. Until then, use HTML labels, a text texture, or a text mesh baked into glTF |
 | drei `<Instances>`, `<Instance>`, `<Merged>` | `scene.createInstances` |
@@ -155,7 +155,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
 | drei `<Stats>` | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page; `engine.measure()` on the page for percentiles |
 | Mesh events: `onClick`, `onPointerDown`, `onPointerUp`, `onPointerMove`, `onPointerOver` or `onPointerEnter`, `onPointerOut` or `onPointerLeave` | `obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know. Only the closest object and its parents get an event, where r3f also passes it to the objects behind |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and bloom, `ao`, `dof`, `outline`, `lut` and `vignette` (0.2); the other effects are (0.2, not built yet) (`references/post-processing.md`). `<Outline selection={...}>` becomes `setOutlined(true)` on each selected mesh, and its props map as `OutlineEffect`'s do |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and `autoExposure`, bloom, `ao`, `dof`, `outline`, `lut` and `vignette` (0.2); the other effects are (0.2, not built yet) (`references/post-processing.md`). `<Outline selection={...}>` becomes `setOutlined(true)` on each selected mesh, and its props map as `OutlineEffect`'s do |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 

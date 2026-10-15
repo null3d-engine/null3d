@@ -24,6 +24,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 18. Camera that follows a moving object
 19. Water and mirror floors with a reflection
 20. Fire, smoke and sparks with particles (0.2)
+21. Terrain from a height field (0.2)
 
 ## 1. Start a new project
 
@@ -348,7 +349,7 @@ const day = timeOfDay(hours, { model: 'physical' });
 scene.setBackground({ atmosphere: { ...day.atmosphere, cloudCoverage: 0.3, aerialPerspective: 2 } });
 ```
 
-Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometres, so a small scene takes more. Set `metersPerUnit` when the scene's units are not metres. Docs: `concepts/lighting`, `api/scene`.
+Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometers, so a small scene takes more. Set `metersPerUnit` when the scene's units are not meters. Docs: `concepts/lighting`, `api/scene`.
 
 ## 11. Physics with a library in the sketch worker
 
@@ -392,7 +393,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come in 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -409,7 +410,7 @@ The thread that draws reads the frame back and encodes it, so the canvas needs n
 
 ## 14. Video on a surface, with frames from the page
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
+Video textures (`engine.registerVideo` with `textures.fromVideo`) come in 0.3. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
 
 ```ts
 // page.ts

@@ -1,6 +1,6 @@
 # D-135: Contact shadows
 
-Status: decided by the helper of M2-F12 on 11 October 2026, for the owner's review. It changes where [D-53](D-53-technique-defaults.md) ruling 6 runs the march: at ambient occlusion's half size, not in the lit shader. Date: 2026-10-11. Task: M2-F12.
+Status: decided by the helper of M2-F12 on 11 October 2026, for the owner's review. It changes where [D-53](D-53-technique-defaults.md) ruling 6 runs the march: at ambient occlusion's half size, not in the lit shader. Built: contact shadows are on main (`60fe5ef01`). The owner's review is pending. Date: 2026-10-11. Task: M2-F12.
 
 Summary: The main directional light draws contact shadows: short shadows found in the camera's depth, which close the lit gap that the cascades leave where small objects meet the ground. Ambient occlusion's half-size horizon step marches them toward the sun through its depth copy, and its denoise blurs them by depth and normal into the fourth channel of its screen texture. The opaque pass reads that channel with the four reads it already makes for ambient occlusion, and multiplies the sun's light by it. `shadow: { contactDistance }` sets the reach (0.3 m by default), and the `contactShadowSteps` quality setting sets the steps: 8 on High, 16 on Ultra, 4 on WebGL2's Medium, none on Low.
 

@@ -1,8 +1,8 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026). Date: 2026-09-30.
 
-Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start. On 9 October 2026 each GPU path's renderers moved into files of their own. A page downloads those of its own path only. Every thread mode's start fell by 8.5 to 9.2 KB after Brotli. The largest is now 129.9 KB ([One GPU path's renderers](#one-gpu-paths-renderers-for-each-page-9-october-2026)).
+Summary: The engine's JavaScript that a page downloads at its start may take 165 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
 
 ## Question
 
@@ -509,20 +509,89 @@ The renderers draw the same commands with the same shaders. `bun run bench:gpu-c
 - The offline file list (`null3d-files.json`, D-102) puts both paths' renderers and the shared file in `start`. So a cached game also starts offline on the path that its first visit did not draw with. A unit test of `offline.ts` checks the list, and `bun run test:packages` starts the fresh project offline on both paths. A page that switches paths, such as a benchmark page, runs each path in a load of its own. It downloads each path's renderers the first time it draws with that path.
 - An engine test checks that a page downloads its own GPU path's renderers and not the other path's. It is the test "a page that uses no feature that loads on first use downloads none of their files".
 
-## The start's figures raised on 14 October 2026
+## The figures raised on 14 and 15 October 2026
 
-The owner raised the start's budget on 14 October 2026, in answer to the
-coordinator's question. The engine's JavaScript that a page downloads at its
-start may now take 145 KB after Brotli, 464 KB after gzip and 3,448 KB
-uncompressed, in each thread mode on each GPU path.
+Status: decided by the owner on 14 October 2026 in two raises on the same day, and raised a third time on 15 October 2026. Date: 2026-10-15.
 
-The M2 features had reached the old 140 KB limit. By 14 October main itself was a
-few bytes over, and four finished features could not land: SSR (899 B over with
-its first-use reflections bit), reflection probes (1,211 B), auto exposure
-(701 B) and lit fog (515 B). Each helper had trimmed its own start code in turn
-(R6, R31, EX29, R10), which turned the limit into a lottery: each engine landing
-risked a red build. The 5 KB raise gives room for those features and for the
-features that follow, without a redesign of each one.
+### The first raise: the start to 145 KB
 
-The figures keep the old proportions: gzip and uncompressed rise with Brotli
-(448 to 464 KB, 3,328 to 3,448 KB). The owner set them on 14 October 2026.
+The owner raised the start's Brotli budget from 140 KB to 145 KB on 14 October 2026, in answer to the coordinator's question. That question asked for about 145 KB after Brotli. It named no gzip or uncompressed figure.
+
+The M2 features had reached the old 140 KB limit. By 14 October main itself was a few bytes over. Four finished features could not land: SSR (899 B over with its first-use reflections bit), reflection probes (1,211 B), auto exposure (701 B) and lit fog (515 B). Each helper had trimmed its own start code in turn (R6, R31, EX29, R10). That turned the limit into a lottery, where each engine landing risked a red build. The 5 KB raise gave room for those features and for the features that follow, without a redesign of each one.
+
+The same change (`b521bc7b1`) also raised the start's other two budgets, to keep the old proportions: gzip from 448 KB to 464 KB, and uncompressed from 3,328 KB to 3,448 KB. The owner gave those two figures without written words. On 15 October 2026 the owner ruled that the raise was "approved in chat, words not kept", and returned both to 448 KB and 3,328 KB. The Brotli figures stand; the ruling raised the start's Brotli figure a third time, below.
+
+### The second raise: the start to 160 KB and first-use shader files to 48 KB
+
+Later the same day the raised start budget was over again, and the first-use shader files were over their budget too. The owner raised two Brotli figures: the start from 145 KB to 160 KB, and each first-use shader file from 32 KB to 48 KB. The owner gave these figures in the chat, and on 15 October 2026 ruled that the record should say the words were not kept. Both figures stand. The gzip and uncompressed figures stayed at first, because both still passed with headroom.
+
+#### What the build measured
+
+A fresh worktree at main `cfd44ef44`, after `bun install`, and plain `bun run build`, which exited 1. The budget checks are absolute, so the base commit does not matter.
+
+Five start modes were over, all WebGL2. Every WebGPU mode passed.
+
+| Mode | Brotli | Share of 145 KB |
+| --- | ---: | ---: |
+| pipelined, WebGL2 | 162,305 B | 109.3% |
+| low latency, WebGL2 | 159,271 B | 107.3% |
+| drawing on the main thread, WebGL2 | 158,870 B | 107.0% |
+| sketch on the main thread, WebGL2 | 155,837 B | 105.0% |
+| single-threaded, WebGL2 | 150,701 B | 101.5% |
+
+392 of the 657 first-use shader files were over 32 KB, from 33,748 to 43,029 bytes. All 392 were GLSL. No WGSL first-use file was over, and the largest was about 21 KB. The largest files were the sets of several features, such as `js/shaders-area-lights-and-morph-and-skinning-and-transmission-glsl-draw-index-tone-map-half.js` at 43,029 bytes. The gzip and uncompressed columns passed everywhere: the largest first-use file was 171.9 KB of 320 KB after gzip, and 1,005.1 KB of 1,536 KB uncompressed.
+
+#### The cause
+
+The two overruns share one cause: the GLSL shader text is three to four times the WGSL text, because naga writes each stage's full text into every program.
+
+- The start. `budgetProblems` scores each thread mode as its other parts plus the largest start shader module. The other parts are 116 to 119 KB in every mode. The WGSL start module (`js/shaders-wgsl*.js`) is 25.8 to 27.4 KB after Brotli, and the GLSL one (`js/shaders-glsl*.js`) is 40.5 to 42.2 KB. That gap of about 15 KB is the whole overrun, and it is the same in each mode. So the start overrun is a WebGL2 shader-text problem, not general growth: pipelined WebGPU sat at 144.5 KB, 99.7% of the budget before this raise.
+- The first-use files. A first-use file holds every build of one feature set, for one target and one value of the bits that a device fixes (`first_use_files` in `crates/null3d-shaders/src/typescript.rs`). `[first_use.*]` then named 31 features. D-56 set the limit at 32 KB, when the largest file was about 20 KB. Since then, area lights, transmission, weighted blending, row values, level-of-detail fade, coverage and hash each added a permutation to the mesh templates. The 32 KB figure had become smaller than a start shader file itself, about 42 KB, so its anchor no longer held.
+- The combined files are not the cause. The change that gives a build of several features a file of its own separates builds, and does not merge them. Of the 392 files over, 320 are such combined files. The other 72 are single-feature files that predate that change: `skinning`, `morph`, `area-lights`, `row-values`, `lod-fade`, `coverage`, `hash`, `weighted` and `transmission`.
+
+#### The decision
+
+| Budget | Before | Worst measured | After |
+| --- | ---: | ---: | ---: |
+| The start, after Brotli | 145 KB | 162,305 B | 160 KB |
+| Each first-use shader file, after Brotli | 32 KB | 43,029 B | 48 KB |
+| The start, after gzip | 464 KB | 279.6 KB | 448 KB |
+| The start, uncompressed | 3,448 KB | 1,326.1 KB | 3,328 KB |
+| A first-use shader file, after gzip | 320 KB | 171.9 KB | 320 KB |
+| A first-use shader file, uncompressed | 1,536 KB | 1,005.1 KB | 1,536 KB |
+
+`START_BUDGET` and `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` hold the figures. At the new figures the worst start mode was 158.5 KB, with 1.5 KB to spare, and the worst first-use file 42.0 KB, with 6 KB to spare. The gzip and uncompressed figures returned to 448 KB and 3,328 KB on 15 October 2026, as the first raise above records.
+
+#### Why not shrink the files
+
+Splitting each first-use module further, by shader template, would put each file under 32 KB. But it only moves bytes between files: a page still downloads the same builds, in more requests. It also needs a new loader key, since the tables are keyed by feature set, and it does nothing for the start.
+
+The start can shrink only by moving builds that a page draws with out of the start module and into a first-use file. That delays the first drawn frame for ordinary materials, which D-56 forbids: no frame draws a feature half done. So the start budget rose instead.
+
+### The third raise, 15 October 2026: the start to 165 KB
+
+Main's own build was over the budget. The pipelined WebGL2 start measured 162.2 KB after Brotli against 160 KB, so a landing failed the size check on main's bundle rather than on its own change: showcase-hud-1, cargo-isolation-1 and ex32-probes-1 each stopped there on 15 October 2026. The WebGPU start measured 147.1 KB and passed. The raise of 14 October had left less than a day of headroom, and the WebGL2 shader text is what filled it, as the section above predicted.
+
+The owner raised the start's Brotli budget from 160 KB to 165 KB, which leaves 2.8 KB of headroom, and chose that figure over trimming the start at once. The owner recorded the trim as a later task: "we can trim later on". The same day's earlier ruling returned the gzip and uncompressed figures to 448 KB and 3,328 KB, which the raise of 14 October had changed with no written words.
+
+### The first-use files raised, 15 October 2026: 48 KB to 49 KB
+
+The screen-space reflections work was over budget on two of its device modules rather than on the
+start: 49,684 and 49,567 bytes after Brotli against 48 KB, so 532 and 415 bytes over. Both are GLSL
+combination builds of main's area-lights feature, and the reflections' lit code sits in every lit
+build. That is the same cause that filled the start budget before the raise above.
+
+The owner raised each first-use shader file's Brotli budget from 48 KB to 49 KB. That clears both
+files with about half a kilobyte to spare. The alternative was to move the reflections' lit code into
+a first-use module of its own, which the branch had recorded as D-134's reflections bit: it would
+bring both files under the old figure, at about 900 extra GLSL programs and a rebalance of the Safari
+shard guard. The owner chose the raise, as they did for the start, because half a kilobyte is not
+worth 900 programs.
+
+`FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the new figure. The gzip and
+uncompressed figures for a first-use file are unchanged at 320 KB and 1,536 KB.
+
+### The trend, and the task that tracks it
+
+The start budget rose from 140 KB to 145 KB in the morning and was over again within hours. Hours after the raise to 160 KB, the light probe grid's figures put the pipelined WebGL2 start at 159.6 KB, 99.8% of the new budget ([D-146](D-146-light-probe-grid.md)). Every raise so far went to the GLSL side, and the WebGL2 start module is the binding one. The next landing that adds a mesh-template permutation moves it again.
+

@@ -26,6 +26,7 @@ import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
+	ANTIALIAS_MSAA,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_KEEP_COPIES,
@@ -33,7 +34,7 @@ import {
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
 } from '../generated/core';
-import { FORMAT_CANVAS } from '../generated/gpu';
+import { FORMAT_CANVAS, PERMUTATION_DRAW_INDEX, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
@@ -60,6 +61,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsAsker,
 	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
@@ -102,10 +104,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
-	/** Sends a shader's builds that load on first use to the thread that draws. */
+	/** Sends a set of a shader's builds that load on first use to the thread that draws. */
 	sendBuilds: BuildsSender;
-	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
-	onAskBuilds(handler: (template: number) => void): void;
+	/** Answers each ask of the thread that draws for a set of a shader's builds. */
+	onAskBuilds(handler: BuildsAsker): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -302,6 +304,8 @@ export class SketchRunner {
 	private lodThreshold = 1;
 	private lodShadowFactor = 1;
 	private lodFade = true;
+	/** Asks the thread that draws for the shader files that the sketch will use. */
+	private readonly preloads: ShaderPreloads;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -422,6 +426,9 @@ export class SketchRunner {
 						sketch.maxTargetFps,
 					)
 				: undefined;
+		// Alpha to coverage fades a mask's edges only on targets with MSAA.
+		this.preloads = new ShaderPreloads(sketch.sendPreload);
+		this.preloads.setUsable('coverage', device.antialias === ANTIALIAS_MSAA);
 		const { governor } = this;
 		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
 		this.quality = new SketchQuality(
@@ -476,9 +483,10 @@ export class SketchRunner {
 			sketch.sendShader,
 			device.webgl2 ? 'glsl' : 'wgsl',
 			sketch.sendBuilds,
+			device.shaderBits & (PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP),
 		);
-		sketch.onAskBuilds((template) => templates.answer(template));
-		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
+		sketch.onAskBuilds((template, set) => templates.answer(template, set));
+		const materials = new Materials(this.core, templates, this.preloads);
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
@@ -800,6 +808,7 @@ export class SketchRunner {
 		this.lodThreshold = settings.lodThreshold;
 		this.lodShadowFactor = settings.lodShadowFactor;
 		this.lodFade = settings.lodFade;
+		this.preloads.setUsable('lod_fade', settings.lodFade);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
@@ -956,6 +965,7 @@ export class SketchRunner {
 		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
+		this.preloads.setUsable('coverage', device.effectsAntialias === ANTIALIAS_MSAA);
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)
 			this.report(coreFailure(glue, 'post.set'));
 		return true;

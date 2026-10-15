@@ -33,6 +33,9 @@ enable draw_index;
 #ifdef SAMPLE_MASK
 #import null3d::cutout::{MaskedFragment, masked_fragment}
 #endif
+#ifdef WEIGHTED
+#import null3d::weighted::{WeightedFragment, weighted_fragment}
+#endif
 
 #ifdef MAP
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
@@ -121,6 +124,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 @fragment
 #ifdef SAMPLE_MASK
 fn fs(in: VertexOut) -> MaskedFragment {
+#else ifdef WEIGHTED
+fn fs(in: VertexOut) -> WeightedFragment {
 #else
 fn fs(in: VertexOut) -> @location(0) vec4f {
 #endif
@@ -154,6 +159,8 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     return masked_fragment(vec4f(finished.rgb, alpha));
 #else ifdef ALPHA_COVERAGE
     return vec4f(finished.rgb, alpha);
+#else ifdef WEIGHTED
+    return weighted_fragment(fragment_color(m, finished.rgb, alpha), in.relative);
 #else
     return fragment_color(m, finished.rgb, alpha);
 #endif

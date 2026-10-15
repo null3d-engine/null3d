@@ -52,9 +52,9 @@ fn d_ggx(alpha: f32, n_dot_h: f32) -> f32 {
 /// includes the 1 / (4 n.l n.v) of the microfacet model.
 fn v_ggx_smith_correlated(alpha: f32, n_dot_l: f32, n_dot_v: f32) -> f32 {
     let a2 = alpha * alpha;
-    let gv = n_dot_l * sqrt(a2 + (1.0 - a2) * n_dot_v * n_dot_v);
-    let gl = n_dot_v * sqrt(a2 + (1.0 - a2) * n_dot_l * n_dot_l);
-    return 0.5 / max(gv + gl, null3d::math::EPSILON);
+    let lambda_v = n_dot_l * sqrt(a2 + (1.0 - a2) * n_dot_v * n_dot_v);
+    let lambda_l = n_dot_v * sqrt(a2 + (1.0 - a2) * n_dot_l * n_dot_l);
+    return 0.5 / max(lambda_v + lambda_l, null3d::math::EPSILON);
 }
 
 /// The GGX specular reflectance for one light, as three.js's `BRDF_GGX`: the GGX distribution,

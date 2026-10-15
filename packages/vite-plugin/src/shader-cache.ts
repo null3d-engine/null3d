@@ -1,12 +1,22 @@
 // A persistent cache of compiled shaders, so a project builds its shaders once. A shader compile
-// takes the CPU for most of a second, and every `vite build` and `vite dev` used to compile the
-// same WGSL again from nothing. The plugin keeps each result in `node_modules/.cache/null3d-shaders`
-// as the asset tool keeps its own results in `node_modules/.cache/null3d-assets`. A cache entry is
-// keyed by everything that decides the output: the WGSL, the variant spec that the compiler is
-// given, and the compiler's version. The version is the engine's version with the shader build's
-// own stamp, so an engine or compiler upgrade misses every entry. A changed source, spec or
-// compiler therefore misses, and the plugin never serves a wrong shader. Set
-// `NULL3D_NO_SHADER_CACHE=1`, or run Vite with `--force`, to ignore the cache.
+// takes the CPU for most of a second, and without the cache every `vite build` and `vite dev`
+// compiles the same WGSL again from nothing. The plugin keeps each result in
+// `node_modules/.cache/null3d-shaders`, as the asset tool keeps its own results in
+// `node_modules/.cache/null3d-assets`. A cache entry is keyed by everything that decides the
+// output: the WGSL, the path it came from, the variant spec that the compiler is given, and the
+// compiler's version. The version is the engine's version with the shader build's own stamp, so
+// an engine or compiler upgrade misses every entry. A changed source, spec or compiler therefore
+// misses, and the plugin never serves a wrong shader. Set `NULL3D_NO_CACHE=1`, or run Vite with
+// `--force`, to ignore the cache.
+//
+// A game project's cache is not one of the repository's own build caches: it lives in the project,
+// not under `~/.cache/null3d`, and a project that installs this package cannot load repository
+// tooling. So this module repeats the three rules that one module keeps for the repository's caches
+// in `tools/lib/build-cache.ts` (D-177): a write is atomic, any change to an input misses, and there
+// is one documented opt-out. The `hashOf` and `writeFileAtomic` helpers below mirror that module's,
+// and the opt-out names match its list. It takes no build lock: each entry is one atomic file, and
+// the compiler pool runs several compiles at once, so a lock would only serialize them. Its rules
+// for game developers are in docs/getting-started/install.md.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -24,17 +34,20 @@ import {
 /** The cache's folder in a project, beside the asset tool's cache. */
 export const SHADER_CACHE_FOLDER = 'null3d-shaders';
 
-/** The environment variable that turns the cache off, so a build compiles every shader again. */
+/** The canonical opt-out, the same name that turns off the repository's own build caches. */
+export const NO_CACHE = 'NULL3D_NO_CACHE';
+
+/** A second name that turns the cache off, as `NO_CACHE` does. */
 export const NO_SHADER_CACHE = 'NULL3D_NO_SHADER_CACHE';
+
+/** Every name that turns the cache off, as `tools/lib/build-cache.ts` lists them. */
+const NO_CACHE_NAMES = [NO_CACHE, 'NULL3D_NO_BUILD_CACHE', NO_SHADER_CACHE];
 
 /**
  * The shape of a cache entry. Bump it when the records of a compiled shader change, so an older
  * entry is never read with new meaning.
  */
 const FORMAT = 1;
-
-/** Hex digits of a key: enough that two of a project's shaders never share one. */
-const KEY_DIGITS = 32;
 
 /** The folder of the compiled shaders' cache in a project. */
 export function shaderCacheFolder(root: string): string {
@@ -43,7 +56,17 @@ export function shaderCacheFolder(root: string): string {
 
 /** True when the environment asks the build to ignore the cache. */
 export function shaderCacheOff(): boolean {
-	return process.env[NO_SHADER_CACHE] === '1';
+	return NO_CACHE_NAMES.some((name) => process.env[name] === '1');
+}
+
+/** A SHA-256 of the given values, in order, as `tools/lib/build-cache.ts`'s `hashOf` does. */
+function hashOf(...inputs: readonly (string | Buffer)[]): string {
+	const hash = createHash('sha256');
+	for (const input of inputs) {
+		hash.update(input);
+		hash.update('\0');
+	}
+	return hash.digest('hex');
 }
 
 /** The version of the installed engine, or `unknown` when the project does not install it. */
@@ -64,7 +87,7 @@ let stamp: string | undefined;
 function shaderBuildStamp(): string {
 	if (stamp === undefined) {
 		try {
-			stamp = createHash('sha256').update(readFileSync(SHADER_COMPILER_URL)).digest('hex');
+			stamp = hashOf(readFileSync(SHADER_COMPILER_URL));
 		} catch {
 			stamp = 'missing';
 		}
@@ -77,7 +100,7 @@ function shaderBuildStamp(): string {
  * when the engine or the compiler changes, so neither serves an old shader after an upgrade.
  */
 export function shaderCompilerVersion(root: string): string {
-	return `${FORMAT}:${engineVersion(root)}:${shaderBuildStamp()}`;
+	return `${engineVersion(root)}:${shaderBuildStamp()}`;
 }
 
 /** What a cache reads and writes: a compile's result, and its own record of whether it compiled. */
@@ -103,15 +126,16 @@ function readCached(file: string): unknown {
 }
 
 /**
- * Writes a result under its key, whole or not at all, so a stopped build leaves no half entry. A
- * cache that cannot be written is not a failure: the compile's result still stands.
+ * Writes an entry in one step, as `tools/lib/build-cache.ts`'s `writeFileAtomic` does, so a reader
+ * sees the whole old entry or the whole new one. A cache that cannot be written is not a failure:
+ * the compile's result still stands.
  */
 function writeCached(file: string, result: unknown): void {
 	try {
 		mkdirSync(dirname(file), { recursive: true });
-		const staging = `${file}.${process.pid}.tmp`;
-		writeFileSync(staging, JSON.stringify(result));
-		renameSync(staging, file);
+		const partial = `${file}.${process.pid}.partial`;
+		writeFileSync(partial, JSON.stringify(result));
+		renameSync(partial, file);
 	} catch {
 		// A read-only folder, a full disk: the build carries on without the cache.
 	}
@@ -153,13 +177,13 @@ export class ShaderCache implements ShaderCompiler {
 		return this.run('effect', effect, () => this.inner.effect(effect));
 	}
 
-	/** The key of a request: its kind and JSON, under the version that the compiler is. */
+	/**
+	 * The key of a request: the cache format, the compiler's version, the kind of compile and the
+	 * request itself, hashed as the repository's build caches hash their inputs.
+	 */
 	private key(kind: string, request: unknown): string {
 		this.stamp ??= this.options.version ?? shaderCompilerVersion(this.root());
-		return createHash('sha256')
-			.update(`${this.stamp}\n${kind}\n${JSON.stringify(request)}`)
-			.digest('hex')
-			.slice(0, KEY_DIGITS);
+		return hashOf(String(FORMAT), this.stamp, kind, JSON.stringify(request));
 	}
 
 	private async run<T>(kind: string, request: unknown, compile: () => Promise<T>): Promise<T> {

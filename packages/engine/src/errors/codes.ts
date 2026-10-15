@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take, and a material that lets light through refuses the mask and hash alpha modes.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -408,9 +408,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
 		since: '0.2',
 	},
 	E1422: {
@@ -427,6 +427,14 @@ const DOCS = {
 			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
 		example:
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
+		since: '0.2',
+	},
+	E1424: {
+		title: 'Custom material builds not downloaded',
+		cause:
+			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+		example:
+			'E1424: the builds of a custom material did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
 		since: '0.2',
 	},
 	E1425: {

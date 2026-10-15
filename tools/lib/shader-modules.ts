@@ -13,19 +13,18 @@
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+	acquireLock,
+	cacheDir,
+	cacheOff,
+	cargoEnv,
+	copyFolderAtomic,
+	filesIn,
+	hashFiles,
+	writeFileAtomic,
+} from './build-cache';
 
 /** The folder that the shader build writes its modules into. */
 export const MODULE_DIR = 'packages/engine/src/generated';
@@ -44,23 +43,19 @@ export const RECORD = 'target/shader-modules.json';
 /**
  * The folder that holds the modules of a build, keyed by the hash of its inputs, shared by every
  * checkout on the machine. A checkout whose inputs match a folder there copies its modules instead of
- * building them, which a fresh worktree needs. Set `NULL3D_SHADER_CACHE` to another folder.
+ * building them, which a fresh worktree needs. It is the `shader-modules` cache under the build
+ * cache's one root; `NULL3D_SHADER_CACHE` names this folder alone, as before.
  */
-export const CACHE_DIR =
-	process.env.NULL3D_SHADER_CACHE ?? join(homedir(), '.cache', 'null3d', 'shader-modules');
+export const CACHE_DIR = cacheDir('shader-modules', process.env.NULL3D_SHADER_CACHE);
 /**
  * The folder of the per-entry shader cache, shared by every checkout on the machine. It holds each
  * entry's compiled output under a folder named by the compiler's stamp, so a change to one shader
  * compiles only that shader and a change to a library module compiles only the entries that import
- * it. It sits beside the modules' cache, and `NULL3D_SHADER_CACHE` moves both.
+ * it. It is the `shader-cache` folder under the build cache's one root.
  */
-export const ENTRY_CACHE_DIR = join(dirname(CACHE_DIR), 'shader-cache');
-/** The environment variable that turns the caches off, as the Vite plugin's cache names it. */
-const NO_SHADER_CACHE = 'NULL3D_NO_SHADER_CACHE';
+export const ENTRY_CACHE_DIR = cacheDir('shader-cache');
 /** The lock file, which holds the process ID of the process that builds. */
 const LOCK = 'target/shader-modules.lock';
-/** How often a process that waits for the lock checks it, in milliseconds. */
-const LOCK_POLL_MS = 200;
 
 interface ModuleRecord {
 	inputs: string;
@@ -77,9 +72,47 @@ export function isShaderModule(name: string): boolean {
 		name === 'shaders.ts' ||
 		name === 'shader-features.ts' ||
 		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
-		/^shaders-(wgsl|glsl)-combos\.ts$/.test(name) ||
+		// A target's table of builds that need several features, one file for each value of the
+		// half-precision bit: `shaders-wgsl-combos` and `shaders-wgsl-combos-half`, and the same for
+		// GLSL. The suffix names the bit value, and a later bit adds another.
+		/^shaders-(wgsl|glsl)-combos(-[a-z0-9-]+)*\.ts$/.test(name) ||
 		/^shaders-[a-z0-9-]+\.js$/.test(name)
 	);
+}
+
+/**
+ * The modules that the main module `shaders.ts` in `folder` loads, from the relative names of its
+ * imports and the device module files its loader tables name. A set that lacks one of them is not the
+ * set a build wrote, so it must be a miss and never a silent "up to date".
+ */
+function requiredModules(folder: string): string[] {
+	const file = join(folder, 'shaders.ts');
+	if (!existsSync(file)) return [];
+	const text = readFileSync(file, 'utf8');
+	const names = new Set<string>();
+	for (const match of text.matchAll(/\bfrom\s*'\.\/([A-Za-z0-9_.-]+)'/g)) names.add(match[1] ?? '');
+	for (const match of text.matchAll(/\bimport\('\.\/([A-Za-z0-9_.-]+)'\)/g))
+		names.add(match[1] ?? '');
+	// A device module is named with its extension, as `new URL('./shaders-ao-glsl.js', import.meta.url)`.
+	for (const match of text.matchAll(/'\.\/([A-Za-z0-9_.-]+\.[jt]s)'/g)) names.add(match[1] ?? '');
+	return [...names].filter((name) => name !== '').sort();
+}
+
+/**
+ * True when `folder` holds `shaders.ts` and every module it loads. A build writes one module for each
+ * feature, each target and each value of the bits a device fixes, so a set that misses one is a
+ * partial set that must never be used.
+ */
+export function folderIsComplete(folder: string): boolean {
+	if (!existsSync(join(folder, 'shaders.ts'))) return false;
+	for (const name of requiredModules(folder))
+		if (
+			!existsSync(join(folder, name)) &&
+			!existsSync(join(folder, `${name}.ts`)) &&
+			!existsSync(join(folder, `${name}.js`))
+		)
+			return false;
+	return true;
 }
 
 /**
@@ -108,17 +141,6 @@ function filesBelow(root: string, folder: string, files: string[]): void {
 	}
 }
 
-/** A hash of each file's path and contents, in the order given. */
-function hashFiles(root: string, files: readonly string[]): string {
-	const hash = createHash('sha256');
-	for (const file of files) {
-		hash.update(`${file}\0`);
-		hash.update(readFileSync(join(root, file)));
-		hash.update('\0');
-	}
-	return hash.digest('hex');
-}
-
 /**
  * Every input of the build of `crate`, in order: the files of it and its path dependencies, and the
  * workspace's Cargo files. The shader build's inputs by default.
@@ -139,7 +161,7 @@ export function inputHash(root: string, crate = SHADER_CRATE): string {
  * compiles again.
  */
 export function shaderCacheOff(): boolean {
-	return process.env[NO_SHADER_CACHE] === '1';
+	return cacheOff();
 }
 
 /**
@@ -158,11 +180,15 @@ export function compilerStamp(root: string): string {
 	return hashFiles(root, compilerFiles(root));
 }
 
-/** A hash of the modules on disk, or null when the main module is missing. */
+/**
+ * A hash of the modules on disk, or null when the set is incomplete: the main module is missing, or a
+ * module that it loads is. A partial set is never fresh, so the build runs again rather than reporting
+ * an incomplete set as up to date.
+ */
 export function moduleHash(root: string): string | null {
 	const folder = join(root, MODULE_DIR);
-	const names = existsSync(folder) ? readdirSync(folder).filter(isShaderModule).sort() : [];
-	if (!names.includes('shaders.ts')) return null;
+	if (!folderIsComplete(folder)) return null;
+	const names = readdirSync(folder).filter(isShaderModule).sort();
 	return hashFiles(
 		root,
 		names.map((name) => `${MODULE_DIR}/${name}`),
@@ -183,41 +209,16 @@ function isFresh(root: string, inputs: string): boolean {
 	return record?.inputs === inputs && record.modules === moduleHash(root);
 }
 
-function sleep(ms: number): void {
-	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function isRunning(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (e) {
-		return (e as NodeJS.ErrnoException).code === 'EPERM';
-	}
-}
-
 /**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
  * holder, and takes over a lock whose holder has stopped.
  */
 function withLock(root: string, work: () => void): void {
-	const lock = join(root, LOCK);
-	mkdirSync(dirname(lock), { recursive: true });
-	for (;;) {
-		try {
-			writeFileSync(lock, String(process.pid), { flag: 'wx' });
-			break;
-		} catch (e) {
-			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-		}
-		const holder = Number.parseInt(readFileSync(lock, 'utf8'), 10);
-		if (Number.isInteger(holder) && isRunning(holder)) sleep(LOCK_POLL_MS);
-		else rmSync(lock, { force: true });
-	}
+	const release = acquireLock(join(root, LOCK));
 	try {
 		work();
 	} finally {
-		rmSync(lock, { force: true });
+		release();
 	}
 }
 
@@ -234,6 +235,7 @@ function runShaderBuild(root: string): void {
 	}
 	const result = spawnSync('cargo', [...args, ...buildArgs], {
 		cwd: root,
+		env: { ...process.env, ...cargoEnv() },
 		stdio: ['ignore', 2, 2],
 	});
 	if (result.error)
@@ -251,10 +253,7 @@ function moduleNames(root: string): string[] {
 
 /** Writes the record of a build, in place. */
 function writeRecord(root: string, record: ModuleRecord): void {
-	const file = join(root, RECORD);
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(`${file}.${process.pid}`, `${JSON.stringify(record, null, '\t')}\n`);
-	renameSync(`${file}.${process.pid}`, file);
+	writeFileAtomic(join(root, RECORD), `${JSON.stringify(record, null, '\t')}\n`);
 }
 
 /**
@@ -263,30 +262,32 @@ function writeRecord(root: string, record: ModuleRecord): void {
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const cache = join(CACHE_DIR, inputs);
-	const names = existsSync(cache) ? readdirSync(cache).filter(isShaderModule).sort() : [];
-	if (!names.includes('shaders.ts')) return false;
+	// A partial entry is a miss. An older entry, written before the module set was complete, must
+	// never be handed back as the set a build would produce.
+	if (!folderIsComplete(cache)) return false;
+	const names = filesIn(cache, isShaderModule);
 	const folder = join(root, MODULE_DIR);
 	mkdirSync(folder, { recursive: true });
 	const wanted = new Set(names);
 	for (const name of moduleNames(root))
 		if (!wanted.has(name)) rmSync(join(folder, name), { force: true });
 	for (const name of names) copyFileSync(join(cache, name), join(folder, name));
-	writeRecord(root, { inputs, modules: moduleHash(root) ?? '' });
+	const modules = moduleHash(root);
+	if (modules === null) return false;
+	writeRecord(root, { inputs, modules });
 	console.error(`the shader modules came from the shared cache (${CACHE_DIR})`);
 	return true;
 }
 
 /** Copies the modules on disk into the shared cache, so another checkout need not build them. */
 function saveToCache(root: string, inputs: string): void {
-	try {
-		const cache = join(CACHE_DIR, inputs);
-		rmSync(cache, { recursive: true, force: true });
-		mkdirSync(cache, { recursive: true });
-		for (const name of moduleNames(root))
-			copyFileSync(join(root, MODULE_DIR, name), join(cache, name));
-	} catch {
-		// A cache that cannot be written costs the next checkout its build, and nothing else.
-	}
+	// Only a complete set is stored: a partial set, from a build that wrote less than it declared,
+	// would otherwise be handed to every checkout.
+	if (!folderIsComplete(join(root, MODULE_DIR))) return;
+	copyFolderAtomic(
+		join(CACHE_DIR, inputs),
+		moduleNames(root).map((name) => [name, join(root, MODULE_DIR, name)] as const),
+	);
 }
 
 /**
@@ -303,7 +304,12 @@ export function ensureShaderModules(root: string): boolean {
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;
 		runShaderBuild(root);
-		writeRecord(root, { inputs, modules: moduleHash(root) ?? '' });
+		const modules = moduleHash(root);
+		if (modules === null)
+			throw new Error(
+				'the shader build wrote an incomplete set: a module that shaders.ts loads is missing',
+			);
+		writeRecord(root, { inputs, modules });
 		saveToCache(root, inputs);
 		built = true;
 	});

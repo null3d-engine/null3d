@@ -83,7 +83,7 @@ import {
 	ratesParted,
 } from '../pages/lib/overload.ts';
 import { ROOM_KEPT, ROOM_LOST_ONCE } from '../pages/lib/room.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { glslProgramsOf, inShaderSet, type ShaderSet } from '../pages/lib/shader-list.ts';
 import {
 	frameSaving,
 	pathTiming,
@@ -452,8 +452,9 @@ const SHADERS_BASE_SECONDS = 30;
  */
 const SHADERS_SECONDS_PER_PROGRAM = 0.5;
 
-/** Every GLSL program of the engine, which the parts of the shaders page share. */
-const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
+/** The GLSL programs of the engine, by set, which the parts of the shaders page share. */
+const ALL_PROGRAMS = glslProgramsOf(await everyShader()).map(([name]) => name);
+const programsIn = (set: ShaderSet) => ALL_PROGRAMS.filter((name) => inShaderSet(name, set)).length;
 
 /**
  * The most GLSL programs that one part of the shaders page compiles. Each part is a page of its
@@ -462,12 +463,31 @@ const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
  */
 const SHADER_PROGRAMS_PER_PART = 400;
 
+/** The parts of a set of programs: enough that none holds more than that many programs. */
+const partsOf = (set: ShaderSet) => Math.ceil(programsIn(set) / SHADER_PROGRAMS_PER_PART);
+
 /**
- * The parts of the shaders page: enough that each holds about that many programs. A build that
- * several device modules hold counts in each part that downloads one of them, so a part may hold
- * somewhat more.
+ * Which builds the checks plan compiles. `all` compiles every one: the builds without the coat and
+ * sheen bit in their parts, then those with it in theirs. `sampled` compiles the builds without it
+ * and one part of a sample of those with it, which keeps Safari's shards on CI's few Macs short
+ * (D-147).
  */
-export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
+export const SHADER_PLANS = ['all', 'sampled'] as const;
+export type ShaderPlan = (typeof SHADER_PLANS)[number];
+
+/** The sets of the shaders page that each kind of plan compiles, each in its parts. */
+const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
+	all: ['base', 'coat'],
+	sampled: ['base', 'coat-sample'],
+};
+
+/**
+ * The parts of every build of the shaders page: enough that each holds about that many programs. A
+ * build that several device modules hold counts in each part that downloads one of them, so a part
+ * may hold somewhat more. Each set's parts of the checks plan number by its own programs, as
+ * [`partsOf`] gives, so this counts only the builds of the shaders page in one module.
+ */
+export const SHADER_PARTS = Math.ceil(ALL_PROGRAMS.length / SHADER_PROGRAMS_PER_PART);
 
 /**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
@@ -476,23 +496,32 @@ export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
  * long, up to a cap. A page that stops still fails, with the last step it noted.
  */
 export const SHADERS_PAGE_SECONDS = Math.ceil(
-	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * Math.ceil(GLSL_PROGRAMS / SHADER_PARTS),
+	SHADERS_BASE_SECONDS +
+		SHADERS_SECONDS_PER_PROGRAM *
+			Math.max(
+				...(['base', 'coat', 'coat-sample'] as const).map((set) =>
+					Math.ceil(programsIn(set) / partsOf(set)),
+				),
+			),
 );
 
-/** The checks plan's item for one part of the shaders page. */
-const shaderPageId = (part: number) => `shaders-${part}`;
+/** The checks plan's item for one part of one set of the shaders page. */
+const shaderPageId = (set: ShaderSet, part: number) =>
+	set === 'base' ? `shaders-${part}` : `shaders-${set}-${part}`;
 
-/** The parts of the shaders page, each with its share of the programs and modules. */
-const shaderPages = (): PlanItem<Check>[] =>
-	Array.from({ length: SHADER_PARTS }, (_, i) =>
-		pageItem(
-			shaderPageId(i + 1),
-			'shaders',
-			{ kind: 'shaders' },
-			{
-				switches: [`part=${i + 1}`, `parts=${SHADER_PARTS}`],
-				timeoutSeconds: SHADERS_PAGE_SECONDS,
-			},
+/** The parts of the shaders page that a plan compiles, each with its share of its set's builds. */
+const shaderPages = (plan: ShaderPlan): PlanItem<Check>[] =>
+	SHADER_PLAN_SETS[plan].flatMap((set) =>
+		Array.from({ length: partsOf(set) }, (_, i) =>
+			pageItem(
+				shaderPageId(set, i + 1),
+				'shaders',
+				{ kind: 'shaders' },
+				{
+					switches: [`part=${i + 1}`, `parts=${partsOf(set)}`, `set=${set}`],
+					timeoutSeconds: SHADERS_PAGE_SECONDS,
+				},
+			),
 		),
 	);
 
@@ -512,11 +541,11 @@ const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
  * mode. The capabilities page loads again last, so its extension answers can be compared across
  * loads.
  */
-export function checksPlan(): PlanItem<Check>[] {
+export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Check>[] {
 	return [
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
-		...shaderPages(),
+		...shaderPages(shaders),
 		...TIERS.map((tier) =>
 			pageItem(
 				`shader-library-${tier}`,
@@ -775,7 +804,8 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
  * in frames, as the runner page runs every page. New GPU tiers and thread modes join by the same
  * rules.
  */
-export const smokePlan = (): PlanItem<Check>[] => checksPlan().filter(inSmokePlan);
+export const smokePlan = (): PlanItem<Check>[] =>
+	checksPlan({ shaders: 'sampled' }).filter(inSmokePlan);
 
 /** The name of the parity plan's item for one scene's hold page of one kind. */
 const parityItemId = (scene: BenchScene, kind: string) => `parity-${scene}-${kind}`;
@@ -843,6 +873,8 @@ export interface PlanSettings {
 	seconds?: number;
 	/** The soak plan's minutes of each soak, or undefined for its own number. */
 	minutes?: number;
+	/** Which builds the checks plan's shaders page compiles, or undefined for every one. */
+	shaders?: ShaderPlan;
 }
 
 /** The name of a visual check's folder of frames in a run, and of its figures in the summary. */
@@ -1913,10 +1945,14 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
  * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
  * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
- * counts at their mean. The WebGPU pages of the same names skip there.
+ * counts at their mean. A part with a set's own share of the programs counts by that share: the
+ * sampled coat page compiles about 190 programs against a base part's 380, and it runs after the
+ * base parts, so it counts at about 15 seconds, half a later part's time. The WebGPU pages of the
+ * same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
-	[/^shaders-\d+$/, 48],
+	[/^shaders-coat-sample-/, 15],
+	[/^shaders-/, 48],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
 	[/^image-demo-creek-webgl2-/, 22],

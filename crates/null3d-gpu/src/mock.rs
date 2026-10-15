@@ -8,7 +8,7 @@ use crate::caps::{
 };
 use crate::drawlist::{
     Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
-    state_flags, texture_usage, upload_flags, vertex, view,
+    state_flags, template, texture_usage, upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -80,17 +80,20 @@ struct View {
 struct Pass {
     width: u32,
     height: u32,
-    targets: [Option<u32>; 3],
+    targets: [Option<u32>; 4],
     formats: Formats,
 }
 
-/// The color format, the depth format (`NONE` for none) and the sample count of a render pass's
-/// targets, which a pipeline or a bundle that draws in it must share.
+/// The color format, the depth format (`NONE` for none), the sample count and the second color
+/// format (`NONE` for none) of a render pass's targets, which a pipeline or a bundle that draws in
+/// it must share. Only the weighted layer's pipelines draw into a second color target, of
+/// `format::R16_FLOAT` (`template::draws_two_targets`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Formats {
     color: u32,
     depth: u32,
     samples: u32,
+    second: u32,
 }
 
 /// A render target of a pass: the texture it draws into, and what the pass checks it against.
@@ -834,6 +837,23 @@ impl MockBackend {
             }
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
+        let second = match o.get(9) {
+            Some(&id) => Some(self.target(op, id)?),
+            None => None,
+        };
+        if let Some(second) = second {
+            let Some(color) = color else {
+                return Err(invalid(op, "a second color target needs a first"));
+            };
+            check(
+                !format::is_depth(second.format)
+                    && second.samples == 1
+                    && color.samples == 1
+                    && (second.width, second.height) == (color.width, color.height),
+                op,
+                "a second color target has a color format, one sample and the first target's size",
+            )?;
+        }
         check(
             color.is_some() || depth.is_some(),
             op,
@@ -887,7 +907,7 @@ impl MockBackend {
                 "the color and depth targets have one size",
             )?;
         }
-        let targets = [color, resolve, depth].map(|target| target.and_then(|t| t.texture));
+        let targets = [color, resolve, depth, second].map(|target| target.and_then(|t| t.texture));
         for texture in targets.into_iter().flatten() {
             self.use_resource(Resource::Texture(texture));
         }
@@ -900,6 +920,7 @@ impl MockBackend {
                 color: color.map_or(format::NONE, |t| t.format),
                 depth: depth.map_or(format::NONE, |t| t.format),
                 samples: size.samples,
+                second: second.map_or(format::NONE, |t| t.format),
             },
         });
         self.pipeline_set = false;
@@ -1048,6 +1069,11 @@ impl MockBackend {
                         color: o[3],
                         depth: o[4],
                         samples: o[5],
+                        second: if template::draws_two_targets(o[1], o[2]) {
+                            format::R16_FLOAT
+                        } else {
+                            format::NONE
+                        },
                     },
                 );
             }
@@ -1063,6 +1089,7 @@ impl MockBackend {
                     color: o[1],
                     depth: o[2],
                     samples: o[3],
+                    second: format::NONE,
                 });
                 self.pipeline_set = false;
                 self.vertex_buffer_set = false;
