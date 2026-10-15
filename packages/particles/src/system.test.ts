@@ -209,21 +209,26 @@ describe('long runs', () => {
 			return s.system.time - (n + 1) / rate;
 		};
 		let moving = 0;
+		let rewrote = 0;
 		for (let k = 0; k < 2400; k++) {
+			const born = emitted();
 			s.system.update(0.5);
 			const { frame, writes } = s.commits.at(-1) as { frame: number[]; writes: number };
 			const shifting = (frame[3] as number) !== 0;
-			if (shifting) {
-				moving++;
-				// No frame rewrites every record: a share of them, and the frame's births.
-				expect(writes).toBeLessThanOrEqual(16_384 + rate);
-			}
-			if (shifting || k % 100 === 0)
+			if (shifting) moving++;
+			// The writes of a frame are its births and the records the move rewrites.
+			const rewrites = writes - (emitted() - born);
+			expect(rewrites).toBeLessThanOrEqual(16_384);
+			if (rewrites > 0) rewrote++;
+			if (rewrites > 0 || shifting || k % 100 === 0)
 				for (let i = 0; i < s.records.length; i += 97)
 					expect(gpuAge(frame, s.records[i] as number[], i)).toBeCloseTo(age(i), 2);
 		}
-		// 1,200 seconds pass one move, which takes three frames for 40,000 records.
-		expect(moving).toBe(3);
+		// 1,200 seconds pass one move. It rewrites 40,000 records over three updates; the last of
+		// them has finished by the time its values are written, so two updates tell the shader
+		// which records still count from the old base.
+		expect(rewrote).toBe(3);
+		expect(moving).toBe(2);
 		const last = s.commits.at(-1)?.frame as number[];
 		expect(last[3]).toBe(0);
 		expect(last[0] as number).toBeLessThan(1024);
