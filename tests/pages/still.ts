@@ -1,5 +1,5 @@
 // Starts the engine live with the anti-aliasing tests' edges scene, which holds still, on the GPU
-// tier that the switches ask for, with the still-camera accumulation on (?still=on). The view
+// tier that the switches ask for, with the still-camera accumulation on (?still-camera=on). The view
 // blends its frames and then rests: the thread that draws takes frames without drawing them, while
 // the sketch keeps stepping. The page reports the frames until the view rested, then moves the box
 // once and reports whether the next frames drew and whether the view rested again. With ?image it

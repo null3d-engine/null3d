@@ -352,7 +352,7 @@ post.set({ toneMapping: reinhard });
 
 ## Still views
 
-A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines and automatic exposure keep a view drawing every frame, as [the post-processing chain](../concepts/post-processing.md#still-camera-accumulation) explains. `createEngine({ still: false })` and the page switch `?still=off` turn it off.
+A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines and automatic exposure keep a view drawing every frame, as [the post-processing chain](../concepts/post-processing.md#still-camera-accumulation) explains. `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
 
 ## Errors
 

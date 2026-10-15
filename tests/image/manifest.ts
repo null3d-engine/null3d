@@ -1160,7 +1160,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'still',
 		page: 'tests/pages/still.html',
 		size: [320, 180],
-		switches: ['still=on', 'image'],
+		switches: ['still-camera=on', 'image'],
 		expect: { rested: true },
 		timeoutSeconds: 60,
 	},

@@ -92,8 +92,8 @@ The measurements:
   8-bit path. Their pictures change on the GPU alone, or the blend could not average them.
 - The thread that draws takes a resting frame but submits nothing, and the sketch keeps stepping,
   so it sees the change that ends the rest. The first frame after a rest records no frame interval.
-- Test and benchmark pages default to `?still=off` (`tests/pages/lib/result.ts`): their captures,
-  frame counts and timings assume that every frame draws. The still page asks for `?still=on`.
+- Test and benchmark pages default to `?still-camera=off` (`tests/pages/lib/result.ts`): their captures,
+  frame counts and timings assume that every frame draws. The still page asks for `?still-camera=on`.
 
 ## Consequences
 
