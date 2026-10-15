@@ -46,7 +46,9 @@
 // boxes levels of detail, so each frame picks a level for every row, and fades rows between two.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
+// turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
+// S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
+// adds two hemisphere lights to S1,
 // one of them tilted, and changes their intensities every frame. `--area-lights` adds eight
 // rectangle lights, two with images, and four tube lights to S1, which circle the swarm and change
 // their intensities every frame. `--setters` calls, every frame, each setter that a sketch may
@@ -615,6 +617,8 @@ async function main(): Promise<void> {
 		if (levels && scene !== 's1') throw new Error('--levels gives the boxes of S1 levels only');
 		const environment = args.includes('--environment') ? '&environment' : '';
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
+		const probes = args.includes('--probes') ? '&probes' : '';
+		if (probes && scene !== 's1') throw new Error('--probes sets a light probe grid on S1 only');
 		const hemisphere = args.includes('--hemisphere') ? '&hemisphere' : '';
 		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
 		const areaLights = args.includes('--area-lights') ? '&areaLights' : '';
@@ -655,7 +659,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${probes}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${weighted}${coatSheen}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
