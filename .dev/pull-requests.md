@@ -206,28 +206,28 @@ Each push to main runs every job, on the pushed commit ([D-157](decisions/D-157-
 
 | Event | Jobs |
 | --- | --- |
-| Draft pull request | The quick checks: `build`, `docs-and-tools`, `rust-lint`, the two parts of `rust-tests`, `size-base`, `wasm-checks`, `shader-compiler` and `packages` |
-| Docs-only pull request | `build` and `docs-and-tools`, and `skill-sketches` when the pull request changes the skills' or the cookbook's Markdown and is no draft ([Docs-only pull requests](#docs-only-pull-requests)) |
-| Pull request ready for review: opened, pushed, reopened, or marked ready | Every job: the quick checks, the 7 `browser` shards and the job of the tests that run alone, the 2 `bench` shards, and the `real-browsers` shards in Safari and Firefox |
+| Draft pull request, which no branch raises now | The quick checks: `build`, `docs-and-tools`, `rust-lint`, the two parts of `rust-tests`, `size-base`, `wasm-checks`, `shader-compiler` and `packages` |
+| Docs-only pull request, which no branch raises now | `build` and `docs-and-tools`, and `skill-sketches` when the change touches the skills' or the cookbook's Markdown ([The docs-only skip](#the-docs-only-skip)) |
+| Pull request ready for review: opened, pushed, reopened, or marked ready, which no branch raises now | Every job: the quick checks, the 7 `browser` shards and the job of the tests that run alone, the 2 `bench` shards, and the `real-browsers` shards in Safari and Firefox |
 | Push to main | Every job, on the code that the merge made. Main's jobs also keep the caches, and `wasm-checks` keeps the commit's sizes |
 | Started by hand | Every job, on the branch that the run names: `gh workflow run ci.yml --ref main` |
 | Merge queue | Every job, only while main's rules still use the queue |
 
 - Before 6 October 2026, every pull request and every push to main ran the full suite, about 100 runner minutes each. GitHub Free runs 20 Linux jobs at once, so the queue's runs waited for runners for about half of their 32 minutes. From 6 to 7 October 2026, pull requests ran only the quick checks, and the queue ran the rest ([D-86](decisions/D-86-ci-runs-per-event.md)).
 
-### Docs-only pull requests
+### The docs-only skip
 
-A pull request that changes only docs files runs only the checks that read them. CI's first job, `changes`, decides it from the diff of the merge commit with main. A renamed file counts as its old path and its new path.
+A pull request that changed only docs files ran only the checks that read them, and CI reads the same path list when it decides the jobs of a push to main. CI's first job, `changes`, decides it from the diff of the merge commit with main. A renamed file counts as its old path and its new path.
 
 - Docs files are Markdown files anywhere, and every file in `.dev/`, `docs/` and `skills/`. Only the `docs-and-tools` job reads them, in its docs, style, skills and type checks, the skill validator and the unit tests. Nothing in the engine, the Rust crates, the benchmarks or the test pages reads them. That holds for `docs/data/threejs-mapping.json` too: only the docs generator, the skills check and their unit tests read it.
 - `build` still runs, because `docs-and-tools` needs its shader modules.
-- The browser tests draw each complete sketch in the skills' and the cookbook's Markdown (`tests/image/skill-sketches.spec.ts`). So when a docs-only pull request that is no draft changes Markdown in `skills/` or `docs/cookbook/`, the `skill-sketches` job runs that one test file. In a full run, the `browser` shards draw the sketches, and `skill-sketches` skips.
+- The browser tests draw each complete sketch in the skills' and the cookbook's Markdown (`tests/image/skill-sketches.spec.ts`). So when a change touches Markdown in `skills/` or `docs/cookbook/`, the `skill-sketches` job runs that one test file. In a full run, the `browser` shards draw the sketches, and `skill-sketches` skips.
 - Every other job skips. That is the Rust jobs, the size check, the shader compiler and the packages test. It is also the browser, benchmark page, allocation, Safari and Firefox jobs.
-- A pull request that changes any other file runs every job. That includes `.github/`, `package.json` and the tools.
+- A change to any other file runs every job. That includes `.github/`, `package.json` and the tools.
 - Each push to main runs every job, so main's run still tests the docs change with everything else.
-- The reason: a full run takes about 30 jobs. GitHub Free runs 20 Linux jobs at once, and few macOS jobs. On 11 October 2026, with 6 or more pull requests open, main's own run waited over 90 minutes for runners. A docs-only run takes 4 short jobs, `ci-passed` among them, or 5 with the sketches.
-- A new test that reads a docs file must run in `docs-and-tools`. If it cannot, add the file's path to the `changes` job as a code path. Otherwise a docs-only pull request skips the test, and only main's run finds a failure.
-- The `changes` job's log lists the pull request's files and its four answers: `code`, `full`, `allocation` and `sketches`. `ci-passed` prints them too.
+- The reason: a full run takes about 30 jobs. GitHub Free runs 20 Linux jobs at once, and few macOS jobs. On 11 October 2026, with 6 or more branches in flight, main's own run waited over 90 minutes for runners. A docs-only run takes 4 short jobs, `ci-passed` among them, or 5 with the sketches.
+- A new test that reads a docs file must run in `docs-and-tools`. If it cannot, add the file's path to the `changes` job as a code path. Otherwise a docs-only change skips the test, and only main's run finds a failure.
+- The `changes` job's log lists the changed files and its four answers: `code`, `full`, `allocation` and `sketches`. `ci-passed` prints them too.
 
 ## CI's jobs
 
