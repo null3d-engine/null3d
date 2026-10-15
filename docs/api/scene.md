@@ -198,7 +198,7 @@ The same air lies between the camera and each object. It dims what lies behind i
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets }) => {
-  // An evening sun over a scene whose units are metres, with the haze three times the real air's.
+  // An evening sun over a scene whose units are meters, with the haze three times the real air's.
   scene.setBackground({
     atmosphere: { sunPosition: [0, 0.12, -1], aerialPerspective: 3, cloudCoverage: 0.3 },
   });
@@ -218,8 +218,8 @@ export default defineSketch(async ({ scene, assets }) => {
 | `ozone` | 1 | The factor of ozone, which keeps the twilight sky blue |
 | `mieDirectionalG` | 0.8 | How much the haze scatters toward the light, from 0 to below 1 |
 | `groundAlbedo` | 0.3 | The share of light that the ground under the horizon reflects |
-| `altitude` | 0 | The height of the scene's y = 0 above the ground, in metres |
-| `metersPerUnit` | 1 | The metres in one unit of the scene |
+| `altitude` | 0 | The height of the scene's y = 0 above the ground, in meters |
+| `metersPerUnit` | 1 | The meters in one unit of the scene |
 | `aerialPerspective` | 1 | The factor of the haze on objects: 0 for none, 1 for the real air. More makes a small scene look as large as a landscape |
 | `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky |
 | `moonPosition` | `[0, 1, 0]` | A point toward the moon |
@@ -252,7 +252,7 @@ Each call sets both options, and an option left out takes its default. The call 
 
 ## The light probe grid
 
-`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from coloured walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, three filtered reads each, and its light takes the place of the environment's diffuse light; the environment keeps its reflections.
+`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, with three filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
 
 ```ts
 const grid = new LightProbeGrid({
@@ -273,7 +273,7 @@ scene.setLightProbeGrid({ ...grid, texture: textures.fromData({ ...grid.texture 
 | `intensity` | 1 | The factor of the grid's light, 0 or more |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` colour for one coloured bounce. Bake a few probes a frame so a loading screen can show progress.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` color for one colored bounce. Bake a few probes a frame so a loading screen can show progress.
 
 ```ts
 const bake = bakeProbes(scene, {
