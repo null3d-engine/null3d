@@ -54,6 +54,7 @@ export const SHOTS: readonly Shot[] = [
 	{ position: [0.3, 4.2, 13], target: [0, 2.8, -2], seconds: 7 },
 	{ position: [0, 15, 26], target: [0, 3, 2], seconds: 7 },
 	{ position: [-20, 15, -14], target: [0, 3, 0], seconds: 8 },
+	{ position: [-13, 13, -11], target: [0, 3, 0], seconds: 6 },
 	{ position: [-1, 4, -6], target: [1, 3, 2], seconds: 7 },
 	{ position: [0, 12, 4], target: [0, 3, 2], seconds: 6 },
 ];
