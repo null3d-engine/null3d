@@ -233,7 +233,7 @@ export function mergeFarGeometry(parts: readonly FarPart[]): MeshArrays {
 }
 
 /**
- * Groups copies by the grid cell of their centres: the cell a centre falls in is its position
+ * Groups copies by the grid cell of their centers: the cell a center falls in is its position
  * divided by `cellSize` and rounded down, along each axis. Merge each group into one mesh, so a
  * large world draws a few meshes instead of one per copy. Centers that share a cell, in the order
  * they were given, come back as one list.

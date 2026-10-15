@@ -45,7 +45,7 @@ opt-out. The plugin's cache is documented for game developers in
 
 - `tools/lib/build-cache.ts` holds the mechanics, and `tools/lib/build-cache.test.ts` checks the
   keying, the atomic write and the lock. The shader module and artifact cache tests are unchanged.
-- [Pull requests and parallel work](../pull-requests.md#builds) describes the one root, and
+- [Branches and parallel work](../pull-requests.md#builds) describes the one root, and
   [Benchmarks](../benchmarks.md#build-caches) holds the measured figures.
 - The caches stay outside git, as [D-105](D-105-generated-files-out-of-git.md) requires. Nothing
   generated is committed.
