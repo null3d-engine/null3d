@@ -101,9 +101,10 @@ describe('WebGL2Backend', () => {
 			[G.OP_CREATE_TEXTURE, 1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D],
 			[G.OP_CREATE_TEXTURE, 2, 4, 4, 1, G.FORMAT_DEPTH24_PLUS, usage, 1, 1, G.VIEW_2D],
 		);
+		// The flags sit after the clear values, and a pass without a second color target ends there.
 		const pass = (color: number, depth: number, flags: number) =>
 			replay(
-				[G.OP_BEGIN_RENDER_PASS, color, G.NO_TARGET, depth, 0, 0, 0, 0, flags],
+				[G.OP_BEGIN_RENDER_PASS, color, G.NO_TARGET, depth, 0, 0, 0, 0, 0, flags],
 				[G.OP_END_RENDER_PASS],
 			);
 		// GL's own numbers, which the backend's lists hold whatever the context's constants are.
