@@ -242,6 +242,9 @@ struct Job<'a> {
 struct Built {
     output: VariantOutput,
     warnings: Vec<Problem>,
+    /// The shader compiler that a page or a bundler loads keeps no cache, so its builds record no
+    /// files.
+    #[cfg(not(target_arch = "wasm32"))]
     files: Vec<String>,
 }
 
@@ -307,11 +310,13 @@ fn build_entries(
         let mut built = BTreeMap::new();
         let mut failed = false;
         // The library files the entry's builds read, which the cache invalidates the entry on.
+        #[cfg(not(target_arch = "wasm32"))]
         let mut files: BTreeSet<String> = BTreeSet::new();
         while let Some((result, job)) = results.next_if(|(_, job)| job.entry == entry) {
             match result {
                 Ok(build) => {
                     built.insert(job.build.name.clone(), build.output);
+                    #[cfg(not(target_arch = "wasm32"))]
                     files.extend(build.files);
                 }
                 Err(problems) => {
@@ -332,7 +337,7 @@ fn build_entries(
             cache.store(shader_name, &key, &deps, &inputs.files, &built);
         }
         #[cfg(target_arch = "wasm32")]
-        let _ = (key, failed, shader, files);
+        let _ = (key, failed, shader);
         entries.push(built);
     }
     Ok(entries)
@@ -648,8 +653,6 @@ impl Compiler {
             })
             .map(str::to_owned)
             .collect();
-        #[cfg(target_arch = "wasm32")]
-        let files: Vec<String> = Vec::new();
         let views: Vec<View> = prepared.iter().map(View::new).collect();
         fail_on(features::scan(&views))?;
         let mut warnings = features::browser_faults(&views);
@@ -736,6 +739,7 @@ impl Compiler {
         Ok(Built {
             output,
             warnings,
+            #[cfg(not(target_arch = "wasm32"))]
             files,
         })
     }
