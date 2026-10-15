@@ -1024,6 +1024,43 @@ fn the_same_problem_in_several_variants_is_listed_once() {
     );
 }
 
+/// The builds of an entry compile together on several threads. Each output must still be the
+/// build of its own variant, and a problem must name the variants in build order.
+#[test]
+fn builds_that_compile_together_keep_their_own_outputs_and_order() {
+    let count = 16;
+    let mut source = String::from("@fragment\nfn fs_main() -> @location(0) vec4f {\n");
+    for k in 0..count {
+        source.push_str(&format!(
+            "#ifdef D{k}\n    let x = {}.5;\n#endif\n",
+            100 + k
+        ));
+    }
+    source.push_str("    return vec4f(x);\n}\n");
+    let names: Vec<String> = (0..count).map(|k| format!("v{k:02}")).collect();
+    let tables: Vec<String> = (0..count)
+        .map(|k| format!("{{ defs = [\"D{k}\"], targets = [\"wgsl\"] }}"))
+        .collect();
+    let variants: Vec<(&str, &str)> = names
+        .iter()
+        .zip(&tables)
+        .map(|(name, table)| (name.as_str(), table.as_str()))
+        .collect();
+    let output = build(&project(&source, &variants, &[])).unwrap();
+    for (k, name) in names.iter().enumerate() {
+        let wgsl = &output.shaders["shader"][name].wgsl.as_ref().unwrap().source;
+        assert!(wgsl.contains(&format!("{}.5", 100 + k)), "{name}:\n{wgsl}");
+    }
+
+    let broken = source.replace(
+        "    return vec4f(x);",
+        "    var c = vec4f(x);\n    c.xy = vec2f(1.0);\n    return c;",
+    );
+    let problem = only_problem(build(&project(&broken, &variants, &[])));
+    let expected: Vec<String> = names.iter().map(|name| format!("shader.{name}")).collect();
+    assert_eq!(problem.variants, expected);
+}
+
 /// The library modules that shaders import.
 const LIBRARY_MODULES: [&str; 8] = [
     "math", "noise", "color", "lighting", "fog", "vertex", "depth", "sdf",
