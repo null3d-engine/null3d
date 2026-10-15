@@ -383,9 +383,13 @@ export function plantRows(count: number, radius: number): Rows {
 	for (let k = 0; k < count; k++) {
 		const out = Math.sqrt((k + 0.5) / count);
 		const angle = k * 2.39996 + math.randFloat(-0.4, 0.4);
+		const [u, v] = [Math.cos(angle) * out * radius, Math.sin(angle) * out * radius];
+		// The spiral alone would read as a lattice of even gaps. A shift that varies slowly over the
+		// wood gathers the trees into thickets and opens small clearings, and the jitter across both
+		// axes breaks up what is left of the pattern.
 		const [x, z] = [
-			Math.cos(angle) * out * radius + math.randFloat(-3, 3),
-			Math.sin(angle) * out * radius,
+			u + 11 * Math.sin(u * 0.045 + 1.7) * Math.cos(v * 0.039) + math.randFloat(-3.5, 3.5),
+			v + 11 * Math.sin(v * 0.041 - 0.6) * Math.cos(u * 0.047 + 0.4) + math.randFloat(-3.5, 3.5),
 		];
 		const patch = 0.5 + 0.5 * Math.sin(x * 0.009 + 1.3) * Math.cos(z * 0.008 - 0.7);
 		const pick = math.random();
