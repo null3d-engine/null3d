@@ -21,7 +21,7 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
 use null3d_core::levels::{FADE_BAND, LevelRule};
 use null3d_core::lights::{
-    AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
+    AUTO_FALLBACK, LightShadow, LightTable, LightView, ReceiverView, SunShadow, VisibleLight,
     farthest_receiver_distance, ladder_distance,
 };
 use null3d_core::morph::MorphWeights;
@@ -707,6 +707,9 @@ pub struct SceneSettings {
     cascade_depth: CascadeDepth,
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
+    /// The offset to each cell from the camera that places the cascades, for the automatic shadow
+    /// distance's search for receivers.
+    receiver_offsets: CellOffsets,
     canvas: CanvasOutput,
     output: Output,
     /// Bloom's settings while the sketch turns it on.
@@ -855,6 +858,7 @@ impl SceneSettings {
             shadow_schedule: CascadeSchedule::default(),
             cascade_depth,
             moving_casters: MovingCasters::default(),
+            receiver_offsets: CellOffsets::default(),
             canvas,
             output: Output::default(),
             bloom: None,
@@ -2335,19 +2339,21 @@ impl SceneSettings {
             .unwrap_or((slot, lens));
         let world = scene.world(parity).matrix(fitter as usize);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        // A light that names no distance follows the farthest visible receiver. The render worker
-        // computes it from the camera that places the cascades, so the cascades always fit the
-        // distance of the view they draw. The ladder holds the distance for one step, so a raw
-        // distance that moves across a ladder step does not make the shadows flicker.
+        // A light that names no distance follows the farthest visible receiver, an object or a
+        // row of a batch. The render worker computes it from the camera that places the cascades,
+        // so the cascades always fit the distance of the view they draw. The ladder holds the
+        // distance for one step, so a raw distance that moves across a ladder step does not make
+        // the shadows flicker.
         let fitter_position = scene.cell_position(fitter, parity);
         let mut distance = shadow.distance;
         if shadow.auto {
-            let view = LightView {
-                camera: fitter_position,
+            self.receiver_offsets.update(scene, &fitter_position);
+            let view = ReceiverView {
                 frustum: Frustum::from_view_projection(&lens.view_projection(world, aspect)),
+                offsets: self.receiver_offsets.as_slice(),
                 layers: self.views[ViewId::CAMERA.index()].layers(),
             };
-            let raw = farthest_receiver_distance(scene, parity, &view);
+            let raw = farthest_receiver_distance(input.jobs, scene, input.batches, parity, &view);
             let previous = self.lighting.auto_shadow_distance;
             let held = if raw > 0.0 {
                 ladder_distance(previous, raw)

@@ -183,7 +183,9 @@ const FOG_VOLUME_SIZE = [480, 270] as const;
  * draws the image of turning it on in the setup. At half the render scale the apply step draws into
  * the corner of its target. With no slices, as on Low, and
  * on a device with no HDR target, which the page's switch that turns HDR off stands in for, the fog
- * keeps its glow and draws the image without the volumetric fog.
+ * keeps its glow and draws the image without the volumetric fog. With fog that grows without
+ * bound below its height, the grid's cells far below the ground stay within its range, so no
+ * pixel turns black.
  */
 function fogVolumeTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -197,6 +199,7 @@ function fogVolumeTests(): ImageTest[] {
 		test('fog-volume-sun', '?fog=on'),
 		test('fog-volume-night-off', '?night'),
 		test('fog-volume-night', '?night&fog=on'),
+		test('fog-volume-dense', '?fog=on&dense'),
 		{ ...test('fog-volume-later', '?fog=on&later'), reference: 'fog-volume-sun' },
 		{
 			...test('fog-volume-medium', '?fog=on&slices=32'),

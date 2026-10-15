@@ -150,7 +150,7 @@ A particle that crosses the ground or a wall shows a hard line where it cuts int
 
 A system is one scene object, with one draw of all its particles. It sorts among the other blended objects by its bounds. Its own particles draw in the order they were born, so `additive` blending, which needs no order, suits most effects. With `normal` blending, keep particles soft and faint, as smoke is.
 
-The system keeps its object's culling sphere around its live particles, from where they were born and how far they can move. Particles do not cast shadows, and lights do not light them. Fog fades them as it fades other surfaces. Additive particles fade out in fog, and others take on its color.
+The system keeps its object's culling sphere around its live particles, from where they were born and how far they can move. Particles do not cast shadows, and lights do not light them. Fog and the physical sky's air fade them as they fade other surfaces. Additive particles fade out in fog and in the air, and others take on their color.
 
 `system.set(values)` changes the motion and the look at any time. `system.destroy()` removes the system and its particles.
 

@@ -224,7 +224,17 @@ impl SkyUniform {
 }
 
 /// The air between the camera and each surface, laid out as the shaders' `Aerial` in
-/// `null3d::sky_scattering`: lengths in the scene's units, light exposed. All zero without a physical sky.
+/// `null3d::sky_scattering`: lengths in units of 2^e of the scene's units, light exposed. All zero
+/// without a physical sky.
+///
+/// Per scene unit, the coefficients and the densities' falls with height lie far from 1: at one
+/// metre per unit, Rayleigh's red is about 5.8e-6, below the smallest normal half-precision float,
+/// about 6.1e-5. Some WebGL2 drivers keep the floats of a struct at half precision, whatever the
+/// shader declares, so there they would read as 0 and the haze would vanish (AGENTS.md, hard rule
+/// 23). So each frame picks the whole number `e` that brings the coefficients and the falls
+/// together around 1, and keeps them per 2^e units. `moon_light.w` holds `e` plus
+/// [`AERIAL_SCALE_BIAS`], and the shader measures its lengths in the same units, so the products
+/// that the light reads do not change.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AerialUniform {
@@ -237,6 +247,13 @@ pub struct AerialUniform {
 }
 
 const _: () = assert!(std::mem::size_of::<AerialUniform>() == 96);
+
+/// What `AerialUniform::moon_light`'s `w` adds to the scale's exponent: a whole number that half
+/// precision keeps exactly, which keeps the value above 0, the value of no aerial perspective.
+/// The shaders' `AERIAL_SCALE_BIAS` holds the same number.
+pub const AERIAL_SCALE_BIAS: f32 = 128.0;
+/// The largest size of the aerial perspective's scale exponent.
+const AERIAL_SCALE_LIMIT: f32 = 64.0;
 
 impl AerialUniform {
     /// The values for a camera at height `y` in the scene, in a frame whose light takes the factor
@@ -257,6 +274,14 @@ impl AerialUniform {
         let mie_density = (air.mie[2] * height).exp();
         let r = [air.rayleigh[0], air.rayleigh[1], air.rayleigh[2]]
             .map(|c| c * rayleigh_density * path);
+        let mie = [air.mie[0], air.mie[1]].map(|c| c * mie_density * path);
+        let falls = [km / RAYLEIGH_HEIGHT, km / MIE_HEIGHT];
+        // The scale's exponent puts the geometric mean of the largest coefficient and the largest
+        // fall at about 1, so both stay well within half precision's range at any unit and haze.
+        let largest = |values: &[f32]| values.iter().fold(0.0f32, |a, &b| a.max(b));
+        let middle = (largest(&[r[0], r[1], r[2], mie[0], mie[1]]) * largest(&falls)).sqrt();
+        let e = (-middle.log2().round()).clamp(-AERIAL_SCALE_LIMIT, AERIAL_SCALE_LIMIT);
+        let scale = e.exp2();
         let sun = a.sun();
         let moon = a.moon();
         let sun_light = model
@@ -271,17 +296,22 @@ impl AerialUniform {
             (again_sun[c] * a.sun_intensity + again_moon[c] * a.moon_intensity) * light
         });
         Self {
-            rayleigh: [r[0], r[1], r[2], air.mie[0] * mie_density * path],
+            rayleigh: [r[0] * scale, r[1] * scale, r[2] * scale, mie[0] * scale],
             shape: [
-                air.mie[1] * mie_density * path,
-                km / RAYLEIGH_HEIGHT,
-                km / MIE_HEIGHT,
+                mie[1] * scale,
+                falls[0] * scale,
+                falls[1] * scale,
                 a.mie_directional_g,
             ],
             sun: [sun[0], sun[1], sun[2], again[0]],
             sun_light: [sun_light[0], sun_light[1], sun_light[2], again[1]],
             moon: [moon[0], moon[1], moon[2], again[2]],
-            moon_light: [moon_light[0], moon_light[1], moon_light[2], 1.0],
+            moon_light: [
+                moon_light[0],
+                moon_light[1],
+                moon_light[2],
+                AERIAL_SCALE_BIAS + e,
+            ],
         }
     }
 }
@@ -635,5 +665,78 @@ impl PhysicalSkyPass {
         self.air = None;
         self.view = None;
         self.ready = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The smallest normal half-precision float and the largest one.
+    const HALF_MIN: f32 = 6.104e-5;
+    const HALF_MAX: f32 = 65504.0;
+
+    #[test]
+    fn the_aerial_values_stay_within_half_precision_and_keep_their_products() {
+        for meters_per_unit in [1e-3, 0.01, 1.0, 1000.0, 1e5] {
+            for haze in [0.01, 1.0, 3.0, 100.0] {
+                for y in [
+                    -50.0,
+                    0.0,
+                    2000.0 / meters_per_unit,
+                    30_000.0 / meters_per_unit,
+                ] {
+                    let atmosphere = Atmosphere {
+                        meters_per_unit,
+                        aerial_perspective: haze,
+                        ..Atmosphere::default()
+                    };
+                    let model = AirModel::new(atmosphere.air());
+                    let aerial = AerialUniform::of(&atmosphere, &model, y, 1.0);
+                    let what = format!("{meters_per_unit} m per unit, haze {haze}, height {y}");
+                    // Rayleigh's coefficients and the falls with height, and Mie's at the
+                    // ground, where they matter, sit inside the normal half-precision range.
+                    let mut held = vec![
+                        aerial.rayleigh[0],
+                        aerial.rayleigh[1],
+                        aerial.rayleigh[2],
+                        aerial.shape[1],
+                        aerial.shape[2],
+                    ];
+                    if y <= 0.0 {
+                        held.extend([aerial.rayleigh[3], aerial.shape[0]]);
+                    }
+                    for value in held {
+                        assert!((HALF_MIN..=HALF_MAX).contains(&value), "{value} at {what}");
+                    }
+                    // The scale is a power of 2 that the bias keeps whole and above 0.
+                    let e = aerial.moon_light[3] - AERIAL_SCALE_BIAS;
+                    assert!(
+                        aerial.moon_light[3] > 0.0 && e == e.round(),
+                        "{e} at {what}"
+                    );
+                    // In the scene's units, Rayleigh's red and its fall with height are those
+                    // of the air at the camera's height, times the haze.
+                    let km = meters_per_unit * 1e-3;
+                    let air = atmosphere.air();
+                    let height = atmosphere.height_of(y);
+                    let red = air.rayleigh[0] * (air.rayleigh[3] * height).exp() * km * haze;
+                    let per_unit = (-e).exp2();
+                    let close = |a: f32, b: f32| (a - b).abs() <= b.abs() * 1e-5;
+                    assert!(close(aerial.rayleigh[0] * per_unit, red), "red at {what}");
+                    let fall = km / RAYLEIGH_HEIGHT;
+                    assert!(close(aerial.shape[1] * per_unit, fall), "fall at {what}");
+                }
+            }
+        }
+        let none = Atmosphere {
+            aerial_perspective: 0.0,
+            ..Atmosphere::default()
+        };
+        let model = AirModel::new(none.air());
+        assert_eq!(
+            AerialUniform::of(&none, &model, 0.0, 1.0),
+            AerialUniform::default()
+        );
     }
 }

@@ -10,7 +10,7 @@
 // The step binds the camera's frame group at group 0, as the scene's background does, so it reads
 // the sun's cascades, the clustered lights and the shadow atlas as the scene's surfaces do. Its own
 // group holds its settings, the last frame's grid and a sampler.
-#import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_edge_distance, fog_grid_place, fog_phase, fog_point, fog_slice_edge}
+#import null3d::fog_volume::{FogStep, GRID_MAX, SLICES_PER_ROW, fog_edge_distance, fog_grid_place, fog_phase, fog_point, fog_slice_edge}
 #import null3d::lighting::{distance_attenuation, spot_attenuation}
 #import null3d::lights::{cluster_lights, grid_word, light_of}
 #import null3d::shadows::{shadows, light_shadow, no_plane, sun_texels}
@@ -115,12 +115,15 @@ fn light(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let toward = select(settings.forward.xyz, normalize(relative), grid.texel.w > 0.5);
     let medium = settings.medium;
     let climb = clamp(-medium.y * relative.y, -HEIGHT_EXPONENT_LIMIT, HEIGHT_EXPONENT_LIMIT);
-    let density = medium.x * exp(climb);
+    // Fog that grows without bound below its height can pass the grid's range. A slice a
+    // thousandth of a unit long at the limit passes under e^-65 of the light behind it, so the
+    // limit changes nothing that shows.
+    let density = min(medium.x * exp(climb), GRID_MAX);
     let g = settings.sun_direction.w;
     let to_sun = -settings.sun_direction.xyz;
     var scattered = settings.sun_color.rgb * (sun_seen(relative) * fog_phase(g, dot(to_sun, toward)));
     scattered += lamps_seen(relative, toward) * settings.sun_color.w;
-    var result = vec4f(scattered * density, density);
+    var result = vec4f(min(scattered * density, vec3f(GRID_MAX)), density);
     // The last frame's grid at the same place in the world, where its view held the place.
     if medium.z > 0.0 {
         let clip = settings.history_view_proj * vec4f(relative, 1.0);

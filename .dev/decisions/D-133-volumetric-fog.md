@@ -122,3 +122,22 @@ To come with the data.
 ## Consequences
 
 To come with the data.
+
+## Addendum: the grid's range
+
+Status: fixed on 15 October 2026 by the helper of the code review's lighting findings (M-13), for
+the owner's review. Date: 2026-10-15. Task: none.
+
+The grid's textures hold 16-bit floats, whose largest value is 65504. Height fog grows without
+bound below its height, and the grid's cells reach below the ground, behind the surfaces. The
+scene docs' own example, `setFog({ density: 0.1, height: 0, heightFalloff: 0.5 })`, gives a
+density of about 27,000 per unit 25 m below the ground, and more below that. A larger density, or
+its scattered light, stored as infinity. The block step then multiplied infinity by 0, which is
+not a number. That value spread down the cell's column through the sum, onto the scene's pixels
+through the apply step's blend, and into later frames through the history.
+
+The light step now limits the density and the scattered light to 65504 before it stores them
+(`GRID_MAX` in `null3d::fog_volume`). The block and sum steps limit the light that they store in
+the same way. At the limit, a slice a thousandth of a unit long passes under e^-65 of the light
+behind it, so nothing that shows changes. The image test `fog-volume-dense` draws the docs'
+example with the lit fog's default reach, whose cells pass the range far below the ground.

@@ -224,7 +224,10 @@ fn sun_disc(d: vec3f, toward: vec3f, light: f32, cos_radius: f32, through: vec3f
 
 /// The air between the camera and each surface: the physical sky's aerial perspective, as the
 /// engine writes it into each frame's values for the camera that draws. All zero while the scene
-/// draws no physical sky. Lengths are in the scene's units, and light is exposed.
+/// draws no physical sky. Light is exposed. Lengths are in units of 2^e of the scene's units,
+/// where `e` is the whole number that brings the coefficients and the falls with height together
+/// around 1. Per scene unit they can lie far outside half precision's range, and some WebGL2
+/// drivers keep the floats of a struct at half precision.
 struct Aerial {
     /// Rayleigh's scattering per unit of distance at the camera's height, which is also its
     /// extinction, and Mie's scattering in `w`.
@@ -238,9 +241,14 @@ struct Aerial {
     sun_light: vec4f,
     /// The unit direction toward the moon, and the blue of the light that scatters more than once.
     moon: vec4f,
-    /// The moon's light at the camera, and 1 while the scene draws the physical sky, else 0.
+    /// The moon's light at the camera, and while the scene draws the physical sky `e` plus
+    /// AERIAL_SCALE_BIAS, else 0.
     moon_light: vec4f,
 }
+
+/// What the aerial perspective's `moon_light.w` adds to its scale's exponent, which keeps that
+/// value above 0 while the scene draws the physical sky.
+const AERIAL_SCALE_BIAS: f32 = 128.0;
 
 /// Rayleigh's phase function.
 fn rayleigh_phase(cos_theta: f32) -> f32 {
@@ -254,22 +262,41 @@ fn mie_phase(cos_theta: f32, g: f32) -> f32 {
     return 0.11936620731892151 * (1.0 - g2) * (1.0 + cos_theta * cos_theta) / ((2.0 + g2) * base * sqrt(base));
 }
 
+/// The air along the ray from the camera to `relative`, its position relative to the camera:
+/// Rayleigh's optical depth in `xyz`, and the ray's length through Mie's density in `w`, at the
+/// density at the camera. Each density falls exponentially with height, so each integrates exactly
+/// along the ray, as height fog does.
+fn aerial_paths(air: Aerial, relative: vec3f) -> vec4f {
+    let scaled = relative * exp2(AERIAL_SCALE_BIAS - air.moon_light.w);
+    let distance = length(scaled);
+    let rayleigh = air.rayleigh.xyz * (distance * fog_height_ratio(air.shape.y * scaled.y));
+    return vec4f(rayleigh, distance * fog_height_ratio(air.shape.z * scaled.y));
+}
+
+/// The share of light from `relative`, its position relative to the camera, that the physical
+/// sky's air lets through to the camera: 1 while the scene draws no physical sky.
+fn aerial_through(air: Aerial, relative: vec3f) -> vec3f {
+    if (air.moon_light.w == 0.0) {
+        return vec3f(1.0);
+    }
+    let paths = aerial_paths(air, relative);
+    return exp(-(paths.xyz + air.shape.x * paths.w));
+}
+
 /// A color `c` at `relative`, its position relative to the camera, seen through the physical
 /// sky's air. The air dims it by Rayleigh's and Mie's extinction along the ray, and adds the light
-/// that it scatters toward the camera from the sun, the moon and the sky. Each density falls
-/// exponentially with height, so each integrates exactly along the ray, as height fog does. Over a
-/// scene's distances, the light at each point of the ray is the light at the camera.
+/// that it scatters toward the camera from the sun, the moon and the sky. Over a scene's
+/// distances, the light at each point of the ray is the light at the camera.
 fn aerial_perspective(air: Aerial, c: vec3f, relative: vec3f) -> vec3f {
     if (air.moon_light.w == 0.0) {
         return c;
     }
-    let distance = length(relative);
-    let rayleigh = air.rayleigh.xyz * (distance * fog_height_ratio(air.shape.y * relative.y));
-    let mie_path = distance * fog_height_ratio(air.shape.z * relative.y);
-    let mie_scattering = air.rayleigh.w * mie_path;
-    let depth = rayleigh + air.shape.x * mie_path;
+    let paths = aerial_paths(air, relative);
+    let rayleigh = paths.xyz;
+    let mie_scattering = air.rayleigh.w * paths.w;
+    let depth = rayleigh + air.shape.x * paths.w;
     let through = exp(-depth);
-    let view = relative / max(distance, 1e-6);
+    let view = relative / max(length(relative), 1e-6);
     let g = air.shape.w;
     let cos_sun = dot(view, air.sun.xyz);
     let cos_moon = dot(view, air.moon.xyz);

@@ -1612,7 +1612,107 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return scalar(Math.min(2 * 0.15 * (dot(du, du) + dot(dv, dv)), 0.01));
 		},
 	},
+	// null3d::lighting: the Charlie lobe of sheen. Its roughness floor keeps it finite at a
+	// roughness of 0, glTF's default, where the bare lobe is not a number and near which it draws
+	// sparks along back-lit edges. The tolerance allows the power's rounding at large exponents.
+	{
+		name: 'lighting::d_charlie',
+		cases: (random) => [
+			...[0, 1e-4, 0.045, 0.07].flatMap((r) => [0, 0.5, 0.99].map((h) => new Inputs().setF(0, [r, h]))),
+			...samples((r) => new Inputs().setF(0, [between(r, 0, 1), between(r, 0, 1)]))(random),
+		],
+		expected: (i) => {
+			const [roughness, nDotH] = i.f(0);
+			const invAlpha = 1 / Math.max(roughness, LIGHTING_ROUGHNESS_FLOOR) ** 2;
+			const sin2h = Math.max(1 - nDotH * nDotH, 0.0078125);
+			return scalar(((2 + invAlpha) * sin2h ** (invAlpha * 0.5)) / (2 * Math.PI));
+		},
+		tolerance: 1e-3,
+	},
+	// null3d::sky_scattering: the aerial perspective of the physical sky's air at 1 m per unit, as
+	// the engine keeps its values per 2^e units, against the same air per metre. Per metre most
+	// coefficients lie below the smallest normal half-precision float, so on a WebGL2 driver that
+	// keeps a struct's floats at half precision they would read as 0 and the haze would vanish.
+	{
+		name: 'sky_scattering::aerial_perspective',
+		cases: samples((r) => {
+			const haze = between(r, 0.5, 3);
+			const air = aerialAir(haze);
+			const largest = (values: readonly number[]) => Math.max(...values);
+			const middle = Math.sqrt(
+				largest([...air.rayleigh, air.mieScattering, air.mieExtinction]) * largest(air.falls),
+			);
+			const e = -Math.round(Math.log2(middle));
+			const s = 2 ** e;
+			return new Inputs()
+				.setF(0, [...scale(air.rayleigh, s), air.mieScattering * s])
+				.setF(1, [air.mieExtinction * s, air.falls[0] * s, air.falls[1] * s, 0.76])
+				.setF(2, [...normalize([between(r, -1, 1), between(r, 0.05, 1), between(r, -1, 1)]), 0.04])
+				.setF(3, [3, 2.8, 2.5, 0.05])
+				.setF(4, [...normalize([between(r, -1, 1), between(r, -1, 1), between(r, -1, 1)]), 0.07])
+				.setF(5, [0.02, 0.02, 0.03, AERIAL_SCALE_BIAS + e])
+				.setF(6, values(r, 3, 0, 1))
+				.setF(7, [between(r, -20000, 20000), between(r, -300, 3000), between(r, -20000, 20000)]);
+		}),
+		expected: (i) => {
+			const s = 2 ** -(i.f(5)[3] - AERIAL_SCALE_BIAS);
+			// The air per metre, from the scaled values.
+			const rayleigh = scale(xyz(i.f(0)), s);
+			const [mieScattering, mieExtinction, fallR, fallM, g] = [
+				i.f(0)[3] * s,
+				i.f(1)[0] * s,
+				i.f(1)[1] * s,
+				i.f(1)[2] * s,
+				i.f(1)[3],
+			];
+			const relative = xyz(i.f(7));
+			const distance = length(relative);
+			const rayleighDepth = scale(rayleigh, distance * heightRatio(fallR * relative[1]));
+			const miePath = distance * heightRatio(fallM * relative[1]);
+			const depth = map3(rayleighDepth, (d) => d + mieExtinction * miePath);
+			const through = map3(depth, (d) => Math.exp(-d));
+			const view = normalize(relative);
+			const [sun, sunLight, moon, moonLight] = [i.f(2), i.f(3), i.f(4), i.f(5)];
+			const again: V3 = [sun[3], sunLight[3], moon[3]];
+			const cosSun = dot(view, xyz(sun));
+			const cosMoon = dot(view, xyz(moon));
+			const rayleighPhase = (c: number) => 0.05968310365946075 * (1 + c * c);
+			const miePhase = (c: number) => {
+				const base = Math.max(1 + g * g - 2 * g * c, 1e-4);
+				return (0.11936620731892151 * (1 - g * g) * (1 + c * c)) / ((2 + g * g) * base * Math.sqrt(base));
+			};
+			const lit = (phase: (c: number) => number) =>
+				add(add(scale(xyz(sunLight), phase(cosSun)), scale(xyz(moonLight), phase(cosMoon))), again);
+			const scattered = add(
+				mul(rayleighDepth, lit(rayleighPhase)),
+				scale(lit(miePhase), mieScattering * miePath),
+			);
+			const c = xyz(i.f(6));
+			return floats(
+				[0, 1, 2].map(
+					(k) => c[k]! * through[k]! + (scattered[k]! * (1 - through[k]!)) / Math.max(depth[k]!, 1e-6),
+				),
+			);
+		},
+		tolerance: HALF_TOLERANCE,
+	},
 ];
+
+/** null3d::lighting's lowest perceptual roughness, which the Charlie lobe of sheen takes too. */
+const LIGHTING_ROUGHNESS_FLOOR = 0.045;
+/** What the aerial perspective's `moon_light.w` adds to its scale's exponent. */
+const AERIAL_SCALE_BIAS = 128;
+
+/** The physical sky's air at the ground, per metre, with the haze `haze`, and its falls with height per metre. */
+function aerialAir(haze: number) {
+	const km = 1e-3;
+	return {
+		rayleigh: scale([5.802e-3, 13.558e-3, 33.1e-3], km * haze),
+		mieScattering: 3.996e-3 * km * haze,
+		mieExtinction: 4.4e-3 * km * haze,
+		falls: [km / 8, km / 1.2] as const,
+	};
+}
 
 /** three.js's sky: its Rayleigh coefficients per metre, and its Mie constant. */
 const SKY_TOTAL_RAYLEIGH: V3 = [5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5];

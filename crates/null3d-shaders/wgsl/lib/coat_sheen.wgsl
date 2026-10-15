@@ -1,8 +1,8 @@
 #define_import_path null3d::coat_sheen
 #import null3d::globals::{EnvironmentLight}
 #import null3d::ibl::{environment_radiance}
-#import null3d::lighting::{brdf_ggx, dfg_lut, environment_brdf, f_schlick}
-#import null3d::math::{INV_PI, PI, max_component}
+#import null3d::lighting::{brdf_ggx, d_charlie, dfg_lut, environment_brdf, f_schlick}
+#import null3d::math::{INV_PI, max_component}
 
 // The layers above a surface's base, as three.js's MeshPhysicalMaterial lights them: a clear coat
 // and a sheen. The coat is a second GGX lobe, with a reflectance of 0.04 head on and 1 at grazing
@@ -29,7 +29,7 @@ struct Layers {
     coat_normal: vec3f,
     /// The sheen's linear color: black for none.
     sheen_color: vec3f,
-    /// The sheen's perceptual roughness, from 0.0001 to 1.
+    /// The sheen's perceptual roughness, from 0 to 1. The sheen's lobe takes a floor of its own.
     sheen_roughness: f32,
 }
 
@@ -41,15 +41,6 @@ var<private> coat_direct: vec3f;
 var<private> coat_indirect: vec3f;
 /// The sheen's light so far, from the direct lights and from all directions.
 var<private> sheen_light: vec3f;
-
-/// The Charlie distribution of sheen, as three.js's `D_Charlie`.
-fn d_charlie(roughness: f32, n_dot_h: f32) -> f32 {
-    let alpha = roughness * roughness;
-    let inv_alpha = 1.0 / alpha;
-    // 2^(-14/2), so the sine squared stays above 0 at half precision too.
-    let sin2h = max(1.0 - n_dot_h * n_dot_h, 0.0078125);
-    return (2.0 + inv_alpha) * pow(sin2h, inv_alpha * 0.5) / (2.0 * PI);
-}
 
 /// Neubelt and Pettineo's visibility term of sheen, as three.js's `V_Neubelt`.
 fn v_neubelt(n_dot_v: f32, n_dot_l: f32) -> f32 {

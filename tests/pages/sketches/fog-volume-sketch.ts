@@ -6,7 +6,9 @@
 // that reaches down to 0.5; with ?fixed the range holds that scale alone, and the governor is off,
 // for timing. With ?later, the sketch turns the volumetric fog on during play, half a second in.
 // With ?moving, the camera sways from side to side, so each frame reads the last frame's grid from
-// another place.
+// another place. ?dense takes the fog of the scene docs' example, which grows without bound below
+// its height, with the lit fog's default reach, so the grid's cells far below the ground pass the
+// range of its 16-bit floats.
 //
 // On the page's 'fog' message it turns the volumetric fog on, waits until its pipelines are built,
 // and posts the frames and milliseconds that took as 'settled'. The 'fog-off' message turns it off.
@@ -23,20 +25,21 @@ const MOVING = params.has('moving');
 const SLICES = params.get('slices');
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
+const DENSE = params.has('dense');
 
 /** The slice count that ?slices= names, of those that the quality setting fogSlices takes. */
 const SLICE_COUNT =
 	SLICES === '0' ? 0 : SLICES === '32' ? 32 : SLICES === '96' ? 96 : SLICES === null ? null : 64;
 
 const FOG_COLOR = NIGHT ? '#10141c' : '#56606e';
-const VOLUMETRIC = { intensity: NIGHT ? 1 : 1.5, anisotropy: 0.6, distance: 40 };
+const VOLUMETRIC = { intensity: NIGHT ? 1 : 1.5, anisotropy: 0.6, distance: DENSE ? 100 : 40 };
 
 /** The scene's fog with its sun glow, and the same fog with the volumetric fog on. */
 const PLAIN = {
 	color: FOG_COLOR,
-	density: NIGHT ? 0.05 : 0.035,
+	density: DENSE ? 0.1 : NIGHT ? 0.05 : 0.035,
 	height: 0,
-	heightFalloff: 0.08,
+	heightFalloff: DENSE ? 0.5 : 0.08,
 	sunGlow: NIGHT ? 0 : 0.8,
 };
 const LIT = { ...PLAIN, volumetric: VOLUMETRIC };

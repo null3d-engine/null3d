@@ -24,7 +24,7 @@
 // binding 4.
 // The MULTISAMPLED builds read sample 0 of a multisampled depth, on WebGPU.
 #import null3d::fog::{fog_height_ratio}
-#import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_cell_uv, fog_edge_distance, fog_phase, fog_ray, fog_screen_place, fog_volume_blend, fog_volume_place}
+#import null3d::fog_volume::{FogStep, GRID_MAX, SLICES_PER_ROW, fog_cell_uv, fog_edge_distance, fog_phase, fog_ray, fog_screen_place, fog_volume_blend, fog_volume_place}
 
 @group(0) @binding(0) var<uniform> settings: FogStep;
 @group(0) @binding(1) var source: texture_2d<f32>;
@@ -104,7 +104,7 @@ fn block_sum(@builtin(position) position: vec4f) -> @location(0) vec4f {
             passes *= through;
         }
     }
-    return vec4f(light, passes);
+    return vec4f(min(light, vec3f(GRID_MAX)), passes);
 }
 
 @fragment
@@ -124,7 +124,8 @@ fn sum(@builtin(position) position: vec4f) -> @location(0) vec4f {
             result = join(result, textureLoad(source, grid_texel(at.cell, last), 0));
         }
     }
-    return join(result, textureLoad(source, grid_texel(at.cell, at.slice), 0));
+    let summed = join(result, textureLoad(source, grid_texel(at.cell, at.slice), 0));
+    return vec4f(min(summed.rgb, vec3f(GRID_MAX)), summed.a);
 }
 
 /// The depth value of the scene's texel `texel`: of a multisampled depth, its first sample. Fog

@@ -770,7 +770,8 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.clearcoatRoughness = coat_sheen_row.coat.y;
     s.clearcoatNormal = input.normal;
     s.sheenColor = coat_sheen_row.sheen.rgb;
-    s.sheenRoughness = coat_sheen_row.sheen.w;
+    // three.js raises the sheen's roughness to 0.07 before its map multiplies it.
+    s.sheenRoughness = clamp(coat_sheen_row.sheen.w, 0.07, 1.0);
 #else ifdef CUSTOM
     s.clearcoat = 0.0;
     s.clearcoatRoughness = 0.0;
@@ -1109,7 +1110,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     );
     coat_sheen.coat_normal = normalize(s.clearcoatNormal);
     coat_sheen.sheen_color = max(s.sheenColor, vec3f(0.0));
-    coat_sheen.sheen_roughness = clamp(s.sheenRoughness, 0.0001, 1.0);
+    coat_sheen.sheen_roughness = saturate(s.sheenRoughness);
     begin_layers(coat_sheen);
 #endif
     // The frame's lights are exposed already. The surface's own light and its baked light take the

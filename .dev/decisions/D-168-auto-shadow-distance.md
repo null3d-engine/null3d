@@ -85,3 +85,39 @@ count low over normal camera motion.
 - The API is `shadow: { distance: 'auto' }`, the new default. A number fixes it.
 - [Shadows](../../docs/concepts/shadows.md#settings) and [Lights](../../docs/api/lights.md#shadows)
   describe the setting.
+
+## Addendum: batches that receive shadows, and the hold
+
+Status: fixed on 15 October 2026 by the helper of the code review's lighting findings (M-7 and
+M-8), for the owner's review. Date: 2026-10-15. Task: none.
+
+The code review of 15 October 2026 found two faults.
+
+- The search for the farthest receiver walked only the scene's objects. A batch can receive
+  shadows (`setBatchShadows`), but its rows never set the distance. A forest of instanced trees
+  beside a few objects near the camera lost its far shadows. With no object in view, the distance
+  fell back to 200 m. The search also tested every object against the frustum, one at a time, on
+  the render worker, in every frame.
+- The ladder never held a step. It kept the held distance only while `raw >= held / 1.25`. The
+  step that rounds such a raw distance up is the held one already, so the hold changed nothing. A
+  raw distance near 11.64 m flipped the distance between 11.64 m and 14.55 m from frame to frame,
+  and each flip moved the cascades.
+
+The fixes:
+
+- The search now takes the scene's objects and the rows of every batch that receives shadows and
+  shares a layer with the camera. It tests four spheres at a time with SIMD (`farthest_reach` in
+  `null3d_core::culling`). Past a few thousand spheres it splits them over the job workers, as the
+  culling does, and the parts join through an atomic maximum. It allocates nothing. The offsets
+  of the cells come once per frame from the camera that places the cascades.
+- The ladder holds the held step while `raw >= held / 1.25²`. So a fall happens only once the raw
+  distance drops more than one step below the held one, as the rule above says. The unit test
+  moves a raw distance to and fro across 11.64 m and expects 14.55 m throughout.
+
+The review proposed to take the distance from the culling results instead. That holds only on
+WebGL2. On WebGPU the GPU culls each object and row, so the CPU has no list of visible ones, and
+a readback would arrive frames late. The camera view's culling also runs after the cascades are
+fitted, and it never sees the debug shadow camera's view. So the rule of this record stands: the
+CPU computes the distance from the world spheres, for the camera that places the cascades, and
+both GPU paths draw the same shadows. The cost per frame now spreads over the job workers, and a
+batch that receives no shadows costs nothing.

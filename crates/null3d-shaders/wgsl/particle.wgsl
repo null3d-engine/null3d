@@ -19,6 +19,7 @@
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::fog::{fog_color, fog_factor}
+#import null3d::sky_scattering::{aerial_perspective, aerial_through}
 #import null3d::noise::{pcg, simplex3, to_unit}
 #import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
 
@@ -375,17 +376,21 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     if alpha <= params.look.w {
         discard;
     }
-    var light = in.color.rgb * texel.rgb;
+    // The fog's and the air's colors are exposed, so they act on exposed light, as on the scene's
+    // surfaces. Added light only dims through them: they add no light of their own to it, which
+    // each of a cloud's particles would add again.
+    var light = in.color.rgb * texel.rgb * frame.output.exposure;
     let factor = fog_factor(frame.fog, in.relative);
-    if factor > 0.0 {
-        if params.flags.z > 0.5 {
-            light *= 1.0 - factor;
-        } else {
+    if params.flags.z > 0.5 {
+        light *= aerial_through(frame.aerial, in.relative) * (1.0 - factor);
+    } else {
+        light = aerial_perspective(frame.aerial, light, in.relative);
+        if factor > 0.0 {
             light = mix(light, fog_color(frame.fog, in.relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
         }
     }
     let out = null3d::tonemap::finish(
-        light * frame.output.exposure,
+        light,
         in.clip.xy,
         frame.output,
         frame.target_size.xy,

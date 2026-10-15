@@ -20,6 +20,7 @@
 
 use std::collections::TryReserveError;
 use std::ops::Range;
+use std::simd::StdFloat;
 use std::simd::prelude::*;
 
 use crate::alloc::reserve_keeping;
@@ -314,6 +315,119 @@ pub fn cull_spheres_in_cells(
         offsets,
     };
     cull_positions(frustum, range, out, &positions)
+}
+
+/// Spheres that all move by one offset from the camera, so a frustum relative to the camera tests
+/// them.
+struct Moved<P> {
+    positions: P,
+    offset: [f32; 4],
+}
+
+impl<P: Positions> Positions for Moved<P> {
+    #[inline(always)]
+    fn spheres4(&self, i: usize) -> [f32x4; 4] {
+        let [x, y, z, r] = self.positions.spheres4(i);
+        let [ox, oy, oz, _] = self.offset.map(f32x4::splat);
+        [x + ox, y + oy, z + oz, r]
+    }
+
+    #[inline(always)]
+    fn sphere(&self, i: usize) -> [f32; 4] {
+        let [x, y, z, r] = self.positions.sphere(i);
+        let [ox, oy, oz, _] = self.offset;
+        [x + ox, y + oy, z + oz, r]
+    }
+
+    #[inline(always)]
+    fn rows4(&self, i: usize) -> u32x4 {
+        self.positions.rows4(i)
+    }
+
+    #[inline(always)]
+    fn row(&self, i: usize) -> u32 {
+        self.positions.row(i)
+    }
+}
+
+/// The farthest reach from the camera, the distance to a sphere's center plus its radius, of the
+/// spheres at `range` that are inside the frustum and whose rows `keeps` keeps, or 0 for none.
+/// Each center first moves by its cell's offset from the camera, and the frustum is relative to
+/// the camera. A sphere whose radius is negative, unbounded or not a number reaches nowhere. Four
+/// spheres are tested per SIMD operation, and `keeps` runs only for the spheres inside.
+///
+/// # Panics
+/// When the range is past the spheres or the cells, or a cell has no offset.
+pub fn farthest_reach(
+    frustum: &Frustum,
+    spheres: SphereArrays<'_>,
+    cells: RowCells<'_>,
+    offsets: &[[f32; 4]],
+    range: Range<u32>,
+    keeps: impl Fn(u32) -> bool,
+) -> f32 {
+    let positions = InOrder(spheres);
+    match cells {
+        RowCells::One(cell) => {
+            let offset = offsets[cell as usize];
+            reach_positions(frustum, range, &Moved { positions, offset }, keeps)
+        }
+        RowCells::Rows(cells) => {
+            let positions = InCells {
+                positions,
+                cells,
+                offsets,
+            };
+            reach_positions(frustum, range, &positions, keeps)
+        }
+    }
+}
+
+/// [`farthest_reach`] over any positions.
+#[inline(always)]
+fn reach_positions(
+    frustum: &Frustum,
+    range: Range<u32>,
+    positions: &impl Positions,
+    keeps: impl Fn(u32) -> bool,
+) -> f32 {
+    let planes = frustum.planes.map(|p| p.map(f32x4::splat));
+    let (start, end) = (range.start as usize, range.end as usize);
+    let simd_end = start + (end - start) / 4 * 4;
+    let (zero, unbounded) = (f32x4::splat(0.0), f32x4::splat(UNBOUNDED_RADIUS));
+    let mut far = 0.0f32;
+    let mut i = start;
+    while i < simd_end {
+        let [x, y, z, r] = positions.spheres4(i);
+        let limit = -r;
+        let mut inside = r.simd_ge(zero) & r.simd_lt(unbounded);
+        for p in &planes {
+            inside &= (x * p[0] + y * p[1] + z * p[2] + p[3]).simd_ge(limit);
+        }
+        let mut bits = inside.to_bitmask();
+        if bits != 0 {
+            let reach = ((x * x + y * y + z * z).sqrt() + r).to_array();
+            let rows = positions.rows4(i).to_array();
+            while bits != 0 {
+                let lane = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                if keeps(rows[lane]) {
+                    far = far.max(reach[lane]);
+                }
+            }
+        }
+        i += 4;
+    }
+    for i in simd_end..end {
+        let [x, y, z, r] = positions.sphere(i);
+        if (0.0..UNBOUNDED_RADIUS).contains(&r)
+            && frustum.contains_sphere(x, y, z, r)
+            && keeps(positions.row(i))
+        {
+            far = far.max((x * x + y * y + z * z).sqrt() + r);
+        }
+    }
+    far
 }
 
 /// Writes the rows of the positions in `range` whose spheres are inside the frustum to `out`, in
@@ -1220,7 +1334,7 @@ pub fn cull_into_buckets<'a>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A column-major perspective matrix in WebGPU's clip space, looking down -Z.
@@ -1268,6 +1382,56 @@ mod tests {
         }
         assert!(!same_words(&a, &b[..69]));
         assert!(same_words(&[], &[]));
+    }
+
+    #[test]
+    fn the_farthest_reach_keeps_inside_kept_spheres_with_their_offsets() {
+        let frustum = Frustum::from_view_projection(&perspective(1.0, 1.0, 0.5, 100.0));
+        // Spheres down the view, one per meter from 1 to 21, with radius 0.5. Sphere 9 is
+        // hidden, 13 unbounded and 17 behind the camera; 21 lies past the far plane.
+        let mut zs: Vec<f32> = (0..21).map(|i| -(i as f32) - 1.0).collect();
+        let mut rs = vec![0.5; 21];
+        rs[9] = crate::world::HIDDEN_RADIUS;
+        rs[13] = UNBOUNDED_RADIUS;
+        zs[17] = 50.0;
+        zs[20] = -500.0;
+        let (xs, ys) = (vec![0.0; 21], vec![0.0; 21]);
+        let spheres = SphereArrays {
+            xs: &xs,
+            ys: &ys,
+            zs: &zs,
+            radii: &rs,
+        };
+        let origin = [[0.0; 4]];
+        let one = RowCells::One(0);
+        let reach = |range: Range<u32>, keeps: &dyn Fn(u32) -> bool| {
+            farthest_reach(&frustum, spheres, one, &origin, range, keeps)
+        };
+        // The SIMD lanes and the scalar tail give the same answers.
+        assert_eq!(reach(0..21, &|_| true), 20.5);
+        assert_eq!(reach(0..19, &|_| true), 19.5);
+        assert_eq!(reach(0..18, &|_| true), 17.5);
+        assert_eq!(reach(9..10, &|_| true), 0.0);
+        assert_eq!(reach(13..14, &|_| true), 0.0);
+        assert_eq!(reach(5..5, &|_| true), 0.0);
+        assert_eq!(reach(0..21, &|row| row % 2 == 0), 19.5);
+        assert_eq!(reach(0..21, &|row| row < 3), 3.5);
+        // Each row's cell moves it by its offset from the camera, as does a run's one cell.
+        let offsets = [[0.0; 4], [0.0, 0.0, -50.0, 0.0]];
+        let cells: Vec<u32> = (0..21).map(|i| u32::from(i == 4)).collect();
+        let by_row = farthest_reach(
+            &frustum,
+            spheres,
+            RowCells::Rows(&cells),
+            &offsets,
+            0..21,
+            |_| true,
+        );
+        assert_eq!(by_row, 55.5);
+        let moved = farthest_reach(&frustum, spheres, RowCells::One(1), &offsets, 0..8, |_| {
+            true
+        });
+        assert_eq!(moved, 58.5);
     }
 
     #[test]

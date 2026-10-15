@@ -120,3 +120,35 @@ Measured on 11 and 12 October 2026 in Chrome on the Mac's GPU (Apple M5 Max), an
 - Skills: the develop skill's quick reference and materials notes, and the port skill's materials notes.
 - Tests: unit tests of the row, the builds, the options and the glTF reader; image tests of the layers, their maps, a custom material and the Khronos models; parity scenes with three.js; the first-use download test; a `--coat-sheen` switch for `bench:allocation`, and a `coatSheen` switch for the benchmark pages.
 - Sample content: the Khronos models ClearCoatTest, ClearCoatCarPaint, ClearcoatWicker, SheenChair, SheenCloth, SheenTestGrid and ToyCar join the sample-assets repository.
+
+## Addendum: the sheen's roughness floor
+
+Status: decided on 15 October 2026 by the helper of the code review's lighting findings (M-14),
+for the owner's review, under the rule of intent parity ([D-52](D-52-intent-parity.md)). Date:
+2026-10-15. Task: none.
+
+The standard material clamped the sheen's roughness to 0.0001 to 1, after its map. glTF's
+`sheenRoughnessFactor` defaults to 0, and the glTF loader keeps 0. At 0.0001 the Charlie lobe is
+almost 0 facing the light and about 1.6e7 where the half vector grazes the surface. So a velvet
+or cloth file that names only a sheen color drew almost no sheen, with sparks along back-lit
+edges. Bloom then spread them. At exactly 0 the lobe is not a number.
+
+What the references do:
+
+| Renderer | Sheen roughness |
+| --- | --- |
+| three.js 0.186 (`lights_physical_fragment`) | The factor is clamped to 0.07 to 1, then the map multiplies it |
+| Filament | A floor of 0.045, its least perceptual roughness |
+| glTF's specification | No floor. The factor is 0 to 1, default 0 |
+
+The choice:
+
+- The factor takes three.js's clamp to 0.07 to 1 before the map multiplies it, as three.js does.
+  glTF gives no floor, and three.js is the reference for its intent. So a file that names only a
+  sheen color draws three.js's soft rim.
+- The Charlie lobe takes a floor of its own, the engine's least roughness of 0.045, as Filament
+  has. A map can still take the product below 0.07, as in three.js. Below the floor three.js
+  draws sparks, and at 0 it draws no number. The floor keeps the lobe finite there.
+- The floor lives in `d_charlie`, now in `null3d::lighting` beside the other lobes. The shader
+  library check page's `lighting::d_charlie` case checks it at roughness 0, 0.0001, 0.045 and
+  0.07.

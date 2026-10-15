@@ -53,14 +53,18 @@
 //! ones tiles of its shadow atlas, and writes each light's tile into its [`VisibleLight`] record.
 
 use std::f32::consts::FRAC_PI_3;
+use std::ops::Range;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::cells::CellPosition;
-use crate::culling::Frustum;
+use crate::cells::{CellPosition, ORIGIN_CELL};
+use crate::culling::{CULL_CHUNK, Frustum, RowCells, cull_in_parallel, farthest_reach};
 use crate::error::CoreError;
 use crate::handle::Handle;
+use crate::instances::BatchTable;
+use crate::jobs::JobSystem;
 use crate::layers::{ALL_LAYERS, shares_layer};
 use crate::scene::{SceneStorage, flags};
-use crate::world::{HIDDEN_RADIUS, UNBOUNDED_RADIUS};
+use crate::world::HIDDEN_RADIUS;
 
 /// Kinds of light. A free row has kind [`kind::NONE`].
 pub mod kind {
@@ -364,60 +368,98 @@ impl SunShadow {
     }
 }
 
+/// The view that the shadow distance finds its receivers in: the view of the camera that places
+/// the cascades.
+#[derive(Clone, Copy, Debug)]
+pub struct ReceiverView<'a> {
+    /// The view's frustum, relative to its camera.
+    pub frustum: Frustum,
+    /// The offset from the view's camera to each cell's center, by cell index.
+    pub offsets: &'a [[f32; 4]],
+    /// The view's layer mask: a receiver on no layer of it is left out.
+    pub layers: u32,
+}
+
 /// The distance from the view's camera to the farthest visible receiver's bounding sphere, plus
-/// its radius, in meters, or 0 when the view sees no receiver. A hidden object, an object that
-/// receives no shadows, and one on another layer are left out. The sphere of each is relative to
-/// its grid cell, so the offset from the camera's cell is added first; a sphere that is not in the
-/// frustum is left out too. The scene object table and the light table hold rows that fit on the
-/// calling thread, so this allocates nothing.
-pub fn farthest_receiver_distance(scene: &SceneStorage, parity: usize, view: &LightView) -> f32 {
+/// its radius, in meters, or 0 when the view sees no receiver. Receivers are the scene's objects
+/// and the rows of the instance batches that receive shadows. A hidden object, an object or batch
+/// that receives no shadows, and one on another layer are left out, as is a sphere outside the
+/// frustum. Each sphere is relative to its grid cell, so its cell's offset from the camera is
+/// added first. The spheres are tested four at a time, on the job workers too when there are
+/// many, and it allocates nothing.
+pub fn farthest_receiver_distance(
+    jobs: &JobSystem,
+    scene: &SceneStorage,
+    batches: &BatchTable,
+    parity: usize,
+    view: &ReceiverView<'_>,
+) -> f32 {
+    // Reaches are never negative, so their bits order as the numbers do.
+    let far = AtomicU32::new(0);
+    let reach = |count: u32, chunk: &(dyn Fn(Range<u32>) -> f32 + Sync)| {
+        let keep = |range: Range<u32>| {
+            far.fetch_max(chunk(range).to_bits(), Ordering::Relaxed);
+        };
+        if cull_in_parallel(jobs, count as usize) {
+            jobs.parallel_for(count, CULL_CHUNK, &|range, _| keep(range));
+        } else {
+            keep(0..count);
+        }
+    };
     let world = scene.world(parity);
-    let object_flags = scene.flags();
-    let object_layers = scene.layers();
-    let cells = scene.cells();
-    let table = scene.cell_table();
-    let rows = world.rows().min(object_flags.len()).min(cells.len());
+    let (object_flags, object_layers) = (scene.flags(), scene.layers());
+    let rows = world
+        .rows()
+        .min(object_flags.len())
+        .min(object_layers.len())
+        .min(scene.cells().len());
+    let cells = if scene.cell_table().origin_only() {
+        RowCells::One(ORIGIN_CELL)
+    } else {
+        RowCells::Rows(scene.cells())
+    };
     let wanted = flags::VISIBLE | flags::RECEIVE_SHADOWS;
-    let mut far: f32 = 0.0;
-    for row in 0..rows {
-        let radius = world.radii()[row];
-        // A hidden row carries a negative radius, and an unculled one the unbounded radius that
-        // bounds nothing: neither sets the distance.
-        if !radius.is_finite() || radius < 0.0 || radius == UNBOUNDED_RADIUS {
+    let receives = |row: u32| {
+        let row = row as usize;
+        object_flags[row] & wanted == wanted && shares_layer(object_layers[row], view.layers)
+    };
+    reach(rows as u32, &|range| {
+        farthest_reach(
+            &view.frustum,
+            world.spheres(),
+            cells,
+            view.offsets,
+            range,
+            receives,
+        )
+    });
+    for (_, batch) in batches.iter() {
+        if batch.shadows() & flags::RECEIVE_SHADOWS == 0
+            || !shares_layer(batch.layers(), view.layers)
+        {
             continue;
         }
-        if object_flags[row] & wanted != wanted {
-            continue;
-        }
-        if !shares_layer(object_layers[row], view.layers) {
-            continue;
-        }
-        let offset = view.camera.offset_to(table.coords(cells[row]));
-        let (x, y, z) = (
-            world.xs()[row] + offset[0],
-            world.ys()[row] + offset[1],
-            world.zs()[row] + offset[2],
-        );
-        if !view.frustum.contains_sphere(x, y, z, radius) {
-            continue;
-        }
-        let distance = (x * x + y * y + z * z).sqrt() + radius;
-        if distance > far {
-            far = distance;
-        }
+        let spheres = batch.world(parity).spheres();
+        let cells = batch
+            .common_cell()
+            .map_or(RowCells::Rows(batch.cells()), RowCells::One);
+        reach(batch.frame_active_count(parity), &|range| {
+            farthest_reach(&view.frustum, spheres, cells, view.offsets, range, |_| true)
+        });
     }
-    far
+    f32::from_bits(far.into_inner())
 }
 
 /// The distance that follows the farthest visible receiver: the smallest ladder step at or above
-/// `raw`, held from `held` with one step of hysteresis. A rise happens at once; a fall happens
-/// only once `raw` drops below the ladder step under the held one. `held` is 0 before the first
-/// frame that resolves the distance.
+/// `raw`, held from `held` with one step of hysteresis. A rise happens at once. A fall happens
+/// only once `raw` drops more than one step below the held step, so a raw distance that moves to
+/// and fro across a step keeps the held one. `held` is 0 before the first frame that resolves the
+/// distance.
 pub fn ladder_distance(held: f32, raw: f32) -> f32 {
     let raw = raw.max(AUTO_MIN_DISTANCE);
     let step = (raw / AUTO_MIN_DISTANCE).log(AUTO_LADDER).ceil().max(0.0);
     let up = AUTO_MIN_DISTANCE * AUTO_LADDER.powf(step);
-    if held <= 0.0 || up > held || raw < held / AUTO_LADDER {
+    if held <= 0.0 || up > held || raw < held / (AUTO_LADDER * AUTO_LADDER) {
         up
     } else {
         held
@@ -1102,6 +1144,79 @@ mod tests {
     }
 
     #[test]
+    fn the_farthest_receiver_counts_receiving_batches_beyond_a_near_object() {
+        use crate::culling::Frustum;
+        use crate::scene::Command;
+
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let receives = flags::VISIBLE | flags::RECEIVE_SHADOWS;
+        // A receiver 5 m down the view, one 8 m down that receives no shadows, and one on
+        // another layer 9 m down.
+        let near = scene.reserve().unwrap();
+        let plain = scene.reserve().unwrap();
+        let other = scene.reserve().unwrap();
+        let commands = [
+            Command::create(near, Handle::NONE, 1, receives),
+            Command::create(plain, Handle::NONE, 1, flags::VISIBLE),
+            Command::create(other, Handle::NONE, 1, receives),
+            Command::set_layers(other, 2),
+        ];
+        scene.apply_commands(&commands, 1).unwrap();
+        for (handle, z) in [(near, -5.0), (plain, -8.0), (other, -9.0)] {
+            scene.set_position(handle, [0.0, 0.0, z]).unwrap();
+            scene.set_local_radius(handle, 0.5).unwrap();
+        }
+        scene.update_transforms(&jobs);
+        // A forest of rows from 10 m to 40 m down the view, and one row behind the camera.
+        let mut batches = BatchTable::with_capacity(2);
+        let forest = batches.create(64, false, false, 1, 1, 1.0).unwrap();
+        let far_rows = batches.create(4, false, false, 1, 1, 1.0).unwrap();
+        for (id, rows) in [(forest, 32), (far_rows, 2)] {
+            let batch = batches.get_mut(id).unwrap();
+            batch.set_active_count(rows).unwrap();
+            for row in 0..rows as usize {
+                let z = if id == far_rows {
+                    -90.0
+                } else {
+                    -10.0 - row as f32
+                };
+                batch.positions_mut()[row * 3..row * 3 + 3].copy_from_slice(&[0.0, 0.0, z]);
+            }
+        }
+        let batch = batches.get_mut(forest).unwrap();
+        batch.positions_mut()[31 * 3 + 2] = 40.0;
+        batch.set_shadows(flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS);
+        batches
+            .get_mut(far_rows)
+            .unwrap()
+            .set_shadows(flags::CAST_SHADOWS);
+        batches.update(&jobs, 1, scene.cell_table_mut());
+
+        let matrix = crate::culling::tests::perspective(1.0, 1.0, 0.5, 100.0);
+        let offsets = [[0.0; 4]];
+        let view = |layers: u32| ReceiverView {
+            frustum: Frustum::from_view_projection(&matrix),
+            offsets: &offsets,
+            layers,
+        };
+        let distance =
+            |layers| farthest_receiver_distance(&jobs, &scene, &batches, 1, &view(layers));
+        // The forest's farthest row in view, 40 m down the view with radius 1, sets the distance;
+        // the batch that casts alone does not.
+        assert_eq!(distance(ALL_LAYERS), 41.0);
+        // On a layer that the forest is not on, the receiver on that layer sets it.
+        batches.get_mut(forest).unwrap().set_layers(1);
+        assert_eq!(distance(2), 9.5);
+        // With the forest receiving no shadows, the near object sets it.
+        let batch = batches.get_mut(forest).unwrap();
+        batch.set_layers(ALL_LAYERS);
+        batch.set_shadows(flags::CAST_SHADOWS);
+        assert_eq!(distance(1), 5.5);
+        assert_eq!(distance(4), 0.0);
+    }
+
+    #[test]
     fn the_ladder_rounds_up_and_holds_for_one_step() {
         let close = |a: f32, b: f32| assert!((a - b).abs() <= b * 1e-5, "{a} vs {b}");
         // 1 m is the shortest step; each next is 1.25 times the one before.
@@ -1114,7 +1229,18 @@ mod tests {
         close(ladder_distance(14.551915, 12.0), 14.551915);
         // A rise happens at once when the raw distance crosses the held step.
         close(ladder_distance(14.551915, 16.0), 18.189894);
-        // A fall happens only once the raw distance drops below the step under the held one.
-        close(ladder_distance(14.551915, 11.0), 11.641532);
+        // A raw distance in the step under the held one, which alone rounds up to 11.64 m, keeps
+        // the held step, so a distance that moves to and fro across 11.64 m does not flicker.
+        close(ladder_distance(0.0, 11.0), 11.641532);
+        close(ladder_distance(14.551915, 11.0), 14.551915);
+        close(ladder_distance(14.551915, 9.4), 14.551915);
+        let mut held = 0.0;
+        for raw in [11.7, 11.6, 11.7, 11.5, 11.7, 11.6] {
+            held = ladder_distance(held, raw);
+            close(held, 14.551915);
+        }
+        // A fall happens once the raw distance drops more than a step below the held one.
+        close(ladder_distance(14.551915, 9.0), 9.313226);
+        close(ladder_distance(14.551915, 3.0), 3.0517578);
     }
 }

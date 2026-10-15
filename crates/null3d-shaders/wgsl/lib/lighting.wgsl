@@ -48,6 +48,18 @@ fn d_ggx(alpha: f32, n_dot_h: f32) -> f32 {
     return null3d::math::INV_PI * a2 / (denom * denom);
 }
 
+/// The Charlie distribution of sheen (Estevez and Kulla), as three.js's `D_Charlie`, at a
+/// perceptual roughness of at least ROUGHNESS_FLOOR. Toward a roughness of 0 the lobe sinks to
+/// nothing facing the light and grows without bound where the half vector grazes the surface, so a
+/// sheen without the floor draws sparks along back-lit edges, and at 0 it is not a number.
+fn d_charlie(roughness: f32, n_dot_h: f32) -> f32 {
+    let r = max(roughness, ROUGHNESS_FLOOR);
+    let inv_alpha = 1.0 / (r * r);
+    // 2^(-14/2), so the sine squared stays above 0 at half precision too.
+    let sin2h = max(1.0 - n_dot_h * n_dot_h, 0.0078125);
+    return (2.0 + inv_alpha) * pow(sin2h, inv_alpha * 0.5) / (2.0 * null3d::math::PI);
+}
+
 /// The height-correlated Smith visibility term of GGX, as three.js's `V_GGX_SmithCorrelated`. It
 /// includes the 1 / (4 n.l n.v) of the microfacet model.
 fn v_ggx_smith_correlated(alpha: f32, n_dot_l: f32, n_dot_v: f32) -> f32 {

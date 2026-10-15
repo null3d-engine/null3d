@@ -18,6 +18,9 @@
 
 /// Slices in each row of tiles of the grid's texture.
 const SLICES_PER_ROW: u32 = 8u;
+/// The largest value that the grid's 16-bit floats hold. A larger one would store as infinity,
+/// and the steps that read it would multiply infinity by 0, which is not a number.
+const GRID_MAX: f32 = 65504.0;
 
 /// The grid's layout, as the engine writes it into each block that reads the grid.
 struct FogGrid {
