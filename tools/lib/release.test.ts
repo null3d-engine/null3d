@@ -241,6 +241,7 @@ describe('fitReleaseText', () => {
 });
 
 describe('the notes of a history with branch merges', () => {
+	// It runs many git commands and the release command, which take seconds on a busy machine.
 	it('list every commit since the last release once, whichever branch brought it', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'null3d-release-notes-'));
 		// The user's own git settings, such as commit signing and hooks, stay out of the test.
@@ -321,7 +322,7 @@ describe('the notes of a history with branch merges', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
-	});
+	}, 30_000);
 
 	it('fails when git cannot read the range', async () => {
 		const read = async () => {
