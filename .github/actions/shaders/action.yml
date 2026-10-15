@@ -9,8 +9,8 @@ description: >-
   key no longer matches. A new compiler restores nothing. The tools check every entry's key
   themselves, so a restored entry is never used for other inputs. Only the current stamp's entries
   and the current module set are saved, so the cache does not grow with old ones. A failed or
-  cancelled build still saves the entries it finished, under a key of its own, since each entry is
-  written whole. The cache saves only when the workflow's SAVE_CACHES is true.
+  cancelled build still saves the entries it finished, under a key of its own for the run and the
+  job, since each entry is written whole. The cache saves only when the workflow's SAVE_CACHES is true.
 
 inputs:
   run:
@@ -53,4 +53,4 @@ runs:
         path: |
           ${{ steps.keys.outputs.modules-dir }}
           ${{ steps.keys.outputs.entries-dir }}
-        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) || '' }}
