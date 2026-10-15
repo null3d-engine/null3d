@@ -1,13 +1,14 @@
-// Computes the next release version and its changelog from the Conventional Commits since the last
-// release tag (AGENTS.md, "Releases"). The Release workflow runs `--apply` on a release branch and
-// opens a pull request; merging that pull request tags the version and publishes it.
+// Computes the next release version and its notes from every commit since the last release tag,
+// whichever branch brought it to main (D-108). The Release workflow runs `--apply` on a release
+// branch and opens a pull request; merging that pull request tags the version and publishes it.
 //   bun tools/release.ts [--release-type auto|patch|minor|major]
-//                                   print the next version and its changelog, and change nothing
+//                                   print the next version and its notes, and change nothing
 //   bun tools/release.ts --apply    also write every version copy and add the section to
 //                                   CHANGELOG.md; in CI, write `version` and `changelog` to
 //                                   $GITHUB_OUTPUT
 //   bun tools/release.ts --notes <version>
-//                                   print that version's section of CHANGELOG.md
+//                                   print that version's section of CHANGELOG.md, cut to the
+//                                   length a GitHub Release takes
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,6 +38,8 @@ import {
 const root = process.cwd();
 const CHANGELOG = 'CHANGELOG.md';
 const RELEASE_TYPES: readonly ReleaseType[] = ['auto', 'patch', 'minor', 'major'];
+/** GitHub limits a pull request's text to 65,536 characters; the rest is the workflow's preamble. */
+const PULL_REQUEST_NOTES_LIMIT = 64_000;
 /** Release tags are plain versions, with no `v` prefix and no pre-release part. */
 const TAG_RE = /^\d+\.\d+\.\d+$/;
 
@@ -75,6 +78,12 @@ function repoUrl(): string | undefined {
 	}
 }
 
+/** The changelog file at a branch or tag, on GitHub when the repository is known. */
+function changelogUrl(ref: string): string {
+	const url = repoUrl();
+	return url ? `${url}/blob/${ref}/${CHANGELOG}` : CHANGELOG;
+}
+
 function apply(version: string, changelog: string): void {
 	for (const copy of versionCopies(root)) {
 		const path = join(root, copy.path);
@@ -84,12 +93,17 @@ function apply(version: string, changelog: string): void {
 		join(root, CHANGELOG),
 		prependChangelog(readIfExists(root, CHANGELOG) ?? '', changelog),
 	);
+	// The notes go into the release pull request's text, which GitHub limits, so they stop at the
+	// limit with a link to the release branch's full list.
 	const output = process.env.GITHUB_OUTPUT;
-	if (output)
-		appendFileSync(
-			output,
-			`version=${version}\nchangelog<<RELEASE_EOF\n${changelog}\nRELEASE_EOF\n`,
+	if (output) {
+		const notes = fitReleaseText(
+			changelog,
+			PULL_REQUEST_NOTES_LIMIT,
+			changelogUrl(`release/${version}`),
 		);
+		appendFileSync(output, `version=${version}\nchangelog<<RELEASE_EOF\n${notes}\nRELEASE_EOF\n`);
+	}
 }
 
 async function main(): Promise<void> {
@@ -105,9 +119,7 @@ async function main(): Promise<void> {
 	if (values.notes !== undefined) {
 		const notes = extractReleaseNotes(readIfExists(root, CHANGELOG) ?? '', values.notes);
 		if (notes === null) fail(`${CHANGELOG} has no section for ${values.notes}`);
-		const url = repoUrl();
-		const fullList = url ? `${url}/blob/${values.notes}/${CHANGELOG}` : CHANGELOG;
-		console.log(fitReleaseText(notes, RELEASE_TEXT_LIMIT, fullList));
+		console.log(fitReleaseText(notes, RELEASE_TEXT_LIMIT, changelogUrl(values.notes)));
 		return;
 	}
 
