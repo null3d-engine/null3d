@@ -6,6 +6,9 @@ import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { LOTS, TOWER } from './houses';
 import { SHOTS } from './sketch';
 
+/** How many points of the loop the check samples. A spline bends between the shots, so the
+ * checks sample finely enough to catch a bulge that a shot's own pose does not show. */
+const SAMPLES = 2000;
 /** How far a route must keep from a surface, in meters, as the clearance guard does. */
 const CLEARANCE = 0.5;
 /** The height of one floor, as `houses.ts` builds it. */
@@ -46,9 +49,9 @@ test('the night town route stays clear of its houses and its tower', () => {
 		height: TOWER.height + TOWER.width * 1.6,
 	};
 	const boxes = [...houseBoxes(), tower];
-	for (let step = 0; step <= 400; step++) {
+	for (let step = 0; step <= SAMPLES; step++) {
 		// The sample through the player's own interpolation: what it plays is what is checked.
-		routePosition(route, (step / 400) * route.total, pose);
+		routePosition(route, (step / SAMPLES) * route.total, pose);
 		const at = [pose[0] as number, pose[1] as number, pose[2] as number];
 		for (const box of boxes) {
 			const inside =
