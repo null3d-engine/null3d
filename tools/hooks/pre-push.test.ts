@@ -87,10 +87,11 @@ describe('plan', () => {
 	const commands = (files: string[], nextest = true) =>
 		plan('b2', 'a1', files, CRATES, nextest).map((step) => [step.lane, step.command.join(' ')]);
 
-	it('checks only the messages and trailers of a push that changes no Rust code', () => {
+	it('checks only the messages, trailers and merges of a push that changes no Rust code', () => {
 		expect(commands(['packages/engine/src/index.ts', '.dev/x.md'])).toEqual([
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
+			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 		]);
 	});
 
@@ -98,6 +99,7 @@ describe('plan', () => {
 		expect(commands(['crates/null3d-render/src/output.rs'])).toEqual([
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
+			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],
 		]);
@@ -111,7 +113,7 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(3);
+		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(4);
 		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
 			'cargo check --workspace',
 		);

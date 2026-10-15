@@ -213,7 +213,7 @@ Before each commit:
 
 Before each push to main (`tools/hooks/pre-push.ts`; a push to another branch runs nothing):
 
-- The messages and trailers of every commit that the push adds to main, as CI's `commits` job checks them: commitlint, then the trailer check.
+- The messages and trailers of every commit that the push adds to main, as CI's `commits` job checks them: commitlint, then the trailer check. The merge check runs over them too, so a merge commit that carries new work is refused.
 - When the push changes Rust code or Cargo settings: `cargo check --workspace`, then the tests of each crate that it changes, with `--no-fail-fast`. The test that builds every shader runs in CI only.
 - On a machine whose git setting `null3d.jobQueue` names a job queue script, the steps run through that queue.
 - Only in an emergency, a `Push-Check-Skipped: <reason>` trailer on a commit of the push skips the check. The owner approved the check on 15 October 2026 ([D-157](.dev/decisions/D-157-direct-pushes-to-main.md)).
