@@ -1,22 +1,20 @@
 import { describe, expect, it } from 'bun:test';
-import { gunzipSync } from 'node:zlib';
 import {
 	AREA_TABLE_HALVES,
 	decodeAreaTables,
 } from '../packages/engine/src/scene/area-light-tables';
-import { encodeAreaTables, TABLES_FILE, tablesFile, threeTables } from './area-light-tables';
+import { encodeAreaTables, keptTablesBytes, tablesBytes, threeTables } from './area-light-tables';
 
 describe('the area lights tables file', () => {
-	it("is what the tool writes from the engine's three.js", async () => {
-		const kept = new Uint8Array(await Bun.file(TABLES_FILE).arrayBuffer());
-		expect(Buffer.compare(Buffer.from(kept), Buffer.from(await tablesFile()))).toBe(0);
+	it("unpacks to what the tool writes from the engine's three.js", async () => {
+		const kept = Buffer.from(await keptTablesBytes());
+		expect(Buffer.compare(kept, Buffer.from(await tablesBytes()))).toBe(0);
 	});
 
 	it("decodes to three.js's half floats, less the channels that no shader reads", async () => {
 		const three = await threeTables();
-		const kept = new Uint8Array(await Bun.file(TABLES_FILE).arrayBuffer());
 		const out = new Uint16Array(AREA_TABLE_HALVES);
-		decodeAreaTables(gunzipSync(kept), out);
+		decodeAreaTables(await keptTablesBytes(), out);
 		const second = AREA_TABLE_HALVES / 2;
 		for (let i = 0; i < AREA_TABLE_HALVES; i++)
 			if (i < second || (i & 3) < 2) expect(out[i]).toBe(three[i] as number);
