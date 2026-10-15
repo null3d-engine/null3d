@@ -114,6 +114,10 @@ The decision:
 4. The caches that the shared folder fed were purged once on 15 October 2026: the built WebAssembly
    files, the shader modules, the per-entry shader cache, the GPU check's baseline builds and the
    shared folder itself.
+5. The size check's lock moves into the checkout with everything else: `target/build.lock`. It was
+   `~/.cache/null3d/build.lock`, one file for the whole machine. A landing in one checkout then waited
+   for a landing in another for the length of a base build. Two size checks in one checkout still
+   serialise, because they share that checkout's base tree and staging folders.
 
 The sccache server runs each compile itself, at the priority that it started with. The coordinator's
 load limiter starts it at background priority, so the CPU lane's compiles never run beside a timing
