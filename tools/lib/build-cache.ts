@@ -4,12 +4,17 @@
 // every entry is a pure function of its inputs, and a missing entry only costs the build time.
 //
 // The canonical root variable is `NULL3D_BUILD_CACHE`, defaulting to `~/.cache/null3d`, with one
-// named subfolder per cache. The older per-cache variables (`NULL3D_CARGO_TARGET`,
-// `NULL3D_SHADER_CACHE`, `NULL3D_WASM_ARTIFACTS`) still name one cache's own folder. The canonical
-// escape hatch is `NULL3D_NO_CACHE=1`; `NULL3D_NO_BUILD_CACHE=1` and `NULL3D_NO_SHADER_CACHE=1`
-// still work.
+// named subfolder per cache. The older per-cache variables (`NULL3D_SHADER_CACHE`,
+// `NULL3D_WASM_ARTIFACTS`) still name one cache's own folder. The canonical escape hatch is
+// `NULL3D_NO_CACHE=1`; `NULL3D_NO_BUILD_CACHE=1` and `NULL3D_NO_SHADER_CACHE=1` still work.
+//
+// The Rust build folder is not a cache under the root: each checkout keeps its own, because Cargo
+// judges the engine's crates fresh by file times, and sccache, when installed, shares the compiled
+// dependency crates instead (see cargoEnv).
 import { createHash } from 'node:crypto';
 import {
+	accessSync,
+	constants,
 	copyFileSync,
 	mkdirSync,
 	readdirSync,
@@ -20,7 +25,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 /** The one root of every build cache on this machine, `~/.cache/null3d` unless overridden. */
 export const CACHE_ROOT = process.env.NULL3D_BUILD_CACHE ?? join(homedir(), '.cache', 'null3d');
@@ -35,6 +40,35 @@ const NO_CACHE = ['NULL3D_NO_CACHE', 'NULL3D_NO_BUILD_CACHE', 'NULL3D_NO_SHADER_
 export function cacheDir(name: string, override?: string): string {
 	if (override === 'local') return join(process.cwd(), 'target', name);
 	return override ?? join(CACHE_ROOT, name);
+}
+
+/** The path of the named program in the folders of `path`, or null when none holds it. */
+export function onPath(name: string, path = ''): string | null {
+	for (const folder of path.split(delimiter)) {
+		if (!folder) continue;
+		const file = join(folder, name);
+		try {
+			accessSync(file, constants.X_OK);
+			return file;
+		} catch {
+			// Not in this folder; look in the next.
+		}
+	}
+	return null;
+}
+
+/**
+ * The environment of a cargo run: sccache as the compiler wrapper when it is installed and the caller
+ * names no wrapper, with its cache under the root. sccache keys each compile by the contents of its
+ * sources, flags and dependencies, so the dependency crates compile once for every checkout while each
+ * checkout keeps its own Rust build folder. Without sccache, cargo runs as it would alone; an empty
+ * `RUSTC_WRAPPER` turns sccache off.
+ */
+export function cargoEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+	if (env.RUSTC_WRAPPER !== undefined) return {};
+	const sccache = onPath('sccache', env.PATH);
+	if (!sccache) return {};
+	return { RUSTC_WRAPPER: sccache, SCCACHE_DIR: env.SCCACHE_DIR ?? cacheDir('sccache') };
 }
 
 /** True when the environment asks every cache to be ignored, so each build runs again. */

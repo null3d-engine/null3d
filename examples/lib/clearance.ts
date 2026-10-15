@@ -72,16 +72,18 @@ export function createClearance(ctx: SketchContext, options: ClearanceOptions = 
 			out[0] = to[0] as number;
 			out[1] = to[1] as number;
 			out[2] = to[2] as number;
-			if (length <= margin) return false;
+			if (length === 0) return false;
 			const dx = ax / length;
 			const dy = ay / length;
 			const dz = az / length;
-			// A move is only stopped by a surface ahead of it. An origin already within the margin
-			// of a surface, such as the ground, never pins the move: the point may move away from
-			// it freely.
+			// The point must end a margin from every surface, so the guard looks a whole move plus
+			// a margin ahead: a step shorter than the margin is guarded like any other. A surface
+			// behind the move is never hit, so a point within the margin of one, such as the ground,
+			// still moves away from it freely; a surface ahead within the margin holds the point
+			// where it is rather than letting it draw closer.
 			if (!cast(from[0] as number, from[1] as number, from[2] as number, dx, dy, dz)) return false;
-			if (hit.distance <= margin || hit.distance >= length - margin) return false;
-			const stop = hit.distance - margin;
+			if (hit.distance >= length + margin) return false;
+			const stop = Math.max(0, hit.distance - margin);
 			out[0] = (from[0] as number) + dx * stop;
 			out[1] = (from[1] as number) + dy * stop;
 			out[2] = (from[2] as number) + dz * stop;

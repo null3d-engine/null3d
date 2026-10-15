@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'bun:test';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	acquireLock,
+	CACHE_ROOT,
 	cacheDir,
 	cacheOff,
+	cargoEnv,
 	hashFiles,
 	hashOf,
 	writeFileAtomic,
@@ -104,9 +115,33 @@ describe('cacheOff', () => {
 describe('cacheDir', () => {
 	it('names a named folder under the root, or the override, or the checkout for local', () => {
 		expect(cacheDir('wasm-artifacts')).toContain('wasm-artifacts');
-		expect(cacheDir('wasm-artifacts')).not.toContain('cargo-target');
-		expect(cacheDir('cargo-target', '/tmp/elsewhere')).toBe('/tmp/elsewhere');
-		expect(cacheDir('cargo-target', 'local')).toBe(join(process.cwd(), 'target', 'cargo-target'));
+		expect(cacheDir('wasm-artifacts')).not.toContain('shader-cache');
+		expect(cacheDir('shader-cache', '/tmp/elsewhere')).toBe('/tmp/elsewhere');
+		expect(cacheDir('shader-cache', 'local')).toBe(join(process.cwd(), 'target', 'shader-cache'));
+	});
+});
+
+describe('cargoEnv', () => {
+	it('wraps the compiler in sccache when it is installed and no wrapper is named', () => {
+		withFolder((folder) => {
+			const bin = join(folder, 'bin');
+			mkdirSync(bin);
+			const sccache = join(bin, 'sccache');
+			writeFileSync(sccache, '#!/bin/sh\n');
+			chmodSync(sccache, 0o755);
+			const PATH = `${join(folder, 'empty')}:${bin}`;
+			expect(cargoEnv({ PATH })).toEqual({
+				RUSTC_WRAPPER: sccache,
+				SCCACHE_DIR: join(CACHE_ROOT, 'sccache'),
+			});
+			expect(cargoEnv({ PATH, SCCACHE_DIR: '/elsewhere' }).SCCACHE_DIR).toBe('/elsewhere');
+			// A wrapper the caller names, or an empty one that turns wrapping off, is kept as it is.
+			expect(cargoEnv({ PATH, RUSTC_WRAPPER: '' })).toEqual({});
+			expect(cargoEnv({ PATH, RUSTC_WRAPPER: '/usr/bin/other' })).toEqual({});
+			// Without sccache, cargo runs as it would alone, as in CI.
+			expect(cargoEnv({ PATH: join(folder, 'empty') })).toEqual({});
+			expect(cargoEnv({})).toEqual({});
+		});
 	});
 });
 

@@ -5,9 +5,9 @@
 // houses, the props, the trees and the falling snow.
 //
 // The camera runs a cinematic route made for this scene (see SHOTS). `c` toggles between the route
-// (Auto) and the user's own fly camera (Manual); `h` hides the on-screen help. The page's buttons
-// pick a time of day (Night at its start), and `d` or the buttons turn on a "DSLR" lens with depth of
-// field. For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
+// (Auto) and the user's own fly camera (Manual); `h` opens and closes the controls. The controls
+// pick a time of day (Night at its start) and turn the effects on and off, among them a "DSLR" lens
+// with depth of field. For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { createCinematic, type Shot } from '../../lib/cinematic';
 import {
@@ -69,7 +69,7 @@ export const SHOTS: readonly Shot[] = [
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time, input } = ctx;
+	const { scene, assets, post, quality, page, time } = ctx;
 	const detail = DETAIL[quality.preset];
 	page.post('loading', 'Building the town');
 	const [sky, room] = await Promise.all([
@@ -106,6 +106,9 @@ export default defineSketch(async (ctx) => {
 		air.fit(quality.preset);
 	};
 	fit();
+	// The preset changes under the scene: the frame-budget governor and the Quality buttons both
+	// set it, so the counts follow it.
+	quality.onChange(fit);
 
 	// The mood: night at its start, with a little cloud and a light fog for depth. `Auto` moves the
 	// sun and the moon across the sky; the other moods hold an hour.
@@ -113,6 +116,7 @@ export default defineSketch(async (ctx) => {
 		heading: HEADING,
 		fogDensity: 0.0075,
 		cloudCoverage: 0.35,
+		backdrop: [0.02, 0.025, 0.04],
 	});
 	const start = params.get('mood');
 	stage.set(isMood(start) ? start : 'Night');
@@ -143,20 +147,13 @@ export default defineSketch(async (ctx) => {
 	};
 	if (params.has('dslr')) setLens(true);
 
-	const repaint = () => stage.set(stage.mood);
 	const setEffect = (id: string, on: boolean): void => {
 		effects[id] = on;
 		switch (id) {
 			case 'sky':
-				if (on) repaint();
-				else {
-					scene.setBackground([0.02, 0.025, 0.04]);
-					scene.setEnvironment(null);
-				}
-				break;
 			case 'fog':
-				if (on) repaint();
-				else scene.setFog(null);
+			case 'environment':
+				stage.show(id, on);
 				break;
 			case 'snow':
 				air.setSnow(on);
@@ -169,10 +166,6 @@ export default defineSketch(async (ctx) => {
 				break;
 			case 'ao':
 				post.set({ ao: on ? { radius: 0.7 } : false });
-				break;
-			case 'environment':
-				if (on) repaint();
-				else scene.setEnvironment(null);
 				break;
 			case 'bloom':
 				post.set({ bloom: on ? { blend: 'add', intensity: 0.7, threshold: 1 } : false });
@@ -217,7 +210,6 @@ export default defineSketch(async (ctx) => {
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
-		speed: 8,
 		groups,
 	});
 
@@ -233,16 +225,12 @@ export default defineSketch(async (ctx) => {
 		} else if (name === 'quality') {
 			void quality.setPreset(picked as QualityPreset);
 			film.refresh();
-		} else if (name === 'dslr') setLens(picked === 'On');
+		}
 	});
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			if (input.wasPressed('KeyD')) {
-				setLens(!dslr);
-				film.refresh();
-			}
 			stage.update(dt);
 			film.update(dt);
 			if (dslr) post.set(lens);

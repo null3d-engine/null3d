@@ -1,8 +1,9 @@
 // Checks every commit in a range that main keeps, so a commit made with --no-verify cannot skip the
 // commit gates: that each subject reads well as a line of the release notes, the acknowledgement
 // trailers, that each Size-Growth trailer names a file and gives a reason, that a branch that
-// changes how the GPU draws records its GPU check, and that one that remakes SwiftShader references
-// remakes the real-GPU ones or says why not. Run it before a push to main:
+// changes how the GPU draws records its GPU check, that one that remakes SwiftShader references
+// remakes the real-GPU ones or says why not, and that each Task: footer names a listed task or says
+// none. Run it before a push to main:
 //   bun tools/hooks/check-trailers.ts origin/main..HEAD
 import { execFileSync } from 'node:child_process';
 import { checkSubject } from '../lib/docs-style';
@@ -11,6 +12,7 @@ import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem } from './check-mac-references';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
+import { knownTaskIds, taskProblem } from './check-task';
 import { checkAck } from './commit-ack';
 
 const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE];
@@ -51,6 +53,7 @@ function main(): void {
 	}
 	const failures: string[] = [];
 	const commits: CommitWithFiles[] = [];
+	const tasks = knownTaskIds();
 	for (const { sha, authoredAt, message } of keptCommits(range)) {
 		const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', sha)
 			.split('\n')
@@ -64,6 +67,8 @@ function main(): void {
 		for (const problem of sizeGrowthProblems(message)) failures.push(`${commit}: ${problem}`);
 		for (const finding of checkSubject(message.split('\n')[0] ?? ''))
 			if (finding.severity === 'error') failures.push(`${commit}: ${finding.message}`);
+		const task = taskProblem(message, tasks, authoredAt);
+		if (task) failures.push(`${commit}: ${task}`);
 	}
 	for (const problem of [gpuCheckProblem(commits), macReferencesProblem(commits)])
 		if (problem) failures.push(problem);

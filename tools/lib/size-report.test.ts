@@ -321,7 +321,7 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(160 * 1024);
+		expect(START_BUDGET.brotli).toBe(165 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
@@ -334,8 +334,8 @@ describe('budgetProblems', () => {
 				later,
 			),
 		).toEqual([
-			'the engine JavaScript that a page downloads at its start in pipelined mode is 163,841 bytes after Brotli, over its 160 KB budget',
-			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${START_BUDGET.brotli / 1024} KB budget`,
+			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${LATER_BUDGET.brotli / 1024} KB budget`,
 		]);
 	});
 

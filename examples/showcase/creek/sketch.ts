@@ -5,7 +5,7 @@
 // textures, the rocks, the grass and the water are made in code. The trees, the plants and the
 // cave mouth are models that a script builds in Blender, loaded from files.
 //
-// The page's buttons pick a mood (four times of day and a studio) and turn on a "DSLR" lens with
+// The controls pick a time of day and turn the effects on and off, among them a "DSLR" lens with
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
@@ -103,7 +103,7 @@ export const SHOTS: readonly Shot[] = [
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time, input } = ctx;
+	const { scene, assets, post, quality, page, time } = ctx;
 	const detail = DETAIL[quality.preset];
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
@@ -153,6 +153,7 @@ export default defineSketch(async (ctx) => {
 		fogDensity: 0.006,
 		cloudCoverage: 0.3,
 		haze: { Golden: 2.2, Dusk: 1.5 },
+		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
 	let current: Mood = 'Afternoon';
@@ -203,20 +204,13 @@ export default defineSketch(async (ctx) => {
 	};
 	if (params.has('dslr')) setLens(true);
 
-	const repaint = () => stage.set(stage.mood);
 	const setEffect = (id: string, on: boolean): void => {
 		effects[id] = on;
 		switch (id) {
 			case 'sky':
-				if (on) repaint();
-				else {
-					scene.setBackground([0.02, 0.03, 0.05]);
-					scene.setEnvironment(null);
-				}
-				break;
 			case 'fog':
-				if (on) repaint();
-				else scene.setFog(null);
+			case 'environment':
+				stage.show(id, on);
 				break;
 			case 'shafts':
 				light();
@@ -229,10 +223,6 @@ export default defineSketch(async (ctx) => {
 				break;
 			case 'ao':
 				post.set({ ao: on ? { radius: 0.5 } : false });
-				break;
-			case 'environment':
-				if (on) repaint();
-				else scene.setEnvironment(null);
 				break;
 			case 'bloom':
 				post.set({ bloom: on ? { blend: 'add', intensity: 0.2, threshold: 1 } : false });
@@ -277,7 +267,6 @@ export default defineSketch(async (ctx) => {
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
-		speed: 7,
 		groups,
 	});
 	page.onMessage((name, value) => {
@@ -292,16 +281,12 @@ export default defineSketch(async (ctx) => {
 		} else if (name === 'quality') {
 			void quality.setPreset(picked as QualityPreset);
 			film.refresh();
-		} else if (name === 'dslr') setLens(picked === 'On');
+		}
 	});
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			if (input.wasPressed('KeyD')) {
-				setLens(!dslr);
-				film.refresh();
-			}
 			stage.update(dt);
 			film.update(dt);
 			if (dslr) post.set(lens);

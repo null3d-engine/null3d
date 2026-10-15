@@ -40,6 +40,12 @@ export interface StartOptions {
 	 * the camera mode. Without it, the demo shows no help. A held frame has none.
 	 */
 	hud?: HTMLElement;
+	/**
+	 * Aborting it removes the listeners, the loading overlay and the controls HUD that this demo
+	 * added, so a page that starts a second demo in the same document leaves nothing of the first.
+	 * The page still owns the canvas, its own elements and the engine.
+	 */
+	signal?: AbortSignal;
 }
 
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
@@ -50,11 +56,14 @@ export async function startDemo({
 	stats = true,
 	choices,
 	hud,
+	signal,
 }: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
-	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
+	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false, signal });
 	// The loading overlay covers the canvas from before the engine starts until the first frame draws.
 	const loader = createLoader(canvas);
+	// A stopped demo takes its loading overlay away with it; the controls HUD follows below.
+	signal?.addEventListener('abort', () => loader.hide());
 	let engine: Engine;
 	try {
 		// No preset: the engine's start-up check picks one that the device holds at its frame rate.
@@ -76,7 +85,7 @@ export async function startDemo({
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
 	const readers = [
 		...(labels ? [labelReader(engine, labels)] : []),
-		...(hud ? [hudReader(engine, hud)] : []),
+		...(hud ? [hudReader(engine, hud, signal)] : []),
 	];
 	engine.onSketchMessage((type, data) => {
 		if (type === 'loading') {
@@ -92,7 +101,7 @@ export async function startDemo({
 	);
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
-		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}));
+		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}), { signal });
 	return engine;
 }
 
@@ -244,9 +253,15 @@ interface HudMessage {
  * buttons. A row with an action is a button, which sends the action's message to the sketch, so a
  * touch screen with no keyboard can press it. A held frame posts none.
  */
-function hudReader(engine: Engine, element: HTMLElement): (type: string, data: unknown) => void {
+function hudReader(
+	engine: Engine,
+	element: HTMLElement,
+	signal?: AbortSignal,
+): (type: string, data: unknown) => void {
 	const stage = element.parentElement ?? element;
 	const hud = createHud(element, stage, (name, value) => engine.postToSketch(name, value));
+	// The page may start another demo here: the HUD leaves with the demo's own signal.
+	signal?.addEventListener('abort', () => hud.dispose());
 	return (type, data) => {
 		if (type !== 'hud') return;
 		const { groups, visible } = data as HudMessage;

@@ -38,7 +38,7 @@ The coordinator chose the following on 13 October 2026, under D-142's ruling.
 
 The frame group's binding layout change frees binding 10 for the grid. It moved no measured page. `bun run bench:gpu-check` compared the branch with main at 120 Hz, with one dropped run. GPU time per frame changed by +0.3% in S4 at Medium and by -2.2% in S6 at Medium. It changed by +6.6% in S4 at High and by -2.0% in S6 at High. Each change is well inside its rule's limits.
 
-The grid's sampling sits in its own first-use templates, `probe_grid` and `probe_grid_maps`, so a page that sets no grid downloads none of it. The builds pass every download figure: the pipelined start is 159.6 KB after Brotli on WebGL2 and 145.7 KB on WebGPU against 160 KB, and the shaders' combination file is 54.7 KB uncompressed against 64 KB. The templates leave out the area lights, transmission, level of detail and weighted transparency bits, so a mesh with one of those features draws without grid light until those figures allow them.
+The grid's sampling sits in its own first-use templates, `probe_grid` and `probe_grid_maps`, so a page that sets no grid downloads none of it. The builds pass every download figure: the pipelined start is 159.6 KB after Brotli on WebGL2 and 145.7 KB on WebGPU against 160 KB, and the shaders' combination file is 54.7 KB uncompressed against 64 KB. The templates leave out the area lights, transmission, level of detail fade, weighted transparency and coat and sheen bits, so a mesh with one of those features draws without grid light until those figures allow them. `ProbeShading` keeps such a pair on its plain template (the mask is checked against the templates' lists by a unit test in `probe_shading.rs`).
 
 ## Consequences
 

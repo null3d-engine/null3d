@@ -55,7 +55,14 @@ runs:
       run: |
         count() { find "$1" -maxdepth 1 -type f 2>/dev/null | wc -l; }
         size() { du -sh "$1" 2>/dev/null | cut -f1; }
-        stats=$(grep -ho 'compiled [0-9]* entries and reused [0-9]*' "$RUNNER_TEMP/shader-build.log" | tail -1)
+        # A restored module set makes the build a no-op, so the log holds no summary line: the
+        # record names that case, and a line that is missing for any other reason is reported
+        # rather than failing the job, whose outcome the build step already decided.
+        if grep -q 'came from the shared cache' "$RUNNER_TEMP/shader-build.log"; then
+          stats="the shared cache held the whole module set, so the build compiled nothing"
+        else
+          stats=$(grep -ho 'compiled [0-9]* entries and reused [0-9]*' "$RUNNER_TEMP/shader-build.log" | tail -1 || true)
+        fi
         {
           echo "### Shader build"
           echo "- Outcome: $OUTCOME, after $(( ($(date +%s) - STARTED) / 60 )) min"

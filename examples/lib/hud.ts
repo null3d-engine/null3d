@@ -19,6 +19,8 @@ const TIP_HOLD = 2800;
 export interface Hud {
 	/** Draws the model, and shows or hides the whole control. */
 	render(model: HudModel, visible: boolean): void;
+	/** Removes the HUD's nodes and its listeners, so a page may start another demo in the same one. */
+	dispose(): void;
 }
 
 /** A new element with its class and its text. */
@@ -87,6 +89,9 @@ export function createHud(
 		chevron.setAttribute('aria-label', open ? 'Hide scene controls' : 'Show scene controls');
 		if (!open) hideTip();
 	};
+	/** The listeners that outlive `element`, which one signal drops together. */
+	const listeners = new AbortController();
+	const { signal } = listeners;
 	let tipTimer: ReturnType<typeof setTimeout> | 0 = 0;
 	function hideTip(): void {
 		clearTimeout(tipTimer);
@@ -121,15 +126,30 @@ export function createHud(
 	bindTip(chevron);
 	chevron.addEventListener('click', () => setOpen(!element.classList.contains('open')));
 	panel.addEventListener('scroll', hideTip);
-	stage.addEventListener('pointerdown', (event) => {
-		const target = event.target;
-		if (!(target instanceof Element) || !target.closest('[data-tip]')) hideTip();
-	});
-	document.addEventListener('keydown', (event) => {
-		if (event.target instanceof HTMLInputElement) return;
-		if (event.key === 'h' || event.key === 'H') setOpen(!element.classList.contains('open'));
-		else if (event.key === 'Escape') setOpen(false);
-	});
+	stage.addEventListener(
+		'pointerdown',
+		(event) => {
+			const target = event.target;
+			if (!(target instanceof Element) || !target.closest('[data-tip]')) hideTip();
+		},
+		{ signal },
+	);
+	document.addEventListener(
+		'keydown',
+		(event) => {
+			// A shortcut never fights a browser or an editor shortcut, and never types into a field.
+			if (event.ctrlKey || event.metaKey || event.altKey) return;
+			const target = event.target;
+			if (
+				target instanceof HTMLElement &&
+				(target.isContentEditable || target.matches('input, textarea, select'))
+			)
+				return;
+			if (event.key === 'h' || event.key === 'H') setOpen(!element.classList.contains('open'));
+			else if (event.key === 'Escape') setOpen(false);
+		},
+		{ signal },
+	);
 
 	/** The buttons drawn now, by their group and id, so a render only turns them on and off. */
 	let drawn = new Map<string, HTMLButtonElement>();
@@ -266,6 +286,14 @@ export function createHud(
 			element.hidden = !visible;
 			draw(model);
 			toastChanges(model);
+		},
+		dispose() {
+			listeners.abort();
+			clearTimeout(tipTimer);
+			clearTimeout(toastTimer);
+			tip.remove();
+			toast.remove();
+			element.replaceChildren();
 		},
 	};
 }

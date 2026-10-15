@@ -71,9 +71,9 @@ import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import {
 	acquireLock,
-	CACHE_ROOT,
 	cacheDir,
 	cacheOff,
+	cargoEnv,
 	hashOf,
 	writeFolderAtomic,
 } from './lib/build-cache';
@@ -380,23 +380,28 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 }
 
 /**
- * Where cargo builds. By default this is a cache shared by every checkout on the machine, so the
- * dependency crates (wasm-bindgen and the rest) compile once rather than once per worktree. Set
- * `NULL3D_CARGO_TARGET` to another folder, or to `local` to build inside this checkout as before.
- * Cargo locks a target folder while it writes, so two builds that share it run in turn.
+ * Where cargo builds: this checkout's own `target` unless `override` names another folder. Two
+ * checkouts never share one Rust build folder. Cargo finds the engine's crates at the same
+ * workspace paths in both and judges them fresh by file times, so a shared folder lets one
+ * checkout's build link the other's crates, and the content-keyed caches would then store that
+ * output under this checkout's key. sccache, when installed, still compiles the dependency crates
+ * once for every checkout (see cargoEnv). The value `local` names this checkout's folder too.
  */
-const CARGO_TARGET_BASE =
-	process.env.NULL3D_CARGO_TARGET === 'local'
-		? join(root, 'target')
-		: cacheDir('cargo-target', process.env.NULL3D_CARGO_TARGET);
+export function cargoTargetBase(checkout: string, override?: string): string {
+	return override && override !== 'local' ? override : join(checkout, 'target');
+}
 
-/** The Rust build folder of a variant, in the shared cache unless this checkout keeps its own. */
+const CARGO_TARGET_BASE = cargoTargetBase(root, process.env.NULL3D_CARGO_TARGET);
+/** The environment of every cargo run of the build: sccache as the compiler wrapper when installed. */
+const CARGO_ENV = cargoEnv();
+
+/** The Rust build folder of a variant. */
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
 
 /**
  * Where a variant's wasm-bindgen output and its optimized wasm are staged before they go in place.
- * It lives in this checkout, not in the shared cargo target, and it carries the process id, so no two
- * builds ever share one, in one checkout or in several. A shared staging folder lets one build remove
+ * It lives in this checkout and carries the process id, so no two builds ever share one, in one
+ * checkout or in several. A shared staging folder lets one build remove
  * another's half-written output, which makes wasm-opt fail with "Failed opening output file". Because
  * a folder belongs to one build, a build never needs to wait for another.
  */
@@ -405,13 +410,18 @@ export function variantStagingFolder(variant: Variant): string {
 }
 
 /**
- * The size check's lock. An ordinary build takes no lock: it stages in a folder of its own (see
- * variantStagingFolder), and Cargo locks the target folder that builds share. A size check takes this
- * lock, because it also builds the base commit with that commit's own build script, and an older
- * script may stage into the shared target folder. One lock over the whole check keeps two checks, or a
- * check and an older build, from removing each other's staged files.
+ * The size check's lock, in the checkout that runs it. An ordinary build takes no lock: it stages in
+ * a folder of its own (see variantStagingFolder), and Cargo locks the target folder while it writes.
+ * A size check takes this lock, because it also builds the base commit with that commit's own build
+ * script, and that tree lives in this checkout's target too. One lock over the whole check keeps two
+ * checks, or a check and an older build, from removing each other's staged files. Each checkout has
+ * its own lock file, so two checkouts' size checks run at the same time.
  */
-const SIZE_CHECK_LOCK = join(CACHE_ROOT, 'build.lock');
+export function sizeCheckLock(checkout: string): string {
+	return join(checkout, 'target', 'build.lock');
+}
+
+const SIZE_CHECK_LOCK = sizeCheckLock(root);
 
 /**
  * Takes the size check's lock and returns the function that releases it. Ordinary builds do not take
@@ -633,11 +643,10 @@ function buildVariant(
 			targetDir,
 			...variant.cargoArgs,
 		],
-		{ RUSTFLAGS: variant.rustflags },
+		{ ...CARGO_ENV, RUSTFLAGS: variant.rustflags },
 	);
-	// The files take shape in this checkout's staging folder, and go in place whole once every step
-	// and check passed. The staging folder is private, never the shared cargo target's (see
-	// variantStagingFolder).
+	// The files take shape in this build's own staging folder, and go in place whole once every step
+	// and check passed (see variantStagingFolder).
 	const staged = variantStagingFolder(variant);
 	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
@@ -696,7 +705,7 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 			'--target-dir',
 			targetDir,
 		],
-		{ RUSTFLAGS: '-Cstrip=symbols' },
+		{ ...CARGO_ENV, RUSTFLAGS: '-Cstrip=symbols' },
 	);
 	for (const { crate, path } of TOOL_MODULES) {
 		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
@@ -816,17 +825,15 @@ function checkoutBaseTree(tree: string, sha: string): boolean {
 /**
  * Copies this checkout's Rust build folders into a new base worktree with their file times, and
  * shares the downloaded wasm-bindgen, whose folder names its version. The base build then runs with
- * `NULL3D_CARGO_TARGET=local`, so it compiles into the worktree's own `target/wasm-<variant>` and
- * never into this checkout's build folder. The worktree's files are newer than the copies, so Cargo
- * rebuilds the engine's crates from the base's code and reuses the standard library and the
- * dependencies. Two checkouts never share one Rust build folder: Cargo finds the engine's crates at
- * the same paths in both, and judges them fresh by file times, so one checkout's build could
- * otherwise take the other's crates.
+ * `NULL3D_CARGO_TARGET=local`, so it compiles into the worktree's own `target/wasm-<variant>` even
+ * when the base commit's build script defaults to a shared folder. The worktree's files are newer
+ * than the copies, so Cargo rebuilds the engine's crates from the base's code and reuses the standard
+ * library and the dependencies.
  */
 function seedBuildFolders(tree: string): void {
 	mkdirSync(join(tree, 'target'), { recursive: true });
 	for (const variant of VARIANTS) {
-		// buildFolder is absolute: the shared cache, or this checkout's target when it keeps its own.
+		// buildFolder is absolute: this checkout's target, or the folder that overrides it.
 		const folder = buildFolder(variant);
 		if (existsSync(folder))
 			execFileSync('cp', ['-Rp', folder, join(tree, 'target', `wasm-${variant.name}`)]);

@@ -125,3 +125,28 @@ The owner asked for the check to cover every demo and showcase scene. What runs 
   world-space triangles of its objects and instance rows. That readback is not built, so those scenes
   are not covered yet. Until it is, an overlap in a demo is caught by eye or in a review, not by a
   test.
+
+## Addendum: the guards of the switches and the route (15 October 2026)
+
+A code review on 15 October 2026 found four faults in this camera, and each fix keeps a rule above.
+They are recorded here, since the camera's behaviour is what the rules describe.
+
+- **The clearance guard skipped a short move.** `examples/lib/clearance.ts` cast a ray only when the
+  move was longer than its margin. A route's frame moves far less than the margin, so the guard never
+  tested it and the Auto camera could walk into a building a little at a time. The guard now looks a
+  whole move plus a margin ahead, so a short step is guarded like any other, and a surface that is
+  already within the margin holds the point where it is instead of letting it draw closer.
+- **The camera resumed a fling after a switch.** With damping on, the controls keep the turn, tilt,
+  pan and zoom that remain and decay them in `update`. Auto does not call `update`, so the remainder
+  of the last fling stayed stored and resumed at the next takeover. `OrbitControls.stop()` drops the
+  remainder, and `cinematic.ts` calls it at every switch, so the camera is still from the first frame
+  of the mode change, as the addendum above requires.
+- **A takeover during the glide jumped.** Taking the camera back while the route glided onto it
+  applied the route's own pose that moment, not the mid-glide pose the camera held. The takeover now
+  keeps the camera exactly where it is, whichever phase the glide had reached.
+- **The manual keys barely moved.** Both scenes passed the old fly speed in metres (`speed: 8` and
+  `speed: 7`) to a player that reads pixels a second, so the keys moved the camera a few pixels a
+  frame. The scenes take the player's default (420 pixels a second) instead.
+
+`examples/lib/takeover.test.ts` holds a case for each: a fling that must not resume, a mid-glide
+takeover, and `examples/lib/clearance.test.ts` holds the short step.
