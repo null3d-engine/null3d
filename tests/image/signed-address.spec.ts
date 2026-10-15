@@ -19,6 +19,7 @@ interface SignedAddressResult {
 	drawListAddress?: number;
 	drawListWords?: number;
 	made?: number;
+	presentedAtMove?: number;
 	presented?: number;
 	stopMs?: number;
 	failures?: string[];
@@ -52,8 +53,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				'the draw list address, which must pass 2 GiB to cover the fault',
 			).toBeGreaterThanOrEqual(SIGNED_LIMIT);
 		expect(result.made ?? 0).toBeGreaterThan(1_000);
-		// The frames drew from the list, and the engine stopped cleanly.
-		expect(result.presented ?? 0).toBeGreaterThan(0);
+		// The renderer drew frames from the moved list, and the engine stopped cleanly.
+		expect(result.presentedAtMove ?? 0).toBeGreaterThan(0);
+		expect(
+			result.presented ?? 0,
+			'the frame the renderer drew last, which must move on after the draw list moved',
+		).toBeGreaterThan(result.presentedAtMove ?? 0);
 		expect(result.failures).toEqual([]);
 		expect(result.stopMs ?? RUN_LIMIT_MS).toBeLessThan(30_000);
 	});
