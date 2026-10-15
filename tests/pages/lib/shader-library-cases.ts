@@ -1618,7 +1618,9 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	{
 		name: 'lighting::d_charlie',
 		cases: (random) => [
-			...[0, 1e-4, 0.045, 0.07].flatMap((r) => [0, 0.5, 0.99].map((h) => new Inputs().setF(0, [r, h]))),
+			...[0, 1e-4, 0.045, 0.07].flatMap((r) =>
+				[0, 0.5, 0.99].map((h) => new Inputs().setF(0, [r, h])),
+			),
 			...samples((r) => new Inputs().setF(0, [between(r, 0, 1), between(r, 0, 1)]))(random),
 		],
 		expected: (i) => {
@@ -1679,7 +1681,9 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			const rayleighPhase = (c: number) => 0.05968310365946075 * (1 + c * c);
 			const miePhase = (c: number) => {
 				const base = Math.max(1 + g * g - 2 * g * c, 1e-4);
-				return (0.11936620731892151 * (1 - g * g) * (1 + c * c)) / ((2 + g * g) * base * Math.sqrt(base));
+				return (
+					(0.11936620731892152 * (1 - g * g) * (1 + c * c)) / ((2 + g * g) * base * Math.sqrt(base))
+				);
 			};
 			const lit = (phase: (c: number) => number) =>
 				add(add(scale(xyz(sunLight), phase(cosSun)), scale(xyz(moonLight), phase(cosMoon))), again);
@@ -1690,7 +1694,8 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			const c = xyz(i.f(6));
 			return floats(
 				[0, 1, 2].map(
-					(k) => c[k]! * through[k]! + (scattered[k]! * (1 - through[k]!)) / Math.max(depth[k]!, 1e-6),
+					(k) =>
+						c[k]! * through[k]! + (scattered[k]! * (1 - through[k]!)) / Math.max(depth[k]!, 1e-6),
 				),
 			);
 		},
