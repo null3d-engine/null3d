@@ -51,6 +51,11 @@ Figures from the Mac on 14 October 2026, with the shared cargo target warm:
 A library module's edit rebuilds only the entries that import it: 31 of 54 in one measurement. The
 dependency crates compile once for every checkout on the machine rather than once per worktree.
 
+CI keeps the two shader folders in the Actions cache ([CI's jobs](pull-requests.md#cis-jobs)). On 15
+October 2026 a cold shader build on a CI runner took longer than 34 minutes. One stopped run left
+669 MB of finished entries, which the Actions cache stored as 10.3 MiB. The next run restored them in
+under a second (runs 38679915189 and 38683080955).
+
 ## What a report measures
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
