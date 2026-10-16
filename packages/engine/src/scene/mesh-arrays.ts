@@ -184,6 +184,29 @@ const INTEGER_ARRAYS: readonly [
 	[Uint16Array, VERTEX_TYPE_UNORM16, VERTEX_TYPE_UINT16],
 ];
 
+/**
+ * The array spec of each attribute name, and the integer typed array that holds each vertex type,
+ * worked out once. An update of a mesh's vertices asks both, and a search that names its attribute
+ * in a callback makes one object per call, which a frame that writes vertices may not.
+ */
+const SPEC_BY_NAME: ReadonlyMap<string, ArraySpec> = new Map(
+	ARRAYS.map((spec) => [spec.name, spec] as const),
+);
+const INTEGER_BY_TYPE: ReadonlyMap<number, HeapConstructor<IntegerArray>> = new Map(
+	INTEGER_ARRAYS.flatMap(([array, normalized, plain]) => [
+		[normalized, array] as const,
+		[plain, array] as const,
+	]),
+);
+
+/** The empty attribute list of a location that holds none, so a read of it makes no array. */
+const NO_TYPES: readonly number[] = [];
+
+/** The integer typed array that holds a vertex type, or undefined when none does. */
+function integerArrayFor(type: number): HeapConstructor<IntegerArray> | undefined {
+	return INTEGER_BY_TYPE.get(type);
+}
+
 /** One array's numbers and how its integers read, after `VertexArray`'s fields are taken apart. */
 interface Values {
 	array: Float32Array | IntegerArray | readonly number[];
@@ -213,10 +236,7 @@ function takenArrays(spec: ArraySpec): string {
 	const types = VERTEX_ATTRIBUTES[spec.location]?.[3] ?? [];
 	const names: string[] = [];
 	for (const type of types) {
-		const name =
-			type === VERTEX_TYPE_F32
-				? 'Float32Array'
-				: INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type)?.[0].name;
+		const name = type === VERTEX_TYPE_F32 ? 'Float32Array' : integerArrayFor(type)?.name;
 		if (name && !names.includes(name)) names.push(name);
 	}
 	const listed = names.map(withArticle);
@@ -365,9 +385,9 @@ function wordBytes(type: number, length: number): number {
 /** The typed array of engine memory that holds `length` values of a vertex type from `address`. */
 function memoryOf(core: CoreMemory, type: number, address: number, length: number) {
 	if (type === VERTEX_TYPE_F32) return core.view(Float32Array, address, length);
-	const integer = INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type);
+	const integer = integerArrayFor(type);
 	if (!integer) throw new Error(`no typed array holds vertex type ${type}`);
-	return core.view(integer[0], address, length);
+	return core.view(integer, address, length);
 }
 
 /**
@@ -508,9 +528,9 @@ export interface VertexLayout {
 /** The typed array class that holds values of a vertex type, as `INTEGER_ARRAYS` names them. */
 function arrayClass(type: number): HeapConstructor<Float32Array | IntegerArray> {
 	if (type === VERTEX_TYPE_F32) return Float32Array;
-	const integer = INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type);
+	const integer = integerArrayFor(type);
 	if (!integer) throw new Error(`no typed array holds vertex type ${type}`);
-	return integer[0];
+	return integer;
 }
 
 /**
@@ -525,12 +545,15 @@ function updateProblem(
 	count: number,
 	out: { spec?: ArraySpec; type: number; components: number },
 ): string | undefined {
-	const spec = ARRAYS.find((array) => array.name === name);
+	const spec = SPEC_BY_NAME.get(name);
 	if (!spec || spec.location > LAST_UPDATABLE)
 		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors or tangents.`;
 	if (layout.format & POSED_BITS)
 		return 'got a mesh with joints or morph targets, whose vertices take no updates.';
-	const [bit = 0, , shift = 0, types = []] = VERTEX_ATTRIBUTES[spec.location] ?? [];
+	const attributes = VERTEX_ATTRIBUTES[spec.location];
+	const bit = attributes?.[0] ?? 0;
+	const shift = attributes?.[2] ?? 0;
+	const types = attributes?.[3] ?? NO_TYPES;
 	if (bit !== 0 && (layout.format & bit) === 0) return `got ${name} for a mesh without ${name}.`;
 	const width = 32 - Math.clz32(Math.max(types.length - 1, 0));
 	const type = types[(layout.format >>> shift) & ((1 << width) - 1)] ?? VERTEX_TYPE_F32;

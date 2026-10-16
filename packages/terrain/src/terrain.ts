@@ -4,7 +4,14 @@
 // of different levels meet. One splat-mapped material blends up to four tiled layers over all the
 // blocks. The terrain has no collision: a game reads `heightAt` and `normalAt` to place what
 // stands on it.
-import type { Material, Mesh, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
+import type {
+	Material,
+	Mesh,
+	MeshGeometry,
+	SketchContext,
+	Texture,
+	Vec3Like,
+} from '@null3d/engine';
 import { type ChunkShape, chunkShape, writeChunkVertices } from './chunk';
 import { createHeightfield, type Heightfield } from './heightfield';
 import { splatMaterial, type TerrainLayer } from './material';
@@ -107,6 +114,12 @@ export class Terrain {
 	private readonly blocks = new Map<number, Block>();
 	/** The blocks that a selection left out, whose meshes the next block that needs one takes. */
 	private readonly spares: Block[] = [];
+	/**
+	 * How many blocks wait in `spares`. The ground holds the array at its longest, because a
+	 * selection that parks and takes blocks again would make the browser grow and shrink it, which
+	 * allocates a word for every block of every frame.
+	 */
+	private spareCount = 0;
 	/** The vertices of the block being written, which every block writes into in turn. */
 	private readonly positions: Float32Array;
 	private readonly normals: Float32Array;
@@ -226,12 +239,16 @@ export class Terrain {
 	}
 
 	/**
-	 * Picks the blocks to draw for a camera at `x` and `z` on the ground. It does nothing until the
-	 * camera moves into a new cell of the finest level, so a still camera costs no work, and a block
-	 * that the new selection needs takes the mesh of one that it left out. Call it in `onUpdate`
-	 * with the camera's own x and z.
+	 * Picks the blocks to draw for a camera whose world position `eye` holds, as x, y and z: the
+	 * ground reads the x and the z. It does nothing until the camera moves into a new cell of the
+	 * finest level, so a still camera costs no work, and a block that the new selection needs takes
+	 * the mesh of one that it left out. Call it in `onUpdate` with the camera's own position, in an
+	 * array you keep: an array crosses the call as it is, where two fractions make the browser box
+	 * each of them into an object.
 	 */
-	update(x: number, z: number): void {
+	update(eye: Vec3Like): void {
+		const x = eye[0] as number;
+		const z = eye[2] as number;
 		if (this.ended) return;
 		const column = Math.floor((x + this.halfSize) / this.cellSize);
 		const row = Math.floor((z + this.halfSize) / this.cellSize);
@@ -264,16 +281,16 @@ export class Terrain {
 	/** Shows or hides the whole ground, for a camera high above it. */
 	setVisible(visible: boolean): void {
 		for (const block of this.blocks.values()) block.object.setVisible(visible);
-		for (let i = 0; i < this.spares.length; i++)
-			(this.spares[i] as Block).object.setVisible(visible);
+		for (let i = 0; i < this.spareCount; i++) (this.spares[i] as Block).object.setVisible(visible);
 	}
 
 	/** Destroys the ground: every block's object and mesh, and the material's own textures. */
 	destroy(): void {
 		for (const block of this.blocks.values()) this.endBlock(block);
 		this.blocks.clear();
-		for (let i = 0; i < this.spares.length; i++) this.endBlock(this.spares[i] as Block);
+		for (let i = 0; i < this.spareCount; i++) this.endBlock(this.spares[i] as Block);
 		this.spares.length = 0;
+		this.spareCount = 0;
 		this.material.destroy();
 		this.splatTexture.destroy();
 		this.white?.destroy();
@@ -334,10 +351,23 @@ export class Terrain {
 	 * `maxBlocks` meshes, where a new block builds one.
 	 */
 	private takeBlock(): Block | undefined {
-		const waiting = this.spares.pop();
+		const waiting = this.unpark();
 		if (waiting) return waiting;
-		if (this.blocks.size >= this.maxBlocks && this.evict()) return this.spares.pop();
+		if (this.blocks.size >= this.maxBlocks && this.evict()) return this.unpark();
 		return undefined;
+	}
+
+	/** Parks a block's mesh for a later block to take, at a place the array already holds. */
+	private park(block: Block): void {
+		this.spares[this.spareCount++] = block;
+	}
+
+	/** Takes the last parked block, or undefined when none waits. */
+	private unpark(): Block | undefined {
+		if (this.spareCount === 0) return undefined;
+		const taken = this.spares[--this.spareCount] as Block;
+		this.spares[this.spareCount] = undefined as unknown as Block;
+		return taken;
 	}
 
 	/**
@@ -366,7 +396,7 @@ export class Terrain {
 		const oldest = this.oldest;
 		if (!oldest) return false;
 		this.blocks.delete(this.oldestKey);
-		this.spares.push(oldest);
+		this.park(oldest);
 		return true;
 	}
 
@@ -379,7 +409,7 @@ export class Terrain {
 
 /**
  * Makes a terrain: a height field drawn as a quadtree of blocks with a splat-mapped surface. Call
- * `terrain.update(x, z)` with the camera's ground position when it moves, and read `heightAt` and
+ * `terrain.update(eye)` with the camera's world position when it moves, and read `heightAt` and
  * `normalAt` to place what stands on the ground. `terrain.destroy()` frees it.
  *
  * @category api/terrain

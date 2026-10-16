@@ -57,7 +57,7 @@ export default defineSketch((ctx) => {
     onUpdate() {
       const at = [0, 0, 0];
       camera.getWorldPosition(at);
-      terrain.update(at[0], at[2]);
+      terrain.update(at);
     },
   };
 });
