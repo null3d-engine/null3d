@@ -1,9 +1,10 @@
 // Runs the checks that hold gigabytes, each in a process of its own. The unit run shares one process
 // between its files, so what one such check holds every test after it pays for, and a check cannot
-// hand that memory back ([Test memory](../.dev/tests.md)). Two kinds are here. A check that reads
+// hand that memory back ([Test memory](../.dev/tests.md)). Three kinds are here. A check that reads
 // the generated shader set holds the 1,343 modules it parses, about 3.6 GB. A check that builds the
 // engine with the bundler holds the bundle and the bundler's copy of it, which the generated shaders
-// make about 890 MB of code.
+// make about 890 MB of code. A check that feeds the WebAssembly texture transcoder changed files
+// holds every growth of its heap, which never shrinks: about 1.7 GB, from files of a few kilobytes.
 //
 // The list is shared with the unit run, which leaves these files out: `tests/lib/heavy-checks.ts`.
 // Each process gets a memory ceiling of its own, which is the peak its check measured with room for
