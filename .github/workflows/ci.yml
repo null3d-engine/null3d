@@ -133,6 +133,30 @@ jobs:
       - uses: ./.github/actions/samples
       - run: bun run test
 
+  heavy-checks:
+    # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
+    # the modules, the engine's programs and pipelines, and the two bundler builds. The unit job
+    # shares one process, so its script ignores these files and this job runs them beside it, each
+    # under its own memory ceiling ([Test memory](.dev/tests.md)).
+    needs: [changes, build]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Git hooks are for local commits; this job runs the same checks directly.
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/samples
+      - run: bun run test:heavy
+
   commits:
     # The commit messages and their trailers, which the commit hooks check locally: on a push, every
     # commit after main's commit before the push; on a pull request, every commit of its branch. A
@@ -786,6 +810,7 @@ jobs:
       - changes
       - commits
       - docs-and-tools
+      - heavy-checks
       - rust-lint
       - rust-tests
       - build
@@ -830,7 +855,8 @@ jobs:
           jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
           jq -e '.changes.outputs as $run | {
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "wasm-checks": "code",
-              "shader-compiler": "code", "packages": "code", "city": "full", "browser": "full",
+              "shader-compiler": "code", "packages": "code", "heavy-checks": "code",
+              "city": "full", "browser": "full",
               "browser-city": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"
