@@ -3,7 +3,8 @@
 // With a process for each group, the run's peak is the largest group's rather than the sum of them.
 // The groups are the repository's own: the tools, each package, the benchmark's scenes and pages,
 // the tests and their helpers, and the demos. Each process gets the memory ceiling of the unit run,
-// through `tests/lib/memory-ceiling.ts` ([Test memory](../.dev/tests.md)).
+// through `tests/lib/memory-ceiling.ts`, and its checks the time budget of `tests/lib/run-budget.ts`
+// ([Test memory](../.dev/tests.md)).
 //
 // The checks that hold gigabytes are not here; `bun run test:heavy` runs them in processes of their
 // own, one at a time, because a process that holds one of them holds it for good.
@@ -11,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
+import { CHECK_TIMEOUT_MS } from './lib/run-budget.ts';
 
 /** The repository, which the groups' paths are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -38,7 +40,13 @@ for (const paths of GROUPS) {
 	// `--isolate` is not used: it gives each file a global of its own, which shrank the engine's
 	// group from 2,908 MB to 2,054 MB, but grew the group of the runner's tests from 1,220 MB to
 	// 3,822 MB and made it three times slower, so the run's peak was higher with it.
-	const args = ['test', '--preload', CEILING_PRELOAD, '--conditions=null3d-source'];
+	const args = [
+		'test',
+		`--timeout=${CHECK_TIMEOUT_MS}`,
+		'--preload',
+		CEILING_PRELOAD,
+		'--conditions=null3d-source',
+	];
 	for (const { file } of HEAVY_CHECKS) args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
 	args.push(...paths);
 	const started = Date.now();
