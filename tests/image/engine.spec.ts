@@ -358,6 +358,16 @@ const FEATURE_FILE_OWNERS: Partial<
 	views: { webgl2: null },
 };
 
+/**
+ * How long a first-use page may take to answer. The page itself waits for the frame's pipelines to
+ * build for up to 30 s (`BUILD_WAIT_LIMIT_MS`), and answers with its error when that runs out. So
+ * the test must wait longer than the page's own limit, or it races the page and reports a bare
+ * timeout in place of the page's answer. The clear coat and sheen page builds 24 pipelines, more
+ * than any other feature's page, and needs about 30 s for them on CI's software GPU: it passed at
+ * 30.2 s and failed at 30.5 s and 30.6 s while this wait was 30 s.
+ */
+const FIRST_USE_WAIT_MS = 60_000;
+
 // A page that uses one such feature downloads that feature's shader file once, for its device's
 // fixed bits, and no other feature's shader file. The features come from the shader manifest's
 // first-use tables, so a new table gets a test, and fails it until a sketch uses that feature. The
@@ -391,7 +401,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			await page.goto(
 				`image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`,
 			);
-			const result = await pageResult<{ error?: string }>(page, 30_000);
+			const result = await pageResult<{ error?: string }>(page, FIRST_USE_WAIT_MS);
 			expect(result.error).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
 			const owner = FEATURE_FILE_OWNERS[feature]?.[gpu];
