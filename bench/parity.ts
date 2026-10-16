@@ -61,6 +61,8 @@ import {
 	passesWithBaseline,
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
+	sceneLimit,
+	type Tier,
 } from './lib/parity';
 
 const OUTPUT_DIR = join(REPO_ROOT, 'test-results/parity');
@@ -77,7 +79,8 @@ interface SceneSource {
 	path(kind: PageKind): string | null;
 	decode(result: unknown): HoldFrame;
 	pair(comparison: Comparison): PagePair;
-	limit: number;
+	/** The percentage of pixels under which the scene passes on a tier, or in a comparison of two kinds. */
+	limit(tier?: Tier): number;
 	baseline: boolean;
 }
 
@@ -89,7 +92,7 @@ function sourceOf(name: string, switches: string): SceneSource {
 			path: (kind) => holdPagePath(name, kind, switches),
 			decode: decodeHoldResult,
 			pair: (comparison) => comparison,
-			limit: MAX_DIFFERENT_PERCENT,
+			limit: () => MAX_DIFFERENT_PERCENT,
 			baseline: true,
 		};
 	const scene = featureScene(name);
@@ -100,7 +103,7 @@ function sourceOf(name: string, switches: string): SceneSource {
 		decode: (result) => decodeFeatureResult(result, name),
 		pair: (comparison) =>
 			comparison.tier === undefined ? comparison : featurePair(scene, comparison.tier),
-		limit: scene.limit ?? MAX_DIFFERENT_PERCENT,
+		limit: (tier) => sceneLimit(scene, tier) ?? MAX_DIFFERENT_PERCENT,
 		baseline: scene.webglOnly !== true,
 	};
 }
@@ -161,8 +164,9 @@ function runComparison(
 	const files = parityFiles(comparisonName(source.name, pair), candidate, reference, result.diff);
 	for (const { file, png } of files) writeFileSync(join(OUTPUT_DIR, file), png);
 	const images = files.map(({ file }) => relative(REPO_ROOT, join(OUTPUT_DIR, file))).join(', ');
-	const pass = passesWithBaseline(result.share, baselineShare, source.limit);
-	const difference = differenceText(result, baselineShare, false, source.limit);
+	const limit = source.limit(comparison.tier);
+	const pass = passesWithBaseline(result.share, baselineShare, limit);
+	const difference = differenceText(result, baselineShare, false, limit);
 	return { pass, line: `${pass ? 'pass' : 'FAIL'}  ${label}: ${difference}. Images: ${images}` };
 }
 

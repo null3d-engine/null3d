@@ -52,8 +52,20 @@ const showsMap = (pixel: readonly number[]) =>
 	(pixel[1] as number) + 40 < (pixel[0] as number) &&
 	(pixel[1] as number) + 40 < (pixel[2] as number);
 
+/**
+ * True for the material's own color alone, with no map: three channels within a few steps of each
+ * other, and bright enough that the engine drew the surface rather than a black frame. The tone
+ * curve gives the material's white a bright grey, so the check reads that, not the exact white. The
+ * map's magenta has no green and a stopped engine's frame has no brightness, so neither passes.
+ */
+const showsColorAlone = (pixel: readonly number[]) => {
+	const [red, green, blue] = pixel as [number, number, number];
+	const spread = Math.max(red, green, blue) - Math.min(red, green, blue);
+	return spread <= 8 && Math.min(red, green, blue) >= 100;
+};
+
 // With keepTextureCopies the engine keeps the image's copy and the map comes back. Without it the
-// image is freed after its upload, and the texture draws with its color alone.
+// image is freed after its upload, and the engine draws on with the material's own color alone.
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	test(`a kept copy brings a map back after a GPU loss on ${gpu}`, async ({ page }) => {
 		await page.goto(`map-loss.html?gpu=${gpu}&copies=on`);
@@ -72,7 +84,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		expect(result.error).toBeUndefined();
 		expect(result.code).toBeNull();
 		expect(showsMap(result.before), `before ${result.before.join(', ')}`).toBe(true);
-		expect(showsMap(result.after), `after ${result.after.join(', ')}`).toBe(false);
+		expect(showsColorAlone(result.after), `after ${result.after.join(', ')}`).toBe(true);
 	});
 }
 

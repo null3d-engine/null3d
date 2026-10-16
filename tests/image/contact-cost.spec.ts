@@ -6,32 +6,17 @@
 // On WebGPU the depth prepass follows contact shadows, so the on side pays it too. A second run of
 // each WebGPU case keeps the prepass on for both sides, and the difference between the two runs is
 // the prepass's own cost. WebGL2 draws the prepass on every preset. Compatibility mode stops at
-// Medium, so it runs Medium's 4 steps alone. Each test waits until the computer's 1-minute load is
-// under 8, and prints the load beside its figures, as other work on the computer would spoil them.
-import { loadavg } from 'node:os';
+// Medium, so it runs Medium's 4 steps alone. Each test waits for a quiet computer, within a time
+// limit, and prints the load beside its figures (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
+import {
+	type CostResult,
+	costTimeout,
+	loadNow,
+	sideLine,
+	waitForQuiet,
+} from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
-
-interface Side {
-	gpuMs: number | null;
-	intervalMs: number | null;
-	cpuMs: number | null;
-	threads: Record<string, number | null>;
-}
-
-interface CostResult {
-	error?: string;
-	tier: string;
-	off: Side;
-	on: Side;
-	failures: string[];
-}
-
-const ms = (value: number | null) => (value === null ? 'none' : value.toFixed(3));
-
-/** The 1-minute load under which a test measures, and how often it checks the load. */
-const QUIET_LOAD = 8;
-const LOAD_CHECK_MS = 15_000;
 
 /** Each case: the GPU path, the preset, the steps per march and whether the prepass stays on. */
 const CASES = [
@@ -52,23 +37,19 @@ for (const [gpu, preset, steps, prepass] of CASES)
 				!process.env.NULL3D_CONTACT_COST,
 				'set NULL3D_CONTACT_COST to time contact shadows',
 			);
-			test.setTimeout(300_000);
-			while ((loadavg()[0] as number) >= QUIET_LOAD)
-				await new Promise((resolve) => setTimeout(resolve, LOAD_CHECK_MS));
-			const loadBefore = (loadavg()[0] as number).toFixed(1);
+			test.setTimeout(costTimeout(300_000));
+			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 1920, height: 1080 });
 			await page.goto(
 				`effect-cost.html?effect=contact&gpu=${gpu}&preset=${preset}&steps=${steps}&scale=${scale}${prepass ? '&prepass=on' : ''}`,
 			);
 			const result = await pageResult<CostResult>(page, 200_000);
 			expect(result.error).toBeUndefined();
-			const line = (name: string, side: Side) =>
-				`${name}: GPU ${ms(side.gpuMs)} ms, interval ${ms(side.intervalMs)} ms, CPU ${ms(side.cpuMs)} ms`;
 			console.log(
 				[
-					`CONTACTCOST ${result.tier} ${steps} steps, scale ${scale}, prepass ${prepass ? 'on' : 'follows'}, load ${loadBefore} before and ${(loadavg()[0] as number).toFixed(1)} after`,
-					line('off', result.off),
-					line('on', result.on),
+					`CONTACTCOST ${result.tier} ${steps} steps, scale ${scale}, prepass ${prepass ? 'on' : 'follows'}, load ${loadBefore} before and ${loadNow()} after`,
+					sideLine('off', result.off, 3),
+					sideLine('on', result.on, 3),
 				].join('\n'),
 			);
 			expect(result.failures).toEqual([]);
