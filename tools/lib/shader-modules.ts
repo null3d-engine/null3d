@@ -256,9 +256,23 @@ function withLock(root: string, work: () => void): void {
 	}
 }
 
-/** Runs the shader build, with its output on standard error so that callers keep a clean output. */
+/**
+ * Runs the shader build, with its output on standard error so that callers keep a clean output.
+ * The shader profile builds the crate's own parsing and validation code optimized, which the
+ * development profile leaves unoptimized.
+ */
 function runShaderBuild(root: string): void {
-	const args = ['run', '--quiet', '-p', 'null3d-shaders', '--bin', 'shader-build', '--'];
+	const args = [
+		'run',
+		'--quiet',
+		'--profile',
+		'shader',
+		'-p',
+		'null3d-shaders',
+		'--bin',
+		'shader-build',
+		'--',
+	];
 	const buildArgs = ['--root', root];
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');
