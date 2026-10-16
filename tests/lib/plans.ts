@@ -2406,9 +2406,12 @@ export function judge(
 			// that read the draw index, and a share can hold nothing but those. The part then
 			// compiles no program, which is the device's limit rather than a fault of the page.
 			const skipped = (result.skipped ?? []) as string[];
-			const onlyDrawIndex =
-				result.multiDraw === false && skipped.length > 0 && skipped.every(skippedForNoMultiDraw);
-			if (onlyDrawIndex)
+			const noProgramToCompile =
+				Number(result.glslPrograms) === 0 &&
+				result.multiDraw === false &&
+				skipped.length > 0 &&
+				skipped.every(skippedForNoMultiDraw);
+			if (noProgramToCompile)
 				context?.note?.(
 					`the device has no ${MULTI_DRAW_EXTENSION}, so the page skipped all ${skipped.length} programs of this part, which read the draw index`,
 				);
