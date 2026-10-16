@@ -157,13 +157,16 @@ The shares were 0.254% on WebGPU, 0.274% in compatibility mode and 0.264% on Web
 a fresh run of the same three measured 0.273%, 0.297% and 0.277%, and an earlier one 0.2826%, 0.2960%
 and 0.2821%.
 
-The scene takes 0.32%, and that figure is the family's, not this scene's own measurement. The nearest
-relative is `gltf-metal-rough`, the other Khronos model whose glossy surfaces the two kernels widen
-by different amounts. It measured up to 0.316% and takes 0.34%: 0.024 of a point of headroom, or
-7.6% of its own measurement. The toy car measured up to 0.297%, and 0.32% leaves 0.023 of a point,
-or 7.7%. The other limits of the family leave 0.012 to 0.028 of a point, or 7.6% to 13.6%. So this
-limit sits inside that band. It is within a thousandth of a point of its nearest relative, rather
-than just above the largest figure seen so far.
+The scene takes 0.32%. The family's limits were each set just above their scene's largest measured
+share, and that convention leaves a different room on every scene. The nearest relative is
+`gltf-metal-rough`, the other Khronos model whose glossy surfaces the two kernels widen by different
+amounts. Its scene measured up to 0.316%, and its 0.34% limit leaves 0.024 of a point, which is 7.6%
+of that measurement. This scene measured up to 0.297%, and 0.32% leaves 0.023 of a point, or 7.7%.
+The family's other limits leave 0.012 to 0.028 of a point, or 7.6% to 13.6%.
+
+So the two nearest relatives were chosen alike, and each sits about 7.6% below its own limit. This
+limit is inside the family's band, and it is not the smallest figure above this scene's largest
+measurement.
 
 The cause is the kernel alone, and the measurements and the code show it. three.js's frame and the
 frame the engine drew before the kernel differ in only 0.008% of the WebGPU frame's pixels. On the
