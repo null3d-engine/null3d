@@ -999,7 +999,7 @@ Only the feature-set modules changed. All twelve modules of the start are byte-i
 build wrote before, so a page that uses no feature downloads exactly what it did, and a kind's table
 loads with the first feature of that kind, not at the start. No image can change either: every
 feature-set module builds the same shader text it did, which a production build of the test project
-checked for every WebGPU module and a tenth of the WebGL2 ones.
+checked for all 1,331 device modules of both targets.
 
 The count is the named constant `SHARED_PARAGRAPH_MIN_USES`. Lowering it saves more text and grows
 the tables; the ladder in [D-181](decisions/D-181-shared-shader-paragraphs.md) gives the figures.
