@@ -42,6 +42,7 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
+import { emitParagraphTables, shaderParagraphsPlugin } from './paragraphs.ts';
 import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
 import {
 	compileLiteral,
@@ -390,7 +391,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: {
 					format: 'es',
-					plugins: () => [workerFilesPlugin(workerFiles), workerPreloadPlugin()],
+					plugins: () => [
+						workerFilesPlugin(workerFiles),
+						workerPreloadPlugin(),
+						shaderParagraphsPlugin(),
+					],
 				},
 				build: {
 					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit),
@@ -641,8 +646,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		generateBundle: {
 			order: 'post',
 			handler(_options, bundle) {
+				const tables = emitParagraphTables.call(this, bundle);
 				if (buildingPages) {
-					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root));
+					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root, tables));
 					this.emitFile({
 						type: 'asset',
 						fileName: FILES_LIST,
