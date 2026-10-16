@@ -39,9 +39,9 @@ and how does a slower rate save work when every pass skins a character in its ve
 
 | Option | Verdict |
 | --- | --- |
-| The update advances the clip by the frames it skipped, so its mean rate is the frame's rate | Chosen. It uses the step that last posed the instance, so a change of the interval takes effect at the next pose |
+| The update adds up the time of each frame the instance skipped, each at its own time scale, and spends the sum on its next pose | Chosen, 15 October 2026 (the code review's finding M-3 replaced the rejected row below). Every frame counts once, whatever its length, so the clip keeps real time and a play-once clip ends when it should. It needs one float per instance, which the table grows with the rest |
+| The update advances the clip by the frames it skipped, so its mean rate is the frame's rate | Rejected, 15 October 2026. It multiplies the frame that poses the instance by the whole gap, so free frame times drift: on an interval of 4, frames of 16, 16, 16 and 100 ms advanced the clip by 400 ms instead of the 148 ms that passed |
 | The update advances by one frame, as usual | Rejected. A character would then animate at 1/interval of its speed |
-| The engine sums the skipped time of each instance | Rejected. It needs a second per-instance array of floats, and the step that last posed the instance already gives the frame count exactly |
 
 ### The shared poses of the task
 
@@ -67,7 +67,7 @@ task's shared-pose wording is met by the vertex-shader default and M2-C8's pose 
 
 ## Costs
 
-- One 32-bit word per animated instance (4 KB at the table's 1,024 instances) and one more per
+- One 32-bit word per animated instance (4 KB at the 1,024 instances that the table starts with) and one more per
   instance for the step that last posed it.
 - On a frame that skips an instance, the engine copies its matrices from the previous frame's
   buffer into this one, 48 bytes per joint. That is a memcpy against a full sample, blend and

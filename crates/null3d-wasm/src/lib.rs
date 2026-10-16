@@ -126,9 +126,16 @@ const UPLOAD_RANGES: u32 = 4096;
 /// millisecond, so a scene that grows past it during play barely pauses.
 pub const START_OBJECTS: u32 = 1_023;
 
-/// Counts the times that arrays TypeScript views moved without the memory growing: each scene
-/// growth. TypeScript compares it with the count it made its views at.
+/// Counts the times that arrays TypeScript views moved, which the memory may not grow for: each
+/// growth of the scene or of the animation table, and the first joint overrides. TypeScript
+/// compares it with the count it made its views at.
 static ARRAYS_MOVED: AtomicU32 = AtomicU32::new(0);
+
+/// Counts a move of arrays that TypeScript views, so it makes its views again before their next
+/// use. Every call that gives such an array new memory steps it.
+fn arrays_moved() {
+    ARRAYS_MOVED.fetch_add(1, Ordering::Release);
+}
 
 /// Engine error codes for failures that do not come from the core.
 mod codes {
@@ -863,7 +870,7 @@ fn grow_scene(e: &mut Engine, capacity: u32, needed: u32) -> Result<(), u32> {
         })?;
     e.scene.try_grow(capacity).map_err(core_failure)?;
     e.structure_changed = true;
-    ARRAYS_MOVED.fetch_add(1, Ordering::Release);
+    arrays_moved();
     Ok(())
 }
 
@@ -4048,20 +4055,8 @@ pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
             return Err(fail(codes::NOT_READY, [2, 0]));
         };
         let skeleton = skeleton.wrapping_sub(1);
-        // A full table doubles what it lacks, up to the joints that the joint texture holds. The
-        // old matrix buffers stay until no frame that a thread may still replay reads them.
-        if let Some((instances, joints)) =
-            animations.growth_for(skeleton, skinning::MAX_TABLE_JOINTS)
-        {
-            e.retired_matrices
-                .try_reserve(1)
-                .map_err(|_| out_of_memory(size_of::<(u32, [Box<[f32]>; 2])>() as u64))?;
-            let old = animations
-                .try_grow(instances, joints)
-                .map_err(animation_failure)?;
-            let free_at = next_frame(next_frame(e.scene.frame()));
-            e.retired_matrices.push((free_at, old));
-        }
+        let free_at = next_frame(next_frame(e.scene.frame()));
+        make_room_for_instance(animations, skeleton, &mut e.retired_matrices, free_at)?;
         let instance = animations
             .add_instance(skeleton)
             .map_err(animation_failure)?;
@@ -4070,6 +4065,32 @@ pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
             .map_err(animation_failure)?;
         Ok(instance + 1)
     })
+}
+
+/// Grows the animation table when it lacks room for one more instance of `skeleton`: it doubles
+/// what it lacks, up to the joints that the joint texture holds. Every array of the table moves,
+/// so the count of moves steps, whether the memory grew or the new arrays fit in free space. The
+/// old matrix buffers go to `retired` until frame `free_at`, as a draw list that a thread still
+/// replays may read them.
+fn make_room_for_instance(
+    animations: &mut Animations,
+    skeleton: u32,
+    retired: &mut Vec<(u32, [Box<[f32]>; 2])>,
+    free_at: u32,
+) -> Result<(), u32> {
+    let Some((instances, joints)) = animations.growth_for(skeleton, skinning::MAX_TABLE_JOINTS)
+    else {
+        return Ok(());
+    };
+    retired
+        .try_reserve(1)
+        .map_err(|_| out_of_memory(size_of::<(u32, [Box<[f32]>; 2])>() as u64))?;
+    let old = animations
+        .try_grow(instances, joints)
+        .map_err(animation_failure)?;
+    retired.push((free_at, old));
+    arrays_moved();
+    Ok(())
 }
 
 /// The most animated instances that the animation table holds now, or 0 before it exists. The
@@ -4087,11 +4108,22 @@ pub fn animation_capacity() -> u32 {
 #[wasm_bindgen(js_name = enableJointOverrides)]
 pub fn enable_joint_overrides() -> u32 {
     with_animations(|animations, _| {
-        animations
-            .enable_joint_overrides()
-            .map_err(animation_failure)?;
+        enable_overrides(animations)?;
         Ok(0)
     })
+}
+
+/// Makes the table of joint overrides and look-at targets, once. Its arrays are new memory that
+/// TypeScript views, so making them counts as a move.
+fn enable_overrides(animations: &mut Animations) -> Result<(), u32> {
+    if !animations.joint_overrides().is_empty() {
+        return Ok(());
+    }
+    animations
+        .enable_joint_overrides()
+        .map_err(animation_failure)?;
+    arrays_moved();
+    Ok(())
 }
 
 /// Removes an animated instance; its id and joints go to later instances.
@@ -4532,6 +4564,7 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use null3d_core::animation::NO_PARENT;
 
     #[test]
     fn a_reflections_share_of_the_render_size_becomes_halvings() {
@@ -4552,5 +4585,42 @@ mod tests {
         // The growth stops at the most objects a handle can name.
         assert_eq!(grown_capacity(524_287, 524_288), MAX_SLOTS);
         assert_eq!(grown_capacity(700_000, MAX_SLOTS), MAX_SLOTS);
+    }
+
+    #[test]
+    fn each_move_of_the_animation_tables_arrays_steps_the_count() {
+        let jobs = JobSystem::new(0);
+        let mut animations = Animations::new(&jobs, 1, 4).unwrap();
+        let rest = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        let bind = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let skeleton = Skeleton::new(&[NO_PARENT], &rest, &bind).unwrap();
+        let skeleton = animations.add_skeleton(skeleton).unwrap();
+        let mut retired = Vec::new();
+        let moves = || ARRAYS_MOVED.load(Ordering::Acquire);
+        let start = moves();
+
+        // The first instance fits the table as it is.
+        make_room_for_instance(&mut animations, skeleton, &mut retired, 3).unwrap();
+        assert_eq!(moves(), start);
+        animations.add_instance(skeleton).unwrap();
+
+        // The second doubles the table. Its arrays move whether or not the memory grows, and only
+        // the count tells TypeScript.
+        let time_scales = address(animations.time_scales());
+        make_room_for_instance(&mut animations, skeleton, &mut retired, 3).unwrap();
+        assert_eq!(animations.instance_capacity(), 2);
+        assert_ne!(address(animations.time_scales()), time_scales);
+        assert_eq!(moves(), start + 1);
+        assert_eq!(
+            retired.len(),
+            1,
+            "the old matrices wait for the frames that read them"
+        );
+
+        // The joint overrides count once, when the table makes them.
+        enable_overrides(&mut animations).unwrap();
+        assert_eq!(moves(), start + 2);
+        enable_overrides(&mut animations).unwrap();
+        assert_eq!(moves(), start + 2);
     }
 }
