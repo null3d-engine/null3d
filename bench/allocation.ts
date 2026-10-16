@@ -32,7 +32,8 @@
 // turns depth of field on in S1, focused on a point that moves every frame, so the core writes its
 // steps' blocks again in each frame. `--exposure` turns automatic exposure on in S1, and changes
 // its compensation every frame, so the meter runs and uploads its block in each frame. `--fog`
-// gives S1 height fog with the volumetric fog on, whose block the core writes again in each frame.
+// gives S1 height fog with the volumetric fog on, and changes the volumetric fog's intensity with
+// `scene.setFog` every frame, so the core writes the fog's block again in each frame.
 // The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
@@ -68,11 +69,18 @@
 // with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
 // uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's color
 // at half the render size, whose texture a custom effect adds as a glow, and changes the pass's
-// uniform every frame. `--terrain` puts the terrain add-on's ground under S1, whose quadtree
+// uniform every frame, and keeps the pass on with `render.setPassEnabled` in every frame.
+// `--terrain` puts the terrain add-on's ground under S1, whose quadtree
 // follows the orbiting camera in every frame. `--impostors` puts a field of the impostors add-on's
 // cards around S1, which pick their views from the camera in every frame. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
-// unless `--animated` names a count. `--prepass` turns the depth prepass on, in any scene.
+// unless `--animated` names a count. `--calls` makes, every frame, the
+// calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
+// update, a camera's ray through the pointer and its screen point of a place, the orbit and fly
+// controls' update, and the sketch's read of the frame's figures, which turns on the figures that
+// `--stats` samples. `--time-of-day` moves a day cycle's hour in every frame, through the object
+// that the first `timeOfDay` call made, for the allocation sample of the helper's per-frame form.
+// `--prepass` turns the depth prepass on, in any scene.
 // `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
 // the Mac on 15 October 2026, the terrain's update allocated 1908 bytes per frame in the heightfield
 // sampling, 1871 in the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and
@@ -135,6 +143,8 @@
 //   bun run bench:allocation --terrain --gpu webgl2
 //   bun run bench:allocation --impostors --gpu webgl2
 //   bun run bench:allocation --inertial --gpu webgl2
+//   bun run bench:allocation --time-of-day
+//   bun run bench:allocation --calls --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import {
@@ -273,7 +283,9 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 	},
 };
 /**
- * Places that allocate with `--stats` on top of `BUDGETS`, while the overlay samples. On WebGPU, on
+ * Places that allocate with `--stats` on top of `BUDGETS`, while the overlay samples, which
+ * `CALLS_BUDGETS` takes over too, because `--calls` reads the frame's figures and turns the same
+ * sampling on. On WebGPU, on
  * one frame in eleven, the GPU timer's readback and the readback of the GPU-culled draws' counts
  * each make a command buffer or a view of the mapped range, and a promise with its reaction: the
  * browser returns each of them, so no pool can keep them. On S1 the timer's places took 35 to 38
@@ -326,6 +338,26 @@ export const SETTER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, num
 		// begins one more pass each frame and the browser makes its per-pass object, about 23 bytes.
 		'beginPass webgl2/backend.ts': 32,
 	},
+};
+
+/**
+ * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
+ * calls that the engine's docs promise allocate nothing, and the figure places that its read of
+ * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
+ */
+export const CALLS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': { ...STATS_BUDGETS['render-worker'] },
+};
+
+/**
+ * Places that allocate with `--time-of-day`, on top of `BUDGETS`: the day cycle's own steps, which
+ * pass fractions to each other from a call that the browser does not inline, and the sketch's step
+ * that calls the helper.
+ */
+export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': {},
 };
 
 /**
@@ -471,6 +503,8 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
 	{ flag: '--inertial', query: '&inertial' },
+	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
+	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },
 	{ flag: '--stats', query: '&stats', budgets: STATS_BUDGETS, anyScene: true },
 	{ flag: '--stats-collapsed', query: '&stats=collapsed', anyScene: true },
 ];

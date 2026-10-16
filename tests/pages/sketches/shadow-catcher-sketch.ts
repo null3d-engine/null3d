@@ -36,10 +36,9 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 	const [width, depth] = SHADOW_CATCHER.size;
 	scene.createMesh({
 		mesh: geometry.box({ width, height: 0.2, depth }),
-		material: materials.shadowCatcher({
-			color: SHADOW_CATCHER.color,
-			opacity: SHADOW_CATCHER.opacity,
-		}),
+		// The scene's ground is black, the catcher's default, so the sketch leaves the color out and
+		// the image test covers the default.
+		material: materials.shadowCatcher({ opacity: SHADOW_CATCHER.opacity }),
 		position: SHADOW_CATCHER.position,
 		receiveShadows: true,
 	});
