@@ -271,9 +271,12 @@ const EXPOSURE_SIZE = [320, 180] as const;
  * every tier. A dark hall and a sunny street both adapt toward middle gray, with the percentile
  * and the mean meters, a center weight, a compensation and a range that stops the eye short. The
  * eye adapts with bloom and AgX too, and at half the render scale. Turning it on during play draws
- * the image of turning it on at the start, as the meter's first frame takes its stops at once. The
- * downsample meter, which Low and WebGL2 use, draws its own image. A device with no HDR target
- * keeps the camera's exposure.
+ * the image of turning it on at the start, as the meter's first frame takes its stops at once. On
+ * the dark hall the range holds the eye at one stop, so the mean meter, the center weight and the
+ * downsample meter draw the dark test's picture there: the metres move the eye on the sunny street
+ * and on the dark hall once the range is opened (`resume-status/examples/area-light-hold-notes.md`),
+ * and this scene's range is the part that decides the picture. A device with no HDR target keeps
+ * the camera's exposure.
  */
 function exposureTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -286,14 +289,17 @@ function exposureTests(): ImageTest[] {
 		test('exposure-off', '?light=dark'),
 		test('exposure-dark', '?light=dark&auto'),
 		test('exposure-bright', '?light=bright&auto'),
-		test('exposure-mean', '?light=dark&auto&metering=mean'),
-		test('exposure-center', '?light=dark&auto&center=1'),
+		{ ...test('exposure-mean', '?light=dark&auto&metering=mean'), samePicture: 'exposure-dark' },
+		{ ...test('exposure-center', '?light=dark&auto&center=1'), samePicture: 'exposure-dark' },
 		test('exposure-compensation', '?light=dark&auto&comp=1'),
 		test('exposure-range', '?light=dark&auto&min=-2'),
 		test('exposure-bloom', '?light=dark&auto&bloom'),
 		{ ...test('exposure-later', '?light=dark&auto&later'), reference: 'exposure-dark' },
 		test('exposure-scale-50', '?scale=0.5&light=dark&auto'),
-		test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+		{
+			...test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+			samePicture: 'exposure-dark',
+		},
 		{
 			...test('exposure-8-bit', '?light=dark&auto'),
 			tiers: ['webgpu', 'webgl2'],
