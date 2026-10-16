@@ -220,7 +220,9 @@ describe('raycasts', () => {
 			instance: -1,
 			point: [1, 2, 3],
 			normal: [0, 0, 1],
-			uv: [0, 0],
+			// The mesh of this hit has no texture coordinates, so the record holds NaN there and
+			// `hasUv` reports the absence.
+			uv: [Number.NaN, Number.NaN],
 			hasUv: false,
 			distance: 4.5,
 			triangle: 7,
