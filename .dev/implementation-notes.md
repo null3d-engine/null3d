@@ -162,6 +162,9 @@ The page starts every download that the start needs while the core downloads. On
 
 Warm loads and loads at full speed stayed within the spread between runs. The first row of the single-threaded mode already downloaded the sketch module with the core. Before that, the first frame came at 3,580 ms. In single-threaded mode, starting only the renderer early gave 3,194 ms, because the core's loader was then last. Starting both gave 2,624 ms.
 
+- A software GPU can leave a probe worker quiet past both limits. On 16 October 2026 every run of the showcase page on a Mac's software GPU carried the fallback warning. No probe worker answered within its 5 seconds, then 10. Yet the same page reached its controls in four seconds in some runs and never did in others. Two of five pages drawing at once never did. So the checks' milliseconds are a quiet machine's figure. A worker quiet past its limit can be a slow one, and not a stalled one. A page that gives up on the worker may still start. Where it then does not start, the cause lies elsewhere ([D-186](decisions/D-186-showcase-page-never-reaches-its-controls.md)).
+
+
 ## A sketch module that does not load
 
 - `loadSketch` imports a sketch module that did not load once more, after 500 ms. The console and the thread's start trail note the second import. So it shows in test results and in user reports. The load fails with E1410 only when the second import fails too. Its message names the first failure, in the same words as before. A block by the page's policy (E1422) fails at once, since a second import cannot pass it.
