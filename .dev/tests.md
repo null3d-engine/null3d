@@ -57,7 +57,7 @@ by the group, and the run's peak is its largest group rather than the sum of eve
 4. Measure a test that touches generated data. Run it alone under `/usr/bin/time -l` and read the `maximum resident set size` line. Put the figure in the branch notes when the test changes.
 5. Keep fixtures small, and read them one file at a time. Tests that need the large sample content use the shared cache that [Sample content](sample-content.md) describes.
 6. When a check grows past the ceiling, split it rather than raising the ceiling. The ceiling exists to make a fault visible as a failed test, not to end a run with a dead machine.
-7. Give a check that may take more than about two seconds on a busy machine a budget of its own: three times the longest run seen. Bun's default of five seconds is a budget rather than a measurement, so a check that takes three seconds on an idle machine and nine on a loaded one fails for whoever runs the suite beside other work. The checks that map a glow at every canvas each state thirty seconds that way.
+7. A check gets the budget the run states, thirty seconds (`tests/lib/run-budget.ts`), and a check that needs more states its own, which wins over that. Bun's default of five seconds is a budget, not a measurement. The checks that map a glow at every canvas take 0.64 and 0.90 seconds idle and 7.0 and 8.7 seconds loaded, about tenfold, so a check that computes is at risk long before it looks slow. A check that hangs now waits thirty seconds rather than five. A check that waits on the clock rather than the load, such as a runner page or a lock, needs nothing of its own.
 
 ## The ceiling
 
