@@ -4,8 +4,17 @@
 // version and the options, so each model encodes once until one of them changes. The dev server
 // serves the cache, and a build writes the files into its assets folder.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import { createRequire } from 'node:module';
+import { basename, dirname, extname, join } from 'node:path';
 
 /** Options of the asset tool, as `assets optimize` takes them. */
 export interface AssetOptions {
@@ -99,13 +108,54 @@ export interface CachedModel {
 export const cacheFolder = (root: string) => join(root, 'node_modules/.cache', ASSET_FOLDER);
 
 /**
- * The cache key of a model: the hash of the tool's version, the options, and each file of the
+ * The cache key of a model: the hash of the tool's identity, the options, and each file of the
  * model, its own and those it names.
  */
-export function modelKey(version: string, options: object, files: readonly string[]): string {
-	const hash = createHash('sha256').update(`${version}\n${JSON.stringify(options)}\n`);
+export function modelKey(identity: string, options: object, files: readonly string[]): string {
+	const hash = createHash('sha256').update(`${identity}\n${JSON.stringify(options)}\n`);
 	for (const file of files) hash.update(readFileSync(file));
 	return hash.digest('hex').slice(0, 16);
+}
+
+/**
+ * What the asset tool is: the version it reports and a hash of its own code, which is the module the
+ * plugin loads and the files that share its name, the WebAssembly file among them. The version alone
+ * is not enough, because it stays `0.0.0` in the repository: a fix to the tool then changed what a
+ * model encoded to without changing the key, and the cache kept serving models that the pipeline
+ * before the fix wrote (code review H-17). A tool whose files cannot be read falls back to the
+ * version it reports.
+ */
+export function toolIdentity(version: string): string {
+	try {
+		const module = createRequire(import.meta.url).resolve(TOOL_MODULE);
+		const code = fileCodeHash(module);
+		return code === null ? version : `${version}+${code}`;
+	} catch {
+		return version;
+	}
+}
+
+/**
+ * A hash of the module at `path` and of the files that share its name, a WebAssembly file among
+ * them, or null when they cannot be read. A tool's own file names its siblings, so one name covers
+ * the JavaScript that drives it and the module it runs.
+ */
+export function fileCodeHash(path: string): string | null {
+	try {
+		const folder = dirname(path);
+		const stem = basename(path, extname(path));
+		const names = readdirSync(folder)
+			.filter((name) => basename(name, extname(name)) === stem)
+			.sort();
+		// A module that is not there has no code to hash, so the caller falls back rather than keying
+		// every model by the same empty hash.
+		if (!names.includes(basename(path))) return null;
+		const hash = createHash('sha256');
+		for (const name of names) hash.update(readFileSync(join(folder, name)));
+		return hash.digest('hex').slice(0, 16);
+	} catch {
+		return null;
+	}
 }
 
 /** The textures that a model file names, by their file names. */
@@ -135,7 +185,7 @@ export async function optimizedModel(
 	const asset = await loadTool();
 	const settings = { ...asset.DEFAULT_OPTIONS, ...options };
 	const sources = [path, ...asset.namedFiles(path)];
-	const key = modelKey(asset.VERSION, settings, sources);
+	const key = modelKey(toolIdentity(asset.VERSION), settings, sources);
 	const name = `${basename(path, extname(path))}.glb`;
 	const cache = cacheFolder(root);
 	const folder = join(cache, key);
