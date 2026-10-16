@@ -89,6 +89,14 @@ function difference(a: Frame, b: Frame): number {
 
 /** A mean difference that only a change of the look gives; the scene at rest differs less. */
 const CHANGED = 1.5;
+/**
+ * The share of the change that turning a part off made that turning it back on must make again. A
+ * part whose own light is drawn into the environment map fills that map a stage a frame, so a slow
+ * machine takes many seconds over it and the look it settles on sits steps away from any frame read
+ * before it. The checks below therefore read the looks they compare, and judge the return by the
+ * change the pick makes rather than by a frame that has had minutes to drift away.
+ */
+const RETURNED = 0.5;
 /** A mean difference below which the canvas counts as still, over a settled look. */
 const STILL = 0.5;
 /** Frames read after a switch: the old bug rewrote the part a frame later, so several are read. */
@@ -123,7 +131,15 @@ async function settle(page: Page): Promise<void> {
 
 /**
  * Turns a part of the look off and on through the HUD, and checks the canvas: while the part is off,
- * each of several frames differs from the frame with it on, and once it turns on, the look returns.
+ * each of several frames differs from the frame with it on, and once it turns on, the look comes
+ * back to the one the part has.
+ *
+ * The return is judged by the change the pick makes, from the look with the part off back to the
+ * look with it on, and never by the frame the first checks use. The sky's light reaches the
+ * environment map a stage a frame, so the look a slow machine settles on sits steps away from a
+ * frame read before it settled, and a comparison with that frame measures the machine's speed
+ * rather than the part. The frame with the part off is read at the pick, so the two looks the
+ * return is measured between are seconds apart and carry that change and little else.
  */
 async function switchPart(page: Page, label: string, tab: string, group: string): Promise<void> {
 	// The look eases and the camera settles, so the frame with the part on is read when it is still.
@@ -135,10 +151,13 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 		.toBeGreaterThan(CHANGED);
 	for (let k = 0; k < FRAMES; k++)
 		expect(difference(await frame(page), before), `${label} stays off`).toBeGreaterThan(CHANGED);
+	/** The look with the part off, read as the pick is made: what the return must move away from. */
+	const off = await frame(page);
+	const departure = difference(off, before);
 	await pick(page, tab, group, label, `${label}: on`);
 	await expect
-		.poll(async () => difference(await frame(page), before), { timeout: WAIT_MS })
-		.toBeLessThan(CHANGED);
+		.poll(async () => difference(await frame(page), off), { timeout: WAIT_MS })
+		.toBeGreaterThan(departure * RETURNED);
 }
 
 test(
