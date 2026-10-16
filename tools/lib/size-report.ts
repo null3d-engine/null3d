@@ -577,7 +577,7 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_536 * 1024,
 	gzip: 320 * 1024,
-	brotli: 49 * 1024,
+	brotli: 56 * 1024,
 };
 
 /**

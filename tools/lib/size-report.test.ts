@@ -352,13 +352,13 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(49 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(56 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+			`js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 });

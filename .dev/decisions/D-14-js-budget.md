@@ -1,8 +1,8 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026). On 16 October 2026 the owner raised each first-use shader file to 56 KB after Brotli, and named the shader build's split of an oversized combination module as the work it leaves owed, in [D-183](D-183-first-use-shader-budget-raise.md). Date: 2026-09-30.
 
-Summary: The engine's JavaScript that a page downloads at its start may take 165 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
+Summary: The engine's JavaScript that a page downloads at its start may take 165 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 56 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
 
 ## Question
 
@@ -590,6 +590,17 @@ worth 900 programs.
 
 `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the new figure. The gzip and
 uncompressed figures for a first-use file are unchanged at 320 KB and 1,536 KB.
+
+### The first-use files raised, 16 October 2026: 49 KB to 56 KB
+
+The surface displacement work took one GLSL combination module to 50,962 bytes after Brotli, 786
+bytes over the figure of the raise above, and 39 such modules of its tree passed the figure of 48 KB.
+The owner raised each first-use shader file's Brotli budget from 49 KB to 56 KB rather than have the
+shader build split an oversized combination module in the same change.
+
+The gzip and uncompressed figures for a first-use file stay at 320 KB and 1,536 KB, and the start's
+figures are unchanged. The shader build's split is owed, and [D-183](D-183-first-use-shader-budget-raise.md)
+holds the figures, the arithmetic that ruled out a trim and the work the raise leaves owed.
 
 ### The trend, and the task that tracks it
 
