@@ -513,6 +513,40 @@ describe('the GPU pages of the checks plan', () => {
 		]);
 	});
 
+	it('passes a part whose every program needs an extension the device lacks, and fails an empty one', () => {
+		notes.length = 0;
+		const names = ['lit.webgl2_draw_index_coat_sheen.main', 'cloth.webgl2_draw_index.main'];
+		const skipped = names.map((name) => `${name}: no WEBGL_multi_draw`);
+		expect(
+			judge(
+				checkOf('shaders-coat-11'),
+				{ ok: true, glslPrograms: 0, multiDraw: false, webgpu: true, skipped },
+				NONE_MISSING,
+				context,
+			),
+		).toEqual([]);
+		expect(notes).toEqual([
+			'the device has no WEBGL_multi_draw, so the page skipped all 2 programs of this part, which read the draw index',
+		]);
+		// A part that held nothing at all is still a fault, and so is one whose programs the device
+		// could compile but the page did not.
+		const empty = { ok: true, glslPrograms: 0, webgpu: true, skipped: [] };
+		expect(
+			judge(checkOf('shaders-coat-11'), { ...empty, multiDraw: false }, NONE_MISSING, context),
+		).toEqual(['no GLSL program was compiled']);
+		expect(
+			judge(checkOf('shaders-coat-11'), { ...empty, multiDraw: true }, NONE_MISSING, context),
+		).toEqual(['no GLSL program was compiled']);
+		expect(
+			judge(
+				checkOf('shaders-coat-11'),
+				{ ok: true, glslPrograms: 1, multiDraw: false, webgpu: true, skipped },
+				NONE_MISSING,
+				context,
+			),
+		).toEqual([]);
+	});
+
 	it("fails the mip levels page only on the engine's way, and notes the ways that work", () => {
 		notes.length = 0;
 		const level = (wrong: number) => ({ level: 1, status: '0x8cd5', left: [], right: [], wrong });
