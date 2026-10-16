@@ -13,8 +13,9 @@
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { copyInPlace } from './atomic-files';
 import {
 	acquireLock,
 	cacheDir,
@@ -23,6 +24,9 @@ import {
 	copyFolderAtomic,
 	filesIn,
 	hashFiles,
+	hashOf,
+	pruneCacheLocked,
+	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
 
@@ -44,16 +48,19 @@ export const RECORD = 'target/shader-modules.json';
  * The folder that holds the modules of a build, keyed by the hash of its inputs, shared by every
  * checkout on the machine. A checkout whose inputs match a folder there copies its modules instead of
  * building them, which a fresh worktree needs. It is the `shader-modules` cache under the build
- * cache's one root; `NULL3D_SHADER_CACHE` names this folder alone, as before.
+ * cache's one root; `NULL3D_SHADER_CACHE` names this folder alone, as before. The folder is read from
+ * the environment on each call, so a caller that moves the cache root moves this cache too.
  */
-export const CACHE_DIR = cacheDir('shader-modules', process.env.NULL3D_SHADER_CACHE);
+export const modulesCacheDir = (): string =>
+	cacheDir('shader-modules', process.env.NULL3D_SHADER_CACHE);
 /**
- * The folder of the per-entry shader cache, shared by every checkout on the machine. It holds each
- * entry's compiled output under a folder named by the compiler's stamp, so a change to one shader
- * compiles only that shader and a change to a library module compiles only the entries that import
- * it. It is the `shader-cache` folder under the build cache's one root.
+ * The folder of the per-entry shader cache, shared by every checkout on the machine, read from the
+ * environment on each call. It holds each entry's compiled output under a folder named by the
+ * compiler's stamp, so a change to one shader compiles only that shader and a change to a library
+ * module compiles only the entries that import it. It is the `shader-cache` folder under the build
+ * cache's one root.
  */
-export const ENTRY_CACHE_DIR = cacheDir('shader-cache');
+export const entryCacheDir = (): string => cacheDir('shader-cache');
 /** The lock file, which holds the process ID of the process that builds. */
 const LOCK = 'target/shader-modules.lock';
 
@@ -200,6 +207,33 @@ export function moduleHash(root: string): string | null {
 	);
 }
 
+/** The record of a module set in the shared cache: the hash of each of its files, by name. */
+const SET_RECORD = 'modules.json';
+
+/**
+ * True when the shared cache entry `cache` holds every module of a set and each file is the one its
+ * record names. A set that misses a file, holds an extra one or holds a file with other bytes than
+ * the record is incomplete, so it is a miss and the build writes the set again.
+ */
+export function setIsComplete(cache: string): boolean {
+	if (!folderIsComplete(cache)) return false;
+	let record: Record<string, string>;
+	try {
+		record = JSON.parse(readFileSync(join(cache, SET_RECORD), 'utf8')) as Record<string, string>;
+	} catch {
+		return false;
+	}
+	const names = filesIn(cache, isShaderModule);
+	if (names.length !== Object.keys(record).length) return false;
+	return names.every((name) => {
+		try {
+			return record[name] === hashOf(readFileSync(join(cache, name)));
+		} catch {
+			return false;
+		}
+	});
+}
+
 function readRecord(root: string): ModuleRecord | null {
 	try {
 		return JSON.parse(readFileSync(join(root, RECORD), 'utf8')) as ModuleRecord;
@@ -236,11 +270,12 @@ function runShaderBuild(root: string): void {
 	} else {
 		// A stamp from another compiler changes the folder, so no entry is read with a new meaning.
 		const stamp = compilerStamp(root);
-		buildArgs.push('--cache', join(ENTRY_CACHE_DIR, stamp), '--stamp', stamp);
+		buildArgs.push('--cache', join(entryCacheDir(), stamp), '--stamp', stamp);
 	}
 	const result = spawnSync('cargo', [...args, ...buildArgs], {
 		cwd: root,
-		env: { ...process.env, ...cargoEnv() },
+		// cargoEnv names the checkout's own target folder, so this build never writes another's.
+		env: { ...process.env, ...cargoEnv(root) },
 		stdio: ['ignore', 2, 2],
 	});
 	if (result.error)
@@ -266,33 +301,66 @@ function writeRecord(root: string, record: ModuleRecord): void {
  * none builds nothing. Returns true when it copied them.
  */
 function restoreFromCache(root: string, inputs: string): boolean {
-	const cache = join(CACHE_DIR, inputs);
-	// A partial entry is a miss. An older entry, written before the module set was complete, must
-	// never be handed back as the set a build would produce.
-	if (!folderIsComplete(cache)) return false;
+	const dir = modulesCacheDir();
+	const cache = join(dir, inputs);
+	// A partial entry is a miss, and so is one whose record does not match its files: an entry that a
+	// stopped or two racing builds left half written must never be handed back as a built set.
+	if (!setIsComplete(cache)) return false;
 	const names = filesIn(cache, isShaderModule);
 	const folder = join(root, MODULE_DIR);
 	mkdirSync(folder, { recursive: true });
 	const wanted = new Set(names);
 	for (const name of moduleNames(root))
 		if (!wanted.has(name)) rmSync(join(folder, name), { force: true });
-	for (const name of names) copyFileSync(join(cache, name), join(folder, name));
+	try {
+		// Each module takes its place whole, so a reader sees either the old file or the new one.
+		for (const name of names) copyInPlace(join(cache, name), join(folder, name));
+	} catch {
+		// A copy that fails is a miss; the build then writes the whole set itself.
+		return false;
+	}
 	const modules = moduleHash(root);
 	if (modules === null) return false;
 	writeRecord(root, { inputs, modules });
-	console.error(`the shader modules came from the shared cache (${CACHE_DIR})`);
+	touchCacheEntry(cache);
+	console.error(`the shader modules came from the shared cache (${dir})`);
 	return true;
 }
 
-/** Copies the modules on disk into the shared cache, so another checkout need not build them. */
+/**
+ * Copies the modules on disk into the shared cache, so another checkout need not build them, with a
+ * record of each file's bytes. The record is what makes a half-copied set, or one whose files were
+ * truncated, a miss for the next checkout instead of a set that looks complete.
+ */
 function saveToCache(root: string, inputs: string): void {
+	const folder = join(root, MODULE_DIR);
 	// Only a complete set is stored: a partial set, from a build that wrote less than it declared,
 	// would otherwise be handed to every checkout.
-	if (!folderIsComplete(join(root, MODULE_DIR))) return;
-	copyFolderAtomic(
-		join(CACHE_DIR, inputs),
-		moduleNames(root).map((name) => [name, join(root, MODULE_DIR, name)] as const),
-	);
+	if (!folderIsComplete(folder)) return;
+	const names = moduleNames(root);
+	const record: Record<string, string> = {};
+	const sources = names.map((name) => {
+		const path = join(folder, name);
+		record[name] = hashOf(readFileSync(path));
+		return [name, path] as const;
+	});
+	const cache = join(modulesCacheDir(), inputs);
+	if (!copyFolderAtomic(cache, sources)) return;
+	writeFileAtomic(join(cache, SET_RECORD), `${JSON.stringify(record, null, '\t')}\n`);
+	touchCacheEntry(cache);
+}
+
+/**
+ * Removes the least recently used entries of the module cache and of the per-entry cache, so a
+ * machine that builds all day does not fill its disk. One module set is about 850 MB and the entry
+ * cache holds one folder per compiler stamp, so without a limit the two grew past 30 GB in a day.
+ */
+function pruneCaches(): void {
+	for (const folder of [modulesCacheDir(), entryCacheDir()]) {
+		const removed = pruneCacheLocked(folder);
+		if (removed.length > 0)
+			console.error(`removed ${removed.length} least recently used entries of ${folder}`);
+	}
 }
 
 /**
@@ -314,9 +382,19 @@ export function ensureShaderModules(root: string): boolean {
 			throw new Error(
 				'the shader build wrote an incomplete set: a module that shaders.ts loads is missing',
 			);
+		// The inputs were hashed before the build read them. If a WGSL file changed while it ran, this
+		// set is not the one `inputs` names, and its modules may hold a mix of the two versions. It is
+		// never recorded and never stored, because a record would hand the output of the edited file
+		// to every checkout whose sources match `inputs`. The caller is told to run again: a set that
+		// the build read from two versions of its sources is not a set to build a page from.
+		if (inputHash(root) !== inputs)
+			throw new Error(
+				'the shader sources changed while the build ran, so the modules are not the ones this build started from; run the command again',
+			);
 		writeRecord(root, { inputs, modules });
-		saveToCache(root, inputs);
 		built = true;
+		saveToCache(root, inputs);
+		pruneCaches();
 	});
 	return built;
 }

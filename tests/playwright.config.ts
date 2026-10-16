@@ -48,6 +48,8 @@ export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
 	timeout: 60_000,
+	// Refuses a run that times frames at macOS background priority, before any browser starts.
+	globalSetup: './lib/priority-setup.ts',
 	forbidOnly: ci,
 	reporter: ci ? [['list'], ['github']] : 'list',
 	use: {

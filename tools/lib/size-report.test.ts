@@ -360,8 +360,8 @@ describe('budgetProblems', () => {
 				later,
 			),
 		).toEqual([
-			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${START_BUDGET.brotli / 1024} KB budget`,
-			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${LATER_BUDGET.brotli / 1024} KB budget`,
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${START_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${LATER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 
@@ -372,8 +372,8 @@ describe('budgetProblems', () => {
 			later,
 		);
 		expect(problems).toEqual([
-			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${START_BUDGET.gzip / 1024} KB budget`,
-			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.raw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${LATER_BUDGET.raw / 1024} KB budget`,
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${START_BUDGET.gzip / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.raw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${LATER_BUDGET.raw / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 
@@ -384,7 +384,7 @@ describe('budgetProblems', () => {
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget',
+			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
 		]);
 	});
 
