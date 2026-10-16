@@ -1889,15 +1889,11 @@ impl SceneSettings {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
-            maps if maps == template::INSTANCED_STANDARD_MAPS
-                || maps == template::DECAL_MAPS
-                || maps >= template::CUSTOM_FIRST =>
-            {
-                self.map_groups
-                    .get(material as usize - 1)
-                    .copied()
-                    .unwrap_or(0)
-            }
+            maps if reads_material_maps(maps) => self
+                .map_groups
+                .get(material as usize - 1)
+                .copied()
+                .unwrap_or(0),
             _ => 0,
         }
     }
@@ -3033,6 +3029,17 @@ impl MeshBuffers {
     }
 }
 
+/// True for the templates that read the material's maps from the maps' group: the standard
+/// material's build, the decal's, the probes' (which carry the same maps as the lit builds that
+/// they switch from, so a textured mesh keeps them while a probe lights it) and custom
+/// materials' own templates.
+pub(crate) const fn reads_material_maps(template: u32) -> bool {
+    template == template::INSTANCED_STANDARD_MAPS
+        || template == template::PROBE_GRID_MAPS
+        || template == template::DECAL_MAPS
+        || template >= template::CUSTOM_FIRST
+}
+
 /// True for the templates whose masked casters cut holes in their shadows: the engine's mesh
 /// templates, whose alpha the cutout templates compute alike.
 const fn cuts_shadows(template: u32) -> bool {
@@ -3077,6 +3084,28 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A pair of drawings that differ only in their template: a textured mesh keeps its maps'
+    /// group when a probe lights it, and a plain lit pair reads none.
+    #[test]
+    fn the_maps_group_reaches_every_template_that_reads_a_material_s_map() {
+        for maps in [
+            template::INSTANCED_STANDARD_MAPS,
+            template::PROBE_GRID_MAPS,
+            template::DECAL_MAPS,
+            template::CUSTOM_FIRST,
+        ] {
+            assert!(reads_material_maps(maps), "template {maps}");
+        }
+        for plain in [
+            template::INSTANCED_LIT,
+            template::PROBE_GRID,
+            template::DECAL,
+            template::INSTANCED_UNLIT,
+        ] {
+            assert!(!reads_material_maps(plain), "template {plain}");
+        }
+    }
 
     #[test]
     fn drawn_rows_trim_the_rows_that_draw_nowhere() {
