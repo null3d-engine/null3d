@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
@@ -48,8 +49,10 @@ export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
 	timeout: 60_000,
-	// Refuses a run that times frames at macOS background priority, before any browser starts.
-	globalSetup: './lib/priority-setup.ts',
+	// Refuses a run that times frames at macOS background priority, before any browser starts. The
+	// path is absolute, because Playwright resolves a global setup against the config file that names
+	// it: the benchmark config spreads this one, so a relative path would resolve under bench/.
+	globalSetup: join(import.meta.dirname, 'lib/priority-setup.ts'),
 	forbidOnly: ci,
 	reporter: ci ? [['list'], ['github']] : 'list',
 	use: {

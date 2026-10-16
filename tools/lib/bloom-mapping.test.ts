@@ -29,6 +29,12 @@ const REFERENCE = join(
 	'../../skills/null3d-port-threejs/references/post-processing.md',
 );
 const SMOOTHING_GAP = 0.005;
+/**
+ * The limit for the checks that map a glow at every canvas: each mapping builds a table per canvas,
+ * so a loaded machine takes seconds where a quiet one takes under one, and the five-second default
+ * fails for whoever runs the suite while something else is busy.
+ */
+const TABLE_MS = 30_000;
 
 type Fit = ReturnType<typeof mapUnrealBloomPass>['fit'];
 
@@ -123,14 +129,18 @@ describe('UnrealBloomPass', () => {
 				expect(mapped.knee).toBe(0.01);
 			});
 
-	test("fits three.js's bloom example and each radius of the table within 3% at 1080 pixels", () => {
-		const radii = [0, 0.25, 0.5, 0.75, 1];
-		for (const settings of [EXAMPLE, ...radii.map((radius) => ({ ...EXAMPLE, radius }))]) {
-			const mapped = mapUnrealBloomPass(settings);
-			expect(mapped.fit.gap).toBeLessThan(0.03);
-			expectWeights(mapped.weights, 1080);
-		}
-	});
+	test(
+		"fits three.js's bloom example and each radius of the table within 3% at 1080 pixels",
+		() => {
+			const radii = [0, 0.25, 0.5, 0.75, 1];
+			for (const settings of [EXAMPLE, ...radii.map((radius) => ({ ...EXAMPLE, radius }))]) {
+				const mapped = mapUnrealBloomPass(settings);
+				expect(mapped.fit.gap).toBeLessThan(0.03);
+				expectWeights(mapped.weights, 1080);
+			}
+		},
+		TABLE_MS,
+	);
 
 	test('smooths the weights from level to level by default', () => {
 		const plain = mapUnrealBloomPass(STRONG, PLAIN);
@@ -206,4 +216,5 @@ test.skipIf(!marked)(
 		);
 		expect(between.trim()).toBe(bloomTables().trim());
 	},
+	TABLE_MS,
 );
