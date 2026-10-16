@@ -1,6 +1,6 @@
 # D-153: Light through thin surfaces, and subsurface light for skin
 
-Status: decided by the helper of M2-EX36 on 12 October 2026, for the owner's review of the look. The timings of both parts follow. Date: 2026-10-12. Task: M2-EX36.
+Status: decided by the helper of M2-EX36 on 12 October 2026, for the owner's review of the look. Built: both parts are on the branch `feat/m2-ex36-subsurface`, waiting for a landing on main. The timings of both parts follow. Date: 2026-10-12. Task: M2-EX36.
 
 Summary: The standard material takes glTF's diffuse transmission: light that reaches a thin surface from behind, such as the sun through a leaf, a petal or an ear, shows on its front through a color of its own. The glTF loader reads `KHR_materials_diffuse_transmission` into it, and `KHR_materials_volume` dims it over the surface's thickness. One permutation bit, `TRANSLUCENCY`, gives it shader builds that load on first use. Its two maps take the slots of the specular maps, which read the same channels, so no GPU path binds a texture more. For skin, wax and marble, a material's `subsurfaceRadius` and `subsurfaceColor` spread its diffuse light under its surface: a skin pass draws those objects' diffuse light again, and two separable steps blur it with Burley's diffusion profile into a copy of the scene color, on the High and Ultra presets (`subsurfaceSamples`). The glTF loader reads the draft `KHR_materials_volume_scatter` into the two values.
 

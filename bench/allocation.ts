@@ -60,17 +60,27 @@
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--particles` adds two particle systems to S1, whose emitters write
 // births every frame, one of them soft, so the frame copies the opaque depth for it.
-// `--transmission` puts clear water that lets light through under S1, which samples a copy of the
-// swarm's colors that the frame makes, with its mip levels, in every frame. `--translucency` makes
-// S1's boxes let light through to their other side, which lights their backs. `--subsurface` adds
-// 64 spheres to S1 whose light spreads under their surface, which the skin pass draws again and the
-// subsurface blur's steps spread. `--coat-sheen` gives S1's boxes a clear coat and a sheen, the
-// shaders of layered materials. `--weighted` puts a column of smoke of the weighted blending over
-// S1, whose 2,000 puffs rise in every frame, which the camera's weighted layer draws. `--decals`
-// puts a ground with a batch of decals under S1, which turn every frame, so the decal pass culls,
-// orders and uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's
-// color at half the render size, whose texture a custom effect adds as a glow, and changes the
-// pass's uniform every frame. `--prepass` turns the depth prepass on, in any scene.
+// `--translucency` makes S1's boxes let light through to their other side, which lights their
+// backs, and `--subsurface` adds 64 spheres to S1 whose light spreads under their surface, which the
+// skin pass draws again and the subsurface blur's steps spread.
+// `--transmission` puts clear water that lets light through under S1,
+// which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
+// frame. `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
+// materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
+// puffs rise in every frame, which the camera's weighted layer draws. `--decals` puts a ground
+// with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
+// uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's color
+// at half the render size, whose texture a custom effect adds as a glow, and changes the pass's
+// uniform every frame. `--terrain` puts the terrain add-on's ground under S1, whose quadtree
+// follows the orbiting camera in every frame. `--impostors` puts a field of the impostors add-on's
+// cards around S1, which pick their views from the camera in every frame. `--inertial` makes the
+// animated characters that play one clip switch clips by inertial transitions, with 64 characters
+// unless `--animated` names a count. `--prepass` turns the depth prepass on, in any scene.
+// `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
+// the Mac on 15 October 2026, the terrain's update allocated 1908 bytes per frame in the heightfield
+// sampling, 1871 in the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and
+// the impostors' batch update allocated 187 KB per frame with 23 KB in the sampling beside it. Both
+// add-ons must stop allocating in their per-frame update, which their owners owe.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -125,6 +135,11 @@
 //   bun run bench:allocation --decals --gpu webgl2
 //   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
+//   bun run bench:allocation --coat-sheen --gpu webgl2
+//   bun run bench:allocation --atmosphere --gpu webgl2
+//   bun run bench:allocation --terrain --gpu webgl2
+//   bun run bench:allocation --impostors --gpu webgl2
+//   bun run bench:allocation --inertial --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import {
@@ -222,12 +237,17 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the sketch worker's reading of pointer events. It runs at the input's rate, not the frame's,
  *   so the browser may keep it in a lower tier, where each fraction it computes is a new number.
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
+ * - the wake path's slot change, which the sketch worker reads each frame: measured on the Mac at
+ *   High on 15 October 2026, it took 17.5 bytes per frame, up to 19.7;
+ * - the frame's pending reads, which the render worker maps after it submits: each read makes a
+ *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
+ *   per frame, up to 20.4.
  */
 export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
-		'slotChange shared/wake.ts': 16,
+		'slotChange shared/wake.ts': 20,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
@@ -249,6 +269,7 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'then (built-in)': 128,
 		'Uint8Array (built-in)': 64,
 		'submit webgpu/backend.ts': 32,
+		'flushReads webgpu/backend.ts': 24,
 		'afterSubmit gpu/completion.ts': 160,
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
@@ -332,109 +353,146 @@ export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
-/**
- * What `--tile-shadows` adds to the WebGPU replay's budget: the browser's encoder of each tile's
- * culling pass and render pass, about 17 bytes each, for the most tiles that draw again in a frame
- * (`MAX_REDRAWS` in `shadow_tiles.rs`). Moving casters draw tiles in every frame of that page.
- */
-const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
+/** The place of the WebGPU replay, which makes the browser's objects of each pass. */
+const REPLAY = 'replay webgpu/backend.ts';
+
+/** Budgets of places by worker, in bytes per frame. */
+type WorkerBudgets = Partial<Record<(typeof WORKERS)[number], Record<string, number>>>;
 
 /**
- * What `--batch-shadows` adds to the WebGPU replay's budget: the browser's encoder of each sun
- * cascade's culling pass and render pass, about 17 bytes each, for its 3 cascades. The rows move
- * through every cascade, so each cascade draws again in every frame, not only on its turn.
+ * The bytes per frame that the WebGPU replay may allocate for each render pass or compute pass that
+ * a switch or a scene adds on top of S1's: the browser's encoder of the pass, which it makes for
+ * each pass. Measured on the Mac at High: (2026-10-15) the pass-heavy switches added 25.5 to 34.4
+ * bytes per pass over S1's own figure — 24 for `--tile-shadows`, 28 for `--bloom`, 26 for `--dof`,
+ * 34 for `--fog` and 25 for `--passes` — so 32 covers them with room for sampling noise.
  */
-const BATCH_SHADOWS_REPLAY_BYTES = 2 * 17 * 3;
+const PASS_REPLAY_BYTES = 32;
 
 /**
- * What the sun's contact shadows add to the WebGPU replay's budget, in scenes whose sun casts
- * shadows (S4, and S1 with `--batch-shadows`): the encoders of the render passes that they add with
- * ambient occlusion off, the depth prepass's own pass, the depth copy, the horizon step that
- * marches them and the denoise that blurs them. The Mac draws these scenes at High, where contact
- * shadows draw. On the Mac, S4's replay allocated 310 to 330 bytes more per frame than main's at
- * the same load, so the allowance takes five passes at bloom's allowance per pass. With `--ao`
- * they add no pass: ambient occlusion runs the same steps already.
+ * The render passes that the sun's contact shadows add, in scenes whose sun casts shadows (S4, and
+ * S1 with `--batch-shadows`), with ambient occlusion off: the depth prepass's own pass, the depth
+ * copy, the horizon step that marches them and the denoise that blurs them. The Mac draws these
+ * scenes at High, where contact shadows draw. With `--ao` they add no pass: ambient occlusion runs
+ * the same steps already.
  */
-const CONTACT_REPLAY_BUDGET = 5 * 64;
+const CONTACT_PASSES = 5;
 
 /**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
- * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
- * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
- * in all, on the Mac.
+ * What `--transmission` adds to the WebGPU backend's mip levels: the encoders of the render passes
+ * that make the copy's levels, one per level after the first, for a render size of up to 4096
+ * pixels. On the Mac the page's ten such passes allocated about 17 bytes per pass, 173 per frame.
  */
-const BLOOM_REPLAY_BUDGET = 15 * 64;
+const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
+	'render-worker': { 'generateMipmaps webgpu/backend.ts': 11 * 32 },
+};
 
 /**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--dof`: the
- * encoders of depth of field's four render passes, at bloom's allowance per pass.
+ * What `--weighted` writes through the staging ring each frame: the blended rows' weights, which the
+ * page uploads as its rows move. Measured on the Mac on 15 October 2026: the write took 123.5 bytes
+ * per frame against the 96 that a page without the switch takes, up to 124.1.
  */
-const DOF_REPLAY_BUDGET = 4 * 64;
+const WEIGHTED_BUDGETS: WorkerBudgets = {
+	'render-worker': { 'write webgpu/staging.ts': 32 },
+};
+
+/** A switch of the check that S1's page takes as a switch of its sketch. */
+interface PageSwitch {
+	/** The check's flag. */
+	flag: string;
+	/** What the flag adds to the page's address. */
+	query: string;
+	/** The render passes and compute passes that it adds to each WebGPU frame, if any. */
+	passes?: number;
+	/** What it allocates on top of `BUDGETS` beyond its passes, by place. */
+	budgets?: WorkerBudgets;
+	/** True for a switch that any scene takes; the others change S1 alone. */
+	anyScene?: boolean;
+}
 
 /**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--exposure`:
- * the encoders of the meter's passes, a compute pass for the histogram or two render passes for the
- * downsample, at bloom's allowance per pass.
+ * The switches that the check passes to the page, as the header lists them. Each pass that a
+ * switch adds to a WebGPU frame adds `PASS_REPLAY_BYTES` to the replay's budget:
+ * - `--tile-shadows`: a culling pass and a render pass for each tile, for the most tiles that draw
+ *   again in a frame (`MAX_REDRAWS` in `shadow_tiles.rs`). Moving casters draw tiles in every
+ *   frame of that page;
+ * - `--batch-shadows`: a culling pass and a render pass for each of the sun's 3 cascades. The rows
+ *   move through every cascade, so each cascade draws again in every frame, not only on its turn;
+ *   and the contact shadows' passes, without `--ao`;
+ * - `--bloom`: bloom's default chain of 15 passes;
+ * - `--dof`: depth of field's four passes;
+ * - `--exposure`: the meter's two, a compute pass for the histogram or two render passes for the
+ *   downsample;
+ * - `--fog`: the volumetric fog's three;
+ * - `--effects`: the two effects' passes;
+ * - `--reflection`: the reflection's culling pass, its render pass and the pass that copies its
+ *   image upright;
+ * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
+ * - `--particles`: the pass that copies the opaque depth for the soft particles;
+ * - `--decals`: the decal pass;
+ * - `--passes`: the full-screen pass and the effect's pass;
+ * - `--prepass`: the depth prepass.
  */
-const EXPOSURE_REPLAY_BUDGET = 2 * 64;
+export const PAGE_SWITCHES: readonly PageSwitch[] = [
+	{ flag: '--blend', query: '&blend' },
+	{ flag: '--grading', query: '&grading' },
+	{ flag: '--sprites', query: '&sprites' },
+	{ flag: '--lines', query: '&lines' },
+	{ flag: '--ao', query: '&ao' },
+	{ flag: '--bloom', query: '&bloom', passes: 15 },
+	{ flag: '--dof', query: '&dof', passes: 4 },
+	{ flag: '--exposure', query: '&exposure', passes: 2 },
+	{ flag: '--fog', query: '&fog', passes: 3 },
+	{ flag: '--outline', query: '&outline' },
+	{ flag: '--prepass', query: '&prepass=on', anyScene: true },
+	{ flag: '--tile-shadows', query: '&tileShadows', passes: 2 * 12 },
+	{ flag: '--batch-shadows', query: '&shadows=3&batchShadows', passes: 2 * 3 },
+	{ flag: '--row-values', query: '&rowValues' },
+	{ flag: '--levels', query: '&levels' },
+	{ flag: '--environment', query: '&environment' },
+	{ flag: '--hemisphere', query: '&hemisphere', budgets: SETTER_BUDGETS },
+	{ flag: '--area-lights', query: '&areaLights' },
+	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },
+	{ flag: '--effects', query: '&effects', passes: 2 },
+	{ flag: '--sky', query: '&sky' },
+	{ flag: '--sky-environment', query: '&sky=light', budgets: SKY_ENVIRONMENT_BUDGETS },
+	{ flag: '--atmosphere', query: '&sky=physical' },
+	{
+		flag: '--atmosphere-environment',
+		query: '&sky=physical-light',
+		budgets: SKY_ENVIRONMENT_BUDGETS,
+	},
+	{ flag: '--reflection', query: '&reflection', passes: 3 },
+	{
+		flag: '--transmission',
+		query: '&transmission',
+		passes: 1,
+		budgets: TRANSMISSION_MIPS_BUDGETS,
+	},
+	{ flag: '--translucency', query: '&translucency' },
+	// The skin pass, the culling pass that follows it on the GPU-driven path, and the blur's two
+	// steps.
+	{ flag: '--subsurface', query: '&subsurface', passes: 4 },
+	{ flag: '--coat-sheen', query: '&coatSheen' },
+	{ flag: '--weighted', query: '&weighted', budgets: WEIGHTED_BUDGETS },
+	{ flag: '--decals', query: '&decals', passes: 1 },
+	{ flag: '--particles', query: '&particles', passes: 1 },
+	{ flag: '--passes', query: '&passes', passes: 2 },
+	{ flag: '--terrain', query: '&terrain' },
+	{ flag: '--impostors', query: '&impostors' },
+	{ flag: '--inertial', query: '&inertial' },
+	{ flag: '--stats', query: '&stats', budgets: STATS_BUDGETS, anyScene: true },
+	{ flag: '--stats-collapsed', query: '&stats=collapsed', anyScene: true },
+];
+
+/** The flags that each draw one background behind S1, of which a run takes one at most. */
+const SKY_FLAGS = ['--sky', '--sky-environment', '--atmosphere', '--atmosphere-environment'];
+
+/** The animated characters that `--inertial` adds to S1 when `--animated` names no count. */
+const INERTIAL_CROWD = 64;
 
 /**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--fog`: the
- * encoders of the volumetric fog's three render passes, at bloom's allowance per pass.
- */
-const FOG_REPLAY_BUDGET = 3 * 64;
-
-/**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--effects`:
- * the encoders of the two effects' render passes, at bloom's allowance per pass.
- */
-const EFFECTS_REPLAY_BUDGET = 2 * 64;
-
-/**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--reflection`:
- * the encoders of the reflection's culling pass, its render pass and the pass that copies its
- * image upright, at bloom's allowance per pass. On the Mac the replay allocated 137 bytes more per
- * frame with the reflection, about 46 per pass.
- */
-const REFLECTION_REPLAY_BUDGET = 3 * 64;
-
-/**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with
- * `--transmission`: the encoder of the render pass that copies the opaque color, at bloom's
- * allowance per pass.
- */
-const TRANSMISSION_REPLAY_BUDGET = 64;
-
-/**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--particles`:
- * the encoder of the render pass that copies the opaque depth for the soft particles, at bloom's
- * allowance per pass.
- */
-const PARTICLES_REPLAY_BUDGET = 64;
-
-/**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--passes`:
- * the encoders of the full-screen pass's render pass and the effect's, at bloom's allowance per
- * pass.
- */
-const PASSES_REPLAY_BUDGET = 2 * 64;
-
-/**
- * The bytes per frame that the WebGPU backend's mip levels may allocate with `--transmission`: the
- * encoders of the render passes that make the copy's levels, one per level after the first, for a
- * render size of up to 4096 pixels. On the Mac the page's ten such passes allocated about 17 bytes
- * per pass, 173 per frame.
- */
-const TRANSMISSION_MIPS_BUDGET = 11 * 32;
-
-/**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--decals`: the
- * encoder of the decal pass's render pass, at bloom's allowance per pass.
- */
-const DECALS_REPLAY_BUDGET = 64;
-
-/**
- * What S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
+ * What S4, S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
+ * - S4's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each;
  * - S5's camera path, which the browser runs beside 500 knights' moves without inlining the
  *   camera's setters, so it boxes up to all seven numbers that it passes to them: 46 to 84 bytes
  *   per frame on the Mac;
@@ -445,24 +503,21 @@ const DECALS_REPLAY_BUDGET = 64;
  *   busy longer than S1's boxes;
  * - S6's camera path, whose route the browser does not inline, so it boxes the route's time:
  *   41 to 50 bytes per frame on the Mac, at the edge of the budget that boxes four numbers;
- * - S6's WebGPU replay: the encoders of its render passes, which the browser returns for each pass,
- *   at bloom's allowance per pass. S6 draws bloom's 15 passes, the depth prepass, ambient
- *   occlusion's 3 and a culling pass and a render pass for each of up to 4 shadow cascades. On the
- *   Mac the replay took 1,725 to 1,775 bytes per frame.
+ * - S6's WebGPU replay: the encoders of its render passes, at `PASS_REPLAY_BYTES` each. S6 draws
+ *   bloom's 15 passes, the depth prepass, ambient occlusion's 3 and a culling pass and a render pass
+ *   for each of up to 4 shadow cascades.
  */
-const SCENE_BUDGETS: Partial<
-	Record<
-		(typeof ALLOCATION_SCENES)[number],
-		Record<(typeof WORKERS)[number], Record<string, number>>
-	>
-> = {
+const SCENE_BUDGETS: Partial<Record<(typeof ALLOCATION_SCENES)[number], WorkerBudgets>> = {
+	s4: {
+		'render-worker': { 'replay webgpu/backend.ts': CONTACT_PASSES * PASS_REPLAY_BYTES },
+	},
 	s5: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 48 },
 		'render-worker': { 'write webgpu/staging.ts': 8 * 64, 'giveUpStalled gpu/completion.ts': 12 },
 	},
 	s6: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 16 },
-		'render-worker': { 'replay webgpu/backend.ts': BLOOM_REPLAY_BUDGET + (1 + 3 + 2 * 4) * 64 },
+		'render-worker': { 'replay webgpu/backend.ts': (15 + 1 + 3 + 2 * 4) * PASS_REPLAY_BYTES },
 	},
 };
 
@@ -556,6 +611,25 @@ async function main(): Promise<void> {
 		'--warmup-frames',
 		swiftShader ? SWIFTSHADER_WARMUP_FRAMES : WARMUP_FRAMES,
 	);
+	const has = (flag: string) => args.includes(flag);
+	const chosen = PAGE_SWITCHES.filter(({ flag }) => has(flag));
+	for (const { flag, anyScene } of chosen)
+		if (!anyScene && scene !== 's1') throw new Error(`${flag} changes S1 only, not ${scene}`);
+	const skies = SKY_FLAGS.filter(has);
+	if (skies.length > 1) throw new Error(`${skies.join(' and ')} each draw a background; give one`);
+	const animatedCount = option('--animated', has('--inertial') ? INERTIAL_CROWD : 0);
+	if (animatedCount > 0 && scene !== 's1')
+		throw new Error('--animated adds animated characters to S1 only');
+	const morphedCount = option('--morphed', 0);
+	if (morphedCount > 0 && scene !== 's1')
+		throw new Error('--morphed adds morphed objects to S1 only');
+	const labelCount = option('--labels', 0);
+	if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
+	const counts = [
+		animatedCount > 0 ? `&animated=${animatedCount}` : '',
+		morphedCount > 0 ? `&morphed=${morphedCount}` : '',
+		labelCount > 0 ? `&labels=${labelCount}` : '',
+	].join('');
 	const dev = args.includes(DEV_OPTION);
 	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
@@ -574,96 +648,10 @@ async function main(): Promise<void> {
 	try {
 		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
-		const blend = args.includes('--blend') ? '&blend' : '';
-		const animatedCount = option('--animated', 0);
-		if (animatedCount > 0 && scene !== 's1')
-			throw new Error('--animated adds animated characters to S1 only');
-		const animated = animatedCount > 0 ? `&animated=${animatedCount}` : '';
-		const morphedCount = option('--morphed', 0);
-		if (morphedCount > 0 && scene !== 's1')
-			throw new Error('--morphed adds morphed objects to S1 only');
-		const morphed = morphedCount > 0 ? `&morphed=${morphedCount}` : '';
-		const grading = args.includes('--grading') ? '&grading' : '';
-		if (grading && scene !== 's1') throw new Error('--grading grades S1 only');
-		const sprites = args.includes('--sprites') ? '&sprites' : '';
-		if (sprites && scene !== 's1') throw new Error('--sprites draws S1 as sprites only');
-		const lines = args.includes('--lines') ? '&lines' : '';
-		if (lines && scene !== 's1') throw new Error('--lines draws S1 as lines only');
-		const ao = args.includes('--ao') ? '&ao' : '';
-		if (ao && scene !== 's1') throw new Error('--ao turns ambient occlusion on in S1 only');
-		const bloom = args.includes('--bloom') ? '&bloom' : '';
-		if (bloom && scene !== 's1') throw new Error('--bloom turns bloom on in S1 only');
-		const dof = args.includes('--dof') ? '&dof' : '';
-		const fog = args.includes('--fog') ? '&fog' : '';
-		if (fog && scene !== 's1') throw new Error('--fog turns the volumetric fog on in S1 only');
-		if (dof && scene !== 's1') throw new Error('--dof turns depth of field on in S1 only');
-		const exposure = args.includes('--exposure') ? '&exposure' : '';
-		if (exposure && scene !== 's1')
-			throw new Error('--exposure turns automatic exposure on in S1 only');
-		const outline = args.includes('--outline') ? '&outline' : '';
-		if (outline && scene !== 's1') throw new Error('--outline outlines boxes in S1 only');
-		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
-		const labelCount = option('--labels', 0);
-		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
-		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
-		const tileShadows = args.includes('--tile-shadows') ? '&tileShadows' : '';
-		if (tileShadows && scene !== 's1')
-			throw new Error('--tile-shadows adds shadowed spot and point lights to S1 only');
-		const batchShadows = args.includes('--batch-shadows') ? '&shadows=3&batchShadows' : '';
-		if (batchShadows && scene !== 's1')
-			throw new Error('--batch-shadows makes the rows of S1 cast shadows only');
-		const rowValues = args.includes('--row-values') ? '&rowValues' : '';
-		if (rowValues && scene !== 's1')
-			throw new Error('--row-values gives the rows of S1 colors and values only');
-		const levels = args.includes('--levels') ? '&levels' : '';
-		if (levels && scene !== 's1') throw new Error('--levels gives the boxes of S1 levels only');
-		const environment = args.includes('--environment') ? '&environment' : '';
-		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
-		const hemisphere = args.includes('--hemisphere') ? '&hemisphere' : '';
-		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
-		const areaLights = args.includes('--area-lights') ? '&areaLights' : '';
-		if (areaLights && scene !== 's1') throw new Error('--area-lights lights S1 only');
-		const setters = args.includes('--setters') ? '&setters' : '';
-		if (setters && scene !== 's1') throw new Error("--setters calls S1's setters only");
-		const effects = args.includes('--effects') ? '&effects' : '';
-		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
-		const physicalLight = args.includes('--atmosphere-environment');
-		const physical = physicalLight || args.includes('--atmosphere');
-		const skyLight = physicalLight || args.includes('--sky-environment');
-		const sky = physical
-			? `&sky=${physicalLight ? 'physical-light' : 'physical'}`
-			: skyLight
-				? '&sky=light'
-				: args.includes('--sky')
-					? '&sky'
-					: '';
-		if (sky && scene !== 's1')
-			throw new Error('--sky, --atmosphere and their environments draw behind S1 only');
-		const reflection = args.includes('--reflection') ? '&reflection' : '';
-		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
-		const transmission = args.includes('--transmission') ? '&transmission' : '';
-		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
-		const translucency = args.includes('--translucency') ? '&translucency' : '';
-		if (translucency && scene !== 's1') throw new Error('--translucency changes S1 only');
-		const subsurface = args.includes('--subsurface') ? '&subsurface' : '';
-		if (subsurface && scene !== 's1') throw new Error('--subsurface adds spheres to S1 only');
-		const coatSheen = args.includes('--coat-sheen') ? '&coatSheen' : '';
-		if (coatSheen && scene !== 's1') throw new Error('--coat-sheen coats the boxes of S1 only');
-		const weighted = args.includes('--weighted') ? '&weighted' : '';
-		if (weighted && scene !== 's1') throw new Error('--weighted puts smoke over S1 only');
-		const decals = args.includes('--decals') ? '&decals' : '';
-		if (decals && scene !== 's1') throw new Error('--decals puts decals under S1 only');
-		const particles = args.includes('--particles') ? '&particles' : '';
-		if (particles && scene !== 's1') throw new Error('--particles adds particles to S1 only');
-		const passes = args.includes('--passes') ? '&passes' : '';
-		if (passes && scene !== 's1') throw new Error('--passes adds a full-screen pass to S1 only');
-		const statsCollapsed = args.includes('--stats-collapsed');
-		const stats = args.includes('--stats');
-		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${translucency}${subsurface}${decals}${weighted}${coatSheen}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${counts}${chosen.map((choice) => choice.query).join('')}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -781,11 +769,18 @@ async function main(): Promise<void> {
 		);
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${batchShadows ? ', its rows casting and receiving shadows' : ''}${rowValues ? ', its rows with colors and values' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${chosen.map(({ flag }) => ` ${flag}`).join('')}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
 		);
+		// The passes that the switches add to each WebGPU frame, with the contact shadows' passes when
+		// the rows cast the sun's shadows and ambient occlusion does not run the same steps already.
+		const replayPasses =
+			chosen.reduce((sum, choice) => sum + (choice.passes ?? 0), 0) +
+			(has('--batch-shadows') && !has('--ao') ? CONTACT_PASSES : 0);
+		// Two switches that share a table of budgets, such as `--setters` and `--hemisphere`, count it once.
+		const switchBudgets = [...new Set(chosen.flatMap(({ budgets }) => (budgets ? [budgets] : [])))];
 		const over: string[] = [];
 		const unsampled: string[] = [];
 		for (const [worker, workerSamples] of samples) {
@@ -793,39 +788,18 @@ async function main(): Promise<void> {
 				...BUDGETS[worker as (typeof WORKERS)[number]],
 				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
 			};
-			const statsBudgets = stats ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
-			const skyBudgets = skyLight
-				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
-				: {};
-			const setterBudgets =
-				setters || hemisphere ? SETTER_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
 			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
 			if (!bytes.get(worker)) unsampled.push(worker);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
-				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
-					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
-					(replay && batchShadows ? BATCH_SHADOWS_REPLAY_BYTES : 0) +
-					(replay && (batchShadows || scene === 's4') ? CONTACT_REPLAY_BUDGET : 0) +
-					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
-					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
-					(replay && exposure ? EXPOSURE_REPLAY_BUDGET : 0) +
-					(replay && fog ? FOG_REPLAY_BUDGET : 0) +
-					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
-					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
-					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
-					(replay && decals ? DECALS_REPLAY_BUDGET : 0) +
-					(replay && particles ? PARTICLES_REPLAY_BUDGET : 0) +
-					(replay && passes ? PASSES_REPLAY_BUDGET : 0) +
-					(name === 'generateMipmaps webgpu/backend.ts' && transmission
-						? TRANSMISSION_MIPS_BUDGET
-						: 0) +
-					(statsBudgets[name] ?? 0) +
-					(skyBudgets[name] ?? 0) +
-					(setterBudgets[name] ?? 0) +
+					(name === REPLAY ? replayPasses * PASS_REPLAY_BYTES : 0) +
+					switchBudgets.reduce(
+						(sum, table) => sum + (table[worker as (typeof WORKERS)[number]]?.[name] ?? 0),
+						0,
+					) +
 					(sceneBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);

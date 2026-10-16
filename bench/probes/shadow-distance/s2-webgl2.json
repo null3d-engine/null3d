@@ -1,0 +1,45 @@
+{
+  "name": "s2",
+  "gpu": "webgl2",
+  "page": "visual",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "url": "http://localhost:8004/tests/pages/visual.html?gpu=webgl2&scene=%2Fbench%2Fpages%2Fnull3d%2Fs2-sketch.ts%3Fn%3D5096&size=640x360&shadows=3",
+  "ok": true,
+  "tier": "webgl2",
+  "mode": {
+    "build": "threaded",
+    "latency": "pipelined",
+    "sketchThread": "worker",
+    "renderThread": "render-worker",
+    "jobWorkers": 16,
+    "hold": 2,
+    "preset": "medium",
+    "presetCheck": null,
+    "crashedStarts": 0,
+    "memoryMaximumMiB": 1024,
+    "renderFallback": null
+  },
+  "scene": "/bench/pages/null3d/s2-sketch.ts?n=5096&shadows=3",
+  "width": 640,
+  "height": 360,
+  "stability": {
+    "changedPercent": 0,
+    "meanChangedPercent": 0,
+    "shadowedPercent": 99.27126736111111
+  },
+  "edges": {
+    "offsetPixels": 0.10015290519877676
+  },
+  "contact": {
+    "feet": 0,
+    "meanGapPixels": 0,
+    "gapPercent": 0,
+    "tops": 6,
+    "meanRimPixels": 0.1196078360080719
+  },
+  "acne": {
+    "pixels": 0,
+    "meanShadowPercent": 0,
+    "shadowedPercent": 0
+  }
+}
