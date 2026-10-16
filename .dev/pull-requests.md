@@ -52,11 +52,12 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
-in a landing, so keep the count down. Every build cache lives under one root, `~/.cache/null3d` by
-default, each in a named subfolder: `shader-modules`, `shader-cache`, `wasm-artifacts` and, when
-sccache is installed, `sccache`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache
-variables still name one folder. Clearing the root is always safe, because every entry is a pure
-function of its inputs, so re-checking a branch on a moved main is cheap.
+in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
+`XDG_CACHE_HOME` or `~/.cache/null3d`, each in a named subfolder: `shader-modules`, `shader-cache`,
+`wasm-artifacts`, `samples`, `gpu-check-baselines` and, when sccache is installed, `sccache`.
+`NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still name one folder.
+Clearing the root is always safe, because every entry is a pure function of its inputs, so re-checking
+a branch on a moved main is cheap.
 [D-176](decisions/D-176-wasm-artifact-cache.md) and
 [D-177](decisions/D-177-build-cache-module.md) give the keys, and
 [Benchmarks](benchmarks.md#build-caches) the figures.
@@ -64,9 +65,15 @@ function of its inputs, so re-checking a branch on a moved main is cheap.
 - `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
   landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
 - A cache is used only when its entry is whole. The shader modules cache, for example, requires every
-  module that `shaders.ts` loads, from its imports and the device module names its tables hold. A set
-  that misses one is a miss, so the build runs again rather than reporting "up to date" while a file is
-  absent.
+  module that `shaders.ts` loads, from its imports and the device module names its tables hold, and a
+  record that names the bytes of each of them. A set that misses one, or holds a file with other bytes
+  than its record, is a miss, so the build runs again rather than reporting "up to date" while a file
+  is absent or half written.
+- Each cache prunes itself: while it holds more than 24 GiB it removes its least recently used entries,
+  and an entry used within the last two hours stays, because another checkout's build may be reading
+  it. A cache key names every input of the build, including the build's own code, and a build hashes
+  its inputs again before it stores anything, so an edit that lands while a build runs is never stored
+  under the key of the state before it.
 - Never a build beside a browser or image run of the same worktree. A half-written core makes a page
   fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
   output in a folder of its own, named for the build's process, and Cargo locks a target folder while
@@ -167,6 +174,13 @@ The record of [tested devices](tested-devices.md) was one table until 7 October 
 
 ## Commit messages and pushes
 
+- A push to main runs a check first, `tools/hooks/pre-push.ts`, which the owner approved on 15 October 2026 ([D-157](decisions/D-157-direct-pushes-to-main.md)). A push to any other branch runs nothing, so saving a branch stays fast. The check prints each command it runs and why. It runs the commit message and trailer checks (commitlint, then the trailer check) over every commit that the push adds to main, as CI's `commits` job does, and the merge check over the merges among them. So a bad message, a bad trailer or a merge that carries new work is caught before the push, not by a red main after it. When the push changes Rust code or Cargo settings, it also runs `cargo check --workspace` and the tests of each changed crate. The tests run through cargo-nextest's `ci` profile with `--no-fail-fast`, or through `cargo test` where nextest is missing. A changed workspace `Cargo.toml`, `Cargo.lock` or Rust setting tests every crate. The test that builds every shader runs in CI only, as it takes half an hour or more.
+- A push that changes no Rust file skips the cargo steps, because the merged Rust tree then holds main's own bytes, which main's CI has compiled. The type check still gates the push, since it reads the merged tree. The cargo check follows as its own queued job, and a failure there is fixed by the next push. Two things must hold: the branch's own diff changes no Rust file, and the merge that it just resolved changes none. [D-157](decisions/D-157-direct-pushes-to-main.md#addendum-15-october-2026-a-rust-free-push-needs-the-type-check-only) gives the ruling and the criterion.
+- The check compares with the commit that git reports for main before the push. When that commit is not in this checkout and no local main ref meets the pushed commit, it refuses the push and asks for a `git fetch origin main`, since it cannot say which commits the push adds.
+- The cargo steps compile the working tree, so push from a clean checkout of the commit that you push. They use the checkout's own Rust folder, or `CARGO_TARGET_DIR` when it is set.
+- On the Mac that runs the helpers, the git setting `null3d.jobQueue` names the job queue script. The check then runs the message and trailer checks in the queue's quick lane and the cargo steps in its CPU lane. So a push does not load the Mac outside the queue. A push may therefore wait for a slot. The environment's `NULL3D_JOB_QUEUE` names the script too. Elsewhere the steps run directly.
+- Only in an emergency, skip the check with a `Push-Check-Skipped: <reason>` trailer on a commit of the push. The reason names the emergency, such as a red main that this push fixes while the job queue is stopped. The check prints the reason and runs nothing. `git push --no-verify` skips every hook, so never use it.
+
 - A merge commit must pass the commit-message check, as every commit does. A message such as `Merge origin/main into <branch>` passes, and so do git's own merge messages. A message such as `merge origin/main` fails, because the check reads it as a commit without a type.
 - Never force push a branch that you pushed, so never amend, rebase or squash a commit that you pushed.
 - A `Task:` footer names a listed milestone task that the commit delivers part of, or says `none`. The commit-msg hook (`tools/hooks/check-task.ts`) refuses free text and IDs that are not in `tools/hooks/task-ids.txt`. Before 15 October 2026, footers carried text such as `main CI repair`. Four shader commits carried `Task: M2-J4`, though they delivered none of its materials. The milestone count read those footers and counted tasks that were not done. Now it counts only each task's audited status.
@@ -188,6 +202,7 @@ A branch lands on main by direct push ([D-157](decisions/D-157-direct-pushes-to-
 - A new push to main cancels main's running CI run, by the owner's choice: only the newest main matters.
 - Never wait for main's CI before a push: not for a running run, and not for a red one. When a finished run on main fails because of your push, fix it at once. Others keep pushing meanwhile.
 - When a job on main fails, read its log, and find whether a push caused the failure. `gh run view <run> --log-failed` prints the failed steps. A test that fails only under load, or a run that GitHub cancelled when a runner shut down, says nothing about the code. Run the failed jobs again with `gh run rerun <run> --failed`. Otherwise fix the cause and push. Record the cause in `.dev/` either way.
+- A run that a later push cancelled still holds the jobs that had already finished, and those failures are the signal. Read them with `gh run view --job <id> --log`, which answers once the cancellation has gone through; `--log-failed` on the run itself does not. On 15 October 2026 a push cancelled main's run part way, and dismissing it as cancelled threw away the only readable account of six failing jobs - a run's status describes whether it finished, not whether what it did still counts. Read the finished jobs before deciding a run told you nothing.
 - Two tests are known to fail only on a loaded machine. One is the GPU loss test "draws on after a GPU loss" on SwiftShader. It got no frame in its fixed recovery wait, in full local runs while the Mac's load was 21 to 30. The other is the benchmark page test of S4 on SwiftShader. It drew no frame in its short run, in CI runs 37289400132 and 37578361814. Both passed when they ran again. In each, the slow software GPU took longer than the test's fixed window to draw the first frame after a start or a loss. A rerun alone shows whether a failure is this ([Image tests](image-tests.md#tests-on-slow-machines)).
 - The Safari and Firefox jobs compare the image tests with the Mac's `chrome-real-gpu` references. A test without one of these references, or without its SwiftShader reference, fails `bun run check` ([Image tests](image-tests.md#references)).
 - CI's last job, `ci-passed`, waits for every other CI job, and it passes only when each one passed. A job may skip only when the first job, `changes`, passed and said that the job does not run. Main's rules require `ci-passed`, not each job, so a CI job can split into more shards and change its name with no change to the rules.
@@ -306,3 +321,4 @@ One coordinator session often runs several helper agents at once, each in its ow
 - **A check that fails closed must say why.** The load limiter's start gate closes while the machine is busy, which is what it is for. On 15 October 2026 a fault in the reading made the gate close on every pass, so no job started for hours while nothing anywhere said there was a problem: the symptom of the fault was the absence of a symptom. The gate now names the value it refused and says that no job can start until the sampler works. A closed gate and a busy machine look identical from outside, so a check of this kind must report the difference.
 - **A place in the queue with no live process is a fault too.** The lanes serve jobs in arrival order, so a place held by a job whose process has gone blocks everybody behind it. On 15 October 2026 one such place survived for almost four hours: its shell had been stopped, and its wait command lived on with no parent. Read a job's own process, not only its place in the queue, before calling it healthy, and clear the place as well as the process.
 - **Read your own commits before a push.** Before a push to main, run `git log origin/main..HEAD` and confirm every commit in it is yours. A helper inherits the coordinator's working folder, so a helper's commit can be sitting in the coordinator's branch, and the coordinator's push is what puts it on the trunk, under the coordinator's name and without the checks the helper owed it. On 15 October 2026 that published a terrain change whose allocation fix had not been measured, on the same day that a different helper's documentation edit was caught in a commit minutes earlier. The first catch was luck; the second was a missing habit.
+- **Do not change a working copy's files while its own queued job runs.** A job can wait hours in a lane before it starts, and its owner goes on working meanwhile. On 15 October 2026 a helper merged `origin/main` into its branch while a shader job of the same working copy was queued; the job began part way through the merge and compiled across it, linked a compiler from before the merge, and failed for a reason that had nothing to do with the change. Re-running it on the settled tree fixed it. Settle the tree first - merge, commit and leave it alone - before queueing a job that reads it, or wait for the job to finish before touching the files.

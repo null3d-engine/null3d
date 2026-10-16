@@ -122,3 +122,38 @@ The decision:
 The sccache server runs each compile itself, at the priority that it started with. The coordinator's
 load limiter starts it at background priority, so the CPU lane's compiles never run beside a timing
 run in the foreground.
+
+## Addendum, 15 October 2026: one lock, one root, and a limit on every cache
+
+The code review of 13 to 15 October found four faults in these caches: a lock that two processes could
+hold at once (M-31), keys that left out an input the build itself writes (H-14), keys taken before the
+build read its inputs (H-15), and no limit on how much disk a cache keeps (H-16). Two more were the
+same mechanics copied twice (BT-22). The fixes:
+
+1. `acquireLock` creates the lock as a folder that holds the holder's process id. `mkdir` either
+   creates it or fails, so exactly one process takes it, where the old write with `wx` could leave an
+   empty file that a second process then read as "nobody holds this". A lock whose holder has stopped,
+   or that names no process and is older than a minute, is broken by renaming it aside first: of two
+   processes that find the same stale lock, exactly one renames it, so neither removes a lock that
+   another took meanwhile. The holder names itself while a build waits.
+2. `pruneCache` removes the least recently used entries of a cache while it holds more than
+   `CACHE_LIMIT_BYTES` (24 GiB), skipping an entry used within the last two hours, because a build of
+   another checkout may still be reading it. A cache touch marks an entry as used. The module cache and
+   the per-entry cache prune after a build; the artifact cache prunes after a store. The GPU check's
+   baseline cache keeps its own rule: it keeps six large builds by commit, which the check names.
+3. `cacheRoot` reads `NULL3D_BUILD_CACHE`, else `null3d` under `XDG_CACHE_HOME`, else `~/.cache/null3d`,
+   and every cache under the root takes its folder from there, including the sample cache. The GPU
+   check's baseline cache and the sample cache no longer name their own root.
+4. Every cargo run goes through `cargoEnv(checkout)`, which names that checkout's `target` folder, so a
+   stale `CARGO_TARGET_DIR` in a shell or a job can no longer point two checkouts at one folder.
+5. Every key includes a hash of the build's own code, `tools/build-wasm.ts` and
+   `tools/lib/core-sources.ts`: the first sets the flags and the staging and the second rewrites each
+   built module's glue, so an edit to either changes what an entry holds while the Rust sources stay
+   the same.
+6. A build hashes its inputs again before it stores anything. When a source changed while it ran, the
+   artifact cache stores nothing, and the shader build refuses to record the set and asks for another
+   run: an entry must hold exactly what its key names, for every checkout that matches the key.
+7. A module set in the shared cache carries a record of each file's hash, and a set that misses a file,
+   holds an extra one or holds one with other bytes than the record is a miss. A restore copies each
+   module in place and treats a copy failure as a miss, so a half-written 850 MB set is never handed
+   to a checkout as a built set.

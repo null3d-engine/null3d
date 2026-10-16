@@ -457,6 +457,7 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 A feature that most pages do not use keeps its shader builds out of the start files ([D-56](decisions/D-56-first-use-shader-files.md)). Sprites, lines, skinning, morph targets, bloom, ambient occlusion, the texture background, GPU occlusion culling, area lights and the engine's test template do so today.
 
 - A feature declares its file with a `[first_use.<feature>]` table in `crates/null3d-shaders/shaders.toml`.
+  - The engine test "the first use of X downloads its shader file once" (`tests/image/engine.spec.ts`) runs for every table, from the generated feature list. A feature without a sketch of its own draws in `tests/pages/sketches/first-use-sketch.ts`, whose `?feature=` names it. A new table fails that test until the sketch has a case that uses the feature alone.
   - `shaders` lists templates whose every build needs the feature.
   - `bits` lists permutation bits that a device does not fix. Every build with one of them needs the feature, such as every template's SKIN builds.
   - A build needs its template's feature and the feature of each of its bits that a table names. A build that needs one feature goes into that feature's file. A build that needs several, such as a SKIN build with ALPHA_HASH, goes into a file of its own for that set of features, which a page loads only once it uses each of them. So no feature's file grows by the builds of another feature ([D-56](decisions/D-56-first-use-shader-files.md#addendum-2026-10-12-builds-that-need-several-features)).
