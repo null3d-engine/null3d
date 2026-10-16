@@ -1,6 +1,6 @@
 # D-138: Custom shader inputs: second texture coordinates, pixel position, instance index, matrices and ids
 
-Status: decided by the helper of M2-EX23 on 11 October 2026, for the owner's review. Date: 2026-10-11. Task: M2-EX23.
+Status: decided by the helper of M2-EX23 on 11 October 2026, for the owner's review. Built: the custom material inputs are on main (`9093bad7f`). The owner's review is pending. Date: 2026-10-11. Task: M2-EX23.
 
 Summary: Custom materials read every input that three.js's `ShaderMaterial` gives its shaders. The surface input gains `uv1`, `fragCoord` and `instance`, and the vertex input gains `uv1` and `instance`. `camera` gains `view`, `projection`, `near` and `far`, and `object` gains `worldMatrix`, `normalMatrix` and `id`. They work on all three GPU paths. An input that costs something reaches only WGSL that reads it. The shader compiler turns on its code by a shader def per material, so other materials get no build, binding or upload. The camera's two matrices join the frame's uniform block. The instance index and the object id come from a uniform table of object ranges, which the vertex shader searches. No input takes a texture slot.
 

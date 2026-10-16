@@ -1,11 +1,28 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build, createServer } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
-import { ASSET_FOLDER, cachedFile, cacheFolder, modelKey, optimizedModel } from './assets';
+import {
+	ASSET_FOLDER,
+	cachedFile,
+	cacheFolder,
+	fileCodeHash,
+	modelKey,
+	optimizedModel,
+} from './assets';
 import null3d from './index';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
@@ -46,6 +63,27 @@ describe('optimized models', () => {
 		expect(modelKey('1.0.0', { lod: true }, [file])).not.toBe(key);
 		expect(modelKey('1.0.1', { lod: false }, [file])).not.toBe(key);
 		expect(modelKey('1.0.0', { lod: false }, [SCENE, file])).not.toBe(key);
+	});
+
+	it('hash the tool code, so a fix to the tool changes the key of every model', () => {
+		// The tool's version stays 0.0.0 in the repository, so its version alone left the cache
+		// serving models that a pipeline before the fix wrote. The module and the file that shares
+		// its name, the WebAssembly one among them, are both part of the code's hash.
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
+		try {
+			const module = join(folder, 'assets.js');
+			writeFileSync(module, 'export const VERSION = "0.0.0";\n');
+			writeFileSync(join(folder, 'assets.wasm'), 'wasm bytes');
+			const before = fileCodeHash(module);
+			expect(before).not.toBeNull();
+			expect(fileCodeHash(module)).toBe(before);
+			writeFileSync(join(folder, 'assets.wasm'), 'other wasm bytes');
+			expect(fileCodeHash(module)).not.toBe(before);
+			writeFileSync(join(folder, 'assets.js'), 'export const VERSION = "0.0.1";\n');
+			expect(fileCodeHash(join(folder, 'missing.js'))).toBeNull();
+		} finally {
+			rmSync(folder, { recursive: true, force: true });
+		}
 	});
 
 	it('serve only files inside the cache', () => {

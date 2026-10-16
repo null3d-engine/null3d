@@ -36,13 +36,28 @@ describe('encodeOctahedral', () => {
 		}
 	});
 
-	test("sends the axes to the square's middle and corners", () => {
+	test("sends the axes to the square's middle, edges and corner", () => {
 		expect(encodeOctahedral([0, 0, 1])).toEqual([0, 0]);
-		expect(encodeOctahedral([0, 0, -1])).toEqual([0, 0]);
+		expect(encodeOctahedral([0, 0, -1])).toEqual([1, 1]);
 		expect(encodeOctahedral([1, 0, 0])[0]).toBeCloseTo(1, 6);
 		expect(encodeOctahedral([-1, 0, 0])[0]).toBeCloseTo(-1, 6);
 		expect(encodeOctahedral([0, 1, 0])[1]).toBeCloseTo(1, 6);
 		expect(encodeOctahedral([0, -1, 0])[1]).toBeCloseTo(-1, 6);
+	});
+
+	test('keeps back directions with x or y at 0 in the back half', () => {
+		for (const direction of [
+			[0, 0, -1],
+			[0, 0.6, -0.8],
+			[0, -0.6, -0.8],
+			[0.6, 0, -0.8],
+			[-0.6, 0, -0.8],
+		] as const) {
+			const back = decodeOctahedral(encodeOctahedral(direction));
+			expect(back[0]).toBeCloseTo(direction[0], 6);
+			expect(back[1]).toBeCloseTo(direction[1], 6);
+			expect(back[2]).toBeCloseTo(direction[2], 6);
+		}
 	});
 
 	test('reads a direction of length 0 as the middle', () => {
@@ -70,6 +85,23 @@ describe('impostorFrame and frameDirection', () => {
 		// The middle cell of a 3 by 3 grid is the +z direction, as frame 4 counts from the top left.
 		expect(impostorFrame([0, 0, 1], atlas)).toBe(4);
 		expect(frameDirection(4, atlas)).toEqual([0, 0, 1]);
+	});
+
+	test('gives the back pole and the back half-planes their own cells', () => {
+		const atlas = { columns: 4, rows: 4 };
+		// The back pole is the last cell, at the bottom right corner, never a front cell.
+		expect(impostorFrame([0, 0, -1], atlas)).toBe(15);
+		expect(impostorFrame([0, 0, -1], atlas)).not.toBe(impostorFrame([0, 0, 1], atlas));
+		// A back direction with x or y at 0 shows a cell whose view faces back too.
+		for (const direction of [
+			[0, 0.2, -1],
+			[0, -0.2, -1],
+			[0.2, 0, -1],
+			[-0.2, 0, -1],
+		] as const) {
+			const seen = frameDirection(impostorFrame(direction, atlas), atlas);
+			expect(seen[2]).toBeLessThan(0);
+		}
 	});
 
 	test('refuses a frame outside the grid in frameDirection', () => {

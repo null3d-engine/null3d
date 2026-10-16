@@ -4,7 +4,10 @@
 // third the walk and the run side by side by clip weights, from start times of their own. Each
 // frame, the sketch moves one layer's weight of every character, and the blend value or the run's
 // clip weight. Now and then a character cross-fades to another clip, plays its blend again with
-// other points, or fades its clips to new weights, as a game's code does. Every fourth character
+// other points, or fades its clips to new weights, as a game's code does. With inertial
+// transitions, the characters that play one clip switch to the next with an inertial transition
+// instead of a cross-fade, so the animator carries the pose they leave into the new clip. Every
+// fourth character
 // turns two joints on top of its clips, with a set and an added rotation, and the next ones aim a
 // chain of three joints at a point that moves, at a weight that moves. Each character is a
 // skinned mesh, a box at each joint, in a row in front of S1's boxes, which both GPU paths skin
@@ -26,6 +29,7 @@ const FADE_EVERY = 120;
 const BLEND = Object.freeze({ walk: 0, run: 0.8 });
 const REVERSED = Object.freeze({ walk: 0.8, run: 0 });
 const FADE = Object.freeze({ fade: 0.3 });
+const INERTIAL = Object.freeze({ fade: 0.3, transition: 'inertial' as const });
 /** The aim of the characters that look at a point: a limb of three joints from the root. */
 const AIM = Object.freeze({ joints: ['joint1', 'joint6', 'joint11'], limit: 0.8 });
 const FADE_TO_WEIGHT = [
@@ -40,11 +44,12 @@ export function readAnimated(moduleUrl: string): number {
 
 /**
  * Adds `count` animated characters, and returns the code that moves them in each frame at sketch
- * time `t`.
+ * time `t`. With `inertial`, the characters that play one clip switch clips by inertial transitions.
  */
 export function createAnimatedCrowd(
 	{ scene, geometry, materials }: SketchContext,
 	count: number,
+	inertial = false,
 ): (t: number) => void {
 	if (count === 0) return () => {};
 	const rig = createAnimationRig(scene, crowdRig(JOINTS));
@@ -107,6 +112,7 @@ export function createAnimatedCrowd(
 			const turn = ((frame + k) / FADE_EVERY) % 2;
 			if (kind === 1) animator.playBlend(turn === 0 ? BLEND : REVERSED, FADE);
 			else if (kind === 2) animator.play('walk', FADE_TO_WEIGHT[turn]);
+			else if (inertial) animator.play(CROWD_CLIPS[turn] as string, INERTIAL);
 			else animator.crossFade(CROWD_CLIPS[turn] as string, 0.3);
 		}
 	};

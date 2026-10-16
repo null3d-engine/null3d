@@ -1,11 +1,11 @@
-// The terrain add-on: a height field drawn as a camera-centred quadtree of blocks, so the ground
+// The terrain add-on: a height field drawn as a camera-centered quadtree of blocks, so the ground
 // near the camera is fine and the far ground is cheap. Each block is a mesh whose vertices carry
 // the height field's heights, with a skirt around its edge that closes the seam where two blocks
 // of different levels meet. One splat-mapped material blends up to four tiled layers over all the
 // blocks. The terrain has no collision: a game reads `heightAt` and `normalAt` to place what
 // stands on it.
 import type { Material, Mesh, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
-import { chunkArrays } from './chunk';
+import { type ChunkShape, chunkShape, writeChunkVertices } from './chunk';
 import { createHeightfield, type Heightfield } from './heightfield';
 import { splatMaterial, type TerrainLayer } from './material';
 import { Quadtree } from './quadtree';
@@ -50,8 +50,8 @@ export interface TerrainOptions {
 	 */
 	split?: number;
 	/**
-	 * How far the skirt around each block hangs down, in meters. The default is four of the
-	 * block's cells, which closes the seam against a neighbour up to a level or two coarser.
+	 * How far the skirt around each block hangs down, in meters. The default is four of the block's
+	 * cells, which closes the seam against a neighbour up to a level or two coarser.
 	 */
 	skirt?: number;
 	/** How much the ground acts like a metal, from 0 to 1. The default is 0. */
@@ -60,7 +60,11 @@ export interface TerrainOptions {
 	castShadows?: boolean;
 	/** True makes shadows fall on the ground. The default is true. */
 	receiveShadows?: boolean;
-	/** The most blocks kept ready, from 16 up. A block left out of the view is reused first. The default is 512. */
+	/**
+	 * The most blocks the ground keeps, from 16 up: a selection draws up to that many, and a block
+	 * that a new selection leaves out gives up its mesh to the next block that needs one, so the
+	 * ground stops building meshes once it holds this many. The default is 512.
+	 */
 	maxBlocks?: number;
 }
 
@@ -79,7 +83,7 @@ const DEFAULT_MAX_LEVEL = 6;
 const DEFAULT_SPLIT = 2;
 /** The default texels along each side of the splat map. */
 const DEFAULT_SPLAT = 256;
-/** The default blocks kept ready. */
+/** The default blocks a selection may draw. */
 const DEFAULT_BLOCKS = 512;
 
 /**
@@ -94,12 +98,39 @@ export class Terrain {
 	private readonly material: Material;
 	private readonly splatTexture: Texture;
 	private readonly white: Texture | undefined;
-	private readonly quads: number;
+	private readonly shape: ChunkShape;
 	private readonly fixedSkirt: number | undefined;
 	private readonly cast: boolean;
 	private readonly receive: boolean;
 	private readonly maxBlocks: number;
+	/** The blocks that the last update drew, by their key. */
 	private readonly blocks = new Map<number, Block>();
+	/** The blocks that a selection left out, whose meshes the next block that needs one takes. */
+	private readonly spares: Block[] = [];
+	/** The vertices of the block being written, which every block writes into in turn. */
+	private readonly positions: Float32Array;
+	private readonly normals: Float32Array;
+	/** The center of a block's own sphere, which holds every block at its own corner. */
+	private readonly center: [number, number, number] = [0, 0, 0];
+	/** The block and the key that `scanOldest` found, which `evict` takes. */
+	private oldest: Block | undefined = undefined;
+	private oldestKey = 0;
+	/** Hides the blocks that the new selection leaves out, without making an iterator or a closure. */
+	private readonly hideLeftOut = (block: Block): void => {
+		if (block.stamp !== this.stamp) block.object.setVisible(false);
+	};
+	/** Notes the oldest block that the new selection leaves out. */
+	private readonly scanOldest = (block: Block, key: number): void => {
+		if (block.stamp === this.stamp) return;
+		const oldest = this.oldest;
+		if (!oldest || block.stamp < oldest.stamp) {
+			this.oldest = block;
+			this.oldestKey = key;
+		}
+	};
+	/** The size of a leaf of the finest level, and half of the ground's width. */
+	private readonly cellSize: number;
+	private readonly halfSize: number;
 	private stamp = 0;
 	private lastCellX = Number.NaN;
 	private lastCellZ = Number.NaN;
@@ -124,7 +155,6 @@ export class Terrain {
 				`createTerrain() got the maxBlocks ${maxBlocks}, which is not a whole number of 16 or more.`,
 			);
 		this.context = context;
-		this.quads = chunkQuads;
 		this.fixedSkirt = options.skirt;
 		this.cast = options.castShadows ?? true;
 		this.receive = options.receiveShadows ?? true;
@@ -135,6 +165,11 @@ export class Terrain {
 			height: options.height,
 		});
 		this.tree = new Quadtree({ size, maxLevel, split });
+		this.cellSize = this.tree.blockSize(maxLevel);
+		this.halfSize = size / 2;
+		this.shape = chunkShape(chunkQuads);
+		this.positions = new Float32Array(this.shape.vertices * 3);
+		this.normals = new Float32Array(this.shape.vertices * 3);
 		const splat = options.splat ?? defaultSplat(this.field);
 		this.splatTexture = splatTexture(
 			context.textures,
@@ -169,8 +204,8 @@ export class Terrain {
 
 	/** How many triangles the last update drew, with each block's skirt. */
 	get triangles(): number {
-		const grid = this.quads * this.quads * 2;
-		const skirt = this.quads * 4 * 2;
+		const grid = this.shape.quads * this.shape.quads * 2;
+		const skirt = this.shape.quads * 4 * 2;
 		return this.drawnBlocks * (grid + skirt);
 	}
 
@@ -192,65 +227,95 @@ export class Terrain {
 
 	/**
 	 * Picks the blocks to draw for a camera at `x` and `z` on the ground. It does nothing until the
-	 * camera moves into a new cell of the finest level, so a still camera costs no work. Call it in
-	 * `onUpdate` with the camera's own x and z.
+	 * camera moves into a new cell of the finest level, so a still camera costs no work, and a block
+	 * that the new selection needs takes the mesh of one that it left out. Call it in `onUpdate`
+	 * with the camera's own x and z.
 	 */
 	update(x: number, z: number): void {
 		if (this.ended) return;
-		const cell = this.tree.blockSize(this.tree.maxLevel);
-		const column = Math.floor((x + this.tree.size / 2) / cell);
-		const row = Math.floor((z + this.tree.size / 2) / cell);
+		const column = Math.floor((x + this.halfSize) / this.cellSize);
+		const row = Math.floor((z + this.halfSize) / this.cellSize);
 		if (column === this.lastCellX && row === this.lastCellZ) return;
 		this.lastCellX = column;
 		this.lastCellZ = row;
 		const { tree } = this;
 		const count = tree.select(x, z);
 		this.stamp++;
+		const stamp = this.stamp;
 		for (let i = 0; i < count; i++) {
 			const level = tree.levels[i] as number;
-			const at = tree.key(level, tree.columns[i] as number, tree.rows[i] as number);
+			const blockColumn = tree.columns[i] as number;
+			const blockRow = tree.rows[i] as number;
+			const at = tree.key(level, blockColumn, blockRow);
 			let block = this.blocks.get(at);
-			if (!block)
-				block = this.makeBlock(level, tree.columns[i] as number, tree.rows[i] as number, at);
-			if (block.stamp !== this.stamp) {
-				block.stamp = this.stamp;
+			if (!block) block = this.placeBlock(level, blockColumn, blockRow, at);
+			if (block.stamp !== stamp) {
+				block.stamp = stamp;
 				block.object.setVisible(true);
 			}
 		}
 		this.drawnBlocks = count;
-		for (const block of this.blocks.values())
-			if (block.stamp !== this.stamp) block.object.setVisible(false);
+		this.blocks.forEach(this.hideLeftOut);
 		while (this.blocks.size > this.maxBlocks && this.evict()) {
-			// Drop the blocks that the new selection left out, oldest first.
+			// Park the blocks that the new selection left out, oldest first.
 		}
 	}
 
 	/** Shows or hides the whole ground, for a camera high above it. */
 	setVisible(visible: boolean): void {
 		for (const block of this.blocks.values()) block.object.setVisible(visible);
+		for (let i = 0; i < this.spares.length; i++)
+			(this.spares[i] as Block).object.setVisible(visible);
 	}
 
 	/** Destroys the ground: every block's object and mesh, and the material's own textures. */
 	destroy(): void {
 		for (const block of this.blocks.values()) this.endBlock(block);
 		this.blocks.clear();
+		for (let i = 0; i < this.spares.length; i++) this.endBlock(this.spares[i] as Block);
+		this.spares.length = 0;
 		this.material.destroy();
 		this.splatTexture.destroy();
 		this.white?.destroy();
 		this.ended = true;
 	}
 
-	/** Makes one block's mesh and object, and remembers them. */
-	private makeBlock(level: number, column: number, row: number, key: number): Block {
-		const { tree, quads } = this;
-		const block = tree.blockSize(level);
+	/**
+	 * Puts a block at the leaf of `level`, `column` and `row`: a mesh whose vertices hold that
+	 * leaf's ground, taken from the blocks that earlier selections left out, and a new mesh only
+	 * when none waits.
+	 */
+	private placeBlock(level: number, column: number, row: number, key: number): Block {
+		const { tree, shape } = this;
+		const blockSize = tree.blockSize(level);
 		const originX = tree.blockX(level, column);
 		const originZ = tree.blockZ(level, row);
-		const cell = block / quads;
-		const skirt = this.fixedSkirt ?? cell * 4;
-		const mesh = this.context.geometry.fromArrays(
-			chunkArrays(this.field, block, originX, originZ, quads, skirt),
+		const skirt = this.fixedSkirt ?? (blockSize / shape.quads) * 4;
+		writeChunkVertices(
+			this.field,
+			shape,
+			blockSize,
+			originX,
+			originZ,
+			skirt,
+			this.positions,
+			this.normals,
 		);
+		const spare = this.takeBlock();
+		if (spare) {
+			spare.mesh.updateVertices('positions', this.positions);
+			spare.mesh.updateVertices('normals', this.normals);
+			spare.object.setPosition(originX, 0, originZ);
+			spare.object.setBounds(this.center, this.blockRadius());
+			this.blocks.set(key, spare);
+			return spare;
+		}
+		const mesh = this.context.geometry.fromArrays({
+			positions: this.positions,
+			normals: this.normals,
+			uvs: shape.uvs,
+			indices: shape.indices,
+		});
 		const object = this.context.scene.createMesh({
 			mesh,
 			material: this.material,
@@ -263,20 +328,45 @@ export class Terrain {
 		return entry;
 	}
 
-	/** Destroys the oldest block that this selection left out, and forgets it. False when every block is drawn. */
-	private evict(): boolean {
-		let oldest: Block | undefined;
-		let key = 0;
-		for (const [at, block] of this.blocks) {
-			if (block.stamp === this.stamp) continue;
-			if (!oldest || block.stamp < oldest.stamp) {
-				oldest = block;
-				key = at;
-			}
+	/**
+	 * The block whose mesh a new block takes: one that waited, or the one that the longest has gone
+	 * unused among the blocks this selection left out. Undefined while the ground holds fewer than
+	 * `maxBlocks` meshes, where a new block builds one.
+	 */
+	private takeBlock(): Block | undefined {
+		const waiting = this.spares.pop();
+		if (waiting) return waiting;
+		if (this.blocks.size >= this.maxBlocks && this.evict()) return this.spares.pop();
+		return undefined;
+	}
+
+	/**
+	 * The distance from a block's low corner to the farthest vertex that was just written into it.
+	 * A mesh keeps the sphere it was made with, so a block that takes another's mesh gives the object
+	 * the sphere of the ground that it now holds.
+	 */
+	private blockRadius(): number {
+		const { positions } = this;
+		let radius = 0;
+		for (let at = 0; at < positions.length; at += 3) {
+			const x = positions[at] as number;
+			const y = positions[at + 1] as number;
+			const z = positions[at + 2] as number;
+			const distance = Math.sqrt(x * x + y * y + z * z);
+			if (distance > radius) radius = distance;
 		}
+		return radius;
+	}
+
+	/** Parks the oldest block that the selection left out, for the next block to take. False when every block draws. */
+	private evict(): boolean {
+		this.oldest = undefined;
+		this.oldestKey = 0;
+		this.blocks.forEach(this.scanOldest);
+		const oldest = this.oldest;
 		if (!oldest) return false;
-		this.endBlock(oldest);
-		this.blocks.delete(key);
+		this.blocks.delete(this.oldestKey);
+		this.spares.push(oldest);
 		return true;
 	}
 

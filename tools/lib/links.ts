@@ -3,7 +3,9 @@
 // into this repository) are checked across the whole tree, because a renamed or deleted page breaks
 // the links in other files. External URLs are probed separately, by the commit hook, for the files
 // a commit changes.
-import { posix } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join, posix } from 'node:path';
 import { docsFiles, guideFiles, readIfExists } from './files';
 
 /** Root-level Markdown files that link into the docs and are checked with them. */
@@ -192,6 +194,25 @@ export function checkLinkTree(
 		}
 	}
 	return problems;
+}
+
+/**
+ * Whether a link target exists. A page that git ignores is written by a generator, so it is absent
+ * until the generators have run. A link to such a page is valid either way: without this, a fresh
+ * worktree rejects every commit that links to a generated page, which is what the first-use shader
+ * page did on 15 October 2026.
+ */
+export function linkTargetExists(root: string, repoRelativePath: string): boolean {
+	if (existsSync(join(root, repoRelativePath))) return true;
+	try {
+		execFileSync('git', ['check-ignore', '--quiet', repoRelativePath], {
+			cwd: root,
+			stdio: 'ignore',
+		});
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** Every file whose links are checked, keyed by repository-relative path. */

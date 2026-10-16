@@ -31,14 +31,14 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /**
- * The shadow-catcher scene's limit, in percent of the pixels. The material draws nothing where the
- * light reaches it, so the sun's shadow fills the frame and its softness sets the material's alpha.
- * Core WebGPU and WebGL2 match three.js closely. Compatibility mode runs at its Medium ceiling,
- * whose FXAA smooths the shadow's edge; the smoothing then shows across the whole penumbra, where an
- * opaque surface would show only a brightness change. The `shadows` scene's limit of 0.5% therefore
- * does not hold there. On 15 October 2026 with the 3 x 3 filter, on the Mac's GPU, 0.019% of the
- * pixels differed on core WebGPU and 0.017% on WebGL2, and 2.382% in compatibility mode.
- * `.dev/image-tests.md` records the figures.
+ * The shadow-catcher scene's limit in compatibility mode alone, in percent of the pixels. The
+ * material draws nothing where the light reaches it, so the sun's shadow fills the frame and its
+ * softness sets the material's alpha. Core WebGPU and WebGL2 match three.js closely, under three.js's
+ * own rule. Compatibility mode runs at its Medium ceiling, whose FXAA smooths the shadow's edge; the
+ * smoothing then shows across the whole penumbra, where an opaque surface would show only a
+ * brightness change. The `shadows` scene's limit of 0.5% therefore does not hold there. On 15 October
+ * 2026 with the 3 x 3 filter, on the Mac's GPU, 0.019% of the pixels differed on core WebGPU and
+ * 0.017% on WebGL2, and 2.382% in compatibility mode. `.dev/image-tests.md` records the figures.
  */
 export const SHADOW_CATCHER_MAX_DIFFERENT_PERCENT = 2.5;
 
@@ -77,10 +77,11 @@ export const ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT = 0.25;
 export const ALPHA_HASH_MAX_DIFFERENT_PERCENT = 6;
 
 /**
- * The glass scene's limit, in percent of the pixels. On the Mac's GPU, 0.001% of the pixels differ
- * from three.js on WebGPU and 0.000% on WebGL2. Compatibility mode's 8-bit path averages the edge
- * samples of the tinted ball and the wall after it encodes them, so 0.086% differ there, all on
- * those edges. three.js's two renderers differ by 0.052% on the same frame.
+ * The glass scene's limit in compatibility mode alone, in percent of the pixels. Measured on
+ * 15 October 2026, on the Mac and under SwiftShader: 0.048% and 0.048% of the pixels differ from
+ * three.js on core WebGPU, 0.044% on WebGL2, and 0.126% and 0.124% in compatibility mode, whose
+ * 8-bit path averages the edge samples of the tinted ball and the wall after it encodes them, all on
+ * those edges. Under three.js's own rule on the other tiers.
  */
 export const TRANSMISSION_MAX_DIFFERENT_PERCENT = 0.2;
 
@@ -110,16 +111,27 @@ export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
  */
 export const SPECULAR_AA_LIMITS = {
 	'standard-grid': 0.25,
-	'environment-room': 0.55,
+	'environment-room': 0.4,
 	'environment-venice': 0.17,
 	'environment-venice-rotated': 0.3,
 	'environment-venice-hdr': 0.17,
-	'environment-room-hemisphere': 0.56,
+	'environment-room-hemisphere': 0.4,
 	'lights-16': 0.15,
 	'gltf-metal-rough': 0.34,
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
 } as const;
+
+/**
+ * The compatibility tier's share for the environment scenes whose 8-bit path smooths edges with
+ * FXAA and averages its samples after encoding them, so they differ from three.js there alone.
+ * Measured on 15 October 2026, on the Mac and under SwiftShader: the room 0.51% and 0.50%, and the
+ * room with a hemisphere light 0.53% and 0.51%, against 0.20% on the other tiers.
+ */
+const ENVIRONMENT_COMPAT_LIMITS: Partial<Record<string, number>> = {
+	room: 0.7,
+	'room-hemisphere': 0.7,
+};
 
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
@@ -388,7 +400,17 @@ export interface FeatureScene {
 	webglOnly?: boolean;
 	/** The percentage of pixels under which the scene passes, where it is not three.js's limit. */
 	limit?: number;
+	/**
+	 * The percentage in compatibility mode, where it differs from `limit`: its 8-bit path averages
+	 * edge samples after it encodes them, and its Medium ceiling smooths edges with FXAA, so some
+	 * scenes differ from three.js there alone.
+	 */
+	compatLimit?: number;
 }
+
+/** The percentage of pixels under which a feature scene passes on a tier, or on every tier. */
+export const sceneLimit = (scene: FeatureScene, tier?: Tier): number | undefined =>
+	tier === 'compat' && scene.compatLimit !== undefined ? scene.compatLimit : scene.limit;
 
 const TWINS = '/bench/pages/threejs';
 /** The sketch switch that turns off tone mapping, for sketches whose image tests keep the default curve. */
@@ -407,12 +429,23 @@ const NO_TONE = 'tone=none';
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 0.5,
-	instancing: 0.5,
-	clearcoat: 0.2,
-	'meshopt-ext': 0.5,
+	clearcoat: 0.15,
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
+};
+
+/**
+ * The limits of those model scenes in compatibility mode alone, which are looser than the scene's
+ * own: its 8-bit path averages edge samples after it encodes them, so bright edges on black differ
+ * from three.js only there. Measured on 15 October 2026 on the Mac and under SwiftShader: the
+ * instanced cubes 0.40% and 0.40% against nothing on the other tiers, meshopt's the same cubes
+ * 0.40% and 0.40%, and the clear coat test's tiles 0.20% and 0.20% against 0.07% elsewhere.
+ */
+const MODEL_COMPAT_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
+	instancing: 0.5,
+	'meshopt-ext': 0.5,
+	clearcoat: 0.3,
 };
 
 /**
@@ -451,6 +484,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			twin: `${TWINS}/environment.html?env=${env.replace('-rotated', '&rotate')}`,
 			sketchSwitches: NO_TONE,
 			limit: SPECULAR_AA_LIMITS[`environment-${env}`],
+			compatLimit: ENVIRONMENT_COMPAT_LIMITS[env],
 		}),
 	),
 	// The sunset again, from its Radiance file, which the engine filters at load, against three.js's
@@ -469,6 +503,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/environment.html?env=room&hemisphere`,
 		sketchSwitches: NO_TONE,
 		limit: SPECULAR_AA_LIMITS['environment-room-hemisphere'],
+		compatLimit: ENVIRONMENT_COMPAT_LIMITS['room-hemisphere'],
 	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html`, sketchSwitches: NO_TONE },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
@@ -499,7 +534,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		test: 'transmission',
 		twin: `${TWINS}/transmission.html`,
 		sketchSwitches: NO_TONE,
-		limit: TRANSMISSION_MAX_DIFFERENT_PERCENT,
+		compatLimit: TRANSMISSION_MAX_DIFFERENT_PERCENT,
 	},
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
 	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
@@ -509,7 +544,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	// on the Mac's GPU. Compatibility mode's 8-bit path also averages edge samples after it encodes
 	// them, at the edges of bright points on the wall: 0.119% differ on SwiftShader, and 0.110% on
 	// the Mac's GPU. D-37 gives the detail.
-	{ test: 'points', twin: `${TWINS}/points.html`, webglOnly: true, limit: 0.2 },
+	{ test: 'points', twin: `${TWINS}/points.html`, webglOnly: true, limit: 0.15, compatLimit: 0.2 },
 	{ test: 'lines', twin: `${TWINS}/lines.html` },
 	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
@@ -552,6 +587,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			test: `gltf-${model}`,
 			twin: `${TWINS}/gltf.html?model=${model}`,
 			limit: MODEL_LIMITS[model],
+			compatLimit: MODEL_COMPAT_LIMITS[model],
 			...(WEBGL_ONLY_MODELS.has(model) && { webglOnly: true }),
 		}),
 	),
@@ -571,7 +607,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		test: 'shadow-catcher',
 		twin: `${TWINS}/shadow-catcher.html`,
 		sketchSwitches: NO_TONE,
-		limit: SHADOW_CATCHER_MAX_DIFFERENT_PERCENT,
+		compatLimit: SHADOW_CATCHER_MAX_DIFFERENT_PERCENT,
 	},
 	// Skinning against three.js's SkinnedMesh.
 	{
@@ -588,7 +624,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		test: 'morph',
 		twin: `${TWINS}/morph.html`,
 		sketchSwitches: NO_TONE,
-		limit: 0.2,
+		compatLimit: 0.2,
 	},
 	{
 		test: 'morph-closeup',

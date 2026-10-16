@@ -26,6 +26,8 @@ The workflow lands the version on main, then tags, then publishes. Each step is 
 - A failure before the tag exists leaves main holding the version numbers. Run the workflow again with the same commit: it finds nothing to land, and carries on to the tag.
 - A tag that exists stops the workflow, because a released version is never released again.
 
+The Release Publish workflow's two jobs, `publish` and `publish-npm`, may run for 30 minutes. They are the one exception to the rule that every CI job stops at 20 minutes ([Branches and parallel work](pull-requests.md#cis-jobs)). A release is not a check of a commit, and a publish cut off halfway is worse than a slow one: a tag without its GitHub Release, or some packages on npm and not the others. They had not run yet on 12 October 2026, so their time is not known.
+
 ## Versions
 
 The first release is 0.1.0, when M3's exit gate passes, and 1.0 follows at M4's gate with the API freeze ([D-108](decisions/D-108-first-release.md), owner, 8 October 2026). That replaces the owner's ruling of 3 October 2026, which made 1.0 the first release. M1 and M2 end at their exit gates, and no publish step follows them. Before 0.1.0, M3 adds hosting with the isolation headers, basic fuzzing of the file loaders, the first npm publishes and a rule for the `since` values.

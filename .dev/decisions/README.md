@@ -8,7 +8,7 @@ A decision record settles one design question with measured data. It states the 
 
 ## Write a record
 
-1. Take the next free number, and check that no open pull request uses it.
+1. Take the next free number, and check that no remote branch uses it: `git fetch`, then `git grep -l 'D-<number>' $(git for-each-ref --format='%(refname)' refs/remotes/origin) -- .dev/decisions`. Two branches can still take one number, and the docs check then refuses the second when it merges main.
 2. Copy [TEMPLATE.md](TEMPLATE.md) to `D-<number>-<short-name>.md`, with the short name in lowercase words joined by hyphens.
 3. Start with the line `# D-<number>: <title>`. Under it, write a `Status:` paragraph and a `Summary:` paragraph. The status says what is decided and what is pending, with dates. The summary gives the choice and its main figures in one to three sentences.
 4. When the record changes, keep its status and summary current.

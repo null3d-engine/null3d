@@ -5,7 +5,7 @@
 // block. External URLs are probed only in the changed files (HEAD, then GET for servers that
 // refuse HEAD), and successes are cached in .git/ for a week. Only a definitive 404 or 410 blocks:
 // a 403 can be a bot wall, and an offline machine must warn, never wedge a commit.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
 	checkLinkTree,
@@ -14,6 +14,7 @@ import {
 	isOwnRepoUrl,
 	isSkippedExternalUrl,
 	linkedFiles,
+	linkTargetExists,
 } from '../lib/links';
 import { stagedFiles } from './commit-ack';
 
@@ -79,7 +80,7 @@ function writeCache(cache: Record<string, number>): void {
 async function main(): Promise<void> {
 	const root = process.cwd();
 	const files = linkedFiles(root);
-	const problems = checkLinkTree(files, (p) => existsSync(join(root, p)));
+	const problems = checkLinkTree(files, (p) => linkTargetExists(root, p));
 	if (problems.length > 0) {
 		console.error(`\ncommit rejected: ${problems.length} broken link(s):\n`);
 		for (const p of problems) console.error(`  ${p}`);

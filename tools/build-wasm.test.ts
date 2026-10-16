@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
 	addReleaseInstance,
 	artifactFiles,
+	buildCodeHash,
 	cargoTargetBase,
 	checkHeapStart,
 	lockedVersion,
@@ -178,6 +179,27 @@ describe('variantKey', () => {
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, rust: 'other' })).not.toBe(key);
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, bindgen: '0.2.130' })).not.toBe(key);
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, wasmOpt: '133.0.0' })).not.toBe(key);
+	});
+});
+
+describe('buildCodeHash', () => {
+	it('changes with this script or with the module that rewrites the glue', () => {
+		// Both decide what an entry holds: the script sets the flags and the staging, and the glue
+		// module rewrites every built module. Neither is a Rust source, so neither reaches the
+		// sources' stamp, and without this an edit here kept serving an entry an earlier version wrote.
+		const root = mkdtempSync(join(tmpdir(), 'null3d-code-'));
+		try {
+			for (const file of ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']) {
+				mkdirSync(dirname(join(root, file)), { recursive: true });
+				cpSync(join(process.cwd(), file), join(root, file));
+			}
+			const before = buildCodeHash(root);
+			expect(buildCodeHash(root)).toBe(before);
+			writeFileSync(join(root, 'tools/lib/core-sources.ts'), '// another glue\n', { flag: 'a' });
+			expect(buildCodeHash(root)).not.toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

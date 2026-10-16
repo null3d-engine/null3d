@@ -1,6 +1,6 @@
 # D-120: Planar reflections
 
-Status: decided by the helper of M2-EX15 on 9 October 2026, for the owner's review. Date: 2026-10-09. Task: M2-EX15.
+Status: decided by the helper of M2-EX15 on 9 October 2026, for the owner's review. Built: planar reflections are on main (`ea5cb60eb`). The owner's review is pending. Date: 2026-10-09. Task: M2-EX15.
 
 Summary: `render.addPass({ kind: 'reflection', writes, plane })` draws the camera's view mirrored across a plane into a texture. The plane is the projection's oblique near plane, so nothing below it shows and no shader pays for the clip. The reflection draws the scene's background, and, since 11 October 2026, the point and spot lights that it sees. A custom material reads the texture with `null3d::reflection::reflection_uv`. It sets the surface's new `reflection`, which the engine lights in place of the environment's reflection. The presets draw it at a quarter, half, half and the whole render size, from Low to Ultra. In S1 on the Mac's GPU, it added 0.63 ms per frame at half size and 0.73 ms at full size on WebGPU, and 0.35 and 0.24 ms on WebGL2.
 

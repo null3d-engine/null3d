@@ -320,9 +320,9 @@ export interface EngineOptions {
 	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
 	 * while the engine runs. The error's message holds the failure, such as `E1102: ...`. The engine
 	 * keeps drawing and presenting frames, so the error alone does not stop it: a frame whose update
-	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`, which
-	 * the comparison ramps judge. `engine.onSketchError` adds more handlers once the engine has
-	 * started. Without a handler, the error also reaches the console.
+	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`.
+	 * `engine.onSketchError` adds more handlers once the engine has started. Without a handler, the
+	 * error also reaches the console.
 	 */
 	onSketchError?: (error: Error) => void;
 	/**

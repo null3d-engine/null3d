@@ -1,6 +1,6 @@
 # D-146: A grid of irradiance probes gives the scene local, coloured indirect light
 
-Status: decided by the coordinator on 13 October 2026. It follows the owner's ruling [D-142](D-142-more-techniques-before-1-0.md) of 11 October 2026, which moved a light probe grid into M2. The figures this record needs follow as the task is built.
+Status: decided by the coordinator on 13 October 2026. It follows the owner's ruling [D-142](D-142-more-techniques-before-1-0.md) of 11 October 2026, which moved a light probe grid into M2. Built: the grid is on main (`c309987b2`), and "Figures" holds its measurements.
 
 Summary: A scene can bake a grid of irradiance probes in the browser, or give the engine a baked grid of its own. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, three hardware-filtered reads each, with a normal offset for leak control. The grid replaces the environment's diffuse light, because the bake already holds the sky; the environment keeps its reflections. It runs at near zero cost while no scene sets a grid. This is the cheap step toward global illumination: it gives coloured bounce indoors and sky occlusion under a canopy.
 
@@ -43,7 +43,7 @@ The grid's sampling sits in its own first-use templates, `probe_grid` and `probe
 ## Consequences
 
 - **Storage and memory:** 24 bytes per probe. A 24 x 8 x 24 grid (one probe per metre over a 24 m hall, 4,608 probes) takes 110 KB.
-- **Frame group's bindings, an open question.** The lit shader's group 0 uses every binding below 16 on WebGL2. The only free one today is binding 3, where WebGPU keeps its split-sum table. WebGPU uses bindings 16 and 17 as well. M2-EX32 (reflection probes) takes binding 3 on both paths, after freeing it on WebGPU by moving the split-sum table into the materials' custom values texture. A probe grid texture therefore needs the coordinator's ruling on the frame group's layout. Options: free a slot for it, share M2-EX32's slot through one pump, or read the grid per object on the CPU. Godot's per-object rule costs no texture unit, but it no longer varies per pixel. The task asks for per pixel, so a slot must be freed. The cheapest slot to free is one of the two shadow uniforms. The cascades' block (binding 6) and the tiles' (binding 10) could become one block. That frees a binding on both paths and costs one upload.
+- **Frame group's bindings, settled.** The lit shader's group 0 used every binding below 16 on WebGL2, and M2-EX32 (reflection probes) took binding 3 on both paths. A per-pixel grid needed a freed slot, since Godot's per-object rule costs no texture unit but does not vary per pixel. The cascades' block (binding 6) and the tiles' (binding 10) became one block, which freed binding 10 on both paths for the grid and costs one upload ("Figures").
 - **WebGL2 texture units:** the grid is one more unit for the lit builds that read it, inside the 16 that D-142 names. The build counts a build's units and fails at 16.
 - **Tests and size:** image references of a baked grid on the three GPU paths, and an allocation check of the bake and the frame. A download-size check proves that a page without a grid pays nothing.
 - **Docs, mapping and skills:** a docs page, the three.js `LightProbeGrid` mapping entry, and the skill lines, with the showcase scenes able to set a grid.

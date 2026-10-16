@@ -1,6 +1,6 @@
 # D-133: Volumetric fog and light shafts
 
-Status: decided by its landing, 2026-10-14. Date: 2026-10-11. Task: M2-EX21.
+Status: decided by the helper of M2-EX21, and built on main on 14 October 2026 (`bf57a945b`). The owner has not reviewed the design. Date: 2026-10-11. Task: M2-EX21.
 
 Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main directional light and the point and spot lights, through their shadows. Sun rays then fall through trees, and lamps and headlights glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as Frostbite and Unreal do. It sums the cells front to back, and adds the light that the fog scatters toward the camera after the main pass. Four fragment steps run on every GPU path, and their code and shaders load on first use. The quality setting `fogSlices` sizes the grid. Low keeps the fog's analytic sun glow, at no cost. Data holds the figures per preset and the download sizes.
 

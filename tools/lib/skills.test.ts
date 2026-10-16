@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { walkFiles } from './files';
 import { fixture } from './fixture';
-import { checkSkills, docIdsIn, syncSkills } from './skills';
+import { checkSkills, contentsProblems, docIdsIn, syncSkills } from './skills';
 
 const repoRoot = join(import.meta.dir, '../..');
 
@@ -100,5 +100,25 @@ describe('checkSkills', () => {
 
 	it('passes on the repository', () => {
 		expect(checkSkills(repoRoot).problems).toEqual([]);
+	});
+});
+
+describe('contentsProblems', () => {
+	const file = (contents: string) =>
+		`# Recipes\n\n## Contents\n\n${contents}\n\n## 1. Start\n\nText.\n\n## 2. Terrain (0.2)\n\nText.\n`;
+
+	it('accepts a contents list that names every numbered section', () => {
+		expect(contentsProblems('r.md', file('1. Start a project\n2. Terrain'))).toEqual([]);
+	});
+
+	it('reports a section that the list lacks, and an item that no section has', () => {
+		expect(contentsProblems('r.md', file('1. Start\n3. Water'))).toEqual([
+			'r.md: its contents list lacks section 2, "Terrain (0.2)"',
+			'r.md: its contents list names section 3, which no heading has',
+		]);
+	});
+
+	it('ignores a file without a contents list', () => {
+		expect(contentsProblems('r.md', '# Notes\n\n## 1. One\n')).toEqual([]);
 	});
 });

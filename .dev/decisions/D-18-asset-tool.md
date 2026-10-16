@@ -128,7 +128,7 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 - Pure JavaScript decoders read PNG (fast-png) and JPEG (jpeg-js), and the tool resizes in its own code. That code only adds, multiplies, divides and rounds. It reads sRGB values from a written table, not from `Math.pow`. So every JavaScript engine computes the same pixels.
 - Each texture encodes on a worker thread of its own, on one thread inside the encoder. The output does not depend on the thread count, and a set of textures uses every core.
 - The formats shared with the engine come from the engine's Rust core. The `null3d-assets-wasm` crate builds them to WebAssembly, as the shader compiler is built. Its first format is the stored mesh BVH of [D-27](D-27-bvh.md): `meshBvh` in `packages/cli/src/assets/formats.js` returns `MeshBvh::to_bytes()`. M2-B4 writes it into model files for large static meshes, through this function.
-- The Vite plugin runs the same steps on a model that a module imports with `?optimized`. It keeps the result in `node_modules/.cache/null3d-assets`, keyed by the hash of the model's files, the tool's version and the options.
+- The Vite plugin runs the same steps on a model that a module imports with `?optimized`. It keeps the result in `node_modules/.cache/null3d-assets`, keyed by the hash of the model's files, the identity of the tool (its version and a hash of its own code) and the options.
 
 ### The settings
 
@@ -195,3 +195,15 @@ three.js has no asset tool of its own. Its users run other tools, such as gltfpa
 - M2-B3 reads FBX with ufbx built to WebAssembly, by the owner's answer. M2-B4 writes blocker meshes and BVHs through the formats module.
 - The file `packages/cli/src/assets/clips.js` holds the clip step and `MeshoptWithRotationFilter`. The core's `bake` and the formats module's `clip()` give it the keys. Its tests check the keys against the source curves, the one-key tracks, the 16-bit rotations and the same bytes on two runs.
 - The `gltf-poses` test loads each sample model after the tool too, and requires that no clip resamples.
+
+## Addendum, 15 October 2026: the model cache key names the tool's code
+
+The code review of 13 to 15 October found that the Vite plugin's model cache was keyed by the tool's
+package version alone (H-17). That version is `0.0.0` in the repository, so two changes to the tool's
+output landed without changing the key: the shader list a model records, and the clear coat and sheen
+names. A project kept the models that the earlier pipeline wrote, and a later fix would be hidden the
+same way.
+
+The key now names the tool's identity: the version it reports and a hash of its own code, which is the
+module the plugin loads and the files that share its name, the WebAssembly file among them. A tool
+whose files cannot be read falls back to the version, as before.

@@ -150,3 +150,27 @@ They are recorded here, since the camera's behaviour is what the rules describe.
 
 `examples/lib/takeover.test.ts` holds a case for each: a fling that must not resume, a mid-glide
 takeover, and `examples/lib/clearance.test.ts` holds the short step.
+
+## Addendum: the route is a spline, and the camera never stops between shots (15 October 2026)
+
+A code review on 15 October 2026 found that the route stopped at every shot. Each shot eased into the
+next with a smoothstep, whose speed is zero at both ends, so the camera came to a full stop at every
+shot boundary, ten times a loop, and turned a corner where the two straight segments met. The rule
+above says the route never stands still.
+
+`routePosition` in `examples/lib/cinematic.ts` now flies a centripetal Catmull-Rom spline through the
+shots' positions and the points they look at. Each shot's own seconds warp onto its stretch of the
+spline's parameter, so a shot still lasts what it says and the camera keeps its speed as it passes
+that shot. A shot marked `hold` stays on its own knot, so the pose of a held frame is the pose it
+always was, which the image tests' references depend on. The mid-points between shots are the
+spline's own, so a route's shots are now a rough guide rather than the path itself.
+
+The spline bends away from the straight lines between the shots, so a route tuned to clear geometry
+must be checked along the whole curve, not only at its shots. The two route tests sample 2,000 points
+of the loop for that reason. The night town's route cut a house at about (-8.0, 6.8, -10.9) once the
+spline was in, and a shot at (-13, 13, -11) lifts the bend clear. The clearance guard still clamps
+each frame, so a bulge that a scene's own test does not know about cannot pass through a building
+unnoticed: the camera slides along the surface instead.
+
+A glide back onto the route follows the route while it eases onto it, so the route's own speed is
+what the camera has when the glide ends, rather than the route setting off again from a standstill.

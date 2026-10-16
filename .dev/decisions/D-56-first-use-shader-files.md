@@ -304,7 +304,7 @@ The folder held 499 MB after the cold run, because an entry's record holds the W
 - `crates/null3d-shaders/src/cache.rs` holds the cache, `crates/null3d-shaders/src/lib.rs` builds each entry through it, and `--cache`, `--stamp` and `--no-cache` reach `shader-build`.
 - `tools/lib/shader-modules.ts` passes the folder and the compiler stamp, and turns the cache off for `NULL3D_NO_SHADER_CACHE=1`.
 - The build output does not change. A warm run writes the same modules as a cold one, which the tests in `crates/null3d-shaders/tests/cache.rs` and `tests/cli.rs` check.
-- [Pull requests and parallel work](../pull-requests.md#builds) notes the cache and its figures beside the repository's other caches.
+- [Branches and parallel work](../pull-requests.md#builds) notes the cache and its figures beside the repository's other caches.
 
 ## Addendum, 2026-10-16: the combos tables split by the half-precision bit
 

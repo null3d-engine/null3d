@@ -1,7 +1,7 @@
 // The stage writes the sky, the fog and the environment light every frame, so a part that the HUD
 // turns off must stay off in every later frame and mood, and come back when it turns on again.
 import { expect, test } from 'bun:test';
-import { createMoods, type Mood, type StagePart } from './stage';
+import { createMoods, type Mood, nearestMood, type StagePart } from './stage';
 
 const SKY = { name: 'sky' };
 const ROOM = { name: 'room' };
@@ -97,4 +97,14 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test('the fixed mood nearest an hour carries the look of the moment', () => {
+	expect(nearestMood(6.2)).toBe('Dawn');
+	expect(nearestMood(12)).toBe('Midday');
+	expect(nearestMood(17.6)).toBe('Golden');
+	// Around the clock: an hour after midnight is nearest to the night, not to the dawn.
+	expect(nearestMood(23.5)).toBe('Night');
+	expect(nearestMood(0.5)).toBe('Night');
+	expect(nearestMood(8)).toBe('Morning');
 });

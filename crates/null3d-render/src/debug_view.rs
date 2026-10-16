@@ -106,11 +106,14 @@ impl DebugView {
 }
 
 /// True for a template whose shading reflects the lights, so shadows fall on it: the standard
-/// material's two templates, its two decal templates, and custom materials, which light their
-/// surfaces as it does.
+/// material's two templates, the light probe grid's two, which carry the same shading while a grid
+/// or a reflection probe lights the mesh, its two decal templates, and custom materials, which
+/// light their surfaces as it does.
 pub const fn shades_with_lights(template: u32) -> bool {
     template == template::INSTANCED_LIT
         || template == template::INSTANCED_STANDARD_MAPS
+        || template == template::PROBE_GRID
+        || template == template::PROBE_GRID_MAPS
         || template == template::DECAL
         || template == template::DECAL_MAPS
         || template >= template::CUSTOM_FIRST
@@ -137,6 +140,16 @@ pub const fn receiving(key: DrawKey) -> DrawKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A lit mesh keeps receiving shadows while a grid or a probe lights it, and the shadows debug
+    /// view shades it as it shades the plain lit templates.
+    #[test]
+    fn the_probe_templates_shade_with_the_lights() {
+        for probe in [template::PROBE_GRID, template::PROBE_GRID_MAPS] {
+            assert!(shades_with_lights(probe), "template {probe}");
+        }
+        assert!(!shades_with_lights(template::INSTANCED_UNLIT));
+    }
 
     const BLENDED: DrawKey = DrawKey {
         template: template::INSTANCED_LIT,

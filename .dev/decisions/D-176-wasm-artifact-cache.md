@@ -73,7 +73,7 @@ file again.
 
 - `tools/build-wasm.ts` holds the cache and the keys, and `tools/build-wasm.test.ts` checks the keys
   and the miss paths.
-- [Pull requests and parallel work](../pull-requests.md#builds) gains the new cache beside the shared
+- [Branches and parallel work](../pull-requests.md#builds) gains the new cache beside the shared
   cargo target and the shader module cache, with the measured figures.
 - The escape hatch covers a cache that a reader suspects is stale, and a build that must not read a
   cache at all.

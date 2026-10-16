@@ -182,7 +182,7 @@ A debug view, such as `debug.view('normals')`, turns effects off while it draws.
 
 ## Custom tone curves
 
-A custom tone curve replaces the built-in curves (`'aces'`, `'agx'`, `'neutral'` and `'none'`). Its WGSL declares one function, and `post.set` takes it as `toneMapping`:
+A custom tone curve replaces the built-in curves (`'agx-punchy'`, the default, and `'agx'`, `'aces'`, `'neutral'` and `'none'`). Its WGSL declares one function, and `post.set` takes it as `toneMapping`:
 
 ```ts
 // Reinhard's curve, as three.js's ReinhardToneMapping draws it.

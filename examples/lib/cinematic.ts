@@ -103,6 +103,10 @@ export interface Route {
 	readonly lengths: readonly number[];
 	/** The length of the whole loop, in seconds. */
 	readonly total: number;
+	/** The spline's step from each shot to the next, in its own parameter, never zero. */
+	readonly steps: readonly number[];
+	/** The spline's parameter at each shot, plus the loop's own end. */
+	readonly knots: readonly number[];
 }
 
 /**
@@ -119,7 +123,26 @@ export function routeTimeline(shots: readonly Shot[]): Route {
 		lengths.push(length);
 		total += length;
 	}
-	return { shots, starts, lengths, total };
+	// The spline's own parameter: one step per shot, the distance to the next shot raised to the
+	// centripetal power. A step never reaches zero, so two shots at the same pose, such as a hold,
+	// still have a tangent, and the curve passes through every shot.
+	const steps: number[] = [];
+	let loop = 0;
+	for (let i = 0; i < shots.length; i++) {
+		const from = shots[i] as Shot;
+		const to = shots[(i + 1) % shots.length] as Shot;
+		const distance = Math.hypot(
+			(to.position[0] as number) - (from.position[0] as number),
+			(to.position[1] as number) - (from.position[1] as number),
+			(to.position[2] as number) - (from.position[2] as number),
+		);
+		const step = Math.max(KNOT_FLOOR, distance ** SPLINE_ALPHA);
+		steps.push(step);
+		loop += step;
+	}
+	const knots: number[] = [0];
+	for (let i = 0; i < shots.length; i++) knots.push((knots[i] as number) + (steps[i] as number));
+	return { shots, starts, lengths, total, steps, knots };
 }
 
 /**
@@ -129,19 +152,52 @@ export function routeTimeline(shots: readonly Shot[]): Route {
  * plays.
  */
 export function routePosition(route: Route, phase: number, out: Float32Array): void {
-	const { shots, starts, lengths, total } = route;
+	const { shots, starts, lengths, total, steps, knots } = route;
+	const count = shots.length;
 	const a = ((phase % total) + total) % total || 0;
 	let index = 0;
-	for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
+	for (let k = 0; k < count; k++) if (a >= (starts[k] as number)) index = k;
 	const shot = shots[index] as Shot;
-	const next = shots[(index + 1) % shots.length] as Shot;
-	const along = (a - (starts[index] as number)) / (lengths[index] as number);
-	const f = shot.move === 'hold' ? 0 : smooth(Math.min(1, Math.max(0, along)));
+	const along = Math.min(
+		1,
+		Math.max(0, (a - (starts[index] as number)) / (lengths[index] as number)),
+	);
+	// The shot's own stretch of the spline's parameter, with the step before it and the step after it
+	// as its other two knots. A shot that holds stays on its own knot, so a hold is exactly still.
+	const t1 = knots[index] as number;
+	const t2 = knots[index + 1] as number;
+	const before = (index + count - 1) % count;
+	const after = (index + 1) % count;
+	const then = (index + 2) % count;
+	const t0 = t1 - (steps[before] as number);
+	const t3 = t2 + (steps[after] as number);
+	const t = shot.move === 'hold' ? t1 : t1 + along * (t2 - t1);
+	const first = shots[before] as Shot;
+	const second = shots[after] as Shot;
+	const third = shots[then] as Shot;
 	for (let c = 0; c < 3; c++) {
-		const p = shot.position[c] as number;
-		const t = shot.target[c] as number;
-		out[c] = p + ((next.position[c] as number) - p) * f;
-		out[3 + c] = t + ((next.target[c] as number) - t) * f;
+		out[c] = catmullRom(
+			first.position[c] as number,
+			shot.position[c] as number,
+			second.position[c] as number,
+			third.position[c] as number,
+			t0,
+			t1,
+			t2,
+			t3,
+			t,
+		);
+		out[3 + c] = catmullRom(
+			first.target[c] as number,
+			shot.target[c] as number,
+			second.target[c] as number,
+			third.target[c] as number,
+			t0,
+			t1,
+			t2,
+			t3,
+			t,
+		);
 	}
 }
 
@@ -177,6 +233,34 @@ export interface Cinematic {
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
+/** The power that the route's spline raises each shot's distance to: the centripetal form. */
+const SPLINE_ALPHA = 0.5;
+/** The shortest step between two knots, so two shots at one pose still have a tangent. */
+const KNOT_FLOOR = 1e-3;
+
+/**
+ * One component of the centripetal Catmull-Rom spline through `v0` to `v3`, at the parameter `t`
+ * between the knots `t1` and `t2`. The curve passes through `v1` at `t1` and `v2` at `t2`, and its
+ * speed never falls to zero at a knot, so a route through the shots never stops at one.
+ */
+function catmullRom(
+	v0: number,
+	v1: number,
+	v2: number,
+	v3: number,
+	t0: number,
+	t1: number,
+	t2: number,
+	t3: number,
+	t: number,
+): number {
+	const a1 = ((t1 - t) * v0 + (t - t0) * v1) / (t1 - t0);
+	const a2 = ((t2 - t) * v1 + (t - t1) * v2) / (t2 - t1);
+	const a3 = ((t3 - t) * v2 + (t - t2) * v3) / (t3 - t2);
+	const b1 = ((t2 - t) * a1 + (t - t0) * a2) / (t2 - t0);
+	const b2 = ((t3 - t) * a2 + (t - t1) * a3) / (t3 - t1);
+	return ((t2 - t) * b1 + (t - t1) * b2) / (t2 - t1);
+}
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
@@ -203,7 +287,8 @@ export function createCinematic(
 	const sample = new Float32Array(6);
 	const pose = new Float32Array(6);
 	const from = new Float32Array(6);
-	const glideTo = new Float32Array(6);
+	/** The time at which a glide started, so the glide can follow the route as it runs. */
+	let glideStart = 0;
 	let mode: 'auto' | 'manual' = 'auto';
 	/** The shift that keeps the route's phase, after a glide has landed on it. */
 	let phaseShift = 0;
@@ -368,7 +453,9 @@ export function createCinematic(
 			from[4] = options.target[1];
 			from[5] = options.target[2];
 			glideFrom = nearestPhase(from);
-			routePose(glideFrom, glideTo);
+			// The glide measures the route from the moment it starts, so it lands on the moving route
+			// and takes its speed, rather than setting off from a standstill.
+			glideStart = time.now;
 			glide = 0;
 		}
 		postControls();
@@ -427,12 +514,14 @@ export function createCinematic(
 				return;
 			}
 			if (glide < 1) {
-				// Ease from the user's pose onto the route point, then carry on from that phase.
+				// Ease from the user's pose onto the route, which carries on while the glide runs: the
+				// blend reaches the route's own pose at the route's own speed.
 				glide = Math.min(1, glide + dt / GLIDE);
 				const b = smooth(glide);
+				routePose(glideFrom + (time.now - glideStart), sample);
 				for (let c = 0; c < 6; c++)
-					pose[c] = (from[c] as number) + ((glideTo[c] as number) - (from[c] as number)) * b;
-				if (glide >= 1) phaseShift = glideFrom - time.now;
+					pose[c] = (from[c] as number) + ((sample[c] as number) - (from[c] as number)) * b;
+				if (glide >= 1) phaseShift = glideFrom - glideStart;
 			} else {
 				routePose(time.now + phaseShift, pose);
 			}

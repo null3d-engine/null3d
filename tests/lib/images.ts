@@ -115,6 +115,11 @@ interface ImageTestSettings {
 	expect?: Readonly<Record<string, unknown>>;
 	/** How far the image may stray from the references of the place that drew it. */
 	tolerance?: Partial<Tolerance>;
+	/**
+	 * How far an image drawn on SwiftShader may stray from SwiftShader's references, on top of
+	 * `tolerance`, for a scene that the software GPU rounds differently on different machines.
+	 */
+	swiftShaderTolerance?: Partial<Tolerance>;
 	/** How far an image from another browser or device may stray from the real-GPU references. */
 	deviceTolerance?: Partial<Tolerance>;
 	/** Devices whose GPU draws the test differently, which keep their own references, such as 'ipad'. */
@@ -177,6 +182,8 @@ export interface ImageRun {
 	/** Whose references the run compares with: the test and the tier that make them. */
 	reference: { test: string; tier: Tier; devices: readonly string[] };
 	tolerance: Tolerance;
+	/** The tolerance against SwiftShader's references, where it differs from `tolerance`. */
+	swiftShaderTolerance?: Tolerance;
 	deviceTolerance: Tolerance;
 	/** The run of the test's first mode on the same tier, whose pixels every other mode must match. */
 	sameAs?: string;
@@ -251,6 +258,9 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 					devices: owner.devices ?? [],
 				},
 				tolerance: { ...TOLERANCE, ...test.tolerance },
+				...(test.swiftShaderTolerance && {
+					swiftShaderTolerance: { ...TOLERANCE, ...test.tolerance, ...test.swiftShaderTolerance },
+				}),
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
 				...(test.swiftShaderSwitches && { swiftShaderSwitches: test.swiftShaderSwitches }),
@@ -361,7 +371,11 @@ export function referenceOf(run: ImageRun, place: Place): Reference {
 	const set =
 		'environment' in place ? place.environment : own ? referenceDevice(place.device) : REAL_GPU;
 	const file = `${set}/${run.reference.tier}/${run.reference.test}.png`;
-	const reference = { file, tolerance: own ? run.tolerance : run.deviceTolerance };
+	const ownTolerance =
+		('environment' in place && place.environment === 'chromium-swiftshader'
+			? run.swiftShaderTolerance
+			: undefined) ?? run.tolerance;
+	const reference = { file, tolerance: own ? ownTolerance : run.deviceTolerance };
 	if (!own && 'device' in place)
 		return {
 			...reference,

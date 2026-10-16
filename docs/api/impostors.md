@@ -59,34 +59,41 @@ export default defineSketch(async ({ scene, assets }) => {
     alphaMode: 'mask',
   });
 
+  // The camera's position, which each frame writes into the same array.
+  const eye: [number, number, number] = [0, 0, 0];
   return {
     onUpdate() {
-      trees.update(camera.position);
+      camera.getWorldPosition(eye);
+      trees.update(eye);
     },
   };
 });
 ```
 
-`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position. It writes only the frame numbers, so it allocates nothing. A card shows one view: three-way blending is a later step.
+`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position in the world. Keep one array for the position, as above, so the frame loop allocates nothing. A card shows one view: three-way blending is a later step.
+
+The cards are a static sprite batch. `update` marks only the cards whose view changed, so a still camera uploads nothing. When the eye has not moved since the last call, `update` returns at once. After you change cards' positions, sizes or colors through `trees.sprites`, call `trees.markDirty(start, count)` for those cards. The batch then uploads them, and the next `update` picks every view again.
+
+The positions are relative to `origin`, which is the world's origin by default. Set `origin` near a forest far from the world's origin, so the cards keep the precision of 32-bit floats. `update` takes the eye in the world, and subtracts the origin itself.
 
 ## The atlas and its cells
 
 `octahedralAtlas(views)` gives the squarest grid that holds at least `views` views, as `{ columns, rows }`. The cells count from the top left, along each row and then down, as a sprite atlas does.
 
-`frameDirection(frame, atlas)` gives the direction a cell's view is drawn from. `impostorFrame(direction, atlas)` gives the cell a direction shows. A bake walks `frameDirection` over every frame. The cards call `impostorFrame`. The two agree on every cell, because they are inverses. `encodeOctahedral` and `decodeOctahedral` fold the directions onto one square. So a grid covers the poles too.
+`frameDirection(frame, atlas)` gives the direction a cell's view is drawn from. `impostorFrame(direction, atlas)` gives the cell a direction shows. A bake walks `frameDirection` over every frame. The cards pick their cells as `impostorFrame` does. The two agree on every cell, because they are inverses. `encodeOctahedral` and `decodeOctahedral` fold the directions onto one square. The front half of the sphere fills the square's middle diamond, and the back half fills its four corners. So a grid covers both poles too. The back pole, straight behind, lands on the corner at the bottom right.
 
 A bake needs the direction of each cell and one camera per cell, looking from that direction at a distance that frames the object. The engine's [`render.addPass`](../concepts/render-graph.md) draws a camera's view into a texture. So a sketch can bake the views at run time and copy them into one atlas.
 
 ## Merged far geometry
 
-`mergeFarGeometry(parts)` writes copies of a mesh's arrays into the arrays of one mesh, each copy moved by its own transform. It returns `MeshArrays` for `geometry.fromArrays`. Positions and indices are always kept. Attach normals, texture coordinates, colors and tangents when every copy has them. A copy's normals turn by the inverse transpose of its transform, so a stretched copy keeps its shading.
+`mergeFarGeometry(parts)` writes copies of a mesh's arrays into the arrays of one mesh, each copy moved by its own transform. It returns `MeshArrays` for `geometry.fromArrays`. Positions and indices are always kept. Attach normals, texture coordinates, colors and tangents when every copy has them. A copy's normals turn by the inverse transpose of its transform, so a stretched copy keeps its shading. Its tangents turn with it, so its normal map lights from the right side. A mirrored copy, such as one scaled by -1 along an axis, gets its triangles' winding reversed and its tangents' sign flipped. So its front faces stay outward.
 
 ```ts
 import { farCellGroups, mergeFarGeometry } from '@null3d/impostors';
 
 // The arrays that made each mesh's far level, and where each copy sits.
-const centres = trees.map((tree) => tree.position);
-for (const group of farCellGroups(centres, 64)) {
+const centers = trees.map((tree) => tree.position);
+for (const group of farCellGroups(centers, 64)) {
   const merged = mergeFarGeometry(group.map((i) => ({
     arrays: treeFarArrays,
     transform: place(trees[i]),
@@ -95,7 +102,7 @@ for (const group of farCellGroups(centres, 64)) {
 }
 ```
 
-`farCellGroups(centres, cellSize)` groups copies by the cell of the grid their centres fall in, so each group becomes one mesh. The detailed levels stay for what is near, and the merged far meshes draw as single objects.
+`farCellGroups(centers, cellSize)` groups copies by the cell of the grid their centers fall in, so each group becomes one mesh. The detailed levels stay for what is near, and the merged far meshes draw as single objects.
 
 ## Compared with three.js
 

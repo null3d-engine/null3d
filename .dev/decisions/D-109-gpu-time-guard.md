@@ -57,7 +57,7 @@ How the data was produced: `bun run bench:run --compare` on the Mac, the records
 
 - `bench/lib/compare.ts` judges `gpu-time`. The comparison's summary lists GPU time as table rows, no longer as a line that is "reported and not judged".
 - `bench/gpu-check.ts`, `bench/lib/gpu-check.ts` and the `bench:gpu-check` command are new. `tools/hooks/check-gpu-ack.ts` holds the paths and the trailer rule, and `tools/hooks/check-trailers.ts` runs it in CI.
-- [Benchmarks](../benchmarks.md#the-benchmark-job-in-ci) gives the GPU rule and its replay. [Pull requests](../pull-requests.md#the-gpu-check) says when the check must run and how to record it. AGENTS.md lists the trailer under "Commit gates".
+- [Benchmarks](../benchmarks.md#the-benchmark-job-in-ci) gives the GPU rule and its replay. [Branches and parallel work](../pull-requests.md#the-gpu-check) says when the check must run and how to record it. AGENTS.md lists the trailer under "Commit gates".
 - The nightly run takes a build of main and the check, on the Mac, in each quiet window. The maintainers' script keeps its base and its log out of git.
 - A pull request that changes shaders costs its author one run of the check on a Mac, after both builds. Branches that change those files and were open when this rule merged need the trailer before they merge.
 - Phones, tablets and Safari are still not checked for GPU time on each change. Device sessions cover them, as before.
