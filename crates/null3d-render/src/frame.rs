@@ -2213,13 +2213,16 @@ impl SceneSettings {
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
     /// main directional light, the ambient lights and the hemisphere lights become the light the
     /// shaders read, and the light table's visible list holds the point and spot lights the camera
-    /// sees. Every light's color takes the exposure that frames draw with.
+    /// sees. Every light's color takes the exposure that frames draw with. `pipelines_built` is the
+    /// newest frame that the thread that draws drew with every pipeline built, which decides what
+    /// the list may hold besides a point or spot light.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
+        pipelines_built: u32,
     ) {
         let view = self
             .view_frame(ViewId::CAMERA, scene, parity, canvas, RenderScale::FULL)
@@ -2229,9 +2232,14 @@ impl SceneSettings {
                 layers: frame.layers,
             });
         // Area lights join the visible list only while the lit templates draw with their builds
-        // that shade them, so no build meets a light whose code it lacks.
+        // that shade them, so no build meets a light whose code it lacks. This list is made before
+        // `update_area_shading` decides for the frame, so the switch is read as the frame before it
+        // left it, except where the answer is already known: a frame that waits for every pipeline
+        // its own list creates, which is any frame of a device that has drawn nothing yet, turns
+        // area shading on itself (`crate::area_shading`).
         self.area_wanted = self.light_tables.ready() && lights.has_area_lights();
-        lights.set_area_ready(self.light_tables.ready() && self.area_shading.on());
+        let shading = self.area_shading.on() || (pipelines_built == 0 && self.area_wanted);
+        lights.set_area_ready(self.light_tables.ready() && shading);
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
