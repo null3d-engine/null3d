@@ -95,6 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
@@ -144,6 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
@@ -381,6 +383,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       # The check reads the trailers of the commits since the base.
@@ -452,6 +455,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -506,6 +510,7 @@ jobs:
           - { part: shard 15 of 15, id: 15, tests: --grep-invert "@alone|$CITY_TESTS" --shard=15/15 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       # S6's image tests, which load the city's files: the browser-city job runs them.
       CITY_TESTS: '\bs6 on '
@@ -545,6 +550,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -569,6 +575,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -603,6 +610,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -654,6 +662,7 @@ jobs:
           - shard: 2
             select: --grep-invert
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
@@ -701,6 +710,7 @@ jobs:
       matrix:
         gpu: [webgpu, webgl2]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -755,6 +765,7 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7]
         shards: [7]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -793,6 +804,7 @@ jobs:
     permissions:
       contents: write
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5

@@ -67,6 +67,8 @@ const LOCK = 'target/shader-modules.lock';
 interface ModuleRecord {
 	inputs: string;
 	modules: string;
+	/** The module files of the set, so a run that must not build can name the files it lacks. */
+	names?: readonly string[];
 }
 
 /**
@@ -248,6 +250,44 @@ function isFresh(root: string, inputs: string): boolean {
 }
 
 /**
+ * True when the environment says that this run takes the modules from the build job. CI's jobs that
+ * download the build job's artifact set it, so that a set which does not match its record stops the
+ * job at once. The check otherwise builds the set again, which costs minutes in every such job and
+ * hides the fault: a file that the build job wrote and the artifact missed.
+ */
+function freshShadersRequired(): boolean {
+	return process.env.NULL3D_REQUIRE_FRESH_SHADERS === '1';
+}
+
+/** The names in `names`, at most four of them, then the count of the rest. */
+function nameList(names: readonly string[]): string {
+	const shown = names.slice(0, 4).join(', ');
+	return names.length > 4 ? `${shown}, and ${names.length - 4} more` : shown;
+}
+
+/**
+ * The message for a set that does not match its record, in a run that takes the modules from the
+ * build job. It names the files that the record holds and this tree lacks, or the files that this
+ * tree holds and the record does not name, because either is how an artifact that missed a kind of
+ * file shows up.
+ */
+function staleSetMessage(root: string): string {
+	const names = readRecord(root)?.names;
+	const here = moduleNames(root);
+	const missing = names ? names.filter((name) => !here.includes(name)) : [];
+	const extra = names ? here.filter((name) => !names.includes(name)) : [];
+	const faults = [
+		missing.length > 0 ? `it lacks ${nameList(missing)}` : '',
+		extra.length > 0 ? `it holds ${nameList(extra)}, which the record does not name` : '',
+	].filter((fault) => fault !== '');
+	return (
+		`the shader modules in ${MODULE_DIR} are not the set that ${RECORD} records` +
+		(faults.length > 0 ? `: ${faults.join('; ')}` : '') +
+		`. This run takes the modules from the build job, because NULL3D_REQUIRE_FRESH_SHADERS is set, so it never builds them. A file that the shader build writes is missing from the artifact that carried them: add its path to the page-wasm artifact in .github/workflows/ci.yml.`
+	);
+}
+
+/**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
  * holder, and takes over a lock whose holder has stopped.
  */
@@ -334,7 +374,7 @@ function restoreFromCache(root: string, inputs: string): boolean {
 	}
 	const modules = moduleHash(root);
 	if (modules === null) return false;
-	writeRecord(root, { inputs, modules });
+	writeRecord(root, { inputs, modules, names: moduleNames(root) });
 	touchCacheEntry(cache);
 	console.error(`the shader modules came from the shared cache (${dir})`);
 	return true;
@@ -384,6 +424,7 @@ function pruneCaches(): void {
 export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
+	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
 	let built = false;
 	withLock(root, () => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
@@ -404,7 +445,7 @@ export function ensureShaderModules(root: string): boolean {
 			throw new Error(
 				'the shader sources changed while the build ran, so the modules are not the ones this build started from; run the command again',
 			);
-		writeRecord(root, { inputs, modules });
+		writeRecord(root, { inputs, modules, names: moduleNames(root) });
 		built = true;
 		saveToCache(root, inputs);
 		pruneCaches();
