@@ -1,6 +1,6 @@
 // Cameras with no engine behind them, for the tests of the camera controls. Each keeps its pose in
 // 32-bit floats and turns toward a point as the engine's cameras do, and allocates nothing.
-import { quat } from '@null3d/engine';
+import { type QuatLike, quat, type Vec3Like } from '@null3d/engine';
 
 /** The perspective camera's vertical field of view, in degrees. */
 export const STAND_IN_FOV = 50;
@@ -42,6 +42,18 @@ export class StandInCamera {
 		out[1] = this.rotation[1] as number;
 		out[2] = this.rotation[2] as number;
 		out[3] = this.rotation[3] as number;
+	}
+
+	/** Writes the position, and the rotation when one is given, as the engine's `setPose` does. */
+	setPose(position: Vec3Like, rotation?: QuatLike): void {
+		this.setPosition(position[0] as number, position[1] as number, position[2] as number);
+		if (rotation)
+			this.setRotation(
+				rotation[0] as number,
+				rotation[1] as number,
+				rotation[2] as number,
+				rotation[3] as number,
+			);
 	}
 
 	/** Cameras look down their -Z axis, so the engine swaps the eye and the target. */
