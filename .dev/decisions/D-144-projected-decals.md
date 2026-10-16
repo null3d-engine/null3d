@@ -95,3 +95,9 @@ Two fixes were open. One asks for a higher `maxSampledTexturesPerShaderStage` wh
 - The WebGPU builder makes the group only while the decal pass runs, from the camera's frame group's inputs, and again whenever it makes the camera's frame group again. A page without decals makes neither the group nor its layout.
 - WebGL2 is unchanged: the decal pass binds the frame group.
 - A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's resources per stage over its layouts, for every template, against WebGPU's default limits. A new binding that passes a limit fails it. The render crate's `decals` tests check the group's entries and that the decal pass binds it.
+
+## Addendum, 2026-10-16: a box with a flat side marks nothing
+
+The vertex stage inverts the box's axes by their cofactors. Its comment says that a flat box has no inverse and marks nothing, and nothing enforced that. A box with a zero size on one axis gives a zero determinant, so the three axis vectors it carries out are all zero. Every dot product with them is zero. The fragment stage read that as a point at the box's middle, so `inside` held. The aim it normalized was the zero vector, which makes a NaN. `facing`, `angle_fade` and `decal_fade` followed. A NaN is not below zero, so the box drew rather than discarded.
+
+An animated size that passes through zero, or a size typed as 0 on the depth axis, reaches this. The fragment stage now tests the box's axis for zero. A flat box takes a fixed aim, so no NaN is made, and `inside` is false, so it discards. The decal image tests place boxes with a size on each axis, and the demos give every decal a depth, so no reference changes.
