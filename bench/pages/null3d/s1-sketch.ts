@@ -1,7 +1,8 @@
 // The null3d version of S1, the swarm: every instance moves every frame, and the camera orbits.
 // The `blend` switch makes the boxes see through, for the allocation sample of the transparent pass.
 // The `animated` switch adds that many animated characters, for the allocation sample of the
-// animator. The `morphed` switch adds that many morphed spheres whose weights change every frame,
+// animator, and the `inertial` switch makes the characters that play one clip switch clips by
+// inertial transitions, for the allocation sample of those transitions. The `morphed` switch adds that many morphed spheres whose weights change every frame,
 // for the allocation sample of morph targets. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
@@ -56,8 +57,10 @@
 // size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
 // the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
 // block and the effect's texture. It also keeps the pass on with render.setPassEnabled in every frame.
-// The `impostors` switch adds a field of impostor cards around the swarm, whose views `update`
-// picks from the camera's position in every frame, for the allocation sample of the impostors.
+// The `terrain` switch puts the terrain add-on's ground under the swarm, whose quadtree follows
+// the orbiting camera in every frame, and the `impostors` switch a field of the impostors
+// add-on's cards around it, which pick their views from the camera in every frame, for the
+// allocation samples of the add-ons' steps.
 // The `calls` switch makes, in every frame, the calls whose docs promise no allocation and that no
 // other switch makes: a raycast, a mesh's vertex update, a camera's ray through the pointer and
 // its screen point of a place, the orbit and fly controls' update, and the sketch's read of the
@@ -86,10 +89,10 @@ import {
 	type Texture,
 	timeOfDay,
 } from '@null3d/engine';
-import { createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
+import { createImpostorField, createTerrainGround } from './addons';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
@@ -112,7 +115,16 @@ export default defineSketch(async (context) => {
 					levels: switches.has('levels'),
 					layers: readCoatSheen(switches.get('coatSheen')),
 				}).pose;
-	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
+	const animate = createAnimatedCrowd(
+		context,
+		readAnimated(import.meta.url),
+		switches.has('inertial'),
+	);
+	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
+	const pickViews = switches.has('impostors') ? await createImpostorField(context) : undefined;
+	// The camera's position for the add-ons' steps, and the target that the path writes beside it.
+	const cameraAt = new Float64Array(3);
+	const lookAt = new Float64Array(3);
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
@@ -207,9 +219,6 @@ export default defineSketch(async (context) => {
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
 	const areas = switches.has('areaLights') ? createAreaLights(context, now) : undefined;
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
-	const pickViews = switches.has('impostors')
-		? await createImpostorField(context, camera)
-		: undefined;
 	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
 	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
 	const pose = (t: number) => {
@@ -220,6 +229,11 @@ export default defineSketch(async (context) => {
 		moveCasters?.(t);
 		moveSmoke?.(t);
 		turnDecals?.(t);
+		if (followTerrain || pickViews) {
+			s1Camera(t, cameraAt, lookAt);
+			followTerrain?.(cameraAt);
+			pickViews?.(cameraAt);
+		}
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
@@ -289,7 +303,6 @@ export default defineSketch(async (context) => {
 			poseHemispheres?.();
 			areas?.();
 			setValues?.();
-			pickViews?.();
 			makeCalls?.();
 			moveDay?.();
 			for (let k = 0; k < particles.length; k++) particles[k]?.update();
@@ -554,45 +567,6 @@ function createCalls(
 		orbit.update(time.dt);
 		fly.update(time.dt);
 		debug.frameStats();
-	};
-}
-
-/** The impostor cards along each side of the `impostors` switch's square field. */
-const IMPOSTOR_ROWS = 64;
-
-/**
- * The `impostors` switch: a square field of impostor cards across and beyond the swarm, with an
- * atlas made in code whose cells each have a shade of their own. Returns the frame's step, which
- * reads the camera's world position into an array made once and picks every card's view from it.
- */
-async function createImpostorField(
-	{ scene, textures }: SketchContext,
-	camera: PerspectiveCamera,
-): Promise<() => void> {
-	const atlas = octahedralAtlas(16);
-	const cell = 8;
-	const width = cell * atlas.columns;
-	const height = cell * atlas.rows;
-	const data = new Uint8Array(width * height * 4).fill(255);
-	for (let i = 0; i < width * height; i++) {
-		const frame =
-			Math.floor(Math.floor(i / width) / cell) * atlas.columns + Math.floor((i % width) / cell);
-		data[i * 4] = 40 + frame * 12;
-		data[i * 4 + 2] = 220 - frame * 12;
-	}
-	const texture = textures.fromData({ width, height, data });
-	const count = IMPOSTOR_ROWS * IMPOSTOR_ROWS;
-	const positions = new Float32Array(count * 3);
-	for (let i = 0; i < count; i++) {
-		positions[i * 3] = ((i % IMPOSTOR_ROWS) / (IMPOSTOR_ROWS - 1) - 0.5) * 4 * S1_EXTENT;
-		positions[i * 3 + 2] =
-			(Math.floor(i / IMPOSTOR_ROWS) / (IMPOSTOR_ROWS - 1) - 0.5) * 4 * S1_EXTENT;
-	}
-	const cards = await createImpostors(scene, { texture, atlas, positions, size: 3 });
-	const eye = new Float64Array(3);
-	return () => {
-		camera.getWorldPosition(eye);
-		cards.update(eye);
 	};
 }
 
