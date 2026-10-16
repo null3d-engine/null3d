@@ -152,20 +152,41 @@ interface Encoded {
 const brotli = promisify(brotliCompress);
 const gzipped = promisify(gzip);
 
+/** A file of at least this size can take seconds to compress, so the server says what it is doing. */
+const SLOW_BYTES = 256 * 1024;
+
+/** Once this much compression time has passed, the server prints a line with the running rate. */
+const COMPRESSION_REPORT_MS = 60_000;
+
 /** Compresses a file's bytes, off this thread, at the Brotli quality that the size report measures. */
-async function encode(raw: Buffer, compressed: boolean): Promise<Encoded> {
+async function encode(raw: Buffer, compressed: boolean, what?: string): Promise<Encoded> {
 	const etag = `W/"${createHash('sha1').update(raw).digest('hex').slice(0, 16)}"`;
 	if (!compressed) return { bodies: { identity: raw }, etag };
-	const [br, gz] = await Promise.all([
-		brotli(raw, {
-			params: {
-				[constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
-				[constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
-			},
-		}),
-		gzipped(raw, { level: constants.Z_BEST_COMPRESSION }),
-	]);
-	return { bodies: { identity: raw, br, gzip: gz }, etag };
+	// A run reads the log to see what the server is doing, so a large file is named while it is
+	// compressed and again when it ends. Nothing here may go quiet for minutes: a job that is killed
+	// during a silent step leaves a log with no output at all, which tells a reader nothing.
+	const loud = what !== undefined && raw.length >= SLOW_BYTES;
+	if (loud)
+		console.log(`null3d load server: compressing ${what} (${Math.round(raw.length / 1024)} KB)`);
+	const started = Date.now();
+	try {
+		const [br, gz] = await Promise.all([
+			brotli(raw, {
+				params: {
+					[constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
+					[constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
+				},
+			}),
+			gzipped(raw, { level: constants.Z_BEST_COMPRESSION }),
+		]);
+		if (loud) console.log(`null3d load server: compressed ${what} in ${Date.now() - started} ms`);
+		return { bodies: { identity: raw, br, gzip: gz }, etag };
+	} catch (error) {
+		console.error(
+			`null3d load server: could not compress ${what ?? 'a file'} after ${Date.now() - started} ms: ${String(error)}`,
+		);
+		throw error;
+	}
 }
 
 const MODULE_HEADER = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
@@ -210,7 +231,7 @@ const version = (file: string) => {
 	return `${mtimeMs}:${size}`;
 };
 
-/** What the ready route answers: how many files the server prepared, and the builds they are of. */
+/** What the ready route answers: how many files the builds it serves hold, and the builds they are of. */
 interface Readiness {
 	files: number;
 	builds: string[];
@@ -233,13 +254,42 @@ export function loadMiddleware(
 	const files = new Map<string, { version: string; encoded: Promise<Encoded> }>();
 	const marked = new Map<string, { version: string; ready: Promise<Encoded>[] }>();
 	const tallies = new Map<string, { firstAt: number; files: DownloadedFile[] }>();
+	/** The last readiness line printed, so a caller that asks every few seconds is not answered twice. */
+	let announced = '';
+	/** What compressing has cost so far, printed as a rate, so a slow run shows in the log. */
+	const cost = { files: 0, bytes: 0, ms: 0 };
+	let nextCostLine = COMPRESSION_REPORT_MS;
 
-	/** A file's bodies, compressed once per build. */
+	/**
+	 * Notes what one compression cost. Every minute of compression prints a line with the running
+	 * rate, so a run that compresses far more than it should, as a file that no store holds, or a
+	 * machine under another load, shows as a figure in the log rather than as minutes of silence.
+	 */
+	const noteCompression = (ms: number, bytes: number): void => {
+		cost.files++;
+		cost.bytes += bytes;
+		cost.ms += ms;
+		if (cost.ms < nextCostLine) return;
+		nextCostLine += COMPRESSION_REPORT_MS;
+		const mb = cost.bytes / 1048576;
+		const seconds = cost.ms / 1000;
+		console.log(
+			`null3d load server: compressed ${cost.files} files, ${mb.toFixed(1)} MB, in ${seconds.toFixed(1)} s (${(mb / seconds).toFixed(2)} MB/s)`,
+		);
+	};
+
+	/** A file's bodies, compressed once per build. The first ask for a file pays for it. */
 	const encodedFile = (file: string): Promise<Encoded> => {
 		const current = version(file);
 		const cached = files.get(file);
 		if (cached?.version === current) return cached.encoded;
-		const encoded = encode(readFileSync(file), COMPRESSED.has(extname(file)));
+		const raw = readFileSync(file);
+		const started = Date.now();
+		const encoded = encode(raw, COMPRESSED.has(extname(file)), file);
+		void encoded.then(
+			() => noteCompression(Date.now() - started, raw.length),
+			() => noteCompression(Date.now() - started, raw.length),
+		);
 		files.set(file, { version: current, encoded });
 		return encoded;
 	};
@@ -253,7 +303,13 @@ export function loadMiddleware(
 			marked.set(file, pool);
 		}
 		while (pool.ready.length < MARKED_AHEAD) {
-			const copy = encode(Buffer.from(markCore(readFileSync(file), randomBytes(16))), true);
+			const raw = Buffer.from(markCore(readFileSync(file), randomBytes(16)));
+			const started = Date.now();
+			const copy = encode(raw, true, `a marked copy of ${file}`);
+			void copy.then(
+				() => noteCompression(Date.now() - started, raw.length),
+				() => noteCompression(Date.now() - started, raw.length),
+			);
 			// A failure surfaces when a load takes the copy, not as an unhandled rejection now.
 			copy.catch(() => {});
 			pool.ready.push(copy);
@@ -335,22 +391,22 @@ export function loadMiddleware(
 	}
 
 	/**
-	 * Compresses every file of each build there is, and a copy of each core, ahead of the first load.
-	 * A build's files are those its prefix reaches, so a file of another build's folder is left out.
+	 * What the builds the caller names hold, without compressing any of them. A build's files are
+	 * those its prefix reaches, so a file of another build's folder is left out. The server compresses
+	 * a file when a load first asks for it, so a run never waits for work that prints nothing, and a
+	 * caller pays only for the files its own loads ask for.
 	 */
-	async function prepare(): Promise<Readiness | undefined> {
-		const present = builds.filter(({ dir }) => existsSync(dir));
-		if (present.length === 0) return undefined;
-		const paths = present.flatMap((build) =>
-			buildFiles(build.dir)
-				.filter((path) => buildOf(path, builds) === build)
-				.map((path) => join(build.dir, path)),
+	function readiness(needed: readonly string[]): Readiness | undefined {
+		const present = builds.filter(
+			({ dir, name }) => existsSync(dir) && (needed.length === 0 || needed.includes(name)),
 		);
-		await Promise.all([
-			...paths.map(encodedFile),
-			...paths.filter((file) => extname(file) === '.wasm').flatMap(markedCopies),
-		]);
-		return { files: paths.length, builds: present.map(({ name }) => name) };
+		if (present.length === 0) return undefined;
+		const files = present.reduce(
+			(total, build) =>
+				total + buildFiles(build.dir).filter((path) => buildOf(path, builds) === build).length,
+			0,
+		);
+		return { files, builds: present.map(({ name }) => name) };
 	}
 
 	const json = (res: ServerResponse, status: number, body: unknown) =>
@@ -360,14 +416,25 @@ export function loadMiddleware(
 		const url = req.url ?? '/';
 		const load = parseDownloadsPath(url);
 		if (load) return json(res, 200, takeTally(load));
-		if (url === LOAD_READY_ROUTE)
-			return void prepare().then(
-				(ready) =>
-					ready
-						? json(res, 200, ready)
-						: json(res, 404, { error: 'no production build to serve; build one first' }),
-				(error: unknown) => json(res, 500, { error: String(error) }),
+		if (url.startsWith(LOAD_READY_ROUTE)) {
+			// The caller names the builds it will load, so the answer says whether they are here.
+			const asked = new URL(url, 'http://localhost').searchParams.get('builds') ?? '';
+			const ready = readiness(asked.split(',').filter(Boolean));
+			const summary = ready
+				? `${ready.builds.join(', ')}: ${ready.files} files`
+				: 'no production build';
+			// A run reads the log to see that the server answered, so the line is printed once per
+			// answer rather than once per ask, which the caller repeats every few seconds.
+			if (summary !== announced) {
+				console.log(`null3d load server: ready to serve ${summary}, each file on its first ask`);
+				announced = summary;
+			}
+			return json(
+				res,
+				ready ? 200 : 404,
+				ready ?? { error: 'no production build to serve; build one first' },
 			);
+		}
 		if (!url.startsWith(LOAD_ROUTE)) return next();
 		serve(req, res, url).catch((error: unknown) => {
 			if (res.headersSent) res.destroy();
@@ -396,26 +463,25 @@ export function loadServer(): Plugin {
  * started before the load routes, or before they served that build.
  */
 /**
- * How long a caller keeps asking a server that is still preparing, and how long it waits between
- * asks. The first ask makes the server compress every file of every build, which is 3,730 files and
- * took 570 seconds on a busy Mac on 15 October 2026. The caches live in the server process, so every
- * server start pays it again, and the HTTPS server - the one the devices use, over the Mac's own
- * name - times out before it finishes: measured that evening, a fetch of the readiness route over
- * HTTPS failed with `The operation timed out.` after 361 seconds, where the same call over HTTP on
- * localhost waited 570 seconds and succeeded. That is what failed CI's Safari and Firefox jobs and a
- * device run on the owner's iPad the same evening, and it is why a caller must ask again rather than
- * let one attempt's timeout end the run: the work carries on and the next ask is answered from the
- * caches the moment it finishes.
+ * How long a caller keeps asking a server that has not answered yet, and how long it waits between
+ * asks. The route answers from the builds on disk and compresses nothing, so an ask is normally
+ * answered in one round trip. A device reaches the Mac's HTTPS server over the Mac's own name, where
+ * a single fetch can still time out: measured on 15 October 2026, a fetch failed with `The operation
+ * timed out.` after 361 seconds, while the same call over HTTP waited and succeeded. So a caller asks
+ * again rather than let one attempt's timeout end the run, and the server prints one line when it
+ * answers, which names the builds it serves and the files they hold.
  */
-const READY_BUDGET_MS = 20 * 60_000;
+const READY_BUDGET_MS = 5 * 60_000;
 const READY_RETRY_MS = 5_000;
 
 export async function prepareLoads(serverUrl: string, needed: readonly string[]): Promise<void> {
+	// The caller names the builds its loads reach, so the server answers for those and no others.
+	const asked = needed.length > 0 ? `?builds=${encodeURIComponent(needed.join(','))}` : '';
 	const started = performance.now();
 	let response: Response;
 	for (;;) {
 		try {
-			response = await localFetch(`${serverUrl}${LOAD_READY_ROUTE}`);
+			response = await localFetch(`${serverUrl}${LOAD_READY_ROUTE}${asked}`);
 			break;
 		} catch (error) {
 			if (performance.now() - started > READY_BUDGET_MS) throw error;
