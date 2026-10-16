@@ -12,6 +12,7 @@ import {
 } from '@null3d/engine/internal';
 import { expectEnd, progress } from './result';
 import { expectedEndSeconds } from './runner-rules';
+import { MULTI_DRAW_EXTENSION, NO_MULTI_DRAW } from './shader-list';
 
 /** A shader that the browser rejected, with the stage and the browser's log. */
 export interface ShaderFailure {
@@ -186,13 +187,13 @@ export async function checkGlslPrograms(
 	const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
 	if (!gl) throw new Error('no WebGL2 context');
 	// Extensions are requested by name; the multi-draw programs need this one enabled to compile.
-	const multiDraw = gl.getExtension('WEBGL_multi_draw') !== null;
+	const multiDraw = gl.getExtension(MULTI_DRAW_EXTENSION) !== null;
 	const parallel = gl.getExtension('KHR_parallel_shader_compile');
 	const skipped: string[] = [];
 	const removed: RemovedUniform[] = [];
 	const compiled = programs.filter(([name, program]) => {
 		if (multiDraw || !program.vertex.source.includes('GL_ANGLE_multi_draw')) return true;
-		skipped.push(`${name}: no WEBGL_multi_draw`);
+		skipped.push(`${name}: ${NO_MULTI_DRAW}`);
 		return false;
 	});
 	const relinked: ShaderFailure[] = [];

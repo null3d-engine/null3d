@@ -141,6 +141,7 @@ export const LAYOUT_WEIGHTED_COMPOSITE = 41;
 export const LAYOUT_WEIGHTED_DEPTH_MS = 42;
 export const LAYOUT_DECAL_DEPTH = 36;
 export const LAYOUT_DECAL_DEPTH_MS = 37;
+export const LAYOUT_DECAL_FRAME = 46;
 export const LAYOUT_PARTICLE = 32;
 export const LAYOUT_PARTICLE_SCENE_DEPTH = 33;
 export const LAYOUT_PARTICLE_DEPTH_MS = 35;

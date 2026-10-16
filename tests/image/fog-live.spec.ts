@@ -29,24 +29,39 @@ const MAX_DIFFERENT = 0.06;
  * this many frames rather than a time, because a software renderer draws only a few a second.
  */
 const MIN_FRAMES = 20;
+/**
+ * How long one load may take: the page's own cap on the settle, the load, and the capture. It sits
+ * above that cap so that a page which settles slowly still reports its own frame count, rather than
+ * the run reporting that it heard nothing.
+ */
+const LOAD_TIMEOUT_MS = 60_000;
 
 async function load(page: Page, gpu: string) {
 	await page.goto(`fog-live.html?gpu=${gpu}`);
-	const result = await pageResult<FogLiveResult>(page, 60_000);
+	const result = await pageResult<FogLiveResult>(page, LOAD_TIMEOUT_MS);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
 	expect(result.frames).toBeGreaterThanOrEqual(MIN_FRAMES);
 	return result;
 }
 
-for (const gpu of ['compat', 'webgl2'] as const)
-	test(`the volumetric fog in play draws WebGPU's image on ${gpu}`, async ({ page }) => {
-		const webgpu = await load(page, 'webgpu');
+// Both other paths against one WebGPU frame. The two tests this replaces each drew their own
+// WebGPU frame, so the scene was loaded four times over the pair where three do now, and each
+// path was judged against a different frame of a blend whose phase cycles. The comparisons are
+// soft, so one path's verdict does not hide the other's.
+test("the volumetric fog in play draws WebGPU's image on compat and webgl2", async ({ page }) => {
+	// Three loads of the heaviest live scene here, each of which may settle for as long as its own
+	// cap allows.
+	test.setTimeout(240_000);
+	const webgpu = await load(page, 'webgpu');
+	const reference = Buffer.from(webgpu.pixels, 'base64');
+	for (const gpu of ['compat', 'webgl2'] as const) {
 		const other = await load(page, gpu);
-		const share = differentShare(
-			Buffer.from(other.pixels, 'base64'),
-			Buffer.from(webgpu.pixels, 'base64'),
-			CHANNEL,
-		);
-		expect(share).toBeLessThanOrEqual(MAX_DIFFERENT);
-	});
+		expect
+			.soft(
+				differentShare(Buffer.from(other.pixels, 'base64'), reference, CHANNEL),
+				`${gpu} draws WebGPU's image`,
+			)
+			.toBeLessThanOrEqual(MAX_DIFFERENT);
+	}
+});

@@ -132,3 +132,13 @@ Decided: option A for shading, the facing rectangle for tubes, and the gzip file
 - The WebGL2 test of texture units keeps three spare units, not four.
 - The engine's third-party notices gain the LTC fit's licence.
 - `bench:allocation --area-lights` samples area lights in S1, and the effect cost page measures them (`?effect=area`).
+
+## Addendum, 2026-10-16: the builds that never shade an area light
+
+The light grid lists area lights while the lit templates draw with their `AREA_LIGHTS` builds. Decals, particles and sprites draw with templates outside `shades_area_lights`. Their builds never take the bit, so they read the same grid without the tables. Their light loop tested no kind, so it read a rectangle's record as a point light. It took the record's two half sides as the decay and the cone angle, and its image layer as a shadow tile. A decal in a room with a window light drew that light at the wrong distance and with a wrong falloff. The light also looked up a shadow that it never casts. The fog's light step read the same records for the sun's scattering.
+
+Two fixes were open. Giving those templates the area lights' builds doubles the pipelines that a page with a decal, a particle or a sprite builds. Each of those builds carries the tables' code, so it costs start time and first-use bytes for light that a decal rarely needs. Skipping the kinds costs one comparison per light.
+
+The chosen fix skips every kind from `KIND_RECT` on in the light loop of the builds without `AREA_LIGHTS`, and in the fog's light step. `KIND_RECT` and `KIND_TUBE` are no longer behind the `AREA_LIGHTS` define, since both arms test the kind. A decal, a particle, a sprite and the fog's light step take no light from a rectangle or a tube. The surfaces around them do.
+
+The guard is a unit test in the render crate, `the_light_loops_leave_out_the_area_lights_that_they_cannot_shade`, which reads the two shader files and refuses a loop with one arm. It is a shape check over the source, not a build. The build of one variant costs more than the whole crate's tests.
