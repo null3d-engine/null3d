@@ -2,7 +2,7 @@
 
 Status: corrected. Date: 2026-10-16, corrected 2026-10-17. Task: the showcase controls test on a software GPU.
 
-Summary: The showcase controls test read its starting picture before the page had drawn anything, so every frame after a switch was measured against an empty canvas. A page posts its controls while its sketch builds the scene, which is before the engine's first frame, and on a software GPU that frame arrives much later. Two empty frames differ by nothing, so the test's still check accepted the empty picture. The engine draws the sky and its light again correctly. The test now waits for the page to take its loading overlay away, which it does on the engine's first frame, before it reads anything. The reading that first blamed the engine is corrected below.
+Summary: The showcase controls test read its starting picture before the page had drawn anything, so every frame after a switch was measured against an empty canvas. A page posts its controls while its sketch builds the scene, which is before the engine's first frame, and on a software GPU that frame arrives much later. Two empty frames differ by nothing, so the test's still check accepted the empty picture. The engine draws the sky and its light again correctly. The test now waits for the page to take its loading overlay away, which it does on the engine's first frame, before it reads anything. A second reading found the same test measuring the machine's speed: the look keeps settling for many seconds while the sky's light fills the environment map, so the frame it compared against sat steps away from the look that came back. The test now judges a part's return by the change its pick makes, between two frames read in the same few seconds. The readings that blamed the engine are corrected below.
 
 ## Question
 
@@ -49,10 +49,47 @@ The rows above that force a tier do not separate a lost sky from a backend: a fo
 an unforced one compare two drawing paths, so nothing follows from the difference between them. The
 page's own start on a software GPU is the other fault (D-186).
 
+## Correction (17 October 2026, the check that measured the machine's speed)
+
+CI run 38951143101 (the job that runs tests alone) failed at the same switch's other half: the look
+that comes back after the Sky switch is turned on again stayed at a mean of 5.288 of 255, where the
+check asks for less than 1.5. Neither the engine nor the reader is at fault. The frame the check
+compared with was read while the scene was still settling.
+
+Measured on the Mac's software renderer at 400 x 300, with a probe that read the canvas every second
+and kept a reference frame of its own:
+
+| What is measured | From the frame read after the settle | From a frame read 40 seconds later |
+| --- | --- | --- |
+| A frame of the scene, untouched, 13 seconds on | 2.35 (6.0% of pixels moved by more than 8) | |
+| The same scene, left to settle for a minute | 2.25 to 2.38, brightness unchanged | |
+| The scene with the sky off | 11.4 | 10.8 |
+| The scene with the sky on again | 2.27 to 2.41 | 0.59 to 1.01 |
+
+The engine drew 16 to 23 frames a second throughout, so every read gave a new frame. The look does
+come back: the returned frame sits as near the settled look as any other frame of the untouched
+scene (0.6 to 1.0, against the scene's own change of 0.5 to 0.8 between two frames read a second
+apart). What moves is the frame the test calls its reference. The sky's light is drawn into the
+environment map a stage a frame, so after the mood picks the look keeps settling for about ten
+seconds here, and longer on CI's machine. The test's `settle` accepts two frames a quarter of a
+second apart that differ by less than 0.5, and the settling look changes by less than that in a
+frame, so it returns at once and the reference is a picture of the scene part-way to its look. The
+scene never returns to it: the difference climbs from 0.26 to 2.35 over 13 seconds and then stays
+there, with the frame's brightness unchanged, so the change is the lighting settling rather than a
+transient the scene comes back from. The check's failure grows with the machine's slowness, which is
+why CI read 5.288 where this machine reads 2.3.
+
 ## Decision
 
 The test waits for the page to take its loading overlay away before it reads any picture, because
 that overlay leaves on the engine's first frame. No engine change follows from this fault.
+
+The return of a part is judged by the change that its pick makes, never by a frame read long before
+it. The test reads the look with the part off as it makes the pick to turn the part on, and asks
+that the part coming back move the canvas from that look by at least half of what turning it off
+moved it from the look with the part on. Both changes lie between frames read in the same few
+seconds, so neither the settling nor the scene's own motion can decide the check, and a part that
+does not come back leaves the canvas at the look with the part off, which the check refuses.
 
 The spec's own allowance is 600 seconds, and 180 of them are the wait for that frame. Waiting for
 the frame is work the test did not do before, and on a software GPU the frame arrives about 30
