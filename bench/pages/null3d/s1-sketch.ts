@@ -32,8 +32,8 @@
 // sample of post.set's focus point and depth of field's steps. The `exposure` switch turns automatic
 // exposure on, and changes its compensation every frame, for the allocation sample of post.set's
 // automatic exposure and the meter's steps. The `fog` switch gives the scene height fog with the
-// volumetric fog on, for the allocation sample of its steps, whose block the core writes again in
-// every frame as the camera orbits.
+// volumetric fog on, and changes the volumetric fog's intensity every frame, for the allocation
+// sample of scene.setFog and the fog's steps, whose block the core writes again in every frame.
 // The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
 // swarm and the background into, for the allocation sample of the pass and for its cost: the
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
@@ -56,11 +56,17 @@
 // The `passes` switch adds a full-screen pass that reads the scene's color at half the render
 // size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
 // the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
-// block and the effect's texture.
+// block and the effect's texture. It also keeps the pass on with render.setPassEnabled in every frame.
 // The `terrain` switch puts the terrain add-on's ground under the swarm, whose quadtree follows
 // the orbiting camera in every frame, and the `impostors` switch a field of the impostors
 // add-on's cards around it, which pick their views from the camera in every frame, for the
 // allocation samples of the add-ons' steps.
+// The `calls` switch makes, in every frame, the calls whose docs promise no allocation and that no
+// other switch makes: a raycast, a mesh's vertex update, a camera's ray through the pointer and
+// its screen point of a place, the orbit and fly controls' update, and the sketch's read of the
+// frame's figures, for the allocation sample of each.
+// The `timeOfDay` switch moves a day cycle's hour in every frame, through the object that its
+// first call made, for the allocation sample of the helper's per-frame form.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -70,14 +76,18 @@
 // tints each box, for the allocation sample of the row values' uploads. The `levels` switch gives
 // the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
 // fading bands between levels. The `setters` switch calls, in every frame, each setter that a
-// sketch may call per frame, with fractions and colors: the lights', a line batch's, the camera's
-// field of view, the fog and the background color. A material's `set` is called once, at setup.
+// sketch may call per frame, with fractions and colors: the lights', a standard and a custom
+// material's, a line batch's, the camera's field of view, the fog and the background color.
+import { createFlyControls, createOrbitControls } from '@null3d/controls';
 import {
 	defineSketch,
 	type Environment,
+	emptyTimeOfDay,
 	type PerspectiveCamera,
+	type RaycastHit,
 	type SketchContext,
 	type Texture,
+	timeOfDay,
 } from '@null3d/engine';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
@@ -150,13 +160,10 @@ export default defineSketch(async (context) => {
 	const dof = switches.has('dof');
 	const eye = { autoExposure: { compensation: 0 } };
 	const exposure = switches.has('exposure');
-	if (switches.has('fog'))
-		context.scene.setFog({
-			color: '#8090a0',
-			density: 0.01,
-			heightFalloff: 0.05,
-			volumetric: true,
-		});
+	const fogged = switches.has('fog');
+	// The volumetric fog's options, changed in place: its light swells and fades every frame.
+	const volume = { intensity: 1, anisotropy: 0.3 };
+	const fog = { color: '#8090a0', density: 0.01, heightFalloff: 0.05, volumetric: volume };
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -210,8 +217,10 @@ export default defineSketch(async (context) => {
 		});
 	const now = new Float64Array(1);
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
-	const areas = switches.has('areaLights') ? createAreaLights(context) : undefined;
+	const areas = switches.has('areaLights') ? createAreaLights(context, now) : undefined;
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
+	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
+	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -232,14 +241,6 @@ export default defineSketch(async (context) => {
 		// The frame's time goes through a typed array: a step of its own takes no fraction, so no
 		// number crosses a call that the browser may not inline.
 		now[0] = t;
-		if (areas)
-			for (let k = 0; k < areas.length; k++) {
-				const angle = t * 0.3 + (k * Math.PI * 2) / areas.length;
-				const light = areas[k] as (typeof areas)[number];
-				light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
-				light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
-				light.setIntensity(4 + Math.sin(t + k));
-			}
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -249,6 +250,10 @@ export default defineSketch(async (context) => {
 			sun[1] = 0.2 + 0.15 * Math.sin(t);
 			skySettings.time = t;
 			context.scene.setBackground(skyBackground);
+		}
+		if (fogged) {
+			volume.intensity = 1 + 0.25 * Math.sin(t);
+			context.scene.setFog(fog);
 		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -277,6 +282,7 @@ export default defineSketch(async (context) => {
 		if (soft) {
 			softness[0] = 0.3 + 0.1 * Math.sin(t);
 			context.render.setPassUniform(soft, 'glow', softness);
+			context.render.setPassEnabled(soft, true);
 		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
@@ -295,7 +301,10 @@ export default defineSketch(async (context) => {
 		// stays in a register instead of becoming an object.
 		onLateUpdate() {
 			poseHemispheres?.();
+			areas?.();
 			setValues?.();
+			makeCalls?.();
+			moveDay?.();
 			for (let k = 0; k < particles.length; k++) particles[k]?.update();
 		},
 	};
@@ -436,15 +445,13 @@ fn surface(input: SurfaceInput) -> Surface {
 /**
  * The `setters` switch: a point light, a spot light, a hemisphere light, a line batch, a standard
  * material and a custom one. Returns the frame's step, which calls the per-frame setters of the
- * lights, the camera's field of view, the line's width and dashes, the fog and the background color
- * with fractions and colors. The colors are an array changed in place, a hex number and a hex
- * string. The calls sit in a small step of their own, as in a game's update function, so the
- * browser inlines them and no number crosses a call as an object of its own. A material's `set`
- * reads each number from the options object it is given, and the browser boxes such a read, so the
- * two materials are set once, before the frame.
+ * lights, the materials, the camera's field of view, the line's width and dashes, the fog and the
+ * background color with fractions and colors. The colors are an array changed in place, a hex
+ * number and a hex string. The calls sit in a small step of their own, as in a game's update
+ * function, so the browser inlines them and no number crosses a call as an object of its own.
  */
 async function createSetters(
-	{ scene, materials }: SketchContext,
+	{ scene, materials, geometry }: SketchContext,
 	camera: PerspectiveCamera,
 	now: Float64Array,
 ): Promise<() => void> {
@@ -459,17 +466,16 @@ async function createSetters(
 	});
 	const paint = materials.standard({ color: '#808080' });
 	const custom = materials.shader({ wgsl: TINTED, uniforms: { tint: [1, 1, 1], strength: 0.5 } });
+	// A box of each material, so the frames upload and draw the values that the step sets.
+	const box = geometry.box({ width: 2, height: 2, depth: 2 });
+	scene.createMesh({ mesh: box, material: paint, position: [-3, 1, 0] });
+	scene.createMesh({ mesh: box, material: custom, position: [3, 1, 0] });
 	const fov = camera.fov;
-	// Every options object and color is made once and changed in place.
+	// Every options object and color is made once and changed in place. The materials' values go
+	// through setUniform in the frame, as a value that changes every frame does.
 	const color: [number, number, number] = [1, 1, 1];
-	const paintValues = { color, roughness: 0.5, metalness: 0.5, emissiveIntensity: 1 };
-	const customValues = { tint: color, strength: 0.5, roughness: 0.5 };
 	const lineValues = { color, dashOffset: 0.5 };
 	const fog = { color, density: 0.001 };
-	// A material's `set` reads each number from the options object it is given, and the browser
-	// boxes such a read, so a material is set once here and not in every frame.
-	paint.set(paintValues);
-	custom.set(customValues);
 	return () => {
 		const t = now[0] as number;
 		const s = Math.sin(t);
@@ -489,21 +495,105 @@ async function createSetters(
 		lines.setWidth(2 + s);
 		lineValues.dashOffset = 0.5 + 0.5 * s;
 		lines.material.set(lineValues);
+		paint.setUniform('roughness', 0.5 + 0.25 * s);
+		paint.setUniform('emissiveIntensity', 1 + 0.5 * c);
+		custom.setUniform('tint', color);
+		custom.setUniform('strength', 0.5 + 0.25 * c);
+		custom.setUniform('roughness', 0.5 + 0.25 * s);
 		fog.density = 0.001 + 0.0005 * s;
 		scene.setFog(fog);
 		scene.setBackground(color);
 	};
 }
 
+/** The vertices along each side of the `calls` switch's rippling sheet. */
+const SHEET_ROWS = 32;
+
+/**
+ * The `calls` switch: a sheet whose vertices ripple, and two cameras of their own for the orbit and
+ * the fly controls. Returns the frame's step, which updates the sheet's vertices, casts a ray down
+ * into the swarm, turns the pointer into a ray and a point of the swarm into the canvas's pixels,
+ * updates both controls and reads the frame's figures, with arrays and a hit made once.
+ */
+function createCalls(
+	context: SketchContext,
+	camera: PerspectiveCamera,
+	now: Float64Array,
+): () => void {
+	const { scene, geometry, materials, debug, time, input } = context;
+	const count = SHEET_ROWS * SHEET_ROWS;
+	const positions = new Float32Array(count * 3);
+	const normals = new Float32Array(count * 3);
+	for (let v = 0; v < count; v++) {
+		positions[v * 3] = (v % SHEET_ROWS) - SHEET_ROWS / 2;
+		positions[v * 3 + 2] = Math.floor(v / SHEET_ROWS) - SHEET_ROWS / 2;
+		normals[v * 3 + 1] = 1;
+	}
+	const quads = SHEET_ROWS - 1;
+	const indices = new Uint16Array(quads * quads * 6);
+	for (let q = 0; q < quads * quads; q++) {
+		const v = Math.floor(q / quads) * SHEET_ROWS + (q % quads);
+		indices.set([v, v + SHEET_ROWS, v + 1, v + 1, v + SHEET_ROWS, v + SHEET_ROWS + 1], q * 6);
+	}
+	const sheet = geometry.fromArrays({ positions, normals, indices });
+	const blue = materials.standard({ color: '#4080c0' });
+	scene.createMesh({ mesh: sheet, material: blue, position: [0, -2, 0] });
+	const orbit = createOrbitControls(
+		context,
+		scene.createPerspectiveCamera({ position: [0, 20, 60], target: [0, 0, 0] }),
+	);
+	const fly = createFlyControls(context, scene.createPerspectiveCamera({ position: [0, 20, 60] }));
+	const origin: [number, number, number] = [0, 80, 0];
+	const down: [number, number, number] = [0, -1, 0];
+	const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
+	const onScreen = [0, 0, 0];
+	const hit: RaycastHit = {
+		object: null,
+		instance: -1,
+		point: [0, 0, 0],
+		normal: [0, 0, 0],
+		distance: 0,
+		triangle: -1,
+	};
+	return () => {
+		const t = now[0] as number;
+		for (let v = 0; v < count; v++) positions[v * 3 + 1] = Math.sin(t + v * 0.1) * 0.5;
+		sheet.updateVertices('positions', positions);
+		origin[0] = 20 * Math.sin(t);
+		origin[2] = 20 * Math.cos(t);
+		scene.raycast(origin, down, undefined, hit);
+		camera.screenToRay(input.pointer.x, input.pointer.y, ray);
+		camera.worldToScreen(origin, onScreen);
+		orbit.update(time.dt);
+		fly.update(time.dt);
+		debug.frameStats();
+	};
+}
+
+/**
+ * The `timeOfDay` switch: a day cycle that moves its hour in every frame. Returns the frame's step,
+ * which fills the object that the first call made, so the cycle allocates nothing. A call without
+ * that object makes an object tree in every frame.
+ */
+function createTimeOfDay(now: Float64Array): () => void {
+	const day = emptyTimeOfDay();
+	const options = {};
+	return () => {
+		timeOfDay(17 + (now[0] as number) * 0.01, options, day);
+	};
+}
+
 /**
  * Eight rectangle lights, two of which show a striped image, and four tube lights for the
- * `areaLights` switch. The frames move them around the swarm.
+ * `areaLights` switch. Returns the frame's step, which moves them around the swarm. The step runs
+ * in `onLateUpdate`, apart from the large `pose`: the browser then inlines it and the setters it
+ * calls, so no fraction that it computes crosses a call as an object of its own.
  */
-function createAreaLights({ scene }: SketchContext) {
+function createAreaLights({ scene }: SketchContext, now: Float64Array): () => void {
 	const stripes = new Uint8Array(16 * 16 * 4).map((_, i) => ((i >> 6) % 2 ? 255 : 40));
 	const image = { width: 16, height: 16, data: stripes };
 	const range = S1_EXTENT * 3;
-	return Array.from({ length: 12 }, (_, k) =>
+	const lights = Array.from({ length: 12 }, (_, k) =>
 		k < 8
 			? scene.createRectAreaLight({
 					width: 4,
@@ -515,6 +605,16 @@ function createAreaLights({ scene }: SketchContext) {
 				})
 			: scene.createTubeLight({ length: 3, range, color: '#ff6ab0', dynamic: true }),
 	);
+	return () => {
+		const t = now[0] as number;
+		for (let k = 0; k < lights.length; k++) {
+			const angle = t * 0.3 + (k * Math.PI * 2) / lights.length;
+			const light = lights[k] as (typeof lights)[number];
+			light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
+			light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
+			light.setIntensity(4 + Math.sin(t + k));
+		}
+	};
 }
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */

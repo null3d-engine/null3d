@@ -65,6 +65,17 @@ export default defineSketch(({ materials }) => {
 	// @ts-expect-error: uvTransform is not a value of a custom material.
 	wavy.set({ uvTransform: { offset: [0, 0] } });
 
+	// setUniform takes one value at a time, by name, as the value itself.
+	wavy.setUniform('height', 0.4);
+	wavy.setUniform('shift', [0, 0.25]);
+	wavy.setUniform('roughness', 0.5);
+	// @ts-expect-error: hight is not a uniform of waves.wgsl.
+	wavy.setUniform('hight', 0.4);
+	// @ts-expect-error: shift is a vec2f, which takes two numbers.
+	wavy.setUniform('shift', [0, 0.25, 1]);
+	// @ts-expect-error: height is an f32, which takes a number.
+	wavy.setUniform('height', '0.2');
+
 	// A tagged template literal in a constant.
 	const ringed = materials.shader({ wgsl: rings, uniforms: { tint: [1, 0.5, 0], count: 4 } });
 	ringed.set({ tint: '#4080ff', width: 0.3, glow: [1, 0.6, 0.1, 1.5], color: '#808080' });
@@ -77,6 +88,10 @@ export default defineSketch(({ materials }) => {
 	ringed.set({ glow: [1, 0.6, 0.1] });
 	// @ts-expect-error: count is an i32, which takes a number.
 	ringed.set({ count: [4] });
+	ringed.setUniform('tint', '#4080ff');
+	ringed.setUniform('glow', [1, 0.6, 0.1, 1.5]);
+	// @ts-expect-error: old is in a comment, not a uniform.
+	ringed.setUniform('old', 1);
 
 	// A tagged template literal inside the call.
 	const inline = materials.shader({
