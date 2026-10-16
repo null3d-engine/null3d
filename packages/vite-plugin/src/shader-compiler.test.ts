@@ -231,11 +231,10 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 	});
 
 	// A few of the engine's shaders, which is the scale a build tool passes: a project's own
-	// manifest. The whole engine manifest takes the module about twelve minutes and answers with
-	// about 1.7 GB of JSON, more than this test's limit and more than a 32-bit module may hold
-	// beside its builds (`.dev/implementation-notes.md`). `standard_maps` alone holds 11,456
-	// builds. The shader crate's own test compares every entry of the repository through the
-	// module, one entry at a time.
+	// manifest. The whole engine manifest takes the module about twelve minutes, past this test's
+	// limit. `standard_maps` alone holds 11,456 builds. The shader crate's own test compares every
+	// entry of the repository through the module, one entry at a time, and the module hands an
+	// entry's answer over in pieces (`.dev/implementation-notes.md`).
 	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit', 'probe_grid'];
 
 	it("gives the native build's output for the engine's shaders", async () => {
