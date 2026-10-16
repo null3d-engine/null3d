@@ -89,8 +89,6 @@ export function bootstrapFailure(message: string, error: WasmError): EngineError
 	return coded;
 }
 
-/** What stands in for the thread's `Worker` while `spawnWorker` runs, once made. */
-let bootstrapping: typeof Worker | undefined;
 /** The error maker of the `spawnWorker` call that runs. */
 let errorOfCall: WasmError | undefined;
 
@@ -150,8 +148,10 @@ function bootstrappingWorker(Native: typeof Worker): typeof Worker {
  */
 export function spawnWorker(start: () => Worker, error: WasmError): Worker {
 	const Native = globalThis.Worker;
-	bootstrapping ??= bootstrappingWorker(Native);
-	globalThis.Worker = bootstrapping;
+	// The stand-in wraps the worker class that the thread holds now, so each start reaches the class
+	// of its own time. A thread can change its `Worker` between starts, such as a library that
+	// replaces it or a test that installs a stand-in.
+	globalThis.Worker = bootstrappingWorker(Native);
 	errorOfCall = error;
 	try {
 		return start();
