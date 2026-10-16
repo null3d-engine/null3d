@@ -951,7 +951,8 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 
 /**
  * Starts job worker `index`. It joins the job system once it is ready: until then the sketch thread
- * and the job workers already running take every chunk, so no frame waits for it. A job worker that
+ * and the job workers already running take every chunk, so no frame waits for it. `started` hears
+ * once it is ready, so the thread that runs the sketch learns which workers run. A job worker that
  * fails to start is reported as a failure of the running engine, and returns undefined when the
  * browser refuses it at once.
  */
@@ -959,6 +960,7 @@ function startJobWorker(
 	index: number,
 	slots: Int32Array,
 	events: WorkerEvents,
+	started: (index: number) => void,
 ): EngineWorker | undefined {
 	const failed = (error: unknown) => {
 		if (Atomics.load(slots, Slot.Running) !== 0)
@@ -980,7 +982,10 @@ function startJobWorker(
 			`job ${index}`,
 			events,
 		);
-		job.ready().catch(failed);
+		job.ready().then(
+			() => started(index),
+			(error: unknown) => failed(error),
+		);
 		return job;
 	} catch (thrown) {
 		failed(thrown);
@@ -1797,22 +1802,38 @@ async function startEngine(
 		/**
 		 * Makes a port for each job worker that the engine may start, for the on-demand loader's
 		 * tasks, and returns the other end of each, for the thread that runs the sketch. The job
-		 * workers start as that thread asks for them: each gets the core and its port as it starts.
+		 * workers start as that thread asks for them: each gets the core and its port as it starts,
+		 * and that thread then hears which of them run, so it sends its tasks only to those.
 		 * A stop waits until each started job worker reports that it left the job system, which one
 		 * without the core never does.
 		 */
 		const startJobs = (jobs: EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
 			const taskPorts = Array.from({ length: jobWorkers }, () => channel());
+			/** The job workers that started, by index, which the on-demand loader sends its tasks to. */
+			const running: number[] = [];
+			/** Notes a job worker that started, by its index. */
+			const noteStarted = (index: number) => running.push(index);
 			growJobs = (count) => {
+				const starting: Promise<unknown>[] = [];
 				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
-					if (Atomics.load(slots, Slot.Running) === 0) return;
-					const job = startJobWorker(index, slots, events);
-					if (!job) return;
+					if (Atomics.load(slots, Slot.Running) === 0) break;
+					const job = startJobWorker(index, slots, events, noteStarted);
+					if (!job) break;
 					jobs.push(job);
 					const port = (taskPorts[index] as MessageChannel).port1;
 					job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: port }, [port]);
+					starting.push(job.ready());
 				}
+				// The sketch thread hears which of a batch of job workers run once the whole batch has
+				// settled, so it never takes a worker for running before the batch is known. A batch
+				// that started no worker, because the browser refused them or the engine is stopping,
+				// stays unheard: the thread then uses the workers it asked for.
+				if (starting.length === 0) return;
+				void Promise.allSettled(starting).then(() => {
+					running.sort((a, b) => a - b);
+					threads?.sketch?.worker.postMessage({ type: 'job-workers', running: [...running] });
+				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
 		};
