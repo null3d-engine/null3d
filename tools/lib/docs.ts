@@ -29,7 +29,7 @@ import {
 import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
-import { docsFiles, readIfExists, walkFiles } from './files';
+import { currentGuideFiles, docsFiles, readIfExists } from './files';
 import {
 	FIRST_USE_PAGE_ID,
 	firstUsePage,
@@ -333,7 +333,7 @@ ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
  * Markdown file directly in `.dev/`, apart from the README and the generated tables.
  */
 export function guideListProblems(root: string): string[] {
-	const guides = walkFiles(root, '.dev', (path) => /^\.dev\/[^/]+\.md$/.test(path)).filter(
+	const guides = currentGuideFiles(root).filter(
 		(path) => path !== '.dev/README.md' && path !== RECORD_TABLES_PAGE,
 	);
 	const agents = readIfExists(root, 'AGENTS.md') ?? '';

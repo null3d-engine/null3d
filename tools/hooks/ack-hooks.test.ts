@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fixture } from '../lib/fixture';
 import {
 	checkCommitMessage as checkDocs,
 	DOCS_ACK_RULE,
@@ -10,7 +11,7 @@ import {
 	effectiveMessage,
 	isExemptCommit,
 } from './check-docs-ack';
-import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
+import { audienceOf, isStyleChecked, styleCheckedFiles, subjectOf } from './check-docs-style';
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
@@ -242,8 +243,10 @@ describe('touchesRust', () => {
 	});
 });
 
+const repoRoot = join(import.meta.dir, '../..');
+
 describe('the docs style hook', () => {
-	it('checks every published Markdown file, and nothing generated for Claude Code', () => {
+	it('checks the pages a reader acts on, and nothing generated for Claude Code', () => {
 		for (const path of [
 			'README.md',
 			'AGENTS.md',
@@ -253,7 +256,7 @@ describe('the docs style hook', () => {
 			'skills/demo/references/notes.md',
 			'packages/cli/README.md',
 			'.dev/devices.md',
-			'.dev/decisions/D-01-gpu-layer.md',
+			'.dev/tested-devices.md',
 		])
 			expect(isStyleChecked(path)).toBe(true);
 		for (const path of [
@@ -267,10 +270,51 @@ describe('the docs style hook', () => {
 			expect(isStyleChecked(path)).toBe(false);
 	});
 
-	it('treats AGENTS.md, the maintainer guides and the decision records as contributor files', () => {
+	it('leaves the dated records alone, in both of the folders that keep them', () => {
+		for (const path of [
+			'.dev/decisions/D-01-gpu-layer.md',
+			'.dev/decisions/TEMPLATE.md',
+			'.dev/tested-devices/mac-safari/runs.md',
+			'.dev/tested-devices/macbook-pro-chrome/notes.md',
+		])
+			expect(isStyleChecked(path)).toBe(false);
+	});
+
+	it('reads that same set of files when --all runs it', () => {
+		const root = fixture({
+			'README.md': '# Read me\n',
+			'AGENTS.md': '# Rules\n',
+			'CHANGELOG.md': '# Changes\n',
+			'docs/guides/performance.md': '# Performance\n',
+			'skills/demo/SKILL.md': '# Demo\n',
+			'packages/cli/README.md': '# The command line\n',
+			'.dev/benchmarks.md': '# Benchmarks\n',
+			'.dev/decisions/D-01-gpu-layer.md': '# D-01: The GPU layer\n',
+			'.dev/tested-devices/mac-safari/runs.md': 'Plans: smoke 2026-10-15\n',
+		});
+		expect(styleCheckedFiles(root)).toEqual([
+			'README.md',
+			'AGENTS.md',
+			'.dev/benchmarks.md',
+			'CHANGELOG.md',
+			'packages/cli/README.md',
+			'docs/guides/performance.md',
+			'skills/demo/SKILL.md',
+		]);
+	});
+
+	it('reads the current guides of this checkout, and no dated record', () => {
+		const checked = styleCheckedFiles(repoRoot);
+		for (const path of ['README.md', 'AGENTS.md', 'docs/index.md', '.dev/benchmarks.md'])
+			expect(checked).toContain(path);
+		// Every `.dev` file the check reads is a current guide, so a record never reaches it.
+		for (const path of checked.filter((path) => path.startsWith('.dev/')))
+			expect(path).toMatch(/^\.dev\/[^/]+\.md$/);
+	});
+
+	it('treats AGENTS.md and the current maintainer guides as contributor files', () => {
 		expect(audienceOf('AGENTS.md')).toBe('contributors');
 		expect(audienceOf('.dev/benchmarks.md')).toBe('contributors');
-		expect(audienceOf('.dev/decisions/D-01-gpu-layer.md')).toBe('contributors');
 		expect(audienceOf('README.md')).toBe('users');
 	});
 

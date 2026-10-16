@@ -43,3 +43,17 @@ export function isGuide(path: string): boolean {
 export function guideFiles(root: string): string[] {
 	return walkFiles(root, '.dev', isGuide);
 }
+
+/**
+ * True for a maintainer guide that is still current: Markdown directly in `.dev/`, with none
+ * nested below it. It leaves out the dated records, `.dev/decisions/` and `.dev/tested-devices/`,
+ * because each of those holds what was decided or measured on a day (D-182).
+ */
+export function isCurrentGuide(path: string): boolean {
+	return /^\.dev\/[^/]+\.md$/.test(path);
+}
+
+/** The current maintainer guides, the ones a maintainer edits today. */
+export function currentGuideFiles(root: string): string[] {
+	return walkFiles(root, '.dev', isCurrentGuide);
+}

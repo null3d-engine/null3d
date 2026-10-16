@@ -19,4 +19,4 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Technique review, October 2026](technique-review-2026-10.md) | The comparison of null3D's techniques with eight engines' source: the ranked changes, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the gaps, the web search results with their sources, where earlier reports were wrong, and the newer techniques of October 2026 with what three.js gained |
 | [Tested devices](tested-devices.md) | Every device and browser that null3D has run on, with the facts and the known issues, a folder of runs for each, and how to add a run |
 
-A guide or a decision record follows AGENTS.md's writing rules, as a contributor file.
+A guide or a decision record follows AGENTS.md's writing rules, as a contributor file. The style check reads the current guides and every page a reader acts on. It leaves the dated records in `decisions/` and `tested-devices/` alone, so that a rule added later cannot rewrite what was done on a day ([D-182](decisions/D-182-docs-style-scope.md)).

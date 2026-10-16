@@ -10,7 +10,7 @@ import {
 	type DocsAudience,
 	type StyleFinding,
 } from '../lib/docs-style';
-import { docsFiles, guideFiles, isGuide, walkFiles } from '../lib/files';
+import { currentGuideFiles, docsFiles, isCurrentGuide, walkFiles } from '../lib/files';
 import { ROOT_LINKED_FILES } from '../lib/links';
 import { effectiveMessage, isExemptCommit, stagedFiles } from './commit-ack';
 
@@ -20,13 +20,17 @@ const CHANGELOG = 'CHANGELOG.md';
 const CONTRIBUTOR_FILES = new Set(['AGENTS.md']);
 
 /**
- * Published Markdown: every docs page, the skills, the README, the package READMEs, the changelog,
- * AGENTS.md and the maintainer guides.
+ * Published Markdown: the pages a reader acts on. They are every page under `docs/`, the skills,
+ * the README, the package READMEs, the changelog, AGENTS.md and the current maintainer guides.
+ *
+ * The dated records stay out: `.dev/decisions/` holds the decision history and
+ * `.dev/tested-devices/` holds each device's runs. An entry there records what was decided or
+ * measured on a day, so a rule added later must not edit it (D-182).
  */
 export function isStyleChecked(path: string): boolean {
 	return (
 		ROOT_LINKED_FILES.includes(path) ||
-		isGuide(path) ||
+		isCurrentGuide(path) ||
 		path === CHANGELOG ||
 		/^(docs|skills)\/.+\.md$/.test(path) ||
 		/^packages\/[^/]+\/README\.md$/.test(path)
@@ -34,18 +38,25 @@ export function isStyleChecked(path: string): boolean {
 }
 
 export function audienceOf(path: string): DocsAudience {
-	return CONTRIBUTOR_FILES.has(path) || isGuide(path) ? 'contributors' : 'users';
+	return CONTRIBUTOR_FILES.has(path) || isCurrentGuide(path) ? 'contributors' : 'users';
 }
 
-function publishedFiles(root: string): string[] {
-	const packageReadmes = readdirSync(join(root, 'packages'))
+/** Every package README of the packages that the checkout holds. */
+function packageReadmes(root: string): string[] {
+	const dir = join(root, 'packages');
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
 		.map((name) => `packages/${name}/README.md`)
 		.filter((path) => existsSync(join(root, path)));
+}
+
+/** Every file that `--all` reads, which is the same set that `isStyleChecked` accepts. */
+export function styleCheckedFiles(root: string): string[] {
 	return [
 		...ROOT_LINKED_FILES,
-		...guideFiles(root),
+		...currentGuideFiles(root),
 		...(existsSync(join(root, CHANGELOG)) ? [CHANGELOG] : []),
-		...packageReadmes,
+		...packageReadmes(root),
 		...docsFiles(root),
 		...walkFiles(root, 'skills', (p) => p.endsWith('.md')),
 	];
@@ -101,7 +112,7 @@ function main(): void {
 	}
 
 	const all = args.includes('--all');
-	const paths = all ? publishedFiles(root) : stagedFiles().filter(isStyleChecked);
+	const paths = all ? styleCheckedFiles(root) : stagedFiles().filter(isStyleChecked);
 	const results: Result[] = [];
 	for (const file of paths) {
 		let content: string;

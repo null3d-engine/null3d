@@ -173,7 +173,7 @@ The owner set these rules on 4 October 2026. [D-52](.dev/decisions/D-52-intent-p
 
 ## Writing docs
 
-Published Markdown (every page under `docs/`, the skills, the README, the package READMEs, `CHANGELOG.md`, this file and the guides in `.dev/`) follows these rules.
+Published Markdown (every page under `docs/`, the skills, the README, the package READMEs, `CHANGELOG.md`, this file and the current guides in `.dev/`) follows these rules.
 
 - Write plain English in short sentences, at most 25 words each, in the active voice. Simplified Technical English is the model.
 - Use sentence case in headings, with no emojis.
@@ -186,7 +186,7 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 - Show commands with Bun: `bun add`, `bun install`, `bun run` and `bunx`, never the npm or npx forms. Run the command line tool as `bunx @null3d/cli <command>`, with the scope. Both rules cover code blocks too.
 - Run the humanizer skill over any prose you write or change. This covers user-facing text that lives in data or code too: the mapping notes, error messages and TSDoc comments.
 
-The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and the command line tool run by the wrong name. It checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
+The docs style check catches the mechanical part of these rules. It reads the pages a reader acts on: `docs/`, `skills/`, the README, the package READMEs, `CHANGELOG.md`, this file and the current guides in `.dev/`. It leaves out the dated records in `.dev/decisions/` and `.dev/tested-devices/`, because a rule added later must not rewrite what was done on a day ([D-182](.dev/decisions/D-182-docs-style-scope.md)). It blocks build-process words such as milestone and checkpoint, and the command line tool run by the wrong name. It checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
 
 ## Record the reasons
 
