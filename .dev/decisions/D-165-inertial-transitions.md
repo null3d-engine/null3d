@@ -121,6 +121,11 @@ not for its size. A record frees when its blend ends, when its instance is remov
 skeleton remakes the pool's records. The first inertial play of that crowd allocates about 74 KB,
 against the 33 MB it replaces, and its growth follows the blends that run.
 
+A doubling is the one allocation a play may make. It is rare: the pool reaches any number of
+concurrent transitions in a few doublings, and it then holds them. The frame step itself still
+allocates nothing. The no-allocation test warms up until a crowd's transitions have reached their
+steady number, and only then counts, so the pool's growth is not mistaken for a per-frame cost.
+
 M-2's sixth case was the layer above the first. Its shares come from the channels its own clips
 animate, and the outgoing clips had left their slots. A joint that only they animated therefore
 dropped to the pose below at the switch instead of fading. Each record now keeps the outgoing
