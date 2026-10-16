@@ -10,8 +10,15 @@ import { run, toBase64 } from './lib/result';
 const SETTLE_FRAMES = 20;
 /** The length of each window the page measures. */
 const WINDOW_SECONDS = 0.5;
-/** How long a slow device, such as the software renderer, may take to draw those frames. */
-const SETTLE_LIMIT_SECONDS = 20;
+/**
+ * How long a slow device, such as the software renderer, may take to draw those frames. The cap
+ * only decides how long the page waits before it says it could not settle: a page whose frame loop
+ * has stopped never raises the count, so it reaches the cap with too few frames and the test fails
+ * on the count either way. The figure is a small multiple of what a working software renderer
+ * needs for the same 20 frames, so that a loaded machine still settles, and it stays bounded so
+ * that a stopped page is reported rather than waited on.
+ */
+const SETTLE_LIMIT_SECONDS = 45;
 
 run('fog-live', async () => {
 	const canvas = document.querySelector('canvas');
