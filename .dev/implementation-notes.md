@@ -1007,10 +1007,12 @@ The paragraph text repeats across the eight GLSL targets of one feature set, not
 sets inside one target. This was measured by streaming the modules one at a time and hashing each
 paragraph, so it reads no whole file into memory.
 
-- Two targets that differ in the draw-index bit agree on 526 of their 527 paragraphs, 99.8 per cent.
-- Across all eight, one feature set stores 267 MB of paragraph text, and the distinct text is 99 MB.
-  The eight targets therefore fall into about three families of paragraph text. The half-precision and
-  tone-mapping bits rewrite paragraphs; the draw-index bit does not.
+- Two targets that differ in the draw-index bit agree on all but nine of their paragraphs, 99.8 per
+  cent of the text. The remaining difference is under one and a half thousand bytes.
+- The 115 feature sets that have all eight targets store 267 MB of paragraph text between them, where
+  the distinct text is 99 MB, 37 per cent. So the eight targets fall into about three families of
+  paragraph text. The half-precision and tone-mapping bits rewrite paragraphs; the draw-index bit
+  does not.
 - The composed sources are not where the duplication is. They are the same programs written with
   different paragraph numbers, because the writer numbers a paragraph by where it first appears. Ten of
   eleven composed sources differ between two targets whose paragraphs agree. Share the paragraphs, and
