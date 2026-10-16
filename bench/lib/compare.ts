@@ -9,7 +9,7 @@
 // real GPU, such as a developer's computer, also catches a change that slows only the GPU.
 import type { Shard } from '../../tests/lib/runs.ts';
 import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
-import { REFERENCE_PRESET_SWITCH } from './parity';
+import { HOLD_EVERY_FRAME_SWITCH, REFERENCE_PRESET_SWITCH } from './parity';
 import { type BenchResult, median, ownWorkMs, summarizeRuns } from './report';
 
 /** The two builds of a comparison. */
@@ -48,9 +48,16 @@ export interface DroppedRun {
  * on a busy machine that check lowers it in some runs and not in others. A named preset turns the
  * check and the crash marker off, and the desktop's preset, High within each GPU path's ceiling,
  * keeps the work that a desktop draws. The governor stays off, because a step during the measured
- * seconds would change what the rest of the run draws. .dev/benchmarks.md gives the measurements.
+ * seconds would change what the rest of the run draws. Every character is posed in every frame,
+ * because a far character's longer update interval would otherwise give null3D's crowd less work
+ * than the three.js twin does, and D-52 asks a comparison to measure equal work.
+ * .dev/benchmarks.md gives the measurements.
  */
-export const COMPARISON_SWITCHES: readonly string[] = [REFERENCE_PRESET_SWITCH, 'governor=off'];
+export const COMPARISON_SWITCHES: readonly string[] = [
+	REFERENCE_PRESET_SWITCH,
+	'governor=off',
+	HOLD_EVERY_FRAME_SWITCH,
+];
 
 /** The comparison's own switches, less those that the command's `switches` set themselves. */
 export function comparisonSwitches(switches: string): string[] {
