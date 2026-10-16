@@ -458,22 +458,29 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A shard's tests take about 12 minutes, with the median times that the weights come from, and
+    # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
+    # the median, so the limit leaves room for that rather than for a hang.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 11, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/11 }
-          - { part: shard 2 of 11, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/11 }
-          - { part: shard 3 of 11, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/11 }
-          - { part: shard 4 of 11, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/11 }
-          - { part: shard 5 of 11, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/11 }
-          - { part: shard 6 of 11, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/11 }
-          - { part: shard 7 of 11, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/11 }
-          - { part: shard 8 of 11, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/11 }
-          - { part: shard 9 of 11, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/11 }
-          - { part: shard 10 of 11, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/11 }
-          - { part: shard 11 of 11, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/11 }
+          - { part: shard 1 of 15, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/15 }
+          - { part: shard 2 of 15, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/15 }
+          - { part: shard 3 of 15, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/15 }
+          - { part: shard 4 of 15, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/15 }
+          - { part: shard 5 of 15, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/15 }
+          - { part: shard 6 of 15, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/15 }
+          - { part: shard 7 of 15, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/15 }
+          - { part: shard 8 of 15, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/15 }
+          - { part: shard 9 of 15, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/15 }
+          - { part: shard 10 of 15, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/15 }
+          - { part: shard 11 of 15, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/15 }
+          - { part: shard 12 of 15, id: 12, tests: --grep-invert "@alone|$CITY_TESTS" --shard=12/15 }
+          - { part: shard 13 of 15, id: 13, tests: --grep-invert "@alone|$CITY_TESTS" --shard=13/15 }
+          - { part: shard 14 of 15, id: 14, tests: --grep-invert "@alone|$CITY_TESTS" --shard=14/15 }
+          - { part: shard 15 of 15, id: 15, tests: --grep-invert "@alone|$CITY_TESTS" --shard=15/15 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -494,7 +501,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "103:202:322:293:185:66:133:112:170:121:257"
+          PWTEST_SHARD_WEIGHTS: "118:154:283:511:209:143:80:47:193:199:24:28:28:138:308"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
