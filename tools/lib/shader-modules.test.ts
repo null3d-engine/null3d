@@ -161,6 +161,35 @@ describe('the shader modules', () => {
 			expect(existsSync(join(root, 'target/shader-modules.lock'))).toBe(false);
 		});
 	});
+
+	it('fail at once instead of building when the run takes the modules from the build job', () => {
+		withScratchCaches(() => {
+			const root = repository();
+			mkdirSync(join(root, 'target'));
+			process.env.NULL3D_REQUIRE_FRESH_SHADERS = '1';
+			try {
+				// A set that matches its record passes with no build, as it does without the switch.
+				writeFileSync(
+					join(root, RECORD),
+					JSON.stringify({ inputs: inputHash(root), modules: moduleHash(root) }),
+				);
+				expect(ensureShaderModules(root)).toBe(false);
+				// A record that names modules the artifact did not deliver stops the run at once, and
+				// names the file it lacks, in place of a build that costs minutes in every job.
+				writeFileSync(
+					join(root, RECORD),
+					JSON.stringify({
+						inputs: inputHash(root),
+						modules: 'another set',
+						names: ['shaders.ts', 'shader-paragraphs-wgsl.js'],
+					}),
+				);
+				expect(() => ensureShaderModules(root)).toThrow(/shader-paragraphs-wgsl\.js/);
+			} finally {
+				delete process.env.NULL3D_REQUIRE_FRESH_SHADERS;
+			}
+		});
+	});
 });
 
 describe('a set in the shared cache', () => {
