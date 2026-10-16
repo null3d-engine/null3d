@@ -2,16 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
-import {
-	glslProgramsOf,
-	inShaderSet,
-	type ShaderSet,
-	wgslModulesOf,
-} from '../pages/lib/shader-list.ts';
+import { type ShaderSet, variantInShaderSet } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -43,7 +37,6 @@ import {
 	PLANS,
 	parityPlan,
 	REPORT_ON_TOP_PLANS,
-	SHADER_PARTS,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -78,6 +71,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
+import { glslProgramCount, glslProgramCountOf, glslProgramsByVariant } from './shader-programs.ts';
 import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
@@ -1060,20 +1054,21 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
-	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
-		const all = await everyShader();
-		const names = glslProgramsOf(all).map(([name]) => name);
-		expect(names.length).toBeGreaterThan(100);
-		const inSet = (set: ShaderSet) => names.filter((name) => inShaderSet(name, set));
+	it('splits the shaders page into parts that share every program, each with time for its share', () => {
+		const all = glslProgramCount();
+		expect(all).toBeGreaterThan(100);
+		const inSet = (set: ShaderSet) => glslProgramCountOf(set);
 		const [base, coat, sample] = [inSet('base'), inSet('coat'), inSet('coat-sample')];
 		// The base and coat sets split every program, and the sample is some of the coat's.
-		expect(base.length + coat.length).toBe(names.length);
-		expect(sample.length).toBeGreaterThan(0);
-		expect(sample.length).toBeLessThanOrEqual(400);
-		for (const name of sample) expect(coat).toContain(name);
+		expect(base + coat).toBe(all);
+		expect(sample).toBeGreaterThan(0);
+		expect(sample).toBeLessThanOrEqual(400);
 		// The sample pairs the coat with shadows, row values and half precision, alone and together.
+		const sampledBuilds = [...glslProgramsByVariant()].filter(
+			([build, programs]) => programs > 0 && variantInShaderSet(build, 'coat-sample'),
+		);
 		const pairs = (bits: string[]) =>
-			sample.some((name) => bits.every((bit) => name.includes(`_${bit}_`)));
+			sampledBuilds.some(([name]) => bits.every((bit) => name.includes(`_${bit}_`)));
 		for (const bit of ['receive_shadows', 'row_values', 'half', 'alpha_mask', 'vertex_tangent'])
 			expect(pairs([bit]), bit).toBe(true);
 		expect(pairs(['receive_shadows', 'row_values', 'half'])).toBe(true);
@@ -1081,8 +1076,8 @@ describe('the checks plan', () => {
 			plan.filter((item) => item.check.kind === 'shaders' && item.path.endsWith(`set=${set}`));
 		const sampled = checksPlan({ shaders: 'sampled' });
 		for (const [plan, sets] of [
-			[items, { base: base.length, coat: coat.length }],
-			[sampled, { base: base.length, 'coat-sample': sample.length }],
+			[items, { base, coat }],
+			[sampled, { base, 'coat-sample': sample }],
 		] as const) {
 			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
 				Object.values(sets).reduce((sum, programs) => sum + Math.ceil(programs / 400), 0),
@@ -1098,35 +1093,15 @@ describe('the checks plan', () => {
 				);
 				// Each part downloads its share of the builds and keeps the set's among them, so the
 				// parts together check every build of the set, and no part compiles more than a few
-				// hundred programs in one WebGL2 context.
-				const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, parts.length)));
-				const kept = new Set(
-					shares
-						.flatMap(glslProgramsOf)
-						.map(([name]) => name)
-						.filter((name) => inShaderSet(name, set)),
-				);
-				expect(kept).toEqual(new Set(inSet(set)));
-				for (const share of shares)
-					expect(
-						glslProgramsOf(share).filter(([name]) => inShaderSet(name, set)).length,
-					).toBeLessThanOrEqual(600);
+				// hundred programs in one WebGL2 context. Holding the parts beside the builds they load
+				// needs the whole set: that check runs in a process of its own
+				// (`bun run test:heavy`, [Test memory](../../.dev/tests.md)).
 				for (const part of parts) {
 					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
 					expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / parts.length / 4);
 				}
 			}
 		}
-		// The generator's own split covers every build in SHADER_PARTS shares, each under the limit.
-		const shares = await Promise.all(
-			Array.from({ length: SHADER_PARTS }, (_, i) => everyShader(i + 1, SHADER_PARTS)),
-		);
-		const sharedNames = (lists: (readonly [string, unknown])[]) =>
-			new Set(lists.map(([name]) => name));
-		expect(sharedNames(shares.flatMap(glslProgramsOf))).toEqual(new Set(names));
-		expect(sharedNames(shares.flatMap(wgslModulesOf))).toEqual(sharedNames(wgslModulesOf(all)));
-		expect(names.length / SHADER_PARTS).toBeLessThanOrEqual(400);
-		for (const share of shares) expect(glslProgramsOf(share).length).toBeLessThanOrEqual(600);
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {
