@@ -713,9 +713,11 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
-    # Each shard should take at most about 12 minutes, setup included, which leaves room under the
-    # limit for a runner page that goes quiet: each one costs about a minute more.
-    timeout-minutes: 20
+    # Two of the seven Safari shards reached a verdict in each of the last two runs, in 13.4 to
+    # 18.3 minutes. The other five were cut at the 20-minute limit, before any page. A shard spends
+    # its first minutes starting the dev server and the browser, so the limit leaves room for that
+    # as well as for a runner page that goes quiet.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
