@@ -145,3 +145,44 @@ three.js r187 floors perceptual roughness at 0.045, Filament's desktop value, in
 ## Addendum, 15 October 2026: ruling 5 settled
 
 The owner settled ruling 5 on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 23). ACES stays in the core for good, not until `three-compat` ships. Reinhard and Cineon go to `three-compat` in M3.
+
+## Addendum, 17 October 2026: the toy car's limit
+
+The toy car (`gltf-toy-car`) became the eleventh lit scene with a parity limit of its own. Its scene
+landed in the branch that added the clear coat. That branch forked before the lighting defaults, so
+the comparison had never run against the kernel.
+
+CI's run 38921872010 of 16 October 2026 failed the scene on all three tiers, against the rule's 0.1%.
+The shares were 0.254% on WebGPU, 0.274% in compatibility mode and 0.264% on WebGL2. On the Mac's GPU
+a fresh run of the same three measured 0.273%, 0.297% and 0.277%, and an earlier one 0.2826%, 0.2960%
+and 0.2821%.
+
+The scene takes 0.32%. The family's limits were each set just above their scene's largest measured
+share, and that convention leaves a different room on every scene. The nearest relative is
+`gltf-metal-rough`, the other Khronos model whose glossy surfaces the two kernels widen by different
+amounts. Its scene measured up to 0.316%, and its 0.34% limit leaves 0.024 of a point, which is 7.6%
+of that measurement. This scene measured up to 0.297%, and 0.32% leaves 0.023 of a point, or 7.7%.
+The family's other limits leave 0.012 to 0.028 of a point, or 7.6% to 13.6%.
+
+So the two nearest relatives were chosen alike, and each sits about 7.6% below its own limit. This
+limit is inside the family's band, and it is not the smallest figure above this scene's largest
+measurement.
+
+The cause is the kernel alone, and the measurements and the code show it. three.js's frame and the
+frame the engine drew before the kernel differ in only 0.008% of the WebGPU frame's pixels. On the
+WebGL2 frame the two differ in only 0.009% of them. That older frame is the toy car's reference of
+12 October 2026, which `ca28c9fdd` drew: its `lit.wgsl` still applied three.js's own term to the base
+roughness and to the coat's. Today's frame differs from both by 0.28% to 0.30%. The pixels that
+differ are the car's thin bright details, such as its chrome trim, its window frames and its lamp
+covers. The other two parts of this change cannot act on the scene. Both sides draw it with no tone
+curve, and it has no environment for the horizon fading.
+
+The coat, the sheen and the glass are not at fault. The branch's car-paint scene, whose model carries
+a coat and a sheen, differs from three.js in 0.026%, under the rule's 0.1%. The engine already drew
+the toy car's coat, sheen and glass before the kernel, and three.js matched it then.
+
+The limit is a property of the scene: its coat, sheen and glass highlights, which the two kernels
+widen by different amounts. It is not a property of any one run.
+
+The fix is the scene's limit and not a renderer change. The kernel is the technique that D-53
+ruling 27 chose, and D-79's ruling 2 keeps it. `.dev/image-tests.md` records the figures.
