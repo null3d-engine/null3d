@@ -84,3 +84,16 @@ The coordinator ruled it that evening, after a branch that changed no Rust file 
 - The criterion is equality of the two Rust trees: `git diff HEAD origin/main` over `*.rs`, `Cargo.toml`, `Cargo.lock` and `rust-toolchain.toml` prints nothing. Both halves must hold, with no Rust file in the branch's own diff and none in the merge that it just resolved. The Rust bytes are then main's own, which main's CI has compiled already, so a local compile repeats a known result at a cost that every helper behind it pays in the queue.
 - The type check still gates the push because it reads the merged tree, merge resolutions included. On 15 October it caught a merged tree whose pages import `@null3d/impostors` before that package was installed.
 - A push that takes this path names, in its report, the commit that main held before it, so a failed cargo check costs one revert.
+
+## Addendum, 16 October 2026: the push holds a connection, and it must be kept alive
+
+The team lead asked on 16 October 2026 for the cause of two pushes to main that died with nothing printed by git, and for the check to stop it happening again. The cause is measured, and it is not in the code being pushed.
+
+- `git push` opens the connection to the remote before it runs the hook, and holds it, saying nothing, until the hook returns. It has to: the hook reads the ref list that the negotiation produced. git's own trace from the second failed push puts the connection four seconds before the hook.
+- A connection that says nothing is closed by the far end after about six minutes. Measured in the same hour: a held, authenticated `git-receive-pack` session to `github.com` that wrote nothing ended after 365.6 seconds, and the ssh client exited 255. No ref and no pack was sent, so nothing on the remote changed.
+- The two failed pushes were both through the job queue, and the same push without it landed. The queue's CPU lane runs its steps at background priority, so the check takes about three times as long: the same cargo test step took 389.9 and 395.1 seconds of test time through the queue, against 134.7 seconds run directly. The longer check outlived its connection, and the shorter one did not.
+- When the connection has gone, git writes the push into a socket that has gone: the hook prints `every check passed`, git prints nothing, nothing is pushed, and the status is 141, which is a write to a closed socket. The minutes the check spent are lost.
+- So the check refuses a push to main whose remote it reaches over ssh when nothing keeps that connection alive, and it names the setting. A machine that pushes to main names `ServerAliveInterval` for the host, under `Host <host>` in `~/.ssh/config`, or on the ssh command through `core.sshCommand`.
+- The alternative, running the check's cargo steps as a job after the push, was rejected. It would trade the guarantee that this record's addendum of 15 October added, that a merged tree compiles before it lands, for a shorter check. Keeping the connection alive costs one line of machine setup and keeps the guarantee.
+
+How to recognise it: a push to main that prints `pre-push: every check passed`, prints nothing from git, and exits 141 did not fail its checks. Its connection went quiet for too long. Push again, and add the keepalive setting.
