@@ -1030,3 +1030,60 @@ shader build in CI.
   so the saving is zero.
 - **More first-use files.** The start file is one per cent of the set, and a page that uses two
   features would fetch two modules whose contents overlap. That is the merge problem in another form.
+
+### Measured on 16 October 2026: the duplication is also across the device targets
+
+The paragraph text repeats across the eight GLSL targets of one feature set, not only across feature
+sets inside one target. This was measured by streaming the modules one at a time and hashing each
+paragraph, so it reads no whole file into memory.
+
+- Two targets that differ in the draw-index bit agree on all but nine of their paragraphs, 99.8 per
+  cent of the text. The remaining difference is under one and a half thousand bytes.
+- The 115 feature sets that have all eight targets store 267 MB of paragraph text between them, where
+  the distinct text is 99 MB, 37 per cent. So the eight targets fall into about three families of
+  paragraph text. The half-precision and tone-mapping bits rewrite paragraphs; the draw-index bit
+  does not.
+- The composed sources are not where the duplication is. They are the same programs written with
+  different paragraph numbers, because the writer numbers a paragraph by where it first appears. Ten of
+  eleven composed sources differ between two targets whose paragraphs agree. Share the paragraphs, and
+  never the composed text.
+
+### The build's work is a product of its bits
+
+The manifest's 115 variants make about 17,000 builds. That figure is a model of the manifest and its
+bit table rather than a count of what is on disk, because a variant may carry more than one pipeline
+and so hold several programs. A variant builds once for each combination of its free bits, so
+removing any free bit halves it. Tone mapping is the dearest bit by a wide margin. It is
+listed by 45 of the 115 variants, and it accounts for about half of all builds. Skin, alpha masking,
+received shadows, half precision and vertex colour each cut 46 to 50 per cent of the large variants. The
+rare lit features cost less: area lights and coat-sheen about 6,600 builds each, and weighted
+transparency 1,300.
+
+### What each device bit costs, in files and in bytes
+
+The 17,000 is a model of the manifest, not a count of what is on disk. The bytes below are read from
+the modules themselves, by pairing each module that carries a device bit with the twin that lacks it.
+
+| device bit | modules carrying it | their bytes | their twins | it adds over the twins |
+| --- | --- | --- | --- | --- |
+| `TONE_MAP` | 648, 49 per cent of the files | 428 MB | 416 MB | 11.8 MB, 1.4 per cent of the set |
+| `HALF` | 618, 46 per cent | 426 MB | 415 MB | 11.4 MB, 1.3 per cent |
+| `DRAW_INDEX` | 484, 36 per cent | 387 MB | 387 MB | 0.6 MB, a tenth of a per cent |
+
+So a device bit costs the set almost nothing in text and a great deal in near-copy files. Each one
+doubles the file count and adds about 400 MB of modules whose twin already holds the same content.
+`DRAW_INDEX` is the extreme: 387 MB of modules against 387 MB of twins.
+
+That is the shape of the largest saving available. A bit that becomes a runtime branch is deleted
+from the build and grows its twin by its own per-cent. Tone mapping would delete 648 modules and
+428 MB, and grow 416 MB of twins by 12 MB, for about 416 MB or 49 per cent of the set. Half precision
+is worth about the same and the draw-index bit about 387 MB. The three do not add up, because they
+compose: together they multiply the GLSL weight by eight while changing a few per cent of the text.
+The price is a branch in the shader, and these are lit paths on devices where a branch can cost.
+
+### The demand-driven build would not help
+
+A build that emitted only the feature sets a page asks for would not shrink the set. Two measurements
+close it. The test suite compiles every variant of every generated module, so all 140 GLSL feature sets
+are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
+every page's build whatever the page draws. Grouping those copies only defers the download.
