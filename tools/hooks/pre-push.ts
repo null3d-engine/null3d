@@ -5,7 +5,11 @@
 //      which refuses a merge that carries new work;
 //   2. when the push changes Rust code or Cargo settings, `cargo check --workspace`, since a merge
 //      that keeps both sides of a struct or a constant often looks valid until it compiles;
-//   3. then the tests of each crate that the push changes, through cargo-nextest's `ci` profile with
+//   3. the same crates for the WebAssembly target, `cargo check -p <crate> --target
+//      wasm32-unknown-unknown`. A build for this machine compiles the `cfg(not(target_arch =
+//      "wasm32"))` items and skips the ones the engine ships, so the workspace check passes while
+//      the shipping build fails (15 October 2026, shader-time-1);
+//   4. then the tests of each crate that the push changes, through cargo-nextest's `ci` profile with
 //      --no-fail-fast, or cargo test when nextest is missing. The test that builds every shader
 //      runs in CI only: it takes half an hour or more.
 // A machine's job queue runs the steps when git's `null3d.jobQueue` setting, or the environment's
@@ -26,6 +30,13 @@ export const SKIP_TRAILER = 'Push-Check-Skipped';
 /** The test that builds every shader, which CI runs in a job of its own. */
 const WHOLE_SHADER_BUILD =
 	'the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule';
+/** The target the engine ships on, which a build for this machine does not compile. */
+export const WASM_TARGET = 'wasm32-unknown-unknown';
+/**
+ * The crates that the engine builds for that target: the shader compiler that a bundler loads, and
+ * the engine core. Between them they reach the rest of the workspace, except the asset tool.
+ */
+export const WASM_CRATES = ['null3d-shaders-wasm', 'null3d-wasm'];
 const NO_COMMIT = /^0+$/;
 
 /** One line of what git pushes: a local ref and commit to a remote ref and its commit. */
@@ -86,6 +97,8 @@ export interface Step {
 	why: string;
 	lane: 'QUICK' | 'CPU_ONLY';
 	command: string[];
+	/** Why the step cannot run at all here, or nothing when it can. */
+	needs?: () => string | undefined;
 }
 
 /** The steps for a push that adds `base..head` to main and changes `files`. */
@@ -119,6 +132,18 @@ export function plan(
 		why: 'the push changes Rust code or Cargo settings, so the merged workspace must compile',
 		lane: 'CPU_ONLY',
 		command: ['cargo', 'check', '--workspace'],
+	});
+	steps.push({
+		why: `the engine ships for the ${WASM_TARGET} target, which a build for this machine does not compile`,
+		lane: 'CPU_ONLY',
+		command: [
+			'cargo',
+			'check',
+			...WASM_CRATES.flatMap((name) => ['-p', name]),
+			'--target',
+			WASM_TARGET,
+		],
+		needs: wasmTargetProblem,
 	});
 	const names = changedCrates(files, crates);
 	if (names.length === 0) return steps;
@@ -162,6 +187,36 @@ function jobQueue(): string | undefined {
 
 function hasNextest(): boolean {
 	return spawnSync('cargo', ['nextest', '--version'], { stdio: 'ignore' }).status === 0;
+}
+
+/** The sysroot of the toolchain that answers rustc here, or nothing when none does. */
+function rustcSysroot(): string | undefined {
+	try {
+		return execFileSync('rustc', ['--print', 'sysroot'], { encoding: 'utf8' }).trim();
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Why the WebAssembly check cannot run here, or nothing when it can. Cargo reports a missing target
+ * only after it has compiled that target's whole dependency tree, so the check asks the toolchain
+ * for the target's own standard library first and says what is missing. A check that passed because
+ * its target was absent would be worse than no check.
+ */
+export function wasmTargetProblem(sysroot = rustcSysroot()): string | undefined {
+	if (!sysroot) {
+		return [
+			`pre-push: no rustc answered, so the check of the ${WASM_TARGET} target cannot run.`,
+			'Install the Rust toolchain that rust-toolchain.toml names and push again.',
+		].join('\n');
+	}
+	if (existsSync(join(sysroot, 'lib', 'rustlib', WASM_TARGET))) return undefined;
+	return [
+		`pre-push: the ${WASM_TARGET} standard library is not installed for the toolchain at ${sysroot}.`,
+		`The push changes Rust code, and the engine ships for that target, so the check refuses to pass without it.`,
+		`Install it with \`rustup target add ${WASM_TARGET}\` and push again.`,
+	].join('\n');
 }
 
 /**
@@ -211,6 +266,14 @@ function main(): void {
 	);
 	for (const step of plan(base, push.localSha, files, workspaceCrates(), hasNextest())) {
 		console.log(`pre-push: ${step.command.join(' ')}\n  because ${step.why}`);
+		const problem = step.needs?.();
+		if (problem) {
+			console.error(`\npush to main refused: \`${step.command.join(' ')}\` cannot run here.\n${problem}`);
+			console.error(
+				`Only in an emergency, add a \`${SKIP_TRAILER}: <reason>\` trailer to a commit of the push; see .dev/pull-requests.md.\n`,
+			);
+			process.exit(1);
+		}
 		const command = queue ? ['zsh', queue, ...step.command] : step.command;
 		const result = spawnSync(command[0] ?? '', command.slice(1), {
 			stdio: ['ignore', 'inherit', 'inherit'],

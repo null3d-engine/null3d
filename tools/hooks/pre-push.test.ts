@@ -8,6 +8,8 @@ import {
 	pushToMain,
 	SKIP_TRAILER,
 	skipReason,
+	WASM_TARGET,
+	wasmTargetProblem,
 } from './pre-push';
 
 const MAIN = 'refs/heads/main';
@@ -101,8 +103,26 @@ describe('plan', () => {
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 			['CPU_ONLY', 'cargo check --workspace'],
+			[
+				'CPU_ONLY',
+				'cargo check -p null3d-shaders-wasm -p null3d-wasm --target wasm32-unknown-unknown',
+			],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],
 		]);
+	});
+
+	it('checks what the engine ships for: the WebAssembly target, for a push that changes Rust', () => {
+		const wasm = commands(['crates/null3d-shaders/src/lib.rs']).find(([, line]) =>
+			line.includes(WASM_TARGET),
+		);
+		expect(wasm?.[1]).toContain(`--target ${WASM_TARGET}`);
+		expect(wasm?.[1]).toContain('null3d-shaders-wasm');
+	});
+
+	it('leaves the WebAssembly target out of a push that changes no Rust code', () => {
+		expect(commands(['.dev/pull-requests.md']).some(([, line]) => line.includes(WASM_TARGET))).toBe(
+			false,
+		);
 	});
 
 	it('runs cargo test without the whole shader build when nextest is missing', () => {
@@ -113,9 +133,20 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(4);
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
-			'cargo check --workspace',
-		);
+		const steps = commands(['tools/fixtures/disallowed-clock/src/main.rs']);
+		expect(steps).toHaveLength(5);
+		expect(steps.at(-1)?.[1]).toContain(`--target ${WASM_TARGET}`);
+	});
+});
+
+describe('wasmTargetProblem', () => {
+	it('names the missing target and its fix for a toolchain without it', () => {
+		const problem = wasmTargetProblem('/no/such/toolchain');
+		expect(problem).toContain(WASM_TARGET);
+		expect(problem).toContain(`rustup target add ${WASM_TARGET}`);
+	});
+
+	it('finds nothing missing on this checkout, which the check needs to run', () => {
+		expect(wasmTargetProblem()).toBeUndefined();
 	});
 });
