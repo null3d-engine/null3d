@@ -17,6 +17,8 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 7168 },
 	// The engine's programs and pipelines, read for every build the build wrote.
 	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 6144 },
+	// The WebGPU pipeline layouts, read for every build the build wrote.
+	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7168 },
 	// Two bundles of the engine, built to read which math helpers a sketch keeps.
 	{ file: 'packages/engine/src/math/tree-shaking.test.ts', ceilingMiB: 10240 },
 	// The release build, built to read which debug helpers it drops.
