@@ -274,7 +274,11 @@ export type ShaderBuildResult =
 	| { readonly ok: true; readonly output: ShaderBuildOutput }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
-/** Builds every variant in a shader manifest, as the native `bun run shaders` does. */
+/**
+ * Builds every variant in a shader manifest, as the native `bun run shaders` does. The answer may
+ * be large — the engine's own manifest answers with hundreds of megabytes — and the module hands
+ * it over in pieces, which `CompilerCalls` joins before this reads it.
+ */
 export function buildShaders(inputs: ShaderBuildInputs): ShaderBuildResult {
 	return call<ShaderBuildOutput>('build', inputs);
 }
