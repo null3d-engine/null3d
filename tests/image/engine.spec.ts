@@ -335,6 +335,7 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	coat_sheen: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv',
 	weighted: 'tests/pages/sketches/weighted-sketch.ts',
 	decals: 'tests/pages/sketches/decal-first-use-sketch.ts',
+	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
 };
 
 /** Page switches that a feature needs besides its sketch: the test switches that turn it on. */
@@ -375,13 +376,6 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			test.skip(
 				feature === 'decals' && gpu === 'webgpu',
 				'a decal material with a map exceeds the WebGPU per-stage sampled-texture limit (E1305)',
-			);
-			// The sketch has no case for a probe grid, because no page lights with one yet: the
-			// probes work adds the first such page (M2-R38), and this test then covers it like every
-			// other feature. Until then the case would draw nothing and download nothing.
-			test.skip(
-				feature === 'probe_grid',
-				'no page lights with a probe grid yet: the probes work adds the first one',
 			);
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
