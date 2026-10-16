@@ -252,7 +252,8 @@ export function firstUseFile(shader: string, permutation: number): string | unde
 	const own = SHADER_FEATURES[shader];
 	if (own !== undefined) features.add(own);
 	const listed = permutation & ((FEATURE_MASKS[shader] ?? 0) | FEATURE_UNSHARED);
-	for (const [bit, name] of FEATURE_BITS) if ((listed & bit) !== 0) features.add(name);	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
+	for (const [bit, name] of FEATURE_BITS) if ((listed & bit) !== 0) features.add(name);
+	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
 }
 
 /** A target's device modules of features that load on first use, and the keys that pages asked for. */
@@ -1791,6 +1792,25 @@ mod tests {
         assert!(combined.contains("	'bloom+hash+skinning': {\n		bits: 0,\n"));
         assert!(main.contains("export const FEATURE_JOIN = '+';"));
         assert!(main.contains("export function firstUseFile(shader: string, permutation: number)"));
+    }
+
+    #[test]
+    fn each_generated_module_keeps_one_statement_on_each_line() {
+        // The modules claim the layout that the repository's formatter gives them, so a line that
+        // holds a second statement reads as a fault in the text this crate hands out. A merge once
+        // joined two statements with a tab.
+        for (name, text) in modules(&output_with_features()) {
+            for (number, line) in text.lines().enumerate() {
+                let joined = line
+                    .split_once(";\t")
+                    .is_some_and(|(_, rest)| !rest.trim().is_empty());
+                assert!(
+                    !joined,
+                    "`{name}` line {} holds two statements:\n{line}",
+                    number + 1
+                );
+            }
+        }
     }
 
     #[test]
