@@ -118,15 +118,21 @@ const FIRST_FRAME_MS = 180_000;
  */
 const WAIT_MS = 60_000;
 
-/** Waits until two frames in a row differ by less than a change the checks could mistake for one. */
-async function settle(page: Page): Promise<void> {
+/**
+ * Waits until two frames in a row differ by less than a change the checks could mistake for one, and
+ * gives that still frame as the look the checks below compare with. The look never coming to rest
+ * inside the loop gives the last frame read. A caller that read this look again would pay for it a
+ * second time, and a read costs the frame loop a whole frame.
+ */
+async function settle(page: Page): Promise<Frame> {
 	let previous = await frame(page);
 	for (let k = 0; k < 40; k++) {
 		await new Promise((r) => setTimeout(r, 250));
 		const next = await frame(page);
-		if (difference(next, previous) < STILL) return;
+		if (difference(next, previous) < STILL) return next;
 		previous = next;
 	}
+	return previous;
 }
 
 /**
@@ -140,19 +146,30 @@ async function settle(page: Page): Promise<void> {
  * frame read before it settled, and a comparison with that frame measures the machine's speed
  * rather than the part. The frame with the part off is read at the pick, so the two looks the
  * return is measured between are seconds apart and carry that change and little else.
+ *
+ * Each frame is read once. The poll reads a frame on every try, so the frame it accepts is the first
+ * of the frames that must show the part off, and the last of those frames is the look the return is
+ * measured from. Reading either of them again would cost the page another frame.
  */
 async function switchPart(page: Page, label: string, tab: string, group: string): Promise<void> {
 	// The look eases and the camera settles, so the frame with the part on is read when it is still.
-	await settle(page);
-	const before = await frame(page);
+	const before = await settle(page);
 	await pick(page, tab, group, label, `${label}: off`);
+	/** The part off, as the last frame read holds it. */
+	let off = before;
 	await expect
-		.poll(async () => difference(await frame(page), before), { timeout: WAIT_MS })
+		.poll(
+			async () => {
+				off = await frame(page);
+				return difference(off, before);
+			},
+			{ timeout: WAIT_MS },
+		)
 		.toBeGreaterThan(CHANGED);
-	for (let k = 0; k < FRAMES; k++)
-		expect(difference(await frame(page), before), `${label} stays off`).toBeGreaterThan(CHANGED);
-	/** The look with the part off, read as the pick is made: what the return must move away from. */
-	const off = await frame(page);
+	for (let k = 1; k < FRAMES; k++) {
+		off = await frame(page);
+		expect(difference(off, before), `${label} stays off`).toBeGreaterThan(CHANGED);
+	}
 	const departure = difference(off, before);
 	await pick(page, tab, group, label, `${label}: on`);
 	await expect
