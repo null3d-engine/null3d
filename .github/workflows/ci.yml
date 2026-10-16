@@ -294,9 +294,7 @@ jobs:
             packages/engine/dist/
             packages/vite-plugin/dist/
             packages/cli/dist/
-            packages/engine/src/generated/shaders*.ts
-            packages/engine/src/generated/shaders-*.js
-            packages/engine/src/generated/shader-features.ts
+            packages/engine/src/generated/
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
