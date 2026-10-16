@@ -713,11 +713,18 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
-    # Two of the seven Safari shards reached a verdict in each of the last two runs, in 13.4 to
-    # 18.3 minutes. The other five were cut at the 20-minute limit, before any page. A shard spends
-    # its first minutes starting the dev server and the browser, so the limit leaves room for that
-    # as well as for a runner page that goes quiet.
-    timeout-minutes: 25
+    # Each shard should take at most about 12 minutes, setup included, which leaves room under the
+    # limit for a runner page that goes quiet: each one costs about a minute more.
+    #
+    # The limit is NOT what fails this job, so it is left alone. Measured on run 38824482127: ten of
+    # the fourteen shards hold an engine-production load item and every one of them failed, while the
+    # four without it all finished. On those ten, the dev server's eager preparation compresses the
+    # whole production build before the browser opens, which costs 13.6 to 16.1 minutes of silence;
+    # each shard was then drawing a page, 1.5 to 4.2 minutes in, when the limit killed it. They need
+    # 31 to 33 minutes, so a limit of 25 would cut the same five again and hold scarce macOS runners
+    # five minutes longer on every red run. The cause is the warm-up, not the limit, and it is being
+    # fixed in the test load server instead.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
