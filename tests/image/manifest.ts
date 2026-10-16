@@ -1839,8 +1839,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
-	// The rectangle lights again with a cap of one area light a frame: only the nearest light, the
-	// pink strip over the right of the floor, shades.
+	// The rectangle lights again with a cap of one area light a frame: the one that gives the camera
+	// the most light shades, which here is the wide warm panel over the left of the floor. The bright
+	// pink strip is the narrowest of the three, so the cap leaves it out.
 	{
 		name: 'lights-rect-capped',
 		sketch: 'tests/pages/sketches/lights-sketch.ts?scene=rect&areaLights=1',
