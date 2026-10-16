@@ -326,9 +326,19 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      # The tool names the commit it cannot resolve. A command substitution inside an echo would keep
+      # the step's status at zero, so the tool runs on its own line, which fails the step. An empty
+      # answer fails here too, rather than travelling to the cache key, the file's name and the
+      # artifact's path, where it ends as a complaint about a path.
       - name: Find the size check's base
         id: base
-        run: echo "sha=$(bun tools/build-wasm.ts --print-base)" >> "$GITHUB_OUTPUT"
+        run: |
+          sha=$(bun tools/build-wasm.ts --print-base)
+          if [ -z "$sha" ]; then
+            echo "the size check has no base: --print-base printed no commit" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         id: kept
         with:
@@ -751,12 +761,12 @@ jobs:
     #
     # The limit is NOT what fails this job, so it is left alone. Measured on run 38824482127: ten of
     # the fourteen shards hold an engine-production load item and every one of them failed, while the
-    # four without it all finished. On those ten, the dev server's eager preparation compresses the
-    # whole production build before the browser opens, which costs 13.6 to 16.1 minutes of silence;
-    # each shard was then drawing a page, 1.5 to 4.2 minutes in, when the limit killed it. They need
-    # 31 to 33 minutes, so a limit of 25 would cut the same five again and hold scarce macOS runners
-    # five minutes longer on every red run. The cause is the warm-up, not the limit, and it is being
-    # fixed in the test load server instead.
+    # four without it all finished. On those ten, the load server compressed every file of every page
+    # build before the browser opened, which cost 13.6 to 16.1 minutes of silence, and each shard was
+    # then drawing a page when the limit killed it. That preparation is gone: the server compresses a
+    # file when a load first asks for it, names a large file while it compresses it, and prints the
+    # builds it serves and the files they hold. The limit stays at 20 until a run's own item times
+    # say what a shard needs.
     timeout-minutes: 20
     strategy:
       fail-fast: false
