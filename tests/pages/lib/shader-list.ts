@@ -58,6 +58,18 @@ const SAMPLE_BITS = [
 	'draw_index',
 ];
 
+/**
+ * The extension that the builds reading the draw index need to compile. A browser without it cannot
+ * compile those builds at all, so the shaders page skips them and names this reason.
+ */
+export const MULTI_DRAW_EXTENSION = 'WEBGL_multi_draw';
+
+/** The reason that the shaders page gives for a program it skipped, when the browser lacks the extension. */
+export const NO_MULTI_DRAW = `no ${MULTI_DRAW_EXTENSION}`;
+
+/** True for an entry that the shaders page skipped for the missing extension, as `name: reason`. */
+export const skippedForNoMultiDraw = (entry: string) => entry.endsWith(`: ${NO_MULTI_DRAW}`);
+
 /** True when the program or module named `shader.variant`, with any pipeline after, is in `set`. */
 export function inShaderSet(name: string, set: ShaderSet): boolean {
 	const variant = name.split('.')[1] ?? '';

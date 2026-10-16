@@ -2,7 +2,8 @@
 // and bare bricks, posters, graffiti and water stains for the walls. Each comes as
 // texel data for `textures.fromData`: a base color map with alpha in sRGB, a map with roughness in
 // green and metalness in blue, and a normal map, each `size` texels on a side. Every pattern comes
-// from a seeded hash, so each run makes the same images.
+// from a seeded hash, so each run makes the same images. The decals demo and the engine's decals
+// test sketch share them, so a change of a pattern shows in both.
 
 /** The texels of one decal: base color with alpha, roughness and metalness, and normals. */
 export interface DecalTexels {
