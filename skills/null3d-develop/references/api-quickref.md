@@ -252,7 +252,7 @@ scene.createRectAreaLight({ position, direction, width: 3, height: 2, range: 15,
 scene.createTubeLight({ position, direction, length: 2, radius: 0.025, range: 8, color, intensity });  // (0.2) the tube runs along -Z
 const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, atmosphere, skyIntensity, light, fog, ambient, exposure }, plain values
 timeOfDay(17.5, { model: 'physical' });  // (0.2) values that match setBackground({ atmosphere: day.atmosphere })
-const day = emptyTimeOfDay();             // (0.2) a day cycle calls timeOfDay(hour, {}, day): fills it in place, no garbage
+const day = emptyTimeOfDay();             // (0.2) a day cycle calls timeOfDay(hour, {}, day): fills it in place, no settings object
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
