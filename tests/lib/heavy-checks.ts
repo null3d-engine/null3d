@@ -21,6 +21,9 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'packages/engine/src/math/tree-shaking.test.ts', ceilingMiB: 10240 },
 	// The release build, built to read which debug helpers it drops.
 	{ file: 'packages/engine/src/debug/release.test.ts', ceilingMiB: 7168 },
+	// Changed texture files through the WebAssembly transcoder: its heap grows on the hostile ones
+	// and does not shrink, so the checks hold every growth they have made.
+	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
 ];
 
 /**
