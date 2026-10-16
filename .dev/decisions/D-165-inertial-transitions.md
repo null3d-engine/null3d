@@ -124,7 +124,7 @@ against the 33 MB it replaces, and its growth follows the blends that run.
 A doubling is the one allocation a play may make. It is rare: the pool reaches any number of
 concurrent transitions in a few doublings, and it then holds them. The frame step itself still
 allocates nothing. The no-allocation test warms up until a crowd's transitions have reached their
-steady number, and only then counts, so the pool's growth is not mistaken for a per-frame cost.
+steady number. It counts only after that, so the pool's growth is not mistaken for a frame cost.
 
 M-2's sixth case was the layer above the first. Its shares come from the channels its own clips
 animate, and the outgoing clips had left their slots. A joint that only they animated therefore
