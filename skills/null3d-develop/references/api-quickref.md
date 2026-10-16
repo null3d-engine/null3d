@@ -155,6 +155,7 @@ Groups, meshes, cameras and lights are objects, and they share these calls.
 
 ```ts
 obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
+obj.setPose(position, rotation);    // (0.2) both from arrays: no number crosses the call, for a pose written every frame
 obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
 obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
 obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // about the object's own axes
@@ -251,6 +252,7 @@ scene.createRectAreaLight({ position, direction, width: 3, height: 2, range: 15,
 scene.createTubeLight({ position, direction, length: 2, radius: 0.025, range: 8, color, intensity });  // (0.2) the tube runs along -Z
 const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, atmosphere, skyIntensity, light, fog, ambient, exposure }, plain values
 timeOfDay(17.5, { model: 'physical' });  // (0.2) values that match setBackground({ atmosphere: day.atmosphere })
+const day = emptyTimeOfDay();             // (0.2) a day cycle calls timeOfDay(hour, {}, day): fills it in place, no settings object
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
@@ -328,7 +330,8 @@ const paint = materials.standard({
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
-paint.set({ roughness: 0.4 });  // changes only the options you pass; set values up front, not every frame
+paint.set({ roughness: 0.4 });  // changes only the options you pass; set() is for setup, several values at once
+paint.setUniform('roughness', 0.4);  // one value per call and no allocation: the call for a value a frame changes
 
 const brick = materials.standard({   // maps are fixed at creation; the mesh needs texture coordinates
   map: color,                        // sRGB texture; multiplies color (its alpha multiplies opacity)
@@ -363,7 +366,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
-- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher({ color, opacity })` (0.2) makes a ground plane that shows only the main directional light's shadow, where the mesh sets `setReceiveShadows(true)`.
+- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher({ color, opacity })` (0.2) makes a ground plane that shows only the main directional light's shadow, where the mesh sets `setReceiveShadows(true)`. The default color is black, as three.js's.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
