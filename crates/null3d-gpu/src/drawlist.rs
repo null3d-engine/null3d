@@ -790,6 +790,12 @@ pub mod layout {
     /// [`DECAL_DEPTH`] for a multisampled depth target, whose sample 0 the decals read. Only WebGPU
     /// has it.
     pub const DECAL_DEPTH_MS: u32 = 37;
+    /// Group 0 of the decal templates on WebGPU: [`FRAME`]'s bindings without the light probe
+    /// grids' texture and the copy of the opaque color, which no decal build reads. A decal with
+    /// maps then reads 15 sampled textures in its fragment stage, within WebGPU's default limit of
+    /// 16. WebGL2 binds the frame group, as its programs take a texture unit only for a texture
+    /// that they read.
+    pub const DECAL_FRAME: u32 = 46;
     /// Group 1 of the particle templates: a particle system's values as a uniform block, then the
     /// block of the view that draws, at a dynamic offset.
     pub const PARTICLE: u32 = 32;
@@ -1744,8 +1750,9 @@ pub mod template {
     }
     /// Decals with the standard material: the back faces of each instance's box, which shade the
     /// surface under each pixel from the scene's depth, in the decal pass after the camera's opaque
-    /// pass. It binds the frame's group, then the scene's depth in the group of
-    /// [`super::layout::DECAL_DEPTH`] or [`super::layout::DECAL_DEPTH_MS`].
+    /// pass. It binds the frame's group, of [`super::layout::DECAL_FRAME`] on WebGPU, then the
+    /// scene's depth in the group of [`super::layout::DECAL_DEPTH`] or
+    /// [`super::layout::DECAL_DEPTH_MS`].
     pub const DECAL: u32 = 61;
     /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
     pub const DECAL_MAPS: u32 = 62;
@@ -2086,6 +2093,7 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
                 ("DECAL_DEPTH", layout::DECAL_DEPTH),
                 ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
+                ("DECAL_FRAME", layout::DECAL_FRAME),
                 ("PARTICLE", layout::PARTICLE),
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
