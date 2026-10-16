@@ -383,6 +383,18 @@ pub fn farthest_reach(
     }
 }
 
+/// The lanes whose sphere lies inside every plane, of the lanes that `admitted` names.
+#[inline(always)]
+fn inside_planes(planes: &[[f32x4; 4]; 6], sphere: [f32x4; 4], admitted: mask32x4) -> mask32x4 {
+    let [x, y, z, r] = sphere;
+    let limit = -r;
+    let mut inside = admitted;
+    for p in planes {
+        inside &= (x * p[0] + y * p[1] + z * p[2] + p[3]).simd_ge(limit);
+    }
+    inside
+}
+
 /// [`farthest_reach`] over any positions.
 #[inline(always)]
 fn reach_positions(
@@ -398,13 +410,12 @@ fn reach_positions(
     let mut far = 0.0f32;
     let mut i = start;
     while i < simd_end {
-        let [x, y, z, r] = positions.spheres4(i);
-        let limit = -r;
-        let mut inside = r.simd_ge(zero) & r.simd_lt(unbounded);
-        for p in &planes {
-            inside &= (x * p[0] + y * p[1] + z * p[2] + p[3]).simd_ge(limit);
-        }
-        let mut bits = inside.to_bitmask();
+        let sphere = positions.spheres4(i);
+        let [x, y, z, r] = sphere;
+        // A hidden row's negative radius holds its sphere out, and the unbounded radius bounds
+        // nothing, so neither reaches anywhere.
+        let admitted = r.simd_ge(zero) & r.simd_lt(unbounded);
+        let mut bits = inside_planes(&planes, sphere, admitted).to_bitmask();
         if bits != 0 {
             let reach = ((x * x + y * y + z * z).sqrt() + r).to_array();
             let rows = positions.rows4(i).to_array();
@@ -445,13 +456,10 @@ fn cull_positions(
     let mut n = 0;
     let mut i = start;
     while i < simd_end {
-        let [x, y, z, r] = positions.spheres4(i);
-        let limit = -r;
-        let mut inside = mask32x4::splat(true);
-        for p in &planes {
-            inside &= (x * p[0] + y * p[1] + z * p[2] + p[3]).simd_ge(limit);
-        }
-        let bits = inside.to_bitmask() as usize;
+        // Every sphere is tested: a hidden row's radius is negative without bound, so the plane
+        // test itself leaves it out.
+        let bits = inside_planes(&planes, positions.spheres4(i), mask32x4::splat(true)).to_bitmask()
+            as usize;
         // Shuffle the visible rows to the front and store all four lanes; only the visible ones
         // count. `n` is at most `i - start`, so the store stays inside `out`, which holds a slot
         // per sphere.
