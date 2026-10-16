@@ -724,6 +724,16 @@ The dev server compresses its answers to requests for `bs-local.com`, the name b
 - M2 added heavier asset pages to the smoke plan: KTX2, the optimized asset scene, the texture budget, the animated glTF and the meshopt KHR model. In M2's tier A run on 11 October 2026, some of them ran out of their 30 seconds on the Android phones. That was 8 in Chrome and 14 in Samsung Internet on the Galaxy S25, and 5 on the Pixel 10. The thread that draws was ready at 17 to 20 seconds. The job threads then loaded their own copies of the engine, and were still loading at 25 to 30 seconds. No page drew a wrong image.
 - The page that starts engines in frames it then removes (`frame-destroyed-restarts-pipelined`) loads the engine again for each start. Through the tunnel, each start took 18 to 20 seconds, so the page ran out of its 600 seconds after 30 to 34 starts. That happened on the Galaxy S25, the Pixel 10 and Windows 11.
 
+- The shaders page's parts ended several long cloud runs, at their 25th or 26th page of a 154 page
+  plan. Each part compiles about 386 programs, so its budget is about 223 seconds (30 seconds plus
+  half a second per program), and the runner tool ends the page after that budget plus a 30 second
+  loading allowance. The page paces its own work and tells the runner page when it expects to end,
+  so a slow device behind a loaded Mac can need longer than the tool allows. The tool then counts the
+  page as a stopped runner page, ends the runner's turn, and every later page of the plan is counted
+  as no result. On 15 and 16 October 2026 that happened at the 26th page on the iPhone 17, the Tab
+  S11, the Pixel 11 and the Mac's Safari 18.4 machine, and at the 3rd page on the M32. Windows 11
+  Edge lost its WebGL2 context on `shaders-13` and `shaders-14` instead.
+
 These ways were weighed and set aside:
 
 - A longer cache time for tunnel answers. Chrome and Safari 26 keep nothing from the site in their cache, so a cache time changes nothing for them. It would help only Safari 18, which runs the fewest pages, and it would show stale files in a Live session after an edit.
