@@ -131,9 +131,7 @@ three compatibility-mode scale-0.5 references that move with it were remade in b
 
 ## Addendum, 15 October 2026 (later): the joins return, and the target stays
 
-## Addendum, 15 October 2026 (later): the joins return, and the target stays
-
-The review's first cost is fixed. Its cause is not the one the split's own fix named. The second
+The review's joins cost is fixed. Its cause is not the one the split's own fix named. The target
 cost stays, and the next two sections say why.
 
 ### The joined effects never built on WebGL2
@@ -175,9 +173,9 @@ whole canvas's scale, so its cost there is the memory and no work. That cost can
 crossing keeps its promise. Three facts hold the reason:
 
 - The final pass declares a read of `outputColor` in both shapes, since its second step reads the
-  first step's target. The compiler places a frame target that a running pass uses. It also holds
-  the texture that a declared pass samples, even where the pass that writes it is switched off. So
-  the target stays in the plan for the whole time the two-step shape is declared.
+  first step's target. That pass runs in both shapes, and the compiler places a frame target that a
+  running pass uses. So the target is in the plan for the whole time the two-step shape is declared,
+  and the bloom test pins its presence at the whole canvas's scale.
 - A target shares another's texture only where the two lifetimes do not touch. Below the whole
   canvas the first step writes the target in the step that reads the color it draws from. So the
   target's lifetime begins where that color's ends, and no other target can hold it.

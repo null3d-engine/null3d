@@ -4595,45 +4595,6 @@ mod tests {
     }
 
     #[test]
-    fn the_two_step_target_stays_in_the_plan_while_the_first_step_is_switched_off() {
-        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
-        frames.sync(&[View::default()]);
-        frames.set_scaling(true);
-        let mut list = DrawList::with_capacity(4096);
-        frames
-            .prepare(&mut list, (1280, 720), RenderScale::FULL)
-            .unwrap();
-        let held = frames.graph().plan().unwrap().textures().len();
-        assert!(
-            frames.sampled_id(OUTPUT_COLOR).is_some(),
-            "the two-step pass's target is in the plan"
-        );
-        // The first step draws nothing at the whole canvas's scale. Switching the pass off leaves
-        // the target in the plan: the final pass declares a read of it in both shapes, and the
-        // compiler holds a target that a running pass samples even where the pass that writes it is
-        // switched off. Freeing the target would therefore mean declaring the passes again at a
-        // whole-canvas crossing, which allocates (D-167).
-        let output = frames
-            .graph()
-            .find_pass("Output")
-            .expect("the first step's pass");
-        frames.graph.set_enabled(output, false);
-        list.clear();
-        frames
-            .prepare(&mut list, (1280, 720), RenderScale::FULL)
-            .unwrap();
-        assert_eq!(
-            frames.graph().plan().unwrap().textures().len(),
-            held,
-            "the plan keeps the target"
-        );
-        assert!(
-            frames.sampled_id(OUTPUT_COLOR).is_some(),
-            "the final pass still reads the first step's target"
-        );
-    }
-
-    #[test]
     fn multisampled_targets_are_made_again_when_the_pass_to_the_canvas_changes() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.sync(&[View::default()]);
