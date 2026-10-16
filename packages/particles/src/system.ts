@@ -397,8 +397,9 @@ export class ParticleSystem {
 	}
 
 	/**
-	 * Emits `count` particles at once, at the emitter, or born at `at` in the system's space with
-	 * the shape's spread and `velocity` added.
+	 * Emits `count` particles at once, at the emitter, or at `at` in the system's space with the
+	 * shape's spread around it. Each particle adds `velocity` to its own start velocity, in place of
+	 * the system's `velocity` option.
 	 */
 	burst(count: number, at?: Vec3Like, velocity?: Vec3Like): void {
 		this.span[BIRTH_TIME] = this.time;
@@ -462,7 +463,8 @@ export class ParticleSystem {
 
 	/**
 	 * Emits one particle, born at the span's birth time, its share of the way through the frame for
-	 * a followed emitter that moves. `at` and `velocity` give a burst's place and added velocity.
+	 * a followed emitter that moves. `at` and `velocity` give a burst's place and the velocity it adds
+	 * in place of the system's own.
 	 */
 	private emit(at: Vec3Like | undefined, velocity: Vec3Like | undefined): void {
 		const seeds = this.seeds;

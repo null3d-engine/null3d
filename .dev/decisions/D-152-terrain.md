@@ -1,6 +1,6 @@
 # D-152: The terrain add-on
 
-Status: decided by the helper of M2-EX35 on 13 October 2026, for the owner's review. Date: 2026-10-13. Task: M2-EX35.
+Status: decided by the helper of M2-EX35 on 13 October 2026, for the owner's review. Built: the terrain add-on is on main (`64439513b`). The owner's review is pending. Date: 2026-10-13. Task: M2-EX35.
 
 Summary: `@null3d/terrain` draws a height field as a camera-centred quadtree of blocks. A block near the camera carries a fine grid, a far block a coarse one over more ground, and a skirt around each block hides the seam where two levels meet. Up to four tiled color layers blend by a splat map that the add-on fills from the height and the slope by default. The ground carries no collision; `heightAt` and `normalAt` place what stands on it. The package is built on the engine's public API only and reaches a project as `@null3d/terrain`, with its surface function in a `.wgsl` file that the null3D Vite plugin compiles. A 1,200 meter ground at the default settings draws about 200 blocks and about 130,000 triangles, and a sketch that never imports the package pays nothing.
 
