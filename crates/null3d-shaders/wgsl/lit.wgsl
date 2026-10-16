@@ -1427,10 +1427,15 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         dot(in.to_box_z, from_origin),
     );
     let values = decal_values(in.material);
-    let facing = dot(normal, normalize(in.to_box_z));
+    // A box with a flat side has no inverse, so the axes the vertex stage carried are all zero and
+    // it marks nothing. Its zero aim would make the facing cosine a NaN, which the surface would
+    // carry, so a flat box takes a fixed aim and `inside` turns it away.
+    let solid = dot(in.to_box_x, in.to_box_x) > 0.0;
+    let aim = select(vec3f(0.0, 0.0, 1.0), in.to_box_z, solid);
+    let facing = dot(normal, normalize(aim));
     let angle_fade = decal_ramp(values.y, values.x, facing);
     let edge_fade = saturate((1.0 - abs(local.z) * 2.0) / max(values.z, 1e-4));
-    let inside = all(abs(local) <= vec3f(0.5)) && depth > 0.0;
+    let inside = solid && all(abs(local) <= vec3f(0.5)) && depth > 0.0;
     decal_fade = select(0.0, angle_fade * edge_fade, inside);
     if decal_fade <= 0.0 {
         discard;
