@@ -10,6 +10,7 @@ import {
 	findEngineParts,
 	findFirstUseFiles,
 	isFirstUseShaderPart,
+	isParagraphTable,
 	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
@@ -190,6 +191,31 @@ describe('findEngineParts', () => {
 		]);
 	});
 
+	it('names the tables of shared paragraphs, rather than failing on them', () => {
+		const shaders = ['shaders-wgsl.js'];
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.js'], 'wgsl');
+		const table = built(
+			'shader-paragraphs-wgsl-Q4.js',
+			['generated/shader-paragraphs-wgsl.js'],
+			'shared',
+		);
+		const half = built(
+			'shader-paragraphs-wgsl-half-Q5.js',
+			['generated/shader-paragraphs-wgsl-half.js'],
+			'shared for the half-precision builds',
+		);
+		const found = findEngineParts(
+			[page, pageRenderer, worker, workerRenderer, wgsl, table, half],
+			parts,
+			shaders,
+		);
+		expect([...found.keys()].slice(4)).toEqual([
+			'shaders-wgsl.js',
+			'shader-paragraphs-wgsl-half.js',
+			'shader-paragraphs-wgsl.js',
+		]);
+	});
+
 	it("fails when a part's file also holds a page's own code", () => {
 		const mixed = built('engine-T1.js', ['page/engine.ts'], '', ['tests/pages/engine.ts']);
 		expect(() => findEngineParts([mixed, worker], parts)).toThrow(
@@ -359,6 +385,28 @@ describe('budgetProblems', () => {
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
 			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+		]);
+	});
+
+	it("holds a table of shared paragraphs to a feature shader file's limits", () => {
+		// A table loads with the first feature whose device modules of its kind name it, so no
+		// start counts it.
+		for (const name of [
+			'shader-paragraphs-glsl.js',
+			'shader-paragraphs-glsl-draw-index.js',
+			'shader-paragraphs-wgsl-half.js',
+		])
+			expect(isFirstUseShaderPart(name)).toBe(true);
+		expect(isParagraphTable('shaders-glsl.js')).toBe(false);
+		const within = sizes(START_BUDGET, LATER_BUDGET);
+		within.set('shader-paragraphs-glsl-draw-index.js', FIRST_USE_SHADER_BUDGET);
+		expect(budgetProblems(within, downloads, later)).toEqual([]);
+		within.set(
+			'shader-paragraphs-glsl-draw-index.js',
+			plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }),
+		);
+		expect(budgetProblems(within, downloads, later)).toEqual([
+			'js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
 		]);
 	});
 });

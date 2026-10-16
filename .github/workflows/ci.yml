@@ -95,6 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
@@ -132,6 +133,32 @@ jobs:
       # The meshopt unit tests read the Khronos test file and build test files from the samples.
       - uses: ./.github/actions/samples
       - run: bun run test
+
+  heavy-checks:
+    # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
+    # the modules, the engine's programs, pipelines and malformed texture files, and the two bundler
+    # builds. The unit job
+    # shares one process, so its script ignores these files and this job runs them beside it, each
+    # under its own memory ceiling ([Test memory](.dev/tests.md)).
+    needs: [changes, build]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # Git hooks are for local commits; this job runs the same checks directly.
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/samples
+      - run: bun run test:heavy
 
   commits:
     # The commit messages and their trailers, which the commit hooks check locally: on a push, every
@@ -269,9 +296,7 @@ jobs:
             packages/engine/dist/
             packages/vite-plugin/dist/
             packages/cli/dist/
-            packages/engine/src/generated/shaders*.ts
-            packages/engine/src/generated/shaders-*.js
-            packages/engine/src/generated/shader-features.ts
+            packages/engine/src/generated/
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
@@ -358,6 +383,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       # The check reads the trailers of the commits since the base.
@@ -429,6 +455,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -483,6 +510,7 @@ jobs:
           - { part: shard 15 of 15, id: 15, tests: --grep-invert "@alone|$CITY_TESTS" --shard=15/15 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       # S6's image tests, which load the city's files: the browser-city job runs them.
       CITY_TESTS: '\bs6 on '
@@ -522,6 +550,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -546,6 +575,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -580,6 +610,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -631,6 +662,7 @@ jobs:
           - shard: 2
             select: --grep-invert
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
@@ -678,6 +710,7 @@ jobs:
       matrix:
         gpu: [webgpu, webgl2]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -732,6 +765,7 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7]
         shards: [7]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -770,6 +804,7 @@ jobs:
     permissions:
       contents: write
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -802,6 +837,7 @@ jobs:
       - changes
       - commits
       - docs-and-tools
+      - heavy-checks
       - rust-lint
       - rust-tests
       - build
@@ -846,7 +882,8 @@ jobs:
           jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
           jq -e '.changes.outputs as $run | {
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "wasm-checks": "code",
-              "shader-compiler": "code", "packages": "code", "city": "full", "browser": "full",
+              "shader-compiler": "code", "packages": "code", "heavy-checks": "code",
+              "city": "full", "browser": "full",
               "browser-city": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"

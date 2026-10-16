@@ -808,7 +808,11 @@ function buildEngineTestPage(): BuiltFile[] {
 			return [{ file, text, sources }];
 		}
 		const shaders = /^(shaders-[a-z0-9-]+)-[\w-]{8}\.js$/.exec(file)?.[1];
-		return shaders ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${shaders}.js`] }] : [];
+		if (shaders) return [{ file, text, sources: [`${ENGINE_SOURCE}generated/${shaders}.js`] }];
+		// A target's table of shared paragraphs is emitted at a name of its own, without the hash
+		// that a copied file's name carries, so its name alone says which module it holds.
+		const table = /^(shader-paragraphs-[a-z0-9-]+)\.js$/.exec(file)?.[1];
+		return table ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${table}.js`] }] : [];
 	});
 }
 
