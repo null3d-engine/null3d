@@ -83,7 +83,13 @@ import {
 	ratesParted,
 } from '../pages/lib/overload.ts';
 import { ROOM_KEPT, ROOM_LOST_ONCE } from '../pages/lib/room.ts';
-import { glslProgramsOf, inShaderSet, type ShaderSet } from '../pages/lib/shader-list.ts';
+import {
+	glslProgramsOf,
+	inShaderSet,
+	MULTI_DRAW_EXTENSION,
+	type ShaderSet,
+	skippedForNoMultiDraw,
+} from '../pages/lib/shader-list.ts';
 import {
 	frameSaving,
 	pathTiming,
@@ -2395,7 +2401,21 @@ export function judge(
 				context?.note?.(
 					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
-			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
+			// A part holds one share of the builds, and the browser's extension decides which of them
+			// it can compile at all: a browser without `WEBGL_multi_draw` cannot compile the builds
+			// that read the draw index, and a share can hold nothing but those. The part then
+			// compiles no program, which is the device's limit rather than a fault of the page.
+			const skipped = (result.skipped ?? []) as string[];
+			const noProgramToCompile =
+				Number(result.glslPrograms) === 0 &&
+				result.multiDraw === false &&
+				skipped.length > 0 &&
+				skipped.every(skippedForNoMultiDraw);
+			if (noProgramToCompile)
+				context?.note?.(
+					`the device has no ${MULTI_DRAW_EXTENSION}, so the page skipped all ${skipped.length} programs of this part, which read the draw index`,
+				);
+			else if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
 		}
