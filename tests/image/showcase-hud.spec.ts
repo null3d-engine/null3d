@@ -40,25 +40,31 @@ interface Frame {
 }
 
 /**
- * The canvas as the scene draws it: the canvas exactly, at its own size, with the controls panel, the
- * toast, the tips, the caption and the stats overlay hidden. The frame comes from the page clipped to
- * the canvas's box rather than from the canvas as an element, because an element's picture waits for
- * the element's box to hold still across two of the page's animation frames, and a software GPU busy
- * with several demos stops producing those frames for minutes at a time, which is a wait that never
- * ends. Measured on a real GPU, the two ways of taking it differ by a mean of 0.29 of 255 while two
- * pictures taken the same way differ by 0.39, so the picture follows the scene's own motion and not
- * the way it is taken.
+ * The canvas as the scene draws it, read through the demo's engine: the canvas exactly, at its own
+ * size, and the controls panel, the toast, the tips, the caption and the stats overlay are page
+ * elements, so none of them is in it. The engine publishes itself behind its own `?bench` switch, as
+ * it does for a benchmark tool, so the page needs nothing added for a test to read its frames.
+ *
+ * A browser screenshot cannot serve here. Both ways of taking one wait on the browser's own frame
+ * work: an element's picture waits for its box to hold still across two of the page's animation
+ * frames, and a page picture waits on the compositor for a frame to capture. A software GPU busy with
+ * several demos starves both, for the whole of a test's budget. The engine's own reader instead waits
+ * on the engine's frame loop, which keeps its turn, and gives the frame drawn last when no new frame
+ * comes: measured here, one read took 17 ms where the screenshots ran the test out.
  */
 async function frame(page: Page): Promise<Frame> {
-	const box = await page.locator('main.stage > canvas').boundingBox();
-	// The demo draws into the canvas the page laid out, so a page without one has nothing to read.
-	if (!box) throw new Error('the demo draws into the stage, and the stage has no canvas');
-	const png = await page.screenshot({
-		clip: box,
-		omitBackground: true,
-		style: 'main.stage :not(canvas) { visibility: hidden !important; }',
+	const base64 = await page.evaluate(async () => {
+		const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } }).__null3dEngine;
+		if (!engine)
+			throw new Error('the page publishes its engine behind ?bench, and it has not started one');
+		const bytes = new Uint8Array(await (await engine.capture()).arrayBuffer());
+		let text = '';
+		// Each chunk keeps the argument count of fromCharCode inside its own limit.
+		for (let at = 0; at < bytes.length; at += 0x8000)
+			text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+		return btoa(text);
 	});
-	return decodePngRgba(png, 'the canvas');
+	return decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
 }
 
 /** The mean difference of two frames' colour, in steps of 255, over every pixel and channel. */
@@ -111,8 +117,9 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 test('the showcase HUD names each group change in a toast at the top centre', async ({ page }) => {
 	const errors = watchPageProblems(page);
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its
-	// own look from code, so the toast text does not depend on the preset.
-	await page.goto('/examples/index.html?demo=night-town&preset=low');
+	// own look from code, so the toast text does not depend on the preset. `bench` publishes the
+	// demo's engine on the page, which is how this test reads the canvas's frames.
+	await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
 	const hud = page.locator('.hud');
 	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
 	await expect(hud).toBeVisible({ timeout: 90_000 });
