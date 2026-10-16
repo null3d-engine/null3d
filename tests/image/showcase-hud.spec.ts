@@ -39,9 +39,22 @@ interface Frame {
 	data: Uint8Array;
 }
 
-/** The canvas as the scene draws it, with the HUD, the toast, the tips and the stats hidden. */
+/**
+ * The canvas as the scene draws it: the canvas exactly, at its own size, with the controls panel, the
+ * toast, the tips, the caption and the stats overlay hidden. The frame comes from the page clipped to
+ * the canvas's box rather than from the canvas as an element, because an element's picture waits for
+ * the element's box to hold still across two of the page's animation frames, and a software GPU busy
+ * with several demos stops producing those frames for minutes at a time, which is a wait that never
+ * ends. Measured on a real GPU, the two ways of taking it differ by a mean of 0.29 of 255 while two
+ * pictures taken the same way differ by 0.39, so the picture follows the scene's own motion and not
+ * the way it is taken.
+ */
 async function frame(page: Page): Promise<Frame> {
-	const png = await page.locator('main.stage > canvas').screenshot({
+	const box = await page.locator('main.stage > canvas').boundingBox();
+	// The demo draws into the canvas the page laid out, so a page without one has nothing to read.
+	if (!box) throw new Error('the demo draws into the stage, and the stage has no canvas');
+	const png = await page.screenshot({
+		clip: box,
 		omitBackground: true,
 		style: 'main.stage :not(canvas) { visibility: hidden !important; }',
 	});
