@@ -36,6 +36,32 @@ describe('quadtree', () => {
 		expect(far).toBeLessThan(near);
 	});
 
+	test('a leaf key stays a small integer, and names one leaf', () => {
+		// A number past 2147483647 becomes an object in the browser, one for every leaf of every
+		// selection, so the pack must keep every key below it.
+		const tree = new Quadtree({ size: 1024, maxLevel: 6 });
+		const keys = new Set<number>();
+		let count = 0;
+		for (let level = 0; level <= 6; level++) {
+			const side = 2 ** level;
+			for (let column = 0; column < side; column++)
+				for (let row = 0; row < side; row++) {
+					const key = tree.key(level, column, row);
+					expect(key).toBeGreaterThanOrEqual(0);
+					expect(key).toBeLessThanOrEqual(2147483647);
+					keys.add(key);
+					count++;
+				}
+		}
+		expect(keys.size).toBe(count);
+	});
+
+	test('the deepest level a terrain may take keeps its keys below that', () => {
+		const tree = new Quadtree({ size: 1024, maxLevel: MAX_LEVELS });
+		const side = 2 ** MAX_LEVELS - 1;
+		expect(tree.key(MAX_LEVELS, side, side)).toBeLessThanOrEqual(2147483647);
+	});
+
 	test('the same camera position gives the same leaves, every time', () => {
 		const tree = new Quadtree({ size: 256, maxLevel: 4 });
 		const first = leaves(tree, 10, 20);

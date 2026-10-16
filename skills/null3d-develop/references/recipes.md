@@ -721,7 +721,7 @@ export default defineSketch((ctx) => {
     onUpdate() {
       // The ground follows the camera: fine blocks near it, coarse blocks far away.
       camera.getWorldPosition(eye);
-      terrain.update(eye[0], eye[2]);
+      terrain.update(eye);
     },
   };
 });

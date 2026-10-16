@@ -75,12 +75,36 @@ Option A for the ground, a skirt for the seam, a custom splat surface function, 
 
 ## Consequences
 
-- The add-on `@null3d/terrain`: `createTerrain(ctx, options)` and the `Terrain` class, the `Heightfield`, the `Quadtree`, the splat material and `terrainTextures`. `terrain.update(x, z)` rebuilds only when the camera crosses a cell of the finest level, so a still camera costs no work. `heightAt` and `normalAt` place objects. No collision.
+- The add-on `@null3d/terrain`: `createTerrain(ctx, options)` and the `Terrain` class, the `Heightfield`, the `Quadtree`, the splat material and `terrainTextures`. `terrain.update(eye)` rebuilds only when the camera crosses a cell of the finest level, so a still camera costs no work. `heightAt` and `normalAt` place objects. No collision.
 - The tools: the package build copies a package's `.wgsl` files into `lib/`, and the pack check requires them. This serves any add-on that ships a surface function.
 - The engine: no change. The add-on adds no template, bind layout, permutation bit, opcode, state flag, control slot, format, capability or error code.
 - Docs and skills: `api/terrain`, the three.js mapping's terrain entry, the develop skill's table, quick reference and recipe.
 - A demo, `examples/terrain`, and an image test on all three GPU tiers.
 - Limits: the ground carries no collision, the seam closes with a skirt rather than a morph, and the layers carry color and a roughness, not normal or occlusion maps. The demo and the image test exercise the add-on; no benchmark scene uses it yet.
+
+## Addendum: the frame path takes the camera's position array (16 October 2026)
+
+`bench:allocation --terrain` failed when the switch landed. The add-on's frame path allocated about
+5 KB per frame, and hard rule 1 allows none. Removing the allocations found four objects per call,
+and the last one decided the shape of `update`.
+
+Three were objects the browser made inside the add-on and inside the engine's vertex update. A leaf
+key was packed past the small-integer range. The quadtree's selection called `Math.hypot` and used
+`2 ** level`. And `updateVertices` searched its attribute table with a callback that closed over the
+attribute's name. Each is now a habit in the [implementation notes](../implementation-notes.md#hot-paths-without-allocation).
+
+The fourth was `update(x, z)` itself. A fraction that crosses a call the browser does not inline
+becomes an object of its own, and the camera's ground position is a fraction. Passing whole numbers
+in place of it made the switch pass, which named the cause. So `update` takes the camera's world
+position in one array that the caller keeps, and reads the x and the z from it. The impostor add-on
+already takes the camera's position this way. Both add-ons now ask a sketch for the same thing: one
+array, kept by the caller, passed once a frame.
+
+A parity check covers the change. Over a 1,024 meter ground at `maxLevel` 6, 66,049 camera positions
+pick exactly the same leaves as before, and every height and normal is unchanged. `quadtree.test.ts`
+now fails on a leaf key above the small-integer range.
+
+The switch passes at 308.1 bytes per frame, and every terrain place is under the 4 byte budget.
 
 ## References
 

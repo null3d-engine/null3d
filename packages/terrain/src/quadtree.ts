@@ -7,6 +7,22 @@ export const MAX_NODES = 4096;
 /** The most levels a terrain may take, so a leaf's key fits in a number. */
 export const MAX_LEVELS = 15;
 
+/**
+ * How many leaves every level above a level holds: a level of `n` holds `4 ** n` leaves, and the
+ * levels above it hold `(4 ** n - 1) / 3`. A leaf's key counts from its level's base, so the keys
+ * of a 15 level quadtree run from 0 to 1431655764. That is below the range where the engine turns
+ * a number into an object, which a key above it would do on every leaf of every selection.
+ */
+const LEVEL_BASE = new Int32Array([
+	0, 1, 5, 21, 85, 341, 1365, 5461, 21845, 87381, 349525, 1398101, 5592405, 22369621, 89478485,
+	357913941,
+]);
+
+/** The leaves a level holds along each side, as a whole number: `2 ** level`. */
+function leavesPerSide(level: number): number {
+	return 1 << level;
+}
+
 /** The settings of the quadtree. */
 export interface QuadtreeOptions {
 	/** The width and depth of the ground, in meters. */
@@ -60,7 +76,7 @@ export class Quadtree {
 
 	/** The meters that a leaf of level `level` covers, along each side. */
 	blockSize(level: number): number {
-		return this.size / 2 ** level;
+		return this.size / leavesPerSide(level);
 	}
 
 	/** The x of a leaf's low corner, from its level and column. */
@@ -73,9 +89,12 @@ export class Quadtree {
 		return -this.size / 2 + row * this.blockSize(level);
 	}
 
-	/** A leaf's key, which names it among every leaf of the quadtree. Allocates nothing. */
+	/**
+	 * A leaf's key, which names it among every leaf of the quadtree: the level's base, then the
+	 * leaf's place in that level's own grid. Allocates nothing.
+	 */
 	key(level: number, column: number, row: number): number {
-		return level * 2 ** 30 + column * 2 ** 15 + row;
+		return (LEVEL_BASE[level] as number) + column * leavesPerSide(level) + row;
 	}
 
 	/**
@@ -102,13 +121,14 @@ export class Quadtree {
 		at: number,
 	): number {
 		const { size, maxLevel, split } = this;
-		const block = size / 2 ** level;
+		const block = size / leavesPerSide(level);
 		const half = block / 2;
 		const centerX = -size / 2 + column * block + half;
 		const centerZ = -size / 2 + row * block + half;
 		const dx = Math.max(Math.abs(x - centerX) - half, 0);
 		const dz = Math.max(Math.abs(z - centerZ) - half, 0);
-		if (level < maxLevel && Math.hypot(dx, dz) < block * split) {
+		// The distance by hand: `Math.hypot` makes one object per call.
+		if (level < maxLevel && Math.sqrt(dx * dx + dz * dz) < block * split) {
 			const next = level + 1;
 			let written = this.visit(next, column * 2, row * 2, x, z, at);
 			written += this.visit(next, column * 2 + 1, row * 2, x, z, at + written);
