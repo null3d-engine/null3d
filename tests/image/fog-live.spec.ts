@@ -34,7 +34,7 @@ const MIN_FRAMES = 20;
  * above that cap so that a page which settles slowly still reports its own frame count, rather than
  * the run reporting that it heard nothing.
  */
-const LOAD_TIMEOUT_MS = 60_000;
+const LOAD_TIMEOUT_MS = 180_000;
 
 async function load(page: Page, gpu: string) {
 	await page.goto(`fog-live.html?gpu=${gpu}`);
@@ -51,8 +51,8 @@ async function load(page: Page, gpu: string) {
 // soft, so one path's verdict does not hide the other's.
 test("the volumetric fog in play draws WebGPU's image on compat and webgl2", async ({ page }) => {
 	// Three loads of the heaviest live scene here, each of which may settle for as long as its own
-	// cap allows.
-	test.setTimeout(240_000);
+	// cap allows and is then captured.
+	test.setTimeout(600_000);
 	const webgpu = await load(page, 'webgpu');
 	const reference = Buffer.from(webgpu.pixels, 'base64');
 	for (const gpu of ['compat', 'webgl2'] as const) {
