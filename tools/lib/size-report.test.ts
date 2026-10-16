@@ -406,7 +406,7 @@ describe('budgetProblems', () => {
 			plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }),
 		);
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget',
+			'js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
 		]);
 	});
 });

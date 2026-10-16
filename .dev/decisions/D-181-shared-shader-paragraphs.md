@@ -27,6 +27,10 @@ Sizes are after Brotli at quality 11 and after gzip at level 9, the levels `bun 
 
 Both columns count the 1,331 device modules, and the later one the twelve tables too. The tables are 5.0 MB uncompressed and 294 KB after Brotli together. The largest is `shader-paragraphs-glsl-tone-map-half.js`. It is 593.0 KB uncompressed, 83.5 KB after gzip and 31.4 KB after Brotli, against 1,536 KB, 320 KB and 49 KB. All twelve start modules are byte-identical before and after.
 
+No device module broke a limit of a first-use shader file before this change or after it. The largest was 47.4 KB after Brotli against the 49 KB limit. It is `shaders-area-lights-and-coat-sheen-and-morph-and-skinning-and-transmission-glsl-draw-index-tone-map-half.js`, and it falls to 41.4 KB. Its gzip falls from 197.1 KB to 177.2 KB and its uncompressed size from 1,023.9 KB to 941.8 KB.
+
+After Brotli, one device module of a WebGL2 kind is 9.6 KB smaller at the median. That is 24 per cent of it. One of a WebGPU kind is 7.1 KB smaller, which is 36 per cent. So a module that breaks a limit comes under it when its excess is smaller than that fall. Nine of the 1,319 feature-set modules grow instead, by 10 to 30 bytes each. In a small module, the import line costs about what the shared text saves. A later change to the first-use shader budget should read these figures. It should also measure the set as it stands then.
+
 The count of modules is the dial. This ladder was measured on one WebGL2 kind. Its 140 feature-set device modules hold 100.0 MB.
 
 | modules that name a paragraph | paragraphs | table uncompressed | table after Brotli | saved in that kind |
@@ -40,7 +44,9 @@ The count of modules is the dial. This ladder was measured on one WebGL2 kind. I
 
 Twenty is the highest count whose table still meets every limit with room to spare. It keeps about a fifth of the text. A lower count saves more and grows the tables towards the limits. At twenty the whole set saves 24 per cent.
 
-How the data was produced: on 15 October 2026, the shader build wrote the modules of this change. A script then measured each module and each table for its three sizes. The ladder is a parse of the modules the build wrote before the change, over one WebGL2 kind. For the shader text, the test project was built for production with two features turned on. Every WebGPU device module of that build was imported, and a tenth of the WebGL2 ones. Each was compared with the module the build wrote before the change.
+How the data was produced: on 15 October 2026, the shader build wrote the modules of this change. A script then measured each module and each table for its three sizes. The ladder is a parse of the modules the build wrote before the change, over one WebGL2 kind. For the shader text, the test project was built for production with two features turned on. Every device module of that build was then imported and compared with the module the build wrote before the change. That is all 1,331 of them, on both targets. Each one builds the shader text it did.
+
+**GPU check.** No `bun run bench:gpu-check` measurement was made. The gate in `tools/hooks/check-gpu-ack.ts` reads a change under `crates/null3d-shaders/src/` as one that can change how the GPU draws. It reads the path and not the content. The comparison above is the cover the measurement exists for, and it is complete on both targets. Every device module builds byte-identical shader text, so no page draws with other text. The commit carries a `GPU-Checked:` trailer that states this in place of the measured line. That is the form [Branches and parallel work](../pull-requests.md#the-gpu-check) allows for a change that cannot change the GPU's work.
 
 ## Decision
 
@@ -63,5 +69,6 @@ A copied shader module carries no text that the list of a build's files for offl
 - `tools/lib/size-report.ts` measures a table as one more file that a feature's first use loads, so the three limits of a first-use shader file hold it. `tools/build-wasm.ts` reads a table out of the built page by its name, because the plugin emits it at a name of its own and so it carries no source map. `tools/hooks/check-size-growth.ts` accepts a `Size-Growth:` trailer that names one.
 - `tools/lib/shader-modules.ts` counts the tables among the files the shader build writes, so the shared cache copies them with the rest. `.gitignore` names them.
 - A device module is no longer plain JavaScript that imports nothing. A table that fails to arrive fails every device module that names it. That shows as pipelines waiting, rather than one feature's pipelines waiting.
+- A device module downloads its kind's table before it can build a shader, so the first feature of a kind costs one more request. The table is 12 to 14 KB after Brotli for a WebGPU kind and 29 to 31 KB for a WebGL2 kind. A feature-set module is about 6 to 9 KB smaller after Brotli. So a page that uses one or two features of a kind downloads a little more than before, and one that uses more downloads less. The start's download does not change. This is the one cost of the change on a page's own loading.
 - The change moves the compiler stamp that the per-entry shader cache is keyed by. Every checkout and CI build the shaders once more.
 - `.dev/implementation-notes.md`, "The generated shader set's weight", records the measured result in place of the estimate it held.

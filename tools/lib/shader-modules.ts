@@ -72,11 +72,10 @@ interface ModuleRecord {
 /**
  * True for a file that the shader build writes: the main module, the module of feature names, the
  * module of each shader that loads on first use as a whole and each target's table of the modules
- * of builds that need several features, TypeScript, or a device module, plain JavaScript. A
- * Each kind of device module has a table of shared paragraphs, one file for each target and each
- * value of the bits a device fixes. A table is plain JavaScript too, and its name carries no
- * `shaders-` prefix, so that the list of a build's files for offline play reads it as no feature of
- * its own.
+ * of builds that need several features, TypeScript, or a device module, plain JavaScript. Each kind
+ * of device module has a table of shared paragraphs, one file for each target and each value of the
+ * bits a device fixes. A table is plain JavaScript too, and its name carries no `shaders-` prefix,
+ * so that the list of a build's files for offline play reads it as no feature of its own.
  */
 export function isShaderModule(name: string): boolean {
 	return (

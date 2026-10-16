@@ -28,12 +28,12 @@
 //! constant even where nothing reads it.
 //!
 //! The same paragraph also appears in many device modules, which repeat it once per module. One
-//! kind of device module, a target and one value of the bits a device fixes, whose paragraph
-//! [SHARED_PARAGRAPH_MIN_USES] such modules name, has a table of its own that holds those
-//! paragraphs, and the modules that use them name its exports instead of writing the text. The
-//! start's module of that kind never names the table, so a page's first download holds none of it:
-//! the build leaves the table to the modules of the features that load on first use, as the list of
-//! a build's files for offline play groups them.
+//! kind of device module, a target and one value of the bits a device fixes, gains a table of its
+//! own when at least [SHARED_PARAGRAPH_MIN_USES] of its feature-set modules name one paragraph.
+//! The table holds each such paragraph once, and the modules that use it name its exports instead
+//! of writing the text. The start's module of that kind never names the table, so a page's first
+//! download holds none of it: the build leaves the table to the modules of the features that load
+//! on first use, as the list of a build's files for offline play groups them.
 //!
 //! A shader that loads on a feature's first use as a whole (`first_use = true` in the manifest),
 //! such as the room's generator, has a module of its own for each target, which the feature's code
