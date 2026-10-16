@@ -70,9 +70,11 @@ export const NO_MULTI_DRAW = `no ${MULTI_DRAW_EXTENSION}`;
 /** True for an entry that the shaders page skipped for the missing extension, as `name: reason`. */
 export const skippedForNoMultiDraw = (entry: string) => entry.endsWith(`: ${NO_MULTI_DRAW}`);
 
-/** True when the program or module named `shader.variant`, with any pipeline after, is in `set`. */
-export function inShaderSet(name: string, set: ShaderSet): boolean {
-	const variant = name.split('.')[1] ?? '';
+/** The build a program or module name belongs to: `shader.variant`, with any pipeline after it. */
+export const variantOf = (name: string) => name.split('.')[1] ?? '';
+
+/** True when the build named `variant` is in `set`. */
+export function variantInShaderSet(variant: string, set: ShaderSet): boolean {
 	const bits = `_${variant}_`;
 	const apart = bits.includes(`_${SET_APART_BIT}_`);
 	switch (set) {
@@ -91,3 +93,7 @@ export function inShaderSet(name: string, set: ShaderSet): boolean {
 			);
 	}
 }
+
+/** True when the program or module named `shader.variant`, with any pipeline after, is in `set`. */
+export const inShaderSet = (name: string, set: ShaderSet): boolean =>
+	variantInShaderSet(variantOf(name), set);
