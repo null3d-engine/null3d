@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
 
 /** The repository, which the groups' paths are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -17,14 +18,6 @@ const ROOT = join(import.meta.dirname, '..');
 const CEILING_PRELOAD = './tests/lib/memory-ceiling.ts';
 /** The memory in MiB that one group's process may hold. */
 const CEILING_MIB = 4096;
-/** The files that hold gigabytes, which `bun run test:heavy` runs instead. */
-const BESIDE = [
-	'**/shader-set.test.ts',
-	'**/webgl2/programs.test.ts',
-	'**/webgpu/pipelines.test.ts',
-	'**/math/tree-shaking.test.ts',
-	'**/debug/release.test.ts',
-];
 /** The packages of the workspace: each is a group, so a heavy package is paid for alone. */
 const packages = readdirSync(join(ROOT, 'packages')).map((name) => `packages/${name}`);
 
@@ -46,7 +39,7 @@ for (const paths of GROUPS) {
 	// group from 2,908 MB to 2,054 MB, but grew the group of the runner's tests from 1,220 MB to
 	// 3,822 MB and made it three times slower, so the run's peak was higher with it.
 	const args = ['test', '--preload', CEILING_PRELOAD, '--conditions=null3d-source'];
-	for (const name of BESIDE) args.push(`--path-ignore-patterns=${name}`);
+	for (const { file } of HEAVY_CHECKS) args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
 	args.push(...paths);
 	const started = Date.now();
 	const result = spawnSync('bun', args, {
