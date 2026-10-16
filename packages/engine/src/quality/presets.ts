@@ -558,7 +558,7 @@ export interface QualitySettings {
 	/**
 	 * Texels on each side of each cascade's shadow map, for each directional light whose `shadow`
 	 * options name no `mapSize`: 512, 1,024, 2,048 or 4,096. A larger map gives sharper shadow edges
-	 * and takes more memory, 4 bytes per texel in each cascade. The `shadowMapSize` option of
+	 * and takes more memory, 2 bytes per texel in each cascade. The `shadowMapSize` option of
 	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	shadowMapSize: number;
