@@ -41,8 +41,9 @@
 //                     the checkout's sources and engine build stay the same. The baseline a may
 //                     also be a prepared baseline from the GPU check's cache, whose pages are
 //                     built already (bench/lib/baseline-cache.ts). Every page runs at the High
-//                     preset, within each GPU path's ceiling, with the quality governor off,
-//                     unless --switches names them. The command fails when b is slower than
+//                     preset, within each GPU path's ceiling, with the quality governor off and
+//                     every animated character posed in every frame, unless --switches names
+//                     them. The command fails when b is slower than
 //                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
 //                     the commits from a to b names it. When those commits change the benchmark
 //                     pages or the comparison's switches, the measurement changed: the command

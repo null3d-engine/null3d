@@ -539,15 +539,15 @@ describe('a change to the measurement', () => {
 });
 
 describe('the switches of a comparison', () => {
-	test('fix the preset and turn the governor off on every page', () => {
-		expect(COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off']);
-		expect(comparisonSwitches('')).toEqual(['preset=high', 'governor=off']);
-		expect(comparisonSwitches('shadows=3')).toEqual(['preset=high', 'governor=off']);
+	test('fix the preset, turn the governor off and pose every character on every page', () => {
+		expect(COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off', 'anim=every']);
+		expect(comparisonSwitches('')).toEqual(['preset=high', 'governor=off', 'anim=every']);
+		expect(comparisonSwitches('shadows=3')).toEqual(['preset=high', 'governor=off', 'anim=every']);
 	});
 
 	test('leave out a switch that the command sets itself', () => {
-		expect(comparisonSwitches('preset=low&shadows=3')).toEqual(['governor=off']);
-		expect(comparisonSwitches('governor=off')).toEqual(['preset=high']);
+		expect(comparisonSwitches('preset=low&shadows=3')).toEqual(['governor=off', 'anim=every']);
+		expect(comparisonSwitches('governor=off')).toEqual(['preset=high', 'anim=every']);
 	});
 });
 
