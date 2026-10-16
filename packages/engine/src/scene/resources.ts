@@ -2066,6 +2066,15 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * True for a plain number that a uniform of `type` takes on its own: any finite number for a float
+ * type, a whole one for an integer type. A type that holds several numbers takes an array, or a
+ * `vec3f` a color, so a single number is not enough for it.
+ */
+function numberFits(type: CompiledUniform['type'], value: number): boolean {
+	return UNIFORM_FLOATS[type] === 1 && (type === 'f32' || Number.isInteger(value));
+}
+
+/**
  * Throws E1216 for a value of another kind than `uniform` takes: a number, a whole number for an
  * integer, or an array of as many numbers as the type holds. A `vec3f` takes an sRGB color too,
  * which converts to linear. It allocates nothing.
@@ -2077,17 +2086,16 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 		return;
 	}
 	const count = UNIFORM_FLOATS[type];
-	let fits: boolean;
-	let first: unknown = value;
-	if (Array.isArray(value)) {
-		first = value[0];
-		fits = value.length === count;
+	if (typeof value === 'number') {
+		if (Number.isFinite(value) && numberFits(type, value)) return;
+	} else if (Array.isArray(value)) {
+		let fits = value.length === count;
 		for (let k = 0; fits && k < count; k++) {
 			const number = value[k];
 			fits = typeof number === 'number' && Number.isFinite(number);
 		}
-	} else fits = count === 1 && typeof value === 'number' && Number.isFinite(value);
-	if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(first))) return;
+		if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(value[0]))) return;
+	}
 	const takes =
 		count === 1
 			? type === 'f32'
@@ -2333,7 +2341,11 @@ class ShaderMaterial extends Material<ShaderValues> {
 	): void {
 		const uniform = this.uniforms.get(name);
 		if (uniform) {
-			checkUniform(uniform, value as unknown as UniformValue, this.oneCall);
+			// A number that the uniform takes goes straight through: its check is a length test and a
+			// whole-number test, and a number passed to a call that the browser does not inline becomes
+			// an object of its own. Every other value goes through the check, the rejected ones too.
+			if (typeof value !== 'number' || !Number.isFinite(value) || !numberFits(uniform.type, value))
+				checkUniform(uniform, value as unknown as UniformValue, this.oneCall);
 			writeUniform(this.core, this.id, uniform, value as unknown as UniformValue, this.oneCall);
 			return;
 		}

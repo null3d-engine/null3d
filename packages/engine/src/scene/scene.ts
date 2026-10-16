@@ -690,6 +690,12 @@ const ORIGIN: Vec3 = [0, 0, 0];
  * core splits a 64-bit position: the nearest whole number of cells, so the rest is about half a
  * cell long at most, and a 32-bit float holds it to 0.03 mm or better.
  */
+/**
+ * The position that `writePosition` passes on as an array, made once: a caller's numbers go into it,
+ * and the write reads them by index.
+ */
+const POSITION: Float64Array = new Float64Array(3);
+
 function splitPosition(rest: Float32Array, cells: Int32Array, i: number, value: number): void {
 	const cell = Math.floor(value / C.CELL_SIZE + 0.5);
 	cells[i] = cell;
@@ -851,12 +857,7 @@ export class Object3D implements Described {
 			r[i + 2] = rotation[2] as number;
 			r[i + 3] = rotation[3] as number;
 		}
-		scene.writePosition(
-			this.row,
-			position[0] as number,
-			position[1] as number,
-			position[2] as number,
-		);
+		scene.writePositionFrom(this.row, position);
 		scene.markDirty(this.row);
 	}
 
@@ -2892,13 +2893,16 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * @internal Writes the position of the object in `slot`, relative to its parent. In large-world
-	 * mode it splits each number into whole cells and a rest of about half a cell at most, so the
-	 * 32-bit rest keeps the number's full precision.
+	 * @internal Writes the position of the object in `slot` from an array that holds it, relative to
+	 * its parent. A caller that keeps a pose in an array writes it this way: the numbers stay in the
+	 * array, where a number passed to a call that the browser does not inline becomes an object.
 	 */
-	writePosition(slot: number, x: number, y: number, z: number): void {
+	writePositionFrom(slot: number, position: Vec3Like): void {
 		const { positions, positionCells } = this.views;
 		const i = slot * 3;
+		const x = position[0] as number;
+		const y = position[1] as number;
+		const z = position[2] as number;
 		if (positionCells === undefined) {
 			positions[i] = x;
 			positions[i + 1] = y;
@@ -2908,6 +2912,20 @@ export class Scene implements ViewHolder {
 		splitPosition(positions, positionCells, i, x);
 		splitPosition(positions, positionCells, i + 1, y);
 		splitPosition(positions, positionCells, i + 2, z);
+	}
+
+	/**
+	 * @internal Writes the position of the object in `slot`, relative to its parent. In large-world
+	 * mode it splits each number into whole cells and a rest of about half a cell at most, so the
+	 * 32-bit rest keeps the number's full precision.
+	 */
+	writePosition(slot: number, x: number, y: number, z: number): void {
+		// The numbers go into the array this file keeps, so the write below takes none of them: a
+		// number passed to a call that the browser does not inline becomes an object of its own.
+		POSITION[0] = x;
+		POSITION[1] = y;
+		POSITION[2] = z;
+		this.writePositionFrom(slot, POSITION);
 	}
 
 	/** @internal Copies the position of the object in `slot`, relative to its parent, into `out`. */
