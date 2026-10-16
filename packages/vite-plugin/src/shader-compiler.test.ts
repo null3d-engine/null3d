@@ -242,7 +242,8 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
 		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
 		const whole = await everyShader();
-		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]]));
+		// Every name asked for is an entry of the engine's own manifest, so its variants are there.
+		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
 		expect(result.output.shaders).toEqual(expected);
 	}, 180_000);
 });
