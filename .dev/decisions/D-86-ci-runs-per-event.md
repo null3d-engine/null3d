@@ -37,7 +37,7 @@ GitHub's cache rules decide where caches can be saved. A run restores the caches
 - The queue already tests the exact commit that lands on main, so main's run repeated the queue's checks. A run on main now takes about 9 runner minutes in 7 jobs, against about 100 in 18.
 - A pull request's run drops the browser and benchmark page shards, about 79 of its 103 runner minutes. The Rust tests stay: they take about 8.5 minutes.
 - `ci-passed` accepts a job that its own condition skipped on a pull request or on main. In the queue and in a run started by hand, every job must pass. The queue's rule requires only `ci-passed` and `squash-title`, so it needs no change.
-- Before a pull request joins the queue, its author runs the browser and image tests of the areas that it changes. They run on both GPU sets ([Pull requests](../pull-requests.md#what-ci-runs-where)). The queue still runs every test. But a failure there removes the pull request, and the queue's next run starts again.
+- Before a pull request joins the queue, its author runs the browser and image tests of the areas that it changes. They run on both GPU sets ([D-99](D-99-no-merge-queue.md#what-ci-ran-on-each-event)). The queue still runs every test. But a failure there removes the pull request, and the queue's next run starts again.
 
 ### Merges by hand
 
@@ -51,7 +51,7 @@ The run tests main's newest commit, so start it before anything else merges. The
 
 ### Until 1.0
 
-This split holds until the 1.0 release. After 1.0, pull requests run the browser tests on each push again. To switch back, set the condition of the `browser` and `bench` jobs in `.github/workflows/ci.yml` to `github.event_name != 'push'`. They then run on pull requests too. Then drop the rule that authors run the browser tests before the queue from [Pull requests](../pull-requests.md#what-ci-runs-where). The `real-browsers` jobs were queue-only before this decision, and they stay so. Main's slim run and the run by hand stay. [Releases](../releases.md#versions) lists the switch among the steps of 1.0.
+This split holds until the 1.0 release. After 1.0, pull requests run the browser tests on each push again. To switch back, set the condition of the `browser` and `bench` jobs in `.github/workflows/ci.yml` to `github.event_name != 'push'`. They then run on pull requests too. Then drop the rule that authors run the browser tests before the queue from [D-99](D-99-no-merge-queue.md#what-ci-ran-on-each-event). The `real-browsers` jobs were queue-only before this decision, and they stay so. Main's slim run and the run by hand stay. [Releases](../releases.md#versions) lists the switch among the steps of 1.0.
 
 ## Consequences
 
@@ -60,4 +60,4 @@ This split holds until the 1.0 release. After 1.0, pull requests run the browser
 - CI can be started by hand, and such a run runs every job.
 - The Release workflow reads the newest full CI run of main's newest commit: the queue's or one started by hand, not main's own run. The queue's run is complete before the commit lands, so the workflow no longer waits for CI.
 - The exit gate's `workflows` step reads the same full run of the gate commit. Main's own run no longer runs the image test manifest. A gate commit with no full run fails the step, until a run started by hand passes.
-- [Pull requests](../pull-requests.md#what-ci-runs-where) lists what runs where.
+- [D-99](D-99-no-merge-queue.md#what-ci-ran-on-each-event) lists what runs where.

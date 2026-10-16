@@ -170,9 +170,9 @@ export interface AtmosphereOptions {
 	mieDirectionalG?: number;
 	/** The share of light that the ground below the horizon reflects, from 0 to 1. The default is 0.3. */
 	groundAlbedo?: number;
-	/** The height of the scene's y = 0 above the ground, in metres, 0 or more. The default is 0. */
+	/** The height of the scene's y = 0 above the ground, in meters, 0 or more. The default is 0. */
 	altitude?: number;
-	/** The metres in one unit of the scene, more than 0. The default is 1. */
+	/** The meters in one unit of the scene, more than 0. The default is 1. */
 	metersPerUnit?: number;
 	/**
 	 * The factor of the haze between the camera and each object, 0 or more: 0 for none, 1 for the

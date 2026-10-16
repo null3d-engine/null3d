@@ -92,6 +92,26 @@ export function docIdsIn(text: string): string[] {
 	return ids;
 }
 
+/**
+ * Sections that a file's "Contents" list and its numbered headings disagree on: a numbered heading,
+ * such as "## 21. Terrain", that the list lacks, or a list item whose number no heading has.
+ */
+export function contentsProblems(path: string, text: string): string[] {
+	const section = /^## Contents\n([\s\S]*?)(?=^## )/m.exec(text)?.[1];
+	if (section === undefined) return [];
+	const listed = new Set([...section.matchAll(/^(\d+)\. /gm)].map((m) => m[1]));
+	const headings = [...text.matchAll(/^## (\d+)\. (.+)$/gm)];
+	const numbered = new Set(headings.map((m) => m[1]));
+	return [
+		...headings
+			.filter((m) => !listed.has(m[1]))
+			.map((m) => `${path}: its contents list lacks section ${m[1]}, "${m[2]}"`),
+		...[...listed]
+			.filter((n) => !numbered.has(n))
+			.map((n) => `${path}: its contents list names section ${n}, which no heading has`),
+	];
+}
+
 /** Problems with one skill's SKILL.md and its references, scripts and evals. */
 function checkSkill(root: string, name: string, docRefs: Map<string, Set<string>>): string[] {
 	const problems: string[] = [];
@@ -172,6 +192,7 @@ function checkSkill(root: string, name: string, docRefs: Map<string, Set<string>
 			problems.push(`${path} runs the command line tool as null3d; use bunx @null3d/cli`);
 		if (mentionsOtherPackageManager(content))
 			problems.push(`${path} shows a command for npm, pnpm or Yarn; show it with Bun`);
+		if (path.endsWith('.md')) problems.push(...contentsProblems(path, content));
 		if (mentionsBuildProcess(content))
 			problems.push(
 				`${path} names the maintainers' build process (milestones, checkpoints or task IDs)`,

@@ -32,7 +32,10 @@ sees, without the shadows flickering as it moves?
 ## Data
 
 Prototype S2 ran on the Mac in a parked Chrome 155 window on 14 October 2026. It drew the visual
-page's shadow checks (`bun proto-s2.ts`, results under `logs/r10-shadow-distance/proto/`). The
+page's shadow checks (`bench/lib/visual.ts`) for the benchmark scenes and a 15 m room, with the
+automatic distance and with a fixed one. A one-off script of the task's branch drove them. Its results are in
+[`bench/probes/shadow-distance/`](../../bench/probes/shadow-distance/), one file per page and GPU
+path. The
 stability check measures the share of pixels whose shadow changes between frames. The camera that
 places the cascades moves by under a texel per frame, and the limit is 0.05%. The edge offset
 compares with a reference of the largest shadow map, limit about 0.13 px. The contact gap is

@@ -181,6 +181,7 @@ import {
 	giveFocusBack,
 	PARKED_APPS,
 	parkWindow,
+	refuseBackgroundPriority,
 } from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
@@ -598,10 +599,23 @@ function appMachine(): AppMachine {
 const isApp = (launch: Launch | undefined): launch is AppLaunch =>
 	launch?.kind === 'mac' || launch?.kind === 'linux';
 
+/** True for a plan that times frames or loads: a fixed timed plan, or the phone-scale search. */
+const timedPlan = (plan: string) => TIMED_PLANS.has(plan) || plan === SCALE_PLAN;
+
+/**
+ * True for a run whose browser apps on this machine time frames or loads, which macOS background
+ * priority would slow for every browser the run starts.
+ */
+export const timesOnThisMachine = (options: Options) =>
+	options.apps.length > 0 && timedPlan(options.plan);
+
 function runnersOf(options: Options): LaunchedRunner[] {
 	const machine = options.apps.length > 0 ? appMachine() : 'mac';
-	const timed = TIMED_PLANS.has(options.plan) || options.plan === SCALE_PLAN;
-	const window = appWindow(options.front === true, Boolean(process.env.CI), timed);
+	const window = appWindow(
+		options.front === true,
+		Boolean(process.env.CI),
+		timedPlan(options.plan),
+	);
 	const runners: LaunchedRunner[] = options.apps.map((app) => ({
 		name: `${machine}-${slug(app)}`,
 		device: machine,
@@ -1580,8 +1594,8 @@ interface PlanOutcome {
 }
 
 /**
- * Runs each page that failed in Safari in a way that kept memory explains once more, each in a new
- * runner page, and returns the run's failures: those of the first run, less the pages that passed
+ * Runs each page that failed in Safari, or in any browser on iOS, which draws with WebKit, in a way
+ * that kept memory explains once more, each in a new runner page, and returns the run's failures: those of the first run, less the pages that passed
  * the second time. Each rerun is printed, and recorded in the first run's results as `reruns`, so
  * a fault that a second run hides stays in the record.
  */
@@ -1598,7 +1612,7 @@ async function rerunInNewTabs(
 		const runner = runners.find((r) => r.name === name);
 		if (!runner) continue;
 		console.log(
-			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory Safari kept explains. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
+			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory WebKit kept explains, in Safari or in any browser on iOS. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
 		);
 		const items = pages.map(({ item }) => ({ ...item, ownTab: true as const }));
 		const again = await runPlan(options, items, [runner], launches, local, cloud, true);
@@ -1787,6 +1801,7 @@ function cloudSessions(options: Options): CloudSessions | undefined {
 
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
+	if (timesOnThisMachine(options)) refuseBackgroundPriority();
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
 	if (options.apps.length > 0) keepDisplayAwake();

@@ -12,18 +12,24 @@ const ENGINE = join(import.meta.dirname, '../index.ts');
 /** The first line of the bundle's region for a public math module, which names its source file. */
 const MATH_REGION = /^\S*\/math\/(vec3|quat|mat4|math|color)\.ts\n/;
 
-/** Builds a sketch module for production and returns its code, unminified so names stay. */
+/**
+ * Builds a sketch module for production and returns its code, unminified so names stay. A sketch
+ * is a module of a page, so the build is the page's: a library build inlines every asset as a
+ * data URL instead of copying it, and the shaders alone are about a gigabyte of them, which no
+ * machine running this suite should hold at once.
+ */
 async function bundle(sketch: string): Promise<string> {
 	const folder = mkdtempSync(join(tmpdir(), 'null3d-math-'));
 	const entry = join(folder, 'sketch.ts');
 	writeFileSync(entry, sketch.replace('@null3d/engine', ENGINE));
-	const output = (await build({
+	const built = await build({
 		configFile: false,
 		logLevel: 'silent',
 		mode: 'production',
 		plugins: [null3d()],
-		build: { write: false, minify: false, lib: { entry, formats: ['es'], fileName: 'sketch' } },
-	})) as Rollup.RollupOutput[];
+		build: { write: false, minify: false, rollupOptions: { input: entry } },
+	});
+	const output = (Array.isArray(built) ? built : [built]) as Rollup.RollupOutput[];
 	return output
 		.flatMap((o) => o.output)
 		.map((chunk) => (chunk.type === 'chunk' ? chunk.code : ''))

@@ -1,6 +1,6 @@
 # D-139: Joint overrides and look-at
 
-Status: decided by the helper of M2-EX24 on 11 October 2026, for the owner's review. The owner asked for the feature on 11 October 2026. Date: 2026-10-11. Task: M2-EX24.
+Status: decided by the helper of M2-EX24 on 11 October 2026, for the owner's review. The owner asked for the feature on 11 October 2026. Built: joint overrides are on main (`a150d94b4`). The owner's review of the design is pending. Date: 2026-10-11. Task: M2-EX24.
 
 Summary: The animator gains `joint(name)`, `setJointRotation`, `addJointRotation`, `clearJoint` and `lookAt`. Game code sets or adds a joint's rotation with a weight, on top of the clips. It also turns a chain of up to 4 joints toward a point in the world, each within a limit. The job workers apply them in the frame step, after the clips blend and before the skinning matrices compose. The calls write engine memory, allocate nothing, and hold until cleared. The table that holds them exists only from the first call, so a scene without them pays nothing.
 

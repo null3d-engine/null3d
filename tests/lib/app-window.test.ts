@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
-import { parseArgs } from '../real-browsers.ts';
+import { parseArgs, timesOnThisMachine } from '../real-browsers.ts';
 import {
 	appWindow,
 	BACKGROUND_PRIORITY,
@@ -21,6 +22,7 @@ import {
 	RUNNER_TITLE,
 	SMALL_SIZE,
 } from './app-window.ts';
+import { COST_VARIABLES, timesFrames } from './priority-setup.ts';
 
 /** A laptop display of 1512 by 982 points, with a 33-point menu bar and a 43-point Dock. */
 const laptop = { height: 982, x: 0, y: 43 };
@@ -191,22 +193,62 @@ describe('the background priority guard', () => {
 		},
 	);
 
+	/** What a script prints when it runs `call` at background priority: the refusal, or that it went on. */
+	const atBackgroundPriority = (module: string, call: string) => {
+		const script = `import * as tool from ${JSON.stringify(new URL(module, import.meta.url).pathname)};
+try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message); }`;
+		return spawnSync('taskpolicy', ['-b', process.execPath, '-e', script], {
+			encoding: 'utf8',
+			timeout: 30_000,
+		}).stdout;
+	};
+
+	// The spawned bun pays its own start-up and imports, which under load outlast bun's 5 s default
+	// and leave stdout empty; the spawn's own limit is 30 s, so let each test reach it.
 	it.skipIf(!mac)(
 		'stops a script at background priority before it starts a browser',
 		() => {
-			const script = `import { launchInWindow } from ${JSON.stringify(new URL('./app-window.ts', import.meta.url).pathname)};
-try { await launchInWindow(); console.log('BROWSER LAUNCHED'); } catch (e) { console.log(e.message); }`;
-			const { stdout } = spawnSync('taskpolicy', ['-b', process.execPath, '-e', script], {
-				encoding: 'utf8',
-				timeout: 30_000,
-			});
+			const stdout = atBackgroundPriority('./app-window.ts', 'tool.launchInWindow()');
 			expect(stdout).toContain('macOS background priority');
-			expect(stdout).not.toContain('BROWSER LAUNCHED');
+			expect(stdout).not.toContain('WENT ON');
 		},
-		// The spawned bun pays its own start-up and imports, which under load outlast bun's 5 s
-		// default and leave stdout empty; the spawn's own limit is 30 s, so let the test reach it.
 		30_000,
 	);
+
+	it.skipIf(!mac)(
+		"stops Playwright's runs that time frames at background priority, and lets the others start",
+		() => {
+			const stdout = atBackgroundPriority('./priority-setup.ts', 'tool.default()');
+			if (process.env.CI) expect(stdout).toContain('WENT ON');
+			else expect(stdout).toContain('macOS background priority');
+		},
+		30_000,
+	);
+
+	it('judges which Playwright runs time frames', () => {
+		expect(timesFrames({})).toBe(true);
+		expect(timesFrames({ CI: '1' })).toBe(false);
+		for (const name of COST_VARIABLES) expect(timesFrames({ CI: '1', [name]: '1' })).toBe(true);
+	});
+
+	it('knows the variable of every spec that times an effect', () => {
+		const folder = new URL('../image/', import.meta.url);
+		const used = readdirSync(folder)
+			.filter((file) => file.endsWith('.spec.ts'))
+			.flatMap((file) => [
+				...readFileSync(new URL(file, folder), 'utf8').matchAll(/NULL3D_\w+_COST\b/g),
+			])
+			.map(([name]) => name);
+		expect(used.length).toBeGreaterThan(0);
+		expect([...new Set(used)].sort()).toEqual([...COST_VARIABLES].sort());
+	});
+
+	it("refuses background priority only for the runner's timed plans in this machine's browser apps", () => {
+		expect(timesOnThisMachine(parseArgs(['--plan', 'bench', 'Safari']))).toBe(true);
+		expect(timesOnThisMachine(parseArgs(['--plan', 'scale', 'Safari']))).toBe(true);
+		expect(timesOnThisMachine(parseArgs(['--plan', 'smoke', 'Safari']))).toBe(false);
+		expect(timesOnThisMachine(parseArgs(['--plan', 'bench', '--lan', 'ipad-safari']))).toBe(false);
+	});
 
 	it("reads this process's priority on macOS only", () => {
 		if (mac) expect(processPriority()).toBeGreaterThan(0);

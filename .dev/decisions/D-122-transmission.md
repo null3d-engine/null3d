@@ -1,6 +1,6 @@
 # D-122: Transmission and screen-space refraction
 
-Status: decided by the helper of M2-EX16 on 10 October 2026, for the owner's review. Date: 2026-10-09. Task: M2-EX16.
+Status: decided by the helper of M2-EX16 on 10 October 2026, for the owner's review. Built: transmission is on main (`e9a45c81d`, 10 October 2026). The owner's review is pending. Date: 2026-10-09. Task: M2-EX16.
 
 Summary: A standard or custom material with `transmission` lets the light behind it through, as three.js's `MeshPhysicalMaterial` does. After the camera's opaque pass, the frame copies the scene color into a target with a whole chain of mip levels. Such surfaces draw in the transparent pass. Each samples the copy where its refracted ray leaves the volume, with three.js's bicubic filter, at a level that its roughness picks. `ior`, `thickness`, `attenuationColor` and `attenuationDistance` take three.js's names and formulas. The glTF extensions `KHR_materials_transmission` and `KHR_materials_volume` load into them. The glass scene matches three.js in 0.001% of the pixels on WebGPU, 0.000% on WebGL2 and 0.086% in compatibility mode. Nothing runs or downloads until a material lets light through.
 

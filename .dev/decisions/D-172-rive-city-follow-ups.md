@@ -36,9 +36,9 @@ The techniques that give its look:
 - car materials made in the shader (flakes, seams, clear coat, carbon weave, leather);
 - 2D interfaces drawn into textures on 3D surfaces;
 - rain and steam drawn from the vertex index with no data;
-- a lens grade: grain, colour fringes, an anamorphic streak, sharpening and speed blur.
+- a lens grade: grain, color fringes, an anamorphic streak, sharpening and speed blur.
 
-The same fault class exists in null3D. The render worker reads the draw list's address from the shared `Int32Array` slots with `Atomics.load` (`packages/engine/src/render/scene-renderer.ts`). The page reads the job workers' wake, stop and yield addresses the same way (`packages/engine/src/page/stop-jobs.ts`). Above 2 GiB these reads return negative numbers. The default memory maximum, 1024 MiB, keeps every address below 2 GiB, but a page may raise the maximum to 4096 MiB ([D-04](D-04-memory-maximum.md)). No test covers such a page. The fault was found by reading the code, and has not been reproduced.
+The same fault class existed in null3D on 14 October 2026. The render worker read the draw list's address from the shared `Int32Array` slots with `Atomics.load` (`packages/engine/src/render/scene-renderer.ts`). The page read the job workers' wake, stop and yield addresses the same way (`packages/engine/src/page/stop-jobs.ts`). Above 2 GiB these reads return negative numbers. The default memory maximum, 1024 MiB, keeps every address below 2 GiB, but a page may raise the maximum to 4096 MiB ([D-04](D-04-memory-maximum.md)). The fault was found by reading the code. The same day `9726a73ef` converted each such read with `>>> 0` (hard rule 31). The static check `tools/check-address-reads.ts` and the browser test `tests/image/signed-address.spec.ts` now guard it.
 
 Overlap with M2, as of 14 October 2026:
 

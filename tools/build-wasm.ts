@@ -71,10 +71,13 @@ import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import {
 	acquireLock,
-	CACHE_ROOT,
 	cacheDir,
 	cacheOff,
+	cargoEnv,
+	hashFiles,
 	hashOf,
+	pruneCacheLocked,
+	touchCacheEntry,
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
@@ -380,23 +383,31 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 }
 
 /**
- * Where cargo builds. By default this is a cache shared by every checkout on the machine, so the
- * dependency crates (wasm-bindgen and the rest) compile once rather than once per worktree. Set
- * `NULL3D_CARGO_TARGET` to another folder, or to `local` to build inside this checkout as before.
- * Cargo locks a target folder while it writes, so two builds that share it run in turn.
+ * Where cargo builds: this checkout's own `target` unless `override` names another folder. Two
+ * checkouts never share one Rust build folder. Cargo finds the engine's crates at the same
+ * workspace paths in both and judges them fresh by file times, so a shared folder lets one
+ * checkout's build link the other's crates, and the content-keyed caches would then store that
+ * output under this checkout's key. sccache, when installed, still compiles the dependency crates
+ * once for every checkout (see cargoEnv). The value `local` names this checkout's folder too.
  */
-const CARGO_TARGET_BASE =
-	process.env.NULL3D_CARGO_TARGET === 'local'
-		? join(root, 'target')
-		: cacheDir('cargo-target', process.env.NULL3D_CARGO_TARGET);
+export function cargoTargetBase(checkout: string, override?: string): string {
+	return override && override !== 'local' ? override : join(checkout, 'target');
+}
 
-/** The Rust build folder of a variant, in the shared cache unless this checkout keeps its own. */
+const CARGO_TARGET_BASE = cargoTargetBase(root, process.env.NULL3D_CARGO_TARGET);
+/**
+ * The environment of every cargo run of the build: this checkout's own Rust build folder, and sccache
+ * as the compiler wrapper when it is installed.
+ */
+const CARGO_ENV = cargoEnv(root);
+
+/** The Rust build folder of a variant. */
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
 
 /**
  * Where a variant's wasm-bindgen output and its optimized wasm are staged before they go in place.
- * It lives in this checkout, not in the shared cargo target, and it carries the process id, so no two
- * builds ever share one, in one checkout or in several. A shared staging folder lets one build remove
+ * It lives in this checkout and carries the process id, so no two builds ever share one, in one
+ * checkout or in several. A shared staging folder lets one build remove
  * another's half-written output, which makes wasm-opt fail with "Failed opening output file". Because
  * a folder belongs to one build, a build never needs to wait for another.
  */
@@ -404,14 +415,29 @@ export function variantStagingFolder(variant: Variant): string {
 	return join(root, 'target', `wasm-${variant.name}`, `out-${process.pid}`);
 }
 
+/** The lock that keeps two builds of one set of output files from putting them in place at once. */
+function withInstallLock<T>(name: string, work: () => T): T {
+	const release = acquireLock(join(root, 'target', `install-${name}.lock`));
+	try {
+		return work();
+	} finally {
+		release();
+	}
+}
+
 /**
- * The size check's lock. An ordinary build takes no lock: it stages in a folder of its own (see
- * variantStagingFolder), and Cargo locks the target folder that builds share. A size check takes this
- * lock, because it also builds the base commit with that commit's own build script, and an older
- * script may stage into the shared target folder. One lock over the whole check keeps two checks, or a
- * check and an older build, from removing each other's staged files.
+ * The size check's lock, in the checkout that runs it. An ordinary build takes no lock: it stages in
+ * a folder of its own (see variantStagingFolder), and Cargo locks the target folder while it writes.
+ * A size check takes this lock, because it also builds the base commit with that commit's own build
+ * script, and that tree lives in this checkout's target too. One lock over the whole check keeps two
+ * checks, or a check and an older build, from removing each other's staged files. Each checkout has
+ * its own lock file, so two checkouts' size checks run at the same time.
  */
-const SIZE_CHECK_LOCK = join(CACHE_ROOT, 'build.lock');
+export function sizeCheckLock(checkout: string): string {
+	return join(checkout, 'target', 'build.lock');
+}
+
+const SIZE_CHECK_LOCK = sizeCheckLock(root);
 
 /**
  * Takes the size check's lock and returns the function that releases it. Ordinary builds do not take
@@ -476,9 +502,20 @@ function toolVersions(cargoLock: string): ToolVersions {
 const digest = hashOf;
 
 /**
+ * A hash of the build's own code: this script and the module that rewrites a built module's glue.
+ * A build writes the glue itself (see stampGlue and addReleaseInstance), and this script decides the
+ * flags, the module names and the staging, so both decide what an entry holds. Neither is a Rust
+ * source, so neither shows up in the sources' stamp: without this an edit to the glue kept serving
+ * the entry that the earlier version wrote.
+ */
+export function buildCodeHash(checkout: string): string {
+	return hashFiles(checkout, ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']);
+}
+
+/**
  * The key of a core variant's artifacts: the sources' stamp, the variant's flags, the target, the
- * release profile and the tool versions. Any other input gives another key, so a hit holds exactly
- * the bytes that this build would write.
+ * release profile, the tool versions and the build's own code, which rewrites the glue. Any other
+ * input gives another key, so a hit holds exactly the bytes that this build would write.
  */
 export function variantKey(
 	variant: Variant,
@@ -491,6 +528,7 @@ export function variantKey(
 			`format=${ARTIFACT_FORMAT}`,
 			'kind=core',
 			`variant=${variant.name}`,
+			`code=${buildCodeHash(root)}`,
 			`stamp=${stamp}`,
 			`rustflags=${variant.rustflags}`,
 			`cargoArgs=${variant.cargoArgs.join(' ')}`,
@@ -505,12 +543,13 @@ export function variantKey(
 	);
 }
 
-/** The key of the build tools' modules, from their crates' inputs and the same flags and versions. */
+/** The key of the build tools' modules, from their crates' inputs and the same code, flags and versions. */
 export function toolsKey(shaders: string, assets: string, tools: ToolVersions): string {
 	return digest(
 		[
 			`format=${ARTIFACT_FORMAT}`,
 			'kind=tools',
+			`code=${buildCodeHash(root)}`,
 			`shaders=${shaders}`,
 			`assets=${assets}`,
 			'rustflags=-Cstrip=symbols',
@@ -616,7 +655,11 @@ function buildVariant(
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, CORE_ARTIFACTS);
 	if (cached) {
 		console.log(`\nthe ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
-		for (const name of artifactFiles(cached)) copyInPlace(join(cached, name), join(dest, name));
+		// The entry is in use now, so pruning keeps it while this build copies from it.
+		touchCacheEntry(cached);
+		withInstallLock(variant.name, () => {
+			for (const name of artifactFiles(cached)) copyInPlace(join(cached, name), join(dest, name));
+		});
 		return;
 	}
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
@@ -633,11 +676,10 @@ function buildVariant(
 			targetDir,
 			...variant.cargoArgs,
 		],
-		{ RUSTFLAGS: variant.rustflags },
+		{ ...CARGO_ENV, RUSTFLAGS: variant.rustflags },
 	);
-	// The files take shape in this checkout's staging folder, and go in place whole once every step
-	// and check passed. The staging folder is private, never the shared cargo target's (see
-	// variantStagingFolder).
+	// The files take shape in this build's own staging folder, and go in place whole once every step
+	// and check passed (see variantStagingFolder).
 	const staged = variantStagingFolder(variant);
 	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
@@ -660,8 +702,23 @@ function buildVariant(
 	const stagedFiles = readdirSync(staged)
 		.filter((name) => !name.endsWith('.partial'))
 		.map((name) => [name, join(staged, name)] as const);
-	if (!noCache) writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
-	replaceFolder(staged, dest);
+	// The key was taken before cargo read the sources. If an edit landed while this build ran, the
+	// output is not what the key names, and storing it would hand these files to every checkout whose
+	// sources match the key. The glue carries the stamp of the sources that the build read, so such a
+	// core fails with E1402 on the next page load and asks for a build.
+	if (!noCache) {
+		if (coreSourcesStamp(root) === stamp) {
+			writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
+			pruneCacheLocked(ARTIFACT_CACHE_BASE);
+		} else
+			console.warn(
+				'the core sources changed while this build ran, so the cache stores nothing for it; build again',
+			);
+	}
+	// Each build stages in a folder of its own, so the put-in-place step is the only place two builds
+	// of one checkout can still meet. A lock over it keeps one build's file set from mixing with
+	// another's, which would leave a module from one build beside a WebAssembly file from the other.
+	withInstallLock(variant.name, () => replaceFolder(staged, dest));
 }
 
 /**
@@ -680,7 +737,11 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 		console.log(
 			"\nthe shader compiler and the asset tool's formats are unchanged, copying them from the cache",
 		);
-		for (const { crate, path } of TOOL_MODULES) copyInPlace(join(cached, `${crate}.wasm`), path);
+		// The entry is in use now, so pruning keeps it while this build copies from it.
+		touchCacheEntry(cached);
+		withInstallLock('tools', () => {
+			for (const { crate, path } of TOOL_MODULES) copyInPlace(join(cached, `${crate}.wasm`), path);
+		});
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
@@ -696,18 +757,30 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 			'--target-dir',
 			targetDir,
 		],
-		{ RUSTFLAGS: '-Cstrip=symbols' },
+		{ ...CARGO_ENV, RUSTFLAGS: '-Cstrip=symbols' },
 	);
-	for (const { crate, path } of TOOL_MODULES) {
-		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-		copyInPlace(built, path);
+	withInstallLock('tools', () => {
+		for (const { crate, path } of TOOL_MODULES) {
+			const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
+			copyInPlace(built, path);
+		}
+	});
+	// The tools' crates are hashed before cargo builds them, so an edit during the build means these
+	// modules are not what the key names (see buildVariant, which takes the same care).
+	if (!noCache) {
+		const [nowShaders, nowAssets] = toolInputs(root);
+		if (nowShaders === shaders && nowAssets === assets) {
+			writeArtifacts(
+				ARTIFACT_CACHE_BASE,
+				key,
+				TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
+			);
+			pruneCacheLocked(ARTIFACT_CACHE_BASE);
+		} else
+			console.warn(
+				"the tools' crate sources changed while this build ran, so the cache stores nothing for it; build again",
+			);
 	}
-	if (!noCache)
-		writeArtifacts(
-			ARTIFACT_CACHE_BASE,
-			key,
-			TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
-		);
 }
 
 /**
@@ -816,17 +889,15 @@ function checkoutBaseTree(tree: string, sha: string): boolean {
 /**
  * Copies this checkout's Rust build folders into a new base worktree with their file times, and
  * shares the downloaded wasm-bindgen, whose folder names its version. The base build then runs with
- * `NULL3D_CARGO_TARGET=local`, so it compiles into the worktree's own `target/wasm-<variant>` and
- * never into this checkout's build folder. The worktree's files are newer than the copies, so Cargo
- * rebuilds the engine's crates from the base's code and reuses the standard library and the
- * dependencies. Two checkouts never share one Rust build folder: Cargo finds the engine's crates at
- * the same paths in both, and judges them fresh by file times, so one checkout's build could
- * otherwise take the other's crates.
+ * `NULL3D_CARGO_TARGET=local`, so it compiles into the worktree's own `target/wasm-<variant>` even
+ * when the base commit's build script defaults to a shared folder. The worktree's files are newer
+ * than the copies, so Cargo rebuilds the engine's crates from the base's code and reuses the standard
+ * library and the dependencies.
  */
 function seedBuildFolders(tree: string): void {
 	mkdirSync(join(tree, 'target'), { recursive: true });
 	for (const variant of VARIANTS) {
-		// buildFolder is absolute: the shared cache, or this checkout's target when it keeps its own.
+		// buildFolder is absolute: this checkout's target, or the folder that overrides it.
 		const folder = buildFolder(variant);
 		if (existsSync(folder))
 			execFileSync('cp', ['-Rp', folder, join(tree, 'target', `wasm-${variant.name}`)]);

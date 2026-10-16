@@ -162,6 +162,10 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 					softwareGpu() && (mode === 'instanced' || (gpu === 'webgpu') !== (engine === 'threejs')),
 					'the software GPU runs one ramp per engine, in the scene graph mode',
 				);
+				// On the software GPU, three.js's WebGPURenderer builds Battle's skinned pipelines on the
+				// CPU, and its page took 96 s and 101 s in CI. The limit leaves room for a slower runner.
+				const limit = softwareGpu() ? 160_000 : 100_000;
+				test.setTimeout(limit + 20_000);
 				const errors: string[] = [];
 				page.on('pageerror', (error) => errors.push(error.message));
 				page.on('console', (message) => {
@@ -177,7 +181,7 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 					tier: string;
 					build: string;
 					ramp: RampResult;
-				}>(page, 100_000);
+				}>(page, limit);
 				expect(result.error).toBeUndefined();
 				expect(result.tier).toBe(gpu);
 				expect(result.build).toBe(mode);

@@ -1,6 +1,6 @@
 # D-150: Weighted blended transparency
 
-Status: decided by the helper of M2-EX33 on 12 October 2026, for the owner's review. Date: 2026-10-12. Task: M2-EX33.
+Status: decided by the helper of M2-EX33 on 12 October 2026, for the owner's review. Built: the weighted blending is on main (`21ac1bf03`). The owner's review is pending. Date: 2026-10-12. Task: M2-EX33.
 
 Summary: A material with `blending: 'weighted'` blends with the other such surfaces in any order. The method is McGuire and Bavoil's weighted blended order-independent transparency, with three.js's default weight (the paper's equation 9). After its transparent pass, the camera's view draws them into two one-sample targets: a color sum and a coverage sum. A full-screen step then blends them over the scene. The coverage adds `-log2(1 - alpha)`, so both targets blend alike. Compatibility mode and WebGL2 then draw the layer in one pass with no extension. Nothing runs or downloads until a material asks for it.
 

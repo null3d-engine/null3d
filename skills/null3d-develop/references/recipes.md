@@ -24,6 +24,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 18. Camera that follows a moving object
 19. Water and mirror floors with a reflection
 20. Fire, smoke and sparks with particles (0.2)
+21. Terrain from a height field (0.2)
 
 ## 1. Start a new project
 
@@ -348,7 +349,7 @@ const day = timeOfDay(hours, { model: 'physical' });
 scene.setBackground({ atmosphere: { ...day.atmosphere, cloudCoverage: 0.3, aerialPerspective: 2 } });
 ```
 
-Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometres, so a small scene takes more. Set `metersPerUnit` when the scene's units are not metres. Docs: `concepts/lighting`, `api/scene`.
+Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometers, so a small scene takes more. Set `metersPerUnit` when the scene's units are not meters. Docs: `concepts/lighting`, `api/scene`.
 
 ## 11. Physics with a library in the sketch worker
 

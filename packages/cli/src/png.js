@@ -49,6 +49,36 @@ export function decodePng(bytes, name) {
 }
 
 /**
+ * Decodes a PNG file's bytes as 8-bit RGBA pixels, widening a grey, grey-alpha or RGB image. A
+ * browser's screenshot is often RGB, which `decodePng` refuses. Throws for any deeper image.
+ *
+ * @param {Uint8Array} bytes
+ * @param {string} name The file's name, for the error.
+ * @returns {RgbaImage}
+ */
+export function decodePngRgba(bytes, name) {
+	const { width, height, data, channels, depth } = decode(bytes);
+	if (depth !== 8 || !(data instanceof Uint8Array) || channels < 1 || channels > 4)
+		throw new Error(`${name} is not an 8-bit image`);
+	if (channels === 4) return { width, height, data };
+	const pixels = width * height;
+	const wide = new Uint8Array(pixels * 4);
+	for (let i = 0; i < pixels; i++) {
+		const from = i * channels;
+		const to = i * 4;
+		const grey = channels < 3;
+		const first = data[from] ?? 0;
+		const second = data[from + 1] ?? 0;
+		const third = data[from + 2] ?? 0;
+		wide[to] = first;
+		wide[to + 1] = grey ? first : second;
+		wide[to + 2] = grey ? first : third;
+		wide[to + 3] = channels === 2 ? second : 255;
+	}
+	return { width, height, data: wide };
+}
+
+/**
  * Reads a PNG file of 8-bit RGBA pixels, and throws for any other kind of PNG.
  *
  * @param {string} path

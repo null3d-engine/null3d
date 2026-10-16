@@ -450,8 +450,8 @@ export interface QualitySettings {
 	 * How often a far character's pose updates: once in this many frames, from 1 to 4. Give it to
 	 * `animator.setUpdateInterval` for the characters that the camera sees from far. Give 1 to the
 	 * ones near it, so a crowd samples and skins less without a near character stepping. The
-	 * governor raises it when frames take too long, after every other live step. It is then the
-	 * last thing to give way and the first to come back. It changes during play.
+	 * governor raises it when frames take too long, after its shadow and effect steps and before
+	 * its step of the volumetric fog. It changes during play.
 	 */
 	farAnimationInterval: number;
 	/**
@@ -556,8 +556,9 @@ export interface QualitySettings {
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
 	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
-	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, and the volumetric
-	 * fog's slices while it draws. It raises them again, in the reverse order, once frames have time
+	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the steps of contact
+	 * shadows, how often far characters' poses update, and the volumetric fog's slices while it
+	 * draws. It raises them again, in the reverse order, once frames have time
 	 * to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
@@ -580,7 +581,7 @@ export interface QualitySettings {
 	/**
 	 * Texels on each side of each cascade's shadow map, for each directional light whose `shadow`
 	 * options name no `mapSize`: 512, 1,024, 2,048 or 4,096. A larger map gives sharper shadow edges
-	 * and takes more memory, 4 bytes per texel in each cascade. The `shadowMapSize` option of
+	 * and takes more memory, 2 bytes per texel in each cascade. The `shadowMapSize` option of
 	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	shadowMapSize: number;

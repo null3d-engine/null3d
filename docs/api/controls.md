@@ -104,7 +104,7 @@ Call `controls.update(dt)` once per frame in `onUpdate`, with the step that `onU
 - Auto-rotation stops while the user asks for less motion. [Accessibility](../guides/accessibility.md) explains the preference.
 - If the camera has a parent, the parent must not be rotated. The controls turn the camera with `lookAt`, which assumes that.
 
-`rotateLeft(angle)`, `rotateUp(angle)`, `pan(deltaX, deltaY)`, `dollyIn(scale)` and `dollyOut(scale)` move the camera from code, and the next `update` applies them. `getDistance()`, `getPolarAngle()` and `getAzimuthalAngle()` read the camera's place, as in three.js. Use them to drive the controls with keys or a gamepad:
+`rotateLeft(angle)`, `rotateUp(angle)`, `pan(deltaX, deltaY)`, `dollyIn(scale)` and `dollyOut(scale)` move the camera from code, and the next `update` applies them. `stop()` drops the motion that damping still carries, so the camera is still from the next `update` on: call it when something else takes the camera, such as a route, or the fling resumes at the handover. `getDistance()`, `getPolarAngle()` and `getAzimuthalAngle()` read the camera's place, as in three.js. Use them to drive the controls with keys or a gamepad:
 
 ```ts
 const { input } = ctx;

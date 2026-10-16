@@ -45,4 +45,4 @@ The cache is on by default. `NULL3D_NO_CACHE=1`, or Vite's `--force`, ignores it
 - After [D-177](D-177-build-cache-module.md), the module repeats the three rules that `tools/lib/build-cache.ts` keeps for the repository's caches. Its `hashOf` and one-step write mirror that module's helpers, and it accepts the same opt-out names. It keeps the project's own root and takes no lock, since a game project cannot import repository tooling and each entry is one atomic file.
 - `docs/getting-started/install.md` gains a "Builds" section, and the develop skill says where the cache lives and how to ignore it.
 - The escape hatch covers a cache that a reader suspects is stale, and a build that must not read a cache at all.
-- [Pull requests and parallel work](../pull-requests.md#builds) notes the new cache beside the repository's own caches.
+- [Branches and parallel work](../pull-requests.md#builds) notes the new cache beside the repository's own caches.

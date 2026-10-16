@@ -9,6 +9,16 @@ export const DECISIONS_DIR = '.dev/decisions';
 /** Markdown files in the folder that are not records. */
 const NOT_RECORDS = new Set(['README.md', 'TEMPLATE.md']);
 
+/**
+ * A status that still waits for a ruling or a review. Such a record must also say what is built,
+ * so a reader can tell a shipped design that waits for its review from one that waits to be built.
+ */
+const isOpenStatus = (status: string) =>
+	(/^proposed\b/i.test(status) && !/\bdecided\b/i.test(status)) ||
+	/for the owner's (?:review|ruling)/i.test(status);
+/** The words that say what of a record's design is built. */
+const BUILD_STATE = /\b(?:Built|Not built)\b/;
+
 /** A record's file name: its ID, then a short name in lowercase words joined by hyphens. */
 const FILE_NAME = /^D-(\d{2,})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
 
@@ -55,6 +65,10 @@ export function readRecords(files: ReadonlyMap<string, string>): {
 		if (!title) problems.push(`${path}: start the record with the line "# ${id}: <title>"`);
 		if (!status) problems.push(`${path}: add a "Status:" paragraph under the title`);
 		if (!summary) problems.push(`${path}: add a "Summary:" paragraph under the status`);
+		if (isOpenStatus(status) && !BUILD_STATE.test(status))
+			problems.push(
+				`${path}: its status waits for a ruling or a review, so say what is built: "Built: ..." or "Not built yet"`,
+			);
 		records.push({ number: Number(number), id, title: title ?? '', path, status, summary });
 	}
 	records.sort((a, b) => a.number - b.number || a.path.localeCompare(b.path));

@@ -2,10 +2,6 @@
 // allocates none of its own. WebGPU reads a descriptor only during the call that takes it, so one
 // object can serve every frame.
 
-/**
- * A render pass descriptor with at most two color targets and one depth target. Only the weighted
- * layer draws into a second color target, which clears and stores as the first does.
- */
 /** How many clear colors a render pass setup keeps, more than a frame's passes clear to. */
 const CLEAR_COLORS = 4;
 
@@ -19,7 +15,10 @@ function boxedColor(): GPUColorDict {
 	return { r: null, g: null, b: null, a: null } as unknown as GPUColorDict;
 }
 
-/** A render pass descriptor with at most one color target and one depth target. */
+/**
+ * A render pass descriptor with at most two color targets and one depth target. Only the weighted
+ * layer draws into a second color target, which clears and stores as the first does.
+ */
 export class RenderPassSetup {
 	/**
 	 * The latest clear colors, each made once, so a frame whose passes clear to the same few colors

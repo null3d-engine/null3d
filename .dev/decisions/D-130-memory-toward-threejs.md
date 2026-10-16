@@ -2,7 +2,7 @@
 
 Status: decided, 13 October 2026. Task: M2-EX19.
 
-Summary: A page's memory comes closer to three.js's by sharing the frame builders' bucket-key scratch. Each layout kept its own sorted table of bucket keys, which grows with the scene and stays at its high-water mark. One frame builder now keeps one table for all its layouts, which rebuild one after another. On the Factory comparison at 50,000 parts the engine's WebAssembly memory fell from 68.7 MiB to 61.7 MiB. That is 7.0 MiB, or about 147 bytes per object, with the frame rate and the frame's CPU time unchanged. The study also ranks the other per-object savings and the fixed floor, and records the ones rejected for their cost.
+Summary: A page's memory comes closer to three.js's by sharing the frame builders' bucket-key scratch. Each layout kept its own sorted table of bucket keys, which grows with the scene and stays at its high-water mark. One frame builder now keeps one table for all its layouts, which rebuild one after another. On the Factory comparison at 50,000 parts the engine's WebAssembly memory fell from 68.7 MiB to 61.7 MiB. That is 7.0 MiB, or about 147 bytes per object, with the frame's CPU time unchanged. The study also ranks the other per-object savings and the fixed floor, and records the ones rejected for their cost.
 
 ## Question
 
@@ -51,7 +51,7 @@ Measured on 13 October 2026, MacBook Pro, Chrome, production build of the Factor
 | Frame CPU time | 3.28 to 3.59 ms | 3.13 to 3.58 ms |
 
 - The saving is 7,340,032 bytes, 10.2% of the memory, or about 147 bytes per object. The three removed tables of 48 bytes each account for 144 of it.
-- The frame rate and the frame's CPU time did not change. The builder fills the table once per frame, as before, and makes fewer allocations rather than more.
+- Both columns read exactly 60.00 fps. That is a cap on the frame rate, most likely the window's display rate, so it cannot show a change in cost. The frame's CPU time is the evidence that the cost did not change. The builder fills the table once per frame, as before, and makes fewer allocations rather than more.
 - The allocation check passed on S1 with 100,000 instances on WebGPU. Every place stayed within its budget, with 222 bytes per frame in the sketch worker and 572 in the render worker.
 
 ## Open

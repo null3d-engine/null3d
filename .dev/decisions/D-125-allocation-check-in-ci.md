@@ -47,4 +47,4 @@ The browser's optimizing compiler takes a function after 3,000 calls by default,
 
 - `.github/workflows/ci.yml` has the `allocation` job, and `ci-passed` lets it skip when the job that reads the changed paths says so. That job was `allocation-paths`, and is `changes` from 11 October 2026.
 - `bench/allocation.ts` holds `SWIFTSHADER_COUNT`, `SWIFTSHADER_JS_FLAGS`, `SWIFTSHADER_WARMUP_FRAMES` and `SWIFTSHADER_BUDGETS`. The job's time limit is 15 minutes. The benchmark page's `frames` switch publishes the count of frames that S1 steps.
-- [Benchmarks](../benchmarks.md#allocation-and-profiling) and [Pull requests](../pull-requests.md#cis-jobs) describe the job.
+- [Benchmarks](../benchmarks.md#allocation-and-profiling) and [Branches and parallel work](../pull-requests.md#cis-jobs) describe the job.

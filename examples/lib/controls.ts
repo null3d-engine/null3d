@@ -53,7 +53,11 @@ export const CAMERA_OPTIONS: readonly HudOption[] = [
 	},
 ];
 
-/** The times of day that the showcase HUD offers, with `Auto` easing through them and looping. */
+/**
+ * The times of day that the showcase HUD offers, with `Auto` easing through them and looping. The
+ * studio is the last entry: it is not an hour, but a backdrop and a key light of its own, and Auto
+ * never eases through it.
+ */
 export const TIMES_OF_DAY: readonly HudOption[] = [
 	{
 		id: 'Auto',
@@ -67,6 +71,11 @@ export const TIMES_OF_DAY: readonly HudOption[] = [
 	{ id: 'Golden', label: 'Golden', tip: 'The golden hour: a long, amber sun.' },
 	{ id: 'Dusk', label: 'Dusk', tip: 'Blue hour: the sun just below the horizon.' },
 	{ id: 'Night', label: 'Night', tip: 'Moonlight, a navy sky and the moon\u2019s own light.' },
+	{
+		id: 'Studio',
+		label: 'Studio',
+		tip: 'A studio backdrop: the scene under a soft key light, for a look at the model.',
+	},
 ];
 
 /** The atmosphere effects. A scene shows only the ones it can support. */

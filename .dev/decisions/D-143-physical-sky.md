@@ -1,6 +1,6 @@
 # D-143: Physical sky and aerial perspective
 
-Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. Its exposure band was fixed on 14 October 2026 (addendum). The figures of cost and size are under Data. Date: 2026-10-11. Task: M2-EX26.
+Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. Its exposure band was fixed on 14 October 2026 (addendum). The figures of cost and size are under Data. Built: the physical sky is on main (`3dce97f60`). The owner's review of the design is pending. Date: 2026-10-11. Task: M2-EX26.
 
 Summary: `scene.setBackground({ atmosphere })` draws a physically based sky: Rayleigh and Mie scattering and ozone, from Hillaire's three lookup tables (2020), as Unreal Engine and Bevy draw theirs. The same air hazes distant objects by distance and by the sun's angle, inside each surface's shader, as fog does. The sky's environment, the moon, the stars and the clouds follow it. The Low preset draws three.js's analytic sky in its place, matched in brightness. Nothing runs or downloads while no scene uses it.
 

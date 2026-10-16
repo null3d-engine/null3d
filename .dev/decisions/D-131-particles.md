@@ -1,6 +1,6 @@
 # D-131: Particles in closed form on the GPU
 
-Status: decided by the helper of M2-EX20 on 11 October 2026, for the owner's review. Date: 2026-10-11. Task: M2-EX20.
+Status: decided by the helper of M2-EX20 on 11 October 2026, for the owner's review. Built: the particles add-on is on main (`24f500d5a`). The owner's review is pending. Date: 2026-10-11. Task: M2-EX20.
 
 Summary: The `@null3d/particles` add-on makes particle systems that the GPU works out in closed form, from each particle's birth and age. The motion takes gravity, drag toward the wind, simplex-noise turbulence and a ground; the look takes curves of color, alpha and size over life. The CPU writes a 32-byte record once per birth. No pass simulates particles, so the same shaders run on WebGPU, compatibility mode and WebGL2. Soft particles read a copy of the camera's opaque depth, which the frame makes only while a soft system draws. Nothing downloads or runs until a sketch makes its first system.
 

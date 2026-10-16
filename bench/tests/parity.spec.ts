@@ -24,6 +24,7 @@ import {
 	parityFiles,
 	passesWithBaseline,
 	type RgbaImage,
+	sceneLimit,
 	TIERS,
 } from '../lib/parity';
 import { type PageReport, runPage } from './open-page';
@@ -57,7 +58,7 @@ async function imageOf(page: Page, path: string): Promise<RgbaImage> {
 test.describe.configure({ mode: 'parallel' });
 
 for (const scene of FEATURE_SCENES) {
-	const { test: name, limit, webglOnly } = scene;
+	const { test: name, webglOnly } = scene;
 	test.describe(`${name} against three.js`, () => {
 		test.describe.configure({ mode: 'default' });
 		const twinImages = new Map<PageKind, RgbaImage>();
@@ -79,6 +80,7 @@ for (const scene of FEATURE_SCENES) {
 		for (const tier of TIERS) {
 			test(`matches three.js on ${tier}`, async ({ page }) => {
 				const pair = featurePair(scene, tier);
+				const limit = sceneLimit(scene, tier);
 				const reference = twinImages.get(pair.reference) as RgbaImage;
 				const candidate = await imageOf(page, pathOf(scene, pair.candidate));
 				const comparison = compareImages(reference, candidate);

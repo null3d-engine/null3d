@@ -395,8 +395,33 @@ export function loadServer(): Plugin {
  * checks that it serves each build `needed` names. It throws when the server cannot, as a server
  * started before the load routes, or before they served that build.
  */
+/**
+ * How long a caller keeps asking a server that is still preparing, and how long it waits between
+ * asks. The first ask makes the server compress every file of every build, which is 3,730 files and
+ * took 570 seconds on a busy Mac on 15 October 2026. The caches live in the server process, so every
+ * server start pays it again, and the HTTPS server - the one the devices use, over the Mac's own
+ * name - times out before it finishes: measured that evening, a fetch of the readiness route over
+ * HTTPS failed with `The operation timed out.` after 361 seconds, where the same call over HTTP on
+ * localhost waited 570 seconds and succeeded. That is what failed CI's Safari and Firefox jobs and a
+ * device run on the owner's iPad the same evening, and it is why a caller must ask again rather than
+ * let one attempt's timeout end the run: the work carries on and the next ask is answered from the
+ * caches the moment it finishes.
+ */
+const READY_BUDGET_MS = 20 * 60_000;
+const READY_RETRY_MS = 5_000;
+
 export async function prepareLoads(serverUrl: string, needed: readonly string[]): Promise<void> {
-	const response = await localFetch(`${serverUrl}${LOAD_READY_ROUTE}`);
+	const started = performance.now();
+	let response: Response;
+	for (;;) {
+		try {
+			response = await localFetch(`${serverUrl}${LOAD_READY_ROUTE}`);
+			break;
+		} catch (error) {
+			if (performance.now() - started > READY_BUDGET_MS) throw error;
+			await new Promise((resolve) => setTimeout(resolve, READY_RETRY_MS));
+		}
+	}
 	const answer = (await response.json().catch(() => ({}))) as Partial<Readiness> & {
 		error?: string;
 	};

@@ -1,6 +1,6 @@
 # D-123: Objects under a hidden object skip their transform update
 
-Status: proposed by the helper of the hidden objects work on 10 October 2026, for the owner's review. Figures added on 11 October 2026. Date: 2026-10-10. Task: none (found by the Factory comparison).
+Status: proposed by the helper of the hidden objects work on 10 October 2026, for the owner's review. Figures added on 11 October 2026. Built: the transform update skips such objects on main (`383fa1237`). The owner's review is pending. Date: 2026-10-10. Task: none (found by the Factory comparison).
 
 Summary: An object under a hidden object, dynamic or static, is left alone by the transform update once both world buffers hold it hidden. It uploads nothing, and the frame that shows its ancestor recomputes it. Cameras and their ancestors keep updating, and the world getters work an object's matrix out from the local transforms. With room for 200,000 parts and 2,000 shown, the Factory comparison's busiest thread drops from 5.08 to 0.87 ms per frame on WebGPU. On WebGL2 it drops from 5.00 to 1.25 ms.
 

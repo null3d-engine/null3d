@@ -5,6 +5,10 @@
 // match the sky. A mood is a target: every value eases toward it over a fraction of a second, so a
 // change of mood glides and Auto's sun and moon move continuously. A scene gives the turn of the
 // sun's path and the density of its fog.
+//
+// The stage also holds the switches of the sky, the fog and the environment light. It writes the
+// look every frame, so a part that the HUD turns off stays off only when the stage itself leaves it
+// out: a scene turns a part off through the stage, never with its own call to the scene.
 import {
 	type DirectionalLight,
 	type Environment,
@@ -37,12 +41,46 @@ export const HOURS: Record<Exclude<Mood, 'Auto' | 'Studio'>, number> = {
 	Night: 23,
 };
 
+/** The parts of the look that the HUD turns on and off. The environment light needs the sky too. */
+export type StagePart = 'sky' | 'fog' | 'environment';
+
+/**
+ * The fixed mood whose hour is nearest to `hours`, around the clock. A scene in Auto uses it to carry
+ * the look of the moment, such as its fireflies and its caustics, rather than the look that Auto was
+ * chosen with.
+ */
+export function nearestMood(hours: number): Exclude<Mood, 'Auto' | 'Studio'> {
+	let best: Exclude<Mood, 'Auto' | 'Studio'> = 'Afternoon';
+	let gap = Infinity;
+	for (const [mood, at] of Object.entries(HOURS) as [Exclude<Mood, 'Auto' | 'Studio'>, number][]) {
+		const around = Math.min(Math.abs(hours - at), 24 - Math.abs(hours - at));
+		if (around < gap) {
+			gap = around;
+			best = mood;
+		}
+	}
+	return best;
+}
+
 /** The studio's key light, from the front left and high. */
 const STUDIO_KEY = [0.45, -0.75, -0.5] as const;
+/** The studio's fog: a near-black haze, in linear RGB. */
+const STUDIO_FOG = [0.05, 0.05, 0.055] as const;
+/** How thick the studio's fog is. */
+const STUDIO_FOG_DENSITY = 0.012;
 /** How many minutes a whole day takes in Auto, unless a scene says otherwise. */
 const MINUTES_PER_DAY = 4;
 /** Seconds for a value to settle most of the way to its target: a fast, smooth ease. */
 const EASE = 0.14;
+/** How close a value must be to its target before the look counts as settled, in size. */
+const STILL = 1e-4;
+
+/** True when two vectors match to within a step nothing can see. */
+function near(a: Vec3, b: Vec3): boolean {
+	for (let k = 0; k < 3; k++)
+		if (Math.abs((a[k] as number) - (b[k] as number)) > STILL) return false;
+	return true;
+}
 
 /** A scene's settings of its stage. */
 export interface StageOptions {
@@ -56,6 +94,8 @@ export interface StageOptions {
 	haze?: Partial<Record<Exclude<Mood, 'Auto' | 'Studio'>, number>>;
 	/** The minutes a whole day takes in Auto. The default is 4. */
 	minutesPerDay?: number;
+	/** The plain background color, in linear RGB, that shows while the sky is off. */
+	backdrop: readonly [number, number, number];
 }
 
 /** The stage of a showcase scene: the mood, the Auto driver, and what its values ease toward. */
@@ -70,6 +110,8 @@ export interface Stage {
 	readonly hours: number;
 	/** Eases toward the target and applies it. Call once per frame with the frame's step. */
 	update(dt: number): void;
+	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
+	show(part: StagePart, on: boolean): void;
 }
 
 /** True for a mood name. */
@@ -86,7 +128,7 @@ export function createMoods(
 	options: StageOptions,
 ): Stage {
 	const { scene, post, time } = ctx;
-	const { heading, fogDensity, cloudCoverage, haze = {} } = options;
+	const { heading, fogDensity, cloudCoverage, backdrop, haze = {} } = options;
 	const perDay = options.minutesPerDay ?? MINUTES_PER_DAY;
 	/** The values in use, which ease toward the target's. */
 	const current = {
@@ -114,20 +156,58 @@ export function createMoods(
 	let started = false;
 	/** The hours that the target was made for, so a fixed mood computes it once. */
 	let targetHours = Number.NaN;
+	/** The parts of the look that are on. A part that is off is written once, when it turns off. */
+	const shown: Record<StagePart, boolean> = { sky: true, fog: true, environment: true };
+	/** True while the scene takes its environment light from the background. */
+	const lit = () => shown.sky && shown.environment;
+	/**
+	 * The settings that the look is written through: one object per call, written in place. The
+	 * engine reads each call's values as it takes them, so a stage that builds fresh objects every
+	 * frame pays for nothing.
+	 */
+	const look = {
+		background: {
+			atmosphere: {
+				sunPosition: current.sunPosition,
+				sunIntensity: 0,
+				moonPosition: current.moonPosition,
+				moonIntensity: 0,
+				stars: 0,
+				cloudCoverage: 0,
+				time: 0,
+			},
+		},
+		backgroundOptions: { intensity: 1 },
+		roomOptions: { blur: 0.7, intensity: 0.18 },
+		environment: { intensity: 1 },
+		fog: { color: [0, 0, 0] as Vec3, density: fogDensity, sunGlow: 0 },
+		post: { exposure: 1 },
+	};
+	/** False while any value still eases toward its target, so the frame writes the look again. */
+	let still = false;
+	/**
+	 * True when the scene needs the whole look written once, whatever the eased values say. A new
+	 * mood asks for it: the studio writes the scene itself, so the eased values may already sit on
+	 * their target while the scene holds the studio's look.
+	 */
+	let needsLook = false;
 
 	/** Works out the target from an hour, with the physical sky. */
 	const aimAt = (hours: number, at: Mood): void => {
 		const day = timeOfDay(hours, { heading, model: 'physical' });
-		target.dir = [-day.light.direction[0], -day.light.direction[1], -day.light.direction[2]];
-		target.color = [...day.light.color];
+		// The target's own arrays are written, never replaced: Auto aims again every frame.
+		for (let k = 0; k < 3; k++) {
+			target.dir[k] = -(day.light.direction[k] as number);
+			target.color[k] = day.light.color[k] as number;
+			target.fog[k] = day.fog.color[k] as number;
+			target.sunPosition[k] = day.atmosphere.sunPosition[k] as number;
+			target.moonPosition[k] = day.atmosphere.moonPosition[k] as number;
+		}
 		target.intensity = day.light.intensity;
 		target.skyIntensity = day.skyIntensity;
-		target.fog = [...day.fog.color];
 		target.density = fogDensity * (haze[at as Exclude<Mood, 'Auto' | 'Studio'>] ?? 1);
 		target.glow = day.fog.sunGlow;
 		target.exposure = day.exposure;
-		target.sunPosition = [...day.atmosphere.sunPosition];
-		target.moonPosition = [...day.atmosphere.moonPosition];
 		target.sunLight = day.atmosphere.sunIntensity;
 		target.moonLight = day.atmosphere.moonIntensity;
 		target.stars = day.atmosphere.stars;
@@ -166,6 +246,23 @@ export function createMoods(
 		current.dir[0] = (current.dir[0] as number) / length;
 		current.dir[1] = (current.dir[1] as number) / length;
 		current.dir[2] = (current.dir[2] as number) / length;
+		// Once every value sits on its target, the frame leaves the look alone: the chase is over and
+		// the scene already holds these values to within a step nothing can see.
+		still =
+			Math.abs(current.intensity - target.intensity) <= STILL &&
+			Math.abs(current.skyIntensity - target.skyIntensity) <= STILL &&
+			Math.abs(current.density - target.density) <= STILL * Math.max(1, target.density) &&
+			Math.abs(current.glow - target.glow) <= STILL &&
+			Math.abs(current.exposure - target.exposure) <= STILL &&
+			Math.abs(current.sunLight - target.sunLight) <= STILL &&
+			Math.abs(current.moonLight - target.moonLight) <= STILL &&
+			Math.abs(current.stars - target.stars) <= STILL &&
+			Math.abs(current.clouds - target.clouds) <= STILL &&
+			near(current.dir, target.dir) &&
+			near(current.color, target.color) &&
+			near(current.fog, target.fog) &&
+			near(current.sunPosition, target.sunPosition) &&
+			near(current.moonPosition, target.moonPosition);
 	};
 
 	/** Copies the target into the values in use, so the first frame is already right. */
@@ -190,40 +287,64 @@ export function createMoods(
 		apply();
 	};
 
-	/** Writes the eased values into the scene. */
+	/** Writes the eased values into the scene, leaving out each part that is off. */
 	const apply = (): void => {
 		clouds.time = time.now;
-		scene.setBackground(
-			{
-				atmosphere: {
-					sunPosition: current.sunPosition,
-					sunIntensity: current.sunLight,
-					moonPosition: current.moonPosition,
-					moonIntensity: current.moonLight,
-					stars: current.stars,
-					cloudCoverage: current.clouds,
-					time: clouds.time,
-				},
-			},
-			{ intensity: 1 },
-		);
-		scene.setEnvironment(sky, { intensity: current.skyIntensity });
+		const air = look.background.atmosphere;
+		air.sunIntensity = current.sunLight;
+		air.moonIntensity = current.moonLight;
+		air.stars = current.stars;
+		air.cloudCoverage = current.clouds;
+		air.time = clouds.time;
+		// The sky keeps its own call in every frame: its clouds drift with the time.
+		if (shown.sky) scene.setBackground(look.background, look.backgroundOptions);
+		// A settled look writes nothing else: every value already sits on its target in the scene.
+		const full = needsLook || !still;
+		needsLook = false;
+		if (!full) return;
+		if (lit()) {
+			look.environment.intensity = current.skyIntensity;
+			scene.setEnvironment(sky, look.environment);
+		}
 		sun.setDirection(current.dir[0] as number, current.dir[1] as number, current.dir[2] as number);
 		sun.setColor(current.color);
 		sun.setIntensity(current.intensity);
-		scene.setFog({ color: current.fog, density: current.density, sunGlow: current.glow });
-		post.set({ exposure: current.exposure });
+		if (shown.fog) {
+			// The fog's color is kept apart from the eased one, since the studio writes its own.
+			const fog = look.fog.color;
+			fog[0] = current.fog[0] as number;
+			fog[1] = current.fog[1] as number;
+			fog[2] = current.fog[2] as number;
+			look.fog.density = current.density;
+			look.fog.sunGlow = current.glow;
+			scene.setFog(look.fog);
+		}
+		look.post.exposure = current.exposure;
+		post.set(look.post);
 	};
 
-	/** Puts the studio's own values in place at once: it is a different background, not an hour. */
+	/**
+	 * Puts the studio's own values in place at once: it is a different background, not an hour. Each
+	 * part that is off is left out.
+	 */
 	const toStudio = (): void => {
-		scene.setBackground(room, { blur: 0.7, intensity: 0.18 });
-		scene.setEnvironment(room, { intensity: 0.55 });
+		if (shown.sky) scene.setBackground(room, look.roomOptions);
+		if (lit()) {
+			look.environment.intensity = 0.55;
+			scene.setEnvironment(room, look.environment);
+		}
 		sun.setDirection(STUDIO_KEY[0], STUDIO_KEY[1], STUDIO_KEY[2]);
 		sun.setColor('#fff4e6');
 		sun.setIntensity(3);
-		scene.setFog({ color: [0.05, 0.05, 0.055], density: 0.012 });
-		post.set({ exposure: 1 });
+		if (shown.fog) {
+			look.fog.density = STUDIO_FOG_DENSITY;
+			look.fog.color[0] = STUDIO_FOG[0];
+			look.fog.color[1] = STUDIO_FOG[1];
+			look.fog.color[2] = STUDIO_FOG[2];
+			scene.setFog(look.fog);
+		}
+		look.post.exposure = 1;
+		post.set(look.post);
 	};
 
 	const stage: Stage = {
@@ -240,6 +361,9 @@ export function createMoods(
 		set(next) {
 			mood = next;
 			wasAuto = next === 'Auto';
+			// A mood change writes the whole look, whatever the eased values say.
+			needsLook = true;
+			still = false;
 			if (next === 'Studio') {
 				targetHours = Number.NaN;
 				toStudio();
@@ -259,6 +383,18 @@ export function createMoods(
 			}
 			ease(dt);
 			apply();
+		},
+		show(part, on) {
+			shown[part] = on;
+			// A part that is off is written once here, since the frame's writes leave it out.
+			if (!shown.sky) scene.setBackground(backdrop);
+			if (!lit()) scene.setEnvironment(null);
+			if (!shown.fog) scene.setFog(null);
+			// A part that comes back is written with the rest, settled or not.
+			needsLook = true;
+			still = false;
+			if (mood === 'Studio') toStudio();
+			else apply();
 		},
 	};
 	return stage;

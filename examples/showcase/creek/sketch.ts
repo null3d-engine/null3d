@@ -5,24 +5,16 @@
 // textures, the rocks, the grass and the water are made in code. The trees, the plants and the
 // cave mouth are models that a script builds in Blender, loaded from files.
 //
-// The page's buttons pick a mood (four times of day and a studio) and turn on a "DSLR" lens with
+// The controls pick a time of day and turn the effects on and off, among them a "DSLR" lens with
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
 import { createCinematic, type Shot } from '../../lib/cinematic';
-import {
-	ATMOSPHERE,
-	LIGHTING,
-	POST,
-	QUALITY,
-	radioGroup,
-	TIMES_OF_DAY,
-	toggleGroup,
-} from '../../lib/controls';
 import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
-import { createMoods, isMood, type Mood } from '../../lib/stage';
+import { createShowcaseEffects } from '../../lib/showcase-effects';
+import { createMoods, isMood, type Mood, nearestMood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
@@ -103,7 +95,7 @@ export const SHOTS: readonly Shot[] = [
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time, input } = ctx;
+	const { scene, assets, post, quality, page, time } = ctx;
 	const detail = DETAIL[quality.preset];
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
@@ -153,26 +145,15 @@ export default defineSketch(async (ctx) => {
 		fogDensity: 0.006,
 		cloudCoverage: 0.3,
 		haze: { Golden: 2.2, Dusk: 1.5 },
+		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
+	/** The mood whose look the scene shows. In Auto it is the fixed mood nearest to the hour. */
 	let current: Mood = 'Afternoon';
 	// Shafts of light at golden hour, at High and above: below, their march costs too much.
-	const effects: Record<string, boolean> = {
-		sky: true,
-		fog: true,
-		shafts: false,
-		fireflies: false,
-		shadows: true,
-		ao: true,
-		environment: true,
-		bloom: false,
-		dof: false,
-		exposure: false,
-		vignette: false,
-	};
 	const light = () => {
 		const on =
-			effects.shafts &&
+			controls.on.shafts &&
 			current === 'Golden' &&
 			(quality.preset === 'high' || quality.preset === 'ultra');
 		shafts.set(on ? golden.light.direction : undefined, [1.0, 0.62, 0.3]);
@@ -181,130 +162,90 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
-	const choose = (mood: Mood) => {
+	/** Gives the scene the look of a mood: its fireflies, its air and its water. */
+	const showLook = (mood: Mood): void => {
 		current = mood;
-		stage.set(mood);
 		flora.nightLights(mood === 'Night' || mood === 'Dusk');
 		air.setMood(mood);
 		water.setCaustics(CAUSTICS[mood]);
 		light();
 	};
+	const choose = (mood: Mood) => {
+		stage.set(mood);
+		// Auto moves the hour through the day, so it takes the look of the hour rather than one look
+		// that then sits under a moonlit sky.
+		showLook(mood === 'Auto' ? nearestMood(stage.hours) : mood);
+	};
+	// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
+	// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
+	// lives in `createShowcaseEffects`.
+	const controls = createShowcaseEffects(ctx, {
+		camera,
+		sun,
+		stage,
+		start: {
+			sky: true,
+			fog: true,
+			shafts: false,
+			fireflies: false,
+			shadows: true,
+			ao: true,
+			environment: true,
+			bloom: false,
+			dof: false,
+			exposure: false,
+			vignette: false,
+		},
+		supported: {
+			atmosphere: ['sky', 'fog', 'shafts', 'fireflies'],
+			lighting: ['shadows', 'ao', 'environment'],
+			post: ['bloom', 'dof', 'exposure', 'vignette'],
+		},
+		apply(id, on) {
+			switch (id) {
+				case 'shafts':
+					light();
+					break;
+				case 'fireflies':
+					air.setFireflies(on);
+					break;
+				case 'ao':
+					post.set({ ao: on ? { radius: 0.5 } : false });
+					break;
+				case 'bloom':
+					post.set({ bloom: on ? { blend: 'add', intensity: 0.2, threshold: 1 } : false });
+					break;
+			}
+		},
+		mood: choose,
+		film: () => film,
+		fov: FOV,
+		focalLength: DSLR_FOCAL_LENGTH,
+		focus: target,
+		dslr: params.has('dslr'),
+	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
-	// The DSLR lens: a 50 mm lens wide open, which focuses on the point that the camera looks at.
-	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
-	let dslr = false;
-	const setLens = (on: boolean) => {
-		dslr = on;
-		effects.dof = on;
-		if (on) camera.setFocalLength(DSLR_FOCAL_LENGTH);
-		else camera.setFov(FOV);
-		post.set(on ? lens : { dof: false });
-	};
-	if (params.has('dslr')) setLens(true);
-
-	const repaint = () => stage.set(stage.mood);
-	const setEffect = (id: string, on: boolean): void => {
-		effects[id] = on;
-		switch (id) {
-			case 'sky':
-				if (on) repaint();
-				else {
-					scene.setBackground([0.02, 0.03, 0.05]);
-					scene.setEnvironment(null);
-				}
-				break;
-			case 'fog':
-				if (on) repaint();
-				else scene.setFog(null);
-				break;
-			case 'shafts':
-				light();
-				break;
-			case 'fireflies':
-				air.setFireflies(on);
-				break;
-			case 'shadows':
-				sun.setCastShadows(on);
-				break;
-			case 'ao':
-				post.set({ ao: on ? { radius: 0.5 } : false });
-				break;
-			case 'environment':
-				if (on) repaint();
-				else scene.setEnvironment(null);
-				break;
-			case 'bloom':
-				post.set({ bloom: on ? { blend: 'add', intensity: 0.2, threshold: 1 } : false });
-				break;
-			case 'dof':
-				setLens(on);
-				break;
-			case 'exposure':
-				post.set({ autoExposure: on ? {} : false });
-				break;
-			case 'vignette':
-				post.set({ vignette: on ? {} : false });
-				break;
-		}
-	};
-	const groups = () => [
-		radioGroup('mood', 'Time of day', TIMES_OF_DAY, stage.mood),
-		toggleGroup(
-			'atmosphere',
-			'Atmosphere',
-			ATMOSPHERE,
-			['sky', 'fog', 'shafts', 'fireflies'],
-			(id) => effects[id] ?? false,
-		),
-		toggleGroup(
-			'lighting',
-			'Lighting',
-			LIGHTING,
-			['shadows', 'ao', 'environment'],
-			(id) => effects[id] ?? false,
-		),
-		toggleGroup(
-			'post',
-			'Post',
-			POST,
-			['bloom', 'dof', 'exposure', 'vignette'],
-			(id) => effects[id] ?? false,
-		),
-		radioGroup('quality', 'Quality', QUALITY, quality.preset),
-	];
 
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
-		speed: 7,
-		groups,
-	});
-	page.onMessage((name, value) => {
-		const picked = String(value);
-		if (name === 'camera') film.select(picked);
-		else if (name === 'mood' && isMood(value)) {
-			choose(value);
-			film.refresh();
-		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
-			setEffect(picked, !(effects[picked] ?? false));
-			film.refresh();
-		} else if (name === 'quality') {
-			void quality.setPreset(picked as QualityPreset);
-			film.refresh();
-		} else if (name === 'dslr') setLens(picked === 'On');
+		groups: controls.groups,
 	});
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			if (input.wasPressed('KeyD')) {
-				setLens(!dslr);
-				film.refresh();
-			}
 			stage.update(dt);
+			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
+			// next time of day as the sun does.
+			if (stage.auto) {
+				const at = nearestMood(stage.hours);
+				if (at !== current) showLook(at);
+			}
 			film.update(dt);
-			if (dslr) post.set(lens);
+			const lens = controls.lens();
+			if (lens) post.set(lens);
 			flora.update(t);
 			air.update(t);
 			water.update();
