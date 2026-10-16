@@ -72,6 +72,10 @@ describe('the shader modules', () => {
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('shader-features.ts')).toBe(true);
 		expect(isShaderModule('shaders-environment-wgsl.ts')).toBe(true);
+		// A target's table of shared paragraphs is plain JavaScript beside the device modules. Its
+		// name carries no `shaders-` prefix, so the offline file list reads it as no feature.
+		expect(isShaderModule('shader-paragraphs-glsl.js')).toBe(true);
+		expect(isShaderModule('shader-paragraphs-wgsl.js')).toBe(true);
 		expect(isShaderModule('gpu.ts')).toBe(false);
 		expect(isShaderModule('shaders.ts.map')).toBe(false);
 	});

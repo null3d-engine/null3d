@@ -835,7 +835,8 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| {
-            name.starts_with(typescript::DEVICE_MODULE_PREFIX)
+            (name.starts_with(typescript::DEVICE_MODULE_PREFIX)
+                || name.starts_with(typescript::PARAGRAPHS_MODULE_PREFIX))
                 && (name.ends_with(".ts") || name.ends_with(".js"))
         })
         .map(|name| format!("{OUTPUT_DIR}/{name}"))
