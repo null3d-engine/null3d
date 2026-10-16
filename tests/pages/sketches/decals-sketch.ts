@@ -1,9 +1,9 @@
 // Decals on a stone yard under a low sun: a scorch mark, a stripe of road paint through the ball's
 // shadow, a puddle, cracks on the wall, moss over the ball's foot, which fades up its curved side,
 // and a batch of mud splashes whose row colors tint and fade each one. Each decal is a box with a
-// decal material, whose maps come from the code-made textures of the decals demo. A point light
-// warms the puddle. ?none leaves the decals out, so the decals spec can compare each place with the
-// bare yard.
+// decal material, whose maps come from the code-made textures that the decals demo and this sketch
+// share. A point light warms the puddle. ?none leaves the decals out, so the decals spec can
+// compare each place with the bare yard.
 import { defineSketch, type Quat, type Vec3 } from '@null3d/engine';
 import {
 	cracks,
@@ -13,7 +13,7 @@ import {
 	puddle,
 	roadPaint,
 	scorch,
-} from '../../../examples/decals/decal-textures';
+} from '../../../examples/lib/decal-textures';
 
 const params = new URL(import.meta.url).searchParams;
 

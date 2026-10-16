@@ -205,6 +205,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
 		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'weighted-transparency',
