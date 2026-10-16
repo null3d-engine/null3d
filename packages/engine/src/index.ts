@@ -273,8 +273,13 @@ export type {
 	Textures,
 	TextureWrap,
 } from './scene/textures';
-export type { TimeOfDay, TimeOfDayOptions, TimeOfDayPreset } from './scene/time-of-day';
-export { timeOfDay } from './scene/time-of-day';
+export type {
+	TimeOfDay,
+	TimeOfDayAtmosphere,
+	TimeOfDayOptions,
+	TimeOfDayPreset,
+} from './scene/time-of-day';
+export { emptyTimeOfDay, timeOfDay } from './scene/time-of-day';
 export type {
 	TextureValues,
 	UniformType,
