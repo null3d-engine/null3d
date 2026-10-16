@@ -33,6 +33,9 @@ async function withoutIsolation(page: Page): Promise<void> {
 /** The worker probe's script, in development and in a production build. */
 const PROBE_WORKER = /\/probe-worker[^/]*\.(js|ts)(\?|$)/;
 
+/** The job workers' script, which every job worker loads. */
+const JOB_WORKER = /\/job-worker[^/]*\.(js|ts)(\?|$)/;
+
 /**
  * Serves `body` in place of the worker probe's script. The response keeps the server's headers,
  * whose cross-origin isolation headers an isolated page needs to start a worker at all.
@@ -429,6 +432,46 @@ test('marked occluders download no occlusion shader file with ?occlusion=off on 
 	expect(result.error).toBeUndefined();
 	expect(requests.filter(isFirstUseShaderFile)).toEqual([]);
 });
+
+/**
+ * Serves the job workers' script with a line at its top that stops the worker named `worker` before
+ * it starts, so the engine reports it as a job worker that did not start.
+ */
+async function jobWorkerFails(page: Page, worker: string): Promise<void> {
+	await page.context().route(JOB_WORKER, async (route) => {
+		const response = await route.fetch();
+		const stop = `if (self.name === ${JSON.stringify(worker)}) throw new Error(${JSON.stringify(`${worker} did not start on purpose`)});\n`;
+		await route.fulfill({ response, body: stop + (await response.text()) });
+	});
+}
+
+// A job worker that does not start is survivable, as the engine's own notes say: the engine runs on
+// with the workers it has, and the on-demand loader sends its tasks only to those. The KTX2 sketch
+// loads a file during its setup, so the page needs one task to finish. The loader used to send that
+// task to a job worker by index, started or not, and a worker that did not start never answers: the
+// page then drew nothing at all. Firefox lost the download of that worker's core on 16 October 2026,
+// in real-browsers, with one of two job workers gone. Each case here loads a page that must finish a
+// task of the loader, and every case keeps the engine to two job workers.
+for (const [what, stop] of [
+	[
+		'no job worker starts',
+		(page: Page) => page.context().route(JOB_WORKER, (route) => route.abort()),
+	],
+	['the second of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-1')],
+	['the first of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-0')],
+] as const) {
+	test(`a page draws where ${what}`, async ({ page }, testInfo) => {
+		test.skip(testInfo.project.name === 'production build', 'no image test page');
+		await stop(page);
+		const sketch = encodeURIComponent('/tests/pages/sketches/ktx2-hdr-sketch.ts');
+		await page.goto(
+			`image.html?gpu=webgl2&hold=0&preset=high&size=320x180&jobs=2&sketch=${sketch}`,
+		);
+		const result = await pageResult<{ error?: string; pixels?: string }>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.pixels?.length ?? 0).toBeGreaterThan(0);
+	});
+}
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
