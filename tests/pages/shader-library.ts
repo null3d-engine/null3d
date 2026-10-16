@@ -168,10 +168,17 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 		progress(`uncaptured ${event.error.constructor.name}: ${event.error.message}`),
 	);
 	const fragment = GPUShaderStage.FRAGMENT;
+	// The split-sum table is layer 0 of the frame's light tables array, whose later layers carry the
+	// area lights' tables and their images, so the layout and the view are of an array rather than of
+	// one 2D texture.
 	const layout = device.createBindGroupLayout({
 		entries: [
 			{ binding: 0, visibility: fragment, texture: { sampleType: 'uint' } },
-			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{
+				binding: 3,
+				visibility: fragment,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+			},
 		],
 	});
 	const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
@@ -194,6 +201,8 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 			size: [DFG_SIZE, DFG_SIZE],
 			format: 'rgba32float',
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+			// Compatibility mode fixes a texture's binding dimension when it is made.
+			...({ textureBindingViewDimension: '2d-array' } as object),
 		});
 		device.queue.writeTexture({ texture: dfg }, dfgTexels(), { bytesPerRow: DFG_SIZE * 16 }, [
 			DFG_SIZE,
@@ -231,7 +240,7 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 				layout,
 				entries: [
 					{ binding: 0, resource: inputs.createView() },
-					{ binding: 3, resource: dfg.createView() },
+					{ binding: 3, resource: dfg.createView({ dimension: '2d-array' }) },
 				],
 			}),
 		);
@@ -333,18 +342,20 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 		gl.UNSIGNED_INT,
 		withProbeRow(input),
 	);
-	// The table of specular terms is read with texelFetch.
+	// The table of specular terms is read with texelFetch, from layer 0 of the frame's light tables
+	// array, as it is on WebGPU.
 	const dfg = gl.createTexture();
 	gl.activeTexture(gl.TEXTURE1);
-	gl.bindTexture(gl.TEXTURE_2D, dfg);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	gl.texImage2D(
-		gl.TEXTURE_2D,
+	gl.bindTexture(gl.TEXTURE_2D_ARRAY, dfg);
+	gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	gl.texImage3D(
+		gl.TEXTURE_2D_ARRAY,
 		0,
 		gl.RGBA32F,
 		DFG_SIZE,
 		DFG_SIZE,
+		1,
 		0,
 		gl.RGBA,
 		gl.FLOAT,
