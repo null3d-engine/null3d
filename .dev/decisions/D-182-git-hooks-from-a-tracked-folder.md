@@ -18,6 +18,7 @@ A worktree holds only the files git tracks. Husky writes its hook folder during 
 
 - `.githooks/` holds one file for each hook git calls. Each of the six forwards to the body in `.husky/`, so the checks stay in one place and the forwarding lives in one script.
 - `bun install` runs `tools/hooks/install-hooks.ts`, which sets the repository's `core.hooksPath` to `.githooks`. Husky's installer is retired and its dependency is gone. Its hook bodies stay.
+- The install writes husky's folder too, one file for each hook, each forwarding to the same dispatcher. Either hooks path therefore runs the hooks. The shared setting cannot disarm a tree that has been installed in, whichever value it holds.
 - `HUSKY=0` installs nothing and runs no hook, which is what CI's jobs and the release job ask.
-- A branch from before the folder keeps no hooks until it merges main. A brand-new clone is unguarded until its first install. Git calls no hook when no hooks path is set, so nothing in the repository can report that state. The `commits` job on main covers it.
+- A branch from before the folder keeps its hooks through husky's folder. An install in another tree points the shared path at the tracked folder. A tree from before the folder then lacks hooks until it merges main. A brand-new clone is unguarded until its first install. Git calls no hook when no hooks path is set, so nothing in the repository can report that state. The `commits` job on main covers it.
 - A test holds each hook body to a dispatcher. It holds the installer to the path, and to `HUSKY=0`.
