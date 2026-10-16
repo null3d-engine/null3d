@@ -51,42 +51,54 @@ export interface Null3dPageOptions {
 }
 
 /**
- * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
- * boxes see through, `animated` adds that many animated characters to S1, `morphed` adds that
- * many morphed spheres whose weights change every frame, `grading` gives S1 a
- * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
- * as dashed line segments, `ao` turns ambient occlusion on in S1, `bloom` turns bloom on in S1,
- * `outline` adds outlined boxes to S1, `labels` adds that many labeled objects to S1, whose
- * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
- * point light shadows on, `environment` lights S1 with the built-in room, which turns every
- * frame, `effects` adds two custom effects to S1, whose uniforms change every frame, `dof` turns
- * depth of field on in S1, focused on a point that moves every frame, `exposure` turns automatic
- * exposure on in S1, whose compensation changes every frame, `fog` gives S1 height fog with the
- * volumetric fog on,
- * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
- * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
- * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
- * that a reflection pass mirrors S1 into under the swarm, `transmission` puts clear water that
- * lets light through under it, `ssr` puts a polished floor under it with screen-space reflections
- * on, `particles` adds two particle systems over it, one of them soft,
- * lets light through under it, `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them
- * with `coatSheen=coat` or `coatSheen=sheen`, `particles` adds two particle systems over it, one of
- * them soft, `passes` adds a full-screen pass whose texture a custom effect adds to S1,
- * `batchShadows` makes the rows of S1 and S1-static cast and receive
- * lets light through under it, `weighted` puts a column of smoke of the weighted blending over it,
- * and `weighted=sorted` the same smoke of the normal blending, `batchShadows` makes the rows of S1 and S1-static cast and receive
- * lets light through under it, `particles` adds two particle systems over it, one of them soft,
- * `passes` adds a full-screen pass whose texture a custom effect adds to S1, `batchShadows`
- * makes the rows of S1 and S1-static cast and receive
- * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
- * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
- * hemisphere lights to S1, `areaLights` adds rectangle and tube lights to S1 that circle it and
- * change their intensities every frame, `setters` calls each per-frame setter in S1, colors included, `decals` puts a ground with a batch of decals under S1, and `decals=off` the ground alone, `sides` draws S2's boxes see-through and double-sided: `two` draws each
- * one's back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's
- * boxes with the alpha hash, and `still` makes that share of S5's knights stand still in one pose,
- * as waiting characters do, and `frames` makes S1 count the frames it steps, which the page
- * publishes for the allocation check. A switch missing here never reaches the sketch, which then
- * runs without it, so a unit test checks that every switch a sketch reads is listed.
+ * The page's switches that reach the sketch module's address as they are. A switch missing here
+ * never reaches the sketch, which then runs without it, so a unit test checks that every switch a
+ * sketch reads is listed.
+ * - `blend` makes S1's boxes see through.
+ * - `animated` adds that many animated characters to S1, and `inertial` makes those that play one
+ *   clip switch clips by inertial transitions.
+ * - `morphed` adds that many morphed spheres to S1, whose weights change every frame.
+ * - `grading` gives S1 a color grading table and the vignette.
+ * - `sprites` draws S1's swarm as sprites, and `lines` as dashed line segments.
+ * - `ao` turns ambient occlusion on in S1, and `bloom` bloom.
+ * - `dof` turns depth of field on in S1, focused on a point that moves every frame.
+ * - `exposure` turns automatic exposure on in S1, whose compensation changes every frame.
+ * - `fog` gives S1 height fog with the volumetric fog on.
+ * - `outline` adds outlined boxes to S1.
+ * - `labels` adds that many labeled objects to S1, whose elements the page binds.
+ * - `tileShadows` adds spot and point lights that cast shadows to S1, with point light shadows on.
+ * - `environment` lights S1 with the built-in room, which turns every frame.
+ * - `sides` draws S2's boxes see-through and double-sided: `two` draws each one's back faces, then
+ *   its front faces, and `one` draws both in one draw.
+ * - `alpha=hash` draws S2's boxes with the alpha hash.
+ * - `effects` adds two custom effects to S1, whose uniforms change every frame.
+ * - `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of
+ *   the decoders' work in the engine's workers.
+ * - `sky` draws a background behind S1, and `backgroundFirst` makes it draw before S1's objects.
+ * - `extraBox` adds a small box to S1.
+ * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into.
+ * - `transmission` puts clear water under S1's swarm that lets light through.
+ * - `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them with `coatSheen=coat` or
+ *   `coatSheen=sheen`.
+ * - `weighted` puts a column of smoke of the weighted blending over S1, and `weighted=sorted` the
+ *   same smoke of the normal blending.
+ * - `particles` adds two particle systems over S1, one of them soft.
+ * - `passes` adds a full-screen pass whose texture a custom effect adds to S1.
+ * - `still` makes that share of S5's knights stand still in one pose, as waiting characters do.
+ * - `anim=every` makes S5's far knights update their poses in every frame, as the near ones do.
+ * - `batchShadows` makes the rows of S1 and S1-static cast and receive the sun's shadows.
+ * - `rowValues` gives S1's rows colors and values that change every frame, which a custom material
+ *   reads.
+ * - `levels` gives S1's boxes levels of detail.
+ * - `hemisphere` adds two hemisphere lights to S1.
+ * - `areaLights` adds rectangle and tube lights to S1 that circle it and change their intensities
+ *   every frame.
+ * - `decals` puts a ground with a batch of decals under S1, and `decals=off` the ground alone.
+ * - `terrain` puts the terrain add-on's ground under S1, whose blocks follow the camera every frame.
+ * - `impostors` puts a field of the impostors add-on's cards around S1, which pick their views from
+ *   the camera every frame.
+ * - `setters` calls each per-frame setter in S1, colors included.
+ * - `frames` makes S1 count the frames it steps, which the page publishes for the allocation check.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -113,13 +125,15 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
-	'ssr',
 	'coatSheen',
 	'weighted',
 	'particles',
 	'passes',
 	'still',
 	'anim',
+	'inertial',
+	'terrain',
+	'impostors',
 	'batchShadows',
 	'rowValues',
 	'levels',

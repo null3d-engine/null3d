@@ -1277,7 +1277,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
 	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
-	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
+	// runners rounds one gray pixel a step apart, so one pixel of its frame may differ. The real GPU
+	// must match exactly.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1285,7 +1286,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		swiftShaderTolerance: { maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},

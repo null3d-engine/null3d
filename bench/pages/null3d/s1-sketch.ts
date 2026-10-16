@@ -1,7 +1,8 @@
 // The null3d version of S1, the swarm: every instance moves every frame, and the camera orbits.
 // The `blend` switch makes the boxes see through, for the allocation sample of the transparent pass.
 // The `animated` switch adds that many animated characters, for the allocation sample of the
-// animator. The `morphed` switch adds that many morphed spheres whose weights change every frame,
+// animator, and the `inertial` switch makes the characters that play one clip switch clips by
+// inertial transitions, for the allocation sample of those transitions. The `morphed` switch adds that many morphed spheres whose weights change every frame,
 // for the allocation sample of morph targets. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
@@ -61,6 +62,10 @@
 // size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
 // the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
 // block and the effect's texture.
+// The `terrain` switch puts the terrain add-on's ground under the swarm, whose quadtree follows
+// the orbiting camera in every frame, and the `impostors` switch a field of the impostors
+// add-on's cards around it, which pick their views from the camera in every frame, for the
+// allocation samples of the add-ons' steps.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -82,6 +87,7 @@ import {
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
+import { createImpostorField, createTerrainGround } from './addons';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
@@ -104,7 +110,16 @@ export default defineSketch(async (context) => {
 					levels: switches.has('levels'),
 					layers: readCoatSheen(switches.get('coatSheen')),
 				}).pose;
-	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
+	const animate = createAnimatedCrowd(
+		context,
+		readAnimated(import.meta.url),
+		switches.has('inertial'),
+	);
+	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
+	const pickViews = switches.has('impostors') ? await createImpostorField(context) : undefined;
+	// The camera's position for the add-ons' steps, and the target that the path writes beside it.
+	const cameraAt = new Float64Array(3);
+	const lookAt = new Float64Array(3);
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
@@ -212,6 +227,11 @@ export default defineSketch(async (context) => {
 		moveCasters?.(t);
 		moveSmoke?.(t);
 		turnDecals?.(t);
+		if (followTerrain || pickViews) {
+			s1Camera(t, cameraAt, lookAt);
+			followTerrain?.(cameraAt);
+			pickViews?.(cameraAt);
+		}
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
