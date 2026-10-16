@@ -1199,20 +1199,11 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
-/// The manifest's entries that the shader compiler is not asked for. `standard_maps` alone holds
-/// 11,456 builds, and their answer is 1.08 GB of JSON: builds and answer together are more than the
-/// 4 GB a 32-bit WebAssembly module has, and its memory never comes back once grown, so the module
-/// stops with an internal error where the native build answers. The compiler is the one a build
-/// tool runs on a project's manifest, which holds a few shaders; the engine's own manifest is built
-/// natively. The maintainers' `implementation-notes.md` in `.dev` records the measurement.
-const TOO_LARGE_FOR_THE_COMPILER: [&str; 1] = ["standard_maps"];
-
 /// Builds each entry of the manifest alone through the shader compiler when
 /// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of the
 /// whole repository for that entry. Comparing with that build is what keeps the entry built once:
 /// the reference `output` is the build the test's other checks read. An entry that builds nothing
-/// of its own, such as the template of custom materials, has no such build and is skipped, as is
-/// the entry that is too large for the compiler (`TOO_LARGE_FOR_THE_COMPILER`).
+/// of its own, such as the template of custom materials, has no such build and is skipped.
 fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, output: &Output) {
     if std::env::var_os("NULL3D_SHADER_COMPILER").is_none() {
         return;
@@ -1223,8 +1214,7 @@ fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, out
         .expect("the manifest's shaders");
     assert!(!shaders.is_empty(), "the manifest names no shader");
     for name in shaders.keys() {
-        if !output.shaders.contains_key(name) || TOO_LARGE_FOR_THE_COMPILER.contains(&name.as_str())
-        {
+        if !output.shaders.contains_key(name) {
             continue;
         }
         let compiled = build_in_shader_compiler(&subset::repository_subset(&[name.as_str()]));

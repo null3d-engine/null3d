@@ -242,8 +242,7 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
 		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
 		const whole = await everyShader();
-		const expected: Record<string, unknown> = {};
-		for (const name of ENGINE_SHADERS) expected[name] = whole[name];
+		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]]));
 		expect(result.output.shaders).toEqual(expected);
 	}, 180_000);
 });
