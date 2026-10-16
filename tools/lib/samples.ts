@@ -22,12 +22,12 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import type { ServerResponse } from 'node:http';
-import { homedir } from 'node:os';
 import { dirname, extname, join, posix } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream } from 'node:stream/web';
 import type { Connect, Plugin } from 'vite';
+import { cacheRoot } from './build-cache';
 import { SAMPLES_URL } from './sample-url';
 
 export { SAMPLES_URL, sampleUrl } from './sample-url';
@@ -96,12 +96,13 @@ export function sha256(bytes: Uint8Array): string {
 }
 
 /**
- * The cache that holds one folder per pinned commit: `NULL3D_SAMPLES_DIR` when it is set, or
- * `null3d/samples` in the user's cache folder (`XDG_CACHE_HOME`, or `~/.cache`).
+ * The cache that holds one folder per pinned commit: `NULL3D_SAMPLES_DIR` when it is set, or the
+ * `samples` folder under the build cache's one root (see build-cache.ts), so one variable moves this
+ * cache with the others.
  */
 export function samplesCacheRoot(env: Record<string, string | undefined> = process.env): string {
 	if (env.NULL3D_SAMPLES_DIR) return env.NULL3D_SAMPLES_DIR;
-	return join(env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'null3d', 'samples');
+	return join(cacheRoot(env), 'samples');
 }
 
 /** The folder that holds the pinned commit's files once `bun run samples:fetch` has run. */
