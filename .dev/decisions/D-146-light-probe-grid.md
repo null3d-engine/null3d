@@ -80,3 +80,50 @@ The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.m
 
 - **M3's global illumination is a leak-free probe volume on this grid.** Each probe gains a validity mask for the leaks that the normal offset cannot stop. A separate sky-occlusion term holds how much sky each probe sees. The live sky colour multiplies it, so time of day needs no new bake. Both were this record's "later" items. The grid's format for a grid baked elsewhere becomes a stable, documented format (hook H6 of [D-173](D-173-addon-hooks.md)).
 - **Probe detail stays L1.** three.js's `LightProbeGrid` stores L2, and a port maps it onto this grid and lists the difference.
+
+## Addendum, 16 October 2026: the grid's texture is a volume, and the switch turns on in the frame that uploads it
+
+The code review of 15 October 2026 (H-1, M-11, SH-12, FEAT-16) found that the grid lit nothing on
+either GPU path.
+
+- **The texture.** The frame groups bind binding 10 as a 3D texture, and every public way to make the
+  grid's texture made a 2D texture array, which the frame cannot bind. `LightProbeGridData.toTexture`
+  now makes a 3D `rgba16float` texture through `textures.fromVolumeData`, and `scene.setLightProbeGrid`
+  refuses a texture that is not a volume, with the new code E1222. A Rust test builds a frame with a
+  grid, and one with an array in its place, on both frame builders.
+- **The sampled place.** The lit shader added the view's offset twice, so every view that is not the
+  camera read probes at twice its distance from the eye: 3.4 m for a mirror 1.7 m below. It now adds
+  the camera's own world position once.
+- **A spacing of 0.** An axis with no spacing gave an inverse of 0, which the shader divided by. The
+  sample point now moves by nothing on that axis.
+- **A grid at intensity 0.** The shader decided a grid was set from its intensity, so a grid at 0 gave
+  the environment's full light instead of the grid's share of it, which is none of its own. It now
+  reads the presence from the grid values' fourth number, which the frame writes when a scene sets one.
+- **The switch's frame.** The renderer turned probe shading on only once the grid's texels were on the
+  GPU, and a frame decides that before its own texture work uploads them. A grid that a sketch's setup
+  sets therefore drew with the plain lit templates for two more frames, which a held frame, and
+  `engine.captureFrame`, never reach: the grid drew nothing in its own image test, and `probe-grid`
+  came out byte-identical to `probe-grid-off` on all three tiers. A live 3D texture is now enough,
+  because the frame's values name no grid until its texels are up, so a grid build reads the
+  environment's light exactly as the plain build does. A Rust test covers a grid that the setup sets
+  before the first frame, on both frame builders.
+
+## Addendum, 16 October 2026: the grid's image test, first-use entry and switches
+
+M-38 found the grid with no browser test, no image test and no allocation switch, which is how the
+faults above reached main.
+
+- **Image tests.** `probe-grid`, `probe-grid-off` and `probe-grid-mirror` draw a room with a red wall at
+  the left and a green wall at the right, with three gray spheres. The sketch bakes the grid in the
+  browser. The first image shows the spheres taking red light at the left and green at the right. The
+  second draws the same room with no grid. The third lays a mirror on the floor, whose reflection pass
+  reads the grid at each reflected sphere's own place.
+- **The bake runs in the setup**, before the first frame. Hold mode draws its frame without running any
+  of the sketch's code, so a bake in an update function would never run. A grid that a later frame sets
+  also waits for its own shader builds.
+- **First-use entry.** The manifest's `[first_use.probe_grid]` table names the grid's builds. The
+  generated first-use page lists the feature, and the first-use test covers its download on both paths.
+- **Allocation switch.** `bench/allocation.ts` takes `--probes`, which sets a small grid over S1's
+  swarm, so the allocation sample covers the lit draws' grid reads on both GPU paths.
+- **Docs (M-61).** [Lighting](../../docs/concepts/lighting.md) has a "Light probe grid" section: what
+  takes its light, its limits, its cost and its first-use loading. The scene page links to it.
