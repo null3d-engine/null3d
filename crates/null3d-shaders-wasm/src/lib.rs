@@ -23,14 +23,21 @@
 //!
 //! A panic stops a call with a trap. The panic hook first writes a response that describes the
 //! panic. The caller then drops the instance, whose memory may be in any state after a trap.
+//!
+//! A manifest's answer is written as the build runs, so the module holds the builds beside the
+//! buffer it writes into, not the whole answer twice. A 32-bit module still holds 4 GB at most and
+//! refuses a single allocation above 2 GB, so the engine's whole repository, whose answer is about
+//! 1.7 GB of JSON, does not go through one call. A build tool passes one project's manifest, which
+//! is far smaller, and the repository's own tests ask for one shader entry at a time.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::sync::Once;
 
 use null3d_shaders::{
-    BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, PostTemplates,
-    Problem, Response, ShaderSource,
+    BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, Output,
+    PostTemplates, Problem, Response, ShaderSource,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -127,10 +134,41 @@ fn with_compiler<T>(
     })
 }
 
-/// Builds the manifest in the request.
+/// Builds the manifest in the request. The response is written one shader at a time, and each
+/// shader's builds are dropped as they are written, so the module never holds the whole output
+/// beside the JSON of its own answer. The engine's `standard_maps` entry alone answers with 1.08 GB
+/// of JSON, and a 32-bit module has room for only so much beside its builds.
 #[unsafe(no_mangle)]
 pub extern "C" fn build() {
-    respond(|request| null3d_shaders::build(&parse::<Inputs>(request)?));
+    install_panic_hook();
+    let mut response = Grown(Vec::new());
+    RESPONSE.with_borrow_mut(Vec::clear);
+    WARNINGS.with_borrow_mut(Vec::clear);
+    let result = REQUEST.with_borrow(|request| null3d_shaders::build(&parse::<Inputs>(request)?));
+    match result {
+        Ok(mut output) => {
+            let _ = response.write_all(b"{\"ok\":true,\"output\":{\"shaders\":{");
+            let mut written = false;
+            while let Some((name, variants)) = output.shaders.pop_first() {
+                if written {
+                    let _ = response.write_all(b",");
+                }
+                written = true;
+                let _ = serde_json::to_writer(&mut response, &name);
+                let _ = response.write_all(b":");
+                let _ = serde_json::to_writer(&mut response, &variants);
+            }
+            let _ = response.write_all(b"},\"pipelines\":");
+            let _ = serde_json::to_writer(&mut response, &output.pipelines);
+            let _ = response.write_all(b"}}");
+        }
+        Err(error) => {
+            let failed: Result<Output, BuildError> = Err(error);
+            let response_of = Response::from(&failed);
+            let _ = serde_json::to_writer(&mut response, &response_of);
+        }
+    }
+    RESPONSE.set(response.0);
 }
 
 /// Where the last response starts.
@@ -168,13 +206,38 @@ fn parse<T: DeserializeOwned>(request: &[u8]) -> Result<T, BuildError> {
 /// that stops before the panic hook runs, such as one that runs out of memory, leaves none.
 fn respond<T: Serialize>(call: impl FnOnce(&[u8]) -> Result<T, BuildError>) {
     install_panic_hook();
+    let mut response = Grown(Vec::new());
     RESPONSE.with_borrow_mut(Vec::clear);
     WARNINGS.with_borrow_mut(Vec::clear);
     let result = REQUEST.with_borrow(|request| call(request));
-    let json = WARNINGS.with_borrow(|warnings| {
-        serde_json::to_vec(&Response::from(&result).with_warnings(warnings)).unwrap_or_default()
+    WARNINGS.with_borrow(|warnings| {
+        let response_of = Response::from(&result).with_warnings(warnings);
+        let _ = serde_json::to_writer(&mut response, &response_of);
     });
-    RESPONSE.set(json);
+    RESPONSE.set(response.0);
+}
+
+/// The buffer a response is written into. It grows by half again each time it fills, which keeps
+/// the copies to a few, and it never asks for an allocation larger than the 2 GB that one
+/// allocation may take in a 32-bit module. A `Vec` grows by doubling instead: the engine's
+/// `standard_maps` entry answers with 1.08 GB of JSON, whose next doubling asks for 2 GB and stops
+/// the module with `capacity overflow`.
+struct Grown(Vec<u8>);
+
+impl std::io::Write for Grown {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let needed = self.0.len() + bytes.len();
+        if needed > self.0.capacity() {
+            let grown = self.0.capacity() + self.0.capacity() / 2;
+            self.0.reserve_exact(grown.max(needed) - self.0.len());
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn to_json<T: Serialize>(result: &Result<T, BuildError>) -> Vec<u8> {
