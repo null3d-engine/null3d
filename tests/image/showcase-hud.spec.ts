@@ -6,12 +6,23 @@
 // the canvas, and checks that each part stays off while it is off and comes back when it turns on.
 import { expect, type Page, test } from '@playwright/test';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
+import { ALONE } from '../lib/alone.ts';
 import { watchPageProblems } from '../lib/page-result.ts';
 
 /** The panel of a group, by the group's name in the model. */
 const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
-/** The six picks, the startup and the slow software GPU need longer than the default limit. */
-test.describe.configure({ timeout: 180_000 });
+/**
+ * The picks, the startup and the slow software GPU need longer than the default limit. The engine's
+ * first frame is part of that, and on a software GPU it arrives long after the controls do, so the
+ * budget covers that wait and the switches after it, and the test runs alone.
+ *
+ * Alone for two reasons. Its pictures need the engine to draw frames, and on CI's two-core runner a
+ * heavy test beside it starves this page's frames, which is the fault D-186 measures. And its budget
+ * cannot sit in a shard: a shard's limit is 25 minutes, which covers its tests taking twice as long
+ * as the median, and this test's failure is exactly a slow machine. Moved out of shard 14, whose 25
+ * minutes held 14.6 of tests, the alone job's worst case is 16.3 minutes.
+ */
+test.describe.configure({ timeout: 600_000 });
 
 /**
  * Picks a button of a group and checks the toast that names the change: selects the group's tab,
@@ -82,6 +93,22 @@ const CHANGED = 1.5;
 const STILL = 0.5;
 /** Frames read after a switch: the old bug rewrote the part a frame later, so several are read. */
 const FRAMES = 4;
+/**
+ * How long the engine's first frame may take to arrive. A page shows its controls while its sketch
+ * finishes building the scene, which is before that frame, and the page takes its loading overlay
+ * away on the frame. On a software GPU the shader builds before it take about 30 seconds on a quiet
+ * machine and minutes on a busy one. A picture read before the frame is an empty canvas, so this
+ * wait is what keeps the checks below measuring the scene. A page that never draws fails here, which
+ * names the page's start rather than a picture.
+ */
+const FIRST_FRAME_MS = 180_000;
+/**
+ * How long a switch may take to show in the canvas. A switch costs the page work, and a frame read
+ * gives the frame drawn last when no new one comes. This wait is a hedge for a slow software GPU:
+ * the check below is sound, and the same switch measures 12.4 steps of 255 on a real GPU, within one
+ * frame of the pick.
+ */
+const WAIT_MS = 60_000;
 
 /** Waits until two frames in a row differ by less than a change the checks could mistake for one. */
 async function settle(page: Page): Promise<void> {
@@ -104,60 +131,71 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 	const before = await frame(page);
 	await pick(page, tab, group, label, `${label}: off`);
 	await expect
-		.poll(async () => difference(await frame(page), before), { timeout: 20_000 })
+		.poll(async () => difference(await frame(page), before), { timeout: WAIT_MS })
 		.toBeGreaterThan(CHANGED);
 	for (let k = 0; k < FRAMES; k++)
 		expect(difference(await frame(page), before), `${label} stays off`).toBeGreaterThan(CHANGED);
 	await pick(page, tab, group, label, `${label}: on`);
 	await expect
-		.poll(async () => difference(await frame(page), before), { timeout: 20_000 })
+		.poll(async () => difference(await frame(page), before), { timeout: WAIT_MS })
 		.toBeLessThan(CHANGED);
 }
 
-test('the showcase HUD names each group change in a toast at the top centre', async ({ page }) => {
-	const errors = watchPageProblems(page);
-	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its
-	// own look from code, so the toast text does not depend on the preset. `bench` publishes the
-	// demo's engine on the page, which is how this test reads the canvas's frames.
-	await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
-	const hud = page.locator('.hud');
-	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
-	await expect(hud).toBeVisible({ timeout: 90_000 });
-	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
-	// Open the panel, as a visitor does, with the chevron.
-	await page.locator('.hud__chevron').click();
-	await expect(hud).toHaveClass(/\bopen\b/);
+test(
+	'the showcase HUD names each group change in a toast at the top centre',
+	ALONE,
+	async ({ page }) => {
+		const errors = watchPageProblems(page);
+		// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its
+		// own look from code, so the toast text does not depend on the preset. `bench` publishes the
+		// demo's engine on the page, which is how this test reads the canvas's frames.
+		await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
+		const hud = page.locator('.hud');
+		// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
+		await expect(hud).toBeVisible({ timeout: 90_000 });
+		await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
+		// The controls come up while the sketch finishes its scene, which is before the engine's first
+		// frame. On a software GPU that frame arrives much later, and a picture read before it is an
+		// empty canvas: two empty frames differ by nothing, so the settle below would take one for a
+		// still look and every frame the engine drew afterwards would be measured against nothing. The
+		// page takes its loading overlay away on the first frame, so that is the signal to wait for
+		// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
+		await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
+		// Open the panel, as a visitor does, with the chevron.
+		await page.locator('.hud__chevron').click();
+		await expect(hud).toHaveClass(/\bopen\b/);
 
-	// Camera is a radio group: a pick names the group and the new mode.
-	await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
-	// The toast sits at the top centre of the stage, where the scene draws.
-	const stage = await page.locator('main.stage').boundingBox();
-	const toast = await page.locator('.hud__toast').boundingBox();
-	expect(stage).not.toBeNull();
-	expect(toast).not.toBeNull();
-	expect(
-		Math.abs(
-			(toast?.x ?? 0) + (toast?.width ?? 0) / 2 - ((stage?.x ?? 0) + (stage?.width ?? 0) / 2),
-		),
-	).toBeLessThan(3);
-	expect(toast?.y ?? 0).toBeLessThan(80);
+		// Camera is a radio group: a pick names the group and the new mode.
+		await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
+		// The toast sits at the top centre of the stage, where the scene draws.
+		const stage = await page.locator('main.stage').boundingBox();
+		const toast = await page.locator('.hud__toast').boundingBox();
+		expect(stage).not.toBeNull();
+		expect(toast).not.toBeNull();
+		expect(
+			Math.abs(
+				(toast?.x ?? 0) + (toast?.width ?? 0) / 2 - ((stage?.x ?? 0) + (stage?.width ?? 0) / 2),
+			),
+		).toBeLessThan(3);
+		expect(toast?.y ?? 0).toBeLessThan(80);
 
-	// Time of day is a radio group too. Its last entry is the studio, which is not an hour: every
-	// mood the stage supports is reachable here and checked.
-	await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
-	await pick(page, 'Time of day', 'mood', 'Studio', 'time of day: studio');
-	// Back to an hour, so the switches below are checked against the sky, not the studio backdrop.
-	await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
-	// Atmosphere, Lighting and Post are toggles: each names the effect, with its label's own case,
-	// and its new state. The snow goes off first, so the scene holds still between frames.
-	await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
-	await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
-	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
-	await switchPart(page, 'Environment', 'Lighting', 'lighting');
-	await pick(page, 'Lighting', 'lighting', 'Shadows', 'Shadows: off');
-	await pick(page, 'Post', 'post', 'Bloom', 'Bloom: on');
-	// Quality is a radio group of the presets.
-	await pick(page, 'Quality', 'quality', 'Medium', 'quality: medium');
+		// Time of day is a radio group too. Its last entry is the studio, which is not an hour: every
+		// mood the stage supports is reachable here and checked.
+		await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
+		await pick(page, 'Time of day', 'mood', 'Studio', 'time of day: studio');
+		// Back to an hour, so the switches below are checked against the sky, not the studio backdrop.
+		await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
+		// Atmosphere, Lighting and Post are toggles: each names the effect, with its label's own case,
+		// and its new state. The snow goes off first, so the scene holds still between frames.
+		await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
+		await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
+		await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+		await switchPart(page, 'Environment', 'Lighting', 'lighting');
+		await pick(page, 'Lighting', 'lighting', 'Shadows', 'Shadows: off');
+		await pick(page, 'Post', 'post', 'Bloom', 'Bloom: on');
+		// Quality is a radio group of the presets.
+		await pick(page, 'Quality', 'quality', 'Medium', 'quality: medium');
 
-	expect(errors).toEqual([]);
-});
+		expect(errors).toEqual([]);
+	},
+);
