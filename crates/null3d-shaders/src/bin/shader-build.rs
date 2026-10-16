@@ -3,7 +3,7 @@
 //! date, with a per-entry cache so a change to one shader compiles only that shader.
 //!
 //! ```text
-//! cargo run -p null3d-shaders --bin shader-build [-- --root <repository>]
+//! cargo run --profile shader -p null3d-shaders --bin shader-build [-- --root <repository>]
 //!     [--cache <folder>] [--stamp <stamp>] [--no-cache]
 //! ```
 //!

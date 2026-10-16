@@ -3,9 +3,11 @@
 
 mod common;
 mod precision;
+mod subset;
 
 use common::{
-    SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
+    SEE_RULES, SHADER, assert_feature, assert_same, build, build_in_shader_compiler, build_wgsl,
+    column_of, only_problem, project, wgsl,
 };
 
 use null3d_shaders::{
@@ -1024,6 +1026,43 @@ fn the_same_problem_in_several_variants_is_listed_once() {
     );
 }
 
+/// The builds of an entry compile together on several threads. Each output must still be the
+/// build of its own variant, and a problem must name the variants in build order.
+#[test]
+fn builds_that_compile_together_keep_their_own_outputs_and_order() {
+    let count = 16;
+    let mut source = String::from("@fragment\nfn fs_main() -> @location(0) vec4f {\n");
+    for k in 0..count {
+        source.push_str(&format!(
+            "#ifdef D{k}\n    let x = {}.5;\n#endif\n",
+            100 + k
+        ));
+    }
+    source.push_str("    return vec4f(x);\n}\n");
+    let names: Vec<String> = (0..count).map(|k| format!("v{k:02}")).collect();
+    let tables: Vec<String> = (0..count)
+        .map(|k| format!("{{ defs = [\"D{k}\"], targets = [\"wgsl\"] }}"))
+        .collect();
+    let variants: Vec<(&str, &str)> = names
+        .iter()
+        .zip(&tables)
+        .map(|(name, table)| (name.as_str(), table.as_str()))
+        .collect();
+    let output = build(&project(&source, &variants, &[])).unwrap();
+    for (k, name) in names.iter().enumerate() {
+        let wgsl = &output.shaders["shader"][name].wgsl.as_ref().unwrap().source;
+        assert!(wgsl.contains(&format!("{}.5", 100 + k)), "{name}:\n{wgsl}");
+    }
+
+    let broken = source.replace(
+        "    return vec4f(x);",
+        "    var c = vec4f(x);\n    c.xy = vec2f(1.0);\n    return c;",
+    );
+    let problem = only_problem(build(&project(&broken, &variants, &[])));
+    let expected: Vec<String> = names.iter().map(|name| format!("shader.{name}")).collect();
+    assert_eq!(problem.variants, expected);
+}
+
 /// The library modules that shaders import.
 const LIBRARY_MODULES: [&str; 8] = [
     "math", "noise", "color", "lighting", "fog", "vertex", "depth", "sdf",
@@ -1164,14 +1203,26 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// build. Every check that reads the whole output runs here, on one build. A second build runs
 /// on another thread at the same time, for the check that the output is the same on every build.
 /// Other tests build only the shaders they read, through the tests' `subset` module.
+///
+/// With `NULL3D_SHADER_COMPILER` set, the shader compiler builds the repository one entry at a
+/// time, and each entry's result must be the native build's. It cannot build the whole manifest in
+/// one call: a 32-bit WebAssembly module may hold 4 GB at most and refuses a single allocation
+/// above 2 GB, while the repository's builds hold about 1.7 GB and the JSON of their own result is
+/// as large again. Asked for the whole manifest, the module stops on an internal error while the
+/// native build answers that it is fine. A project's manifest, which is the compiler's own work,
+/// stays far below that.
 #[test]
 fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let inputs = Inputs::read(root).unwrap();
     let (output, again) = std::thread::scope(|scope| {
-        let again = scope.spawn(|| build(&inputs).unwrap());
-        (build(&inputs).unwrap(), again.join().unwrap())
+        let again = scope.spawn(|| null3d_shaders::build(&inputs).unwrap());
+        (
+            null3d_shaders::build(&inputs).unwrap(),
+            again.join().unwrap(),
+        )
     });
+    the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
     let failures: Vec<String> = [
         same_output(&output, &again),
         glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
@@ -1183,6 +1234,52 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
     .filter_map(Result::err)
     .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// Builds each entry of the manifest alone through the shader compiler when
+/// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of the
+/// whole repository for that entry. Comparing with that build is what keeps the entry built once:
+/// the reference `output` is the build the test's other checks read. An entry that builds nothing
+/// of its own, such as the template of custom materials, has no such build and is skipped.
+fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, output: &Output) {
+    if std::env::var_os("NULL3D_SHADER_COMPILER").is_none() {
+        return;
+    }
+    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
+    let shaders = manifest["shaders"]
+        .as_table()
+        .expect("the manifest's shaders");
+    assert!(!shaders.is_empty(), "the manifest names no shader");
+    for name in shaders.keys() {
+        if !output.shaders.contains_key(name) {
+            continue;
+        }
+        let compiled = build_in_shader_compiler(&subset::repository_subset(&[name.as_str()]));
+        assert_same(name, &compiled, &one_entry(name, output));
+    }
+}
+
+/// The result that the native build of the whole repository gives for one entry, in the shape of a
+/// response to a build of that entry alone.
+fn one_entry(name: &str, output: &Output) -> serde_json::Value {
+    let entry = |built: serde_json::Value| {
+        let mut one = serde_json::Map::new();
+        one.insert(name.to_owned(), built);
+        serde_json::Value::Object(one)
+    };
+    let mut built = serde_json::Map::new();
+    built.insert(
+        "shaders".to_owned(),
+        entry(serde_json::to_value(&output.shaders[name]).expect("the entry's builds")),
+    );
+    built.insert(
+        "pipelines".to_owned(),
+        entry(serde_json::to_value(&output.pipelines[name]).expect("the entry's pipelines")),
+    );
+    let mut response = serde_json::Map::new();
+    response.insert("ok".to_owned(), serde_json::Value::Bool(true));
+    response.insert("output".to_owned(), serde_json::Value::Object(built));
+    serde_json::Value::Object(response)
 }
 
 fn same_output(output: &Output, again: &Output) -> Result<(), String> {

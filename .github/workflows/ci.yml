@@ -95,6 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
@@ -132,6 +133,32 @@ jobs:
       # The meshopt unit tests read the Khronos test file and build test files from the samples.
       - uses: ./.github/actions/samples
       - run: bun run test
+
+  heavy-checks:
+    # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
+    # the modules, the engine's programs, pipelines and malformed texture files, and the two bundler
+    # builds. The unit job
+    # shares one process, so its script ignores these files and this job runs them beside it, each
+    # under its own memory ceiling ([Test memory](.dev/tests.md)).
+    needs: [changes, build]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # Git hooks are for local commits; this job runs the same checks directly.
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/samples
+      - run: bun run test:heavy
 
   commits:
     # The commit messages and their trailers, which the commit hooks check locally: on a push, every
@@ -269,9 +296,7 @@ jobs:
             packages/engine/dist/
             packages/vite-plugin/dist/
             packages/cli/dist/
-            packages/engine/src/generated/shaders*.ts
-            packages/engine/src/generated/shaders-*.js
-            packages/engine/src/generated/shader-features.ts
+            packages/engine/src/generated/
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
@@ -358,6 +383,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       # The check reads the trailers of the commits since the base.
@@ -429,6 +455,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -458,24 +485,32 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A shard's tests take about 12 minutes, with the median times that the weights come from, and
+    # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
+    # the median, so the limit leaves room for that rather than for a hang.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 11, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/11 }
-          - { part: shard 2 of 11, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/11 }
-          - { part: shard 3 of 11, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/11 }
-          - { part: shard 4 of 11, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/11 }
-          - { part: shard 5 of 11, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/11 }
-          - { part: shard 6 of 11, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/11 }
-          - { part: shard 7 of 11, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/11 }
-          - { part: shard 8 of 11, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/11 }
-          - { part: shard 9 of 11, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/11 }
-          - { part: shard 10 of 11, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/11 }
-          - { part: shard 11 of 11, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/11 }
+          - { part: shard 1 of 15, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/15 }
+          - { part: shard 2 of 15, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/15 }
+          - { part: shard 3 of 15, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/15 }
+          - { part: shard 4 of 15, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/15 }
+          - { part: shard 5 of 15, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/15 }
+          - { part: shard 6 of 15, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/15 }
+          - { part: shard 7 of 15, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/15 }
+          - { part: shard 8 of 15, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/15 }
+          - { part: shard 9 of 15, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/15 }
+          - { part: shard 10 of 15, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/15 }
+          - { part: shard 11 of 15, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/15 }
+          - { part: shard 12 of 15, id: 12, tests: --grep-invert "@alone|$CITY_TESTS" --shard=12/15 }
+          - { part: shard 13 of 15, id: 13, tests: --grep-invert "@alone|$CITY_TESTS" --shard=13/15 }
+          - { part: shard 14 of 15, id: 14, tests: --grep-invert "@alone|$CITY_TESTS" --shard=14/15 }
+          - { part: shard 15 of 15, id: 15, tests: --grep-invert "@alone|$CITY_TESTS" --shard=15/15 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       # S6's image tests, which load the city's files: the browser-city job runs them.
       CITY_TESTS: '\bs6 on '
@@ -494,7 +529,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "103:202:322:293:185:66:133:112:170:121:257"
+          PWTEST_SHARD_WEIGHTS: "118:154:283:511:209:143:80:47:193:199:24:28:28:138:308"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -515,6 +550,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -539,6 +575,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -573,6 +610,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -624,6 +662,7 @@ jobs:
           - shard: 2
             select: --grep-invert
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
@@ -671,6 +710,7 @@ jobs:
       matrix:
         gpu: [webgpu, webgl2]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -708,6 +748,15 @@ jobs:
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included, which leaves room under the
     # limit for a runner page that goes quiet: each one costs about a minute more.
+    #
+    # The limit is NOT what fails this job, so it is left alone. Measured on run 38824482127: ten of
+    # the fourteen shards hold an engine-production load item and every one of them failed, while the
+    # four without it all finished. On those ten, the dev server's eager preparation compresses the
+    # whole production build before the browser opens, which costs 13.6 to 16.1 minutes of silence;
+    # each shard was then drawing a page, 1.5 to 4.2 minutes in, when the limit killed it. They need
+    # 31 to 33 minutes, so a limit of 25 would cut the same five again and hold scarce macOS runners
+    # five minutes longer on every red run. The cause is the warm-up, not the limit, and it is being
+    # fixed in the test load server instead.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -716,6 +765,7 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7]
         shards: [7]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -754,6 +804,7 @@ jobs:
     permissions:
       contents: write
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -786,6 +837,7 @@ jobs:
       - changes
       - commits
       - docs-and-tools
+      - heavy-checks
       - rust-lint
       - rust-tests
       - build
@@ -830,7 +882,8 @@ jobs:
           jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
           jq -e '.changes.outputs as $run | {
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "wasm-checks": "code",
-              "shader-compiler": "code", "packages": "code", "city": "full", "browser": "full",
+              "shader-compiler": "code", "packages": "code", "heavy-checks": "code",
+              "city": "full", "browser": "full",
               "browser-city": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"

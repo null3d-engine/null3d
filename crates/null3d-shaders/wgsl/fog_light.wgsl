@@ -12,7 +12,7 @@
 // group holds its settings, the last frame's grid and a sampler.
 #import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_edge_distance, fog_grid_place, fog_phase, fog_point, fog_slice_edge}
 #import null3d::lighting::{distance_attenuation, spot_attenuation}
-#import null3d::lights::{cluster_lights, grid_word, light_of}
+#import null3d::lights::{KIND_RECT, cluster_lights, grid_word, light_of}
 #import null3d::shadows::{shadows, light_shadow, no_plane, sun_texels}
 
 @group(1) @binding(0) var<uniform> settings: FogStep;
@@ -80,6 +80,12 @@ fn lamps_seen(relative: vec3f, toward: vec3f) -> vec3f {
     let g = settings.sun_direction.w;
     for (var k = 0u; k < found.y; k++) {
         let lamp = light_of(grid_word(found.x + k));
+        // The grid lists area lights while the lit templates shade them, and a lamp's record holds
+        // a rectangle's shape and image layer where a point or spot light keeps its decay, cone
+        // and shadow tile. The fog scatters the point and spot lights, so it leaves them out.
+        if bitcast<u32>(lamp.penumbra.y) >= KIND_RECT {
+            continue;
+        }
         let offset = lamp.position_range.xyz - relative;
         let gap = length(offset);
         let to_lamp = offset / max(gap, 1e-6);

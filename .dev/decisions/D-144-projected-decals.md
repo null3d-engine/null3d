@@ -84,3 +84,20 @@ Option D, built from the standard material's own shader and the sorted machinery
 - Docs: `api/materials` (Decals), the mapping entry for `DecalGeometry`.
 - Skills: the develop skill's task table and quick reference, the port skill's notes.
 - Tests: the render crate's `decals` tests, the image tests `decals`, the first-use download test and `--decals` in `bench:allocation`.
+
+## Addendum, 2026-10-15: the decals' own frame group on WebGPU
+
+The light probe grid (D-146) added a 3D texture to the frame group. WebGPU counts each pipeline's sampled textures per shader stage over every entry of its groups' layouts, whether or not the shader reads them. A decal with maps then needed 17 in its fragment stage: 8 from the frame group, 8 maps and the scene's depth. WebGPU's default limit is 16, so textured decals drew nothing on WebGPU. WebGL2 drew them, as its programs take a texture unit only for a texture that they read.
+
+Two fixes were open. One asks for a higher `maxSampledTexturesPerShaderStage` where the adapter offers it. Hard rule 6 then needs a fallback for devices that offer only 16, and phones often do, so the fallback has to exist anyway. The other gives the decal templates a frame group without the textures that no decal build reads: the probe grid's and the copy of the opaque color. That keeps every device within the default limits with one code path, so it was chosen.
+
+- On WebGPU the decal templates bind `layout::DECAL_FRAME` at group 0: the frame group's entries without bindings 10 and 15. A decal with maps reads 15 sampled textures, and 1 stays free.
+- The WebGPU builder makes the group only while the decal pass runs, from the camera's frame group's inputs, and again whenever it makes the camera's frame group again. A page without decals makes neither the group nor its layout.
+- WebGL2 is unchanged: the decal pass binds the frame group.
+- A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's resources per stage over its layouts, for every template, against WebGPU's default limits. A new binding that passes a limit fails it. The render crate's `decals` tests check the group's entries and that the decal pass binds it.
+
+## Addendum, 2026-10-16: a box with a flat side marks nothing
+
+The vertex stage inverts the box's axes by their cofactors. Its comment says that a flat box has no inverse and marks nothing, and nothing enforced that. A box with a zero size on one axis gives a zero determinant, so the three axis vectors it carries out are all zero. Every dot product with them is zero. The fragment stage read that as a point at the box's middle, so `inside` held. The aim it normalized was the zero vector, which makes a NaN. `facing`, `angle_fade` and `decal_fade` followed. A NaN is not below zero, so the box drew rather than discarded.
+
+An animated size that passes through zero, or a size typed as 0 on the depth axis, reaches this. The fragment stage now tests the box's axis for zero. A flat box takes a fixed aim, so no NaN is made, and `inside` is false, so it discards. The decal image tests place boxes with a size on each axis, and the demos give every decal a depth, so no reference changes.

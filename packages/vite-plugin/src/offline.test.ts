@@ -169,6 +169,26 @@ describe('offlineFiles', () => {
 		expect(list.start).not.toContain('assets/shaders-hash-and-skinning-wgsl-k1.js');
 	});
 
+	it('gives a feature the table of shared paragraphs that its modules name, never the start', () => {
+		const table = file('assets/shader-paragraphs-wgsl.js', {
+			text: 'export const SHARED_0 = `uniform vec4 shared;`;',
+		});
+		// The start's device module keeps its own paragraphs, so it names no table.
+		const withTable = [
+			...build.map((f) =>
+				f.fileName === 'assets/shaders-skinning-wgsl-f6.js'
+					? { ...f, loads: [...f.loads, table.fileName] }
+					: f,
+			),
+			table,
+		];
+		const list = offlineFiles(withTable);
+		expect(list.features.skinning).toEqual([table.fileName, 'assets/shaders-skinning-wgsl-f6.js']);
+		expect(list.start).not.toContain(table.fileName);
+		for (const files of Object.values(list.features))
+			if (files !== list.features.skinning) expect(files).not.toContain(table.fileName);
+	});
+
 	it("keeps a feature's file in the start when a start file imports it statically", () => {
 		const imported = build.map((f) =>
 			f.fileName === 'assets/src-b2.js' ? { ...f, imports: ['assets/ktx2-d4.js'] } : f,
