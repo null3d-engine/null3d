@@ -141,6 +141,8 @@ const SKETCH_SWITCHES = [
 	'areaLights',
 	'decals',
 	'setters',
+	'calls',
+	'timeOfDay',
 	'frames',
 ] as const;
 

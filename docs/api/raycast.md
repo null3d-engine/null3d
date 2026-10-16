@@ -20,7 +20,7 @@ flowchart LR
 
 A raycast finds where a ray meets the scene's objects. An overlap query finds the objects inside a sphere or a box. Every query tests the triangles of objects and instance rows, as three.js's `Raycaster` does. Raycasts also hit [sprites, points and lines](#sprites-points-and-lines) where they draw. The engine keeps a tree over the scene's objects and a tree over each mesh's triangles. So a query tests only the few triangles near it.
 
-Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing.
+Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. `bun run bench:allocation --calls` checks it.
 
 ```ts
 import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';
