@@ -1368,6 +1368,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
 		sameOnEveryTier: true,
+		samePicture: 'shadows',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The same scene with every object a row of an instance batch, static or dynamic: batch rows cast
@@ -2169,6 +2170,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/transparency-sketch.ts?custom',
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+		samePicture: 'transparency',
 	},
 	// A smooth, a rough and a tinted glass ball let the striped wall behind them through, from the
 	// copy of the opaque objects' color. The parity test compares it with three.js's

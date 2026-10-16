@@ -11,7 +11,9 @@ import {
 	environmentNamed,
 	type ImageRun,
 	imageProblems,
+	referenceDigest,
 	runIn,
+	sharedReferenceProblems,
 	tiersOf,
 } from '../lib/images.ts';
 import { loadResult } from '../lib/page-result.ts';
@@ -78,6 +80,13 @@ for (const imageTest of IMAGE_TESTS)
 			expect(await runProblems(page, runs, testInfo.project.name)).toEqual([]);
 		});
 	}
+
+// Two tests of one scene that keep the same picture are pictures of neither feature, which no
+// browser run can catch: the picture looks right and compares with itself. The bench's four
+// area-light scenes shared one black image this way.
+test('no scene draws one picture for two of its tests', () => {
+	expect(sharedReferenceProblems(IMAGE_RUNS, referenceDigest)).toEqual([]);
+});
 
 // Hold mode waits until the thread that draws holds every texture image. Where the threads wake
 // each other with messages, as in a browser without Atomics.waitAsync, that thread's wake messages
