@@ -3,7 +3,13 @@
 // and every WGSL file, as `{ "manifest": ..., "files": { "<path>": ... } }`. The shader crate's
 // build tests run this to check that the module gives the native build's results:
 //   bun tools/shader-compiler.ts < request.json
-import { buildShaders, type ShaderBuildInputs } from '../packages/vite-plugin/src/shader-compiler';
+//
+// The module's answer goes to standard output as it stands, without being read into objects and
+// written out again. The engine's own manifest answers with more than a gigabyte, and the round
+// trip through `buildShaders` would hold several copies of that at once for no gain: the caller
+// reads JSON either way, and this leaves the module's own pieces as the only copy.
+import { CompilerCalls } from '../packages/vite-plugin/src/compiler-calls.js';
+import { compilerModule } from '../packages/vite-plugin/src/shader-compiler';
 
-const inputs = JSON.parse(await Bun.stdin.text()) as ShaderBuildInputs;
-process.stdout.write(JSON.stringify(buildShaders(inputs)));
+const call = new CompilerCalls(compilerModule());
+process.stdout.write(call.call('build', await Bun.stdin.text()));

@@ -81,13 +81,24 @@ pub fn build_in_shader_compiler(inputs: &Inputs) -> Value {
 }
 
 /// Fails at the first line where two results, printed as JSON, differ. `what` names the build that
-/// was compared.
+/// was compared. The results are printed only when they differ: a repository entry's result is
+/// hundreds of megabytes, and printing both would cost the test more memory than it needs to
+/// compare them.
 pub fn assert_same(what: &str, compiled: &Value, native: &Value) {
-    let pretty = |value| serde_json::to_string_pretty(value).expect("JSON text");
-    let (compiled, native) = (pretty(compiled), pretty(native));
     if compiled == native {
         return;
     }
+    // A result that failed where the native build succeeded is reported by why it failed. Comparing
+    // the two as text would name only the `ok` flag, and a stop for want of memory, which no shader
+    // causes, would read as an unexplained difference.
+    if compiled["ok"] == Value::Bool(false) {
+        panic!(
+            "{what}: the shader compiler answered with a failure where the native build did not:\n{}",
+            problems_of(compiled)
+        );
+    }
+    let pretty = |value| serde_json::to_string_pretty(value).expect("JSON text");
+    let (compiled, native) = (pretty(compiled), pretty(native));
     let line = compiled
         .lines()
         .zip(native.lines())
@@ -99,6 +110,35 @@ pub fn assert_same(what: &str, compiled: &Value, native: &Value) {
         compiled.lines().nth(line).unwrap_or("(the end)"),
         native.lines().nth(line).unwrap_or("(the end)"),
     );
+}
+
+/// Every problem of a failed result, one to a line, with its place when it names one.
+fn problems_of(result: &Value) -> String {
+    let problems = result["problems"].as_array().cloned().unwrap_or_default();
+    if problems.is_empty() {
+        return "  (the response names no problem)".to_owned();
+    }
+    problems
+        .iter()
+        .map(|problem| {
+            let message = problem["message"].as_str().unwrap_or("(no message)");
+            let variants = problem["variants"]
+                .as_array()
+                .map(|names| {
+                    names
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            match problem["file"].as_str() {
+                Some(file) => format!("  {file}: {message} ({variants})"),
+                None => format!("  {message} ({variants})"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Builds a shader with one variant that targets WGSL.
