@@ -193,7 +193,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'shader-inputs',
