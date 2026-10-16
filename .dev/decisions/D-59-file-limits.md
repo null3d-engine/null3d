@@ -151,7 +151,7 @@ The review's low findings on the same files land with this record:
 ## Consequences
 
 - `scene/file-limits.ts` holds the limits. `gltf-parse.ts`, `gltf-animation.ts` and `gltf-json.ts` take a `FileBudget`; `gltf-hostile.test.ts` holds the hostile files.
-- `ktx2.ts` adds `ktx2TooLarge` and the WebGL2 rule; `Textures` keeps whether the engine draws with WebGL2.
+- `ktx2.ts` adds `ktx2TooLarge` and the WebGL2 rule; `Textures` keeps whether the engine draws with WebGL2. The file's reading and its size limits live in `scene/ktx2-file.ts` since [D-184](D-184-ktx2-level-index-limits.md).
 - The core: `MAX_CLIP_KEYS` replaces `MAX_FRAMES`, and E1218's problem 5 is now `KEYS`, whose detail is the keys the clip would hold. The stored-tree reader adds `FormatError::EmptySlot`. `ArraysError` and `MeshError` add `OutOfMemory`, which the WebAssembly entry point reports as E1109.
 - The glTF loader passes E1109 from a mesh through, instead of wrapping it in E1416.
 - The asset tool's `textureSize` keeps each side at 4 texels or more.
@@ -175,4 +175,5 @@ Data, 8 October 2026, on main at 061177262:
 
 - With 4,000 copies of each kind per file, 26 tests and 28,801 checks, the parsers found no fault. They took 4 seconds in all. The committed test takes 500 copies of each kind, which runs in under a second.
 - On some copies, the Basis transcoder printed `elemental_vector::increase_capacity: Allocation failed!` and failed the file. It still transcoded the good file each time after. The engine checks a file's sides and bytes before the transcoder starts (`ktx2TooLarge`), so the sizes that a broken header claims never reach it.
+- 16 October 2026, later runs of the same check: the level index's own numbers were the gap in that. `ktx2TooLarge` reads the header, and the sizes a file declares live in the index that follows it. A 149-byte file whose first level declared 1 GiB grew the transcoder's WebAssembly heap by 1,024 MiB before the refusal, and this check's run cost 1,694 MiB. [D-184](D-184-ktx2-level-index-limits.md) bounds the index too, and the run now costs 264 MiB.
 - To show that the test sees a fault, we removed the index check of `gltf-json.ts` (an index at or past its array's length). 5 of the 26 tests then failed, each on a `TypeError` that names the change, such as "accessors.15.bufferView set to 255".
