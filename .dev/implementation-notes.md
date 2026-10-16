@@ -1000,3 +1000,34 @@ by. Either one means a full rebuild on every checkout and a cold shader build in
   so the saving is zero.
 - **More first-use files.** The start file is one per cent of the set, and a page that uses two
   features would fetch two modules whose contents overlap. That is the merge problem in another form.
+
+### Measured on 16 October 2026: the duplication is also across the device targets
+
+The paragraph text repeats across the eight GLSL targets of one feature set, not only across feature
+sets inside one target. This was measured by streaming the modules one at a time and hashing each
+paragraph, so it reads no whole file into memory.
+
+- Two targets that differ in the draw-index bit agree on 526 of their 527 paragraphs, 99.8 per cent.
+- Across all eight, one feature set stores 267 MB of paragraph text, and the distinct text is 99 MB.
+  The eight targets therefore fall into about three families of paragraph text. The half-precision and
+  tone-mapping bits rewrite paragraphs; the draw-index bit does not.
+- The composed sources are not where the duplication is. They are the same programs written with
+  different paragraph numbers, because the writer numbers a paragraph by where it first appears. Ten of
+  eleven composed sources differ between two targets whose paragraphs agree. Share the paragraphs, and
+  never the composed text.
+
+### The build's work is a product of its bits
+
+The manifest's 115 variants make about 17,000 builds. A variant builds once for each combination of its
+free bits, so removing any free bit halves it. Tone mapping is the dearest bit by a wide margin. It is
+listed by 45 of the 115 variants, and it accounts for about half of all builds. Skin, alpha masking,
+received shadows, half precision and vertex colour each cut 46 to 50 per cent of the large variants. The
+rare lit features cost less: area lights and coat-sheen about 6,600 builds each, and weighted
+transparency 1,300.
+
+### The demand-driven build would not help
+
+A build that emitted only the feature sets a page asks for would not shrink the set. Two measurements
+close it. The test suite compiles every variant of every generated module, so all 140 GLSL feature sets
+are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
+every page's build whatever the page draws. Grouping those copies only defers the download.
