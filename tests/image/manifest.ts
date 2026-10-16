@@ -1965,6 +1965,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		size: [480, 270],
 		modes: ALL_MODES,
+		// This sketch carries three custom shaders, and its first run pays for the compile that the
+		// dev server does of them and for the build sets that go with them. On a busy runner that
+		// start is slow beside the page's own work, so the runs take a longer limit, as the room's
+		// environment and the clear coat's page do. A passing run is unaffected.
+		timeoutSeconds: 60,
 	},
 	// The inputs that three.js's ShaderMaterial gives its shaders: the instance's row and the
 	// object's id in static and dynamic batches and on meshes, the camera's and the object's
