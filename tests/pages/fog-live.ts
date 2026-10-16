@@ -14,11 +14,12 @@ const WINDOW_SECONDS = 0.5;
  * How long a slow device, such as the software renderer, may take to draw those frames. The cap
  * only decides how long the page waits before it says it could not settle: a page whose frame loop
  * has stopped never raises the count, so it reaches the cap with too few frames and the test fails
- * on the count either way. The figure is a small multiple of what a working software renderer
- * needs for the same 20 frames, so that a loaded machine still settles, and it stays bounded so
- * that a stopped page is reported rather than waited on.
+ * on the count either way. Twice the slowest renderer the suite meets: CI's software renderer drew
+ * 12 of these frames in 45 seconds, so the 20 take it about 75, and the second half of the cap is
+ * the room a machine slower than CI's needs. It stays bounded so that a stopped page is reported
+ * rather than waited on.
  */
-const SETTLE_LIMIT_SECONDS = 45;
+const SETTLE_LIMIT_SECONDS = 150;
 
 run('fog-live', async () => {
 	const canvas = document.querySelector('canvas');
