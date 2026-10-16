@@ -45,9 +45,16 @@ export function guideFiles(root: string): string[] {
 }
 
 /**
- * True for a maintainer guide that is still current: Markdown directly in `.dev/`, with none
- * nested below it. It leaves out the dated records, `.dev/decisions/` and `.dev/tested-devices/`,
- * because each of those holds what was decided or measured on a day (D-182).
+ * What decides a style check: a maintainer can still act on a current guide, so its text follows the
+ * writing rules of today. A dated record holds what was decided or measured on a day, so a rule
+ * added later would change the record by editing it. The folders below are where such records live,
+ * and a test refuses a new folder under `.dev/` until it is named here with its reason.
+ */
+export const DATED_RECORD_FOLDERS: readonly string[] = ['.dev/decisions', '.dev/tested-devices'];
+
+/**
+ * True for a maintainer guide that is still current: Markdown directly in `.dev/`, with none nested
+ * below it. Everything under a dated folder of `DATED_RECORD_FOLDERS` is a record instead (D-182).
  */
 export function isCurrentGuide(path: string): boolean {
 	return /^\.dev\/[^/]+\.md$/.test(path);

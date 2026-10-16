@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DATED_RECORD_FOLDERS } from '../lib/files';
 import { fixture } from '../lib/fixture';
 import {
 	checkCommitMessage as checkDocs,
@@ -310,6 +311,16 @@ describe('the docs style hook', () => {
 		// Every `.dev` file the check reads is a current guide, so a record never reaches it.
 		for (const path of checked.filter((path) => path.startsWith('.dev/')))
 			expect(path).toMatch(/^\.dev\/[^/]+\.md$/);
+	});
+
+	it('knows every folder of this checkout under .dev/, so a new one cannot pass unjudged', () => {
+		const folders = readdirSync(join(repoRoot, '.dev'), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => `.dev/${entry.name}`)
+			.sort();
+		// A folder that appears here fails this test until DATED_RECORD_FOLDERS names it, so its
+		// files are checked unless someone records why they are a dated record.
+		expect(folders).toEqual([...DATED_RECORD_FOLDERS].sort());
 	});
 
 	it('treats AGENTS.md and the current maintainer guides as contributor files', () => {

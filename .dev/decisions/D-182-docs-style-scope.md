@@ -10,7 +10,7 @@ Should the maintainers repair 1,659 writing warnings, most of them in the dated 
 
 ## Rule
 
-The writing rules apply to the text a maintainer writes now. A dated record holds what was decided or measured on a day, so editing it to pass a rule added later would falsify it. The check therefore reads the files a reader acts on, and it names every file it leaves out.
+A file is checked when a maintainer can still act on its text. That covers the pages a reader acts on today, and the guides a maintainer edits now. A file that records what was decided or measured on a day is not checked, because a rule added later would change the record by editing it. The criterion decides, not the folder: the dated decision records and the device run records are only where such files happen to live today.
 
 ## Data
 
@@ -39,7 +39,8 @@ Narrow the check. It reads the pages under `docs/` and `skills/`, the README, AG
 
 ## Consequences
 
-- The list of files the check reads over the whole tree (`styleCheckedFiles`) and its test for one path (`isStyleChecked`) share one named predicate, `isCurrentGuide`. It accepts Markdown directly in `.dev/` and nothing below it, so a new folder under `.dev/` stays out of scope until someone adds it on purpose.
+- The list of files the check reads over the whole tree (`styleCheckedFiles`) and its test for one path (`isStyleChecked`) share one named predicate, `isCurrentGuide`. It accepts Markdown directly in `.dev/` and nothing below it, so the criterion is what the code applies.
+- A test compares the folders of this checkout under `.dev/` against `DATED_RECORD_FOLDERS`, which names the two dated ones. A new folder there fails that test until someone names it and says whether its files are dated records. So a folder cannot fall out of the check without a decision.
 - A new decision record and a new device run go unchecked by the machine. The writing rules still apply to them, and the maintainer's own reading and the humanizer pass are what hold them.
 - The link check still reads the records, so a broken link in one is still caught. The command-table check in AGENTS.md reads them too.
 - `bun run docs:check` still refuses a record without a title, a status or a summary. No other check changed.
