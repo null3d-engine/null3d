@@ -117,16 +117,23 @@ const FIRST_FRAME_MS = 180_000;
  * frame of the pick.
  */
 const WAIT_MS = 60_000;
+/**
+ * How long the look may take to come to rest. A frame read costs milliseconds on a real GPU and
+ * seconds on a software one, so this bound is a time and never a count of frames: one count of
+ * frames would give a software chip a wait many times longer than the same count gives a real GPU.
+ */
+const SETTLE_MS = 10_000;
 
 /**
  * Waits until two frames in a row differ by less than a change the checks could mistake for one, and
  * gives that still frame as the look the checks below compare with. The look never coming to rest
- * inside the loop gives the last frame read. A caller that read this look again would pay for it a
+ * inside the wait gives the last frame read. A caller that read this look again would pay for it a
  * second time, and a read costs the frame loop a whole frame.
  */
 async function settle(page: Page): Promise<Frame> {
 	let previous = await frame(page);
-	for (let k = 0; k < 40; k++) {
+	const until = Date.now() + SETTLE_MS;
+	while (Date.now() < until) {
 		await new Promise((r) => setTimeout(r, 250));
 		const next = await frame(page);
 		if (difference(next, previous) < STILL) return next;
