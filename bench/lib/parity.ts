@@ -108,6 +108,8 @@ export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
  * Filament's kernel, and three.js by its own term, so the highlights of the smoothest surfaces and
  * the rims of glossy spheres differ. The other lighting terms match. Each limit sits just above the
  * scene's largest share on SwiftShader and on the Mac's GPU, which `.dev/image-tests.md` records.
+ * The toy car's chrome trim, window frames and lamp covers are the same case, on a model that also
+ * carries a clear coat, a sheen and glass.
  */
 export const SPECULAR_AA_LIMITS = {
 	'standard-grid': 0.25,
@@ -120,6 +122,7 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-metal-rough': 0.34,
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
+	'gltf-toy-car': 0.32,
 } as const;
 
 /**
@@ -424,8 +427,9 @@ const NO_TONE = 'tone=none';
  * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
  * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
  * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
- * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere. The glossy spheres of the metal-rough, specular and IOR scenes take
- * specular anti-aliasing's limits.
+ * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere.
+ * The glossy spheres of the metal-rough, specular and IOR scenes take specular anti-aliasing's
+ * limits, and the toy car's glossy trim, glass and coat take it too.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 0.5,
@@ -433,6 +437,7 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
+	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };
 
 /**
