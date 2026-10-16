@@ -1,0 +1,28 @@
+#!/bin/sh
+# The one dispatcher for this repository's git hooks. Git calls the file in this folder whose name is
+# the hook's, and that file passes the hook's name here. The folder is tracked, so every worktree has
+# it, and a worktree therefore needs no install of its own for its hooks to run.
+#
+# The hook bodies live in `.husky/`, which is tracked too. HUSKY=0 skips every hook, as CI's jobs and
+# the release job ask: they run the same checks directly, and a hook would only repeat them.
+set -eu
+
+hook=$1
+shift
+
+if [ "${HUSKY:-}" = "0" ]; then
+	exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+body="$root/.husky/$hook"
+
+if [ ! -f "$body" ]; then
+	echo "null3D: the $hook hook has no body in this tree, so nothing was checked." >&2
+	echo "Restore it with: git checkout -- .husky" >&2
+	exit 1
+fi
+
+# Git keeps the bodies without the executable bit, so `sh` runs them. `-e` stops at the first command
+# that fails, which is what husky's shim did.
+exec sh -e "$body" "$@"
