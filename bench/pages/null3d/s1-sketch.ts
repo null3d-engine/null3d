@@ -705,8 +705,10 @@ function createDecals({ scene, geometry, materials, textures }: SketchContext, m
 		decals.positions.set([x, WATER_HEIGHT, z], k * 3);
 		decals.scales.set([spacing * 0.9, spacing * 0.9, 30], k * 3);
 	}
-	const rotations = decals.rotations;
 	return (t: number) => {
+		// Read the rows inside the frame: the engine makes its views again when its memory grows,
+		// and the page adds more after these decals.
+		const rotations = decals.rotations;
 		for (let k = 0; k < count; k++) {
 			// A box turned to project down, then about the vertical by its own angle.
 			const half = 0.5 * (t + k);

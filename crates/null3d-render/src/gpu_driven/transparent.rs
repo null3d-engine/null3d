@@ -205,8 +205,9 @@ impl Transparent {
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
     /// It leaves out the objects whose maps show a target that the view does not read. `rows`
     /// picks the buckets that draw, and their pipelines: those of the transparent pass, or of the
-    /// camera's weighted layer. Each draw binds group `last`, where it is not 0, after its
-    /// bucket's groups, as decals bind the scene's depth.
+    /// camera's weighted layer. The draws bind group `frame` at 0, the view's frame group, or the
+    /// decal pass's own. Each draw binds group `last`, where it is not 0, after its bucket's groups,
+    /// as decals bind the scene's depth.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
@@ -217,6 +218,7 @@ impl Transparent {
         skinning: &Skinning,
         settings: &SceneSettings,
         meshes: &MeshBuffers,
+        frame: u32,
         last: u32,
         particles: &ParticlePass,
     ) -> Result<(), RecordError> {
@@ -225,7 +227,7 @@ impl Transparent {
             return Ok(());
         }
         let stride = sizes::INSTANCE_STRIDE;
-        list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
+        list.push(Op::SetBindGroup, &[0, frame, 0])?;
         let mut pipeline = None;
         let (mut vertices, mut indices) = (None, None);
         let mut groups = DrawGroups::default();

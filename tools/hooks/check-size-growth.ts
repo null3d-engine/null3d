@@ -49,12 +49,16 @@ export function explainedFiles(
 }
 
 /**
- * The shader files of features that load on first use that a trailer value names. The shader
- * manifest names those features, so the report's list of files cannot hold them, and their names
- * follow the pattern that the size report knows them by.
+ * The shader files of features that load on first use that a trailer value names, a target's shared
+ * tables of paragraphs among them. The shader manifest names those features, so the report's list
+ * of files cannot hold them, and their names follow the pattern that the size report knows them by.
  */
 function firstUseShaderFiles(value: string): string[] {
-	return [...value.matchAll(/(?<![\w./-])js\/(shaders-[a-z0-9-]+\.js)(?![\w/-]|\.\w)/g)]
+	return [
+		...value.matchAll(
+			/(?<![\w./-])js\/((?:shaders|shader-paragraphs)-[a-z0-9-]+\.js)(?![\w/-]|\.\w)/g,
+		),
+	]
 		.filter((match) => isFirstUseShaderPart(match[1] as string))
 		.map((match) => match[0]);
 }

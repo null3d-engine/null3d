@@ -50,13 +50,15 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
     let native = null3d_shaders::build(inputs);
     if std::env::var_os("NULL3D_SHADER_COMPILER").is_some() {
         let expected = serde_json::to_value(Response::from(&native)).expect("the native result");
-        assert_same(&build_in_shader_compiler(inputs), &expected);
+        assert_same("the build", &build_in_shader_compiler(inputs), &expected);
     }
     native
 }
 
-/// Runs a build through the shader compiler, in Bun.
-fn build_in_shader_compiler(inputs: &Inputs) -> Value {
+/// Runs a build through the shader compiler, in Bun. A test that compares one shader of the
+/// repository with the native build of the whole repository runs this itself, through the `subset`
+/// module, so that the shader is built once.
+pub fn build_in_shader_compiler(inputs: &Inputs) -> Value {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/shader-compiler.ts");
     let mut child = Command::new("bun")
         .arg(script)
@@ -78,8 +80,9 @@ fn build_in_shader_compiler(inputs: &Inputs) -> Value {
     serde_json::from_slice(&output.stdout).expect("the shader compiler's JSON result")
 }
 
-/// Fails at the first line where two results, printed as JSON, differ.
-fn assert_same(compiled: &Value, native: &Value) {
+/// Fails at the first line where two results, printed as JSON, differ. `what` names the build that
+/// was compared.
+pub fn assert_same(what: &str, compiled: &Value, native: &Value) {
     let pretty = |value| serde_json::to_string_pretty(value).expect("JSON text");
     let (compiled, native) = (pretty(compiled), pretty(native));
     if compiled == native {
@@ -91,7 +94,7 @@ fn assert_same(compiled: &Value, native: &Value) {
         .position(|(a, b)| a != b)
         .unwrap_or_else(|| compiled.lines().count().min(native.lines().count()));
     panic!(
-        "the shader compiler's result differs from the native build's, first at line {}:\n  shader compiler: {}\n  native build:    {}",
+        "{what}: the shader compiler's result differs from the native build's, first at line {}:\n  shader compiler: {}\n  native build:    {}",
         line + 1,
         compiled.lines().nth(line).unwrap_or("(the end)"),
         native.lines().nth(line).unwrap_or("(the end)"),
