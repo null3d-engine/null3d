@@ -23,6 +23,10 @@
 //!
 //! A panic stops a call with a trap. The panic hook first writes a response that describes the
 //! panic. The caller then drops the instance, whose memory may be in any state after a trap.
+//!
+//! A build's output and the JSON of its own result both live in the module's memory, which on 32
+//! bits holds 4 GB at most and refuses a single allocation above 2 GB. The engine's whole
+//! repository is beyond that, so build tools pass one project's manifest, which is far smaller.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
