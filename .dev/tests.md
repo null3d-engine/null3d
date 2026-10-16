@@ -8,6 +8,7 @@ The unit tests run in a few processes, one for each group of them, so what each 
 - That is a group for each package, and one each for the tools, the benchmark's scenes and pages, `tests/lib` and the demos, each a `bun test` of its own (`tests/unit.ts`). One invocation holds everything it finds in one process, so a group's peak is what its files hold together, and the run's peak is the largest group's rather than the sum of them all.
 - The generated shader set is the largest thing a test can hold: 1,343 modules and 850 MB of JavaScript source on disk. Git does not keep it; the build writes it.
 - A single file that imports the whole set makes the process large on its own. The same file that reads the set's text costs a fraction of that.
+- A generated set is not the only thing a test holds for good. The WebAssembly texture transcoder's heap grows when a check feeds it hostile files, and it does not shrink, so a check that does that holds every growth it has made. The malformed-file checks reach 1.7 GB that way, from a handful of changed files.
 - The script leaves out the checks that hold gigabytes, and caps the run. `bun run test:heavy` runs those checks, each in a process of its own under a ceiling of its own (`tests/heavy-checks.ts`). Both read one list of them, `tests/lib/heavy-checks.ts`: a file the unit run left out and no runner named would run nowhere, and the two halves of the list must not drift apart.
 
 ## What the run cost on 16 October 2026
