@@ -163,7 +163,8 @@ pub extern "C" fn build() {
             let _ = response.write_all(b"}}");
         }
         Err(error) => {
-            let response_of = Response::from(&Err::<Output, BuildError>(error));
+            let failed: Result<Output, BuildError> = Err(error);
+            let response_of = Response::from(&failed);
             let _ = serde_json::to_writer(&mut response, &response_of);
         }
     }
