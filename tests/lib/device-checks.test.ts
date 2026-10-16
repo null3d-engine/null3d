@@ -537,14 +537,18 @@ describe('the GPU pages of the checks plan', () => {
 		expect(
 			judge(checkOf('shaders-coat-11'), { ...empty, multiDraw: true }, NONE_MISSING, context),
 		).toEqual(['no GLSL program was compiled']);
+		// A part that compiled its other programs is not the case above: it keeps no note, and the
+		// count of what it compiled is still what the check reads.
+		notes.length = 0;
 		expect(
 			judge(
 				checkOf('shaders-coat-11'),
-				{ ok: true, glslPrograms: 1, multiDraw: false, webgpu: true, skipped },
+				{ ok: true, glslPrograms: 396, multiDraw: false, webgpu: true, skipped },
 				NONE_MISSING,
 				context,
 			),
 		).toEqual([]);
+		expect(notes).toEqual([]);
 	});
 
 	it("fails the mip levels page only on the engine's way, and notes the ways that work", () => {
