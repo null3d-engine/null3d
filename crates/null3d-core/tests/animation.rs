@@ -2660,6 +2660,54 @@ fn a_layer_above_zero_keeps_what_only_the_outgoing_clip_animated() {
     );
 }
 
+/// A second inertial switch on a layer above the first carries on with the channels the blend
+/// before it decayed toward, so a joint that only the older clips animated keeps fading.
+#[test]
+fn a_second_switch_on_a_high_layer_keeps_the_channels_the_first_one_carried() {
+    let jobs = JobSystem::new(0);
+    let skeleton = two_roots();
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let both = animations
+        .add_clip(id, moving(&skeleton, &[0, 1], 0.0, 1.0))
+        .unwrap();
+    let one = animations
+        .add_clip(id, moving(&skeleton, &[0], 10.0, 2.0))
+        .unwrap();
+    let other = animations
+        .add_clip(id, moving(&skeleton, &[0], 20.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    let on_layer_one = |play: Play| Play { layer: 1, ..play };
+    animations
+        .play(instance, both, on_layer_one(Play::default()))
+        .unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    // The first switch leaves joint 1 to the blend alone.
+    animations
+        .play(instance, one, on_layer_one(inertial(2.0)))
+        .unwrap();
+    for _ in 0..30 {
+        animations.update(&jobs, dt);
+    }
+    let before = x_of_joint(&animations, instance, 1);
+    assert!(
+        before > 0.1,
+        "the first blend still shows joint 1: {before}"
+    );
+
+    // The second switch replaces the layer's clips again, and joint 1 carries on fading.
+    animations
+        .play(instance, other, on_layer_one(inertial(2.0)))
+        .unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of_joint(&animations, instance, 1);
+    assert!(got >= before * 0.9, "joint 1 snaps from {before} to {got}");
+}
+
 /// A crowd that runs more dead blends at once than the pool starts with grows the pool, and every
 /// blend keeps the pose it decays from.
 #[test]

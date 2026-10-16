@@ -1826,7 +1826,8 @@ impl Animations {
         self.apply_dead_blend(i, layer, &mut scratch.add[..len], 0.0, lanes, transition);
         // The layer keeps the record its blend already runs in, and takes a free one otherwise.
         let at = i * MAX_LAYERS + layer;
-        let record = match self.transition_of[at] {
+        let held = self.transition_of[at];
+        let record = match held {
             NO_TRANSITION => {
                 let record = match self.free_record() {
                     Some(record) => record,
@@ -1850,8 +1851,22 @@ impl Animations {
                 &mut self.pool_vel[base..base + len],
             );
         }
-        self.pool_cover[record * 3 * lanes..(record + 1) * 3 * lanes]
-            .copy_from_slice(&scratch.weights[..3 * lanes]);
+        // The channels the outgoing clips animated are the ones whose pose the blend keeps. A
+        // blend that already ran on the layer carries its own channels on too: its pose is part of
+        // what the frame showed, which the captures above took.
+        let cover = record * 3 * lanes;
+        let carried = if held == NO_TRANSITION {
+            None
+        } else {
+            Some(held as usize * 3 * lanes)
+        };
+        for k in 0..3 * lanes {
+            let mut covered = scratch.weights[k] > 0.0;
+            if let Some(old) = carried {
+                covered |= self.pool_cover[old + k] > 0.0;
+            }
+            self.pool_cover[cover + k] = if covered { 1.0 } else { 0.0 };
+        }
         self.pool_time[record] = 0.0;
         self.pool_len[record] = fade;
         for k in 0..MAX_BLEND {
