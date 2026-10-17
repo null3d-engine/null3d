@@ -1,11 +1,33 @@
 // The chunked level of detail: a quadtree over the height field that keeps the ground near the
 // camera at its finest and coarser blocks farther away. The selection is pure: it writes the
-// leaves it picks into flat arrays, so a frame that moves the camera allocates nothing.
+// leaves it picks into flat arrays, which grow only when a selection picks more leaves than any
+// before it, so a frame that moves the camera allocates nothing.
 
-/** The most leaves one selection may pick. A quadtree of 15 levels over any ground picks fewer. */
-export const MAX_NODES = 4096;
+/** The leaves that the arrays hold at first. */
+const FIRST_NODES = 1024;
 /** The most levels a terrain may take, so a leaf's key fits in a number. */
 export const MAX_LEVELS = 15;
+/**
+ * The largest split distance. At 15 levels it picks about 8,000 leaves; a larger one picks every
+ * leaf of the finest levels over a wide ring, far more blocks than a frame can draw.
+ */
+export const MAX_SPLIT = 8;
+
+/**
+ * How many leaves every level above a level holds: a level of `n` holds `4 ** n` leaves, and the
+ * levels above it hold `(4 ** n - 1) / 3`. A leaf's key counts from its level's base, so the keys
+ * of a 15 level quadtree run from 0 to 1431655764. That is below the range where the engine turns
+ * a number into an object, which a key above it would do on every leaf of every selection.
+ */
+const LEVEL_BASE = new Int32Array([
+	0, 1, 5, 21, 85, 341, 1365, 5461, 21845, 87381, 349525, 1398101, 5592405, 22369621, 89478485,
+	357913941,
+]);
+
+/** The leaves a level holds along each side, as a whole number: `2 ** level`. */
+function leavesPerSide(level: number): number {
+	return 1 << level;
+}
 
 /** The settings of the quadtree. */
 export interface QuadtreeOptions {
@@ -15,8 +37,8 @@ export interface QuadtreeOptions {
 	maxLevel: number;
 	/**
 	 * How far from a block's edge the camera may stand and still split it, as a multiple of the
-	 * block's size. A larger value keeps detail farther out and picks more leaves. The default is
-	 * 2.
+	 * block's size, above 0 and up to 8. A larger value keeps detail farther out and picks more
+	 * leaves. The default is 2.
 	 */
 	split?: number;
 }
@@ -34,11 +56,11 @@ export class Quadtree {
 	/** The split distance, as a multiple of a block's size. */
 	readonly split: number;
 	/** The level of each picked leaf. */
-	readonly levels = new Int32Array(MAX_NODES);
+	levels = new Int32Array(FIRST_NODES);
 	/** The column of each picked leaf among the leaves of its level. */
-	readonly columns = new Int32Array(MAX_NODES);
+	columns = new Int32Array(FIRST_NODES);
 	/** The row of each picked leaf among the leaves of its level. */
-	readonly rows = new Int32Array(MAX_NODES);
+	rows = new Int32Array(FIRST_NODES);
 	/** How many leaves the last selection picked. */
 	count = 0;
 
@@ -51,8 +73,10 @@ export class Quadtree {
 			throw new Error(
 				`a quadtree got the maxLevel ${maxLevel}, which is not a whole number from 0 to ${MAX_LEVELS}.`,
 			);
-		if (!(split > 0) || !Number.isFinite(split))
-			throw new Error(`a quadtree got the split ${split}, which is not a positive number.`);
+		if (!(split > 0 && split <= MAX_SPLIT))
+			throw new Error(
+				`a quadtree got the split ${split}, which is not a number above 0 and up to ${MAX_SPLIT}.`,
+			);
 		this.size = size;
 		this.maxLevel = maxLevel;
 		this.split = split;
@@ -60,7 +84,7 @@ export class Quadtree {
 
 	/** The meters that a leaf of level `level` covers, along each side. */
 	blockSize(level: number): number {
-		return this.size / 2 ** level;
+		return this.size / leavesPerSide(level);
 	}
 
 	/** The x of a leaf's low corner, from its level and column. */
@@ -73,15 +97,18 @@ export class Quadtree {
 		return -this.size / 2 + row * this.blockSize(level);
 	}
 
-	/** A leaf's key, which names it among every leaf of the quadtree. Allocates nothing. */
+	/**
+	 * A leaf's key, which names it among every leaf of the quadtree: the level's base, then the
+	 * leaf's place in that level's own grid. Allocates nothing.
+	 */
 	key(level: number, column: number, row: number): number {
-		return level * 2 ** 30 + column * 2 ** 15 + row;
+		return (LEVEL_BASE[level] as number) + column * leavesPerSide(level) + row;
 	}
 
 	/**
 	 * Picks the leaves to draw for a camera at `x` and `z`, into the arrays. Returns the count,
-	 * which `count` also holds. Two calls with the same arguments pick the same leaves, and a call
-	 * allocates nothing.
+	 * which `count` also holds. Two calls with the same arguments pick the same leaves. A call
+	 * allocates only when it picks more leaves than the arrays hold, and then grows them.
 	 */
 	select(x: number, z: number): number {
 		const count = this.visit(0, 0, 0, x, z, 0);
@@ -102,13 +129,14 @@ export class Quadtree {
 		at: number,
 	): number {
 		const { size, maxLevel, split } = this;
-		const block = size / 2 ** level;
+		const block = size / leavesPerSide(level);
 		const half = block / 2;
 		const centerX = -size / 2 + column * block + half;
 		const centerZ = -size / 2 + row * block + half;
 		const dx = Math.max(Math.abs(x - centerX) - half, 0);
 		const dz = Math.max(Math.abs(z - centerZ) - half, 0);
-		if (level < maxLevel && Math.hypot(dx, dz) < block * split) {
+		// The distance by hand: `Math.hypot` makes one object per call.
+		if (level < maxLevel && Math.sqrt(dx * dx + dz * dz) < block * split) {
 			const next = level + 1;
 			let written = this.visit(next, column * 2, row * 2, x, z, at);
 			written += this.visit(next, column * 2 + 1, row * 2, x, z, at + written);
@@ -116,9 +144,24 @@ export class Quadtree {
 			written += this.visit(next, column * 2 + 1, row * 2 + 1, x, z, at + written);
 			return written;
 		}
+		if (at >= this.levels.length) this.grow();
 		this.levels[at] = level;
 		this.columns[at] = column;
 		this.rows[at] = row;
 		return 1;
+	}
+
+	/** Doubles the arrays, keeping the leaves picked so far. */
+	private grow(): void {
+		const size = this.levels.length * 2;
+		const levels = new Int32Array(size);
+		const columns = new Int32Array(size);
+		const rows = new Int32Array(size);
+		levels.set(this.levels);
+		columns.set(this.columns);
+		rows.set(this.rows);
+		this.levels = levels;
+		this.columns = columns;
+		this.rows = rows;
 	}
 }

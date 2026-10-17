@@ -23,19 +23,22 @@ fn effect_fs() -> @location(0) vec4<f32> {
 }
 `;
 
+// The WebGL2 build of a host: the structure is flattened away and the chain carries its members,
+// one parameter each (`flatten.rs`), so the calls the joiner writes fit it.
 const HOST_GLSL = `#version 300 es
-struct EffectInput {
-    vec4 color;
-};
 uniform highp sampler2D _group_0_binding_1_fs;
 
-vec4 effect_chain(EffectInput effect_chain_input) {
-    return effect_chain_input.color;
+vec4 effect_chain(vec4 effect_chain_color, vec2 effect_chain_uv, vec2 effect_chain_pixel, vec2 effect_chain_size, float effect_chain_time) {
+    return effect_chain_color;
 }
 
 void main() {
-    EffectInput input_;
-    _fs2p_location0 = effect_chain(input_);
+    vec4 input_color = vec4(0.0);
+    vec2 input_uv = vec2(0.0);
+    vec2 input_pixel = vec2(0.0);
+    vec2 input_size = vec2(0.0);
+    float input_time = 0.0;
+    _fs2p_location0 = effect_chain(input_color, input_uv, input_pixel, input_size, input_time);
 }
 `;
 
@@ -144,7 +147,14 @@ describe('joinShaders', () => {
 			'glsl',
 		);
 		const fragment = joined.webgl2?.glsl?.main?.fragment;
-		expect(fragment?.source).toContain('vec4 effect_chain(EffectInput start) {');
+		expect(fragment?.source).toContain(
+			'vec4 effect_chain(vec4 chain_color, vec2 chain_uv, vec2 chain_pixel, vec2 chain_size, float chain_time) {',
+		);
+		// The members reach each member of the group, in the order the structure declares them.
+		expect(fragment?.source).toContain(
+			'    link = a_run(link, chain_uv, chain_pixel, chain_size, chain_time, 0u);\n    link = b_run(link, chain_uv, chain_pixel, chain_size, chain_time, 1u);\n',
+		);
+		expect(fragment?.source).not.toContain('EffectInput link');
 		expect(fragment?.source.match(/void helper\(\)/g)).toHaveLength(1);
 		expect(fragment?.textures).toEqual([
 			{ name: '_group_0_binding_1_fs', group: 0, binding: 1, sampler: { group: 0, binding: 2 } },

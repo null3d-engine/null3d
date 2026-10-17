@@ -200,6 +200,11 @@ export type SketchWorkerMessage =
 	| { type: 'post'; name: string; data: unknown }
 	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */
 	| { type: 'wgsl'; updates: readonly WgslUpdate[] }
+	/**
+	 * The job workers that started, by index, which the on-demand loader sends its tasks to. A
+	 * worker whose script or its core did not load is absent, and takes no task.
+	 */
+	| { type: 'job-workers'; running: readonly number[] }
 	/** Ends the sketch worker's waits, where the threads wake each other with messages. */
 	| typeof WAKE;
 

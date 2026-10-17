@@ -25,6 +25,16 @@ opt-level = 3
 panic = "abort"
 debug = false
 
+# The shader build parses and validates the WGSL of every variant, so its own crates need an
+# optimized build. A tool gains nothing from the release profile's link-time optimization or its
+# single code unit, so this profile turns both off. It keeps unwinding, so a panic in one compile
+# thread reaches the caller instead of ending the process.
+[profile.shader]
+inherits = "release"
+lto = false
+codegen-units = 16
+panic = "unwind"
+
 # Development builds optimize the dependencies but not the engine's own crates. The shader tools'
 # tests and `bun run shaders` then parse and validate WGSL several times faster, while the engine's
 # crates keep their fast rebuilds and full debug information.

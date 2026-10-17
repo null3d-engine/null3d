@@ -297,9 +297,9 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 | `vignette.falloff` | How fast the light falls from the center: the power of the falloff curve, above 0. Higher values darken more of the picture. | 2 |
 | `vignette.roundness` | The shape, from 0 to 1: 0 follows the canvas's shape, an ellipse on a wide canvas, and 1 is a circle. | 0 |
 
-- The vignette multiplies each pixel's light before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners darken as dark corners do.
+- The vignette multiplies each pixel's light before the tone mapping. [The post-processing chain](../concepts/post-processing.md#color-grading-and-the-vignette) gives the rule, the engines it follows and the difference from three.js's `VignetteShader`.
 - At a distance `d` from the center, in canvas widths and heights times `size`, the light is multiplied by `1 - intensity × (1 - (1 - d²)^falloff)`, and never by less than 0.
-- three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
+- A port of three.js's `VignetteShader` sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
 Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.

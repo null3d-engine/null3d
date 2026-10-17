@@ -405,7 +405,10 @@ export class ParticleBuffer implements ViewHolder {
 
 	/**
 	 * The frame's values, which the GPU reads in each frame: the buffer's time in seconds, which ages
-	 * its particles, then how many records from the first the GPU reads, at most the capacity.
+	 * its particles, then how many records from the first the GPU reads, at most the capacity. Then
+	 * a record and a number of seconds, which the GPU takes off the birth times of the records from
+	 * that one up. An emitter that moves the time its birth times count from writes the shift
+	 * there, and rewrites the records a share at a time, so no frame uploads them all.
 	 */
 	get frame(): Float32Array {
 		this.views();
@@ -492,11 +495,15 @@ export class ParticleBuffer implements ViewHolder {
 		this.set(values);
 	}
 
-	/** Removes the buffer and its object from the scene. Its arrays then throw at their next use. */
+	/**
+	 * Removes the buffer and its object from the scene. It drops its views, so a destroyed buffer
+	 * that the sketch still holds keeps none of the engine's memory, and its arrays throw at their
+	 * next use.
+	 */
 	destroy(): void {
 		if (!this.live) return;
 		this.live = false;
-		this.generation = -1;
+		this.dropViews();
 		this.core.glue.destroyParticles(this.id);
 		this.object.scene.particleBuffers--;
 		this.object.destroy();

@@ -42,7 +42,11 @@ enable draw_index;
 // caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
 // depth template places a caster's, flattened onto the near face of the light's box. Their
 // pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
-// that the pass keeps.
+// that the pass keeps. The PICK builds, which also only custom materials with a vertex offset have,
+// draw such an object into GPU picking's id target: the vertex shader moves and places each vertex
+// as the shading builds do, and the fragment shader writes the instance's ids as the pick template
+// does (pick.wgsl). Without them, the pick template would test the scene's depth at the object's
+// place before the offset moved it.
 //
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
@@ -1223,11 +1227,16 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
+#else ifdef PICK
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4u {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef CASTER
     return vec4f(0.0);
+#else ifdef PICK
+    // Red: the object's or the batch's id. Green: the instance's row within its batch.
+    return vec4u(in.ids.y, in.ids.x, 0u, 0u);
 #else
     material_row = material_of(in.material);
 #ifdef TRANSMISSION
@@ -1427,10 +1436,15 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         dot(in.to_box_z, from_origin),
     );
     let values = decal_values(in.material);
-    let facing = dot(normal, normalize(in.to_box_z));
+    // A box with a flat side has no inverse, so the axes the vertex stage carried are all zero and
+    // it marks nothing. Its zero aim would make the facing cosine a NaN, which the surface would
+    // carry, so a flat box takes a fixed aim and `inside` turns it away.
+    let solid = dot(in.to_box_x, in.to_box_x) > 0.0;
+    let aim = select(vec3f(0.0, 0.0, 1.0), in.to_box_z, solid);
+    let facing = dot(normal, normalize(aim));
     let angle_fade = decal_ramp(values.y, values.x, facing);
     let edge_fade = saturate((1.0 - abs(local.z) * 2.0) / max(values.z, 1e-4));
-    let inside = all(abs(local) <= vec3f(0.5)) && depth > 0.0;
+    let inside = solid && all(abs(local) <= vec3f(0.5)) && depth > 0.0;
     decal_fade = select(0.0, angle_fade * edge_fade, inside);
     if decal_fade <= 0.0 {
         discard;

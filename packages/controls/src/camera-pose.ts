@@ -52,16 +52,13 @@ export class CameraPose {
 
 	/** Writes the position and the rotation to the camera. */
 	write(): void {
-		const { camera, position: p, rotation: r } = this;
-		camera.setPosition(p[0] as number, p[1] as number, p[2] as number);
-		camera.setRotation(r[0] as number, r[1] as number, r[2] as number, r[3] as number);
+		this.camera.setPose(this.position, this.rotation);
 		this.keepStored();
 	}
 
 	/** Writes the position alone to the camera. */
 	writePosition(): void {
-		const p = this.position;
-		this.camera.setPosition(p[0] as number, p[1] as number, p[2] as number);
+		this.camera.setPose(this.position);
 		this.keepStored();
 	}
 

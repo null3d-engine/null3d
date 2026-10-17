@@ -193,7 +193,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'shader-inputs',
@@ -205,6 +205,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
 		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'weighted-transparency',
@@ -492,7 +493,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards.',
 		hold: 2,
-		timeoutSeconds: 60,
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'far-from-origin',

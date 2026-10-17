@@ -70,7 +70,8 @@ impl Scratch {
             .expect("the shader-build command runs")
     }
 
-    /// Each entry's stored record, by file name, from the cache folder.
+    /// Each entry's stored record, by its file name in the cache folder. A file's name carries the
+    /// key of the build that wrote it, so a changed entry adds a file rather than replacing one.
     fn cache_files(&self) -> BTreeMap<String, String> {
         let Ok(entries) = fs::read_dir(self.cache_dir()) else {
             return BTreeMap::new();
@@ -83,12 +84,48 @@ impl Scratch {
             })
             .collect()
     }
+
+    /// The cache file of the one entry built under `name`.
+    fn cache_entry(&self, name: &str) -> PathBuf {
+        let found: Vec<PathBuf> = fs::read_dir(self.cache_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .is_some_and(|file| entry_name(&file.to_string_lossy()) == name)
+            })
+            .collect();
+        assert_eq!(found.len(), 1, "one cached entry named {name}");
+        found.into_iter().next().unwrap()
+    }
 }
 
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+/// An entry file's name without the key of the build that wrote it: `cull.<key>.json` reads as
+/// `cull.json`, so a test names an entry as the shader that holds it.
+fn entry_name(file: &str) -> String {
+    match file
+        .strip_suffix(".json")
+        .and_then(|stem| stem.split_once('.'))
+    {
+        Some((name, _key)) => format!("{name}.json"),
+        None => file.to_owned(),
+    }
+}
+
+/// The files of the entries built under `name`, by file name, from a map of the whole folder.
+fn prefixed(files: &BTreeMap<String, String>, name: &str) -> BTreeMap<String, String> {
+    files
+        .iter()
+        .filter(|(file, _)| entry_name(file) == name)
+        .map(|(file, text)| (file.clone(), text.clone()))
+        .collect()
 }
 
 fn write(path: &Path, text: &str) {
@@ -215,10 +252,17 @@ fn changing_one_entry_compiles_only_that_entry() {
         "the edited shader's module output did not change"
     );
     let after = scratch.cache_files();
-    assert_ne!(before["cull.json"], after["cull.json"]);
+    // The edited entry adds a build under a new key, and its older build stays.
+    let was = prefixed(&before, "cull.json");
+    let now = prefixed(&after, "cull.json");
+    assert_eq!(now.len(), was.len() + 1);
+    for (file, text) in &was {
+        assert_eq!(now.get(file), Some(text), "the older build of `cull` stays");
+    }
     for name in ["test_mesh.json", "mipmap.json"] {
         assert_eq!(
-            before[name], after[name],
+            prefixed(&after, name),
+            prefixed(&before, name),
             "the entry `{name}` compiled again"
         );
     }
@@ -239,9 +283,16 @@ fn changing_a_library_module_compiles_only_its_importers() {
     assert!(run.status.success(), "{}", text(&run.stderr));
     assert_eq!(stats(&run), (1, CACHE_SHADERS.len() - 1));
     let after = scratch.cache_files();
-    assert_ne!(before["test_mesh.json"], after["test_mesh.json"]);
+    assert_ne!(
+        prefixed(&after, "test_mesh.json"),
+        prefixed(&before, "test_mesh.json")
+    );
     for name in ["cull.json", "mipmap.json"] {
-        assert_eq!(before[name], after[name], "`{name}` does not import math");
+        assert_eq!(
+            prefixed(&after, name),
+            prefixed(&before, name),
+            "`{name}` does not import math"
+        );
     }
 }
 
@@ -253,13 +304,13 @@ fn a_corrupted_or_missing_cache_entry_compiles_again_with_identical_output() {
     let expected = modules(&clean.0.join(OUTPUT_DIR));
 
     assert!(scratch.run_cached().status.success());
-    fs::write(scratch.cache_dir().join("cull.json"), "{ not a cache entry").unwrap();
+    fs::write(scratch.cache_entry("cull.json"), "{ not a cache entry").unwrap();
     let corrupted = scratch.run_cached();
     assert!(corrupted.status.success(), "{}", text(&corrupted.stderr));
     assert_eq!(stats(&corrupted), (1, CACHE_SHADERS.len() - 1));
     assert_eq!(modules(&scratch.0.join(OUTPUT_DIR)), expected);
 
-    fs::remove_file(scratch.cache_dir().join("mipmap.json")).unwrap();
+    fs::remove_file(scratch.cache_entry("mipmap.json")).unwrap();
     let missing = scratch.run_cached();
     assert!(missing.status.success(), "{}", text(&missing.stderr));
     assert_eq!(stats(&missing), (1, CACHE_SHADERS.len() - 1));

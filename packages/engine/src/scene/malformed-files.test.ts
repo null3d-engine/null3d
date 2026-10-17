@@ -12,7 +12,7 @@ import { shippedDecoder } from '../../../../tests/lib/meshopt-checks';
 import { armBuilder, type GltfJson, morphBuilder } from '../../../../tests/pages/lib/gltf-files';
 import { serveTasks, type TaskAnswer, type TaskRequest, type TaskSource } from '../workers/tasks';
 import { GltfError, type MeshoptDecode, parseGltf, readContainer } from './gltf-parse';
-import { Ktx2Refusal, readKtx2Header, transcodedBytes } from './ktx2';
+import { Ktx2Refusal, readKtx2Header, transcodedBytes } from './ktx2-file';
 
 const ASSETS = join(import.meta.dir, '../../../../tests/pages/assets');
 const VENDOR = join(import.meta.dir, '../../vendor/basis');
@@ -255,7 +255,13 @@ describe('malformed KTX2 files', () => {
 				id: ++id,
 				task: 'ktx2',
 				...(id === 1 && { modules: [['basis', module]] }),
-				input: { file: file.slice().buffer, format, levels: header.levels, layers: header.layers },
+				input: {
+					file: file.slice().buffer,
+					format,
+					levels: header.levels,
+					layers: header.layers,
+					maxSize: 4096,
+				},
 			};
 			source.onmessage?.(new MessageEvent('message', { data: request }));
 			await tasks.whenIdle(() => answers.some((answer) => answer.id === request.id));
