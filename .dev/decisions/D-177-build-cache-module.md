@@ -184,4 +184,3 @@ The GPU check's baseline cache now fills its folder through the module's atomic 
 other caches do. It renames no folder itself. Its own rules stay: it keeps six builds by commit, and
 it prunes by use. The Vite plugin's cache still keeps its own copy of the rules, as the Decision
 above says.
->>>>>>> fix/engine-tooling-lows

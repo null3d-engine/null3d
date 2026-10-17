@@ -701,7 +701,9 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The shards run close to their measured times, and a slow software-renderer runner stretches
+    # them further, so the limit stays above the measurement by more than that variation.
+    timeout-minutes: 28
     strategy:
       fail-fast: false
       matrix:
