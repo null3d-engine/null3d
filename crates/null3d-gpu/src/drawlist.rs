@@ -1876,8 +1876,7 @@ pub mod groups {
     /// shader, the maps' group of a build that samples maps, and the view's index group of a build
     /// that reads its instances by index. WebGL2 reads each view's instance data from groups of its
     /// own, the draws' group and the instances' one, and binds a material's maps at the group after
-    /// them. A decal adds the scene's depth at a group of its own, at index 2 on WebGPU and after
-    /// the maps on WebGL2.
+    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2.
     const MESH: &[&[u32]] = &[
         &[layout::FRAME, layout::DEPTH],
         &[

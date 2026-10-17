@@ -901,19 +901,17 @@ impl MockBackend {
             if layout == 0 {
                 continue;
             }
-            check(
-                groups
-                    .get(index)
-                    .is_some_and(|allowed| allowed.contains(&layout)),
-                op,
-                "a draw's groups are the ones that its pipeline binds",
-            )
-            .map_err(|_| MockError::WrongGroup {
-                op,
-                template,
-                index: index as u32,
-                layout,
-            })?;
+            if !groups
+                .get(index)
+                .is_some_and(|allowed| allowed.contains(&layout))
+            {
+                return Err(MockError::WrongGroup {
+                    op,
+                    template,
+                    index: index as u32,
+                    layout,
+                });
+            }
         }
         Ok(())
     }
