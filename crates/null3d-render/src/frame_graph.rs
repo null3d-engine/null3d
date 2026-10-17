@@ -4155,6 +4155,12 @@ mod tests {
         assert_eq!(view_name(31, "Opaque", "Opaque"), "Opaque31");
     }
 
+    /// The ids that the test graphs give their GPU objects. A builder chains each kind of object
+    /// in a run of its own, and this table keeps that order and spacing: the buffers, the samplers
+    /// and the compute pipelines take one number each from their own bands, and the bind groups
+    /// sit in bands that hold every id of a group that takes several, so no two objects of one
+    /// kind can share an id. The textures sit above the ids a graph takes for the plan's own
+    /// targets and their layer views.
     const IDS: GraphIds = GraphIds {
         first_texture: 1,
         final_pass: FinalIds {
@@ -4165,13 +4171,13 @@ mod tests {
             blank_outline: 901,
         },
         output_pass: FinalIds {
-            settings: 907,
-            group: 907,
-            blank_lut: 920,
-            lut_sampler: 921,
-            blank_outline: 922,
+            settings: 19,
+            group: 200,
+            blank_lut: 902,
+            lut_sampler: 17,
+            blank_outline: 903,
         },
-        present_group: 923,
+        present_group: 201,
         bloom: BloomIds {
             buffer: 10,
             sampler: 10,
@@ -4179,52 +4185,224 @@ mod tests {
         },
         ao: AoIds {
             buffer: 11,
-            first_group: 20,
+            first_group: 30,
         },
         effects: EffectIds {
             buffer: 12,
             sampler: 12,
-            first_group: 30,
-            blank_depth: 902,
+            first_group: 40,
+            blank_depth: 904,
         },
         fullscreen: FullscreenIds {
             buffer: 14,
             sampler: 14,
-            first_group: 400,
+            first_group: 150,
             blank_color: 905,
             blank_depth: 906,
         },
         dof: DofIds {
             buffer: 13,
             sampler: 13,
-            first_group: 50,
+            first_group: 100,
         },
         exposure: ExposureIds {
-            buffer: 14,
-            sampler: 14,
-            cells: 904,
-            texel: 905,
-            stored: 906,
-            first_group: 70,
+            buffer: 15,
+            sampler: 15,
+            cells: 907,
+            texel: 908,
+            stored: 909,
+            first_group: 130,
             compute: Some(crate::exposure::ComputeIds {
-                histogram: 15,
-                state: 16,
-                pipelines: [70, 71],
+                histogram: 16,
+                state: 17,
+                pipelines: [700, 701],
             }),
         },
         fog: FogVolumeIds {
-            buffer: 14,
-            sampler: 14,
-            first_group: 60,
+            buffer: 18,
+            sampler: 16,
+            first_group: 110,
         },
-        view_copy: Some(ViewCopyIds { first_group: 40 }),
+        view_copy: Some(ViewCopyIds { first_group: 60 }),
         transmission: TransmissionIds {
-            group: 60,
-            blank: 903,
+            group: 120,
+            blank: 910,
         },
-        weighted: WeightedIds { first_group: 70 },
-        particle_depth: 61,
+        weighted: WeightedIds { first_group: 140 },
+        particle_depth: 121,
     };
+
+    /// One run of ids of a test graph's table: what the first one names, its id, and how many ids
+    /// the group it belongs to takes from there.
+    type IdRun = (String, u32, u32);
+
+    /// Every id of a test graph's table, by the kind of GPU object each one names. Two objects of
+    /// one kind that share an id are one object to a backend, which then loses or destroys the
+    /// other, so a table whose ids collide tests a graph that no builder would make. Rust has no
+    /// reflection, so the walk lists each field of [`IDS`] by hand, and takes the number of ids a
+    /// group takes from the code that takes them.
+    fn ids_by_kind() -> Vec<(&'static str, Vec<IdRun>)> {
+        let (mut buffers, mut textures) = (Vec::new(), Vec::new());
+        let (mut samplers, mut groups, mut pipelines) = (Vec::new(), Vec::new(), Vec::new());
+        let mut final_pass = |what: &str, ids: FinalIds| {
+            buffers.push((format!("{what} settings"), ids.settings, 1));
+            textures.push((format!("{what} blank table"), ids.blank_lut, 1));
+            textures.push((format!("{what} blank outline"), ids.blank_outline, 1));
+            samplers.push((format!("{what} table sampler"), ids.lut_sampler, 1));
+            groups.push((format!("{what} group"), ids.group, 1));
+        };
+        final_pass("the final pass's", IDS.final_pass);
+        final_pass("the output pass's", IDS.output_pass);
+        groups.push(("the present group".to_string(), IDS.present_group, 1));
+        buffers.push(("bloom's block".to_string(), IDS.bloom.buffer, 1));
+        samplers.push(("bloom's sampler".to_string(), IDS.bloom.sampler, 1));
+        groups.push((
+            "bloom's groups".to_string(),
+            IDS.bloom.first_group,
+            bloom::STEPS as u32,
+        ));
+        buffers.push(("ambient occlusion's block".to_string(), IDS.ao.buffer, 1));
+        groups.push((
+            "ambient occlusion's groups".to_string(),
+            IDS.ao.first_group,
+            ao::STEPS as u32,
+        ));
+        buffers.push(("the effects' block".to_string(), IDS.effects.buffer, 1));
+        samplers.push(("the effects' sampler".to_string(), IDS.effects.sampler, 1));
+        textures.push((
+            "the effects' blank depth".to_string(),
+            IDS.effects.blank_depth,
+            1,
+        ));
+        groups.push((
+            "the effects' groups".to_string(),
+            IDS.effects.first_group,
+            EffectPass::GROUPS,
+        ));
+        buffers.push((
+            "full-screen passes' block".to_string(),
+            IDS.fullscreen.buffer,
+            1,
+        ));
+        samplers.push((
+            "full-screen passes' sampler".to_string(),
+            IDS.fullscreen.sampler,
+            1,
+        ));
+        textures.push((
+            "full-screen passes' blank color".to_string(),
+            IDS.fullscreen.blank_color,
+            1,
+        ));
+        textures.push((
+            "full-screen passes' blank depth".to_string(),
+            IDS.fullscreen.blank_depth,
+            1,
+        ));
+        groups.push((
+            "full-screen passes' groups".to_string(),
+            IDS.fullscreen.first_group,
+            crate::view::MAX_VIEWS as u32,
+        ));
+        buffers.push(("depth of field's block".to_string(), IDS.dof.buffer, 1));
+        samplers.push(("depth of field's sampler".to_string(), IDS.dof.sampler, 1));
+        groups.push((
+            "depth of field's groups".to_string(),
+            IDS.dof.first_group,
+            dof::STEPS as u32,
+        ));
+        buffers.push(("the meter's block".to_string(), IDS.exposure.buffer, 1));
+        samplers.push(("the meter's sampler".to_string(), IDS.exposure.sampler, 1));
+        textures.push(("the meter's cells".to_string(), IDS.exposure.cells, 1));
+        textures.push(("the exposure's texel".to_string(), IDS.exposure.texel, 1));
+        textures.push((
+            "the exposure's stored texel".to_string(),
+            IDS.exposure.stored,
+            1,
+        ));
+        groups.push((
+            "the meter's groups".to_string(),
+            IDS.exposure.first_group,
+            crate::exposure::GROUPS,
+        ));
+        let compute = IDS
+            .exposure
+            .compute
+            .expect("the test graphs take the histogram's objects");
+        buffers.push(("the histogram's bins".to_string(), compute.histogram, 1));
+        buffers.push(("the stored exposure".to_string(), compute.state, 1));
+        pipelines.extend(
+            compute
+                .pipelines
+                .map(|id| ("a compute pipeline".to_string(), id, 1)),
+        );
+        buffers.push(("the fog's block".to_string(), IDS.fog.buffer, 1));
+        samplers.push(("the fog's sampler".to_string(), IDS.fog.sampler, 1));
+        groups.push((
+            "the fog's groups".to_string(),
+            IDS.fog.first_group,
+            fog_volume::GROUPS,
+        ));
+        groups.push((
+            "the copies of views".to_string(),
+            IDS.view_copy
+                .expect("the test graphs copy views")
+                .first_group,
+            crate::view::MAX_VIEWS as u32,
+        ));
+        groups.push((
+            "the transmission copy".to_string(),
+            IDS.transmission.group,
+            1,
+        ));
+        textures.push((
+            "the transmission blank".to_string(),
+            IDS.transmission.blank,
+            1,
+        ));
+        groups.push((
+            "the weighted layer's groups".to_string(),
+            IDS.weighted.first_group,
+            WeightedIds::GROUPS,
+        ));
+        groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        // The graph takes its own textures from `first_texture` on: one for each texture of its
+        // plan and one view for each of their layers, each run at most [`LAYER_VIEWS`] long.
+        textures.push((
+            "the plan's textures and views".to_string(),
+            IDS.first_texture,
+            3 * LAYER_VIEWS,
+        ));
+        vec![
+            ("buffer", buffers),
+            ("texture", textures),
+            ("sampler", samplers),
+            ("bind group", groups),
+            ("compute pipeline", pipelines),
+        ]
+    }
+
+    #[test]
+    fn the_test_graphs_ids_are_distinct_within_each_kind() {
+        for (kind, runs) in ids_by_kind() {
+            let mut ids: Vec<(u32, String)> = Vec::new();
+            for (what, first, count) in runs {
+                for id in first..first + count {
+                    ids.push((id, what.clone()));
+                }
+            }
+            ids.sort_unstable();
+            for pair in ids.windows(2) {
+                let [(id, what), (next, next_what)] = pair else {
+                    unreachable!("a window holds two ids");
+                };
+                assert_ne!(
+                    id, next,
+                    "two {kind}s share the id {id}: {what} and {next_what}"
+                );
+            }
+        }
+    }
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling
     /// and transient attachments.
@@ -4914,7 +5092,10 @@ mod tests {
             .unwrap();
         let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
             .iter()
-            .filter(|group| group[0] >= 30 && group[0] < 30 + MAX_EFFECTS as u32)
+            .filter(|group| {
+                (IDS.effects.first_group..IDS.effects.first_group + EffectPass::GROUPS)
+                    .contains(&group[0])
+            })
             .map(|group| group[1])
             .collect();
         assert_eq!(
@@ -5023,7 +5204,9 @@ mod tests {
             .unwrap();
         let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
             .iter()
-            .filter(|group| (50..50 + dof::STEPS as u32).contains(&group[0]))
+            .filter(|group| {
+                (IDS.dof.first_group..IDS.dof.first_group + dof::STEPS as u32).contains(&group[0])
+            })
             .map(|group| group[1])
             .collect();
         assert_eq!(
@@ -5267,7 +5450,7 @@ mod tests {
             .unwrap();
         let bound: Vec<Vec<u32>> = operands(&list, Op::CreateBindGroup)
             .into_iter()
-            .filter(|group| group[0] == 30 + MAX_EFFECTS as u32 + 1)
+            .filter(|group| group[0] == IDS.effects.first_group + MAX_EFFECTS as u32 + 1)
             .collect();
         assert_eq!(bound.len(), 1, "the group binds once");
         assert_eq!(bound[0][3 + 4], effects::BUFFER_BYTES as u32);
@@ -5474,7 +5657,10 @@ mod tests {
                 .map(|entry| entry[2])
                 .collect();
             assert_eq!(outline_entries.len(), 1);
-            assert_ne!(outline_entries[0], 901, "the mask, not the blank texture");
+            assert_ne!(
+                outline_entries[0], IDS.final_pass.blank_outline,
+                "the mask, not the blank texture"
+            );
 
             // Nothing outlined: the mask pass and the mask are gone.
             frames.set_outline(Some(Outline::default()), false);
