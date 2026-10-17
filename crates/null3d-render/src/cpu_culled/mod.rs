@@ -53,7 +53,8 @@
 //! Point and spot lights cast shadows into the tiles of the shadow atlas (see
 //! [`crate::shadow_tiles`]). Each tile is a view too, which the job workers cull against the
 //! casters' layout into an index list of its own, but only in the frames in which the tile must
-//! draw again. Every camera view's frame groups bind the atlas and the tiles' uniform block.
+//! draw again. Every camera view's frame groups bind the atlas and the shadow settings block,
+//! which holds each tile's matrix, its texel size and its light's biases.
 //!
 //! # Outlines
 //!
@@ -1058,7 +1059,7 @@ impl CpuCulledRenderer {
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
     /// view's, each shadow cascade's and each shadow tile's frame uniform, draw records and
-    /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
+    /// multi-draw arrays, the shadow settings block's parts, the final pass's settings,
     /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters()

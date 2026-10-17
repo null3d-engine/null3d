@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import * as G from '../../generated/gpu';
 import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
+import { engineTemplates } from '../webgl2/programs';
 import { Pipelines } from './pipelines';
 
 const scope = globalThis as Record<string, unknown>;
@@ -234,5 +235,45 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(bindings).not.toContain(15);
 		const entries = groups.flatMap((group) => [...group.entries]);
 		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(15);
+	});
+});
+
+/**
+ * The templates that only the WebGPU backend registers, each with why the WebGL2 path makes none:
+ * it keeps a copy of one sample of a multisampled depth target and reads that, or it copies no
+ * view's image. A feature that registers a template on one path only names it here.
+ */
+const WEBGPU_ONLY: readonly (readonly [number, string])[] = [
+	[G.TEMPLATE_AO_DEPTH_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_VIEW_COPY, 'only WebGPU copies a view’s image'],
+	[G.TEMPLATE_DOF_SETUP_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_DOF_COMPOSITE_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_PARTICLE_DEPTH_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_FOG_APPLY_MS, 'WebGL2 reads one sample of the depth through a copy'],
+];
+
+/** The template ids that a backend registers, below the id where custom materials start. */
+function templateIds(has: (id: number) => boolean): Set<number> {
+	const ids = new Set<number>();
+	for (let id = 0; id < G.TEMPLATE_CUSTOM_FIRST; id++) if (has(id)) ids.add(id);
+	return ids;
+}
+
+describe('the two backends’ render templates', () => {
+	it('cover the same ids, less the ones that only one path can make', () => {
+		const shaders = deviceShaders();
+		const pipelines = new Pipelines(fakeDevice(), shaders);
+		const webgpu = templateIds((id) => pipelines.has(id));
+		const glsl = engineTemplates(shaders);
+		const webgl2 = templateIds((id) => glsl[id] !== undefined);
+		const only = (from: Set<number>, not: Set<number>) =>
+			[...from].filter((id) => !not.has(id)).sort((a, b) => a - b);
+		expect(only(webgl2, webgpu)).toEqual([]);
+		// Every id that only WebGPU has names the reason the WebGL2 path needs none: the test fails
+		// on a new one-sided template until someone records why.
+		const reasons = new Map(WEBGPU_ONLY);
+		expect(only(webgpu, webgl2).map((id) => [id, reasons.get(id)])).toEqual(
+			WEBGPU_ONLY.map(([id, why]) => [id, why]),
+		);
 	});
 });

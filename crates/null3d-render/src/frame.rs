@@ -28,7 +28,8 @@ use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
+    DrawList, DrawListError, Op, address, buffer_usage, filter, permutation, state_flags, template,
+    vertex,
 };
 
 use crate::ao::{self, Ao, Contact};
@@ -472,6 +473,48 @@ pub(crate) fn indices_as_bytes(indices: &[u16]) -> &[u8] {
             std::mem::size_of_val(indices),
         )
     }
+}
+
+/// The filters of a sampler that reads one level of a texture: linear magnification and
+/// minification, and no blend between levels.
+pub(crate) const LINEAR_LEVEL: [u32; 3] = [filter::LINEAR, filter::LINEAR, filter::NEAREST];
+
+/// The filters of a sampler that blends between a texture's levels, as a reader of an environment
+/// map's roughness does.
+pub(crate) const LINEAR_MIPMAP: [u32; 3] = [filter::LINEAR, filter::LINEAR, filter::LINEAR];
+
+/// The filters of a sampler that reads texels as they are stored, with nothing filtering between
+/// them: the sampler of a reader that compares its reads with a depth of its own.
+pub(crate) const NEAREST_TEXELS: [u32; 3] = [filter::NEAREST; 3];
+
+/// Records a `CreateSampler` that clamps each axis at its edge and reads no level below
+/// `highest_level`: `across` addresses the first axis, `filters` are its magnification,
+/// minification and level filters, and `compare` compares a read with a depth for a shadow map's
+/// receivers. Every pass that reads a target makes such a sampler on both GPU paths.
+pub(crate) fn clamp_sampler(
+    list: &mut DrawList,
+    id: u32,
+    across: u32,
+    filters: [u32; 3],
+    highest_level: f32,
+    compare: u32,
+) -> Result<(), RecordError> {
+    Ok(list.push(
+        Op::CreateSampler,
+        &[
+            id,
+            across,
+            address::CLAMP_TO_EDGE,
+            address::CLAMP_TO_EDGE,
+            filters[0],
+            filters[1],
+            filters[2],
+            0f32.to_bits(),
+            highest_level.to_bits(),
+            compare,
+            1,
+        ],
+    )?)
 }
 
 /// Copies of data a frame's list uploads. Chunks never move once allocated, so addresses stay
@@ -3129,5 +3172,40 @@ mod tests {
         );
         assert_eq!(joined_rows((10, 5), 16 + MERGE_GAP_ROWS, 2), None);
         assert_eq!(joined_rows((10, 5), 9, 3), None);
+    }
+
+    /// Every operand in its place: the id, each axis's addressing, the three filters, the two ends
+    /// of the levels, the comparison and the anisotropy.
+    #[test]
+    fn a_clamped_sampler_names_its_filters_levels_and_comparison() {
+        use null3d_gpu::drawlist::{compare, decode};
+        let mut list = DrawList::with_capacity(16);
+        clamp_sampler(
+            &mut list,
+            7,
+            address::REPEAT,
+            LINEAR_MIPMAP,
+            32.0,
+            compare::GREATER_EQUAL,
+        )
+        .unwrap();
+        let command = decode(list.words()).next().unwrap().unwrap();
+        assert_eq!(command.op, Op::CreateSampler);
+        assert_eq!(
+            command.operands,
+            [
+                7,
+                address::REPEAT,
+                address::CLAMP_TO_EDGE,
+                address::CLAMP_TO_EDGE,
+                filter::LINEAR,
+                filter::LINEAR,
+                filter::LINEAR,
+                0f32.to_bits(),
+                32f32.to_bits(),
+                compare::GREATER_EQUAL,
+                1,
+            ]
+        );
     }
 }
