@@ -157,12 +157,20 @@ mod tests {
         for (plain, probe) in [("lit", "probe_grid"), ("standard_maps", "probe_grid_maps")] {
             for device in ["webgpu", "webgl2"] {
                 let probes = listed(toml, probe, device);
-                let mut missing: Vec<String> = listed(toml, plain, device)
-                    .into_iter()
+                let plain_bits = listed(toml, plain, device);
+                let mut missing: Vec<String> = plain_bits
+                    .iter()
                     .filter(|name| !probes.contains(name))
+                    .cloned()
                     .collect();
                 missing.sort();
-                let mut named: Vec<String> = bits.iter().map(|(n, _)| (*n).to_owned()).collect();
+                // Only the bits this template lists: the relief bits belong to the material with
+                // maps, which the lit template never draws.
+                let mut named: Vec<String> = bits
+                    .iter()
+                    .filter(|(name, _)| plain_bits.iter().any(|listed| listed == name))
+                    .map(|(name, _)| (*name).to_owned())
+                    .collect();
                 named.sort();
                 assert_eq!(
                     missing, named,
