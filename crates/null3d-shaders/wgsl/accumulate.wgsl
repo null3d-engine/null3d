@@ -11,12 +11,13 @@
 // The step reads its texture with `textureLoad`, so the texture has the same size as the target:
 // the pass draws at the render size, into the corner of a target of the canvas's size.
 
-/// The values of the blend: the weight of the frame in the average.
+/// The values of the blend: the weight of the frame in the average. The unused members keep the
+/// block at 16 bytes, which the buffer that binds it holds.
 struct Settings {
     /// The weight of the frame's color: one over the frames accumulated, or 0 while the view rests.
     weight: f32,
-    /// Unused, kept so the block is 16 bytes.
-    spare: vec3f,
+    spare: f32,
+    padding: vec2f,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
