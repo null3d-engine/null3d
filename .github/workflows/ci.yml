@@ -463,7 +463,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -477,10 +477,20 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
-      # The step takes 1 to 3 minutes. Its limit ends a stuck browser well before the job's, with
-      # the step named as the one that ran out of time.
+      # The plugin takes the engine's shader modules from the release asset, and no release exists
+      # yet, so the fresh project builds them with the wasm compiler. That build depends on the
+      # shader sources alone, so the cache holds the set between runs and a run that changes no
+      # shader builds nothing. A run that changes one pays the build, which takes 15 minutes or more
+      # on a runner without the cache.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/null3d/engine-shaders
+          key: engine-shaders-${{ runner.os }}-${{ hashFiles('crates/null3d-shaders/wgsl/**', 'crates/null3d-shaders/src/**', 'crates/null3d-shaders/shaders.toml', 'packages/vite-plugin/src/engine-shaders.ts', 'packages/vite-plugin/src/engine-shaders-local.ts') }}
+      # The step takes 1 to 3 minutes with the cached set, and a cold build takes far longer. Its
+      # limit ends a stuck browser well before the job's, with the step named as the one that ran
+      # out of time.
       - name: The packed packages in a fresh project
-        timeout-minutes: 8
+        timeout-minutes: 18
         run: bun run test:packages
 
   browser:
