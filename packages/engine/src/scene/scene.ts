@@ -11,6 +11,7 @@ import {
 	DEV,
 	type Described,
 } from '../errors/checks';
+import { QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import type { ErrorCode } from '../errors/fixes';
 import { reasonOf } from '../errors/message';
@@ -32,7 +33,7 @@ import {
 import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
-import { controlViews, createControlBuffer } from '../shared/control';
+import { controlViews, createControlBuffer, nextFrame } from '../shared/control';
 import type { Animator, SceneAnimations } from './animation';
 import type { AreaLightTables } from './area-light-tables';
 import {
@@ -2765,6 +2766,8 @@ export class Scene implements ViewHolder {
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** The command batches that the world took before the runner's first frame, or -1. */
+	private settledCommands = -1;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
 	private sceneEnvironment: SceneEnvironment | undefined;
 	/** The light probe grid's values in the core, made on the first `setLightProbeGrid`. */
@@ -4162,20 +4165,54 @@ export class Scene implements ViewHolder {
 
 	/** Makes the raycasts and overlap queries. */
 	private makeQueries(): SceneQueries {
-		this.sceneQueries = new SceneQueries(this.core, {
-			objectAt: (slot) => this.objectSlots[slot],
-			batchAt: (id) => {
-				const batch = this.batchSlots[id & SLOT_MASK];
-				return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+		this.sceneQueries = new SceneQueries(
+			this.core,
+			{
+				objectAt: (slot) => this.objectSlots[slot],
+				batchAt: (id) => {
+					const batch = this.batchSlots[id & SLOT_MASK];
+					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+				},
+				writeCamera: (input) => {
+					const camera = this.activeCamera;
+					const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+					this.frameCameras.queryCamera(live, input);
+				},
+				writeRayCamera: (input) => this.frameCameras.rayCamera(input),
 			},
-			writeCamera: (input) => {
-				const camera = this.activeCamera;
-				const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
-				this.frameCameras.queryCamera(live, input);
-			},
-			writeRayCamera: (input) => this.frameCameras.rayCamera(input),
-		});
+			() => this.settleWorld(),
+		);
 		return this.sceneQueries;
+	}
+
+	/**
+	 * Brings the scene's world output up to date before a query that runs before the runner's
+	 * first frame, as a bake in a sketch's setup does: the commands that the sketch queued apply,
+	 * and the transforms and instance batches update, as at the start of the frame that the
+	 * runner would record next. The query then finds everything that the sketch has built so
+	 * far. After the first frame the runner keeps the world current, and this costs a compare.
+	 *
+	 * A settle with no new command since the last one is skipped: a bake casts many batches of
+	 * rays, and only the objects that setup added since the last settle matter. Moves that setup
+	 * makes after the first query count from the first frame, as moves in a frame count from the
+	 * next.
+	 */
+	private settleWorld(): void {
+		if (this.time.frame !== 0) return;
+		const commands = this.commandBatches;
+		if (this.settledCommands === commands) return;
+		this.settledCommands = commands;
+		if (DEV) {
+			// As the runner checks before each transform update, before the dirty bits go.
+			const unmarked = this.unmarkedWrites?.check();
+			if (unmarked) throw unmarked;
+		}
+		const { core } = this;
+		const { glue } = core;
+		const frame = nextFrame(this.time.frame);
+		core.checkGrowth(glue.beginFrame(frame, 0, 0), QUEUED_CHANGE, undefined, true);
+		core.checkGrowth(glue.updateTransforms(), 'the first query', undefined, true);
+		core.checkGrowth(glue.updateBatches(frame), 'the first query', undefined, true);
 	}
 
 	/**
@@ -4185,7 +4222,9 @@ export class Scene implements ViewHolder {
 	 * instance rows on the layers of `options.layers`, as their materials draw them: front faces,
 	 * or both faces for a double-sided material. Queries see the scene as the last frame's update
 	 * left it, so a move, a new object or a destroy in this frame counts from the next frame, or
-	 * from `onLateUpdate`. Create `hit` and `options` once and pass them each time.
+	 * from `onLateUpdate`. A query before the first frame, as a bake in a sketch's setup, first
+	 * applies the changes queued so far and updates them, so it sees what the setup has built.
+	 * Create `hit` and `options` once and pass them each time.
 	 */
 	raycast(
 		origin: Vec3Like,
