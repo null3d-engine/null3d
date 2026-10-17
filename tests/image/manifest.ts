@@ -1147,6 +1147,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75&edge',
 		hold: 0,
 		switches: ['antialias=fxaa'],
+		// Firefox on Linux rounds the fine lines of the lit floor another way: it draws 0.538% of
+		// the pixels apart from Chrome's picture, past the device tolerance. It keeps its own.
+		devices: ['linux'],
 	},
 	{
 		name: 'render-scale-50',
