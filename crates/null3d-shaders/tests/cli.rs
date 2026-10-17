@@ -70,8 +70,8 @@ impl Scratch {
             .expect("the shader-build command runs")
     }
 
-    /// Each entry's stored record, by the name it was built under, from the cache folder. A file's
-    /// own name also carries the key of the build that wrote it, which a test does not name.
+    /// Each entry's stored record, by its file name in the cache folder. A file's name carries the
+    /// key of the build that wrote it, so a changed entry adds a file rather than replacing one.
     fn cache_files(&self) -> BTreeMap<String, String> {
         let Ok(entries) = fs::read_dir(self.cache_dir()) else {
             return BTreeMap::new();
@@ -79,15 +79,15 @@ impl Scratch {
         entries
             .map(|entry| {
                 let entry = entry.unwrap();
-                let name = entry_name(&entry.file_name().to_string_lossy());
+                let name = entry.file_name().to_string_lossy().into_owned();
                 (name, fs::read_to_string(entry.path()).unwrap())
             })
             .collect()
     }
 
-    /// The cache file of the entry built under `name`.
+    /// The cache file of the one entry built under `name`.
     fn cache_entry(&self, name: &str) -> PathBuf {
-        let mut found: Vec<PathBuf> = fs::read_dir(self.cache_dir())
+        let found: Vec<PathBuf> = fs::read_dir(self.cache_dir())
             .unwrap()
             .filter_map(Result::ok)
             .map(|entry| entry.path())
@@ -97,7 +97,7 @@ impl Scratch {
             })
             .collect();
         assert_eq!(found.len(), 1, "one cached entry named {name}");
-        found.pop().unwrap()
+        found.into_iter().next().unwrap()
     }
 }
 
@@ -117,6 +117,15 @@ fn entry_name(file: &str) -> String {
         Some((name, _key)) => format!("{name}.json"),
         None => file.to_owned(),
     }
+}
+
+/// The files of the entries built under `name`, by file name, from a map of the whole folder.
+fn prefixed(files: &BTreeMap<String, String>, name: &str) -> BTreeMap<String, String> {
+    files
+        .iter()
+        .filter(|(file, _)| entry_name(file) == name)
+        .map(|(file, text)| (file.clone(), text.clone()))
+        .collect()
 }
 
 fn write(path: &Path, text: &str) {
@@ -243,10 +252,17 @@ fn changing_one_entry_compiles_only_that_entry() {
         "the edited shader's module output did not change"
     );
     let after = scratch.cache_files();
-    assert_ne!(before["cull.json"], after["cull.json"]);
+    // The edited entry adds a build under a new key, and its older build stays.
+    let was = prefixed(&before, "cull.json");
+    let now = prefixed(&after, "cull.json");
+    assert_eq!(now.len(), was.len() + 1);
+    for (file, text) in &was {
+        assert_eq!(now.get(file), Some(text), "the older build of `cull` stays");
+    }
     for name in ["test_mesh.json", "mipmap.json"] {
         assert_eq!(
-            before[name], after[name],
+            prefixed(&after, name),
+            prefixed(&before, name),
             "the entry `{name}` compiled again"
         );
     }
@@ -267,9 +283,16 @@ fn changing_a_library_module_compiles_only_its_importers() {
     assert!(run.status.success(), "{}", text(&run.stderr));
     assert_eq!(stats(&run), (1, CACHE_SHADERS.len() - 1));
     let after = scratch.cache_files();
-    assert_ne!(before["test_mesh.json"], after["test_mesh.json"]);
+    assert_ne!(
+        prefixed(&after, "test_mesh.json"),
+        prefixed(&before, "test_mesh.json")
+    );
     for name in ["cull.json", "mipmap.json"] {
-        assert_eq!(before[name], after[name], "`{name}` does not import math");
+        assert_eq!(
+            prefixed(&after, name),
+            prefixed(&before, name),
+            "`{name}` does not import math"
+        );
     }
 }
 
