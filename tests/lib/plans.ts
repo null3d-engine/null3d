@@ -468,17 +468,18 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
 
 /**
  * Which builds the checks plan compiles. `all` compiles every one: the builds without the coat and
- * sheen bit in their parts, then those with it in theirs. `sampled` compiles the builds without it
- * and one part of a sample of those with it, which keeps Safari's shards on CI's few Macs short
- * (D-147).
+ * sheen bit in their parts, the builds of the features that load on first use in theirs, then those
+ * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
+ * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
+ * short (D-147, D-189).
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
 
 /** The sets of the shaders page that each kind of plan compiles, each in its parts. */
 const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
-	all: ['base', 'coat'],
-	sampled: ['base', 'coat-sample'],
+	all: ['base', 'first-use', 'coat'],
+	sampled: ['base', 'first-use-sample', 'coat-sample'],
 };
 
 /**
@@ -491,7 +492,7 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 	SHADERS_BASE_SECONDS +
 		SHADERS_SECONDS_PER_PROGRAM *
 			Math.max(
-				...(['base', 'coat', 'coat-sample'] as const).map((set) =>
+				...(['base', 'coat', 'coat-sample', 'first-use', 'first-use-sample'] as const).map((set) =>
 					Math.ceil(glslProgramCountOf(set) / partsOf(set)),
 				),
 			),
@@ -1959,6 +1960,7 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-coat-sample-/, 15],
+	[/^shaders-first-use-sample-/, 15],
 	[/^shaders-/, 48],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],

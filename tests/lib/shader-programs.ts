@@ -12,7 +12,9 @@ import { join } from 'node:path';
 import { SHADERS } from '../../packages/engine/src/generated/shaders.ts';
 import {
 	glslProgramsOf,
+	inShaderSet,
 	type ShaderSet,
+	shaderOf,
 	variantInShaderSet,
 	variantOf,
 } from '../pages/lib/shader-list.ts';
@@ -23,6 +25,8 @@ const MODULE_DIR = join(import.meta.dirname, '../../packages/engine/src/generate
 const GLSL_MODULE = /^shaders-.*glsl.*\.(js|ts)$/;
 /** A build's key, as a module writes it, and the permutation bits that its value opens with. */
 const BUILD_KEY = /^\t+([a-z][a-z0-9_]*): \{$/;
+/** A shader's key, one level above its builds, which names the shader that a build belongs to. */
+const SHADER_KEY = /^\t([a-z][a-z0-9_]*): \{$/;
 const PERMUTATION = /^\t+permutation: /;
 /** One GLSL program's vertex stage, as the shader build writes it: one line for each program. */
 const VERTEX_STAGE = /^\t+vertex: \{$/;
@@ -37,14 +41,16 @@ const MAIN_MODULE_PROGRAMS = glslProgramsOf(SHADERS);
 function programsOfModule(text: string): Map<string, number> {
 	const lines = text.split('\n');
 	const programs = new Map<string, number>();
+	let shader = '';
 	let build = '';
 	for (let at = 0; at < lines.length; at++) {
 		const line = lines[at] ?? '';
 		const key = BUILD_KEY.exec(line);
 		if (key && PERMUTATION.test(lines[at + 1] ?? '')) {
-			build = key[1] ?? '';
+			build = `${shader}.${key[1] ?? ''}`;
 			if (!programs.has(build)) programs.set(build, 0);
-		} else if (VERTEX_STAGE.test(line)) programs.set(build, (programs.get(build) ?? 0) + 1);
+		} else if (SHADER_KEY.test(line)) shader = SHADER_KEY.exec(line)?.[1] ?? shader;
+		else if (VERTEX_STAGE.test(line)) programs.set(build, (programs.get(build) ?? 0) + 1);
 	}
 	return programs;
 }
@@ -65,7 +71,7 @@ export function glslVariantsByModule(): Map<string, Map<string, number>> {
 /** The builds of the engine, counted together, kept for the life of the process. */
 let builds: ReadonlyMap<string, number> | undefined;
 
-/** The GLSL programs of each build of the engine: the main module's, then each module's. */
+/** The GLSL programs of each build of the engine, by variant alone: the main module's, then each module's. */
 export function glslProgramsByVariant(): ReadonlyMap<string, number> {
 	if (builds) return builds;
 	const programs = new Map<string, number>();
@@ -73,9 +79,29 @@ export function glslProgramsByVariant(): ReadonlyMap<string, number> {
 		programs.set(build, (programs.get(build) ?? 0) + count);
 	for (const [name] of MAIN_MODULE_PROGRAMS) add(variantOf(name), 1);
 	for (const variants of glslVariantsByModule().values())
-		for (const [build, count] of variants) add(build, count);
+		for (const [build, count] of variants) add(variantOf(build), count);
 	builds = programs;
 	return builds;
+}
+
+/** The build names of the engine, kept for the life of the process. */
+let named: ReadonlyMap<string, number> | undefined;
+
+/**
+ * The GLSL programs of each build of the engine, by `shader.variant`: the main module's, then each
+ * module's. A set that leaves out a feature's builds needs the shader's name, which the variant
+ * alone does not give.
+ */
+export function glslProgramsByName(): ReadonlyMap<string, number> {
+	if (named) return named;
+	const programs = new Map<string, number>();
+	const add = (build: string, count: number) =>
+		programs.set(build, (programs.get(build) ?? 0) + count);
+	for (const [name] of MAIN_MODULE_PROGRAMS) add(`${shaderOf(name)}.${variantOf(name)}`, 1);
+	for (const variants of glslVariantsByModule().values())
+		for (const [build, count] of variants) add(build, count);
+	named = programs;
+	return named;
 }
 
 /**
@@ -96,8 +122,7 @@ export function glslProgramCountOf(set: ShaderSet): number {
 	const counted = counts.get(set);
 	if (counted !== undefined) return counted;
 	let programs = 0;
-	for (const [build, count] of glslProgramsByVariant())
-		if (variantInShaderSet(build, set)) programs += count;
+	for (const [build, count] of glslProgramsByName()) if (inShaderSet(build, set)) programs += count;
 	counts.set(set, programs);
 	return programs;
 }
