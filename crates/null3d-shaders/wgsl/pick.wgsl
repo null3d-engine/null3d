@@ -11,12 +11,27 @@
 // row of an instance batch. The fragment writes the object's id in red and the row in green, so a
 // 32-bit id and its row read back in one texel.
 //
+// On WebGL2, exact equality across two programs is not certain. In Chrome on the Mac (ANGLE on
+// Metal), the depth template's prepass build and the shading programs gave positions a rounding
+// step apart, though every program marks its position invariant (decision record D-43). So before
+// a frame emits the pick pass, a page that reads back its own picks must show that this template
+// matches the scene's depth on WebGL2 there. Where it does not, the pass needs a test with a small
+// bias toward the camera, as the outline mask's (decision record D-36), and the mask's alpha test
+// in this template.
+//
 // The SKIN builds skin each vertex with the joint texture, as WebGL2 and the other engine templates
-// do, so a skinned character picks where it draws.
+// do, so a skinned character picks where it draws. The MORPH builds, which only WebGL2 has, add a
+// morphed mesh's deltas first, as the lit templates' MORPH builds do; WebGPU morphs in the
+// skinning pass. A custom material's vertex offset moves its vertices where this template cannot
+// follow, so such a material picks with its own PICK builds (lit.wgsl). A full shader of a sketch's
+// own places its vertices as it likes, so the pass leaves its objects out.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, object_ids, relative_position}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_point}
+#endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
 #endif
 
 /// The vertex attributes that the template reads. The mask's and the material's values are not
@@ -26,6 +41,9 @@ struct VertexIn {
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
+#endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
 #endif
 }
 
@@ -38,10 +56,16 @@ struct VertexOut {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
-#ifdef SKIN
-    let position = skinned_point(skin_of(found, v.joints, v.weights), mesh_position(v.position));
+#ifdef MORPH
+    let source = Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0));
+    let rest_position = morph_vertex(found, v.morph, source).position;
 #else
-    let position = mesh_position(v.position);
+    let rest_position = mesh_position(v.position);
+#endif
+#ifdef SKIN
+    let position = skinned_point(skin_of(found, v.joints, v.weights), rest_position);
+#else
+    let position = rest_position;
 #endif
     var out: VertexOut;
     out.position = clip_of(found, relative_position(found, position));

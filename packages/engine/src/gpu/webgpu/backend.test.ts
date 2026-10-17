@@ -1,14 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
+import { MemoryViews } from '../../shared/memory-views';
+import { ReadSink } from '../readback';
 import { WebGPUBackend } from './backend';
 import { needsOwnArguments } from './indirect-arguments';
 
 const scope = globalThis as Record<string, unknown>;
 const GLOBALS = {
 	GPUShaderStage: { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 },
-	GPUBufferUsage: { MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8 },
-	GPUMapMode: { WRITE: 2 },
+	GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8 },
+	GPUMapMode: { READ: 1, WRITE: 2 },
 };
 beforeAll(() => Object.assign(scope, GLOBALS));
 afterAll(() => {
@@ -35,13 +37,20 @@ const MAC_CHROME =
 
 /**
  * A device that records the pipelines it builds, at once or in the background, and the buffers it
- * makes, in order with each submit.
+ * makes, in order with each submit. A buffer maps when its `mapping` settles, and its mapped bytes
+ * count up from its offset.
  */
 function fakeDevice() {
 	const log: string[] = [];
 	const passes: GPURenderPassDescriptor[] = [];
 	const textures: { sampleCount: number; destroyed: boolean }[] = [];
-	const buffers: { size: number; usage: number; destroyed: boolean }[] = [];
+	const buffers: {
+		size: number;
+		usage: number;
+		destroyed: boolean;
+		mapping: Promise<undefined>;
+		unmap(): void;
+	}[] = [];
 	const name = (buffer: unknown) => `buffer ${buffers.indexOf(buffer as (typeof buffers)[number])}`;
 	const pass = {
 		setPipeline() {},
@@ -93,9 +102,19 @@ function fakeDevice() {
 				size,
 				usage,
 				destroyed: false,
+				mapping: Promise.resolve(undefined),
 				destroy() {
 					buffer.destroyed = true;
 					log.push(`destroy ${size}`);
+				},
+				mapAsync(_mode: number, offset: number, length: number) {
+					log.push(`map ${name(buffer)} at ${offset}, ${length} bytes`);
+					return buffer.mapping;
+				},
+				getMappedRange: (offset: number, length: number) =>
+					Uint8Array.from({ length }, (_, i) => (offset + i) & 0xff).buffer,
+				unmap() {
+					log.push(`unmap ${name(buffer)}`);
 				},
 			};
 			buffers.push(buffer);
@@ -112,7 +131,15 @@ function fakeDevice() {
 			copyBufferToBuffer(source: unknown, offset: number, target: unknown) {
 				log.push(`copy ${name(source)} at ${offset} to ${name(target)}`);
 			},
-			copyTextureToBuffer() {},
+			copyTextureToBuffer(
+				_source: unknown,
+				{ buffer, offset, bytesPerRow, rowsPerImage }: GPUTexelCopyBufferInfo,
+				{ width, height }: { width: number; height: number },
+			) {
+				log.push(
+					`copy ${width} x ${height} to ${name(buffer)} at ${offset}, ${bytesPerRow} per row, ${rowsPerImage} rows`,
+				);
+			},
 			copyBufferToTexture() {},
 			finish: () => ({}),
 		}),
@@ -277,7 +304,14 @@ describe('WebGPUBackend', () => {
 			),
 		);
 		const events = log.filter((entry) => !entry.startsWith('background'));
-		expect(events).toEqual(['submit', `destroy ${256 * 8}`]);
+		// Each copy passes through a buffer of its own, and the smaller one goes once its copies
+		// are submitted, because the device may still hold them.
+		expect(events).toEqual([
+			'copy 8 x 8 to buffer 0 at 0, 256 per row, 8 rows',
+			'copy 32 x 32 to buffer 1 at 0, 256 per row, 32 rows',
+			'submit',
+			`destroy ${256 * 8}`,
+		]);
 		// The buffer that stays counts as GPU memory, with its rows padded to 256 bytes, and the
 		// one destroyed no longer does.
 		expect(backend.gpuMemory.bytes[1]).toBe(256 * 32);
@@ -417,5 +451,78 @@ describe('WebGPUBackend', () => {
 		expect(needsOwnArguments(iPhoneChrome)).toBe(true);
 		for (const userAgent of [MAC_CHROME, macFirefox, androidChrome, ''])
 			expect(needsOwnArguments(userAgent), userAgent).toBe(false);
+	});
+
+	it('reads a copied box into engine memory once the frame is submitted, and raises its slot after the unmap', async () => {
+		const { device, log, buffers } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const memory = new WebAssembly.Memory({ initial: 1 });
+		const slots = new Int32Array(8);
+		backend.readSink = new ReadSink(new MemoryViews(memory), slots);
+		const ids = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_COPY_SRC;
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_TEXTURE, 1, 8, 8, 1, G.FORMAT_RGBA32_UINT, ids, 1, 1, G.VIEW_2D],
+				[G.OP_CREATE_BUFFER, 2, 1024, G.BUFFER_USAGE_MAP_READ | G.BUFFER_USAGE_COPY_DST],
+			),
+		);
+		const read = buffers.length - 1;
+		const buffer = buffers[read];
+		if (!buffer) throw new Error('no read buffer');
+		// The slot tells the sketch thread that it may use the buffer again, so it rises after the unmap.
+		let slotAtUnmap = -1;
+		const { unmap } = buffer;
+		buffer.unmap = () => {
+			slotAtUnmap = slots[5] as number;
+			unmap();
+		};
+		log.length = 0;
+		// Two rows of three texels from (2, 4), 256 bytes apart, read into engine memory at 64.
+		const frame = drawList(
+			[G.OP_COPY_TEXTURE_TO_BUFFER, 1, 0, 2, 4, 0, 2, 0, 256, 2, 3, 2],
+			[G.OP_READ_BUFFER, 2, 0, 304, 64, 5],
+		);
+		replay(backend, frame);
+		expect(log).toEqual([
+			`copy 3 x 2 to buffer ${read} at 0, 256 per row, 2 rows`,
+			'submit',
+			`map buffer ${read} at 0, 304 bytes`,
+		]);
+		expect(slots[5]).toBe(0);
+		await settle();
+		const bytes = new Uint8Array(memory.buffer, 64, 304);
+		expect([...bytes]).toEqual(Array.from({ length: 304 }, (_, i) => i & 0xff));
+		expect(slots[5]).toBe(1);
+		expect(slotAtUnmap).toBe(0);
+		expect(log.at(-1)).toBe(`unmap buffer ${read}`);
+
+		// A capture replays the frame that the loop drew already: its copy and read do not run again.
+		log.length = 0;
+		backend.canvasTarget = device.createTexture({ size: [8, 8], format: 'rgba8unorm', usage: 0 });
+		replay(backend, frame);
+		backend.endCapture();
+		await settle();
+		expect(log.filter((entry) => !entry.startsWith('destroy'))).toEqual([]);
+		expect(slots[5]).toBe(1);
+
+		// A buffer destroyed before its read maps drops the read, which never maps.
+		replay(backend, drawList([G.OP_READ_BUFFER, 2, 0, 16, 64, 5], [G.OP_DESTROY_BUFFER, 2]));
+		await settle();
+		expect(log.filter((entry) => entry.startsWith('map'))).toEqual([]);
+		expect(slots[5]).toBe(1);
+
+		// A buffer destroyed during its map drops the read too: its slot never rises.
+		replay(
+			backend,
+			drawList([G.OP_CREATE_BUFFER, 3, 256, G.BUFFER_USAGE_MAP_READ | G.BUFFER_USAGE_COPY_DST]),
+		);
+		const later = buffers.at(-1);
+		if (!later) throw new Error('no read buffer');
+		later.mapping = Promise.reject(new DOMException('destroyed', 'AbortError'));
+		replay(backend, drawList([G.OP_READ_BUFFER, 3, 0, 16, 64, 5]));
+		replay(backend, drawList([G.OP_DESTROY_BUFFER, 3]));
+		await settle();
+		expect(slots[5]).toBe(1);
 	});
 });
