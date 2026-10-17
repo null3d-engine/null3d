@@ -226,15 +226,15 @@ shaders = ["decal", "decal_maps"]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["PROBE_GRID"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+variants.webgpu = { defs = ["PROBE_GRID"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "TRANSLUCENCY", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "TRANSLUCENCY", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
 
 [shaders.probe_grid_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["PROBE_GRID", "MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+variants.webgpu = { defs = ["PROBE_GRID", "MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "TRANSLUCENCY", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "TRANSLUCENCY", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
 
 # A page downloads the grid templates when the sketch first sets a light probe grid.
 [first_use.probe_grid]
