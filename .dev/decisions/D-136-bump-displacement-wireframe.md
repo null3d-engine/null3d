@@ -83,6 +83,7 @@ three.js keeps the mesh's normals, so a displaced plane with no normal map light
 - Kept shadows: a cascade or a light's tile that keeps its layer between frames holds the vertices where the old values put them. A change of the displacement's scale or bias, or a height map whose image arrives, makes every cascade and tile draw again in the next frame.
 - The occluders' pass of GPU occlusion culling draws with the depth template, which does not move vertices. A pair that places its own vertices, a displaced material's or a custom vertex offset's, now hides nothing there, so a moved surface never hides what the camera sees.
 - Outline masks, debug views and raycasts see the mesh before displacement, as they do for custom vertex offsets, and as three.js's raycasts do.
+- The light probe grid's templates build the same bits as the plain lit templates but for a listed set ([D-146](D-146-light-probe-grid.md)), and a material outside that set keeps its plain template. A bump map, a displacement map and parallax join that list: a material with one of them draws its relief and keeps the plain lights, without the grid's light, rather than taking the grid's templates to another three bits of builds.
 
 ### Wireframe
 

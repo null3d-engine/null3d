@@ -16,12 +16,17 @@ use crate::pipelines::{DrawKey, PipelineCache, PipelineKey};
 
 /// The permutation bits of the lit templates that the grid templates build without, at most. A
 /// pair with one of them keeps its plain template while probe shading is on, and draws without grid
-/// light.
+/// light. The builds of a bump map, a displacement map and parallax are among them: a material
+/// with one of them draws its relief and keeps the plain lights, rather than taking the grid's
+/// templates to another three bits of builds.
 pub const NO_PROBE_BUILD: u32 = permutation::AREA_LIGHTS
     | permutation::TRANSMISSION
     | permutation::LOD_FADE
     | permutation::WEIGHTED
-    | permutation::COAT_SHEEN;
+    | permutation::COAT_SHEEN
+    | permutation::BUMP
+    | permutation::DISPLACEMENT
+    | permutation::PARALLAX;
 
 /// The grid template that a pair of `template` and `permutation` draws through while probe shading
 /// is on, or `template` when it has no grid build.
@@ -145,6 +150,9 @@ mod tests {
             ("LOD_FADE", permutation::LOD_FADE),
             ("WEIGHTED", permutation::WEIGHTED),
             ("COAT_SHEEN", permutation::COAT_SHEEN),
+            ("BUMP", permutation::BUMP),
+            ("DISPLACEMENT", permutation::DISPLACEMENT),
+            ("PARALLAX", permutation::PARALLAX),
         ];
         for (plain, probe) in [("lit", "probe_grid"), ("standard_maps", "probe_grid_maps")] {
             for device in ["webgpu", "webgl2"] {
