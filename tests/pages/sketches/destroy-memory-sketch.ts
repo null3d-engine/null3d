@@ -9,8 +9,11 @@
 import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';
 import { blenderMorphBuilder } from '../lib/gltf-files';
 
-/** Rounds in all; the test's warm-up ends once the engine's memory settles. */
-const ROUNDS = 140;
+/**
+ * Rounds in all; the test's warm-up ends once the engine's memory settles. The run is long enough
+ * that a slow machine, whose start-up arrives over more rounds, still leaves many rounds of churn.
+ */
+const ROUNDS = 200;
 /** Frames that each round draws with its copies, and after it destroys them. */
 const FRAMES = 2;
 
