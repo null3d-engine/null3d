@@ -55,7 +55,7 @@ pub use cache::{Cache, CacheStats};
 pub use effect::{EffectOutput, EffectPieces, EffectSource, PostTemplates};
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
-pub use manifest::{Pipeline, Target, Variant};
+pub use manifest::{BUILD_BUDGET, BuildCounts, Manifest, Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
 pub use output::{
     Binding, FEATURE_JOIN, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock,
@@ -69,7 +69,7 @@ pub use typescript::ModuleSet;
 pub use uniforms::Uniform;
 
 use library::{Composers, Library, View};
-use manifest::{Build, Manifest};
+use manifest::Build;
 
 /// The manifest.
 pub const MANIFEST_PATH: &str = "crates/null3d-shaders/shaders.toml";
