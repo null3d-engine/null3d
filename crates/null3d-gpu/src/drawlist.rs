@@ -716,9 +716,10 @@ pub mod layout {
     /// linear sampler.
     pub const BLOOM: u32 = 9;
     /// Group 0 of the final pass that adds bloom: [`FINAL`]'s first two bindings, then bloom's
-    /// uniform block, the texture of each of bloom's levels and their linear sampler, then
-    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, its outline mask at
-    /// binding 11, and the texel of the automatic exposure at binding 12.
+    /// uniform block at binding 2, the base level of bloom's chain at binding 3 and that level's
+    /// linear sampler at binding 8, then [`FINAL`]'s color grading table and its sampler at
+    /// bindings 9 and 10, its outline mask at binding 11, and the texel of the automatic exposure
+    /// at binding 12.
     pub const FINAL_BLOOM: u32 = 10;
     /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
     /// instance's skinning matrices, which vertex shaders read.
