@@ -639,7 +639,9 @@ mod tests {
         source
             .lines()
             .filter_map(|line| {
-                let (name, values) = line.strip_prefix("const ")?.split_once(": vec2f = vec2f(")?;
+                let (name, values) = line
+                    .strip_prefix("const ")?
+                    .split_once(": vec2f = vec2f(")?;
                 let (width, height) = values.trim_end_matches(");").split_once(", ")?;
                 let width: f32 = width.parse().ok()?;
                 let height: f32 = height.parse().ok()?;

@@ -2238,11 +2238,7 @@ mod tests {
                 // The formatter writes one statement per line, and indents the next with a tab. A
                 // semicolon followed by a tab is therefore two statements on one line, which a
                 // merge that joined two edits leaves behind.
-                assert!(
-                    !line.contains(";\t"),
-                    "{name} line {}: {line}",
-                    number + 1
-                );
+                assert!(!line.contains(";\t"), "{name} line {}: {line}", number + 1);
             }
         }
     }
