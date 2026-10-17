@@ -284,6 +284,31 @@ export function buildShaders(inputs: ShaderBuildInputs): ShaderBuildResult {
 }
 
 /**
+ * Prepares the engine's own manifest, whose sources the compiler carries, and lists the file names
+ * of every module it makes. No text is rendered yet: the modules come one at a time, so a build
+ * never holds the whole set beside its sources.
+ */
+export function prepareEngineModules(): readonly string[] {
+	const result = call<readonly string[]>('prepare_modules', {});
+	if (!result.ok) throw new Error(problemsText(result.problems));
+	return result.output;
+}
+
+/** One module of the prepared engine build: its file name and its text. */
+export function engineModule(name: string): { readonly path: string; readonly text: string } {
+	const result = call<{ readonly path: string; readonly text: string }>('module', { name });
+	if (!result.ok) throw new Error(problemsText(result.problems));
+	return result.output;
+}
+
+/** The problems of a failed call as one message, for a failure that ends a build. */
+function problemsText(problems: readonly ShaderProblem[]): string {
+	return problems
+		.map((problem) => `${problem.file ?? 'the shader build'}: ${problem.message}`)
+		.join('\n');
+}
+
+/**
  * The module's response to a call: its output, or the problems that stopped the call. The calls
  * that compile users' shaders add their warnings when they have any.
  */
@@ -296,7 +321,13 @@ export type Response<T> =
 	  };
 
 /** The name of one of the module's exports that takes a request. */
-export type CallName = 'compile' | 'compile_material' | 'compile_effect' | 'build';
+export type CallName =
+	| 'compile'
+	| 'compile_material'
+	| 'compile_effect'
+	| 'build'
+	| 'prepare_modules'
+	| 'module';
 
 let compiled: WebAssembly.Module | undefined;
 let calls: CompilerCalls | undefined;

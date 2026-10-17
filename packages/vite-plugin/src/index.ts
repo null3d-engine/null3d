@@ -21,6 +21,8 @@ import {
 } from './assets.ts';
 import { CompilerPool } from './compile-pool.ts';
 import { writeWgslDeclaration } from './declarations.ts';
+import { engineShaderFolder, engineShadersRoot, ensureEngineShaders } from './engine-shaders.ts';
+import { buildEngineShadersLocally } from './engine-shaders-local.ts';
 import {
 	changedLiterals,
 	HOT_CLIENT,
@@ -156,6 +158,21 @@ export const CORE_FILES = [
  * a script tag for it.
  */
 export const EARLY_CORE_MODULE = '@null3d/engine/early-core';
+
+/** The engine's import of one of its generated shader modules, as its own files write it. */
+const ENGINE_GENERATED = /^\.\/generated\/([A-Za-z0-9_.-]+)$/;
+
+/** The `lib` folder of an engine package, when the importer sits inside it. */
+function engineLibFolder(importer: string): string | undefined {
+	const marker = '/lib/';
+	const at = importer.lastIndexOf(marker);
+	return at < 0 ? undefined : importer.slice(0, at + marker.length);
+}
+
+/** Tells the developer where the engine's shaders come from, and why a first build waits. */
+function reportShaderSource(message: string): void {
+	console.log(message);
+}
 
 /** The chunks that a page's entry chunk imports, directly or through others, with the entry. */
 function staticChunks(
@@ -440,11 +457,26 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		// early script imports nothing, so it runs as soon as it arrives, and the core's download
 		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: [HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS, /^@null3d\/engine$/] },
+			filter: {
+				id: [HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS, /^@null3d\/engine$/, ENGINE_GENERATED],
+			},
 			async handler(source, importer) {
 				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
 				if (MATERIAL_BUILDS_ADDRESS.test(source))
 					return source.startsWith('\0') ? source : `\0${source}`;
+				// The engine package carries no built shader modules. Its files import them by a name
+				// that the installed package's release asset holds, so each import resolves into the
+				// cache folder that every project on this machine shares.
+				const name = ENGINE_GENERATED.exec(source)?.[1];
+				if (name) {
+					const lib = importer ? engineLibFolder(importer) : undefined;
+					if (!lib) return null;
+					const folder = await engineShaderFolder(lib, {
+						fetch: (artifact) => ensureEngineShaders(artifact, reportShaderSource),
+						build: () => buildEngineShadersLocally(lib, reportShaderSource),
+					});
+					return folder ? join(folder, name) : null;
+				}
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
@@ -659,6 +691,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		configureServer(server) {
+			// The engine's shader modules sit outside the project, in the machine's cache, and the
+			// page and its workers reach them from there.
+			const allowed = server.config.server.fs.allow;
+			const shaders = engineShadersRoot();
+			if (!allowed.includes(shaders)) allowed.push(shaders);
 			server.middlewares.use(isolationMiddleware);
 			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
