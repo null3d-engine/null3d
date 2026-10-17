@@ -2,7 +2,7 @@
 
 Status: decided. Date: 2026-10-17. Task: none.
 
-Summary: The engine package no longer ships the built shader modules, 687 MB in 1,343 files. Each release publishes them as one Brotli-compressed tar beside the skill zip files, and the package carries the asset's name, address and SHA-256. A deterministic tar writer makes the same tree give the same bytes twice. The plugin downloads the asset, or builds the set locally when the download cannot be had.
+Summary: The engine package no longer ships the built shader modules, 684 MiB in 1,353 files. Each release publishes them as one Brotli-compressed tar beside the skill zip files, and the package carries the asset's name, address and SHA-256. A deterministic tar writer makes the same tree give the same bytes twice. The plugin downloads the asset, or builds the set locally when the download cannot be had.
 
 ## Question
 
@@ -30,9 +30,11 @@ The longest module name is `shaders-area-lights-and-coat-sheen-and-morph-and-ski
 
 ## Decision
 
-`tools/shader-artifact.ts` writes the asset and the record. The asset is `<tag>-shaders.tar.br`. The tar holds the shader modules at the root, sorted by name. The owner and group are zero, the modification time is the epoch, and the mode is the file's own. The stream is Brotli-compressed at quality 11 with a 22-bit window. A small tar writer in the tool keeps these values fixed, so the bytes do not depend on the machine's tar or on the file times.
+`tools/shader-artifact.ts` writes the asset and the record. The asset is `<tag>-shaders.tar.br`. The tar holds the shader modules at the root, sorted by name. The owner and group are zero, the modification time is the epoch, and the mode is the file's own. The stream is Brotli-compressed at quality 11 with a 22-bit window. A small tar writer in the tool keeps these values fixed. The bytes then do not depend on the machine's tar or on the file times.
 
 The record is `packages/engine/lib/shader-artifact.json`, with the tag, the file name, the release address and the SHA-256, each on one line in that order. The release job writes the archive, measures its hash and passes the hash to the npm job as a job output. The npm job writes the record from that hash and never rebuilds the archive, so the bytes and the hash cannot disagree.
+
+All public packages share one version, and one Release per version carries the asset for all of them. There is no per-package Release. The asset sits on the same Release as the skill zip files, in the `null3d-engine/null3d` repository.
 
 The engine package's `files` list removes the built shader JavaScript: `shaders*.js`, `shader-features.js` and `shader-paragraphs-*.js`. The declarations stay, so a project's type check passes. The engine's generated constants modules, `core.js` and `gpu.js`, stay in the package. They are code of the engine, not shader modules, and the local build of the shader set cannot make them.
 
