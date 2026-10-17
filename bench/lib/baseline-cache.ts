@@ -10,19 +10,20 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	statSync,
 	utimesSync,
 	writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { buildBenchPages } from '../../tests/lib/load-server.ts';
+import { acquireLock, cacheDir, writeFolderAtomic } from '../../tools/lib/build-cache.ts';
 
-/** The cache's folder, which NULL3D_BASELINE_CACHE can move. */
-export const BASELINE_CACHE =
-	process.env.NULL3D_BASELINE_CACHE || join(homedir(), '.cache/null3d/gpu-check-baselines');
+/**
+ * The cache's folder, which NULL3D_BASELINE_CACHE can move. By default it is a folder under the
+ * build cache's one root, so one variable moves every cache on the machine.
+ */
+export const BASELINE_CACHE = process.env.NULL3D_BASELINE_CACHE || cacheDir('gpu-check-baselines');
 
 /** The file that a complete prepared baseline holds, with what a comparison needs of its commit. */
 const RECORD_FILE = 'baseline.json';
@@ -84,69 +85,32 @@ export function run(cwd: string, command: string, ...args: string[]): void {
 const git = (cwd: string, ...args: string[]) =>
 	run(cwd, 'git', '-c', 'core.hooksPath=/dev/null', ...args);
 
-const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
-
-/** True while the process exists. */
-function alive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (e) {
-		return (e as NodeJS.ErrnoException).code === 'EPERM';
-	}
-}
-
-/** A lock that names no process this long after it was taken was left by one that stopped. */
-const UNNAMED_LOCK_MS = 60_000;
-
-/** The process that holds the lock, or 0 when the lock names none yet. */
-function holderOf(lock: string): number {
-	try {
-		return Number(readFileSync(join(lock, 'pid'), 'utf8')) || 0;
-	} catch {
-		return 0;
-	}
-}
-
-/** Runs `work` while this process holds the cache's lock; a lock whose process has gone is freed. */
+/**
+ * Runs `work` while this process holds the cache's lock, so one baseline build runs at a time. The
+ * lock is the build caches' own (see tools/lib/build-cache.ts): its holder names itself, a lock whose
+ * holder has stopped is broken, and the break renames the lock first, so two checks that find the same
+ * stale lock never remove a live one.
+ */
 async function withLock<T>(cache: string, work: () => Promise<T>): Promise<T> {
-	const lock = join(cache, 'builder.lock');
-	let told = false;
-	for (;;) {
-		try {
-			mkdirSync(lock);
-			writeFileSync(join(lock, 'pid'), String(process.pid));
-			break;
-		} catch {
-			const holder = holderOf(lock);
-			const takenMs = statSync(lock, { throwIfNoEntry: false })?.mtimeMs;
-			if (takenMs === undefined) continue;
-			if (holder > 0 ? !alive(holder) : Date.now() - takenMs > UNNAMED_LOCK_MS) {
-				rmSync(lock, { recursive: true, force: true });
-				continue;
-			}
-			if (!told) console.log(`waiting for another check's baseline build (process ${holder})`);
-			told = true;
-			await sleep(10_000);
-		}
-	}
+	mkdirSync(cache, { recursive: true });
+	const release = acquireLock(join(cache, 'builder.lock'));
 	try {
 		return await work();
 	} finally {
-		rmSync(lock, { recursive: true, force: true });
+		release();
 	}
 }
 
 /**
- * The switches that the comparison code of the checkout at `root` gives every page, or none when
- * its comparison had none.
+ * The switches that the comparison code of the checkout at `root` gives its pages, or none when its
+ * comparison had none.
  */
 export async function switchesOf(root: string): Promise<readonly string[]> {
 	try {
 		const code = (await import(join(root, 'bench/lib/compare.ts'))) as {
-			COMPARISON_SWITCHES?: readonly string[];
+			ALL_COMPARISON_SWITCHES?: readonly string[];
 		};
-		return code.COMPARISON_SWITCHES ?? [];
+		return code.ALL_COMPARISON_SWITCHES ?? [];
 	} catch {
 		return [];
 	}
@@ -155,7 +119,8 @@ export async function switchesOf(root: string): Promise<readonly string[]> {
 /** Removes the cache's folders past the kept number, and any build that stopped half way. */
 function prune(cache: string): void {
 	const entries = readdirSync(cache).flatMap((name) => {
-		if (name.endsWith('.part')) {
+		// A folder that a build staged and a stopped build left behind is not an entry.
+		if (name.endsWith('.partial') || name.endsWith('.part')) {
 			rmSync(join(cache, name), { recursive: true, force: true });
 			return [];
 		}
@@ -197,17 +162,28 @@ export async function prepareBaseline(
 		}
 		run(builder, 'bun', 'install');
 		run(builder, 'bun', 'run', 'build');
-		const part = join(cache, `${commit}.part`);
-		rmSync(part, { recursive: true, force: true });
-		buildBenchPages(builder, preparedPages(part));
 		const subject = execFileSync('git', ['-C', builder, 'log', '-1', '--format=%s'], {
 			encoding: 'utf8',
 		}).trim();
 		const record: PreparedBaseline = { commit, subject, switches: await switchesOf(builder) };
-		writeFileSync(join(part, RECORD_FILE), `${JSON.stringify(record, null, '\t')}\n`);
 		const dir = join(cache, commit);
-		rmSync(dir, { recursive: true, force: true });
-		renameSync(part, dir);
+		// The build's pages and its record go into a staging folder and then in place in one step,
+		// as every cache of the build does, so a check that reads the cache never finds half of one.
+		// The write helper keeps a failure to itself, so the reason it happened is kept here.
+		let failure: unknown;
+		const written = writeFolderAtomic(dir, (staging) => {
+			try {
+				buildBenchPages(builder, preparedPages(staging));
+				writeFileSync(join(staging, RECORD_FILE), `${JSON.stringify(record, null, '\t')}\n`);
+			} catch (error) {
+				failure = error;
+				throw error;
+			}
+		});
+		if (!written)
+			throw (
+				failure ?? new Error(`could not write the prepared baseline of ${commit} into ${cache}`)
+			);
 		prune(cache);
 		return dir;
 	});

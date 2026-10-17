@@ -61,7 +61,8 @@ struct Params {
 }
 
 /// The system in one view: its object's world matrix rows moved by its cell's offset from the
-/// view's camera, then the system's time in seconds and its map's layer.
+/// view's camera, then the system's time in seconds, its map's layer, and the rebase: the first
+/// record whose birth time still counts from the old time base, and the seconds to take off it.
 struct View {
     row_x: vec4f,
     row_y: vec4f,
@@ -244,12 +245,19 @@ fn place(p: vec3f, w: f32) -> vec3f {
 }
 
 @vertex
-fn vs(@builtin(vertex_index) vertex: u32, in: VertexIn) -> VertexOut {
+fn vs(
+    @builtin(vertex_index) vertex: u32,
+    @builtin(instance_index) instance: u32,
+    in: VertexIn,
+) -> VertexOut {
     var out: VertexOut;
     out.clip = vec4f(0.0, 0.0, 0.0, 1.0);
     let lifetime = unpack2x16float(in.packed).y;
     let seed = in.packed & 0xffffu;
-    let age = view.clock.x - in.birth.w;
+    // While the system moves its time base, the records that the sketch has not rewritten yet
+    // still count from the old one.
+    let birth = in.birth.w - select(0.0, view.clock.w, f32(instance) >= view.clock.z);
+    let age = view.clock.x - birth;
     if !(age >= 0.0 && age < lifetime) {
         return out;
     }

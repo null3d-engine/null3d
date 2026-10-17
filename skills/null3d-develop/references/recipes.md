@@ -23,7 +23,8 @@ Each recipe states the goal, gives the code, explains why it is written that way
 17. Move a player with keys, a gamepad or touch
 18. Camera that follows a moving object
 19. Water and mirror floors with a reflection
-20. Fire, smoke and sparks with particles (0.2)
+20. Fire, smoke and sparks with particles
+21. Terrain from a height field
 
 ## 1. Start a new project
 
@@ -348,7 +349,7 @@ const day = timeOfDay(hours, { model: 'physical' });
 scene.setBackground({ atmosphere: { ...day.atmosphere, cloudCoverage: 0.3, aerialPerspective: 2 } });
 ```
 
-Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometres, so a small scene takes more. Set `metersPerUnit` when the scene's units are not metres. Docs: `concepts/lighting`, `api/scene`.
+Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometers, so a small scene takes more. Set `metersPerUnit` when the scene's units are not meters. Docs: `concepts/lighting`, `api/scene`.
 
 ## 11. Physics with a library in the sketch worker
 
@@ -392,7 +393,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come in 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -409,7 +410,7 @@ The thread that draws reads the frame back and encodes it, so the canvas needs n
 
 ## 14. Video on a surface, with frames from the page
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
+Video textures (`engine.registerVideo` with `textures.fromVideo`) come in 0.3. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
 
 ```ts
 // page.ts
@@ -601,7 +602,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 
 The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.
 
-## 20. Fire, smoke and sparks with particles (0.2)
+## 20. Fire, smoke and sparks with particles
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -671,7 +672,7 @@ export default defineSketch(async (ctx) => {
 
 Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
 
-## 21. Terrain from a height field (0.2)
+## 21. Terrain from a height field
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -720,7 +721,7 @@ export default defineSketch((ctx) => {
     onUpdate() {
       // The ground follows the camera: fine blocks near it, coarse blocks far away.
       camera.getWorldPosition(eye);
-      terrain.update(eye[0], eye[2]);
+      terrain.update(eye);
     },
   };
 });

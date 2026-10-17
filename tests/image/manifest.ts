@@ -272,9 +272,12 @@ const EXPOSURE_SIZE = [320, 180] as const;
  * every tier. A dark hall and a sunny street both adapt toward middle gray, with the percentile
  * and the mean meters, a center weight, a compensation and a range that stops the eye short. The
  * eye adapts with bloom and AgX too, and at half the render scale. Turning it on during play draws
- * the image of turning it on at the start, as the meter's first frame takes its stops at once. The
- * downsample meter, which Low and WebGL2 use, draws its own image. A device with no HDR target
- * keeps the camera's exposure.
+ * the image of turning it on at the start, as the meter's first frame takes its stops at once. On
+ * the dark hall the range holds the eye at one stop, so the mean meter, the center weight and the
+ * downsample meter draw the dark test's picture there: the metres move the eye on the sunny street
+ * and on the dark hall once the range is opened (`resume-status/examples/area-light-hold-notes.md`),
+ * and this scene's range is the part that decides the picture. A device with no HDR target keeps
+ * the camera's exposure.
  */
 function exposureTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -287,14 +290,17 @@ function exposureTests(): ImageTest[] {
 		test('exposure-off', '?light=dark'),
 		test('exposure-dark', '?light=dark&auto'),
 		test('exposure-bright', '?light=bright&auto'),
-		test('exposure-mean', '?light=dark&auto&metering=mean'),
-		test('exposure-center', '?light=dark&auto&center=1'),
+		{ ...test('exposure-mean', '?light=dark&auto&metering=mean'), samePicture: 'exposure-dark' },
+		{ ...test('exposure-center', '?light=dark&auto&center=1'), samePicture: 'exposure-dark' },
 		test('exposure-compensation', '?light=dark&auto&comp=1'),
 		test('exposure-range', '?light=dark&auto&min=-2'),
 		test('exposure-bloom', '?light=dark&auto&bloom'),
 		{ ...test('exposure-later', '?light=dark&auto&later'), reference: 'exposure-dark' },
 		test('exposure-scale-50', '?scale=0.5&light=dark&auto'),
-		test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+		{
+			...test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+			samePicture: 'exposure-dark',
+		},
 		{
 			...test('exposure-8-bit', '?light=dark&auto'),
 			tiers: ['webgpu', 'webgl2'],
@@ -1133,6 +1139,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'scene',
 	},
 	{ name: 'render-scale-75', sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75', hold: 0 },
+	// The same at 0.75 with FXAA, which below render scale 1 smooths the edges as the first of the
+	// two steps writes the render-size corner of the scene color (D-167). Its taps must stay
+	// inside that corner: a tap past it reads the clear color, which leaves a fringe at the
+	// image's last rows and columns.
+	{
+		name: 'render-scale-75-fxaa',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75&edge',
+		hold: 0,
+		switches: ['antialias=fxaa'],
+		// Firefox on Linux rounds the fine lines of the lit floor another way: it draws 0.538% of
+		// the pixels apart from Chrome's picture, past the device tolerance. It keeps its own.
+		devices: ['linux'],
+	},
 	{
 		name: 'render-scale-50',
 		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.5',
@@ -1242,7 +1261,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
 	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
-	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
+	// runners rounds one gray pixel a step apart, so one pixel of its frame may differ. The real GPU
+	// must match exactly.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1250,7 +1270,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		swiftShaderTolerance: { maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
@@ -1367,6 +1388,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
 		sameOnEveryTier: true,
+		samePicture: 'shadows',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The same scene with every object a row of an instance batch, static or dynamic: batch rows cast
@@ -1831,8 +1853,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
-	// The rectangle lights again with a cap of one area light a frame: only the nearest light, the
-	// pink strip over the right of the floor, shades.
+	// The rectangle lights again with a cap of one area light a frame: the one that gives the camera
+	// the most light shades, which here is the wide warm panel over the left of the floor. The bright
+	// pink strip is the narrowest of the three, so the cap leaves it out.
 	{
 		name: 'lights-rect-capped',
 		sketch: 'tests/pages/sketches/lights-sketch.ts?scene=rect&areaLights=1',
@@ -1956,6 +1979,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		size: [480, 270],
 		modes: ALL_MODES,
+		// This sketch carries three custom shaders, and its first run pays for the compile that the
+		// dev server does of them and for the build sets that go with them. On a busy runner that
+		// start is slow beside the page's own work, so the runs take a longer limit, as the room's
+		// environment and the clear coat's page do. A passing run is unaffected.
+		timeoutSeconds: 60,
 	},
 	// The inputs that three.js's ShaderMaterial gives its shaders: the instance's row and the
 	// object's id in static and dynamic batches and on meshes, the camera's and the object's
@@ -2125,6 +2153,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Impostors of the impostors add-on: cards around an origin far from the world's, each drawing
+	// an atlas cell, and a merged row of a plain, a turned and a mirrored panel, which draws only
+	// when the merge reverses the mirrored copy's winding. The frame each card picks from its
+	// direction to the eye is checked by the package's unit test, which the picture cannot show.
+	{
+		name: 'impostors',
+		sketch: 'tests/pages/sketches/impostors-sketch.ts',
+		hold: 0,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
@@ -2187,6 +2224,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/transparency-sketch.ts?custom',
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+		samePicture: 'transparency',
 	},
 	// A smooth, a rough and a tinted glass ball let the striped wall behind them through, from the
 	// copy of the opaque objects' color. The parity test compares it with three.js's

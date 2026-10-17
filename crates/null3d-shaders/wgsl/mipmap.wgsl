@@ -6,6 +6,8 @@
 // base and highest levels are set to it. The copy pipeline reads the texel under each fragment
 // from the source's first level instead, for the WebGL2 backend's copies out of a layer.
 
+#import null3d::fullscreen::{triangle}
+
 @group(0) @binding(0) var source: texture_2d_array<f32>;
 @group(0) @binding(1) var source_sampler: sampler;
 
@@ -16,11 +18,8 @@ struct VertexOut {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) layer: u32) -> VertexOut {
-    // Corners at (-1, -1), (3, -1) and (-1, 3) in clip space, at a depth that every WebGL2 depth
-    // mapping keeps inside the clip volume.
-    let corner = vec2f(f32((vertex << 1u) & 2u), f32(vertex & 2u));
     var out: VertexOut;
-    out.clip = vec4f(corner * 2.0 - 1.0, 0.5, 1.0);
+    out.clip = triangle(vertex);
     out.layer = layer;
     return out;
 }

@@ -141,3 +141,48 @@ three.js r187 floors perceptual roughness at 0.045, Filament's desktop value, in
 - Follow-ups: the look test leaves out S6, which no benchmark page draws yet; run it on S6 when S6 lands. No starter templates exist yet, so "Neutral in product templates" waits for the first product template.
 - The image references change on almost every lit test. On 11 October 2026 every image test passed on main on both sets, and the change remade 719 references: 360 on the Mac's GPU and 359 on SwiftShader, 12 of them new. 20 of the 22 demos change. The large-world demo sets its own curve, and the walk-and-fly demo keeps ACES and draws as on main. The owner saw each changed demo before and after, held at its test time, before the change merged. The owner approved punchy AgX for every demo but two: the morph-flowers and walk-and-fly demos set ACES, because bright, saturated, stylised scenes keep their punch under ACES. Their 12 references were drawn again with ACES: walk-and-fly's match main's, and morph-flowers' differ from main's in 2 to 3% of pixels, on the flower heads, where the other lighting changes show. Six image tests that main added on 12 October 2026 drew with ACES. They took punchy AgX references, 36 on both sets: the extra-shapes, shader-inputs and vertex-updates demos, custom shader inputs and two reflection tests. Each changed only in tone, by 9 to 41% of pixels. Seven more lit tests came from main on 12 October 2026, with ACES references: the forest and security camera demos, three levels-of-detail tests, and the lamp tests of the minimap and the reflection. They took 38 punchy AgX references, 19 on each set, after a look at each one: the shapes, shadows and lights stay in place, and only the tone changes, by 3 to 81% of pixels. The three.js images of the Battle comparison pass unchanged, as does its null3D image. Three more came later that day: the Creek showcase, the look-at demo and the joints test. They took 14 punchy AgX references, 7 on each set. Again only the tone changes, by 4 to 98% of pixels. The Creek's bright sky, mist and far water lose a little colour. The owner compared the Creek's held frame under punchy AgX and ACES at full size and kept punchy AgX (decision X1, 12 October 2026).
 - Main moved again on 13 October 2026, before this change landed. Its contact-shadow work and its integer hashes remade the Creek and morph-flowers demos, the row tests, the security camera, hold-mode and layers demos. It also added the particles, contact-shadow and full-screen pass tests. All of these draw with the default curve, so their references were drawn again under punchy AgX: 90 references, 45 on each set. Each changes only in tone, by 9 to 100% of pixels, and the shapes, shadows and lights stay in place. The replay-instanced reference stays as main has it, because main's own run fails that test.
+
+## Addendum, 15 October 2026: ruling 5 settled
+
+The owner settled ruling 5 on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 23). ACES stays in the core for good, not until `three-compat` ships. Reinhard and Cineon go to `three-compat` in M3.
+
+## Addendum, 17 October 2026: the toy car's limit
+
+The toy car (`gltf-toy-car`) became the eleventh lit scene with a parity limit of its own. Its scene
+landed in the branch that added the clear coat. That branch forked before the lighting defaults, so
+the comparison had never run against the kernel.
+
+CI's run 38921872010 of 16 October 2026 failed the scene on all three tiers, against the rule's 0.1%.
+The shares were 0.254% on WebGPU, 0.274% in compatibility mode and 0.264% on WebGL2. On the Mac's GPU
+a fresh run of the same three measured 0.273%, 0.297% and 0.277%, and an earlier one 0.2826%, 0.2960%
+and 0.2821%.
+
+The scene takes 0.32%. The family's limits were each set just above their scene's largest measured
+share, and that convention leaves a different room on every scene. The nearest relative is
+`gltf-metal-rough`, the other Khronos model whose glossy surfaces the two kernels widen by different
+amounts. Its scene measured up to 0.316%, and its 0.34% limit leaves 0.024 of a point, which is 7.6%
+of that measurement. This scene measured up to 0.297%, and 0.32% leaves 0.023 of a point, or 7.7%.
+The family's other limits leave 0.012 to 0.028 of a point, or 7.6% to 13.6%.
+
+So the two nearest relatives were chosen alike, and each sits about 7.6% below its own limit. This
+limit is inside the family's band, and it is not the smallest figure above this scene's largest
+measurement.
+
+The cause is the kernel alone, and the measurements and the code show it. three.js's frame and the
+frame the engine drew before the kernel differ in only 0.008% of the WebGPU frame's pixels. On the
+WebGL2 frame the two differ in only 0.009% of them. That older frame is the toy car's reference of
+12 October 2026, which `ca28c9fdd` drew: its `lit.wgsl` still applied three.js's own term to the base
+roughness and to the coat's. Today's frame differs from both by 0.28% to 0.30%. The pixels that
+differ are the car's thin bright details, such as its chrome trim, its window frames and its lamp
+covers. The other two parts of this change cannot act on the scene. Both sides draw it with no tone
+curve, and it has no environment for the horizon fading.
+
+The coat, the sheen and the glass are not at fault. The branch's car-paint scene, whose model carries
+a coat and a sheen, differs from three.js in 0.026%, under the rule's 0.1%. The engine already drew
+the toy car's coat, sheen and glass before the kernel, and three.js matched it then.
+
+The limit is a property of the scene: its coat, sheen and glass highlights, which the two kernels
+widen by different amounts. It is not a property of any one run.
+
+The fix is the scene's limit and not a renderer change. The kernel is the technique that D-53
+ruling 27 chose, and D-79's ruling 2 keeps it. `.dev/image-tests.md` records the figures.

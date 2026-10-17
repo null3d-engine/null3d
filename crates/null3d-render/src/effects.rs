@@ -30,7 +30,7 @@
 //! a group, is a [`Unit`].
 
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
+    DrawList, Op, address, buffer_usage as usage, compare, format, layout as bind_layout,
     permutation, resource_kind, state_flags, texture_usage, view,
 };
 
@@ -38,7 +38,7 @@ use null3d_core::handle::Handle;
 
 use crate::bloom::bytes_of;
 use crate::camera::Mat4;
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
@@ -516,21 +516,13 @@ pub(crate) fn create_shared_objects(
         Op::CreateBuffer,
         &[buffer, bytes as u32, usage::UNIFORM | usage::COPY_DST],
     )?;
-    list.push(
-        Op::CreateSampler,
-        &[
-            sampler,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            filter::LINEAR,
-            filter::LINEAR,
-            filter::NEAREST,
-            0f32.to_bits(),
-            0f32.to_bits(),
-            compare::NONE,
-            1,
-        ],
+    clamp_sampler(
+        list,
+        sampler,
+        address::CLAMP_TO_EDGE,
+        LINEAR_LEVEL,
+        0.0,
+        compare::NONE,
     )?;
     Ok(())
 }

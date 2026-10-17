@@ -151,6 +151,9 @@ pub(super) struct Bucket {
     /// True for a bucket of skinned objects whose vertex shaders skin them, whose first joint
     /// sends the culling pass to each source's own (see [`sizes::PER_SOURCE_JOINT`]).
     pub(super) skins: bool,
+    /// True when its material takes parallax, so its pipelines read the displacement map in the
+    /// fragment stage as well and bind the frame group of parallax in place of the frame group.
+    pub(super) parallax: bool,
     pub(super) first_joint: u32,
     /// True when its pipelines read their instances by index, so its slice holds an index entry
     /// per instance from entry `base` on, after every copy; false when it holds a copy per instance
@@ -285,6 +288,9 @@ pub(super) struct Layout {
     object_ranges: ObjectRanges,
     ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
+    /// True when a bucket's material takes parallax, so a pass records the frame group of parallax
+    /// and binds it for that bucket's own pipelines.
+    parallax: bool,
     /// The slots of the buckets that read copies, and of those that read indices, which each
     /// view's compacted instance buffer holds after the copies.
     pub(super) copied: u32,
@@ -360,6 +366,14 @@ impl Layout {
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
             Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
         }
+    }
+
+    /// True when this layout's passes bind the frame group of parallax for the buckets whose
+    /// material takes parallax, in place of the view's frame group: the scene's layout with such a
+    /// bucket. The casters' and the outlined layout never do: their pipelines bind the depth
+    /// layout, or a mask template, under that group's id.
+    pub(super) fn parallax_frame(&self) -> bool {
+        self.drawn == Drawn::Scene && self.parallax
     }
 
     /// True for the scene's layout, which owns the matrices, the layer table and the cell order.
@@ -738,6 +752,7 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
+        self.parallax = false;
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
@@ -749,6 +764,7 @@ impl Layout {
             // copy, which the culling pass takes from the copy's own source, so the bucket's
             // objects may share it. The SKIN builds never read their instances by index.
             let skins = pipeline.permutation & permutation::SKIN != 0;
+            let parallax = pipeline.permutation & permutation::PARALLAX != 0;
             let by_index = self.index_instances && pipeline.reads_index();
             let pipeline = if by_index {
                 pipeline.by_index()
@@ -786,6 +802,7 @@ impl Layout {
                 }
             };
             let base = if by_index { &mut indexed } else { &mut copied };
+            self.parallax |= parallax;
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
@@ -799,6 +816,7 @@ impl Layout {
                 center,
                 radius,
                 skins,
+                parallax,
                 first_joint: if skins { sizes::PER_SOURCE_JOINT } else { 0 },
                 indexed: by_index,
                 levels: links,

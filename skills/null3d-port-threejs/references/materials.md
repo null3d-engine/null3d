@@ -52,7 +52,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | Same name (0.2), on standard, unlit and custom materials | Fixed when the material is created. Lines one pixel wide with the material's shading, as in three.js. `wireframeLinewidth` has no effect. For the outline edges of `EdgesGeometry`, use `scene.createLines({ positions, mode: 'segments' })` |
 | `fog: false` | Same name | |
-| `toneMapped: false` | Not in 1.0 | No pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
+| `toneMapped: false` | A flag per material (1.0) | Until then, no pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
@@ -73,7 +73,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap` or `specularColorMap`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. Iridescence, anisotropy and the transmission and thickness maps come in 1.0. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
@@ -106,7 +106,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | --- | --- |
 | `MeshNormalMaterial` | `debug.view('normals')` for debugging (world-space normals; three.js shows view-space ones); a surface function that outputs the normal as color for a styled look |
 | `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` for debugging; custom shadow materials are not needed |
-| `ShadowMaterial` | `materials.shadowCatcher({ opacity })` |
+| `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2) |
 | `PointsMaterial` | Options of `scene.createPoints`: `size` (with `sizeAttenuation`, world units: three.js's size times `tan(fov / 2)`; without it, CSS pixels), `sizeAttenuation`, `map`, `color`, `opacity`, `colors` for `vertexColors`, `alphaMode` (`'opaque'` by default; `'blend'` for `transparent`, `'mask'` with `alphaCutoff` for `alphaTest`), `blending` (0.2). Points do not vanish at the screen's edge as WebGL points do. Docs `api/points` |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width` (1 for a one-pixel line), `worldUnits`, `dashed` with `dashSize`, `gapSize`, `dashScale` and `dashOffset`, `colors` (0.2). Docs `api/lines` |
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |

@@ -198,7 +198,7 @@ The same air lies between the camera and each object. It dims what lies behind i
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets }) => {
-  // An evening sun over a scene whose units are metres, with the haze three times the real air's.
+  // An evening sun over a scene whose units are meters, with the haze three times the real air's.
   scene.setBackground({
     atmosphere: { sunPosition: [0, 0.12, -1], aerialPerspective: 3, cloudCoverage: 0.3 },
   });
@@ -218,8 +218,8 @@ export default defineSketch(async ({ scene, assets }) => {
 | `ozone` | 1 | The factor of ozone, which keeps the twilight sky blue |
 | `mieDirectionalG` | 0.8 | How much the haze scatters toward the light, from 0 to below 1 |
 | `groundAlbedo` | 0.3 | The share of light that the ground under the horizon reflects |
-| `altitude` | 0 | The height of the scene's y = 0 above the ground, in metres |
-| `metersPerUnit` | 1 | The metres in one unit of the scene |
+| `altitude` | 0 | The height of the scene's y = 0 above the ground, in meters |
+| `metersPerUnit` | 1 | The meters in one unit of the scene |
 | `aerialPerspective` | 1 | The factor of the haze on objects: 0 for none, 1 for the real air. More makes a small scene look as large as a landscape |
 | `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky |
 | `moonPosition` | `[0, 1, 0]` | A point toward the moon |
@@ -230,7 +230,7 @@ The sky's light is in the units of a directional light's intensity, so the expos
 
 The sky lights nothing by itself. [`assets.skyEnvironment()`](assets.md#environments) makes an environment of it, which follows the sky's settings as they change: [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) shows how.
 
-The first background of each kind downloads its shaders, `'background'`, `'sky'` or `'physical_sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
+The first background of each kind downloads its shaders, `'background'`, `'sky'` or `'physical_sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. `bun run bench:allocation --sky` and `--atmosphere` check it. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
 
 Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
@@ -248,44 +248,76 @@ scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
 | `intensity` | 1 | The factor of the environment's light, 0 or more, as three.js's `scene.environmentIntensity` |
 | `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
 
-Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change of the sky, the scene takes the new light 19 frames later. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
+Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. `bun run bench:allocation --environment` checks it. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change of the sky, the scene takes the new light 19 frames later. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
 
 ## The light probe grid
 
-`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from coloured walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, three filtered reads each, and its light takes the place of the environment's diffuse light; the environment keeps its reflections.
+`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, with three filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
+
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x.
 
 ```ts
-const grid = new LightProbeGrid({
-  origin: [-12, 0, -12],
-  spacing: [1, 2, 1],
-  counts: [24, 8, 24],
-  coefficients: baked, // 12 numbers per probe, packed by `packProbes`
+const grid = new LightProbeGridData(
+  new Float32Array([-12, 0, -12]), // origin
+  new Float32Array([1, 2, 1]), // spacing in meters
+  [25, 5, 25], // probes along each axis
+  baked, // 25 * 5 * 25 * 12 numbers
+);
+scene.setLightProbeGrid({
+  texture: grid.toTexture(textures),
+  origin: grid.origin,
+  spacing: grid.spacing,
+  counts: grid.counts,
 });
-scene.setLightProbeGrid({ ...grid, texture: textures.fromData({ ...grid.texture }) });
 ```
 
 | Option | Default | What it sets |
 | --- | --- | --- |
-| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients, from `textures.fromData` |
-| `origin` | required | The grid's corner of least x, y and z, in the world |
+| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients, from `LightProbeGridData.toTexture` |
+| `origin` | required | The grid's corner of least x, y and z, in the world. This and the next two take an array or a typed array |
 | `spacing` | required | The distance between probes along each axis, in meters |
 | `counts` | required | The probes along each axis, each 2 or more |
-| `intensity` | 1 | The factor of the grid's light, 0 or more |
+| `intensity` | 1 | The factor of the grid's light, 0 or more. A factor of 0 gives none of it |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` colour for one coloured bounce. Bake a few probes a frame so a loading screen can show progress.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`. A ray that reaches the sky takes the environment's light from its direction. Give `environmentOptions` the intensity and rotation that `setEnvironment` got, so the baked sky matches the scene's. Where a ray hits a surface, `albedo` gives the surface's color for one colored bounce: the surface sends back that share of the environment's light, as a matte surface does. The bake counts no lamps, so the grid holds sky light, its occlusion and its bounce. Bake a few probes a frame so a loading screen can show progress.
+
+`spacing` sets the distance between probes along each axis, in meters, or one number for every axis. The default is 2. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
 
 ```ts
-const bake = bakeProbes(scene, {
-  box: { min: [-12, 0, -12], max: [12, 8, 12] },
-  resolution: [24, 8, 24],
-  environment,
-  albedo: (object) => (object as Mesh).material.baseColor,
+import { bakeProbes, defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, textures }) => {
+  const environment = await assets.skyEnvironment();
+  const environmentOptions = { intensity: 0.8 };
+  scene.setEnvironment(environment, environmentOptions);
+  // ... build the room here ...
+  const grey = [0.8, 0.8, 0.8] as const; // every surface a light grey
+  const bake = bakeProbes(scene, {
+    box: { min: [-12, 0, -12], max: [12, 8, 12] },
+    spacing: [1, 2, 1],
+    environment,
+    environmentOptions,
+    albedo: () => grey,
+  });
+  let baking = true;
+  return {
+    onUpdate() {
+      if (!baking || !bake.step(4)) return;
+      baking = false;
+      const grid = bake.grid;
+      scene.setLightProbeGrid({
+        texture: grid.toTexture(textures),
+        origin: grid.origin,
+        spacing: grid.spacing,
+        counts: grid.counts,
+      });
+    },
+  };
 });
-onUpdate(() => { if (bake.step(4)) scene.setLightProbeGrid({ ...bake.grid.toTexture(textures), origin: bake.grid.origin, spacing: bake.grid.spacing, counts: bake.grid.counts }); });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. [Lighting and environment](../concepts/lighting.md) says how the grid lights a surface, and what it costs.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times.
 
 ## Fog
 
@@ -295,7 +327,7 @@ Development builds throw E1203 for a number that is not finite, E1108 for a valu
 - `'exp2'`: thicker with the square of the distance, 1 - exp(-(density × d)²), as three.js's `FogExp2`.
 - `'linear'`: clear up to `near`, and hides objects from `far`, with a smooth change between them, as three.js's `Fog`.
 
-The fog can also thin with height, as mist lies in a valley, and glow toward the main directional light. `setFog(null)` removes the fog.
+The fog can also thin with height, as mist lies in a valley, and glow toward the main directional light. `setFog(null)` removes the fog. The call allocates nothing, so a sketch can change the fog in every frame; `bun run bench:allocation --fog` checks it, the volumetric fog included.
 
 ```ts
 scene.setBackground('#b8c4d0');
@@ -380,6 +412,8 @@ export default defineSketch(async ({ scene, assets, post }) => {
   return {};
 });
 ```
+
+A third argument is an object that the call fills, in place of making one: `timeOfDay(hour, {}, day)` writes the new settings into `day`, so a day cycle that moves the time in every frame makes no settings object and no arrays of its own. The browser still makes an object of each fraction that one step of the sky model hands to another step that it has not inlined, as it does in any code of this size. `bun run bench:allocation --time-of-day` measures both. `emptyTimeOfDay()` makes the first such object. The [atmosphere demo](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere) passes one and moves the hour with the pointer.
 
 [Lighting and environment](../concepts/lighting.md#time-of-day) explains each value, the presets and the sun's path. A value that is not a finite number, or an unknown preset, throws a `RangeError`. The [time of day demo](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day) passes a whole day over a lighthouse in 40 seconds, and lights its windows and its lamp at dusk.
 

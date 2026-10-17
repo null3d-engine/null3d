@@ -38,6 +38,14 @@ The material row is full: its eight map layers fill floats 24 to 31, and float 3
 
 How the data was produced: three.js 0.186.1's shader chunks and renderer, read on 11 October 2026; bind group layouts in `gpu/webgpu/pipelines.ts`; the WebGL2 unit test in `gpu/webgl2/programs.test.ts`.
 
+### The frame group of the builds of parallax
+
+The counts above held for every build except the ones of parallax. WebGPU counts every entry of a pipeline's bind group layouts against the per-stage limits, whether or not the shader reads it. A parallax material reads the displacement map in the fragment stage as well as the vertex stage, so the frame group's eight sampled textures and the maps' group's nine come to 17. Chrome rejected those pipelines while creating the pipeline layout:
+
+> The number of sampled textures (17) in the Fragment stage exceeds the maximum per-stage limit (16). This adapter supports a higher maxSampledTexturesPerShaderStage of 48.
+
+The draw list never pairs `PARALLAX` with `TRANSMISSION`, so no parallax build reads the frame group's copy of the opaque color at binding 15. Those builds therefore bind a frame group without it: bind layout 47, `FRAME_PARALLAX`, which puts their fragment stage at 16 of 16. The engine records it beside the view's frame group while a material takes parallax, and a pass binds it for the buckets whose material takes parallax, and keeps the view's frame group where that id holds the depth layout, as the shadow passes do. The decal pass solves the same limit the same way, with a frame group that leaves out the copy and the light probe grids' texture.
+
 ## Options
 
 ### Where the bump map goes
@@ -132,7 +140,7 @@ GPU time per frame that each feature adds, in ms: the median with the feature on
 
 ## Consequences
 
-- Rust: map slot `Displacement` outside the row's eight layers; row flags `BUMP` (32) and `HEIGHT_NORMALS` (64); permutation bits `DISPLACEMENT` (1 << 26) and `PARALLAX` (1 << 27) and their first-use shader set; permutation bit `BUMP` (1 << 3, formerly the unused `NORMAL_MAP`) and its first-use shader set; material features `WIREFRAME` (16384) and `PARALLAX` (32768); bind layout 34, `MATERIAL_MAPS_PARALLAX`, the maps group with the displacement map visible to the fragment stage too; per-draw edge lists in mesh storage; caster and prepass keys for displaced materials; bounds margins.
+- Rust: map slot `Displacement` outside the row's eight layers; row flags `BUMP` (32) and `HEIGHT_NORMALS` (64); permutation bits `DISPLACEMENT` (1 << 26) and `PARALLAX` (1 << 27) and their first-use shader set; permutation bit `BUMP` (1 << 3, formerly the unused `NORMAL_MAP`) and its first-use shader set; material features `WIREFRAME` (16384) and `PARALLAX` (32768); bind layout 34, `MATERIAL_MAPS_PARALLAX`, the maps group with the displacement map visible to the fragment stage too, and bind layout 47, `FRAME_PARALLAX`, the frame group without the copy of the opaque color, which the parallax builds bind; per-draw edge lists in mesh storage; caster and prepass keys for displaced materials; bounds margins.
 - Levels of detail (D-137): a level with a displaced material switches at once and never fades, as skinned levels do. Fading builds with displacement would double the standard maps template's fading builds, which every page with fading levels downloads.
 - TypeScript: the options on `materials.standard`, `wireframe` on every material, checks in development builds, the quality setting `parallax`, and bounds that grow with a displaced material.
 - First-use shader files: a build that mixes displacement with another feature that loads on first use, such as a displaced skinned mesh, goes into a file of its own, which a page loads only when it uses both. Filed under the other feature, those builds grew the skinning, morph, row-value, transmission, alpha-to-coverage and alpha-hash files by 20 to 30% for pages that never displace a vertex.

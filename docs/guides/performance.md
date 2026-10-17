@@ -105,7 +105,7 @@ Garbage collection pauses the thread that allocated the memory. The render worke
 - Keep reused arrays at their size. Setting `length = 0` frees an array's storage, so the next write allocates it again.
 - Do not wrap a browser promise in an `async` function every frame. Each call makes a promise of its own.
 - Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into a function of its own.
-- A light's, the camera's, a line's and the background's setters write their numbers into the engine's memory. They call the core with whole numbers only, so they allocate nothing, a color included. Call them from a small function of their own, as a game's update does. The browser then inlines each setter, and a fraction that it does not inline becomes an object. A material's `set` and a line material's `set` read the options object that you pass. The browser boxes that read where the call has seen objects of a few shapes, so set their values up front.
+- A light's, the camera's, a line's and the background's setters write their numbers into the engine's memory. They call the core with whole numbers only, so they allocate nothing, a color included. Call them from a small function of their own, as a game's update does. The browser then inlines each setter, and a fraction that it does not inline becomes an object. A line material's `set` allocates nothing too. A material's `set` is for setup: it reads its numbers from an options object, and the browser boxes a read where it cannot keep the fields unboxed. Change a value that a frame changes with `material.setUniform(name, value)`, which takes the value itself, and change a camera's pose with `camera.setPose(position, rotation)` from the arrays that hold it.
 
 Decimal numbers are a special case. Until the browser optimizes a function, the numbers it computes are stored as small objects. Code that runs once per frame gets optimized only after thousands of frames, so judge allocation after about 30 seconds of play.
 
@@ -294,6 +294,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `gpuPassMs` | The parts of `gpuMs`: the copies before the first pass, each pass, and the time between passes |
 | `intervalMs` | Time between frames on the screen |
 | `presentedFps` and `completedFps` | Frames per second that the renderer presented, and that the GPU finished |
+| `updatedFps` and `updateErrors` | Frames per second whose sketch update ran to its end, and the frames whose update threw. A frame whose update threw still presents, so `presentedFps` hides it. `engine.onSketchError` receives the errors |
 | `perSecond` | The presented and completed frame rates of each whole second, which show when and for how long the rate fell in a long measurement |
 | `gpuLatencyMs` | Time from a frame's submit to the GPU finishing it |
 | `completionSignal` | How the engine learned that the GPU finished a frame: `queue` on WebGPU, `fence` on WebGL2 |

@@ -1,6 +1,6 @@
 # D-145: Area lights
 
-Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Date: 2026-10-12. Task: M2-EX28.
+Status: decided by the helper of M2-EX28 on 13 October 2026, for the owner's review. The owner approved the demo's look. The coordinator ruled that the cap keeps the lights with the most light at the camera and fades them across it, in the same pull request. Built: area lights are on main (`efb65024b`). The owner's review of the design is pending. Date: 2026-10-12. Task: M2-EX28.
 
 Summary: Rectangle and tube lights light the standard material with linearly transformed cosines (LTC). A rectangle light matches three.js's `RectAreaLight`: it uses the same formulas and fitted tables. A tube shades as the rectangle through its axis that faces the surface, at the same cost. Area lights share the 64-byte records and the clusters of point and spot lights, and each quality preset caps how many shade in a frame. The tables load on first use from a 19.3 KB gzip file. They share the split-sum table's binding, so WebGPU gains no binding and WebGL2 one texture unit.
 
@@ -43,7 +43,7 @@ How they ship (sizes in bytes; the tables' six used channels as half floats):
 | Six channels, one plane each | 49,152 | 32,874 | 37,544 |
 | The same, each value less its left and upper neighbors, low and high bytes apart | 49,152 | 16,976 | 19,244 |
 
-The engine ships the last form, gzipped, as `vendor/ltc/area-light-tables.bin` in the engine's package: 19,299 bytes with three.js's own half floats. Browsers unpack gzip with `DecompressionStream`. So every server and CDN sends 19.3 KB, whether or not it compresses files itself. A JavaScript module of the same data would need a text form, which compresses worse. It would also count against the 16 KB limit of first-use code. `bun tools/area-light-tables.ts` writes the file from the engine's three.js, and a unit test checks it.
+The engine ships the last form, gzipped, as `vendor/ltc/area-light-tables.bin` in the engine's package: 19,299 bytes with three.js's own half floats. Browsers unpack gzip with `DecompressionStream`. So every server and CDN sends 19.3 KB, whether or not it compresses files itself. A JavaScript module of the same data would need a text form, which compresses worse. It would also count against the 16 KB limit of first-use code. `bun tools/area-light-tables.ts` writes the file from the engine's three.js, and a unit test checks it. The test and `--check` compare the unpacked bytes, never the gzip bytes. A gzip header names the system that wrote it: 19 on the Mac, 3 on Linux. So the packed bytes differ between machines.
 
 The third channel of the second table is zero. Its fourth holds the form factor of a horizon-clipped sphere, which three.js replaces by an approximation (`LTC_ClippedSphereFormFactor`). So the file holds six channels.
 
@@ -56,6 +56,24 @@ The third channel of the second table is zero. Its fourth holds the form factor 
 | C: columns of the material table's texture on WebGL2, as the split-sum table sits there | 15 of 16 | +0 | Rejected. The material texture would need 64 rows and 128 more columns in every scene. The change also clashes with the clearcoat work on the same columns |
 
 So binding 3 of the frame group becomes the light tables: a 2D array of half floats, 64 x 64 texels. Layer 0 holds the split-sum table in its corner. WebGPU reads it there, and WebGL2 still reads its copy beside the material table. Layers 1 and 2 hold the area lights' tables. The shaders read them through the environment's filtering sampler, which the frame group already binds at binding 13. So the GPU filters between the four nearest entries in one read per table. A hand-made filter with `textureLoad` would take eight reads. On WebGL2 it would also pair the texture with no sampler as well as with the images' sampler, which takes a second unit.
+
+### The lit fragment stage's texture budget
+
+The area lights took the last sampled texture of the stage, so this table holds every one of them. A per-pixel input added after this one needs a layout change, not another binding.
+
+| Group | Binding | Sampled texture |
+| --- | --- | --- |
+| The frame | 2 | The materials' custom values |
+| The frame | 3 | The light tables: the split-sum table and the area lights' tables |
+| The frame | 4 | The shadow map |
+| The frame | 9 | The shadow atlas |
+| The frame | 10 | The light probe grid |
+| The frame | 11 | Ambient occlusion |
+| The frame | 12 | The environment's cube texture |
+| The frame | 15 | The copy of the camera's opaque color |
+| The materials' maps | 8 slots | Each material's maps |
+
+That is 16 of WebGPU's 16 sampled textures in the lit fragment stage. The decal pass's frame group leaves out the light probe grid and the copy of the opaque color, which no decal build reads. With the eight slots of the materials' maps and the pass's own depth texture, its fragment stage binds 15. A unit test counts each template's per-stage resources against WebGPU's default limits, so a template that went over fails `bun test` before a device sees it. On WebGL2 the lit stages keep spare units ([D-89](D-89-webgl2-texture-units.md)); a texture moved into another's layers there costs a place in the row, not a unit.
 
 ### Textured emission
 
@@ -132,3 +150,13 @@ Decided: option A for shading, the facing rectangle for tubes, and the gzip file
 - The WebGL2 test of texture units keeps three spare units, not four.
 - The engine's third-party notices gain the LTC fit's licence.
 - `bench:allocation --area-lights` samples area lights in S1, and the effect cost page measures them (`?effect=area`).
+
+## Addendum, 2026-10-16: the builds that never shade an area light
+
+The light grid lists area lights while the lit templates draw with their `AREA_LIGHTS` builds. Decals, particles and sprites draw with templates outside `shades_area_lights`. Their builds never take the bit, so they read the same grid without the tables. Their light loop tested no kind, so it read a rectangle's record as a point light. It took the record's two half sides as the decay and the cone angle, and its image layer as a shadow tile. A decal in a room with a window light drew that light at the wrong distance and with a wrong falloff. The light also looked up a shadow that it never casts. The fog's light step read the same records for the sun's scattering.
+
+Two fixes were open. Giving those templates the area lights' builds doubles the pipelines that a page with a decal, a particle or a sprite builds. Each of those builds carries the tables' code, so it costs start time and first-use bytes for light that a decal rarely needs. Skipping the kinds costs one comparison per light.
+
+The chosen fix skips every kind from `KIND_RECT` on in the light loop of the builds without `AREA_LIGHTS`, and in the fog's light step. `KIND_RECT` and `KIND_TUBE` are no longer behind the `AREA_LIGHTS` define, since both arms test the kind. A decal, a particle, a sprite and the fog's light step take no light from a rectangle or a tube. The surfaces around them do.
+
+The guard is a unit test in the render crate, `the_light_loops_leave_out_the_area_lights_that_they_cannot_shade`, which reads the two shader files and refuses a loop with one arm. It is a shape check over the source, not a build. The build of one variant costs more than the whole crate's tests.

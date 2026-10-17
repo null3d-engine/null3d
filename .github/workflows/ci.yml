@@ -1,13 +1,11 @@
 name: CI
 
-# Every run tests every job, except on a draft or a docs-only pull request, as D-99 (.dev/decisions)
-# decides, and .dev/pull-requests.md lists them. A pull request that is ready for review runs every job on
-# GitHub's merge of it into main, so it merges once its run passes. A draft runs only the quick
-# checks, so that unfinished work holds no browser or macOS machines. Each push to main runs every
-# job again on the code that the merge made, which no pull request's run tested as a whole. A run
-# started by hand runs every job too: gh workflow run ci.yml --ref main
-# A docs-only pull request runs only the build, the docs, style, skills and unit checks, and draws
-# the skill sketches when it changes them. The changes job decides what each run tests.
+# Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
+# job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
+# gh workflow run ci.yml --ref main
+# The pull request and merge queue events stay from the earlier flow (D-99), which no longer runs:
+# a draft ran only the quick checks, and a docs-only pull request only the build, the docs, style,
+# skills and unit checks. The changes job decides what each run tests.
 on:
   push:
     branches: [main]
@@ -21,9 +19,9 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the run of its older push, so CI's machines test only the
-# newest code. Runs on main and in the merge queue each have a group of their own.
-# A newer push to a pull request, or a newer merge to main, cancels the older run still in progress (D-99).
+# A newer push to main cancels main's run still in progress, so CI's machines test only the newest
+# code (the owner's choice, D-157). A cancelled job then reads "cancelled", as a job that hits its
+# time limit does; ci-passed says which of the two stopped it.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
@@ -38,6 +36,10 @@ env:
   # run's cache serves only that pull request or queue branch, and their saves filled GitHub's cache
   # limit for the repository, so that GitHub dropped main's caches.
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
+  # The commit that main pointed to before this push, empty on other events. The size check compares
+  # with it, and the commit check reads the commits after it: after a merge and a push, the commit
+  # before (HEAD^) is the branch's own, not main's.
+  PUSH_BEFORE: ${{ github.event.before }}
 
 jobs:
   changes:
@@ -49,7 +51,8 @@ jobs:
     #   quick checks and every browser, benchmark and macOS job then skip.
     # - full: the browser, city, benchmark page and real-browser jobs run. A draft skips them too.
     # - allocation: the allocation job runs, in a full run that changes the code whose per-frame
-    #   allocation it checks, or the check itself.
+    #   allocation it checks, or the check itself: the engine's render, GPU, sketch, scene and shared
+    #   code, the add-ons, the core's crates, and the benchmark pages and the check's tools.
     # - sketches: a docs-only pull request that is no draft changes the skills' or the cookbook's
     #   Markdown, whose complete sketches the browser tests draw. The skill-sketches job draws them.
     runs-on: ubuntu-latest
@@ -71,7 +74,7 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
           DOCS: ^(\.dev/|docs/|skills/)|\.md$
           SKETCHES: ^(skills|docs/cookbook)/.*\.md$
-          ALLOCATION: ^(packages/engine/src/(render|gpu|sketch)/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/(harness|s1-sketch|sketch-common)\.ts$|\.github/workflows/ci\.yml$)
+          ALLOCATION: ^(packages/engine/src/(render|gpu|sketch|scene|shared)/|packages/(particles|terrain|impostors)/src/|crates/null3d-(core|render|wasm)/src/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/|\.github/workflows/ci\.yml$)
         run: |
           code=true full=true allocation=true sketches=false
           if [ "$EVENT" = pull_request ]; then
@@ -92,6 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
@@ -130,11 +134,59 @@ jobs:
       - uses: ./.github/actions/samples
       - run: bun run test
 
+  heavy-checks:
+    # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
+    # the modules, the engine's programs, pipelines and malformed texture files, and the two bundler
+    # builds. The unit job
+    # shares one process, so its script ignores these files and this job runs them beside it, each
+    # under its own memory ceiling ([Test memory](.dev/tests.md)).
+    needs: [changes, build]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # Git hooks are for local commits; this job runs the same checks directly.
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/samples
+      - run: bun run test:heavy
+
+  commits:
+    # The commit messages and their trailers, which the commit hooks check locally: on a push, every
+    # commit after main's commit before the push; on a pull request, every commit of its branch. A
+    # push that starts a branch, or replaces its history, has no commit before, and checks nothing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HUSKY: "0"
+      FROM: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+      TO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
       - name: Commit messages and trailers
-        if: github.event_name == 'pull_request'
         run: |
-          bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
-          bun tools/hooks/check-trailers.ts ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+          if [ -z "$FROM" ] || [ "$FROM" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$FROM^{commit}"; then
+            echo "No commit before this push to compare with, so no commit is checked."
+            exit 0
+          fi
+          git log --oneline --no-merges "$FROM..$TO"
+          bunx commitlint --from "$FROM" --to "$TO"
+          bun tools/hooks/check-trailers.ts "$FROM..$TO"
 
   rust-lint:
     # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
@@ -167,25 +219,43 @@ jobs:
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
+    # The one test that builds every shader, twice, takes longer than all the others together, so
+    # it runs in a job of its own beside them. The profiles in .config/nextest.toml split the tests.
+    # --no-fail-fast runs every test after a failure, so a run reports every failing test.
+    name: rust-tests (${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The job takes 5 to 9 minutes. Every CI job should take at most 15 minutes, and stops at 20.
-    timeout-minutes: 20
+    # Every CI job should take at most 15 minutes. The other tests stop at 35, and the whole shader
+    # build at 90, until the shader build runs on every core.
+    timeout-minutes: ${{ matrix.limit }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: every test but the whole shader build
+            id: ci
+            tests: --workspace --profile ci
+            limit: 35
+          - part: the whole shader build
+            id: whole-shader-build
+            tests: -p null3d-shaders --test build --profile whole-shader-build
+            limit: 90
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ hashFiles('Cargo.toml') }}
+          key: ${{ hashFiles('Cargo.toml') }}-${{ matrix.id }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --no-fail-fast ${{ matrix.tests }}
       # nextest runs no documentation tests.
-      - run: cargo test --workspace --doc
+      - if: matrix.id == 'ci'
+        run: cargo test --workspace --doc --no-fail-fast
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
@@ -194,7 +264,9 @@ jobs:
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
+    # comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
@@ -211,8 +283,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
-        run: bun tools/build-wasm.ts --pages-only
+        uses: ./.github/actions/shaders
+        with:
+          run: bun tools/build-wasm.ts --pages-only
       # The artifact's paths start at the repository's root, their closest shared folder.
       - uses: actions/upload-artifact@v4
         with:
@@ -221,9 +296,7 @@ jobs:
             packages/engine/dist/
             packages/vite-plugin/dist/
             packages/cli/dist/
-            packages/engine/src/generated/shaders*.ts
-            packages/engine/src/generated/shaders-*.js
-            packages/engine/src/generated/shader-features.ts
+            packages/engine/src/generated/
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
@@ -231,20 +304,21 @@ jobs:
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
     # packages and build script, as the check builds a base in a worktree. Many runs share a base:
-    # pull requests build on main's newest commit, and a run on main on the commit before it. Each
+    # a run on main builds on main's commit before its push, which that commit's own run kept. Each
     # run on main keeps its own commit's sizes (wasm-checks below). So the sizes stay in the Actions
     # cache by commit, and a run that finds them builds nothing. Otherwise this job builds the base
     # beside the build job, and the size check waits for both.
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
+    # comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
-      # The size check finds its base in the history. A pull request compares with main, and a run on
-      # main or in the merge queue with the commit before, so the growth of the pull requests that
-      # merged before never counts against the newest.
+      # The size check finds its base in the history. A run on main compares with main's commit
+      # before the push, so the growth that landed before never counts against the newest push.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -252,9 +326,19 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      # The tool names the commit it cannot resolve. A command substitution inside an echo would keep
+      # the step's status at zero, so the tool runs on its own line, which fails the step. An empty
+      # answer fails here too, rather than travelling to the cache key, the file's name and the
+      # artifact's path, where it ends as a complaint about a path.
       - name: Find the size check's base
         id: base
-        run: echo "sha=$(bun tools/build-wasm.ts --print-base)" >> "$GITHUB_OUTPUT"
+        run: |
+          sha=$(bun tools/build-wasm.ts --print-base)
+          if [ -z "$sha" ]; then
+            echo "the size check has no base: --print-base printed no commit" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         id: kept
         with:
@@ -271,13 +355,25 @@ jobs:
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
-      - name: Build the base and keep its sizes
+      # The base is usually an earlier commit of main, whose run kept its shaders in the cache.
+      - name: Build the base
+        if: steps.kept.outputs.cache-hit != 'true' && hashFiles('.github/actions/shaders/action.yml') != ''
+        uses: ./.github/actions/shaders
+        with:
+          run: |
+            bun install --frozen-lockfile
+            bun tools/build-wasm.ts --sizes-only
+      # A base from before the shader caches in CI builds every shader.
+      - name: Build the base, which has no shader cache action
+        if: steps.kept.outputs.cache-hit != 'true' && hashFiles('.github/actions/shaders/action.yml') == ''
+        run: |
+          bun install --frozen-lockfile
+          bun tools/build-wasm.ts --sizes-only
+      - name: Keep the base's sizes
         if: steps.kept.outputs.cache-hit != 'true'
         env:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
-          bun install --frozen-lockfile
-          bun tools/build-wasm.ts --sizes-only
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$BASE.json"
       - uses: actions/upload-artifact@v4
@@ -297,6 +393,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       # The check reads the trailers of the commits since the base.
@@ -334,7 +431,9 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Its repository-wide shader test builds every shader, which takes longer than 35 minutes on one
+    # core. The limit comes down when the shader build runs on every core.
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:
@@ -366,6 +465,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -380,7 +480,12 @@ jobs:
       # The step takes 1 to 3 minutes. Its limit ends a stuck browser well before the job's, with
       # the step named as the one that ran out of time.
       - name: The packed packages in a fresh project
-        timeout-minutes: 8
+        timeout-minutes: 12
+        env:
+          # The build job's generated shader modules, which the artifact beside them carries. The
+          # plugin uses them instead of the release asset, which no release offers yet, and instead
+          # of the wasm compiler's build, which takes hours on a runner without the cache.
+          NULL3D_ENGINE_SHADERS: ${{ github.workspace }}/packages/engine/src/generated
         run: bun run test:packages
 
   browser:
@@ -395,24 +500,32 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A shard's tests take about 12 minutes, with the median times that the weights come from, and
+    # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
+    # the median, so the limit leaves room for that rather than for a hang.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 11, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/11 }
-          - { part: shard 2 of 11, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/11 }
-          - { part: shard 3 of 11, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/11 }
-          - { part: shard 4 of 11, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/11 }
-          - { part: shard 5 of 11, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/11 }
-          - { part: shard 6 of 11, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/11 }
-          - { part: shard 7 of 11, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/11 }
-          - { part: shard 8 of 11, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/11 }
-          - { part: shard 9 of 11, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/11 }
-          - { part: shard 10 of 11, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/11 }
-          - { part: shard 11 of 11, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/11 }
-          - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
+          - { part: shard 1 of 15, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/15 }
+          - { part: shard 2 of 15, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/15 }
+          - { part: shard 3 of 15, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/15 }
+          - { part: shard 4 of 15, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/15 }
+          - { part: shard 5 of 15, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/15 }
+          - { part: shard 6 of 15, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/15 }
+          - { part: shard 7 of 15, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/15 }
+          - { part: shard 8 of 15, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/15 }
+          - { part: shard 9 of 15, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/15 }
+          - { part: shard 10 of 15, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/15 }
+          - { part: shard 11 of 15, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/15 }
+          - { part: shard 12 of 15, id: 12, tests: --grep-invert "@alone|$CITY_TESTS" --shard=12/15 }
+          - { part: shard 13 of 15, id: 13, tests: --grep-invert "@alone|$CITY_TESTS" --shard=13/15 }
+          - { part: shard 14 of 15, id: 14, tests: --grep-invert "@alone|$CITY_TESTS" --shard=14/15 }
+          - { part: shard 15 of 15, id: 15, tests: --grep-invert "@alone|$CITY_TESTS" --shard=15/15 }
+          - { part: tests that run alone, id: alone, tests: --grep @alone --grep-invert "the showcase HUD" --workers=1 }
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       # S6's image tests, which load the city's files: the browser-city job runs them.
       CITY_TESTS: '\bs6 on '
@@ -431,7 +544,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "103:202:322:293:185:66:133:112:170:121:257"
+          PWTEST_SHARD_WEIGHTS: "118:154:283:511:209:143:80:47:193:199:24:28:28:138:308"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -452,6 +565,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -476,6 +590,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -500,6 +615,40 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  showcase:
+    # The showcase HUD test builds the night town in the page, waits for its first frame on the
+    # software GPU, then reads the canvas many times between switches. That took 16.4 minutes on a
+    # passing run, inside the alone job whose budget is 18. A slower machine ran out. The test has a
+    # job of its own, with room for a machine that runs it slowly, as the alone job has for the
+    # others.
+    name: browser (the showcase HUD)
+    needs: [build, changes]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/samples
+      - name: The showcase HUD test on SwiftShader
+        run: bun run test:browser image/showcase-hud.spec.ts --workers=1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-showcase
+          path: test-results/
+          if-no-files-found: ignore
+
   skill-sketches:
     # The complete sketches in the skills' and the cookbook's Markdown, drawn on every GPU tier, for
     # a docs-only pull request that changes that Markdown. Every full run draws them in the browser
@@ -510,6 +659,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -551,7 +701,9 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The shards run close to their measured times, and a slow software-renderer runner stretches
+    # them further, so the limit stays above the measurement by more than that variation.
+    timeout-minutes: 28
     strategy:
       fail-fast: false
       matrix:
@@ -561,6 +713,7 @@ jobs:
           - shard: 2
             select: --grep-invert
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
@@ -608,6 +761,7 @@ jobs:
       matrix:
         gpu: [webgpu, webgl2]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -645,6 +799,15 @@ jobs:
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included, which leaves room under the
     # limit for a runner page that goes quiet: each one costs about a minute more.
+    #
+    # The limit is NOT what fails this job, so it is left alone. Measured on run 38824482127: ten of
+    # the fourteen shards hold an engine-production load item and every one of them failed, while the
+    # four without it all finished. On those ten, the load server compressed every file of every page
+    # build before the browser opened, which cost 13.6 to 16.1 minutes of silence, and each shard was
+    # then drawing a page when the limit killed it. That preparation is gone: the server compresses a
+    # file when a load first asks for it, names a large file while it compresses it, and prints the
+    # builds it serves and the files they hold. The limit stays at 20 until a run's own item times
+    # say what a shard needs.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -653,6 +816,7 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7]
         shards: [7]
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -691,6 +855,7 @@ jobs:
     permissions:
       contents: write
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
@@ -721,7 +886,9 @@ jobs:
     if: always()
     needs:
       - changes
+      - commits
       - docs-and-tools
+      - heavy-checks
       - rust-lint
       - rust-tests
       - build
@@ -732,13 +899,33 @@ jobs:
       - city
       - browser
       - browser-city
+      - showcase
       - skill-sketches
       - bench
       - allocation
       - real-browsers
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Reading the run's jobs and their messages, to tell a time-out from a cancel.
+    permissions:
+      actions: read
+      checks: read
     steps:
+      # GitHub calls a job that hit its time limit "cancelled", as it calls a job that a newer push
+      # cancelled. A time-out is a failure of the job, so this names it as one.
+      - name: Which stopped jobs timed out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.conclusion == "cancelled") | [.id, .name] | @tsv' |
+          while IFS=$'\t' read -r id name; do
+            if gh api "repos/$GITHUB_REPOSITORY/check-runs/$id/annotations" --jq '.[].message' | grep -q 'maximum execution time'; then
+              echo "::error title=Timed out::$name hit its time limit, which is a failure"
+            else
+              echo "::warning title=Cancelled::$name was cancelled, by a newer push to main or by hand"
+            fi
+          done
       # Each job that may skip, and the changes job's answer that gates it, as in the job's condition.
       - name: Every job passed
         env:
@@ -747,8 +934,9 @@ jobs:
           jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
           jq -e '.changes.outputs as $run | {
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "wasm-checks": "code",
-              "shader-compiler": "code", "packages": "code", "city": "full", "browser": "full",
-              "browser-city": "full", "bench": "full", "real-browsers": "full",
+              "shader-compiler": "code", "packages": "code", "heavy-checks": "code",
+              "city": "full", "browser": "full",
+              "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"
               or (.value.result == "skipped" and $run[$gate[.key] // ""] == "false"))' \

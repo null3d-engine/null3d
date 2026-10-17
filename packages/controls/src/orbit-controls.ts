@@ -12,6 +12,7 @@ import {
 	type InputTouch,
 	type OrthographicCamera,
 	type PerspectiveCamera,
+	quat,
 	type SketchContext,
 	type Vec3Like,
 	vec3,
@@ -285,6 +286,8 @@ export class OrbitControls {
 	private readonly stored = new Float64Array(3);
 	/** Where `readCamera` reads the camera's position. */
 	private readonly read = new Float64Array(3);
+	/** The camera's rotation as a quaternion, from its last turn toward the target. */
+	private readonly rotation = new Float64Array(4);
 	/**
 	 * The movement that the next turn, pan or dolly applies, across and down in CSS pixels. Helpers
 	 * take it here rather than as arguments: a call that the browser does not inline would put each
@@ -453,6 +456,21 @@ export class OrbitControls {
 	 */
 	dollyOut(dollyScale: number): void {
 		this.values[SCALE] = (this.values[SCALE] as number) / dollyScale;
+	}
+
+	/**
+	 * Freezes the camera: it drops the turn, the tilt, the pan and the zoom that damping has left to
+	 * apply, so the camera stays exactly where it is. A page that takes the camera from the controls
+	 * for a while, such as a route that drives it, calls this at the handover, or the motion that was
+	 * still decaying resumes at the next `update`.
+	 */
+	stop(): void {
+		this.values[THETA_DELTA] = 0;
+		this.values[PHI_DELTA] = 0;
+		this.values[SCALE] = 1;
+		this.panOffset[0] = 0;
+		this.panOffset[1] = 0;
+		this.panOffset[2] = 0;
 	}
 
 	/** Takes the camera's position, unless it is still the one the controls wrote. */
@@ -904,9 +922,12 @@ export class OrbitControls {
 	 * look-at makes them, for the pans of the next frame.
 	 */
 	private place(): void {
-		const { camera, position, stored, target, right, up, back } = this;
-		camera.setPosition(position[0] as number, position[1] as number, position[2] as number);
-		camera.lookAt(target[0], target[1], target[2]);
+		const { camera, position, rotation, stored, target, right, up, back } = this;
+		// The camera's rotation is the one that turns it toward the target. A camera looks down its
+		// -Z axis, so the rotation's look-at takes the target as its eye and the position as its
+		// target.
+		quat.lookAt(rotation, target, position);
+		camera.setPose(position, rotation);
 		camera.getPosition(stored);
 		vec3.sub(back, stored, target);
 		if (back[0] === 0 && back[1] === 0 && back[2] === 0) back[2] = 1;
