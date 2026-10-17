@@ -8,7 +8,9 @@ summary: "createImpostors: far objects as camera-facing cards that show the stor
 
 # Impostors
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, blending the three nearest views, an `assets impostor` command, and a demo. Coding agents must not use these yet.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, blending the three nearest views, and an `assets impostor` command. Coding agents must not use these yet.
+
+The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards of a code-made atlas stand far out. Press L there to draw the far band as meshes instead, and compare.
 
 ```mermaid
 flowchart LR
