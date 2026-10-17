@@ -1060,18 +1060,42 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make about 17,000 builds. That figure is a model of the manifest and its
-bit table rather than a count of what is on disk, because a variant may carry more than one pipeline
-and so hold several programs. A variant builds once for each combination of its free bits, so
-removing any free bit halves it. Tone mapping is the dearest bit by a wide margin. It is
-listed by 45 of the 115 variants, and it accounts for about half of all builds. Skin, alpha masking,
-received shadows, half precision and vertex colour each cut 46 to 50 per cent of the large variants. The
-rare lit features cost less: area lights and coat-sheen about 6,600 builds each, and weighted
-transparency 1,300.
+The manifest's 115 variants make 21,160 builds on 17 October 2026: 14,990 GLSL builds and 6,170
+WGSL ones. A build counts once for each target that its variant writes, so a variant that writes
+both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
+files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
+builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping
+is the dearest bit by a wide margin. It is listed by 45 of the 115 variants, and it accounts for
+about half of all builds. Skin, alpha masking, received shadows, half precision and vertex colour
+each cut 46 to 50 per cent of the large variants. The rare lit features cost less: area lights and
+coat-sheen about 8,600 builds each, and weighted transparency 2,600.
+
+### The count the manifest may not pass
+
+`BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above. The test
+`the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
+builds and fails when either target passes its figure. The test builds no shader, so it costs a
+test run almost nothing. Its problem names the figure, the file that holds it and this guide.
+
+The figure counts every build that the shader build compiles for the repository's manifest. It
+does not count the builds that one page downloads. A page loads a subset: the device module of its
+GPU path, then the first-use modules of the features it uses. The manifest's count bounds that
+subset, and the shader build pays for all of it. The figures come from the manifest and its bit
+table through the engine's own enumeration, not from a page's downloads.
+
+A build costs twice. The shader build compiles every one of them, and a page downloads the builds
+of its own GPU path. A permutation bit on a lit template multiplies the count: area lights and
+coat-sheen each added about 8,600 builds by October 2026. The count grew four times in two days
+with nothing to hold it. The cold build then grew past the CI job's time limit
+([Branches and parallel work](pull-requests.md)).
+
+A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
+a decision record. A commit that raises the figure and gives no reason is the growth that this
+guard refuses.
 
 ### What each device bit costs, in files and in bytes
 
-The 17,000 is a model of the manifest, not a count of what is on disk. The bytes below are read from
+The 21,160 counts the manifest, not the files on disk. The bytes below are read from
 the modules themselves, by pairing each module that carries a device bit with the twin that lacks it.
 
 | device bit | modules carrying it | their bytes | their twins | it adds over the twins |
