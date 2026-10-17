@@ -91,8 +91,12 @@ export const drawsTier = (device: string, tier: Tier) =>
 /** The size of a sketch test's image, unless its entry gives another. */
 export const SKETCH_SIZE = [320, 180] as const;
 
-/** How long a page may take to publish its image, unless its entry gives another time. */
-const TIMEOUT_SECONDS = 30;
+/**
+ * How long a page may take to publish its image, unless its entry gives another time. CI's software
+ * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that took 18.5 seconds on a
+ * passing run gave no result within 30 on a slower runner on 17 October 2026.
+ */
+const TIMEOUT_SECONDS = 60;
 
 /** The page that draws each sketch test. */
 export const IMAGE_PAGE = '/tests/pages/image.html';
@@ -132,7 +136,7 @@ interface ImageTestSettings {
 	deviceTolerance?: Partial<Tolerance>;
 	/** Devices whose GPU draws the test differently, which keep their own references, such as 'ipad'. */
 	devices?: readonly string[];
-	/** How long a page may take to publish its image, in seconds; 30 unless the entry gives another. */
+	/** How long a page may take to publish its image, in seconds; 60 unless the entry gives another. */
 	timeoutSeconds?: number;
 	/**
 	 * Page switches that only the runs on SwiftShader add, after the others: a lighter load for a
