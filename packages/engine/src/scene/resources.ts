@@ -1492,23 +1492,23 @@ type Ranged =
 	| 'sheenRoughness'
 	| 'edgeFade';
 
-/** The core's code for each value that is a number, and the most it takes, or none above 0. */
-const RANGED: readonly (readonly [Ranged, number, number])[] = [
-	['opacity', MATERIAL_PARAM_OPACITY, 1],
-	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF, 1],
-	['metalness', MATERIAL_PARAM_METALNESS, 1],
-	['roughness', MATERIAL_PARAM_ROUGHNESS, 1],
-	['emissiveIntensity', MATERIAL_PARAM_EMISSIVE_INTENSITY, Number.POSITIVE_INFINITY],
-	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
-	['lightMapIntensity', MATERIAL_PARAM_LIGHT_MAP_INTENSITY, Number.POSITIVE_INFINITY],
-	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
-	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY],
-	['transmission', MATERIAL_PARAM_TRANSMISSION, 1],
-	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY],
-	['clearcoat', MATERIAL_PARAM_CLEARCOAT, 1],
-	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
-	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
-	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
+/** Each value that is a number, and the most it takes, or none above 0. */
+const RANGED: readonly (readonly [Ranged, number])[] = [
+	['opacity', 1],
+	['alphaCutoff', 1],
+	['metalness', 1],
+	['roughness', 1],
+	['emissiveIntensity', Number.POSITIVE_INFINITY],
+	['aoMapIntensity', 1],
+	['lightMapIntensity', Number.POSITIVE_INFINITY],
+	['specularIntensity', 1],
+	['envIntensity', Number.POSITIVE_INFINITY],
+	['transmission', 1],
+	['thickness', Number.POSITIVE_INFINITY],
+	['clearcoat', 1],
+	['clearcoatRoughness', 1],
+	['sheenRoughness', 1],
+	['edgeFade', 1],
 ];
 
 /** Each whole-number value's name, in `RANGED`'s order, for the development checks. */
@@ -1641,7 +1641,7 @@ function checkValues(values: AnyValues, call: string): void {
 			`${call}() got the attenuationDistance ${distance}; it takes more than 0, or Infinity.`,
 		);
 	for (let k = 0; k < RANGED.length; k++) {
-		const [key, , most] = RANGED[k] as readonly [Ranged, number, number];
+		const [key, most] = RANGED[k] as readonly [Ranged, number];
 		const value = values[key];
 		if (value === undefined) continue;
 		if (!(value >= 0 && value <= most)) {
@@ -1659,9 +1659,10 @@ function checkValues(values: AnyValues, call: string): void {
 /**
  * Writes the numbers of `values` that are set, and the linear colors that are given, into the
  * core's row of material `id`. Every value was checked and every color converted before, so a
- * call that throws changes nothing. Each option is read once, by its name, and goes to the core
- * through its call values: a fraction read by a key that changes, or passed as an argument, would
- * each make a number object in a call that the browser does not inline.
+ * call that throws changes nothing. Each number option is read once, by its name, only from an
+ * object that holds it, and goes to the core through its call values. A fraction read by a key
+ * that changes, read where some objects lack it and the read gives `undefined`, or passed as an
+ * argument to a call that the browser does not inline, would each make a number object.
  */
 function writeValues(
 	core: CoreMemory,
@@ -1680,19 +1681,111 @@ function writeValues(
 	if (attenuation) sendColor(core, id, MATERIAL_PARAM_ATTENUATION_COLOR, attenuation, call);
 	if (sheen) sendColor(core, id, MATERIAL_PARAM_SHEEN_COLOR, sheen, call);
 	const numbers = core.callValues();
-	const {
-		normalScale,
-		clearcoatNormalScale,
-		uvTransform,
-		ior,
-		attenuationDistance: distance,
-		angleFade,
-	} = values;
-	for (const [key, param] of RANGED) {
-		const value = values[key];
-		if (value === undefined) continue;
-		numbers[0] = value;
-		sendValue(core, id, param, call);
+	const { normalScale, clearcoatNormalScale, uvTransform, angleFade } = values;
+	if ('opacity' in values) {
+		const value = values.opacity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_OPACITY, call);
+		}
+	}
+	if ('alphaCutoff' in values) {
+		const value = values.alphaCutoff;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ALPHA_CUTOFF, call);
+		}
+	}
+	if ('metalness' in values) {
+		const value = values.metalness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_METALNESS, call);
+		}
+	}
+	if ('roughness' in values) {
+		const value = values.roughness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ROUGHNESS, call);
+		}
+	}
+	if ('emissiveIntensity' in values) {
+		const value = values.emissiveIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_EMISSIVE_INTENSITY, call);
+		}
+	}
+	if ('aoMapIntensity' in values) {
+		const value = values.aoMapIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_OCCLUSION_STRENGTH, call);
+		}
+	}
+	if ('lightMapIntensity' in values) {
+		const value = values.lightMapIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_INTENSITY, call);
+		}
+	}
+	if ('specularIntensity' in values) {
+		const value = values.specularIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_SPECULAR_INTENSITY, call);
+		}
+	}
+	if ('envIntensity' in values) {
+		const value = values.envIntensity;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ENV_INTENSITY, call);
+		}
+	}
+	if ('transmission' in values) {
+		const value = values.transmission;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_TRANSMISSION, call);
+		}
+	}
+	if ('thickness' in values) {
+		const value = values.thickness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
+		}
+	}
+	if ('clearcoat' in values) {
+		const value = values.clearcoat;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_CLEARCOAT, call);
+		}
+	}
+	if ('clearcoatRoughness' in values) {
+		const value = values.clearcoatRoughness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, call);
+		}
+	}
+	if ('sheenRoughness' in values) {
+		const value = values.sheenRoughness;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_SHEEN_ROUGHNESS, call);
+		}
+	}
+	if ('edgeFade' in values) {
+		const value = values.edgeFade;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_DECAL_EDGE_FADE, call);
+		}
 	}
 	// A decal's fade from its direction: the cosines of the two angles the material carries.
 	if (angleFade) {
@@ -1701,16 +1794,22 @@ function writeValues(
 		numbers[0] = Math.cos(angleFade[1]);
 		sendValue(core, id, MATERIAL_PARAM_DECAL_FADE_END, call);
 	}
-	if (ior !== undefined) {
-		numbers[0] = reflectance(ior);
-		sendValue(core, id, MATERIAL_PARAM_REFLECTANCE, call);
-		numbers[0] = ior;
-		sendValue(core, id, MATERIAL_PARAM_IOR, call);
+	if ('ior' in values) {
+		const ior = values.ior;
+		if (ior !== undefined) {
+			numbers[0] = reflectance(ior);
+			sendValue(core, id, MATERIAL_PARAM_REFLECTANCE, call);
+			numbers[0] = ior;
+			sendValue(core, id, MATERIAL_PARAM_IOR, call);
+		}
 	}
 	// The core keeps 0 for a volume that absorbs nothing.
-	if (distance !== undefined) {
-		numbers[0] = distance < Infinity ? distance : 0;
-		sendValue(core, id, MATERIAL_PARAM_ATTENUATION_DISTANCE, call);
+	if ('attenuationDistance' in values) {
+		const distance = values.attenuationDistance;
+		if (distance !== undefined) {
+			numbers[0] = distance < Infinity ? distance : 0;
+			sendValue(core, id, MATERIAL_PARAM_ATTENUATION_DISTANCE, call);
+		}
 	}
 	if (normalScale) {
 		numbers[0] = normalScale[0];
@@ -1743,6 +1842,103 @@ function writeValues(
 /** Sets material `id`'s value `param` to the core's call values. */
 function sendValue(core: CoreMemory, id: number, param: number, call: string): void {
 	core.check(core.glue.setMaterialValue(id, param), call, undefined, true);
+}
+
+/**
+ * The core's parameter of each standard value that `setUniform` writes by name: the numbers and the
+ * colors that a sketch changes in every frame. A value that takes more than one parameter, as the
+ * texture transform, the normal scales, the angle fade and the index of refraction do, goes through
+ * `set`.
+ */
+const ONE_VALUE_PARAMS: ReadonlyMap<string, number> = new Map<string, number>([
+	['color', MATERIAL_PARAM_COLOR],
+	['emissive', MATERIAL_PARAM_EMISSIVE],
+	['specularColor', MATERIAL_PARAM_SPECULAR_COLOR],
+	['attenuationColor', MATERIAL_PARAM_ATTENUATION_COLOR],
+	['sheenColor', MATERIAL_PARAM_SHEEN_COLOR],
+	['opacity', MATERIAL_PARAM_OPACITY],
+	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF],
+	['metalness', MATERIAL_PARAM_METALNESS],
+	['roughness', MATERIAL_PARAM_ROUGHNESS],
+	['emissiveIntensity', MATERIAL_PARAM_EMISSIVE_INTENSITY],
+	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH],
+	['lightMapIntensity', MATERIAL_PARAM_LIGHT_MAP_INTENSITY],
+	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY],
+	['transmission', MATERIAL_PARAM_TRANSMISSION],
+	['thickness', MATERIAL_PARAM_THICKNESS],
+	['clearcoat', MATERIAL_PARAM_CLEARCOAT],
+	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS],
+	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS],
+	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE],
+]);
+
+/** The values of `ONE_VALUE_PARAMS` that take a color; every other takes a number. */
+const COLOR_VALUES: ReadonlySet<string> = new Set([
+	'color',
+	'emissive',
+	'specularColor',
+	'attenuationColor',
+	'sheenColor',
+]);
+
+/** The name that messages give `setUniform`, from a material's `set` call string. */
+function setUniformCall(call: string): string {
+	return call.replace(/\.set$/, '.setUniform');
+}
+
+/**
+ * Writes one standard value of material `id` by name, through the core's call values. It allocates
+ * nothing: the value crosses the call, where `set` reads it from a field of an options object.
+ * Throws E1216 for a name or a value that `setUniform` does not take, and, in a development build,
+ * E1203 or E1108 for a number that the value does not take.
+ */
+function writeOneValue(
+	core: CoreMemory,
+	id: number,
+	call: string,
+	name: string,
+	value: number | ColorInput,
+): void {
+	const param = ONE_VALUE_PARAMS.get(name);
+	if (param === undefined)
+		throw new EngineError(
+			'E1216',
+			`${call}() got ${name}, which it does not take: a number or a color that set() takes on its own, such as roughness or color, or a uniform of a custom material's WGSL.`,
+		);
+	if (COLOR_VALUES.has(name)) {
+		sendColor(
+			core,
+			id,
+			param,
+			writeLinearColor(core.callValues(), value as ColorInput, call),
+			call,
+		);
+		return;
+	}
+	if (DEV) {
+		if (typeof value !== 'number' || !Number.isFinite(value))
+			throw new EngineError(
+				'E1203',
+				`${call}() got ${String(value)} for ${name}, which takes a finite number.`,
+			);
+		for (let k = 0; k < RANGED.length; k++) {
+			const [key, most] = RANGED[k] as readonly [string, number];
+			if (key !== name) continue;
+			if (value < 0 || value > most) {
+				const label = RANGED_NAMES[k] as string;
+				throw new EngineError(
+					'E1108',
+					most === 1
+						? `${call}() got the ${label} ${value}, outside 0 to 1.`
+						: `${call}() got the ${label} ${value}; it takes 0 or more.`,
+				);
+			}
+			break;
+		}
+	}
+	core.callValues()[0] = value as number;
+	sendValue(core, id, param, call);
 }
 
 /** Sets material `id`'s color `param` to a linear color. */
@@ -1951,6 +2147,15 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * True for a plain number that a uniform of `type` takes on its own: any finite number for a float
+ * type, a whole one for an integer type. A type that holds several numbers takes an array, or a
+ * `vec3f` a color, so a single number is not enough for it.
+ */
+function numberFits(type: CompiledUniform['type'], value: number): boolean {
+	return UNIFORM_FLOATS[type] === 1 && (type === 'f32' || Number.isInteger(value));
+}
+
+/**
  * Throws E1216 for a value of another kind than `uniform` takes: a number, a whole number for an
  * integer, or an array of as many numbers as the type holds. A `vec3f` takes an sRGB color too,
  * which converts to linear. It allocates nothing.
@@ -1962,17 +2167,16 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 		return;
 	}
 	const count = UNIFORM_FLOATS[type];
-	let fits: boolean;
-	let first: unknown = value;
-	if (Array.isArray(value)) {
-		first = value[0];
-		fits = value.length === count;
+	if (typeof value === 'number') {
+		if (Number.isFinite(value) && numberFits(type, value)) return;
+	} else if (Array.isArray(value)) {
+		let fits = value.length === count;
 		for (let k = 0; fits && k < count; k++) {
 			const number = value[k];
 			fits = typeof number === 'number' && Number.isFinite(number);
 		}
-	} else fits = count === 1 && typeof value === 'number' && Number.isFinite(value);
-	if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(first))) return;
+		if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(value[0]))) return;
+	}
 	const takes =
 		count === 1
 			? type === 'f32'
@@ -2001,8 +2205,9 @@ function checkUniforms(
 	call: string,
 ): void {
 	for (const name in values) {
+		if (isStandard(name, call)) continue;
 		const value = values[name];
-		if (value === undefined || isStandard(name, call)) continue;
+		if (value === undefined) continue;
 		const uniform = uniforms.get(name);
 		if (!uniform) {
 			const names = [...uniforms.keys()].join(', ') || 'none';
@@ -2020,6 +2225,25 @@ function checkUniforms(
  * custom values, through the core's call values. It allocates nothing: a color converts into the
  * call values too.
  */
+/**
+ * Writes one uniform into material `id`'s row of custom values, through the core's call values,
+ * which `checkUniform` checked. It allocates nothing: a color converts into the call values too.
+ */
+function writeUniform(
+	core: CoreMemory,
+	id: number,
+	uniform: CompiledUniform,
+	value: UniformValue,
+	call: string,
+): void {
+	const numbers = core.callValues();
+	const count = UNIFORM_FLOATS[uniform.type];
+	if (typeof value === 'number') numbers[0] = value;
+	else if (Array.isArray(value)) for (let k = 0; k < count; k++) numbers[k] = value[k] as number;
+	else writeLinearColor(numbers, value as ColorInput, call);
+	core.check(core.glue.setMaterialValues(id, uniform.offset, count), call, undefined, true);
+}
+
 function writeUniforms(
 	core: CoreMemory,
 	id: number,
@@ -2029,8 +2253,9 @@ function writeUniforms(
 ): void {
 	const numbers = core.callValues();
 	for (const name in values) {
+		if (isStandard(name, call)) continue;
 		const value = values[name];
-		if (value === undefined || isStandard(name, call)) continue;
+		if (value === undefined) continue;
 		const uniform = uniforms.get(name) as CompiledUniform;
 		const count = UNIFORM_FLOATS[uniform.type];
 		if (typeof value === 'number') numbers[0] = value;
@@ -2081,6 +2306,8 @@ export function textureSlots(
 export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
+	/** The name that errors from `setUniform` give the call, made once. */
+	protected readonly oneCall: string;
 
 	/**
 	 * @internal How far the material's displacement moves vertices at most, in the mesh's units,
@@ -2102,6 +2329,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		protected readonly call: string,
 	) {
 		this.liveId = id;
+		this.oneCall = setUniformCall(call);
 	}
 
 	/** @internal True until `destroy` runs. */
@@ -2121,8 +2349,10 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 
 	/**
 	 * Changes the values that it gets and keeps the others. Every object that uses the material
-	 * changes with it. It allocates nothing, so a sketch can change a value or a color in every
-	 * frame. Throws E1101 once the material is destroyed.
+	 * changes with it. Set up a material with it, and with `setUniform` change the values that a
+	 * frame changes: a value that changes in every frame crosses the `setUniform` call itself,
+	 * where this call reads it from a field of the options object, and a field that holds a
+	 * fraction holds a copy of it of its own. Throws E1101 once the material is destroyed.
 	 */
 	set(options: Values): void {
 		const { core, call } = this;
@@ -2192,6 +2422,21 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	}
 
 	/**
+	 * Changes one value by name, and keeps the others: a number, such as `roughness`, `opacity` or
+	 * `emissiveIntensity`, or a color, such as `color`, `emissive` or `sheenColor`. It allocates
+	 * nothing, so a sketch can change a value in every frame. Every object that uses the material
+	 * changes with it. Throws E1101 once the material is destroyed, and E1216 for a name that it
+	 * does not take: a value that takes more than one parameter, as the texture transform, the
+	 * normal scales, the angle fade and the index of refraction do, goes through `set`.
+	 */
+	setUniform<Name extends keyof Values & string>(
+		name: Name,
+		value: NonNullable<Values[Name]>,
+	): void {
+		writeOneValue(this.core, this.id, this.oneCall, name, value as unknown as number | ColorInput);
+	}
+
+	/**
 	 * Destroys the material, like three.js's `material.dispose()`. Objects and instance batches that
 	 * still use it draw nothing until `setMaterial` gives them another material. Once no object uses
 	 * it, its place in the engine's table of materials goes to the next material. When the last
@@ -2229,6 +2474,29 @@ class ShaderMaterial extends Material<ShaderValues> {
 		checkUniforms(uniforms, options, call);
 		super.set(options);
 		writeUniforms(this.core, this.id, uniforms, options, call);
+	}
+
+	/**
+	 * Changes one of the material's uniforms, or one of the standard values, by name. It allocates
+	 * nothing, so a sketch can change a uniform in every frame. Throws E1216 for a name that is no
+	 * uniform of the WGSL and no standard value, and for a value of another kind than the uniform
+	 * takes.
+	 */
+	override setUniform<Name extends keyof ShaderValues & string>(
+		name: Name,
+		value: NonNullable<ShaderValues[Name]>,
+	): void {
+		const uniform = this.uniforms.get(name);
+		if (uniform) {
+			// A number that the uniform takes goes straight through: its check is a length test and a
+			// whole-number test, and a number passed to a call that the browser does not inline becomes
+			// an object of its own. Every other value goes through the check, the rejected ones too.
+			if (typeof value !== 'number' || !Number.isFinite(value) || !numberFits(uniform.type, value))
+				checkUniform(uniform, value as unknown as UniformValue, this.oneCall);
+			writeUniform(this.core, this.id, uniform, value as unknown as UniformValue, this.oneCall);
+			return;
+		}
+		super.setUniform(name, value);
 	}
 }
 
@@ -2365,14 +2633,14 @@ export class Materials {
 	 * `color` where the main directional light's shadow falls, and nothing where the light reaches
 	 * it, at `opacity`. The mesh must receive shadows (`setReceiveShadows(true)`), as three.js's
 	 * `receiveShadow` must be set. Every shadow that falls on the surface comes from the main
-	 * directional light; point and spot lights cast none onto it. The material blends, so it draws
-	 * in the transparent pass after the opaque objects, and the scene's fog leaves it alone. It
-	 * takes no texture maps.
+	 * directional light; point and spot lights cast none onto it. The default color is black, as
+	 * three.js's. The material blends, so it draws in the transparent pass after the opaque
+	 * objects, and the scene's fog leaves it alone. It takes no texture maps.
 	 */
 	shadowCatcher(options: ShadowCatcherOptions = {}): Material<ShadowCatcherValues> {
 		return this.create<ShadowCatcherValues>(
 			SHADING_LIT,
-			{ ...options, alphaMode: 'blend' },
+			{ ...options, color: options.color ?? '#000000', alphaMode: 'blend' },
 			'materials.shadowCatcher',
 			MATERIAL_FEATURE_SHADOW_CATCHER,
 		);

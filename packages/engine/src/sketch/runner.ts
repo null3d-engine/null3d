@@ -26,6 +26,7 @@ import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
+	ANTIALIAS_MSAA,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_KEEP_COPIES,
@@ -303,6 +304,8 @@ export class SketchRunner {
 	private lodThreshold = 1;
 	private lodShadowFactor = 1;
 	private lodFade = true;
+	/** Asks the thread that draws for the shader files that the sketch will use. */
+	private readonly preloads: ShaderPreloads;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -423,6 +426,9 @@ export class SketchRunner {
 						sketch.maxTargetFps,
 					)
 				: undefined;
+		// Alpha to coverage fades a mask's edges only on targets with MSAA.
+		this.preloads = new ShaderPreloads(sketch.sendPreload);
+		this.preloads.setUsable('coverage', device.antialias === ANTIALIAS_MSAA);
 		const { governor } = this;
 		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
 		this.quality = new SketchQuality(
@@ -480,7 +486,7 @@ export class SketchRunner {
 			device.shaderBits & (PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP),
 		);
 		sketch.onAskBuilds((template, set) => templates.answer(template, set));
-		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
+		const materials = new Materials(this.core, templates, this.preloads);
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
@@ -802,6 +808,7 @@ export class SketchRunner {
 		this.lodThreshold = settings.lodThreshold;
 		this.lodShadowFactor = settings.lodShadowFactor;
 		this.lodFade = settings.lodFade;
+		this.preloads.setUsable('lod_fade', settings.lodFade);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
@@ -959,6 +966,7 @@ export class SketchRunner {
 		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
+		this.preloads.setUsable('coverage', device.effectsAntialias === ANTIALIAS_MSAA);
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)
 			this.report(coreFailure(glue, 'post.set'));
 		return true;

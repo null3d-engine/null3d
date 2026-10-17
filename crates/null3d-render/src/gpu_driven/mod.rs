@@ -71,7 +71,8 @@
 //! Point and spot lights cast shadows into the tiles of the shadow atlas (see
 //! [`crate::shadow_tiles`]). Each tile is a view too, which culls and draws the casters' layout as
 //! a cascade does, but only in the frames in which the tile must draw again. Every camera view's
-//! frame group binds the atlas and the tiles' uniform block.
+//! frame group binds the atlas and the shadow settings block, which holds each tile's matrix, its
+//! texel size and its light's biases.
 //!
 //! # Lights
 //!
@@ -171,7 +172,7 @@ use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
-use opaque::Bundle;
+use opaque::{Bundle, FrameInputs};
 use pyramid::Pyramids;
 use skin::Skinning;
 use transparent::Transparent;
@@ -473,8 +474,10 @@ mod ids {
     pub const fn prepass_group(view: ViewId) -> u32 {
         FINAL_GROUP + 1 + MAX_VIEWS as u32 + view.index() as u32
     }
+    /// The second step of the two-step pass's group, which reads the first step's target.
+    pub const PRESENT_GROUP: u32 = OUTPUT_GROUP + 1;
     /// The bind group of each step of bloom, after the groups of the depth prepass.
-    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
+    pub const BLOOM_GROUPS: u32 = PRESENT_GROUP + 1;
     /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
@@ -510,12 +513,26 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of the scene depth that the decal pass reads, after the full-screen passes'.
     pub const DECAL_DEPTH_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
-    pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The decal pass's frame group, after its depth's.
+    pub const DECAL_FRAME_GROUP: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The bind groups of the volumetric fog's steps, after the decal pass's frame group.
+    pub const FOG_GROUPS: u32 = DECAL_FRAME_GROUP + 1;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The bind groups of materials' maps, after the meter's.
-    pub const TEXTURE_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
+    /// The first of each view's frame group for the builds of parallax occlusion mapping, after
+    /// the meter: [`frame_group`] without the copy of the opaque color, which no parallax build
+    /// reads. A parallax material reads the displacement map in the fragment stage as well as the
+    /// vertex stage, so its maps' group holds one more sampled texture than any other material's,
+    /// and this group keeps that stage within WebGPU's default count. Only WebGPU has it.
+    pub const PARALLAX_FRAME_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
+    /// The bind groups of materials' maps, after the parallax frame groups.
+    pub const TEXTURE_GROUPS: u32 = PARALLAX_FRAME_GROUPS + MAX_VIEW_IDS as u32;
+    /// Each view's frame group for those builds, which the passes bind in place of
+    /// [`frame_group`].
+    pub const fn frame_parallax_group(view: ViewId) -> u32 {
+        PARALLAX_FRAME_GROUPS + view.index() as u32
+    }
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -632,6 +649,11 @@ pub struct GpuDrivenRenderer {
     redraws_built: bool,
     /// The depth texture that the decal pass's group binds, or `None` before the group exists.
     decal_depth_bound: Option<u32>,
+    /// What the camera view's frame group binds, which the decal pass's frame group binds too.
+    camera_frame: Option<FrameInputs>,
+    /// True when the decal pass's frame group must be made again: the camera's frame group was
+    /// made again, or the pass did not run in the last frame.
+    decal_frame_stale: bool,
     background: BackgroundPass,
     /// The particle systems' GPU objects and draws.
     particles: ParticlePass,
@@ -724,6 +746,7 @@ impl GpuDrivenRenderer {
                             lut_sampler: ids::OUTPUT_LUT_SAMPLER,
                             blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
+                        present_group: ids::PRESENT_GROUP,
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
@@ -808,6 +831,8 @@ impl GpuDrivenRenderer {
             redraws: Transparent::with_buffers(ids::REDRAW_INSTANCES),
             redraws_built: false,
             decal_depth_bound: None,
+            camera_frame: None,
+            decal_frame_stale: true,
             background: BackgroundPass::new(BackgroundIds {
                 buffer: ids::BACKGROUND,
                 group: ids::BACKGROUND_GROUP,
@@ -1177,6 +1202,8 @@ impl GpuDrivenRenderer {
             .set_decals(!self.decal_layout.is_empty(), redraws);
         self.graph
             .set_soft_particles(self.settings.particles().wants_depth());
+        // The render scale's range decides which of the final pass's pipelines the frame asks for.
+        self.graph.set_scaling(self.settings.render_scaling());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.graph
@@ -1214,7 +1241,6 @@ impl GpuDrivenRenderer {
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
-        self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
         let graph = &self.graph;
         self.settings
@@ -1239,6 +1265,20 @@ impl GpuDrivenRenderer {
                 ids::BLANK_TRANSMISSION
             }
         };
+        let (environment, probe_grid) = (self.bound_environment, self.bound_probe_grid);
+        let frame_inputs = |lights: ViewId, view: ViewId| FrameInputs {
+            lights,
+            shadow_map,
+            atlas,
+            occlusion: ao_texture,
+            environment,
+            probe_grid,
+            transmission: transmission(view),
+        };
+        // A scene whose materials take parallax records the frame group of parallax with each
+        // view's frame group, and again whenever the draw tables are rebuilt: the bundles bind it
+        // for the buckets whose material takes parallax.
+        let parallax = self.layout.parallax_frame();
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
@@ -1250,18 +1290,13 @@ impl GpuDrivenRenderer {
             if depth_pass != Prepass::Off && (index >= self.prepass_views || values_remade) {
                 shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
-            if index >= first_new || self.graph.textures_made() || values_remade {
-                opaque::bind_frame(
-                    list,
-                    view,
-                    light_owner(self.lights_made, view),
-                    shadow_map,
-                    atlas,
-                    ao_texture,
-                    self.bound_environment,
-                    self.bound_probe_grid,
-                    transmission(view),
-                )?;
+            if index >= first_new
+                || self.graph.textures_made()
+                || values_remade
+                || (parallax && upload_everything)
+            {
+                let inputs = frame_inputs(light_owner(self.lights_made, view), view);
+                self.bind_frame(list, view, inputs, parallax)?;
             }
         }
         self.views_made = self.views_made.max(views);
@@ -1361,17 +1396,7 @@ impl GpuDrivenRenderer {
             };
             lights::create(list, view, lights)?;
             self.lights_made |= bit;
-            opaque::bind_frame(
-                list,
-                view,
-                view,
-                shadow_map,
-                atlas,
-                ao_texture,
-                self.bound_environment,
-                self.bound_probe_grid,
-                transmission(view),
-            )?;
+            self.bind_frame(list, view, frame_inputs(view, view), parallax)?;
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
@@ -1427,18 +1452,11 @@ impl GpuDrivenRenderer {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
-                let lights = light_owner(self.lights_made, view);
-                opaque::bind_frame(
-                    list,
-                    view,
-                    lights,
-                    shadow_map,
-                    atlas,
-                    ao_texture,
+                let inputs = FrameInputs {
                     environment,
-                    self.bound_probe_grid,
-                    transmission(view),
-                )?;
+                    ..frame_inputs(light_owner(self.lights_made, view), view)
+                };
+                self.bind_frame(list, view, inputs, parallax)?;
             }
         }
         let (probe_grid, grid_uniform) = self.settings.probe_grid_map(ids::BLANK_PROBE_GRID);
@@ -1446,18 +1464,12 @@ impl GpuDrivenRenderer {
             self.bound_probe_grid = probe_grid;
             for index in 0..views {
                 let view = ViewId::from_index(index);
-                let lights = light_owner(self.lights_made, view);
-                opaque::bind_frame(
-                    list,
-                    view,
-                    lights,
-                    shadow_map,
-                    atlas,
-                    ao_texture,
+                let inputs = FrameInputs {
                     environment,
                     probe_grid,
-                    transmission(view),
-                )?;
+                    ..frame_inputs(light_owner(self.lights_made, view), view)
+                };
+                self.bind_frame(list, view, inputs, parallax)?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
@@ -1473,7 +1485,7 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.bind_decal_depth(list)?;
+        self.bind_decal_groups(list)?;
         self.background
             .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let binding_bytes = self.config.storage_binding_bytes;
@@ -1899,8 +1911,9 @@ impl GpuDrivenRenderer {
                     } else {
                         SortedRows::All
                     };
+                    let frame = ids::frame_group(view);
                     transparent.record(
-                        list, view, rows, sorted, skinning, settings, meshes, 0, particles,
+                        list, view, rows, sorted, skinning, settings, meshes, frame, 0, particles,
                     )
                 }
                 Role::Decals => {
@@ -1914,6 +1927,7 @@ impl GpuDrivenRenderer {
                         skinning,
                         settings,
                         meshes,
+                        ids::DECAL_FRAME_GROUP,
                         depth,
                         particles,
                     )
@@ -1928,6 +1942,7 @@ impl GpuDrivenRenderer {
                         skinning,
                         settings,
                         meshes,
+                        ids::frame_group(view),
                         0,
                         particles,
                     )
@@ -1940,6 +1955,7 @@ impl GpuDrivenRenderer {
                     skinning,
                     settings,
                     meshes,
+                    ids::frame_group(ViewId::CAMERA),
                     0,
                     particles,
                 ),
@@ -2021,10 +2037,35 @@ impl GpuDrivenRenderer {
         !self.decal_layout.is_empty() && self.settings.decal_skipped_layers() != 0
     }
 
-    /// Makes the group of the scene depth that the decal pass reads, when the pass starts, and when
-    /// the frame made the plan's textures again.
-    fn bind_decal_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+    /// Makes a view's frame group, and keeps the camera's inputs for the decal pass's frame group.
+    fn bind_frame(
+        &mut self,
+        list: &mut DrawList,
+        view: ViewId,
+        inputs: FrameInputs,
+        parallax: bool,
+    ) -> Result<(), RecordError> {
+        opaque::bind_frame(list, view, &inputs, parallax)?;
+        if view == ViewId::CAMERA {
+            self.camera_frame = Some(inputs);
+            self.decal_frame_stale = true;
+        }
+        Ok(())
+    }
+
+    /// Makes the decal pass's groups while the pass runs: its frame group when the pass starts and
+    /// whenever the camera's frame group is made again, and the group of the scene depth that it
+    /// reads when the pass starts and when the frame made the plan's textures again.
+    fn bind_decal_groups(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         let depth = self.graph.decal_depth();
+        match (depth, self.camera_frame) {
+            (Some(_), Some(inputs)) if self.decal_frame_stale => {
+                opaque::bind_decal_frame(list, &inputs)?;
+                self.decal_frame_stale = false;
+            }
+            (None, _) => self.decal_frame_stale = true,
+            _ => {}
+        }
         if let Some(texture) = depth
             && (self.graph.textures_made() || depth != self.decal_depth_bound)
         {
@@ -2172,6 +2213,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.decals.forget_gpu();
         self.redraws.forget_gpu();
         self.decal_depth_bound = None;
+        self.camera_frame = None;
+        self.decal_frame_stale = true;
         self.meshes.forget();
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();

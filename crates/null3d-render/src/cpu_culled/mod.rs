@@ -53,7 +53,8 @@
 //! Point and spot lights cast shadows into the tiles of the shadow atlas (see
 //! [`crate::shadow_tiles`]). Each tile is a view too, which the job workers cull against the
 //! casters' layout into an index list of its own, but only in the frames in which the tile must
-//! draw again. Every camera view's frame groups bind the atlas and the tiles' uniform block.
+//! draw again. Every camera view's frame groups bind the atlas and the shadow settings block,
+//! which holds each tile's matrix, its texel size and its light's biases.
 //!
 //! # Outlines
 //!
@@ -307,6 +308,8 @@ mod ids {
     pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEW_IDS as u32;
     /// The first step of the two-step pass's group, after the final pass's.
     pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1;
+    /// The second step of the two-step pass's group, which reads the first step's target.
+    pub const PRESENT_GROUP: u32 = OUTPUT_GROUP + 1;
 
     /// The frame group of the light textures' first ring slot: slot `s` has the group `s` after
     /// it.
@@ -321,8 +324,8 @@ mod ids {
     pub const fn instances_group(view: ViewId) -> u32 {
         draws_group(view) + 1
     }
-    /// The bind group of each step of bloom, after the final pass's group.
-    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
+    /// The bind group of each step of bloom, after the two-step pass's groups.
+    pub const BLOOM_GROUPS: u32 = PRESENT_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
@@ -565,6 +568,7 @@ impl CpuCulledRenderer {
                             lut_sampler: ids::OUTPUT_LUT_SAMPLER,
                             blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
+                        present_group: ids::PRESENT_GROUP,
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
@@ -1055,7 +1059,7 @@ impl CpuCulledRenderer {
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
     /// view's, each shadow cascade's and each shadow tile's frame uniform, draw records and
-    /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
+    /// multi-draw arrays, the shadow settings block's parts, the final pass's settings,
     /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters()
@@ -1386,6 +1390,8 @@ impl CpuCulledRenderer {
             .set_decals(!self.decal_layout.is_empty(), redraws);
         self.graph
             .set_soft_particles(self.settings.particles().wants_depth());
+        // The render scale's range decides which of the final pass's pipelines the frame asks for.
+        self.graph.set_scaling(self.settings.render_scaling());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.graph
@@ -1414,7 +1420,6 @@ impl CpuCulledRenderer {
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
-        self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
         let graph = &self.graph;
         self.settings

@@ -47,7 +47,7 @@ export const ERROR_FIXES = {
 	E1216:
 		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give post.setEffectUniform() an effect that post.addEffect() returned.',
 	E1217:
-		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask' or 'blend', no alphaToCoverage, and no 'weighted' blending. A material with transmission takes 'opaque' or 'blend', not the 'weighted' blending, and a custom one needs WGSL that sets the surface's transmission.",
+		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask' or 'blend', no alphaToCoverage, and no 'weighted' blending. A material with transmission takes 'opaque' or 'blend', not the 'weighted' blending, and a custom one needs WGSL that sets the surface's transmission. A layered material takes no lightMap or specular maps: give clearcoatMap with clearcoatRoughnessMap as one texture, and sheenColorMap with sheenRoughnessMap as one.",
 	E1218:
 		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
@@ -95,7 +95,7 @@ export const ERROR_FIXES = {
 	E1413:
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
 	E1414:
-		'Call engine.capture() while the engine runs, before destroy(). When the message names a GPU failure, wait for the engine to recover from it and call capture() again.',
+		'Call engine.capture() while the engine runs, before destroy(). When the message names a GPU failure, wait for the engine to recover from it and call capture() again. When it says that the worker did not answer, the thread that draws is stuck, often inside a GPU call that never returned: reload the page, or start another engine on another canvas.',
 	E1415:
 		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1416:

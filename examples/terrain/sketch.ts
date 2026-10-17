@@ -125,7 +125,7 @@ export default defineSketch(async (ctx) => {
 				camera.lookAt(ax, ground(ax, az) + 3, az);
 			}
 			camera.getWorldPosition(eye);
-			terrain.update(eye[0] as number, eye[2] as number);
+			terrain.update(eye);
 			view.update(dt);
 		},
 	};

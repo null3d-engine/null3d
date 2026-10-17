@@ -24,6 +24,7 @@
 // with textureLoad. WebGPU draws a corner into a target's first rows, and WebGL2, which counts rows from
 // the bottom, into its last, so the frame builder writes where each corner starts. A fragment's
 // position and a texture's rows count the same way on each path.
+#import null3d::fullscreen::{triangle}
 #import null3d::color::{limit_hdr}
 
 /// The most taps of the gather, two in each vector of the kernel.
@@ -71,10 +72,7 @@ struct Step {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 /// The signed blur size of a depth value, in texels of the half-size targets: the thin lens's

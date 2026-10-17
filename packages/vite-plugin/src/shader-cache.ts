@@ -1,12 +1,13 @@
 // A persistent cache of compiled shaders, so a project builds its shaders once. A shader compile
-// takes the CPU for most of a second, and every `vite build` and `vite dev` used to compile the
-// same WGSL again from nothing. The plugin keeps each result in `node_modules/.cache/null3d-shaders`,
-// as the asset tool keeps its own results in `node_modules/.cache/null3d-assets`. A cache entry is
-// keyed by everything that decides the output: the WGSL, the path it came from, the variant spec
-// that the compiler is given, and the compiler's version. The version is the engine's version with
-// the shader build's own stamp, so an engine or compiler upgrade misses every entry. A changed
-// source, spec or compiler therefore misses, and the plugin never serves a wrong shader. Set
-// `NULL3D_NO_CACHE=1`, or run Vite with `--force`, to ignore the cache.
+// takes the CPU for most of a second, and without the cache every `vite build` and `vite dev`
+// compiles the same WGSL again from nothing. The plugin keeps each result in
+// `node_modules/.cache/null3d-shaders`, as the asset tool keeps its own results in
+// `node_modules/.cache/null3d-assets`. A cache entry is keyed by everything that decides the
+// output: the WGSL, the path it came from, the variant spec that the compiler is given, and the
+// compiler's version. The version is the engine's version with the shader build's own stamp, so
+// an engine or compiler upgrade misses every entry. A changed source, spec or compiler therefore
+// misses, and the plugin never serves a wrong shader. Set `NULL3D_NO_CACHE=1`, or run Vite with
+// `--force`, to ignore the cache.
 //
 // A game project's cache is not one of the repository's own build caches: it lives in the project,
 // not under `~/.cache/null3d`, and a project that installs this package cannot load repository
@@ -36,7 +37,7 @@ export const SHADER_CACHE_FOLDER = 'null3d-shaders';
 /** The canonical opt-out, the same name that turns off the repository's own build caches. */
 export const NO_CACHE = 'NULL3D_NO_CACHE';
 
-/** The plugin's older opt-out name, which still works as an alias. */
+/** A second name that turns the cache off, as `NO_CACHE` does. */
 export const NO_SHADER_CACHE = 'NULL3D_NO_SHADER_CACHE';
 
 /** Every name that turns the cache off, as `tools/lib/build-cache.ts` lists them. */
@@ -157,6 +158,8 @@ export class ShaderCache implements ShaderCompiler {
 	/** Requests that are compiling now, by key, so a second one waits for the first. */
 	private readonly running = new Map<string, Promise<unknown>>();
 	private stamp: string | undefined;
+	/** True once this build has said that it compiles shaders, so it says it once. */
+	private announced = false;
 
 	constructor(
 		private readonly root: () => string,
@@ -185,12 +188,27 @@ export class ShaderCache implements ShaderCompiler {
 		return hashOf(String(FORMAT), this.stamp, kind, JSON.stringify(request));
 	}
 
+	/**
+	 * Says once per build that the shaders are compiled, so the pause before the first result does
+	 * not look like a hang, and names the cache that later builds read instead.
+	 */
+	private announceCompile(request: unknown): void {
+		if (this.announced) return;
+		this.announced = true;
+		const path = (request as { path?: unknown }).path;
+		const what = typeof path === 'string' ? path : 'this project';
+		console.log(
+			`null3D: compiling the shaders of ${what}. A compile takes up to a second, and the results are kept in ${shaderCacheFolder(this.root())}, so later builds do not compile again.`,
+		);
+	}
+
 	private async run<T>(kind: string, request: unknown, compile: () => Promise<T>): Promise<T> {
 		if (this.options.disabled?.()) return compile();
 		const key = this.key(kind, request);
 		const file = join(shaderCacheFolder(this.root()), `${key}.json`);
 		const cached = readCached(file);
 		if (cached !== undefined) return cached as T;
+		this.announceCompile(request);
 		const pending = this.running.get(key);
 		if (pending) return pending as Promise<T>;
 		const work = (async () => {

@@ -142,50 +142,82 @@ impl Variant {
         self.targets.contains(&target)
     }
 
-    /// Every build of the variant `name`, one for each combination of its permutation bits that
-    /// holds the bits each bit needs (`permutation::NEEDS`), the variant's `required` bits, and no
-    /// pair of bits kept apart (`permutation::APART`), in the order of their permutation words. The build without any bit
-    /// takes the variant's name,
-    /// and each other build adds the names of its bits in lowercase, in bit order: variant
-    /// `webgl2` with `DRAW_INDEX` builds `webgl2` and `webgl2_draw_index`. The variant's names
-    /// must be checked first.
-    pub(crate) fn builds(&self, name: &str) -> Vec<Build> {
+    /// The bits that vary its builds, by name and value, in bit order.
+    fn free_bits(&self) -> Vec<(&str, u32)> {
         let mut bits: Vec<(&str, u32)> = self
             .permutations
             .iter()
             .filter_map(|bit| permutation::bit(bit).map(|value| (bit.as_str(), value)))
             .collect();
         bits.sort_by_key(|&(_, value)| value);
-        let required = self
-            .required
+        bits
+    }
+
+    /// The bits that every build of the variant holds.
+    fn required_bits(&self) -> u32 {
+        self.required
             .iter()
             .filter_map(|bit| permutation::bit(bit))
-            .fold(0, |all, bit| all | bit);
+            .fold(0, |all, bit| all | bit)
+    }
+
+    /// The permutation word of one combination of `bits`, whose k-th bit names the k-th of them.
+    fn word_of(bits: &[(&str, u32)], combination: usize) -> u32 {
+        let mut word = 0;
+        for (k, &(_, value)) in bits.iter().enumerate() {
+            if combination & (1 << k) != 0 {
+                word |= value;
+            }
+        }
+        word
+    }
+
+    /// True when `word` makes a build: it holds `required` and the bits each of its bits needs
+    /// (`permutation::NEEDS`), and no pair of bits kept apart (`permutation::APART`).
+    fn makes_build(word: u32, required: u32) -> bool {
+        permutation::buildable(word) && word & required == required
+    }
+
+    /// Every build of the variant `name`, one for each combination of its permutation bits that
+    /// makes a build ([`Self::makes_build`]), in the order of their permutation words. The build
+    /// without any bit takes the variant's name, and each other build adds the names of its bits
+    /// in lowercase, in bit order: variant `webgl2` with `DRAW_INDEX` builds `webgl2` and
+    /// `webgl2_draw_index`. The variant's names must be checked first.
+    pub(crate) fn builds(&self, name: &str) -> Vec<Build> {
+        let bits = self.free_bits();
+        let required = self.required_bits();
         let mut builds: Vec<Build> = (0..1usize << bits.len())
-            .map(|combination| {
+            .map(|combination| Self::word_of(&bits, combination))
+            .filter(|&word| Self::makes_build(word, required))
+            .map(|word| {
                 let mut build = Build {
                     name: name.to_owned(),
                     defs: self.defs.clone(),
-                    permutation: 0,
+                    permutation: word,
                 };
-                for (k, &(bit, value)) in bits.iter().enumerate() {
-                    if combination & (1 << k) != 0 {
+                for &(bit, value) in &bits {
+                    if word & value != 0 {
                         build.name.push('_');
                         build.name.push_str(&bit.to_ascii_lowercase());
                         build.defs.push(bit.to_owned());
-                        build.permutation |= value;
                     }
                 }
                 build.defs.sort();
                 build
             })
-            .filter(|build| {
-                permutation::buildable(build.permutation)
-                    && build.permutation & required == required
-            })
             .collect();
         builds.sort_by_key(|build| build.permutation);
         builds
+    }
+
+    /// The number of builds the variant makes, which is the count of [`Self::builds`] without
+    /// making them.
+    pub(crate) fn build_count(&self) -> usize {
+        let bits = self.free_bits();
+        let required = self.required_bits();
+        (0..1usize << bits.len())
+            .filter(|&combination| Self::makes_build(Self::word_of(&bits, combination), required))
+            .count()
     }
 }
 
@@ -196,6 +228,31 @@ pub(crate) struct Build {
     pub defs: Vec<String>,
     pub permutation: u32,
 }
+
+/// The builds a manifest makes, for each target the build compiles. A page compiles the builds of
+/// its own path: a WebGL2 page the GLSL ones, a WebGPU page the WGSL ones.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BuildCounts {
+    /// The GLSL ES 3.00 builds.
+    pub glsl: usize,
+    /// The WGSL builds.
+    pub wgsl: usize,
+}
+
+/// The most builds the engine's manifest may make, for each target.
+///
+/// Every build costs the shader build its compile time and costs a page the bytes that carry it,
+/// and a permutation bit on a lit template multiplies the count. The figures are the count on
+/// 17 October 2026, when a review found that the count had grown four times in two days with
+/// nothing to hold it. The implementation notes give the measurement and the reason to raise a
+/// figure ([the count the manifest may not
+/// pass](../../../.dev/implementation-notes.md#the-count-the-manifest-may-not-pass)). A commit
+/// that adds builds on purpose raises the figure it passes and records why there. The test
+/// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
+pub const BUILD_BUDGET: BuildCounts = BuildCounts {
+    glsl: 14_994,
+    wgsl: 6_170,
+};
 
 impl Manifest {
     /// Parses the manifest text and checks names, targets and file paths. Each error names the
@@ -239,6 +296,45 @@ impl Manifest {
             }
         }
         Ok(manifest)
+    }
+
+    /// The builds this manifest makes, for each target: every variant's builds count once for each
+    /// target that the variant writes.
+    pub fn build_counts(&self) -> BuildCounts {
+        let mut counts = BuildCounts::default();
+        for entry in self.shaders.values() {
+            for settings in entry.variants.values() {
+                let builds = settings.build_count();
+                if settings.has(Target::Glsl) {
+                    counts.glsl += builds;
+                }
+                if settings.has(Target::Wgsl) {
+                    counts.wgsl += builds;
+                }
+            }
+        }
+        counts
+    }
+
+    /// One problem for each target whose builds pass its figure in `budget`, and none while both
+    /// counts hold within it. The problem names the figure, the file it lives in and the guide that
+    /// keeps the reason, so a count that grew on purpose says how to record the growth.
+    pub fn build_budget_problems(&self, budget: BuildCounts) -> Vec<String> {
+        let counts = self.build_counts();
+        [("GLSL", counts.glsl, budget.glsl), ("WGSL", counts.wgsl, budget.wgsl)]
+            .into_iter()
+            .filter(|&(_, count, limit)| count > limit)
+            .map(|(target, count, limit)| {
+                format!(
+                    "the manifest makes {count} {target} builds, over the recorded figure of {limit}. \
+                     Every build costs the shader build its compile time and costs a page the bytes \
+                     that carry it, and a permutation bit on a lit template multiplies the count. A \
+                     commit that adds builds on purpose raises BUILD_BUDGET in \
+                     crates/null3d-shaders/src/manifest.rs and records the reason in \
+                     .dev/implementation-notes.md."
+                )
+            })
+            .collect()
     }
 }
 
@@ -803,5 +899,45 @@ bits = ["BLOOM"]
         let text = VALID.replace("\"mesh.wgsl\"", "\"lib/math.wgsl\"");
         let errors = Manifest::parse(&text).unwrap_err();
         assert!(errors[0].contains("a library module"), "{errors:?}");
+    }
+
+    #[test]
+    fn the_picking_template_moves_the_vertices_that_the_shading_templates_move() {
+        // The picking pass keeps a pixel only where its depth matches the scene's to the last bit,
+        // so it must place each vertex where the template that shaded the draw placed it. Every bit
+        // that moves a vertex, on a target whose shading templates have it, its picking template
+        // needs too.
+        const MOVING: [&str; 2] = ["SKIN", "MORPH"];
+        const SHADING: [&str; 3] = ["lit", "unlit", "outline_mask"];
+        let path = format!("{}/shaders.toml", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).expect("the repository's manifest");
+        let manifest = Manifest::parse(&text).expect("the repository's manifest parses");
+        let pick = &manifest.shaders["pick"];
+        for target in [Target::Wgsl, Target::Glsl] {
+            let bits = |shader: &Shader| -> Vec<String> {
+                let mut bits: Vec<String> = shader
+                    .variants
+                    .values()
+                    .filter(|variant| variant.has(target))
+                    .flat_map(|variant| variant.permutations.iter().cloned())
+                    .filter(|bit| MOVING.contains(&bit.as_str()))
+                    .collect();
+                bits.sort();
+                bits.dedup();
+                bits
+            };
+            let mut wanted: Vec<String> = SHADING
+                .iter()
+                .flat_map(|name| bits(&manifest.shaders[*name]))
+                .collect();
+            wanted.sort();
+            wanted.dedup();
+            assert_eq!(
+                wanted,
+                bits(pick),
+                "the picking template's {} builds",
+                target.name()
+            );
+        }
     }
 }

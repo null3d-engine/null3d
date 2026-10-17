@@ -1,0 +1,264 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>indirect draw probe</title>
+<pre id="log" style="font: 12px monospace"></pre>
+<script type="module">
+	// Raw WebGPU probe, no engine: the cost of direct and indexed indirect draws at equal drawn work.
+	// One grid of G x G cells covers a fixed 1024x768 target once per pass. Each arm splits the same
+	// index range into N contiguous slices, one draw per slice, so the rasterised work never changes
+	// with N or the arm. Timing never waits on the display: frames go back to back into offscreen
+	// targets, and the page reads queue completion and, where offered, GPU timestamps.
+	const q = new URLSearchParams(location.search);
+	const G = Number(q.get('grid') ?? 256);
+	const DRAWS = (q.get('draws') ?? '64,256,1024,2048').split(',').map(Number);
+	const PASSES = Number(q.get('passes') ?? 1);
+	const FRAMES = Number(q.get('frames') ?? 40);
+	const ROUNDS = Number(q.get('rounds') ?? 3);
+	const MSAA = Number(q.get('msaa') ?? 4);
+	// Instances per draw multiply the vertex work; each instance draws the slice again a little deeper.
+	const INSTANCES = Number(q.get('inst') ?? 1);
+	// Depth-only pipelines with no colour target, as shadow passes draw.
+	const DEPTH_ONLY = q.get('depthonly') === '1';
+	const WIDTH = 1024;
+	const HEIGHT = 768;
+	const ua = navigator.userAgent;
+	// Apple's WebKit races draws that share one argument buffer when it clamps them, which can hang
+	// the GPU, so arms that share one buffer run only where asked or outside WebKit.
+	const webkit = /AppleWebKit/.test(ua) && !/Chrome\/|Edg\//.test(ua);
+	const ALL_ARMS = ['direct-vb', 'own-vb', 'copy-vb', 'zero-vb', 'shared-vb', 'direct-pull', 'own-pull', 'shared-pull'];
+	const ARMS = (q.get('arms') ?? ALL_ARMS.join(','))
+		.split(',')
+		.filter((arm) => !arm.startsWith('shared') || !webkit || q.get('shared') === '1');
+	const out = { ua, webkit, config: { G, DRAWS, PASSES, FRAMES, ROUNDS, MSAA, INSTANCES, DEPTH_ONLY, WIDTH, HEIGHT, ARMS }, results: [], done: false };
+	window.__probe = out;
+	const logEl = document.getElementById('log');
+	const log = (line) => {
+		logEl.textContent += `${line}\n`;
+		console.log(line);
+	};
+	const median = (values) => {
+		const sorted = [...values].sort((a, b) => a - b);
+		return sorted.length ? sorted[Math.floor(sorted.length / 2)] : NaN;
+	};
+
+	try {
+		const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+		const timestamps = adapter.features.has('timestamp-query');
+		const device = await adapter.requestDevice({ requiredFeatures: timestamps ? ['timestamp-query'] : [] });
+		device.addEventListener('uncapturederror', (e) => {
+			out.gpuError = String(e.error?.message ?? e.error);
+			log(`GPU error ${out.gpuError}`);
+		});
+		out.adapter = adapter.info ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device } : null;
+		out.timestamps = timestamps;
+		log(`ua ${ua}\nadapter ${JSON.stringify(out.adapter)} timestamps ${timestamps} arms ${ARMS.join(' ')}`);
+
+		const verts = new Float32Array((G + 1) * (G + 1) * 2);
+		for (let y = 0; y <= G; y++)
+			for (let x = 0; x <= G; x++) {
+				verts[2 * (y * (G + 1) + x)] = (x / G) * 2 - 1;
+				verts[2 * (y * (G + 1) + x) + 1] = (y / G) * 2 - 1;
+			}
+		const indices = new Uint32Array(G * G * 6);
+		for (let y = 0, i = 0; y < G; y++)
+			for (let x = 0; x < G; x++) {
+				const a = y * (G + 1) + x;
+				indices.set([a, a + 1, a + G + 1, a + 1, a + G + 2, a + G + 1], i);
+				i += 6;
+			}
+		const upload = (data, usage) => {
+			const buffer = device.createBuffer({ size: Math.max(16, data.byteLength), usage, mappedAtCreation: true });
+			new data.constructor(buffer.getMappedRange()).set(data);
+			buffer.unmap();
+			return buffer;
+		};
+		const vertexBuffer = upload(verts, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE);
+		const indexBuffer = upload(indices, GPUBufferUsage.INDEX);
+		const maxDraws = Math.max(...DRAWS);
+		const uniformData = new Float32Array(maxDraws * 64);
+		for (let k = 0; k < maxDraws; k++) {
+			uniformData.set([((k * 37) % 255) / 255, ((k * 91) % 255) / 255, ((k * 53) % 255) / 255, 1, 0.5, 0, 0, 0], k * 64);
+		}
+		const uniformBuffer = upload(uniformData, GPUBufferUsage.UNIFORM);
+
+		const module = device.createShaderModule({
+			code: /* wgsl */ `
+				struct D { color: vec4f, z: vec4f }
+				@group(0) @binding(0) var<uniform> d: D;
+				@group(0) @binding(1) var<storage, read> pos: array<vec2f>;
+				struct O { @builtin(position) p: vec4f, @location(0) c: vec4f }
+				fn place(p: vec2f, k: u32) -> vec4f { return vec4f(p, d.z.x + f32(k) * 1e-4, 1); }
+				@vertex fn vb(@location(0) p: vec2f, @builtin(instance_index) k: u32) -> O { return O(place(p, k), d.color); }
+				@vertex fn pull(@builtin(vertex_index) i: u32, @builtin(instance_index) k: u32) -> O { return O(place(pos[i], k), d.color); }
+				@fragment fn fs(i: O) -> @location(0) vec4f { return i.c; }
+			`,
+		});
+		const layout = device.createBindGroupLayout({
+			entries: [
+				{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform', hasDynamicOffset: true } },
+				{ binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+			],
+		});
+		const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+		const pipeline = (entryPoint, buffers) =>
+			device.createRenderPipeline({
+				layout: pipelineLayout,
+				vertex: { module, entryPoint, buffers },
+				fragment: DEPTH_ONLY ? undefined : { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },
+				primitive: { topology: 'triangle-list', cullMode: 'none' },
+				depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+				multisample: { count: MSAA },
+			});
+		const vbPipeline = pipeline('vb', [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }]);
+		const pullPipeline = pipeline('pull', []);
+		const bindGroup = device.createBindGroup({
+			layout,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer, size: 32 } },
+				{ binding: 1, resource: { buffer: vertexBuffer } },
+			],
+		});
+
+		const color = device.createTexture({ size: [WIDTH, HEIGHT], format: 'rgba8unorm', sampleCount: MSAA, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+		const resolve = MSAA > 1 ? device.createTexture({ size: [WIDTH, HEIGHT], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT }) : null;
+		const depth = device.createTexture({ size: [WIDTH, HEIGHT], format: 'depth24plus', sampleCount: MSAA, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+		const colorView = color.createView();
+		const resolveView = resolve?.createView();
+		const depthView = depth.createView();
+
+		const querySet = timestamps ? device.createQuerySet({ type: 'timestamp', count: 2 * FRAMES }) : null;
+		const queryResolve = timestamps ? device.createBuffer({ size: 16 * FRAMES, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC }) : null;
+		const queryRead = timestamps ? device.createBuffer({ size: 16 * FRAMES, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }) : null;
+
+		// Per draw count: the argument records, shared and in a buffer for each draw, and the
+		// zero-instance records the zero arm adds after its visible draws.
+		const sets = new Map();
+		for (const n of DRAWS) {
+			const per = (G * G * 6) / n;
+			if (!Number.isInteger(per)) throw new Error(`draw count ${n} does not divide the grid`);
+			const args = new Uint32Array(n * 5);
+			for (let k = 0; k < n; k++) args.set([per, INSTANCES, k * per, 0, 0], k * 5);
+			const indirect = GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+			const shared = upload(args, indirect);
+			const own = [];
+			const zero = [];
+			for (let k = 0; k < n; k++) {
+				own.push(upload(args.slice(k * 5, k * 5 + 5), indirect));
+				zero.push(upload(new Uint32Array([per, 0, k * per, 0, 0]), indirect));
+			}
+			sets.set(n, { per, shared, own, zero });
+		}
+
+		function encodeFrame(encoder, arm, n, frame) {
+			const set = sets.get(n);
+			if (arm === 'copy-vb') for (let k = 0; k < n; k++) encoder.copyBufferToBuffer(set.shared, k * 20, set.own[k], 0, 20);
+			const pull = arm.endsWith('pull');
+			for (let p = 0; p < PASSES; p++) {
+				const pass = encoder.beginRenderPass({
+					colorAttachments: DEPTH_ONLY ? [] : [{ view: colorView, resolveTarget: resolveView, loadOp: 'clear', storeOp: 'discard', clearValue: [0, 0, 0, 1] }],
+					depthStencilAttachment: { view: depthView, depthLoadOp: 'clear', depthStoreOp: 'discard', depthClearValue: 1 },
+					timestampWrites:
+						querySet && (p === 0 || p === PASSES - 1)
+							? {
+									querySet,
+									...(p === 0 ? { beginningOfPassWriteIndex: 2 * frame } : {}),
+									...(p === PASSES - 1 ? { endOfPassWriteIndex: 2 * frame + 1 } : {}),
+								}
+							: undefined,
+				});
+				pass.setPipeline(pull ? pullPipeline : vbPipeline);
+				if (!pull) pass.setVertexBuffer(0, vertexBuffer);
+				pass.setIndexBuffer(indexBuffer, 'uint32');
+				for (let k = 0; k < n; k++) {
+					pass.setBindGroup(0, bindGroup, [k * 256]);
+					if (arm.startsWith('direct')) pass.drawIndexed(set.per, INSTANCES, k * set.per, 0, 0);
+					else if (arm.startsWith('shared')) pass.drawIndexedIndirect(set.shared, k * 20);
+					else pass.drawIndexedIndirect(set.own[k], 0);
+				}
+				if (arm === 'zero-vb') for (let k = 0; k < n; k++) pass.drawIndexedIndirect(set.zero[k], 0);
+				pass.end();
+			}
+		}
+
+		async function measure(arm, n) {
+			// Warm-up batch, then FRAMES frames back to back; the queue's completion bounds them.
+			for (let f = 0; f < 5; f++) {
+				const encoder = device.createCommandEncoder();
+				encodeFrame(encoder, arm, n, f);
+				device.queue.submit([encoder.finish()]);
+			}
+			await device.queue.onSubmittedWorkDone();
+			let encodeMs = 0;
+			const start = performance.now();
+			for (let f = 0; f < FRAMES; f++) {
+				const t = performance.now();
+				const encoder = device.createCommandEncoder();
+				encodeFrame(encoder, arm, n, f);
+				const buffer = encoder.finish();
+				encodeMs += performance.now() - t;
+				device.queue.submit([buffer]);
+			}
+			const submitted = performance.now();
+			await device.queue.onSubmittedWorkDone();
+			const end = performance.now();
+			let gpuMs = null;
+			if (querySet) {
+				const encoder = device.createCommandEncoder();
+				encoder.resolveQuerySet(querySet, 0, 2 * FRAMES, queryResolve, 0);
+				encoder.copyBufferToBuffer(queryResolve, 0, queryRead, 0, 16 * FRAMES);
+				device.queue.submit([encoder.finish()]);
+				await queryRead.mapAsync(GPUMapMode.READ);
+				const times = new BigUint64Array(queryRead.getMappedRange().slice(0));
+				queryRead.unmap();
+				const spans = [];
+				for (let f = 0; f < FRAMES; f++) spans.push(Number(times[2 * f + 1] - times[2 * f]) / 1e6);
+				gpuMs = { median: median(spans), mean: spans.reduce((a, b) => a + b, 0) / FRAMES };
+			}
+			// One frame at a time: submit, wait, so each figure is a single frame's full trip.
+			const trips = [];
+			for (let f = 0; f < 8; f++) {
+				const t = performance.now();
+				const encoder = device.createCommandEncoder();
+				encodeFrame(encoder, arm, n, 0);
+				device.queue.submit([encoder.finish()]);
+				await device.queue.onSubmittedWorkDone();
+				trips.push(performance.now() - t);
+			}
+			return {
+				encodeMs: encodeMs / FRAMES,
+				submitWaitMs: (end - submitted) / FRAMES,
+				frameMs: (end - start) / FRAMES,
+				tripMs: median(trips),
+				gpuMs,
+			};
+		}
+
+		for (let round = 0; round < ROUNDS; round++)
+			for (const n of DRAWS) {
+				const order = ARMS.map((_, i) => ARMS[(i + round) % ARMS.length]);
+				for (const arm of order) {
+					const r = await measure(arm, n);
+					out.results.push({ round, n, arm, ...r });
+					log(
+						`round ${round} draws ${n} ${arm.padEnd(11)} frame ${r.frameMs.toFixed(2)} ms  trip ${r.tripMs.toFixed(2)}  encode ${r.encodeMs.toFixed(2)}  gpu ${r.gpuMs ? r.gpuMs.median.toFixed(2) : '-'}`,
+					);
+				}
+			}
+		out.summary = {};
+		for (const n of DRAWS)
+			for (const arm of ARMS) {
+				const rows = out.results.filter((r) => r.n === n && r.arm === arm);
+				out.summary[`${n} ${arm}`] = {
+					frameMs: median(rows.map((r) => r.frameMs)),
+					tripMs: median(rows.map((r) => r.tripMs)),
+					encodeMs: median(rows.map((r) => r.encodeMs)),
+					gpuMs: rows[0]?.gpuMs ? median(rows.map((r) => r.gpuMs.median)) : null,
+				};
+			}
+		log(JSON.stringify(out.summary, null, 1));
+	} catch (error) {
+		out.error = String(error?.stack ?? error);
+		log(`ERROR ${out.error}`);
+	}
+	out.done = true;
+</script>

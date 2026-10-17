@@ -3,6 +3,10 @@
 // another, which z-fights and shimmers. `findOverlaps` tests every pair of triangles of the parts it
 // is given: a crossing or a coplanar overlap is a fault, a shared edge or vertex is not.
 //
+// Two coplanar faces that look the other way z-fight only when both can be seen: a solid part hides
+// its own inner faces, so two boxes that meet face to face are sound, and a drape or a sign, whose
+// material draws both sides, is not.
+//
 // A deliberate intersection, such as a chimney sunk through a roof, is left out by naming the parts
 // in `ignore`, so the check stays meaningful.
 /** One built part: its triangles, as positions and an optional index list. */
@@ -10,6 +14,8 @@ export interface OverlapPart {
 	name: string;
 	positions: readonly number[];
 	indices?: readonly number[];
+	/** True when the part's material draws both faces, such as a drape, a leaf or a sign. */
+	doubleSided?: boolean;
 }
 
 /** One fault that the check found. */
@@ -40,6 +46,7 @@ const length = (a: V3): number => Math.hypot(a[0], a[1], a[2]);
 
 interface Triangle {
 	part: string;
+	doubleSided: boolean;
 	a: V3;
 	b: V3;
 	c: V3;
@@ -68,6 +75,7 @@ function trianglesOf(part: OverlapPart): Triangle[] {
 		const size = length(normal);
 		out.push({
 			part: part.name,
+			doubleSided: part.doubleSided === true,
 			a,
 			b,
 			c,
@@ -170,9 +178,16 @@ export function findOverlaps(
 				second.max[2] <= first.min[2] - tol
 			)
 				continue;
-			const parallel = Math.abs(dot(first.normal, second.normal)) > 1 - 1e-6;
+			const facing = dot(first.normal, second.normal);
+			const parallel = Math.abs(facing) > 1 - 1e-6;
 			if (parallel) {
-				if (Math.abs(first.plane - second.plane) > tol) continue;
+				// A plane is measured along its own normal, so two faces that look the other way
+				// lie on the same plane when their distances are equal and opposite.
+				const offset = first.plane - Math.sign(facing) * second.plane;
+				if (Math.abs(offset) > tol) continue;
+				// Faces that look the other way meet back to back: a solid part culls its inner
+				// face, so only a part that draws both sides shows them both, and z-fights.
+				if (facing < 0 && !first.doubleSided && !second.doubleSided) continue;
 				if (coplanarOverlap(first, second, tol))
 					found.push({ a: first.part, b: second.part, at: first.a, kind: 'coplanar' });
 				continue;

@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto';
 import { posix, relative, resolve, sep } from 'node:path';
 import type { Plugin, Rollup } from 'vite';
+import { ENGINE_SHADERS_ENV, engineShadersRoot } from './engine-shaders.ts';
 import type { Null3dPackage } from './package-files.ts';
 
 /** The file that a production build writes beside the page, with the build's files by group. */
@@ -44,7 +45,12 @@ export const FEATURE_MODULES: Readonly<Record<string, readonly string[]>> = {
 		'vendor/draco/draco_wasm_wrapper_gltf',
 		'vendor/draco/draco_decoder_gltf.wasm',
 	],
-	ktx2: ['scene/ktx2', 'scene/ktx2-transcode', 'vendor/basis/basis_transcoder.wasm'],
+	ktx2: [
+		'scene/ktx2',
+		'scene/ktx2-file',
+		'scene/ktx2-transcode',
+		'vendor/basis/basis_transcoder.wasm',
+	],
 	environment: [
 		'scene/environment-file',
 		'scene/builtin-environments',
@@ -95,6 +101,13 @@ export function engineModule(
 ): string | undefined {
 	if (id.startsWith('\0')) return undefined;
 	const file = id.split('?')[0] ?? id;
+	// The engine's generated shader modules come from the set on this machine, or from the folder
+	// that names one, not from the package, and keep the names that the engine's files import.
+	for (const root of [engineShadersRoot(), process.env[ENGINE_SHADERS_ENV]]) {
+		if (!root || !file.startsWith(root + sep)) continue;
+		const name = file.slice(file.lastIndexOf(sep) + 1).replace(/\.[cm]?[jt]s$/, '');
+		return `generated/${name}`;
+	}
 	const found = packageOf(file);
 	if (found?.name !== '@null3d/engine') return undefined;
 	return relative(found.root, file)
@@ -242,13 +255,17 @@ function textOf(fileName: string, source: string | Uint8Array): string | undefin
 /**
  * The files of a client build's bundle as the list reads them, with what the worker builds
  * recorded for the files that they made. A file copied from the engine's source, such as a shader
- * module, names no other file, so its text is left out.
+ * module, holds no script that names another file, so its text is left out; `tables` names the one
+ * file such a module does load, its target's shared table of shader paragraphs. A module of a
+ * feature that loads on first use names it, so the table joins that feature's files and never the
+ * start's, which is what keeps a page's first download free of it.
  */
 export function listedFiles(
 	bundle: Rollup.OutputBundle,
 	workerFiles: ReadonlyMap<string, WorkerFile>,
 	packageOf: (file: string) => Null3dPackage | undefined,
 	root: string,
+	tables: ReadonlyMap<string, string> = new Map(),
 ): ListedFile[] {
 	const modulesOf = (ids: readonly string[]) =>
 		ids.flatMap(
@@ -267,12 +284,13 @@ export function listedFiles(
 		const worker = workerFiles.get(file.fileName);
 		const modules = modulesOf(worker?.moduleIds ?? file.originalFileNames);
 		const copied = !worker?.chunk && modules.length > 0;
+		const table = tables.get(file.fileName);
 		return {
 			fileName: file.fileName,
 			entry: file.fileName.endsWith('.html'),
 			modules,
 			imports: worker?.imports ?? [],
-			loads: worker?.loads ?? [],
+			loads: [...(worker?.loads ?? []), ...(table ? [table] : [])],
 			text: copied ? undefined : textOf(file.fileName, file.source),
 		};
 	});

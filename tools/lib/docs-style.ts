@@ -119,12 +119,44 @@ export function misspelledEngineName(text: string): string | undefined {
 const MILESTONE_NAME = /(?<!Apple )\bM\d\b(?!-)/;
 
 /**
+ * References to the maintainers' own records, which a reader of the release notes cannot look up:
+ * task IDs (M2-EX8, and the examples' tasks written bare, as EX8), decision records (D-174), review
+ * threads (T-36) and milestones (M2). Apple's chips and some phones share the milestones' form, so
+ * a milestone is one digit with no chip or phone name around it.
+ */
+export const DECISION_RECORD_SOURCE = String.raw`\bD-\d+\b`;
+export const INTERNAL_REFERENCE_SOURCE = [
+	String.raw`\bM\d+-[A-Z]+\d+[a-z]?\b`,
+	String.raw`\bEX\d+\b`,
+	DECISION_RECORD_SOURCE,
+	String.raw`\bT-\d+\b`,
+	String.raw`(?<!(?:Apple|Pro|Air|mini|Galaxy) )\bM[1-9]\b(?![+-]| (?:Max|Pro|Ultra)\b)`,
+].join('|');
+
+/** Every reference to the maintainers' own records in a line, in order. */
+export function internalReferences(text: string): string[] {
+	return text.match(new RegExp(INTERNAL_REFERENCE_SOURCE, 'g')) ?? [];
+}
+
+/** A conventional subject whose scope names a milestone, such as `chore(m2):`. */
+const MILESTONE_SCOPE = /^\w+\((m\d+)\)!?:/i;
+
+/**
  * Who a file speaks to. Contributor files, such as AGENTS.md, describe the maintainers' own
  * process, so the build-process rules skip them.
  */
 export type DocsAudience = 'users' | 'contributors';
 
 const EMOJI = /\p{Extended_Pictographic}/u;
+
+/** British spellings, where the docs spell every word the American way. */
+const BRITISH_SPELLING =
+	/\b(?:colour\w*|\w*metres?|centre[sd]?|behaviours?|favour\w*|analys(?:e|ed|es|ing)|optimis(?:e|ed|es|ing|ation)|initialis(?:e|ed|es|ing|ation)|grey)\b/i;
+
+/** The first British spelling in a text, such as "colour", or undefined. */
+export function britishSpelling(text: string): string | undefined {
+	return BRITISH_SPELLING.exec(text)?.[0];
+}
 
 /** A sentence ends at . ! or ? before a capital, a digit, a quote, a bracket, or a name spelled in lowercase. */
 const SENTENCE_BREAK =
@@ -289,6 +321,15 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 		if (/[“”‘’]/.test(text)) {
 			add('curly_quote', 'error', block.line, text, 'Use straight quotes and apostrophes.');
 		}
+		const british = britishSpelling(text);
+		if (british)
+			add(
+				'british_spelling',
+				'warning',
+				block.line,
+				text,
+				`"${british}" is a British spelling; the docs spell words the American way.`,
+			);
 		const misspelled = misspelledEngineName(text);
 		if (misspelled)
 			add(
@@ -398,4 +439,31 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 		}
 	}
 	return findings.sort((a, b) => a.line - b.line);
+}
+
+/**
+ * Every style finding in a commit subject, which becomes a line of the release notes. The
+ * published docs' rules apply, and a reference to the maintainers' own records blocks, because
+ * readers cannot look it up.
+ */
+export function checkSubject(subject: string): StyleFinding[] {
+	const findings = checkDocsStyle(subject).filter((f) => f.rule !== 'milestone_name');
+	const add = (message: string) =>
+		findings.push({
+			rule: 'internal_reference',
+			severity: 'error',
+			line: 1,
+			excerpt: excerptOf(subject),
+			message,
+		});
+	for (const ref of internalReferences(subject).filter((r) => !mentionsBuildProcess(r)))
+		add(
+			`Readers of the release notes cannot look up "${ref}". Describe the change itself, and name the record in the commit body.`,
+		);
+	const scope = MILESTONE_SCOPE.exec(subject)?.[1];
+	if (scope)
+		add(
+			`The scope "${scope}" names a milestone. Name the part of the project that the change touches.`,
+		);
+	return findings;
 }

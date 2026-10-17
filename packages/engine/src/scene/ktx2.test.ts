@@ -11,15 +11,14 @@ import {
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
 import { serveTasks, type TaskAnswer, type TaskRequest, type TaskSource } from '../workers/tasks';
+import { ktx2Target, loadKtx2 } from './ktx2';
 import {
 	type Ktx2Header,
 	type Ktx2Target,
-	ktx2Target,
 	ktx2TooLarge,
-	loadKtx2,
 	readKtx2Header,
 	transcodedBytes,
-} from './ktx2';
+} from './ktx2-file';
 import type { Textures } from './textures';
 
 const ENGINE = join(import.meta.dir, '../..');
@@ -102,6 +101,16 @@ function withWord(bytes: Uint8Array, at: number, value: number): Uint8Array {
 	return copy;
 }
 
+const MIB = 1024 * 1024;
+
+/** The level index's first entry, whose third number is the bytes the level decompresses to. */
+const LEVEL_0_UNCOMPRESSED = 80 + 16;
+
+/** A copy of a file whose first level claims to decompress to `claimed` bytes. */
+function claiming(bytes: Uint8Array, claimed: number): Uint8Array {
+	return withWord(withWord(bytes, LEVEL_0_UNCOMPRESSED, claimed), LEVEL_0_UNCOMPRESSED + 4, 0);
+}
+
 describe('readKtx2Header', () => {
 	test('reads the size, the mip levels, the codec, alpha and the color space', () => {
 		const base = { width: 64, height: 64, layers: 1, levels: 7, colorSpace: 'srgb' };
@@ -179,6 +188,28 @@ describe('readKtx2Header', () => {
 		// Zstandard's.
 		refuses(withWord(etc1s, 12, 1000066000), 'Vulkan format 1000066000');
 		refuses(withWord(file('quarters-hdr'), 44, 1), 'supercompression scheme 1');
+	});
+
+	test('refuses a level index that asks for more than the file or its texels hold', () => {
+		const etc1s = file('quarters-etc1s');
+		const uastc = file('quarters-uastc');
+		const refuses = (bytes: Uint8Array, reason: string) =>
+			expect(() => readKtx2Header(bytes)).toThrow(reason);
+		refuses(withWord(etc1s, 40, 0), 'it holds no mip levels');
+		refuses(withWord(etc1s, 40, 1_000_000), 'its level index is cut short');
+		// A level's data must lie inside the file, at or after the header.
+		refuses(withWord(etc1s, 80, 4), "its level 0's data lies outside the file");
+		refuses(withWord(etc1s, 88, 0), "its level 0's data lies outside the file");
+		refuses(withWord(etc1s, 80, etc1s.length), "its level 0's data lies outside the file");
+		// The bytes a level decompresses to: the transcoder allocates that count before it
+		// decompresses, so it may not pass the level's own texels, in any of the four parts.
+		refuses(claiming(uastc, 256 * MIB), 'more than the 1 MiB that its texels hold');
+		refuses(withWord(uastc, LEVEL_0_UNCOMPRESSED + 4, 1), 'more than any texture the engine loads');
+		// BasisLZ data holds no such length, and Zstandard data must give one.
+		refuses(withWord(etc1s, LEVEL_0_UNCOMPRESSED, 4096), 'BasisLZ data holds none');
+		refuses(withWord(uastc, LEVEL_0_UNCOMPRESSED, 0), 'Zstandard data must give');
+		// A 64 x 64 texture's level 0 is 4 KiB of blocks, so a claim within that passes.
+		expect(readKtx2Header(claiming(uastc, 4096)).levels).toBe(7);
 	});
 });
 
@@ -318,6 +349,41 @@ describe('ktx2TooLarge', () => {
 			globalThis.Worker = Worker;
 		}
 	});
+
+	test('a page that loads a hostile file is refused before the transcoder starts', async () => {
+		// What a site reaches by loading one more .ktx2 file, through the public loader alone: the
+		// file is a real texture with its first level's declared decompressed length changed. Its
+		// header is valid, so before D-184 only the transcoder saw the claim, and it allocated the
+		// claim inside the worker's heap. The loader must refuse it instead, and start no worker.
+		const Worker = globalThis.Worker;
+		let started = 0;
+		globalThis.Worker = class {
+			constructor() {
+				started++;
+				throw new Error('the transcoder started');
+			}
+		} as unknown as typeof globalThis.Worker;
+		try {
+			const textures = { capabilities: 0, webgl2: false, maxSize: 4096 } as Textures;
+			const greedy = claiming(file('quarters-uastc'), 256 * MIB);
+			const refused = loadKtx2(
+				textures,
+				greedy.buffer as ArrayBuffer,
+				new URL('https://example.com/greedy.ktx2'),
+				{},
+				'assets.loadTexture',
+				(code, message) => Object.assign(new Error(message), { code }) as never,
+			);
+			await expect(refused).rejects.toMatchObject({
+				code: 'E1412',
+				message:
+					'assets.loadTexture() could not load https://example.com/greedy.ktx2 as a KTX2 texture: its level 0 says it decompresses to 256 MiB, more than the 1 MiB that its texels hold.',
+			});
+			expect(started).toBe(0);
+		} finally {
+			globalThis.Worker = Worker;
+		}
+	});
 });
 
 describe('the transcoder', () => {
@@ -366,13 +432,19 @@ describe('the transcoder', () => {
 			id: 1,
 			task: 'ktx2',
 			modules: [['basis', module]],
-			input: { file: uastc.buffer, format: 'cTFASTC_4x4_RGBA', levels: 7, layers: 1 },
+			input: {
+				file: uastc.buffer,
+				format: 'cTFASTC_4x4_RGBA',
+				levels: 7,
+				layers: 1,
+				maxSize: 4096,
+			},
 		});
 		const broken = file('quarters-etc1s').slice(0, 300);
 		send({
 			id: 2,
 			task: 'ktx2',
-			input: { file: broken.buffer, format: 'cTFETC1_RGB', levels: 7, layers: 1 },
+			input: { file: broken.buffer, format: 'cTFETC1_RGB', levels: 7, layers: 1, maxSize: 4096 },
 		});
 		send({ id: 3, task: 'draco', input: {} });
 		await tasks.whenIdle(() => answers.length === 3);
@@ -380,13 +452,57 @@ describe('the transcoder', () => {
 		expect(((byId(1) as { output: ArrayBuffer }).output as ArrayBuffer).byteLength).toBe(
 			transcodedBytes('astc-4x4-unorm', 64, 64, 7, 1),
 		);
+		// The file's own reader refuses it, before the transcoder sees the bytes: the cut file's
+		// level index names data that is not in the file.
 		expect(byId(2)).toEqual({
 			id: 2,
-			failed: { stage: 'run', message: 'the transcoder could not start on the file' },
+			failed: { stage: 'run', message: "its level 0's data lies outside the file" },
 		});
 		expect(byId(3)).toEqual({
 			id: 3,
 			failed: { stage: 'load', message: 'the engine has no task draco' },
+		});
+	});
+
+	test('refuses a file whose level index asks for more than the transcoder may allocate', async () => {
+		// The level index's third number is the bytes that the level holds once decompressed. The
+		// transcoder allocates that many before it decompresses, and holds the heap for its life, so
+		// the reader refuses a file whose level asks for more than its texels hold.
+		const answers: TaskAnswer[] = [];
+		const source: TaskSource = {
+			onmessage: null,
+			postMessage: (answer) => answers.push(answer),
+		};
+		const tasks = serveTasks(source);
+		const greedy = claiming(file('quarters-uastc'), 256 * MIB);
+		expect(() => readKtx2Header(greedy)).toThrow(
+			'its level 0 says it decompresses to 256 MiB, more than the 1 MiB that its texels hold',
+		);
+		// No transcoder module is sent, so a task that started the transcoder first would fail with
+		// the loader's own message instead of this one.
+		source.onmessage?.(
+			new MessageEvent('message', {
+				data: {
+					id: 1,
+					task: 'ktx2',
+					input: {
+						file: greedy.buffer,
+						format: 'cTFASTC_4x4_RGBA',
+						levels: 7,
+						layers: 1,
+						maxSize: 4096,
+					},
+				} satisfies TaskRequest,
+			}),
+		);
+		await tasks.whenIdle(() => answers.length === 1);
+		expect(answers[0]).toEqual({
+			id: 1,
+			failed: {
+				stage: 'run',
+				message:
+					'its level 0 says it decompresses to 256 MiB, more than the 1 MiB that its texels hold',
+			},
 		});
 	});
 

@@ -36,9 +36,9 @@ The techniques that give its look:
 - car materials made in the shader (flakes, seams, clear coat, carbon weave, leather);
 - 2D interfaces drawn into textures on 3D surfaces;
 - rain and steam drawn from the vertex index with no data;
-- a lens grade: grain, colour fringes, an anamorphic streak, sharpening and speed blur.
+- a lens grade: grain, color fringes, an anamorphic streak, sharpening and speed blur.
 
-The same fault class exists in null3D. The render worker reads the draw list's address from the shared `Int32Array` slots with `Atomics.load` (`packages/engine/src/render/scene-renderer.ts`). The page reads the job workers' wake, stop and yield addresses the same way (`packages/engine/src/page/stop-jobs.ts`). Above 2 GiB these reads return negative numbers. The default memory maximum, 1024 MiB, keeps every address below 2 GiB, but a page may raise the maximum to 4096 MiB ([D-04](D-04-memory-maximum.md)). No test covers such a page. The fault was found by reading the code, and has not been reproduced.
+The same fault class existed in null3D on 14 October 2026. The render worker read the draw list's address from the shared `Int32Array` slots with `Atomics.load` (`packages/engine/src/render/scene-renderer.ts`). The page read the job workers' wake, stop and yield addresses the same way (`packages/engine/src/page/stop-jobs.ts`). Above 2 GiB these reads return negative numbers. The default memory maximum, 1024 MiB, keeps every address below 2 GiB, but a page may raise the maximum to 4096 MiB ([D-04](D-04-memory-maximum.md)). The fault was found by reading the code. The same day `9726a73ef` converted each such read with `>>> 0` (hard rule 31). The static check `tools/check-address-reads.ts` and the browser test `tests/image/signed-address.spec.ts` now guard it.
 
 Overlap with M2, as of 14 October 2026:
 
@@ -86,3 +86,13 @@ The owner ruled on 14 October 2026:
 - M2-EX8 shrinks to Creek and Town. M2-EX43 gains the demo touches. M3-B1 to M3-B3 later turn the touches' shader code into add-ons and move the demos onto them.
 - The add-ons follow the add-on rule: each loads its shaders on first use, and costs nothing when a page does not import it.
 - Rive's shaders were read only to learn the techniques. null3D's code is written from the techniques, never copied from Rive's files.
+
+## Addendum, 15 October 2026: example add-ons
+
+The owner ruled on 15 October 2026 ([D-173](D-173-addon-hooks.md), ruling 5) that the six add-ons M3-B1 to M3-B6 are example add-ons, not npm packages. They are the lens kit, facades, screens, weather, car paint and traffic lanes.
+
+- Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licences. It uses only the public API, and the import check covers it.
+- Their image tests run through the examples. They carry no version promise, so other developers are free to build and sell better versions.
+- The lens kit uses the core's sharpening (M3-A10), grading (M3-A8) and vignette, and adds none of its own.
+- Weather says which feature makes each part of the rain: its streaks from M3-A5's draws, and splashes and steam from the particles add-on.
+- Car paint's flakes use glints ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 17).

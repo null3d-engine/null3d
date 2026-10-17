@@ -264,14 +264,29 @@ export const SHADER_PARTS: readonly string[] = [
 ];
 
 /**
+ * True for the shared table of a target's device modules of one value of the bits a device fixes,
+ * as `shader-paragraphs-glsl-draw-index.js`. A paragraph that many of the kind's device modules
+ * hold is written once there instead of inside every module that uses it. The shader build's name
+ * carries no `shaders-` prefix, so that the list of a build's files for offline play reads a table
+ * as no feature of its own.
+ */
+export function isParagraphTable(name: string): boolean {
+	return /^shader-paragraphs-[a-z0-9-]+\.js$/.test(name);
+}
+
+/**
  * True for the part of a shader module that loads on a feature's first use: a device module of a
  * feature, which the shader build names after the feature, then the target and the bits, as
  * `shaders-sprites-glsl-draw-index.js`, or the module of a shader that loads on first use as a
  * whole, named after the shader and the target, as `shaders-environment-wgsl.js`. A page downloads
  * one the first time it uses the feature, so no start counts it. The manifest's
  * `[first_use.<feature>]` tables and `first_use` shaders name them, and the parts follow from them.
+ *
+ * A table of shared paragraphs loads with the first feature whose modules of its kind name it, and
+ * the start never names one, so it belongs to this group too.
  */
 export function isFirstUseShaderPart(name: string): boolean {
+	if (isParagraphTable(name)) return true;
 	return (
 		!SHADER_PARTS.includes(name) &&
 		/^shaders-[a-z][a-z0-9-]*?-(wgsl|glsl)(-[a-z-]+)?\.js$/.test(name)
@@ -440,7 +455,7 @@ const isPageSource = (source: string) => /^(tests|bench|examples|templates)\//.t
 function shaderPartOf(file: BuiltFile): string | undefined {
 	const engine = file.sources.filter((source) => source.startsWith(ENGINE_SOURCE));
 	const module = engine.length === 1 ? engine[0]!.slice(ENGINE_SOURCE.length) : '';
-	const match = /^generated\/(shaders-[a-z-]+)\.[jt]s$/.exec(module);
+	const match = /^generated\/(shaders-[a-z-]+|shader-paragraphs-[a-z0-9-]+)\.[jt]s$/.exec(module);
 	return match ? `${match[1]}.js` : undefined;
 }
 
@@ -543,12 +558,11 @@ export function downloadSizes(
 /**
  * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
- * Brotli's budget is the owner's, who raised it from 145 KB on 14 October 2026 (D-14). The gzip and
- * raw budgets hold today's start with about a tenth to spare. The shader file fills most of it, so
- * per-feature shader files bring both down. Until then they stop a start that grows on a gzip host,
- * or on a host that sends files as they are.
+ * Each column's budget is the owner's, and decision record D-14 holds its figures and approvals.
+ * The gzip and raw budgets stop a start that grows on a gzip host, or on a host that sends files as
+ * they are. The start's shader file fills most of each column.
  */
-export const START_BUDGET: Budget = { raw: 3_448 * 1024, gzip: 464 * 1024, brotli: 160 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 165 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
@@ -564,24 +578,21 @@ const COLUMN_NAMES: Readonly<Record<Column, string>> = {
 function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
 	return COLUMNS.filter((column) => size[column] > budget[column]).map(
 		(column) =>
-			`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, over its ${budget[column] / 1024} KB budget`,
+			`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, over its ${budget[column] / 1024} KB budget set in tools/lib/size-report.ts`,
 	);
 }
 
 /**
  * The budget for each device module of a feature that loads on first use. Such a module is shader
- * data, as the modules of the start are, so its limits started at the size of a start shader
- * file. Shader text shrinks far more under compression than code does, so these limits do not keep
- * the start budget's proportions. The owner set them on 4 October 2026, and on 5 October raised
- * the Brotli limit for the shadow filter's growth and the gzip limit, which only hosts without
- * Brotli meet, for the skinning and morph files of environment lighting. On 14 October the owner
- * raised the Brotli limit from 32 KB to 48 KB, because the GLSL files of the mesh templates had
- * grown past it (decision records D-14 and D-56).
+ * data, as the modules of the start are. Shader text shrinks far more under compression than code
+ * does, so these limits do not keep the start budget's proportions. Only hosts without Brotli meet
+ * the gzip limit. Each limit is the owner's, and decision record D-14 holds its figures and
+ * approvals.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_536 * 1024,
 	gzip: 320 * 1024,
-	brotli: 48 * 1024,
+	brotli: 49 * 1024,
 };
 
 /**
