@@ -71,7 +71,8 @@
 //! Point and spot lights cast shadows into the tiles of the shadow atlas (see
 //! [`crate::shadow_tiles`]). Each tile is a view too, which culls and draws the casters' layout as
 //! a cascade does, but only in the frames in which the tile must draw again. Every camera view's
-//! frame group binds the atlas and the tiles' uniform block.
+//! frame group binds the atlas and the shadow settings block, which holds each tile's matrix, its
+//! texel size and its light's biases.
 //!
 //! # Lights
 //!
