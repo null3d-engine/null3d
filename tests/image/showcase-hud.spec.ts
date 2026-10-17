@@ -19,13 +19,15 @@ const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
  * Alone for two reasons. Its pictures need the engine to draw frames, and on CI's two-core runner a
  * heavy test beside it starves this page's frames, which is the fault D-186 measures. And its budget
  * cannot sit in a shard: a shard's limit is 25 minutes, which covers its tests taking twice as long
- * as the median, and this test's failure is exactly a slow machine. Moved out of shard 14, whose 25
- * minutes held 14.6 of tests, this test runs in the alone job, whose 25 minutes bound its waits. The
- * waits below are sized for a software renderer on a loaded runner: a first frame there took longer
- * than three minutes, and a switch showed no new frame within one. Its own budget sits under the
- * job's limit, so a page that truly stops drawing still fails by name rather than by the job's clock.
+ * as the median, and this test's failure is exactly a slow machine. Moved out of shard 14, then out
+ * of the alone job, which the rest of its tests filled to 21 minutes, this test runs in a job of its
+ * own, whose 35 minutes bound its waits. The waits below are sized for a software renderer on a
+ * loaded runner: a first frame there took longer than three minutes, and a switch showed no new
+ * frame within one. A passing run took 16.4 minutes and a slower one ran out of 18. Its own budget
+ * sits under the job's limit, so a page that truly stops drawing still fails by name rather than by
+ * the job's clock.
  */
-test.describe.configure({ timeout: 1_080_000 });
+test.describe.configure({ timeout: 1_500_000 });
 
 /**
  * Picks a button of a group and checks the toast that names the change: selects the group's tab,
