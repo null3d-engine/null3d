@@ -250,7 +250,7 @@ pub struct BuildCounts {
 /// that adds builds on purpose raises the figure it passes and records why there. The test
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
-    glsl: 14_990,
+    glsl: 14_994,
     wgsl: 6_170,
 };
 
@@ -899,5 +899,45 @@ bits = ["BLOOM"]
         let text = VALID.replace("\"mesh.wgsl\"", "\"lib/math.wgsl\"");
         let errors = Manifest::parse(&text).unwrap_err();
         assert!(errors[0].contains("a library module"), "{errors:?}");
+    }
+
+    #[test]
+    fn the_picking_template_moves_the_vertices_that_the_shading_templates_move() {
+        // The picking pass keeps a pixel only where its depth matches the scene's to the last bit,
+        // so it must place each vertex where the template that shaded the draw placed it. Every bit
+        // that moves a vertex, on a target whose shading templates have it, its picking template
+        // needs too.
+        const MOVING: [&str; 2] = ["SKIN", "MORPH"];
+        const SHADING: [&str; 3] = ["lit", "unlit", "outline_mask"];
+        let path = format!("{}/shaders.toml", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).expect("the repository's manifest");
+        let manifest = Manifest::parse(&text).expect("the repository's manifest parses");
+        let pick = &manifest.shaders["pick"];
+        for target in [Target::Wgsl, Target::Glsl] {
+            let bits = |shader: &Shader| -> Vec<String> {
+                let mut bits: Vec<String> = shader
+                    .variants
+                    .values()
+                    .filter(|variant| variant.has(target))
+                    .flat_map(|variant| variant.permutations.iter().cloned())
+                    .filter(|bit| MOVING.contains(&bit.as_str()))
+                    .collect();
+                bits.sort();
+                bits.dedup();
+                bits
+            };
+            let mut wanted: Vec<String> = SHADING
+                .iter()
+                .flat_map(|name| bits(&manifest.shaders[*name]))
+                .collect();
+            wanted.sort();
+            wanted.dedup();
+            assert_eq!(
+                wanted,
+                bits(pick),
+                "the picking template's {} builds",
+                target.name()
+            );
+        }
     }
 }

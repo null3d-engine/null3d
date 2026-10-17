@@ -4,6 +4,8 @@
 // a one-sample copy of a multisampled depth. Both passes number pixels the same way, so the copy
 // keeps the depth's rows in their order.
 
+#import null3d::fullscreen::{triangle}
+
 #ifdef MULTISAMPLED
 @group(0) @binding(0) var depth: texture_multisampled_2d<f32>;
 #else
@@ -12,9 +14,7 @@
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // Corners at (-1, -1), (3, -1) and (-1, 3) in clip space.
-    let corner = vec2f(f32((vertex << 1u) & 2u), f32(vertex & 2u));
-    return vec4f(corner * 2.0 - 1.0, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 @fragment

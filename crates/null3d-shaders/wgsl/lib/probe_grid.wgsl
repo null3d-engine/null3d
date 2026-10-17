@@ -25,7 +25,12 @@ fn probe_grid_irradiance(grid: ProbeGrid, world: vec3f, normal: vec3f) -> vec3f 
         return vec3f(0.0);
     }
     let counts = grid.counts.xyz;
-    let spacing = 1.0 / grid.inverse_spacing.xyz;
+    // An axis one probe deep has an inverse spacing of 0, and its probe alone is what the clamp
+    // keeps. Dividing by that 0 gives an infinity, which a normal component of 0 turns into NaN, so
+    // the divisor holds 1 there. Every other axis divides by its own inverse spacing exactly.
+    let inverse = grid.inverse_spacing.xyz;
+    let divisor = select(vec3f(1.0), inverse, inverse > vec3f(0.0));
+    let spacing = 1.0 / divisor;
     // The sample point moves half a spacing along the normal, then clamps into the grid.
     let at = clamp(
         (world + normal * (spacing * 0.5) - grid.origin.xyz) * grid.inverse_spacing.xyz,

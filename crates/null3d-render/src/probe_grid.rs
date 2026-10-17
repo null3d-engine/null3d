@@ -39,6 +39,8 @@ pub struct ProbeGrid {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ProbeGridUniform {
     pub origin: [f32; 4],
+    /// The inverse of the spacing along each axis, or 0 for an axis one probe deep. A shader scales
+    /// places by it, and puts 1 in its place where it divides, so the 0 is safe.
     pub inverse_spacing: [f32; 4],
     pub counts: [f32; 4],
     pub params: [f32; 4],
