@@ -90,17 +90,7 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first. Then it lowers the levels of detail, the live shadow settings, bloom's size and ambient occlusion's scale. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
-
-| Member | What it holds |
-| --- | --- |
-| `steps` | The governor's steps past the render scale: 0 while the shadow settings, bloom's size, ambient occlusion's scale, the steps of contact shadows and the far characters' update interval apply as set. |
-| `farCascadeInterval` | How often each far shadow cascade draws now: the setting's value, or up to twice as long for each step, at most every 8th frame. |
-| `shadowFilter` | The shadow filter now: the setting's value, or 3 after its step. |
-| `bloomSize` | Bloom's size now: the setting's value, or half of it after its step while bloom is on. |
-| `aoScale` | Ambient occlusion's scale now: the setting's value, or half of it after the step that follows bloom's while ambient occlusion draws. |
-| `contactShadowSteps` | The steps of contact shadows now: the setting's value, or 4 after its step while the directional light casts shadows. |
-| `farAnimationInterval` | How often a far character's pose updates now: the setting's value, or up to twice as long for each of the last steps, at most every 4th frame. |
+When frames take too long, the engine lowers the render scale first. Then it lowers the levels of detail, the live shadow settings, bloom's size and ambient occlusion's scale. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
 
 The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
 
