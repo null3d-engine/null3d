@@ -26,13 +26,13 @@
 //! The gather's taps live in its block, so a new tap count or bokeh shape makes no GPU object.
 
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
+    DrawList, Op, address, buffer_usage as usage, compare, format, layout as bind_layout,
     resource_kind, state_flags, template,
 };
 
 use crate::bloom::{CornerMap, bytes_of};
 use crate::camera::Mat4;
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
@@ -372,21 +372,13 @@ impl DofPass {
                     usage::UNIFORM | usage::COPY_DST,
                 ],
             )?;
-            list.push(
-                Op::CreateSampler,
-                &[
-                    ids.sampler,
-                    address::CLAMP_TO_EDGE,
-                    address::CLAMP_TO_EDGE,
-                    address::CLAMP_TO_EDGE,
-                    filter::LINEAR,
-                    filter::LINEAR,
-                    filter::NEAREST,
-                    0f32.to_bits(),
-                    0f32.to_bits(),
-                    compare::NONE,
-                    1,
-                ],
+            clamp_sampler(
+                list,
+                ids.sampler,
+                address::CLAMP_TO_EDGE,
+                LINEAR_LEVEL,
+                0.0,
+                compare::NONE,
             )?;
             self.created = true;
         }

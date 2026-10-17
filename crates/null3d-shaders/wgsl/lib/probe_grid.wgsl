@@ -13,8 +13,8 @@
 
 @group(0) @binding(10) var probe_grid_map: texture_3d<f32>;
 
-/// True while the scene sets a light probe grid, whatever its intensity: a grid of intensity 0
-/// still takes over the environment's diffuse light, with none of its own.
+/// True while the scene sets a light probe grid. An intensity of 0 keeps the grid in place, so the
+/// grid's light fades to nothing instead of the environment returning.
 fn has_probe_grid(grid: ProbeGrid) -> bool {
     return grid.origin.w > 0.5;
 }
@@ -26,8 +26,12 @@ fn probe_grid_irradiance(grid: ProbeGrid, world: vec3f, normal: vec3f) -> vec3f 
         return vec3f(0.0);
     }
     let counts = grid.counts.xyz;
-    // An axis with no spacing has an inverse of 0; it moves the sample point by nothing.
-    let spacing = select(vec3f(0.0), 1.0 / grid.inverse_spacing.xyz, grid.inverse_spacing.xyz > vec3f(0.0));
+    // An axis one probe deep has an inverse spacing of 0, and its probe alone is what the clamp
+    // keeps. Dividing by that 0 gives an infinity, which a normal component of 0 turns into NaN, so
+    // the divisor holds 1 there. Every other axis divides by its own inverse spacing exactly.
+    let inverse = grid.inverse_spacing.xyz;
+    let divisor = select(vec3f(1.0), inverse, inverse > vec3f(0.0));
+    let spacing = 1.0 / divisor;
     // The sample point moves half a spacing along the normal, then clamps into the grid.
     let at = clamp(
         (world + normal * (spacing * 0.5) - grid.origin.xyz) * grid.inverse_spacing.xyz,

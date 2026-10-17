@@ -157,3 +157,30 @@ same mechanics copied twice (BT-22). The fixes:
    holds an extra one or holds one with other bytes than the record is a miss. A restore copies each
    module in place and treats a copy failure as a miss, so a half-written 850 MB set is never handed
    to a checkout as a built set.
+
+## Addendum, 15 October 2026: one file per entry key, and a shared text table
+
+The per-entry shader cache wrote one file per entry name, and every build of that entry wrote the
+whole file (M-32). Two versions of one entry therefore overwrote each other, so a branch that
+returned to an earlier version of a shader compiled it again, and one entry grew to 1.5 GB: the
+largest entry holds 15,552 builds, whose 281,280 strings are only 7,297 distinct because the same
+library text runs through all of them.
+
+The build now writes each entry into a file named for the entry and its key, so the versions never
+overwrite each other and the older ones are pruned instead. A text of 40 characters or more is
+stored once per entry and referenced by the builds that use it, which cut the stored bytes of the
+same entries from about 1.8 GB per set to about 240 MB in one measurement on 15 October 2026. The
+folder is pruned to 24 GiB after each use, oldest first, sparing a file written within the last two
+hours because a build may be reading it. The format version is now 2, so an entry from the older
+format is never read with a new meaning.
+## Addendum, 17 October 2026: the caches share the cargo run and the baseline's write too
+
+The last two copies of the caches' mechanics are gone (BT-22). `tools/lib/build-cache.ts` now owns the
+cargo invocation as well, in `runCargo`. It sets the checkout's own build folder and sccache through
+`cargoEnv`, and takes the folder of a call that builds elsewhere. It passes on the call's environment
+and stdio. The build's WebAssembly steps and the shader module build run every cargo call through it.
+
+The GPU check's baseline cache now fills its folder through the module's atomic folder write, as the
+other caches do. It renames no folder itself. Its own rules stay: it keeps six builds by commit, and
+it prunes by use. The Vite plugin's cache still keeps its own copy of the rules, as the Decision
+above says.

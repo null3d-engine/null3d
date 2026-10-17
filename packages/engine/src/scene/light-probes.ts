@@ -234,8 +234,9 @@ export interface LightProbeGridOptions {
 	/** The probes along each axis: three whole numbers. */
 	counts: ArrayLike<number>;
 	/**
-	 * The factor of the grid's light on every surface. The default is 1. At 0 the grid gives no
-	 * light, and still takes over the environment's diffuse light as `environmentWeight` says.
+	 * The factor of the grid's light on every surface. The default is 1. A factor of 0 lights
+	 * nothing from the grid, and the grid still takes the share of the environment's light that
+	 * `environmentWeight` names. A fade to 0 then gives no environment light back.
 	 */
 	intensity?: number;
 	/**

@@ -362,7 +362,7 @@ const DOCS = {
 	E1414: {
 		title: 'Frame not captured',
 		cause:
-			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it.',
+			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it. The thread that draws can also stop taking messages, as when a GPU call never returns: the engine then fails the request once its wait for the answer has taken longer than its limit, instead of leaving the call to wait with no end.',
 		example: 'E1414: engine.capture() failed: the engine has stopped.',
 		since: '0.1',
 	},

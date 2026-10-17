@@ -1,7 +1,7 @@
-# The shader manifest. The shader build (cargo run -p null3d-shaders --bin shader-build) builds
-# every variant listed here into packages/engine/src/generated/shaders.ts and the device modules
-# beside it. Git ignores those files: `bun run shaders`, and every command that reads them, runs
-# the build when they are missing or out of date.
+# The shader manifest. The shader build (cargo run --profile shader -p null3d-shaders --bin
+# shader-build) builds every variant listed here into packages/engine/src/generated/shaders.ts and
+# the device modules beside it. Git ignores those files: `bun run shaders`, and every command that
+# reads them, runs the build when they are missing or out of date.
 #
 # Each [shaders.<name>] table is one entry shader:
 #
@@ -141,11 +141,14 @@
 # over to the next: each instance's fade value and a 4 × 4 ordered dither keep the pixels of its
 # side of the band, after the mask's own test by its cutoff or by coverage. It builds without
 # skins, morph targets, the alpha hash, transmission and index-read instances, and loads on first
-# use. Custom materials build none of
-# its builds: their levels switch at once.
-# with, and loads on first use. COAT_SHEEN lights a clear coat and a sheen above the base
-# (null3d::coat_sheen); it builds without index-read instances and loads on first use. Custom
-# materials build it only where their WGSL names a layer's value of the surface.
+# use. Custom materials build none of its builds: their levels switch at once. WEIGHTED draws a
+# surface of the weighted blending into the camera's weighted layer (null3d::weighted), in any order
+# with the other weighted surfaces. It builds without a mask, light through the surface, index-read
+# instances, a fading level of detail, a prepass or a caster, and loads on first use with the layer's
+# own steps. Custom materials build without the bit (decision record D-150). COAT_SHEEN lights a
+# clear coat and a sheen above the base (null3d::coat_sheen); it builds without index-read instances
+# and loads on first use. Custom materials build it only where their WGSL names a layer's value of
+# the surface.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
@@ -411,13 +414,17 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VI
 # scene's depth with an EQUAL test that writes no depth, so a fragment that a material's mask
 # discarded (which wrote no depth) never matches. The fragment writes the id that the table of
 # object ranges gives, which the OBJECT_IDS def adds to the vertex shader. It loads on first use,
-# when a sketch first asks for GPU picking.
+# when a sketch first asks for GPU picking. Every build moves its vertices as the template that
+# shades the same draw does, since the EQUAL test compares positions to the last bit. A mesh drawn
+# with a custom material that moves its vertices has no build here: the material's own WGSL cannot
+# join this template, so picking finds such a mesh on the CPU (crates/null3d-render's picking and
+# the scene's queries).
 [shaders.pick]
 file = "pick.wgsl"
 first_use = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["OBJECT_IDS"], permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "OBJECT_IDS"], permutations = ["DRAW_INDEX", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "OBJECT_IDS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and

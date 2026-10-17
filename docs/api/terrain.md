@@ -53,11 +53,12 @@ export default defineSketch((ctx) => {
     maxLevel: 6,
   });
 
+  // Made once, outside onUpdate, so a frame allocates nothing.
+  const at = [0, 0, 0];
   return {
     onUpdate() {
-      const at = [0, 0, 0];
       camera.getWorldPosition(at);
-      terrain.update(at[0], at[2]);
+      terrain.update(at);
     },
   };
 });
@@ -67,9 +68,9 @@ export default defineSketch((ctx) => {
 
 `createTerrain` samples a height field once, into a flat array of heights. The height comes from a function or from a height map held as a `Float32Array`. Later reads, such as `heightAt`, interpolate between the four samples around the point.
 
-The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four when the camera comes close to its edge. Its `maxLevel` sets the finest level, and its `split` sets the distance at which a block splits. The default of 6 puts the camera's own block at about a meter of detail over a 1,200 meter ground.
+The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four when the camera comes close to its edge. Its `maxLevel` sets the finest level, and its `split` sets the distance at which a block splits, up to 8 times the block's size. The default of 6 puts the camera's own block at about a meter of detail over a 1,200 meter ground.
 
-Each block is one mesh whose vertices carry the heights. The height field never changes shape after `createTerrain`. Once a block is made, the engine reuses it. The terrain rebuilds a block only when the camera moves into a new cell of the finest level. A still camera therefore costs no work at all.
+Each block is one mesh whose vertices carry the heights. The height field never changes shape after `createTerrain`. Once a block is made, the engine reuses it. The terrain picks its blocks again only when the camera moves into a new cell of the finest level. A still camera therefore costs no work at all.
 
 A skirt hangs from the edge of each block, a little below the ground. Where a fine block meets a coarse one, the two edges do not match, and the skirt covers the gap. The skirt hides the seam without a vertex morph, which is the main difference from Strugar's CDLOD. On a very steep seam a thin sliver of skirt can still show.
 
@@ -85,13 +86,13 @@ The terrain carries no collision. Read `heightAt(x, z)` and `normalAt(x, z, out)
 
 ## Speed
 
-A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, whatever the camera does. A block splits or merges only when the camera crosses a cell. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them, and its frame path allocates nothing.
+A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, whatever the camera does. A block splits or merges only when the camera crosses a cell. A crossing can need tens of new blocks, so each `update` builds at most `blocksPerUpdate` of them, 16 by default. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile. The first update builds its whole selection, so call it in the setup if that frame matters. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them, and its frame path allocates nothing. `terrain.setVisible(false)` hides the ground, and `setVisible(true)` shows the current selection again.
 
 A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules, so its surface function compiles into the project's shaders and loads with them.
 
 ## Compared with three.js
 
-three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, use three.js's `TerrainGenerator`, or add a library such as three-mesh-bvh for large ground.
+three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, shape the ground with three.js's `ImprovedNoise` and a height map, or add a library such as three-mesh-bvh for large ground.
 
 | three.js | null3D |
 | --- | --- |

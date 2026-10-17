@@ -5,7 +5,13 @@
 // the moon and the stars, and the sky's environment lights the valley and shows in the lake. Pines
 // made in code at four levels of detail stand in groves on the valley's floor. At night the moon
 // lights the air and the stars come out.
-import { defineSketch, math, timeOfDay } from '@null3d/engine';
+import {
+	defineSketch,
+	emptyTimeOfDay,
+	math,
+	type TimeOfDayOptions,
+	timeOfDay,
+} from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { valley } from './valley';
 
@@ -29,6 +35,20 @@ export default defineSketch(async (ctx) => {
 	// The air of a clear evening: a little haze, high clouds, and twice the real air between the
 	// camera and the land, so that the ridges fade in fewer kilometres.
 	const air = { haze: 1.2, cloudCoverage: 0.32, cloudElevation: 0.8, aerialPerspective: 2 };
+	// The day's settings, which each frame's call fills in place, and the sky's, which the frame's
+	// numbers go into: a day that passes makes no garbage. A call with no `out` would make an
+	// object tree in every frame.
+	const day = emptyTimeOfDay();
+	const dayOptions: TimeOfDayOptions = { heading: HEADING, model: 'physical' };
+	const sky = {
+		...air,
+		sunPosition: day.atmosphere.sunPosition,
+		moonPosition: day.atmosphere.moonPosition,
+		sunIntensity: 0,
+		moonIntensity: 0,
+		stars: 0,
+		time: 0,
+	};
 	const environment = await assets.skyEnvironment();
 	scene.setEnvironment(environment);
 	post.set({ bloom: { intensity: 0.2, threshold: 1 }, ao: { radius: 2 }, vignette: {} });
@@ -50,8 +70,12 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			// The pointer picks an hour from 4:00 at the left to 20:00 at the right.
 			const hour = math.lerp(clock(time.now), 12 + view.point[0] * 1.3e-3, view.steering);
-			const day = timeOfDay(hour, { heading: HEADING, model: 'physical' });
-			scene.setBackground({ atmosphere: { ...air, ...day.atmosphere, time: time.now } });
+			timeOfDay(hour, dayOptions, day);
+			sky.sunIntensity = day.atmosphere.sunIntensity;
+			sky.moonIntensity = day.atmosphere.moonIntensity;
+			sky.stars = day.atmosphere.stars;
+			sky.time = time.now;
+			scene.setBackground({ atmosphere: sky });
 			sun.setDirection(...day.light.direction);
 			sun.setColor(day.light.color);
 			sun.setIntensity(day.light.intensity);

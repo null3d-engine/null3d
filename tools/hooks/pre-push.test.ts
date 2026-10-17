@@ -3,11 +3,13 @@ import { execFileSync } from 'node:child_process';
 import {
 	baseOf,
 	changedCrates,
+	keepaliveSeconds,
 	parsePush,
 	plan,
 	pushToMain,
 	SKIP_TRAILER,
 	skipReason,
+	sshHost,
 } from './pre-push';
 
 const MAIN = 'refs/heads/main';
@@ -64,6 +66,34 @@ describe('skipReason', () => {
 			skipReason([`fix: x\n\n${SKIP_TRAILER}:\nDocs-Checked: read the guide`]),
 		).toBeUndefined();
 		expect(skipReason(['fix: x\n\nDocs-Checked: read the guide'])).toBeUndefined();
+	});
+});
+
+describe('sshHost', () => {
+	it('reads the host of an ssh remote, in either spelling', () => {
+		expect(sshHost('git@github.com:null3d-engine/null3d.git')).toBe('github.com');
+		expect(sshHost('ssh://git@github.com/null3d-engine/null3d.git')).toBe('github.com');
+		expect(sshHost('ssh://git@github.com:22/null3d-engine/null3d.git')).toBe('github.com');
+	});
+
+	it('gives nothing for another transport, and for a local path', () => {
+		expect(sshHost('https://github.com/null3d-engine/null3d.git')).toBeUndefined();
+		expect(sshHost('/tmp/remote.git')).toBeUndefined();
+		expect(sshHost('./remote.git')).toBeUndefined();
+		expect(sshHost('')).toBeUndefined();
+	});
+});
+
+describe('keepaliveSeconds', () => {
+	it('reads the interval that an ssh command line asks for', () => {
+		expect(keepaliveSeconds('ssh -o ServerAliveInterval=20')).toBe(20);
+		expect(keepaliveSeconds('ssh -oServerAliveInterval=20')).toBe(20);
+		expect(keepaliveSeconds('ssh -o ServerAliveInterval 20')).toBe(20);
+	});
+
+	it('reads nothing from a command line that does not ask', () => {
+		expect(keepaliveSeconds('ssh -o BatchMode=yes')).toBe(0);
+		expect(keepaliveSeconds(undefined)).toBe(0);
 	});
 });
 

@@ -108,6 +108,8 @@ export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
  * Filament's kernel, and three.js by its own term, so the highlights of the smoothest surfaces and
  * the rims of glossy spheres differ. The other lighting terms match. Each limit sits just above the
  * scene's largest share on SwiftShader and on the Mac's GPU, which `.dev/image-tests.md` records.
+ * The toy car's chrome trim, window frames and lamp covers are the same case, on a model that also
+ * carries a clear coat, a sheen and glass.
  */
 export const SPECULAR_AA_LIMITS = {
 	'standard-grid': 0.25,
@@ -120,6 +122,7 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-metal-rough': 0.34,
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
+	'gltf-toy-car': 0.32,
 } as const;
 
 /**
@@ -424,8 +427,9 @@ const NO_TONE = 'tone=none';
  * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
  * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
  * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
- * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere. The glossy spheres of the metal-rough, specular and IOR scenes take
- * specular anti-aliasing's limits.
+ * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere.
+ * The glossy spheres of the metal-rough, specular and IOR scenes take specular anti-aliasing's
+ * limits, and the toy car's glossy trim, glass and coat take it too.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 0.5,
@@ -433,6 +437,7 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
+	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };
 
 /**
@@ -750,11 +755,17 @@ export const REFERENCE_PRESET_SWITCH = 'preset=high';
  * more switches. A three.js twin that copies the preset's settings reads the same switch.
  */
 /**
- * Switches that a scene's hold page always gets, whatever the command asks for. S5 gives a far
- * character a longer update interval by default, which steps its pose; a hold frame that parity or
- * the image tests compare must hold every character at every frame, so the twin's pose matches.
+ * The switch that holds every animated character at every frame. S5 gives a far character a longer
+ * update interval by default, which steps its pose and does less work than the three.js twin, which
+ * poses every character in every frame. A hold frame that parity or the image tests compare, and a
+ * comparison that measures equal work (D-52), both need every character posed in every frame.
  */
-const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'anim=every' };
+export const HOLD_EVERY_FRAME_SWITCH = 'anim=every';
+
+/**
+ * Switches that a scene's hold page always gets, whatever the command asks for.
+ */
+const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: HOLD_EVERY_FRAME_SWITCH };
 
 export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
 	// Only the null3D page takes the scene's own switches; the twin ignores them.

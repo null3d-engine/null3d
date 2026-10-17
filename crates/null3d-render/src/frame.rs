@@ -28,7 +28,8 @@ use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
+    DrawList, DrawListError, Op, address, buffer_usage, filter, permutation, state_flags, template,
+    vertex,
 };
 
 use crate::ao::{self, Ao, Contact};
@@ -472,6 +473,48 @@ pub(crate) fn indices_as_bytes(indices: &[u16]) -> &[u8] {
             std::mem::size_of_val(indices),
         )
     }
+}
+
+/// The filters of a sampler that reads one level of a texture: linear magnification and
+/// minification, and no blend between levels.
+pub(crate) const LINEAR_LEVEL: [u32; 3] = [filter::LINEAR, filter::LINEAR, filter::NEAREST];
+
+/// The filters of a sampler that blends between a texture's levels, as a reader of an environment
+/// map's roughness does.
+pub(crate) const LINEAR_MIPMAP: [u32; 3] = [filter::LINEAR, filter::LINEAR, filter::LINEAR];
+
+/// The filters of a sampler that reads texels as they are stored, with nothing filtering between
+/// them: the sampler of a reader that compares its reads with a depth of its own.
+pub(crate) const NEAREST_TEXELS: [u32; 3] = [filter::NEAREST; 3];
+
+/// Records a `CreateSampler` that clamps each axis at its edge and reads no level below
+/// `highest_level`: `across` addresses the first axis, `filters` are its magnification,
+/// minification and level filters, and `compare` compares a read with a depth for a shadow map's
+/// receivers. Every pass that reads a target makes such a sampler on both GPU paths.
+pub(crate) fn clamp_sampler(
+    list: &mut DrawList,
+    id: u32,
+    across: u32,
+    filters: [u32; 3],
+    highest_level: f32,
+    compare: u32,
+) -> Result<(), RecordError> {
+    Ok(list.push(
+        Op::CreateSampler,
+        &[
+            id,
+            across,
+            address::CLAMP_TO_EDGE,
+            address::CLAMP_TO_EDGE,
+            filters[0],
+            filters[1],
+            filters[2],
+            0f32.to_bits(),
+            highest_level.to_bits(),
+            compare,
+            1,
+        ],
+    )?)
 }
 
 /// Copies of data a frame's list uploads. Chunks never move once allocated, so addresses stay
@@ -2213,13 +2256,16 @@ impl SceneSettings {
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
     /// main directional light, the ambient lights and the hemisphere lights become the light the
     /// shaders read, and the light table's visible list holds the point and spot lights the camera
-    /// sees. Every light's color takes the exposure that frames draw with.
+    /// sees. Every light's color takes the exposure that frames draw with. `pipelines_built` is the
+    /// newest frame that the thread that draws drew with every pipeline built, which decides what
+    /// the list may hold besides a point or spot light.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
+        pipelines_built: u32,
     ) {
         let view = self
             .view_frame(ViewId::CAMERA, scene, parity, canvas, RenderScale::FULL)
@@ -2229,9 +2275,14 @@ impl SceneSettings {
                 layers: frame.layers,
             });
         // Area lights join the visible list only while the lit templates draw with their builds
-        // that shade them, so no build meets a light whose code it lacks.
+        // that shade them, so no build meets a light whose code it lacks. This list is made before
+        // `update_area_shading` decides for the frame, so the switch is read as the frame before it
+        // left it, except where the answer is already known: a frame that waits for every pipeline
+        // its own list creates, which is any frame of a device that has drawn nothing yet, turns
+        // area shading on itself (`crate::area_shading`).
         self.area_wanted = self.light_tables.ready() && lights.has_area_lights();
-        lights.set_area_ready(self.light_tables.ready() && self.area_shading.on());
+        let shading = self.area_shading.on() || (pipelines_built == 0 && self.area_wanted);
+        lights.set_area_ready(self.light_tables.ready() && shading);
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
@@ -3125,5 +3176,40 @@ mod tests {
         );
         assert_eq!(joined_rows((10, 5), 16 + MERGE_GAP_ROWS, 2), None);
         assert_eq!(joined_rows((10, 5), 9, 3), None);
+    }
+
+    /// Every operand in its place: the id, each axis's addressing, the three filters, the two ends
+    /// of the levels, the comparison and the anisotropy.
+    #[test]
+    fn a_clamped_sampler_names_its_filters_levels_and_comparison() {
+        use null3d_gpu::drawlist::{compare, decode};
+        let mut list = DrawList::with_capacity(16);
+        clamp_sampler(
+            &mut list,
+            7,
+            address::REPEAT,
+            LINEAR_MIPMAP,
+            32.0,
+            compare::GREATER_EQUAL,
+        )
+        .unwrap();
+        let command = decode(list.words()).next().unwrap().unwrap();
+        assert_eq!(command.op, Op::CreateSampler);
+        assert_eq!(
+            command.operands,
+            [
+                7,
+                address::REPEAT,
+                address::CLAMP_TO_EDGE,
+                address::CLAMP_TO_EDGE,
+                filter::LINEAR,
+                filter::LINEAR,
+                filter::LINEAR,
+                0f32.to_bits(),
+                32f32.to_bits(),
+                compare::GREATER_EQUAL,
+                1,
+            ]
+        );
     }
 }

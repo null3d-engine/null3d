@@ -37,6 +37,12 @@ export const DEFAULT_PACK_DIR = 'target/packages';
 /** The license files that every package carries, copied from the repository's root. */
 const LICENSES = ['LICENSE-MIT', 'LICENSE-APACHE'];
 
+/**
+ * The record of a release's shader set. The release writes it into the engine's `lib/` before the
+ * packages are packed, and the pack keeps it while the build replaces the other built files.
+ */
+const SHADER_ARTIFACT = `${LIB_DIR}/shader-artifact.json`;
+
 /** What a package's pack step makes, besides its license copies. */
 export interface PackageBuild {
 	/** Build `src/` into `lib/` with TypeScript. */
@@ -331,6 +337,11 @@ function run(command: string, args: readonly string[], cwd: string): string {
  */
 function compile(root: string, dir: string, build: PackageBuild): void {
 	const lib = join(dir, LIB_DIR);
+	// A release writes the shader set's record into the engine's `lib/` before the pack runs. Any
+	// package that needs the engine compiles it again, and the pack order is not the order of the
+	// records, so the record is kept across every rebuild of `lib/`.
+	const artifact = join(lib, SHADER_ARTIFACT);
+	const keptArtifact = existsSync(artifact) ? readFileSync(artifact) : null;
 	rmSync(lib, { recursive: true, force: true });
 	const tsc = join(root, 'node_modules/typescript/bin/tsc');
 	run(
@@ -387,6 +398,7 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 	}
 	if (problems.length > 0)
 		throw new Error(`${relative(root, lib)} has problems:\n  ${problems.join('\n  ')}`);
+	if (keptArtifact !== null) writeFileSync(artifact, keptArtifact);
 }
 
 /**
@@ -498,14 +510,30 @@ export function publicPackages(root: string): string[] {
 }
 
 /**
- * The files that the engine's shader build wrote, as the engine's package holds them: built
- * into `lib/`.
+ * The generated declarations that the engine's types need, as the packed package holds them. The
+ * shader build's JavaScript leaves the tarball, so the check asks for a declaration for each
+ * generated TypeScript module: `shaders.d.ts` and the rest, and the engine's own constants modules.
+ * It never asks for a generated JavaScript file, which the package no longer carries.
  */
-function shaderModuleFiles(root: string): string[] {
+export function shaderDeclarationFiles(root: string): string[] {
+	const folder = MODULE_DIR.replace(/^packages\/engine\/src\//, `${LIB_DIR}/`);
+	return readdirSync(join(root, MODULE_DIR))
+		.filter((name) => name.endsWith('.ts'))
+		.map((name) => `${folder}/${name.replace(/\.ts$/, '.d.ts')}`)
+		.sort();
+}
+
+/**
+ * The built shader JavaScript, which the package does not ship: the plugin downloads the set or
+ * builds it locally. The engine's generated constants (`core.js` and `gpu.js`) are code of the
+ * engine itself, not shader modules, and they stay in the tarball.
+ */
+export function shaderModuleJsFiles(root: string): string[] {
 	const folder = MODULE_DIR.replace(/^packages\/engine\/src\//, `${LIB_DIR}/`);
 	return readdirSync(join(root, MODULE_DIR))
 		.filter(isShaderModule)
-		.map((name) => `${folder}/${name.replace(/\.ts$/, '.js')}`);
+		.map((name) => `${folder}/${name.replace(/\.ts$/, '.js')}`)
+		.sort();
 }
 
 /**
@@ -543,9 +571,15 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 				.map((line) => line.slice('package/'.length)),
 		);
 		const required = [...(PACKAGES[folder]?.required ?? [])];
-		if (PACKAGES[folder]?.shaders) required.push(...shaderModuleFiles(root));
-		const build = packageBuild(folder);
-		for (const problem of packageProblems(manifest, files, required, repositoryOnlyFiles(build)))
+		const forbidden = [...repositoryOnlyFiles(packageBuild(folder))];
+		if (PACKAGES[folder]?.shaders) {
+			required.push(...shaderDeclarationFiles(root));
+			forbidden.push(...shaderModuleJsFiles(root));
+			// A release's package carries the address, the file name and the hash of its shader set.
+			if (existsSync(join(root, 'packages', folder, SHADER_ARTIFACT)))
+				required.push(SHADER_ARTIFACT);
+		}
+		for (const problem of packageProblems(manifest, files, required, forbidden))
 			problems.push(`${manifest.name}: ${problem}`);
 		packed.push({ folder, name: manifest.name, version: manifest.version, tarball });
 	}
