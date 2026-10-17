@@ -23,12 +23,12 @@
 //! no table: [`AerialUniform`] gives the shaders' fog step the values of each frame.
 
 use null3d_gpu::drawlist::{
-    DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, filter, format,
+    DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, format,
     layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage, view,
 };
 
 use crate::bloom::bytes_of;
-use crate::frame::{RecordError, SceneSettings, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, SceneSettings, UploadArena, clamp_sampler};
 use crate::physical_sky_light::AirModel;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
@@ -570,21 +570,13 @@ impl PhysicalSkyPass {
             .into_iter()
             .enumerate()
         {
-            list.push(
-                Op::CreateSampler,
-                &[
-                    ids.samplers + k as u32,
-                    across,
-                    address::CLAMP_TO_EDGE,
-                    address::CLAMP_TO_EDGE,
-                    filter::LINEAR,
-                    filter::LINEAR,
-                    filter::NEAREST,
-                    0f32.to_bits(),
-                    0f32.to_bits(),
-                    compare::NONE,
-                    1,
-                ],
+            clamp_sampler(
+                list,
+                ids.samplers + k as u32,
+                across,
+                LINEAR_LEVEL,
+                0.0,
+                compare::NONE,
             )?;
         }
         // Each step binds every table but the one it draws, in whose place it binds another that

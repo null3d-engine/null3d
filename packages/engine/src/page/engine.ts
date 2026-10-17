@@ -85,7 +85,7 @@ import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
-import { coreDevice, maxCanvasSize, maxInstances } from './limits';
+import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
@@ -1280,8 +1280,10 @@ async function startEngine(
 	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
 	 * otherwise (D-164).
 	 */
-	const keepTextureCopies =
-		options.keepTextureCopies ?? deviceKind(presetRequest.hints) !== 'desktop';
+	const keepTextureCopies = keepTextureCopiesOption(
+		options.keepTextureCopies,
+		deviceKind(presetRequest.hints) !== 'desktop',
+	);
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,

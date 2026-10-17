@@ -57,6 +57,24 @@ The third channel of the second table is zero. Its fourth holds the form factor 
 
 So binding 3 of the frame group becomes the light tables: a 2D array of half floats, 64 x 64 texels. Layer 0 holds the split-sum table in its corner. WebGPU reads it there, and WebGL2 still reads its copy beside the material table. Layers 1 and 2 hold the area lights' tables. The shaders read them through the environment's filtering sampler, which the frame group already binds at binding 13. So the GPU filters between the four nearest entries in one read per table. A hand-made filter with `textureLoad` would take eight reads. On WebGL2 it would also pair the texture with no sampler as well as with the images' sampler, which takes a second unit.
 
+### The lit fragment stage's texture budget
+
+The area lights took the last sampled texture of the stage, so this table holds every one of them. A per-pixel input added after this one needs a layout change, not another binding.
+
+| Group | Binding | Sampled texture |
+| --- | --- | --- |
+| The frame | 2 | The materials' custom values |
+| The frame | 3 | The light tables: the split-sum table and the area lights' tables |
+| The frame | 4 | The shadow map |
+| The frame | 9 | The shadow atlas |
+| The frame | 10 | The light probe grid |
+| The frame | 11 | Ambient occlusion |
+| The frame | 12 | The environment's cube texture |
+| The frame | 15 | The copy of the camera's opaque color |
+| The materials' maps | 8 slots | Each material's maps |
+
+That is 16 of WebGPU's 16 sampled textures in the lit fragment stage. The decal pass's frame group leaves out the light probe grid and the copy of the opaque color, which no decal build reads. With the eight slots of the materials' maps and the pass's own depth texture, its fragment stage binds 15. A unit test counts each template's per-stage resources against WebGPU's default limits, so a template that went over fails `bun test` before a device sees it. On WebGL2 the lit stages keep spare units ([D-89](D-89-webgl2-texture-units.md)); a texture moved into another's layers there costs a place in the row, not a unit.
+
 ### Textured emission
 
 A rectangle light can take an image, such as a shop window, a sign or a screen. Its light then varies across its area. The shader follows Heitz's demo code. In the frame that each lobe's LTC matrix makes, it reads the image where the surface point's foot meets the light's plane. The mip level grows with the plane's distance over the light's size. So rough lobes and far surfaces see the image blurred, and mirror-like ones see it sharp. Heitz blurs each level of a prefiltered pyramid with a Gaussian, and pads the image with a border. The engine uses plain mip levels and clamps at the edges, which costs no pass and looks the same on soft images.
