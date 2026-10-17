@@ -1144,7 +1144,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// image's last rows and columns.
 	{
 		name: 'render-scale-75-fxaa',
-		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75&edge',
 		hold: 0,
 		switches: ['antialias=fxaa'],
 	},
