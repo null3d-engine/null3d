@@ -1090,13 +1090,16 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 21,164 builds on 17 October 2026: 14,994 GLSL builds and 6,170
+The manifest's 116 variants make 21,166 builds on 18 October 2026: 14,995 GLSL builds and 6,171
 WGSL ones. The GLSL figure rose by four when the picking template took the MORPH bit on WebGL2, so a
-morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
+morphed mesh picks where it draws; nothing else changed. Each figure then rose by one when the
+reflection probes' template joined the manifest (D-149): it holds one variant for each target and
+no free bits, because its three pipelines differ by entry point rather than by def. A build counts
+once for each target that its variant writes, so a variant that writes
 both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
 files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
 builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping
-is the dearest bit by a wide margin. It is listed by 45 of the 115 variants, and it accounts for
+is the dearest bit by a wide margin. It is listed by 45 of the 116 variants, and it accounts for
 about half of all builds. Skin, alpha masking, received shadows, half precision and vertex colour
 each cut 46 to 50 per cent of the large variants. The rare lit features cost less: area lights and
 coat-sheen about 8,600 builds each, and weighted transparency 2,600.
