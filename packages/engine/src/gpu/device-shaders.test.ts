@@ -197,7 +197,17 @@ describe('DeviceShaderSet', () => {
 		const hash = PERMUTATION_ALPHA_HASH;
 		expect(set.ready(lit, hash, 'wgsl')).toBe(false);
 		expect(set.ready(lit, hash | PERMUTATION_SKIN, 'wgsl')).toBe(false);
+		// The lit template gives the value that bloom's builds use its own name, PICK, for the build
+		// of a custom material whose vertex offset moves its object into the id target. A value that
+		// two templates name counts only for the one that names it (decision record D-156), so this
+		// build needs the hash and skinning features alone, and asks for no module of the bloom pass.
 		expect(set.ready(lit, hash | PERMUTATION_SKIN | PERMUTATION_BLOOM, 'wgsl')).toBe(false);
+		expect(asked).toEqual(['hash 0', 'hash+skinning 0']);
+		// The final pass is the template that names that value BLOOM, so its build of the same three
+		// bits needs bloom's module.
+		expect(set.ready(set.shaders.final, hash | PERMUTATION_SKIN | PERMUTATION_BLOOM, 'wgsl')).toBe(
+			false,
+		);
 		expect(asked).toEqual(['hash 0', 'hash+skinning 0', 'bloom+hash+skinning 0']);
 		await settle();
 		expect(set.ready(lit, hash | PERMUTATION_SKIN, 'wgsl')).toBe(true);

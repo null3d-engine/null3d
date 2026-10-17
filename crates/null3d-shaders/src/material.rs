@@ -96,6 +96,34 @@ fn caster_variant(shading: &Variant) -> Variant {
     }
 }
 
+/// The bits of a custom material's shading builds that its pick builds keep: the draw index, and
+/// what moves vertices or a vertex offset may read, skins and row values.
+const PICK_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
+
+/// The variant of a custom material's pick builds beside one of its shading variants: the same
+/// defs with the instance's ids, which the fragment shader writes, and every build with the PICK
+/// bit. The material's vertex offset then moves the object in GPU picking as it moves its surface.
+fn pick_variant(shading: &Variant) -> Variant {
+    let mut defs = shading.defs.clone();
+    if !defs.iter().any(|def| def == OBJECT_IDS_DEF) {
+        defs.push(OBJECT_IDS_DEF.to_owned());
+        defs.sort();
+    }
+    let mut permutations: Vec<String> = shading
+        .permutations
+        .iter()
+        .filter(|bit| PICK_KEEPS.contains(&bit.as_str()))
+        .cloned()
+        .collect();
+    permutations.push("PICK".to_owned());
+    Variant {
+        defs,
+        permutations,
+        required: vec!["PICK".to_owned()],
+        targets: shading.targets.clone(),
+    }
+}
+
 /// The shader defs of every custom material's build: the custom material's built-in values, and
 /// the first texture coordinates.
 const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
@@ -590,11 +618,16 @@ impl Compiler {
             })
             .collect();
         if offsets {
-            let casters: Vec<(String, Variant)> = variants
+            let moved: Vec<(String, Variant)> = variants
                 .iter()
-                .map(|(name, variant)| (format!("{name}_shadow"), caster_variant(variant)))
+                .flat_map(|(name, variant)| {
+                    [
+                        (format!("{name}_shadow"), caster_variant(variant)),
+                        (format!("{name}_pick"), pick_variant(variant)),
+                    ]
+                })
                 .collect();
-            variants.extend(casters);
+            variants.extend(moved);
         }
         let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
         let source = format!("{}{own_source}{loader}{bindings}", template.source);

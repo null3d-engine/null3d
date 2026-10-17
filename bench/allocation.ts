@@ -274,7 +274,7 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'then (built-in)': 128,
 		'Uint8Array (built-in)': 64,
 		'submit webgpu/backend.ts': 32,
-		'flushReads webgpu/backend.ts': 24,
+		'start webgpu/buffer-reads.ts': 24,
 		'afterSubmit gpu/completion.ts': 160,
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
