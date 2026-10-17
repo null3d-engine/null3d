@@ -74,7 +74,7 @@ Each recipe on the docs' cookbook page, `docs/cookbook/index.md`, is a complete 
 
 - The cookbook took this test and not a manifest entry per recipe (8 October 2026, M2-M1). The page promises that each recipe is a tested example. Reference images for 12 short recipes would add 24 files and a GPU run in both sets for every wording change, and the demos already hold the look of each feature.
 - A recipe names its files as a project serves them, such as `/models/knight.glb`, so readers can copy it. `RECIPE_FILES` in `tests/lib/skill-sketches.ts` maps each such address, in single quotes, to a pinned sample file, and the tests write the sketch with the sample's address. The map names each sample with `sampleUrl('...')`, so the sample check covers it. A recipe that names an address the map lacks fails its browser test with the load's error.
-- A heading that names a later version, such as (0.3), leaves its recipe out of the tests, as in the skills. Remove the version when the feature merges.
+- A heading that names a later version, such as (0.3), leaves its recipe out of the tests, as in the skills. Remove the version when the feature merges. A unit test fails when a sketch under such a heading type checks against the engine, because its parts then exist. In October 2026 the particle and terrain recipes kept their (0.2) after both add-ons merged, and no test drew them.
 - Recipes that load the KayKit Knight, an HDR sky or a glTF model take the 60 s limit of every sketch test. The character demo's load took 14 to 21 s on SwiftShader on the Mac, so the limit leaves room.
 
 ## Visual checks

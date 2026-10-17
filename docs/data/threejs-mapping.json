@@ -1899,13 +1899,13 @@
     {
       "id": "terrain",
       "category": "Geometry",
-      "three": "A displaced PlaneGeometry, or three.js's ImprovedNoise over a height map",
+      "three": "A PlaneGeometry displaced on the CPU, with heights from ImprovedNoise or a height map",
       "status": "changed",
       "since": "0.2",
       "target": "createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
       "notes": "A port replaces one displaced grid with a height field drawn as a camera-centred quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
       "docs": "api/terrain",
-      "detect": "\\bImprovedNoise\\b|\\bgetHeightAt\\b"
+      "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
     {
       "id": "css-renderers",

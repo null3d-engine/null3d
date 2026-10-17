@@ -22,6 +22,9 @@ import { ParticleSystem, type ParticleSystemOptions } from './system';
 function fakeBuffer(capacity: number) {
 	const records: number[][] = [];
 	const frames: [number, number][] = [];
+	/** Each frame's values, and the records written in each frame. */
+	const commits: { frame: number[]; writes: number }[] = [];
+	let writes = 0;
 	const frame = new Float32Array(4);
 	const bounds: number[][] = [];
 	const values: ParticleValues[] = [];
@@ -36,14 +39,19 @@ function fakeBuffer(capacity: number) {
 		},
 		write: (index: number, record: ArrayLike<number>, seed: number) => {
 			records[index] = [...Array.from(record), seed];
+			writes++;
 		},
 		read: (index: number, out: Float32Array) => out.set(records[index] ?? []),
 		frame,
-		commit: () => frames.push([frame[0] as number, frame[1] as number]),
+		commit: () => {
+			frames.push([frame[0] as number, frame[1] as number]);
+			commits.push({ frame: Array.from(frame), writes });
+			writes = 0;
+		},
 		set: (v: ParticleValues) => values.push(v),
 		destroy: () => {},
 	};
-	return { buffer: buffer as unknown as ParticleBuffer, records, frames, bounds };
+	return { buffer: buffer as unknown as ParticleBuffer, records, frames, commits, bounds };
 }
 
 function system(options: ParticleSystemOptions, capacity = 64) {
@@ -162,6 +170,68 @@ describe('sub-emitters', () => {
 		for (let k = 0; k < 20; k++) parent.system.update(0.1);
 		expect(child.records.length).toBe(3);
 		expect(child.records[0]?.[1]).toBeCloseTo(-1, 2);
+	});
+	test('the table of pending events starts small and grows to hold every particle', () => {
+		const child = system({ lifetime: 1 }, 2048);
+		const parent = system(
+			{
+				bursts: [{ time: 0, count: 1000 }],
+				lifetime: 0.5,
+				subEmitters: [{ system: child.system, on: 'death', count: 1 }],
+			},
+			1000,
+		);
+		const table = () => (parent.system as unknown as { events: Float64Array }).events.length;
+		const first = table();
+		expect(first).toBeLessThan(1000 * 10);
+		for (let k = 0; k < 6; k++) parent.system.update(0.1);
+		expect(table()).toBeGreaterThan(first);
+		expect(child.records.length).toBe(1000);
+	});
+});
+
+describe('long runs', () => {
+	/** A particle's age as the GPU works it out from a record and the frame's values. */
+	function gpuAge(frame: number[], record: number[], index: number): number {
+		const shift = index >= (frame[2] as number) ? (frame[3] as number) : 0;
+		return Math.fround(frame[0] as number) - Math.fround((record[3] as number) - shift);
+	}
+
+	test('the time base moves over many frames, and every particle keeps its age meanwhile', () => {
+		const capacity = 40_000;
+		const rate = 40;
+		const s = system({ rate, lifetime: [8, 10] }, capacity);
+		const emitted = () => (s.system as unknown as { emitted: number }).emitted;
+		// The particle that a record holds is the newest of its places in the ring; the rate's
+		// stream gives particle n its birth at (n + 1) / rate seconds.
+		const age = (i: number) => {
+			const n = i + capacity * Math.floor((emitted() - 1 - i) / capacity);
+			return s.system.time - (n + 1) / rate;
+		};
+		let moving = 0;
+		let rewrote = 0;
+		for (let k = 0; k < 2400; k++) {
+			const born = emitted();
+			s.system.update(0.5);
+			const { frame, writes } = s.commits.at(-1) as { frame: number[]; writes: number };
+			const shifting = (frame[3] as number) !== 0;
+			if (shifting) moving++;
+			// The writes of a frame are its births and the records the move rewrites.
+			const rewrites = writes - (emitted() - born);
+			expect(rewrites).toBeLessThanOrEqual(16_384);
+			if (rewrites > 0) rewrote++;
+			if (rewrites > 0 || shifting || k % 100 === 0)
+				for (let i = 0; i < s.records.length; i += 97)
+					expect(gpuAge(frame, s.records[i] as number[], i)).toBeCloseTo(age(i), 2);
+		}
+		// 1,200 seconds pass one move. It rewrites 40,000 records over three updates; the last of
+		// them has finished by the time its values are written, so two updates tell the shader
+		// which records still count from the old base.
+		expect(rewrote).toBe(3);
+		expect(moving).toBe(2);
+		const last = s.commits.at(-1)?.frame as number[];
+		expect(last[3]).toBe(0);
+		expect(last[0] as number).toBeLessThan(1024);
 	});
 });
 

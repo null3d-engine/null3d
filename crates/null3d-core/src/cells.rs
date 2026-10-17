@@ -571,6 +571,11 @@ mod tests {
         assert_eq!(out[0], [-1.0, -2.0, -3.0, 0.0]);
         assert_eq!(out[a as usize], [0.0; 4]);
         assert_eq!(out[b as usize], [-1.0, -2.0, -1027.0, 0.0]);
+        // One cell's offset is the one that the whole table writes, and zeros past its end.
+        for index in 0..3 {
+            assert_eq!(table.offset_of(index, &camera), out[index as usize]);
+        }
+        assert_eq!(table.offset_of(MAX_CELLS - 1, &camera), [0.0; 4]);
     }
 
     #[test]
