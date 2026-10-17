@@ -312,6 +312,6 @@ My reading of why it is deferred:
 - Nothing in the plan is a promise to a page today. The renderer has no public shape that depends
   on its internal step structure.
 
-What would make it worth revisiting: renderer conflicts rising again across parallel work, or a
-feature that again needs 20 to 30 places in `frame_graph.rs` and both id tables. Until then the
-debt is recorded here, in review findings M-9, R-16 and R-17, and no code changes for it.
+Two things would make it worth revisiting. Renderer conflicts could rise again across parallel
+work. Or a feature might again need 20 to 30 places in `frame_graph.rs` and both id tables. Until
+then the debt stays recorded here and in review findings M-9, R-16 and R-17, with no code changes.
