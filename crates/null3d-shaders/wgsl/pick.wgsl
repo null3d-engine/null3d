@@ -20,11 +20,11 @@
 // in this template.
 //
 // The SKIN builds skin each vertex with the joint texture, as WebGL2 and the other engine templates
-// do, so a skinned character picks where it draws. The MORPH builds, which only WebGL2 has, add a
-// morphed mesh's deltas first, as the lit templates' MORPH builds do; WebGPU morphs in the
-// skinning pass. A custom material's vertex offset moves its vertices where this template cannot
-// follow, so such a material picks with its own PICK builds (lit.wgsl). A full shader of a sketch's
-// own places its vertices as it likes, so the pass leaves its objects out.
+// do, so a skinned character picks where it draws. The MORPH builds, which only WebGL2 has, add the
+// morph targets' deltas before that, as its shading templates do, so a morphed mesh picks where it
+// draws too. A mesh drawn with a custom material that moves its vertices has no build here, so the
+// pass leaves it to a pick on the CPU. A full shader of a sketch's own places its vertices as it
+// likes, so the pass leaves its objects out.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, object_ids, relative_position}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
@@ -57,8 +57,13 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
 #ifdef MORPH
-    let source = Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0));
-    let rest_position = morph_vertex(found, v.morph, source).position;
+    // Only the position matters here, so the normal and the tangent enter as zero.
+    let rest = morph_vertex(
+        found,
+        v.morph,
+        Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0)),
+    );
+    let rest_position = rest.position;
 #else
     let rest_position = mesh_position(v.position);
 #endif

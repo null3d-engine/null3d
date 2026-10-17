@@ -1704,6 +1704,33 @@ fn number_constant(module: &str, name: &str) -> f32 {
 }
 
 #[test]
+fn the_probe_grid_shader_never_divides_by_the_raw_inverse_spacing() {
+    // The renderer sends an inverse spacing of 0 for an axis whose spacing is 0 or less, which is
+    // how it encodes an axis one probe deep. A division by that value gives infinity, and a normal
+    // component of 0 then turns the sample point into NaN, which the clamp hides on some GPUs
+    // only. So the divisor takes 1 in place of the 0, and every other axis divides by its own
+    // inverse spacing exactly.
+    let grid = library_module("probe_grid");
+    for (number, line) in grid.lines().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let Some((_, divisor)) = line.split_once('/') else {
+            continue;
+        };
+        assert!(
+            !divisor.contains("inverse"),
+            "line {} divides by the raw inverse spacing: {line}",
+            number + 1
+        );
+    }
+    assert!(
+        grid.contains("select(vec3f(1.0), inverse, inverse > vec3f(0.0))"),
+        "the divisor must put 1 in place of an inverse spacing of 0"
+    );
+}
+
+#[test]
 fn the_half_builds_keep_roughness_to_the_fourth_power_a_normal_16_bit_float() {
     // GGX takes roughness to the fourth power. Below the smallest normal 16-bit float, 2^-14, a
     // GPU may flush it to zero, and the highlight's peak then divides by zero.

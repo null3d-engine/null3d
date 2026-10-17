@@ -1090,8 +1090,9 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 21,160 builds on 17 October 2026: 14,990 GLSL builds and 6,170
-WGSL ones. A build counts once for each target that its variant writes, so a variant that writes
+The manifest's 115 variants make 21,164 builds on 17 October 2026: 14,994 GLSL builds and 6,170
+WGSL ones. The GLSL figure rose by four when the picking template took the MORPH bit on WebGL2, so a
+morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
 both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
 files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
 builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping
@@ -1102,7 +1103,8 @@ coat-sheen about 8,600 builds each, and weighted transparency 2,600.
 
 ### The count the manifest may not pass
 
-`BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above. The test
+`BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above, and a commit
+that adds builds on purpose raises them here and in the constant together. The test
 `the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
 builds and fails when either target passes its figure. The test builds no shader, so it costs a
 test run almost nothing. Its problem names the figure, the file that holds it and this guide.

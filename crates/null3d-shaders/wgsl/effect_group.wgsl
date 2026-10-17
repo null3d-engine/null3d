@@ -24,6 +24,8 @@
 /// What the engine writes for each effect: the sizes, the clock, the camera, and the effect's
 /// uniforms as the build packed them. Two spare vectors make a block 256 bytes long, the distance
 /// between blocks in the buffer.
+
+#import null3d::fullscreen::{triangle}
 struct EffectBlock {
     /// xy: the drawn corner in pixels, the render size. zw: the targets' size in texels.
     size: vec4f,
@@ -165,10 +167,7 @@ fn effect_chain(input: EffectInput) -> vec4f {
 
 @vertex
 fn effect_vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 @fragment
