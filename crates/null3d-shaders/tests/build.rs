@@ -5,9 +5,11 @@ mod common;
 mod precision;
 mod subset;
 
+use std::collections::BTreeMap;
+
 use common::{
-    SEE_RULES, SHADER, assert_feature, assert_same, build, build_in_shader_compiler, build_wgsl,
-    column_of, only_problem, project, wgsl,
+    SEE_RULES, SHADER, assert_feature, assert_same, build, build_each_in_shader_compiler,
+    build_wgsl, column_of, only_problem, project, wgsl,
 };
 
 use null3d_shaders::{
@@ -1240,11 +1242,22 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     build_wgsl(&named).unwrap();
 }
 
+/// The entries that the second build of the repository test makes, to check that a build is the
+/// same every time. Between them they make one module of every kind that the build writes: the
+/// main module, through `timer_mark`; the features module, through the first-use features that the
+/// device entries keep; a device module and a combined loader table, through the largest entry's
+/// many builds of several features; a shared-paragraph table, through the twenty or more feature
+/// sets those builds make; and a whole-shader first-use module, through `pick`.
+const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "pick", "timer_mark"];
+
 /// The one test that builds every shader of the repository. A full build takes minutes, and
 /// cargo-nextest runs each test in a process of its own, so a test cannot share another test's
-/// build. Every check that reads the whole output runs here, on one build. A second build runs
-/// on another thread at the same time, for the check that the output is the same on every build.
-/// Other tests build only the shaders they read, through the tests' `subset` module.
+/// build. Every check that reads the whole output runs here, on one build of the whole manifest.
+/// The check that the output is the same on every build makes a second build, of the entries in
+/// [`DETERMINISM_ENTRIES`] alone, and compares the two outputs narrowed to the same entries:
+/// building the whole manifest twice doubled the time, and the subset still makes every kind of
+/// module that the build writes. Other tests build only the shaders they read, through the tests'
+/// `subset` module.
 ///
 /// With `NULL3D_SHADER_COMPILER` set, the shader compiler builds the repository one entry at a
 /// time, and each entry's result must be the native build's. It cannot build the whole manifest in
@@ -1257,25 +1270,97 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let inputs = Inputs::read(root).unwrap();
-    let (output, again) = std::thread::scope(|scope| {
-        let again = scope.spawn(|| null3d_shaders::build(&inputs).unwrap());
-        (
-            null3d_shaders::build(&inputs).unwrap(),
-            again.join().unwrap(),
-        )
+    let output = null3d_shaders::build(&inputs).unwrap();
+    // The second build runs beside the portability checks, which read only the whole build.
+    let narrow = subset::repository_subset(DETERMINISM_ENTRIES);
+    let (again, failures) = std::thread::scope(|scope| {
+        let again = scope.spawn(|| null3d_shaders::build(&narrow).unwrap());
+        let failures: Vec<String> = [
+            glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
+            glsl_declares_no_structure_value(&output),
+            wgsl_has_only_number_literals_that_safari_reads(&output),
+            standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
+        ]
+        .into_iter()
+        .filter_map(Result::err)
+        .collect();
+        (again.join().unwrap(), failures)
     });
     the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
-    let failures: Vec<String> = [
-        same_output(&output, &again),
-        glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
-        glsl_declares_no_structure_value(&output),
-        wgsl_has_only_number_literals_that_safari_reads(&output),
-        standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
-    ]
-    .into_iter()
-    .filter_map(Result::err)
-    .collect();
+    // Rendering every module of a build costs minutes on the larger entries, so each output is
+    // rendered once and both checks read the same modules.
+    let written = typescript(&narrowed(output, &again, DETERMINISM_ENTRIES));
+    let again_written = typescript(&again);
+    let mut failures = failures;
+    failures.extend(
+        [
+            same_modules(&written, &again_written),
+            every_module_kind(&again_written),
+        ]
+        .into_iter()
+        .filter_map(Result::err),
+    );
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// The whole build's entries for the determinism subset, with the subset build's own records of
+/// which entries load by device and by feature. The two outputs then make the same modules when
+/// every entry and the module generation agree, so the modules can be compared whole.
+fn narrowed(mut output: Output, again: &Output, names: &[&str]) -> Output {
+    output
+        .shaders
+        .retain(|name, _| names.contains(&name.as_str()));
+    output
+        .pipelines
+        .retain(|name, _| names.contains(&name.as_str()));
+    output.by_device = again.by_device.clone();
+    output.first_use = again.first_use.clone();
+    output.first_use_shaders = again.first_use_shaders.clone();
+    output
+}
+
+/// Fails unless the build writes a module of every kind: the main module, the features module, a
+/// device module, a shared-paragraph table, a whole-shader first-use module and a combined loader
+/// table. The check keeps the determinism comparison covering each kind when the manifest changes.
+fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
+    let names: Vec<&str> = modules
+        .keys()
+        .map(|path| path.rsplit('/').next().unwrap_or(path))
+        .collect();
+    let has = |prefix: &str, suffix: &str| {
+        names
+            .iter()
+            .any(|name| name.starts_with(prefix) && name.ends_with(suffix))
+    };
+    let kinds = [
+        ("the main module", names.contains(&"shaders.ts")),
+        ("the features module", names.contains(&"shader-features.ts")),
+        ("a device module", has("shaders-", ".js")),
+        ("a shared-paragraph table", has("shader-paragraphs-", ".js")),
+        (
+            "a whole-shader first-use module",
+            names.iter().any(|name| {
+                name.starts_with("shaders-")
+                    && (name.ends_with("-wgsl.ts") || name.ends_with("-glsl.ts"))
+            }),
+        ),
+        (
+            "a combined loader table",
+            names.iter().any(|name| name.ends_with("-combos.ts")),
+        ),
+    ];
+    let missing: Vec<&str> = kinds
+        .into_iter()
+        .filter_map(|(kind, present)| (!present).then_some(kind))
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the determinism entries make no {}",
+            missing.join(", no ")
+        ))
+    }
 }
 
 /// Builds each entry of the manifest alone through the shader compiler when
@@ -1292,13 +1377,18 @@ fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, out
         .as_table()
         .expect("the manifest's shaders");
     assert!(!shaders.is_empty(), "the manifest names no shader");
-    for name in shaders.keys() {
-        if !output.shaders.contains_key(name) {
-            continue;
-        }
-        let compiled = build_in_shader_compiler(&subset::repository_subset(&[name.as_str()]));
+    let names: Vec<&String> = shaders
+        .keys()
+        .filter(|name| output.shaders.contains_key(*name))
+        .collect();
+    let subsets: Vec<Inputs> = names
+        .iter()
+        .map(|name| subset::repository_subset(&[name.as_str()]))
+        .collect();
+    build_each_in_shader_compiler(&subsets, |index, compiled| {
+        let name = names[index];
         assert_same(name, &compiled, &one_entry(name, output));
-    }
+    });
 }
 
 /// The result that the native build of the whole repository gives for one entry, in the shape of a
@@ -1324,8 +1414,13 @@ fn one_entry(name: &str, output: &Output) -> serde_json::Value {
     serde_json::Value::Object(response)
 }
 
-fn same_output(output: &Output, again: &Output) -> Result<(), String> {
-    if typescript(output) == typescript(again) {
+/// Compares the modules that two builds write. The builds need not have had the same entries:
+/// [`narrowed`] gives the whole build the second build's shape before the comparison.
+fn same_modules(
+    written: &BTreeMap<String, String>,
+    again: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    if written == again {
         Ok(())
     } else {
         Err("two builds of the same shaders wrote different modules".to_owned())
