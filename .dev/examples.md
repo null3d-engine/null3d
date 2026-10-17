@@ -270,6 +270,8 @@ The ramp once judged the display rate, which the page measured from its own anim
 
 The page's measurement takes the median interval of 40 of its frames, or of those that come within a second. On 13 October 2026, three.js drew Battle on CI's SwiftShader at one frame every 5 to 11 seconds. The page's own frames came 2.5 to 6 seconds apart meanwhile. The measurement waited for 40 of them, so the page gave no result within the test's 200 seconds. Now it ends after two such frames. CI's test of Battle's three.js ramp on WebGPU would fail again if it waited that long. With the shorter measurement, CI drew that test in 101 seconds. The test keeps a limit of 160 seconds for the page on the software GPU, so a slower CI machine does not fail it.
 
+The ramp tests also draw their software-GPU runs with every effect off: the effects cost that GPU the most and change no scene update. On 17 October 2026 the same Factory scene drew in 14.6 seconds on one shard with them off. The ramp test ran past its four minutes with them on.
+
 Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
 
 Night town's ramp counts lights, 12 to a block. It starts at 60, 48 and 36 lights and tops out at 1,020, 720 and 480 on desktops, tablets and phones. It stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
