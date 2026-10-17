@@ -276,15 +276,12 @@ fn variants_from(
                 }
             }
             serde_json::Value::Object(fields) => {
-                if fields.len() == 1 {
-                    if let Some(serde_json::Value::Number(index)) = fields.get(TEXT_REF) {
-                        if let Some(text) =
-                            index.as_u64().and_then(|index| texts.get(index as usize))
-                        {
-                            *node = serde_json::Value::String(text.clone());
-                            return;
-                        }
-                    }
+                if fields.len() == 1
+                    && let Some(serde_json::Value::Number(index)) = fields.get(TEXT_REF)
+                    && let Some(text) = index.as_u64().and_then(|index| texts.get(index as usize))
+                {
+                    *node = serde_json::Value::String(text.clone());
+                    return;
                 }
                 for field in fields.values_mut() {
                     walk(field, texts);
@@ -356,6 +353,7 @@ fn entries_to_remove(
 
 /// Removes the oldest entries of `folder` while it holds more than `limit` bytes.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::disallowed_methods)] // Only the native build command writes the cache, and pruning reads the wall clock.
 fn prune(folder: &Path, limit: u64) {
     let Ok(items) = fs::read_dir(folder) else {
         return;
@@ -466,6 +464,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)] // The cache is native-only, and the test needs a clock.
     fn pruning_spends_the_oldest_entries_and_keeps_a_recent_one() {
         let now = std::time::SystemTime::now();
         let ago = |secs: u64| now - std::time::Duration::from_secs(secs);
