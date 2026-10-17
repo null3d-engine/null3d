@@ -202,3 +202,11 @@ The taps now clamp to the corner's own first and last texel. At the whole canvas
 is the whole texture, so those frames are unchanged. `final.wgsl`'s `pixel_color`, `tap` and
 `texel_at` take the bounds from `fs`. That step knows them from the corner's origin, the render size
 and the RESOLVE flag. The image test `render-scale-75-fxaa` draws that case.
+
+### Addendum: prototype P1 has no code
+
+17 October 2026. Prototype P1 compares four upscalers: GSR 1, a bilinear upscale, an EASU with
+RCAS, and today's path. No branch holds any of the four, and no page draws them or measures their
+cost. So the comparison cannot run on the iPad, the Mac or the cloud phones until someone builds
+that page. The split still ships on the Mac's GPU check alone, and GSR 1 and `sharpen` wait for
+the page and its run.
