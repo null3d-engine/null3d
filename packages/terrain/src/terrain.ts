@@ -411,7 +411,7 @@ export class Terrain {
 	/**
 	 * The block whose mesh a new block takes: one that waited, or the one that the longest has gone
 	 * unused among the blocks the newest selection leaves out. Undefined while the ground holds fewer
-	 * meshes than `maxBlocks`, or while every mesh draws, where the new block builds one.
+	 * meshes than `maxBlocks`, or while every mesh it holds draws, where the new block builds one.
 	 */
 	private takeBlock(): Block | undefined {
 		const waiting = this.spares.pop();
