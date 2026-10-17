@@ -252,7 +252,8 @@ export function firstUseFile(shader: string, permutation: number): string | unde
 	const own = SHADER_FEATURES[shader];
 	if (own !== undefined) features.add(own);
 	const listed = permutation & ((FEATURE_MASKS[shader] ?? 0) | FEATURE_UNSHARED);
-	for (const [bit, name] of FEATURE_BITS) if ((listed & bit) !== 0) features.add(name);	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
+	for (const [bit, name] of FEATURE_BITS) if ((listed & bit) !== 0) features.add(name);
+	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
 }
 
 /** A target's device modules of features that load on first use, and the keys that pages asked for. */
@@ -2092,5 +2093,22 @@ mod tests {
             wgsl.contains("export const SHADERS = { room_light: ROOM_LIGHT_SHADER } as const;")
         );
         assert!(modules["shaders-room-light-glsl.ts"].contains("\twebgl2: {\n"));
+    }
+
+    #[test]
+    fn every_generated_module_keeps_one_statement_to_a_line() {
+        let modules = modules(&output_shared_by_features(1));
+        for (name, text) in &modules {
+            for (number, line) in text.lines().enumerate() {
+                // The formatter writes one statement per line, and indents the next with a tab. A
+                // semicolon followed by a tab is therefore two statements on one line, which a
+                // merge that joined two edits leaves behind.
+                assert!(
+                    !line.contains(";\t"),
+                    "{name} line {}: {line}",
+                    number + 1
+                );
+            }
+        }
     }
 }
