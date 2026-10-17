@@ -1090,9 +1090,10 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 21,164 builds on 17 October 2026: 14,994 GLSL builds and 6,170
-WGSL ones. The GLSL figure rose by four when the picking template took the MORPH bit on WebGL2, so a
-morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
+The manifest's 115 variants make 21,168 builds on 18 October 2026: 14,996 GLSL builds and 6,172
+WGSL ones. Two more builds on each target are the reflections' two full-screen passes, the pyramid's
+reduce and the trace. Before them, the GLSL figure rose by four when the picking template took the
+MORPH bit on WebGL2, so a morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
 both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
 files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
 builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping
