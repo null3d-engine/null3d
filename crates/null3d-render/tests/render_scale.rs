@@ -125,15 +125,21 @@ fn check_scaled_frames<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(render_areas(&first), [None, None]);
     // The two steps' objects and bind groups are made with the first frame, while the render scale
     // can drop, so a scale that drops later makes none.
-    let settings = operands(&first, Op::CreateBindGroup)
-        .into_iter()
-        .find(|o| o[1] == layout::FINAL)
-        .map(|o| o[5])
-        .unwrap();
-    let writes = |commands: &[(Op, Vec<u32>)]| {
+    let created = operands(&first, Op::CreateRenderPipeline);
+    let layouts = group_layouts(&first);
+    let made = operands(&first, Op::CreateBindGroup);
+    // Each step of the final pass binds a settings buffer of its own, which carries the render
+    // size of that step: the frame's list makes them with the groups.
+    let settings_of = |group: u32| -> u32 {
+        made.iter()
+            .rev()
+            .find(|o| o[0] == group)
+            .expect("a pass binds a group the frame made")[5]
+    };
+    let writes = |commands: &[(Op, Vec<u32>)], buffer: u32| {
         operands(commands, Op::WriteBuffer)
             .iter()
-            .filter(|o| o[0] == settings)
+            .filter(|o| o[0] == buffer)
             .count()
     };
     // The canvas is 640 x 360 device pixels. Sizes round up.
@@ -161,12 +167,35 @@ fn check_scaled_frames<B: FrameBuilder>(mut world: World<B>) {
                 "a new render scale records no {op:?}"
             );
         }
-        // The final pass learns the new render size.
-        assert_eq!(writes(&commands), 1, "scale {scale}");
-        // A steady frame at the same scale uploads nothing for the final pass.
+        // Each step of the final pass that draws learns the new render size, and a step that does
+        // not draw keeps the one it holds: at the whole canvas only the second step draws.
+        let steps: Vec<u32> = groups_bound(&commands)
+            .iter()
+            .skip(1)
+            .flatten()
+            .map(|group| settings_of(*group))
+            .collect();
+        assert_eq!(
+            steps.len(),
+            if scale < 1000 { 2 } else { 1 },
+            "scale {scale}"
+        );
+        for buffer in &steps {
+            assert_eq!(writes(&commands, *buffer), 1, "scale {scale}");
+        }
+        // A steady frame at the same scale uploads nothing for either step.
         let steady = frame_at(&mut world, &mut device, scale);
-        assert_eq!(writes(&steady), 0, "scale {scale}");
+        for buffer in &steps {
+            assert_eq!(writes(&steady, *buffer), 0, "scale {scale}");
+        }
         assert_eq!(render_areas(&steady), areas);
+        // Each step draws with a group of its pipeline's own layout.
+        check_groups_fit(
+            &commands,
+            &created,
+            &layouts,
+            &[(template::FINAL, layout::FINAL)],
+        );
     }
 }
 
@@ -176,6 +205,55 @@ fn a_lower_render_scale_draws_into_a_corner_of_the_same_targets() {
         let (webgpu, webgl2) = worlds(scene_color);
         check_scaled_frames(webgpu);
         check_scaled_frames(webgl2);
+    }
+}
+
+/// The layout that a frame's `CreateBindGroup` gave each group, by the group's id.
+fn group_layouts(commands: &[(Op, Vec<u32>)]) -> std::collections::HashMap<u32, u32> {
+    operands(commands, Op::CreateBindGroup)
+        .iter()
+        .map(|o| (o[0], o[1]))
+        .collect()
+}
+
+/// Checks that each render pass of a frame binds groups of the layouts that its own pipeline takes.
+/// A real device drops the whole command buffer of a pass that binds a group other than its
+/// pipeline's layout, and draws nothing, while the mock backend accepts the pair: R-02 was exactly
+/// that pair drawn wrong, so the pairs are checked here. `created` holds the pipelines the frame's
+/// passes draw with, and `layouts` the groups it binds, which a frame makes and makes again when
+/// what a group binds changes. `expected` gives the layout that each template's pass binds.
+fn check_groups_fit(
+    commands: &[(Op, Vec<u32>)],
+    created: &[Vec<u32>],
+    layouts: &std::collections::HashMap<u32, u32>,
+    expected: &[(u32, u32)],
+) {
+    let mut template = 0;
+    let mut in_pass = false;
+    for (op, o) in commands {
+        match op {
+            Op::BeginRenderPass => in_pass = true,
+            Op::EndRenderPass => in_pass = false,
+            Op::SetPipeline if in_pass => {
+                template = created
+                    .iter()
+                    .find(|c| c[0] == o[0])
+                    .expect("a pass draws with a pipeline the frame made")[1];
+            }
+            Op::SetBindGroup if in_pass => {
+                let Some((_, want)) = expected.iter().find(|(t, _)| *t == template) else {
+                    continue;
+                };
+                let layout = layouts
+                    .get(&o[1])
+                    .expect("a pass binds a group the frame made");
+                assert_eq!(
+                    layout, want,
+                    "the pass of template {template} binds a group of layout {layout}, not {want}"
+                );
+            }
+            _ => {}
+        }
     }
 }
 
@@ -245,6 +323,14 @@ fn check_eight_bit_scaling<B: FrameBuilder>(mut world: World<B>) {
         .collect();
     assert_eq!(reads, [resolved, output]);
     assert_eq!(operands(&commands, Op::Draw), vec![vec![3, 1, 0, 0]; 2]);
+    // The first step and the second step both draw with the plain final pass's layout.
+    let created = operands(&first, Op::CreateRenderPipeline);
+    check_groups_fit(
+        &commands,
+        &created,
+        &group_layouts(&first),
+        &[(template::FINAL, layout::FINAL)],
+    );
 }
 
 #[test]
@@ -322,6 +408,17 @@ fn check_bloom_while_scaling<B: FrameBuilder>(mut world: World<B>) {
     let whole = frame_at(&mut world, &mut device, 1000);
     let last = |commands: &[(Op, Vec<u32>)]| *templates(commands, &created).last().unwrap();
     assert_eq!(last(&whole), template::FINAL_BLOOM);
+    // The bloom build draws with the bloom layout's group, and the plain present build with the
+    // plain one: a group of the other layout leaves a real device drawing nothing.
+    let fits = [
+        (template::FINAL_BLOOM, layout::FINAL_BLOOM),
+        (template::FINAL, layout::FINAL),
+    ];
+    // A group is made again when what it binds changes, so each frame's groups are added to the
+    // ones before it, and the last of a group's ids is the one its pass binds.
+    let mut layouts = group_layouts(&first);
+    layouts.extend(group_layouts(&whole));
+    check_groups_fit(&whole, &created, &layouts, &fits);
     for _ in 0..2 {
         let below = frame_at(&mut world, &mut device, 500);
         let drawn = templates(&below, &created);
@@ -330,9 +427,12 @@ fn check_bloom_while_scaling<B: FrameBuilder>(mut world: World<B>) {
             [template::FINAL_BLOOM, template::FINAL]
         );
         assert_eq!(common::count(&below, Op::CreateBindGroup), 0);
+        check_groups_fit(&below, &created, &layouts, &fits);
         let whole = frame_at(&mut world, &mut device, 1000);
         assert_eq!(last(&whole), template::FINAL_BLOOM);
         assert_eq!(common::count(&whole, Op::CreateBindGroup), 0);
+        layouts.extend(group_layouts(&whole));
+        check_groups_fit(&whole, &created, &layouts, &fits);
     }
 }
 

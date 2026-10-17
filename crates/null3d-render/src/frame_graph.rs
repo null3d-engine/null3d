@@ -3977,7 +3977,7 @@ mod tests {
             self.sync_views(views, &names);
         }
     }
-    use null3d_gpu::drawlist::template::CUSTOM_FIRST as CUSTOM;
+    use null3d_gpu::drawlist::template::{self, CUSTOM_FIRST as CUSTOM};
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
@@ -4311,6 +4311,26 @@ mod tests {
         frames.sync(&[View::default()]);
         assert_eq!(frames.graph().pass_count(), 7);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
+    }
+
+    #[test]
+    fn a_custom_tone_curve_reaches_the_first_step_while_the_scale_can_drop() {
+        // The curve reaches both steps of the final pass, so a frame below the whole canvas's scale
+        // draws its first step, and the second, with the curve's builds and not the pass's own.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_scaling(true);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.set_tone_curve(Some(CUSTOM));
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
+        // The curve's plain and bloom builds come first, and the first step draws with the bloom
+        // one. Neither step keeps a build of the pass's own curves.
+        assert_eq!(templates[..2], [CUSTOM, CUSTOM + 1]);
+        assert!(!templates.contains(&template::FINAL_BLOOM));
+        // The second step always scales plainly.
+        assert!(templates.contains(&template::FINAL));
     }
 
     #[test]
