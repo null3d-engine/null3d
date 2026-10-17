@@ -12,5 +12,14 @@ export declare class CompilerCalls {
 	 * build's answer arrives in pieces from the module and this joins them, so the response is one
 	 * JSON text whichever call ran.
 	 */
-	call(name: 'compile' | 'compile_material' | 'compile_effect' | 'build', request: string): string;
+	call(
+		name:
+			| 'compile'
+			| 'compile_material'
+			| 'compile_effect'
+			| 'build'
+			| 'prepare_modules'
+			| 'module',
+		request: string,
+	): string;
 }
