@@ -7,6 +7,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	utimesSync,
 	writeFileSync,
@@ -23,6 +24,7 @@ import {
 	hashFiles,
 	hashOf,
 	pruneCache,
+	runCargo,
 	touchCacheEntry,
 	writeFileAtomic,
 	writeFolderAtomic,
@@ -306,5 +308,69 @@ describe('acquireLock', () => {
 			child.kill();
 			rmSync(folder, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('runCargo', () => {
+	/**
+	 * A folder holding a stub `cargo` first on the PATH, which writes its arguments, its folder and
+	 * its target folder's environment to a file. A test then reads what the one cargo helper gave
+	 * the toolchain, without running it.
+	 */
+	function withStubCargo(run: (checkout: string, read: () => string) => void): void {
+		withFolder((folder) => {
+			const bin = join(folder, 'bin');
+			mkdirSync(bin, { recursive: true });
+			const said = join(folder, 'said');
+			const cargo = join(bin, 'cargo');
+			writeFileSync(
+				cargo,
+				`#!/bin/sh\nprintf '%s\\n' "$PWD" "$CARGO_TARGET_DIR" "$RUSTC_WRAPPER" "$@" > ${said}\n`,
+			);
+			chmodSync(cargo, 0o755);
+			const checkout = join(folder, 'checkout');
+			mkdirSync(checkout);
+			const before = { path: process.env.PATH, target: process.env.CARGO_TARGET_DIR };
+			process.env.PATH = `${bin}:${before.path ?? ''}`;
+			delete process.env.CARGO_TARGET_DIR;
+			try {
+				run(checkout, () => readFileSync(said, 'utf8'));
+			} finally {
+				process.env.PATH = before.path;
+				delete process.env.CARGO_TARGET_DIR;
+			}
+		});
+	}
+
+	it('runs in the checkout, with its own target folder and the call\u2019s own arguments', () => {
+		withStubCargo((checkout, read) => {
+			const run = runCargo(checkout, ['build', '-p', 'null3d-core'], {
+				env: { RUSTFLAGS: '-Cstrip=symbols' },
+			});
+			expect(run.error).toBeUndefined();
+			expect(run.status).toBe(0);
+			const [cwd, target, wrapper, ...args] = read().trim().split('\n');
+			// `/var` is a link to `/private/var` on macOS, so the shell's own directory is compared.
+			expect(cwd).toBe(realpathSync(checkout));
+			// No `--target-dir`, so the checkout's own folder applies.
+			expect(target).toBe(join(checkout, 'target'));
+			// sccache is a wrapper only when it is installed, and an empty value turns it off.
+			expect(!wrapper || existsSync(wrapper)).toBe(true);
+			expect(args).toEqual(['build', '-p', 'null3d-core']);
+		});
+	});
+
+	it('builds into the target folder that the call names', () => {
+		withStubCargo((checkout, read) => {
+			const target = join(checkout, 'target', 'wasm-plain');
+			runCargo(checkout, ['build', '-p', 'null3d-core'], { targetDir: target });
+			expect(read().trim().split('\n').slice(3)).toEqual([
+				'build',
+				'-p',
+				'null3d-core',
+				'--target-dir',
+				target,
+			]);
+		});
 	});
 });

@@ -157,3 +157,15 @@ same mechanics copied twice (BT-22). The fixes:
    holds an extra one or holds one with other bytes than the record is a miss. A restore copies each
    module in place and treats a copy failure as a miss, so a half-written 850 MB set is never handed
    to a checkout as a built set.
+
+## Addendum, 17 October 2026: the caches share the cargo run and the baseline's write too
+
+The last two copies of the caches' mechanics are gone (BT-22). `tools/lib/build-cache.ts` now owns the
+cargo invocation as well, in `runCargo`. It sets the checkout's own build folder and sccache through
+`cargoEnv`, and takes the folder of a call that builds elsewhere. It passes on the call's environment
+and stdio. The build's WebAssembly steps and the shader module build run every cargo call through it.
+
+The GPU check's baseline cache now fills its folder through the module's atomic folder write, as the
+other caches do. It renames no folder itself. Its own rules stay: it keeps six builds by commit, and
+it prunes by use. The Vite plugin's cache still keeps its own copy of the rules, as the Decision
+above says.
