@@ -151,14 +151,14 @@ How the data was produced: `bun run build` at the branch's base commit and with 
 
 ### Addendum: picking a mesh that a material's own WGSL moves
 
-17 October 2026. The GPU picking template (M2-D6, still to ship) draws each object with the camera's
-view-projection as the shading templates do, and its depth test keeps a pixel only where the two
+17 October 2026. The GPU picking template (M2-D6, still to ship) draws each object with the
+camera's view-projection as the shading templates do. Its depth test keeps a pixel only where the two
 positions agree to the last bit. It therefore moves a vertex with every bit that moves one on that
-target: `SKIN` on both paths, and `MORPH` on WebGL2, where the vertex shader adds the morph targets'
+target: `SKIN` on both paths, and `MORPH` on WebGL2. There the vertex shader adds the morph targets'
 deltas before it skins. WebGPU needs no morph build: its skinning pass moves the vertices already.
 
 A mesh drawn with a custom material that moves its vertices has no picking build. The material's own
-WGSL cannot join the picking shader, because the manifest allows one custom-material template and the
-mesh templates hold it. Picking finds such a mesh on the CPU, through the ray tests this record
-describes, and the picking shader's own comment says so. A manifest test refuses a picking variant
-that moves fewer bits than the shading templates of the same target do.
+WGSL cannot join the picking shader: the manifest allows one custom-material template, and the mesh
+templates hold it. Picking finds such a mesh on the CPU, through the ray tests this record describes,
+and the picking shader's own comment says so. A manifest test refuses a picking variant that moves
+fewer bits than the shading templates of the same target do.
