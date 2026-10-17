@@ -277,7 +277,7 @@ impl FrameInput<'_> {
 /// compares the list and the arena to decide whether the frame changed at all (see
 /// [`crate::still`]). `enabled` is false where the page turns the accumulation off, such as in hold
 /// mode and the image tests.
-fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
+pub(crate) fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
     enabled && !input.structure_changed && !input.scene.changed().any() && !input.batches.changed()
 }
 
@@ -757,12 +757,19 @@ impl ParityLists {
     ) -> Result<bool, RecordError> {
         let parity = (frame & 1) as usize;
         if result.is_ok() {
-            let same = self.snapshots[parity].unchanged(
-                list.words(),
-                marks.words,
-                arena.bytes(),
-                arena.volatile(),
-            ) && marks.settled;
+            // A frame that cannot settle compares nothing: a view that the page turned the
+            // accumulation off for, or that a source outside the list changed, keeps no frame to
+            // compare the next one with, and its next frame reads as changed.
+            let same = marks.settled
+                && self.snapshots[parity].unchanged(
+                    list.words(),
+                    marks.words,
+                    arena.bytes(),
+                    arena.volatile(),
+                );
+            if !marks.settled {
+                self.snapshots[parity].forget();
+            }
             self.still = self.still.after(same);
             if !same && let Some(at) = marks.weight_at {
                 arena.patch(at, &1.0f32.to_le_bytes());
@@ -2578,11 +2585,19 @@ impl SceneSettings {
                 sways(materials, material)
             });
         let moving = &self.moving_casters;
+        // A still view has no moving caster for a far cascade to follow, so every cascade draws in
+        // each frame while nothing outside the list changed: the frames of one parity then hold the
+        // same list, and the view settles. A frame that changed draws the schedule's own cascades.
+        let interval = if settled(input, self.still_enabled()) {
+            1
+        } else {
+            quality.far_interval
+        };
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
             shadow.map_size,
-            quality.far_interval,
+            interval,
             |bounds| {
                 quality.follow_movers
                     && moving.touch(scene, input.batches, parity, shadow.layers, bounds)

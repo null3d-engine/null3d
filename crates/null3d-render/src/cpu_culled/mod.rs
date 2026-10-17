@@ -115,6 +115,7 @@ use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
     RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
+    settled,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -1377,6 +1378,9 @@ impl CpuCulledRenderer {
             self.cull(input)?;
         }
         self.add_culled_views()?;
+        // A view whose scene stopped changing draws from the uniform slot of its frame's parity,
+        // so the frames of one parity record the same words (see `crate::still`).
+        let hold_uniforms = settled(input, self.settings.still_enabled());
         let views = self.settings.views().len();
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -1655,8 +1659,11 @@ impl CpuCulledRenderer {
                     ],
                 }),
                 views,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             let shadowed = self.layouts_shadowed.any();
             if self.shadow.is_none() && self.cascades_held && shadowed {
@@ -1673,8 +1680,11 @@ impl CpuCulledRenderer {
                 (&mut self.tile_culling, &mut self.tile_draws, &self.casters),
                 None,
                 tiles,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             upload_views(
                 list,
@@ -1686,8 +1696,11 @@ impl CpuCulledRenderer {
                 ),
                 None,
                 outlines,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
@@ -1701,8 +1714,11 @@ impl CpuCulledRenderer {
                     ),
                     None,
                     cascades,
-                    frame,
-                    streamed,
+                    UploadFrame {
+                        frame,
+                        hold_uniforms,
+                        streamed,
+                    },
                 )?;
             }
         }
@@ -1713,7 +1729,6 @@ impl CpuCulledRenderer {
             &input.lines,
             camera.map(|values| &values.camera),
         )?;
-
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let weighted = self.graph.weighted_declared();
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
@@ -1900,6 +1915,15 @@ struct SortedPasses<'a> {
     camera: [(&'a mut Transparent, &'a SortedLayout, u32); 2],
 }
 
+/// What the uploads of one frame's views share: the frame's number, whether a settled view holds
+/// its uniform slot to its parity's, and the streamed texture's ring slot.
+#[derive(Clone, Copy)]
+struct UploadFrame {
+    frame: u32,
+    hold_uniforms: bool,
+    streamed: u32,
+}
+
 /// Uploads, for each of the first `count` views of `culling` that the frame draws, its index list
 /// when it changed, and its frame uniform and draw records, from the views' culling output and the
 /// draws of `layout`. Every view reads the streamed texture of ring slot `streamed`. With `sorted`,
@@ -1912,9 +1936,13 @@ fn upload_views(
     (culling, draws, layout): (&mut Culling, &mut Opaque, &Layout),
     mut sorted: Option<SortedPasses>,
     count: usize,
-    frame: u32,
-    streamed: u32,
+    upload_frame: UploadFrame,
 ) -> Result<(), RecordError> {
+    let UploadFrame {
+        frame,
+        hold_uniforms,
+        streamed,
+    } = upload_frame;
     for k in 0..count {
         let view = culling.view(k);
         let Some(values) = culling.frame(view).copied() else {
@@ -1924,6 +1952,7 @@ fn upload_views(
         let starts = culling.culled(frame, view).bucket_starts();
         let upload = ViewUpload {
             frame,
+            hold_uniforms,
             values: &values,
             offsets: culling.offsets(view),
             streamed,

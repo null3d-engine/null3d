@@ -69,16 +69,19 @@ The measurements:
   scale, without FXAA, bloom or an outline. It is a second final pass with its own settings and bind
   group, so neither pass rebinds when a view starts or stops being still.
 - The blend and the still build are declared whenever the HDR path draws and the page lets a view
-  accumulate, and their pipelines are asked for from the first frame. Each frame's recording picks
-  them or the final pass and the two-step pass's first step. A still view therefore compiles
-  nothing and makes no GPU object. Each frame uploads the blend's weight, whether it blends or not.
+  accumulate. Their pipelines are asked for from the frame after the first, so the first frame never
+  waits for them, and a view that becomes still later makes no GPU object. Each frame's recording
+  picks them or the final pass and the two-step pass's first step. Each frame uploads the blend's
+  weight, whether it blends or not.
 - The frame builder compares the frame it has just recorded with the frame of the same parity two
   frames before: the draw list's words and the upload arena's bytes, outside marked ranges, joined.
   The marks are the clock and the jitter in each view's frame values, the blend's weight, and the
   commands of the passes that a still frame swaps for others. Marks may differ in number and length
   between two frames, so a blended frame compares equal to the moving frame before it. A frame also
   counts as changed when an object transform, the scene's structure or an instance batch row
-  changed.
+  changed. A batch that the engine recomputes every frame, which `dynamic: true` asks for, therefore
+  never rests, even when its rows hold the same values: the comparison does not read those rows. A
+  sketch that asks for no dynamic batch is unaffected.
 - A frame that blends and turns out to have changed takes the whole weight: the builder writes 1
   over the weight in the arena before the frame is published. The first changed frame therefore
   shows itself, not the old history.
@@ -87,6 +90,17 @@ The measurements:
   material. A unit test fails when any other shader reads the frame's clock. Shaders that read a
   clock from their own block, such as particles and custom effects, need nothing: the frame
   uploads that block each frame, and the comparison sees it change.
+- Two parts of a frame move with the clock while the scene holds still. Each would keep the
+  comparison from matching a frame with the frame of its parity two before.
+  - WebGL2 writes each view's frame uniform into the next slot of a ring of three. The words that
+    name the slot move with it. A settled view takes the slot of its frame's parity instead. The
+    frame two before it used that slot, and the uniform outside the clock and the jitter is the
+    same, so an older frame still reading it is unaffected.
+  - The shadow schedule draws far cascades in turn. A settled view makes every cascade draw. The
+    turns change the list, and nothing moves for them to follow.
+- A frame that cannot settle compares nothing and keeps no frame: the next frame of its parity
+  reads as changed, as after a change. The page's image tests and hold mode therefore record
+  without any comparison.
 - A view never blends while bloom, an outline, an effect that folds into the final pass,
   automatic exposure or the volumetric fog draws, on a canvas that keeps its alpha, or on the
   8-bit path. Their pictures change on the GPU alone, or the blend could not average them.

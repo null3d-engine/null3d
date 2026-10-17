@@ -61,6 +61,7 @@ struct Seen {
     transforms: bool,
     batches: bool,
     words: u64,
+    len: usize,
 }
 
 /// A hash of a frame's draw-list words: two frames of one parity that repeat their words hash the
@@ -98,6 +99,7 @@ fn step_seen<B: FrameBuilder>(
         transforms: world.scene.changed().any(),
         batches: world.batches.changed(),
         words: words_hash(world.renderer.list(frame).words()),
+        len: world.renderer.list(frame).words().len(),
     };
     (world.commands(), seen)
 }
@@ -121,6 +123,23 @@ fn creates_accumulation(commands: &[(Op, Vec<u32>)]) -> bool {
 /// first blend waits for and the frames after a change.
 const REST_FRAMES: u32 = MAX_SAMPLES + 16;
 
+/// Steps `frames` frames of a view that rests and checks that it keeps resting, its count grows,
+/// and it draws nothing: the converged image is held while nothing changes.
+fn holds<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBackend, frames: u32) {
+    let before = world.renderer.still().samples();
+    for _ in 0..frames {
+        step(world, device);
+        assert!(
+            world.renderer.still().rests(),
+            "a resting view keeps resting while nothing changes"
+        );
+    }
+    assert!(
+        world.renderer.still().samples() > before,
+        "the still count grows while the view rests"
+    );
+}
+
 /// Steps the world until its view rests, and returns the frames that took. Fails after more frames
 /// than a still view needs, and names what each of the last frames saw.
 fn rest<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBackend) -> u32 {
@@ -134,8 +153,14 @@ fn rest<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBackend) -> u32 
     }
     for entry in &seen[seen.len().saturating_sub(10)..] {
         eprintln!(
-            "frame {}: {} samples, transform {} batches {} words {:#018x}",
-            entry.frame, entry.samples, entry.transforms, entry.batches, entry.words
+            "frame {} (parity {}): {} samples, transform {} batches {} {} words {:#018x}",
+            entry.frame,
+            entry.frame & 1,
+            entry.samples,
+            entry.transforms,
+            entry.batches,
+            entry.len,
+            entry.words
         );
     }
     panic!(
@@ -172,6 +197,7 @@ fn accumulates_rests_and_draws_a_change_at_once<B: FrameBuilder>(mut world: Worl
     );
     assert_eq!(blended, Some(moving + 1), "a still frame blends its color");
     rest(&mut world, &mut device);
+    holds(&mut world, &mut device, 8);
 
     // A moved object draws in the next frame, unblended, and the view accumulates again.
     let object = world.objects[0];
@@ -180,6 +206,7 @@ fn accumulates_rests_and_draws_a_change_at_once<B: FrameBuilder>(mut world: Worl
     assert_eq!(world.renderer.still().samples(), 0, "a change starts again");
     assert!(!world.renderer.still().rests());
     rest(&mut world, &mut device);
+    holds(&mut world, &mut device, 8);
 }
 
 #[test]
@@ -195,8 +222,12 @@ fn a_still_view_rests_below_the_whole_canvas_and_with_fxaa() {
         let (mut webgpu, mut webgl2) = worlds(antialias);
         webgpu.render_scale = RenderScale::from_thousandths(500);
         webgl2.render_scale = RenderScale::from_thousandths(500);
-        rest(&mut webgpu, &mut device());
-        rest(&mut webgl2, &mut device());
+        let mut webgpu_device = device();
+        rest(&mut webgpu, &mut webgpu_device);
+        holds(&mut webgpu, &mut webgpu_device, 8);
+        let mut webgl2_device = device();
+        rest(&mut webgl2, &mut webgl2_device);
+        holds(&mut webgl2, &mut webgl2_device, 8);
     }
 }
 

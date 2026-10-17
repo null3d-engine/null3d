@@ -2004,6 +2004,7 @@ pub mod groups {
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),
         (template::VIEW_COPY, own!(layout::VIEW_COPY)),
+        (template::ACCUMULATE, own!(layout::ACCUMULATE)),
         (template::EXPOSURE_ADAPT_HISTOGRAM, own!(layout::EXPOSURE)),
         (template::DOF_SETUP, own!(layout::EFFECT)),
         (template::DOF_SETUP_MS, own!(layout::EFFECT_DEPTH_MS)),
