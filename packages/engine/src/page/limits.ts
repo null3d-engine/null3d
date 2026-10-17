@@ -52,6 +52,7 @@ export interface DeviceReport {
 		limits: Record<string, number | null>;
 		features: string[];
 		transientAttachments: boolean;
+		directDraws: boolean;
 	};
 	webgl2: {
 		extensions: Record<string, boolean>;
@@ -102,6 +103,11 @@ export interface CoreDevice {
 	 * the final pass tone maps, or the canvas's format on the 8-bit path.
 	 */
 	sceneColor: number;
+	/**
+	 * True when the start-up probe measured the device's direct draws to be clearly faster than
+	 * its indirect draws, so the core culls on the CPU and draws each bucket directly.
+	 */
+	directDraws: boolean;
 	/** The anti-aliasing mode's code in the core. */
 	antialias: number;
 	/**
@@ -218,6 +224,7 @@ export type DeviceOptions = Pick<
 	| 'join'
 	| 'skinning'
 	| 'indexInstances'
+	| 'direct'
 	| 'shadowDepthBits'
 	| 'textureCache'
 	| 'occlusionBuffer'
@@ -395,6 +402,9 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		parallelCompile: options.parallelCompile,
 		freshShaders: options.freshShaders,
 		sceneColor,
+		directDraws:
+			tier !== 'webgl2' &&
+			(options.direct === 'on' || (options.direct === 'auto' && report.webgpu.directDraws)),
 		antialias: ANTIALIAS_CODES[options.antialias],
 		effectsSceneColor: effects.sceneColor,
 		effectsAntialias: ANTIALIAS_CODES[effects.antialias],

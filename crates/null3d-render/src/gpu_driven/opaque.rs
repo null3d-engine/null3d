@@ -240,6 +240,7 @@ pub(super) fn record_bundle(
         frame_group,
         first_draw,
         hidden,
+        counts: None,
     };
     match kind {
         Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
@@ -254,8 +255,49 @@ pub(super) fn record_bundle(
     Ok(())
 }
 
+/// Records a view's pass on the direct-draw path: the buckets of `kind`, each with the instance
+/// count that the CPU culling gave it, from `meshes` into the pass that the render graph began.
+/// No bundle holds them: a bundle's draws keep the counts they were recorded with, and a direct
+/// draw's count changes every frame. `counts` holds each bucket's count, in the layout's bucket
+/// order.
+pub(super) fn record_direct(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    kind: Bundle,
+    counts: &[u32],
+    hidden: &dyn Fn(u32) -> bool,
+) -> Result<(), RecordError> {
+    let frame_group = if kind == Bundle::Prepass {
+        ids::prepass_group(view)
+    } else {
+        ids::frame_group(view)
+    };
+    let draws = Draws {
+        view,
+        layout,
+        meshes,
+        frame_group,
+        first_draw: 0,
+        hidden,
+        counts: Some(counts),
+    };
+    match kind {
+        Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
+        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
+        Bundle::Outline => {
+            draws.record(list, |b| b.pipeline, |_| false)?;
+            draws.record(list, |b| b.prepass, |_| false)?;
+        }
+    }
+    Ok(())
+}
+
 /// What a bundle's buckets draw from: the view, its layout and the mesh pages' buffers, the
-/// group that the depth and mask templates read, and the first of the view's indirect draws.
+/// group that the depth and mask templates read, the first of the view's indirect draws, and,
+/// on the direct-draw path, each bucket's instance count.
 struct Draws<'a> {
     view: ViewId,
     layout: &'a Layout,
@@ -263,6 +305,7 @@ struct Draws<'a> {
     frame_group: u32,
     first_draw: u32,
     hidden: &'a dyn Fn(u32) -> bool,
+    counts: Option<&'a [u32]>,
 }
 
 impl Draws<'_> {
@@ -283,11 +326,12 @@ impl Draws<'_> {
             frame_group,
             first_draw,
             hidden,
+            counts,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut groups = DrawGroups::default();
         let mut bound = None;
-        for bucket in &layout.buckets {
+        for (b, bucket) in layout.buckets.iter().enumerate() {
             let id = pipeline_of(bucket);
             if id == 0 || (bucket.group != 0 && hidden(bucket.group)) {
                 continue;
@@ -338,10 +382,25 @@ impl Draws<'_> {
                     )?;
                     indices = Some(page_indices);
                 }
-                list.push(
-                    Op::DrawIndexedIndirect,
-                    &[ids::indirect(view), (first_draw + index) * INDIRECT_BYTES],
-                )?;
+                match counts {
+                    Some(counts) => {
+                        let instances = counts.get(b).copied().unwrap_or(0);
+                        list.push(
+                            Op::DrawIndexed,
+                            &[
+                                draw.index_count,
+                                instances,
+                                draw.first_index,
+                                draw.base_vertex,
+                                0,
+                            ],
+                        )?;
+                    }
+                    None => list.push(
+                        Op::DrawIndexedIndirect,
+                        &[ids::indirect(view), (first_draw + index) * INDIRECT_BYTES],
+                    )?,
+                }
             }
         }
         Ok(())

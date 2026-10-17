@@ -49,6 +49,7 @@ const CAPABILITIES: EngineCapabilities = {
 	maxInstances: 2_097_152,
 	maxCanvasSize: 4096,
 	depth: 'reversed',
+	directDraws: false,
 };
 
 /** Scene slots of the fake core, and records of its command ring. */
@@ -270,6 +271,7 @@ async function start(
 				largeWorld: false,
 				expectedObjects: 0,
 				gpuOcclusion: false,
+				directDraws: false,
 				textureCache: true,
 				occlusionBuffer: 0,
 			},

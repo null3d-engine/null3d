@@ -1300,3 +1300,53 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
         }
     }
 }
+
+#[test]
+fn the_direct_path_culls_on_the_cpu_and_draws_each_bucket_with_its_count() {
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let commands = world.commands();
+    // No culling dispatch reads the buckets, and no draw reads an indirect buffer: the CPU
+    // counted each bucket's instances before the frame recorded.
+    assert!(
+        !commands
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL),
+        "the direct path binds no culling group"
+    );
+    assert_eq!(count(&commands, Op::DrawIndexedIndirect), 0);
+    let counts: Vec<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexed)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert!(!counts.is_empty(), "the frame draws its buckets");
+    // The camera sees the batch's rows and the objects that draw, so a bucket of the box and the
+    // lit material counts them both.
+    assert!(
+        counts.iter().any(|&instances| instances > BATCH_ROWS),
+        "{counts:?}"
+    );
+    // The visible instances went into the buffer that each draw reads at vertex slot 1, which
+    // the frame uploaded.
+    let visible: Vec<u32> = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert!(!visible.is_empty(), "a draw binds its view's instances");
+    for buffer in visible {
+        assert!(
+            commands
+                .iter()
+                .any(|(op, o)| *op == Op::WriteBuffer && o[0] == buffer),
+            "the frame uploads the instances that the draws read"
+        );
+    }
+}

@@ -367,6 +367,34 @@ impl Culling {
         Ok(())
     }
 
+    /// Sizes a view's compacted instance buffer for the layout on the direct-draw path, which
+    /// fills it from the CPU. The buffer also takes uploads, and binds no group: no culling
+    /// dispatches read or write it.
+    pub(super) fn apply_direct(
+        &mut self,
+        list: &mut DrawList,
+        view: ViewId,
+        layout: &Layout,
+        binding_bytes: u32,
+    ) -> Result<(), RecordError> {
+        let buffers = self.views[view.index()]
+            .as_mut()
+            .expect("a view's buffers exist before it culls");
+        let size = layout.compacted_bytes();
+        if buffers.visible < size {
+            buffers.visible = grown_size(size, binding_bytes);
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::visible(view),
+                    buffers.visible,
+                    usage::VERTEX | usage::COPY_DST,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Uploads a view's culling parameters: its frustum's planes, the source count, its layer
     /// mask, the offset from its camera to each cell in use in `scene`, and, while `cells` culls by
     /// cell, the runs of the cell order of the cells it can see. `sources` is the scene's layout,

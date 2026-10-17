@@ -68,6 +68,13 @@ const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
 export type ShadowDepthBits = 16 | 32;
 
 /**
+ * Which draw path WebGPU takes, which ?direct= picks: `auto`, the default, takes the start-up
+ * probe's measured choice; `on` and `off` force the direct path or the indirect one, so a test
+ * can compare the two on one device.
+ */
+export type DirectSwitch = 'auto' | 'on' | 'off';
+
+/**
  * How WebGPU skins, which ?skinning= picks to measure the ways against each other: `vertex`, the
  * default, skins in the vertex shader of each pass that draws a character, as WebGL2 does.
  * `compute` skins in the skinning pass, once per frame, which skips characters whose pose held
@@ -185,6 +192,12 @@ export interface Switches {
 	 * writes, to measure the two against each other. Compatibility mode and WebGL2 ignore it.
 	 */
 	indexInstances: boolean;
+	/**
+	 * Which WebGPU draw path to take: `?direct=on` forces the direct path and `?direct=off` the
+	 * indirect one, and `auto` takes the start-up probe's measured choice. WebGL2 always draws
+	 * directly.
+	 */
+	direct: DirectSwitch;
 	/**
 	 * The bits per texel of the shadow cascades' depth: 32 when ?shadowdepth=32 asks for 32-bit
 	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
@@ -348,6 +361,7 @@ export function parseSwitches(search: string): Switches {
 		skinning:
 			oneOf(params.get('skinning'), ['compute', 'full', 'skip', 'narrow'] as const) ?? 'vertex',
 		indexInstances: params.get('instances') === 'index',
+		direct: oneOf(params.get('direct'), ['on', 'off'] as const) ?? 'auto',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
