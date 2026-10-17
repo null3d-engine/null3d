@@ -536,6 +536,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 300,
 	},
 	{
+		name: 'impostors',
+		group: 'Scale',
+		sketch: new URL('./impostors/sketch.ts', import.meta.url),
+		code: 'impostors/',
+		title: 'Impostors',
+		scene: 'Forest three ways',
+		summary:
+			'A pine forest at golden hour, drawn three ways by distance: level-of-detail meshes near, one merged mesh per grid cell in the middle, and octahedral impostor cards far out, from an atlas made in code. Press L to draw the far band as meshes instead and compare.',
+		hold: 3,
+		timeoutSeconds: 120,
+	},
+	{
 		name: 'far-from-origin',
 		group: 'Scale',
 		sketch: new URL('./far-from-origin/sketch.ts', import.meta.url),
