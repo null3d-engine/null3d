@@ -128,7 +128,10 @@ export default defineSketch(async (ctx) => {
 				camera.lookAt(Math.sin(t + 0.7) * CARD_EDGE * 1.6, 6, Math.cos(t + 0.7) * CARD_EDGE * 1.6);
 			}
 			view.update(dt);
-			camera.getWorldPosition(eye);
+			// The camera has no parent, so its own position is its world position, and it is right
+			// on the first frame. The world position would still hold the world's origin there,
+			// because the engine reports the frame that last ran.
+			camera.getPosition(eye);
 			cards.update(eye);
 		},
 	};

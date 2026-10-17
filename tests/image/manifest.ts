@@ -2187,6 +2187,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/impostors-sketch.ts',
 		hold: 0,
 	},
+	// A sprite batch with an origin: eight cards, one per frame of a four column, two row atlas of
+	// flat colors, standing around an origin far from the world's. Each card must draw its own cell,
+	// so the picture holds eight cell colors in order. The second test draws the same cards at their
+	// world positions with no origin, which must change nothing but the precision of the positions.
+	{
+		name: 'sprite-origin',
+		page: 'tests/pages/sprite-origin.html',
+		size: [320, 180],
+		hold: 0,
+	},
+	{
+		name: 'sprite-origin-no-origin',
+		page: 'tests/pages/sprite-origin.html',
+		switches: ['origin=off'],
+		size: [320, 180],
+		hold: 0,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
