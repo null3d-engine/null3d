@@ -137,11 +137,7 @@ The preset tables mark some rows as planned, such as the light caps. A light's o
 
 The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. A game on a 120 or 144 Hz display can defend the full rate with `createEngine({ targetFps: 'display' })` (0.2), at the cost of lighter presets (`concepts/quality-presets`). It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
 
-The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
-
-1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas. Budgets that you register with `quality.setBudget` (0.2) step down by 0.25 before each step of the render scale.
-2. The far shadow cascades draw half as often, up to every 8th frame.
-3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
+The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, from the render scale on, in the order that `concepts/quality-presets#the-frame-budget-governor` lists.
 
 It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that falls behind within 30 seconds doubles the wait before the governor tries that setting again, up to 80 seconds. At 57 to 59 frames per second, the settings stay where they are. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
 
