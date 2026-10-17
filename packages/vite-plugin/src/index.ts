@@ -21,7 +21,12 @@ import {
 } from './assets.ts';
 import { CompilerPool } from './compile-pool.ts';
 import { writeWgslDeclaration } from './declarations.ts';
-import { engineShaderFolder, engineShadersRoot, ensureEngineShaders } from './engine-shaders.ts';
+import {
+	ENGINE_SHADERS_ENV,
+	engineShaderFolder,
+	engineShadersRoot,
+	ensureEngineShaders,
+} from './engine-shaders.ts';
 import { buildEngineShadersLocally } from './engine-shaders-local.ts';
 import {
 	changedLiterals,
@@ -717,11 +722,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		configureServer(server) {
-			// The engine's shader modules sit outside the project, in the machine's cache, and the
-			// page and its workers reach them from there.
+			// The engine's shader modules sit outside the project, in the machine's cache or in the
+			// folder that names a set, and the page and its workers reach them from there.
 			const allowed = server.config.server.fs.allow;
-			const shaders = engineShadersRoot();
-			if (!allowed.includes(shaders)) allowed.push(shaders);
+			for (const shaders of [engineShadersRoot(), process.env[ENGINE_SHADERS_ENV]])
+				if (shaders && !allowed.includes(shaders)) allowed.push(shaders);
 			server.middlewares.use(isolationMiddleware);
 			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
