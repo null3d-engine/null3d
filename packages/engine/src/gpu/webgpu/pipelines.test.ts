@@ -250,6 +250,7 @@ const WEBGPU_ONLY: readonly (readonly [number, string])[] = [
 	[G.TEMPLATE_DOF_COMPOSITE_MS, 'WebGL2 reads one sample of the depth through a copy'],
 	[G.TEMPLATE_PARTICLE_DEPTH_MS, 'WebGL2 reads one sample of the depth through a copy'],
 	[G.TEMPLATE_FOG_APPLY_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_SUBSURFACE_COMPOSITE_MS, 'WebGL2 reads one sample of the depth through a copy'],
 ];
 
 /** The template ids that a backend registers, below the id where custom materials start. */

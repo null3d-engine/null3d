@@ -6338,7 +6338,10 @@ mod tests {
             .unwrap();
         let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
             .iter()
-            .filter(|group| (70..70 + subsurface::STEPS as u32).contains(&group[0]))
+            .filter(|group| {
+                let first = IDS.subsurface.first_group;
+                (first..first + subsurface::STEPS as u32).contains(&group[0])
+            })
             .map(|group| group[1])
             .collect();
         assert_eq!(
