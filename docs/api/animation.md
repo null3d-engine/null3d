@@ -383,7 +383,7 @@ return {
 };
 ```
 
-The clips keep their real speed. Each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little. Its events reach your handlers on its next update, up to `frames` frames late. A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still costs nothing even at 1: the skinning pass skips a pose that did not change.
+The clips keep their real speed. Each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little. Its events reach your handlers on its next update, up to `frames` frames late. A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still costs almost what a moving one costs. Every pass still skins it in the vertex shader, and the animator samples its pose in every frame. It saves only the upload of its joint matrices, which no frame repeats while its pose holds. The compute skinning pass skips such a pose too.
 
 ### Limits of skinning
 
