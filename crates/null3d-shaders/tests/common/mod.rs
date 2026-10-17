@@ -5,6 +5,7 @@
 //! result must be the native build's. The module must be built first, with `bun run build`.
 
 use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -59,25 +60,120 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
 /// repository with the native build of the whole repository runs this itself, through the `subset`
 /// module, so that the shader is built once.
 pub fn build_in_shader_compiler(inputs: &Inputs) -> Value {
+    let mut result = None;
+    build_each_in_shader_compiler(std::slice::from_ref(inputs), |_, value| {
+        result = Some(value)
+    });
+    result.expect("the shader compiler's result")
+}
+
+/// The most shader compiler processes that run at once. Each holds its own compiler and the
+/// result it is writing, so the count stays within a CI runner's memory as well as its cores.
+const MAX_COMPILERS: usize = 8;
+
+/// An estimate of the work that a build does: for each variant, the combinations of its
+/// permutation bits, which the build tries and keeps the buildable ones of. It ranks the entries,
+/// which is all that spreading them over processes needs.
+fn build_cost(inputs: &Inputs) -> u128 {
+    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
+    let Some(shaders) = manifest.get("shaders").and_then(toml::Value::as_table) else {
+        return 0;
+    };
+    shaders
+        .values()
+        .flat_map(|shader| shader.get("variants").and_then(toml::Value::as_table))
+        .flat_map(toml::Table::values)
+        .map(|variant| {
+            let bits = variant
+                .get("permutations")
+                .and_then(toml::Value::as_array)
+                .map_or(0, Vec::len);
+            1u128 << bits.min(64)
+        })
+        .sum()
+}
+
+/// Runs a list of builds through the shader compiler and gives each result and the index of its
+/// input to `check`. The builds are split over several processes, one for each core up to
+/// [`MAX_COMPILERS`], and each process composes the shader library once and reuses it for the
+/// builds that follow. Each process writes its results as lines, which are read one at a time, so
+/// a result that would not fit in memory beside every other one still works.
+pub fn build_each_in_shader_compiler(inputs: &[Inputs], mut check: impl FnMut(usize, Value)) {
+    if inputs.is_empty() {
+        return;
+    }
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/shader-compiler.ts");
-    let mut child = Command::new("bun")
-        .arg(script)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Bun runs the shader compiler");
-    let stdin = child.stdin.take().expect("the shader compiler's input");
-    serde_json::to_writer(stdin, inputs).expect("the request reaches the shader compiler");
-    let output = child
-        .wait_with_output()
-        .expect("the shader compiler finishes");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "the shader compiler failed:\n{stderr}"
-    );
-    serde_json::from_slice(&output.stdout).expect("the shader compiler's JSON result")
+    let jobs = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(MAX_COMPILERS)
+        .min(inputs.len());
+    // The largest entries go to different processes, each with small entries beside it, so no
+    // process spends the whole run on one entry while the others hold small ones.
+    let costs: Vec<u128> = inputs.iter().map(build_cost).collect();
+    let mut order: Vec<usize> = (0..inputs.len()).collect();
+    order.sort_by_key(|&index| std::cmp::Reverse(costs[index]));
+    let mut loads = vec![0u128; jobs];
+    let mut groups: Vec<Vec<usize>> = vec![Vec::new(); jobs];
+    for index in order {
+        let job = loads
+            .iter()
+            .enumerate()
+            .min_by_key(|&(_, &load)| load)
+            .map_or(0, |(job, _)| job);
+        loads[job] += costs[index];
+        groups[job].push(index);
+    }
+    for group in &mut groups {
+        group.sort_unstable();
+    }
+    let mut children = Vec::with_capacity(jobs);
+    for group in &groups {
+        let mut child = Command::new("bun")
+            .arg(&script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Bun runs the shader compiler");
+        let request: Vec<&Inputs> = group.iter().map(|&index| &inputs[index]).collect();
+        {
+            let stdin = child.stdin.take().expect("the shader compiler's input");
+            serde_json::to_writer(stdin, &request)
+                .expect("the request reaches the shader compiler");
+        }
+        children.push((group, child));
+    }
+    for (group, mut child) in children {
+        let stdout = child.stdout.take().expect("the shader compiler's output");
+        let mut answers = BufReader::new(stdout);
+        // A result arrives as one line that may run to a gigabyte, so it is read as bytes, which
+        // need no second copy as text.
+        let mut line = Vec::new();
+        let mut answered = 0;
+        for &index in group {
+            line.clear();
+            if answers
+                .read_until(b'\n', &mut line)
+                .expect("the shader compiler's answer")
+                == 0
+            {
+                break;
+            }
+            let result = serde_json::from_slice(&line).expect("the shader compiler's JSON result");
+            check(index, result);
+            answered += 1;
+        }
+        let status = child.wait().expect("the shader compiler finishes");
+        let stderr = child.stderr.take().expect("the shader compiler's errors");
+        let stderr = std::io::read_to_string(stderr).expect("the shader compiler's errors");
+        assert!(status.success(), "the shader compiler failed:\n{stderr}");
+        assert_eq!(
+            answered,
+            group.len(),
+            "the shader compiler answered {answered} of {} builds in its group:\n{stderr}",
+            group.len()
+        );
+    }
 }
 
 /// Fails at the first line where two results, printed as JSON, differ. `what` names the build that
