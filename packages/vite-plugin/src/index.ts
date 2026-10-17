@@ -159,8 +159,11 @@ export const CORE_FILES = [
  */
 export const EARLY_CORE_MODULE = '@null3d/engine/early-core';
 
-/** The engine's import of one of its generated shader modules, as its own files write it. */
-const ENGINE_GENERATED = /^\.\/generated\/([A-Za-z0-9_.-]+)$/;
+/**
+ * The engine's import of one of its generated shader modules, as its own files write it: from a
+ * file at any depth inside the engine, so the path climbs one or more folders to `generated/`.
+ */
+const ENGINE_GENERATED = /^(?:\.\.?\/)+generated\/([A-Za-z0-9_.-]+)$/;
 
 /** The `lib` folder of an engine package, when the importer sits inside it. */
 function engineLibFolder(importer: string): string | undefined {
@@ -385,6 +388,27 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		});
 		environment.hot.send({ type: 'custom', event: WGSL_UPDATE_EVENT, data: { updates } });
 	};
+	/**
+	 * Resolves the engine's import of one of its generated shader modules into the set on this
+	 * machine: the release asset's, or the one built here. The engine's built files name the
+	 * modules as the build names them, while the set holds a TypeScript module with its source
+	 * extension, and a module that the package carries itself stays with it.
+	 */
+	const resolveGenerated = async (source: string, importer?: string): Promise<string | null> => {
+		const name = ENGINE_GENERATED.exec(source)?.[1];
+		if (!name || !importer) return null;
+		const lib = engineLibFolder(importer);
+		if (!lib) return null;
+		const folder = await engineShaderFolder(lib, {
+			fetch: (artifact) => ensureEngineShaders(artifact, reportShaderSource),
+			build: () => buildEngineShadersLocally(lib, reportShaderSource),
+		});
+		if (!folder) return null;
+		const built = join(folder, name);
+		if (existsSync(built)) return built;
+		const asSource = join(folder, name.replace(/\.js$/, '.ts'));
+		return existsSync(asSource) ? asSource : null;
+	};
 	return {
 		name: 'null3d',
 		// Runs before Vite's own asset handling, which would copy a sketch file as raw text, and
@@ -412,6 +436,16 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						workerFilesPlugin(workerFiles),
 						workerPreloadPlugin(),
 						shaderParagraphsPlugin(),
+						{
+							// A worker build keeps these plugins alone, so the engine's generated
+							// modules resolve here as they do on the page.
+							name: 'null3d:engine-generated',
+							enforce: 'pre',
+							resolveId: {
+								filter: { id: ENGINE_GENERATED },
+								handler: (source: string, importer?: string) => resolveGenerated(source, importer),
+							},
+						},
 					],
 				},
 				build: {
@@ -467,16 +501,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				// The engine package carries no built shader modules. Its files import them by a name
 				// that the installed package's release asset holds, so each import resolves into the
 				// cache folder that every project on this machine shares.
-				const name = ENGINE_GENERATED.exec(source)?.[1];
-				if (name) {
-					const lib = importer ? engineLibFolder(importer) : undefined;
-					if (!lib) return null;
-					const folder = await engineShaderFolder(lib, {
-						fetch: (artifact) => ensureEngineShaders(artifact, reportShaderSource),
-						build: () => buildEngineShadersLocally(lib, reportShaderSource),
-					});
-					return folder ? join(folder, name) : null;
-				}
+				const generated = await resolveGenerated(source, importer);
+				if (generated) return generated;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });

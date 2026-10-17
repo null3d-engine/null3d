@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
+import { engineShadersRoot } from './engine-shaders.ts';
 import {
 	engineModule,
 	FEATURE_MODULES,
@@ -85,6 +86,17 @@ describe('engineModule', () => {
 		);
 		const source = join(root, 'repo/packages/engine');
 		expect(engineModule(join(source, 'src/scene/ktx2.ts?worker'), packageOf)).toBe('scene/ktx2');
+	});
+
+	it('names the generated shader modules that the set on this machine holds', () => {
+		// A game's build reads the engine's shader modules from the shared set, not the package.
+		const set = join(engineShadersRoot(), 'local/0.0.0-test');
+		expect(engineModule(join(set, 'shaders-sprites-wgsl.ts'), packageOf)).toBe(
+			'generated/shaders-sprites-wgsl',
+		);
+		expect(engineModule(join(set, 'shader-features.ts'), packageOf)).toBe(
+			'generated/shader-features',
+		);
 	});
 
 	it("leaves out other packages' modules, the project's and virtual ones", () => {
