@@ -1,6 +1,6 @@
 # D-12: Memory budgets per preset
 
-Status: decided for the texture budgets, 2026-10-03, and applied by [D-69](D-69-texture-budget.md) on 2026-10-05. The iPad's WebAssembly row is pending. Task: M1-L3. Test: T-25.
+Status: decided for the texture budgets, 2026-10-03, and applied by [D-69](D-69-texture-budget.md) on 2026-10-05. The iPad's WebAssembly and WebGPU buffer rows are measured, 2026-10-17. Task: M1-L3. Test: T-25.
 
 Summary: Keep the texture budgets of 256 to 2048 MiB and the 1024 MiB WebAssembly maximum. The iPad's tab died at 2016 MiB of GPU textures, so Low and Medium stay under half; the S24+ held 7296 MiB.
 
@@ -21,10 +21,10 @@ The failure point of a growth is the step after the last that lived. Each growth
 | Growth | iPad Pro 11-inch, Safari 26.6 | S24+, Chrome 154 | S24+, Brave, Shields on |
 | --- | --- | --- | --- |
 | GPU textures, WebGPU | 2016 MiB: tab closed | no WebGPU | no WebGPU |
-| GPU buffers, WebGPU | 512 MiB: the step gave no answer for a minute | no WebGPU | no WebGPU |
+| GPU buffers, WebGPU | 2528 MiB: tab closed | no WebGPU | no WebGPU |
 | GPU textures, WebGL2 | 2528 MiB: tab closed | 7296 MiB: tab closed | 7808 MiB: tab closed |
 | GPU buffers, WebGL2 | 2496 MiB: tab closed | 7616 MiB: tab closed | 7808 MiB: WebGL2 context lost |
-| WebAssembly memory | no result | lived to the 4096 MiB cap | lived to the 4096 MiB cap |
+| WebAssembly memory | 2592 MiB: tab closed | lived to the 4096 MiB cap | lived to the 4096 MiB cap |
 
 The lowest failure point on each device:
 
@@ -46,9 +46,9 @@ How the data was produced: on 2026-10-02, `bun tests/real-browsers.ts --plan tab
 
 High and Ultra start only on desktops, which T-25 did not measure. On the iPad, High's 1024 MiB is just over half its lowest point, and Ultra's 2048 MiB is past the point itself. A page can name either preset on a tablet.
 
-**WebAssembly maximum.** Keep D-04's 1024 MiB on every preset. On the S24+, both browsers filled the cap of 4096 MiB, so the rule allows more than 2048 MiB there. On the iPad the rule is not checked. If the iPad's WebAssembly point is under 2048 MiB, then 1024 MiB breaks the rule for Medium and Low there.
+**WebAssembly maximum.** Keep D-04's 1024 MiB on every preset. On the S24+, both browsers filled the cap of 4096 MiB, so the rule allows more than 2048 MiB there. The iPad lived to 2592 MiB and failed at 2624. Half of that is 1296 MiB, so 1024 MiB stays: the rule holds for Medium and Low there.
 
-**GPU buffers.** The presets set no buffer budget. Until a rerun shows whether the stall repeats, keep a scene's GPU buffers on the iPad's WebGPU path under 256 MiB, half the stall point.
+**GPU buffers.** The presets set no buffer budget. The iPad's WebGPU path lived to 2528 MiB on 2026-10-17 and failed at 2560, so the 512 MiB stall did not recur and the page answered at every step above it. A scene's GPU buffers could therefore go well past that stall point; the presets still set no buffer budget.
 
 **Shadow maps.** The shadow maps share the GPU memory that the texture budget plans for. M1-G6 set each preset's shadow cascades and map size (#215). They add 8 MiB on Low and 48 MiB on Medium, which fit well inside the room under 1008 MiB. "Each preset's memory" below gives the figures for every preset.
 
@@ -60,8 +60,8 @@ three.js sets no memory budget. `renderer.info.memory` counts the geometries and
 
 - `memoryMaximumMiB` in `packages/engine/src/quality/presets.ts` stays 1024 MiB on every preset. The planned `textureMemoryMiB` in `preset-docs.ts` keeps its values.
 - The task that builds the texture budget caps it on phones and tablets, whatever preset a page names. The cap is 1008 MiB, under half the iPad's point. A page that sets `textureMemoryMiB` itself still gets its own value.
-- Run the iPad's WebAssembly step with someone at the iPad: `bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended --only tab-memory-wasm-1`. Start from a Safari that was quit and opened again. If the point is under 2048 MiB, lower Medium's and Low's maximum to under half of it.
-- Rerun `--only tab-memory-buffer-webgpu-1` on the iPad in the same way, to see whether its WebGPU buffer stall repeats.
+- The iPad's WebAssembly step ran on 2026-10-17 with someone at the iPad (`bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended --only tab-memory-wasm-1`): the tab lived to 2592 MiB. The point is above 2048 MiB, so Medium's and Low's maximum stay as they are.
+- The iPad's WebGPU buffer step ran the same day: the tab lived to 2528 MiB. The stall at 512 MiB did not recur, so no cap is needed for it.
 - A 4 GB iPad, if one becomes available, runs the whole plan. D-04 left T-07 open for one, and it may fail at about half the iPad Pro's points.
 - [Phones and tablets](../../docs/guides/phones.md#memory) gives the measured points.
 - T-25 closed on 2026-10-03 with the failure points.
