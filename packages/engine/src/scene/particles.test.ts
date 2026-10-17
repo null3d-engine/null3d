@@ -20,13 +20,14 @@ function buffer(capacity: number, additive = true) {
 		markParticleValues: () => marks.push([-1]),
 		destroyParticles: () => 0,
 	} as unknown as CoreGlue;
-	const core = new CoreMemory(glue, new WebAssembly.Memory({ initial: 2 }));
-	const object = {} as Mesh;
+	const memory = new WebAssembly.Memory({ initial: 2 });
+	const core = new CoreMemory(glue, memory);
+	const object = { scene: { particleBuffers: 1 }, destroy: () => {} } as unknown as Mesh;
 	const linear = (color: Parameters<typeof linearColor>[0]) => linearColor(color, 'test');
 	const particles = new ParticleBuffer(core, 1, capacity, object, additive, linear);
 	particles.reset({});
 	const values = core.f32(VALUES, PARTICLE_PARAM_FLOATS + PARTICLE_FRAME_FLOATS);
-	return { particles, marks, values, core };
+	return { particles, marks, values, core, memory };
 }
 
 describe('particle buffers', () => {
@@ -45,6 +46,35 @@ describe('particle buffers', () => {
 			[2, 2],
 			[6, 1],
 		]);
+	});
+
+	test('a buffer makes its views again after the memory grows, over the new memory', () => {
+		const { particles, core, memory } = buffer(8);
+		particles.write(1, [0, 0, 0, 2.5, 0, 0, 0, 1], 3);
+		const frame = particles.frame;
+		memory.grow(1);
+		expect(core.refresh()).toBe(true);
+		// The old view's memory is gone; the buffer reads the same record through a new view.
+		expect(frame.length).toBe(0);
+		expect(particles.frame).not.toBe(frame);
+		expect(particles.frame.buffer).toBe(memory.buffer);
+		const out = new Float32Array(9);
+		particles.read(1, out);
+		expect(out[3]).toBe(2.5);
+	});
+
+	test('a destroyed buffer holds no view of the memory and refuses to be read', () => {
+		const { particles } = buffer(8);
+		particles.write(0, [0, 0, 0, 1, 0, 0, 0, 1], 0);
+		expect(particles.frame.length).toBeGreaterThan(0);
+		particles.destroy();
+		const views = particles as unknown as Record<
+			'floats' | 'words' | 'block' | 'frameValues',
+			ArrayLike<number>
+		>;
+		for (const name of ['floats', 'words', 'block', 'frameValues'] as const)
+			expect(views[name].length).toBe(0);
+		expect(() => particles.frame).toThrow('destroyed');
 	});
 
 	test('the frame values follow the values, where the core reads them', () => {
