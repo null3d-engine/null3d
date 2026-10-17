@@ -10,8 +10,7 @@
 //! birth time in the system's seconds, its start velocity, and its lifetime as a 16-bit float
 //! above a 16-bit seed. The sketch writes a particle's record once, when it is born, and marks the
 //! range it wrote. The vertex shader works out each particle at its age in every frame, so a frame
-//! uploads only the records of the particles born since the frame before, apart from systems that
-//! the sketch sorts back to front, which write their live records in order every frame.
+//! uploads only the records of the particles born since the frame before.
 //!
 //! # Values
 //!
@@ -26,9 +25,9 @@
 //! The sorted pass draws a system's object with one draw of six vertices for each record it reads,
 //! from the system's own vertex buffer of records. Its bind groups are the view's frame group, the
 //! system's group of its values and of a block for each view, the view's group of its depth copy for
-//! soft particles, and the map's group for a system with a flipbook. Each view's block holds the
-//! object's world matrix moved by its cell's offset from that view's camera, so particles keep
-//! their precision far from the world's origin as objects do.
+//! soft particles, and the map's group of the material's maps, a flipbook among them. Each view's
+//! block holds the object's world matrix moved by its cell's offset from that view's camera, so
+//! particles keep their precision far from the world's origin as objects do.
 //!
 //! # Soft particles
 //!
