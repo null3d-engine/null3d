@@ -2019,6 +2019,8 @@ pub mod groups {
         (template::DOF_COMPOSITE, own!(layout::DOF_COMPOSITE)),
         (template::DOF_COMPOSITE_MS, own!(layout::DOF_COMPOSITE_MS)),
         (template::TRANSMISSION_COPY, own!(layout::VIEW_COPY)),
+        (template::SSR_REDUCE, own!(layout::SSR_REDUCE)),
+        (template::SSR_TRACE, own!(layout::SSR_TRACE)),
         (template::PARTICLE, PARTICLE_MESH),
         (template::PARTICLE_MAP, PARTICLE_MESH),
         (template::PARTICLE_DEPTH, own!(layout::VIEW_COPY)),
