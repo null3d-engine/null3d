@@ -73,10 +73,10 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
-	cargoEnv,
 	hashFiles,
 	hashOf,
 	pruneCacheLocked,
+	runCargo,
 	touchCacheEntry,
 	writeFolderAtomic,
 } from './lib/build-cache';
@@ -304,6 +304,16 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}, cwd 
 	execFileSync(cmd, args, { cwd, stdio: 'inherit', env: { ...process.env, ...env } });
 }
 
+/**
+ * Runs cargo through the caches' one helper, which sets the build folder of the call and sccache,
+ * and throws when it fails.
+ */
+function cargo(args: readonly string[], env: Record<string, string>, targetDir: string): void {
+	const { status, error } = runCargo(root, args, { env, targetDir });
+	if (error) throw error;
+	if (status !== 0) throw new Error(`cargo ${args.join(' ')} failed`);
+}
+
 const git = (args: string[], cwd = root) =>
 	execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -395,11 +405,6 @@ export function cargoTargetBase(checkout: string, override?: string): string {
 }
 
 const CARGO_TARGET_BASE = cargoTargetBase(root, process.env.NULL3D_CARGO_TARGET);
-/**
- * The environment of every cargo run of the build: this checkout's own Rust build folder, and sccache
- * as the compiler wrapper when it is installed.
- */
-const CARGO_ENV = cargoEnv(root);
 
 /** The Rust build folder of a variant. */
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
@@ -663,20 +668,10 @@ function buildVariant(
 		return;
 	}
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
-	run(
-		'cargo',
-		[
-			'build',
-			'-p',
-			CRATE,
-			'--release',
-			'--target',
-			'wasm32-unknown-unknown',
-			'--target-dir',
-			targetDir,
-			...variant.cargoArgs,
-		],
-		{ ...CARGO_ENV, RUSTFLAGS: variant.rustflags },
+	cargo(
+		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
+		{ RUSTFLAGS: variant.rustflags },
+		targetDir,
 	);
 	// The files take shape in this build's own staging folder, and go in place whole once every step
 	// and check passed (see variantStagingFolder).
@@ -746,18 +741,16 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	console.log("\nbuilding the shader compiler and the asset tool's formats");
-	run(
-		'cargo',
+	cargo(
 		[
 			'build',
 			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
 			'--release',
 			'--target',
 			'wasm32-unknown-unknown',
-			'--target-dir',
-			targetDir,
 		],
-		{ ...CARGO_ENV, RUSTFLAGS: '-Cstrip=symbols' },
+		{ RUSTFLAGS: '-Cstrip=symbols' },
+		targetDir,
 	);
 	withInstallLock('tools', () => {
 		for (const { crate, path } of TOOL_MODULES) {

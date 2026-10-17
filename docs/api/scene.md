@@ -277,7 +277,7 @@ scene.setLightProbeGrid({
 | `origin` | required | The grid's corner of least x, y and z, in the world. This and the next two take an array or a typed array |
 | `spacing` | required | The distance between probes along each axis, in meters |
 | `counts` | required | The probes along each axis, each 2 or more |
-| `intensity` | 1 | The factor of the grid's light, 0 or more |
+| `intensity` | 1 | The factor of the grid's light, 0 or more. A factor of 0 gives none of it |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
 `bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`. A ray that reaches the sky takes the environment's light from its direction. Give `environmentOptions` the intensity and rotation that `setEnvironment` got, so the baked sky matches the scene's. Where a ray hits a surface, `albedo` gives the surface's color for one colored bounce: the surface sends back that share of the environment's light, as a matte surface does. The bake counts no lamps, so the grid holds sky light, its occlusion and its bounce. Bake a few probes a frame so a loading screen can show progress.
