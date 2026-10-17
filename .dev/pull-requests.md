@@ -244,7 +244,7 @@ Each push to main runs every job, on the pushed commit ([D-157](decisions/D-157-
 | --- | --- |
 | Draft pull request, which no branch raises now | The quick checks: `build`, `docs-and-tools`, `rust-lint`, the two parts of `rust-tests`, `size-base`, `wasm-checks`, `shader-compiler` and `packages` |
 | Docs-only pull request, which no branch raises now | `build` and `docs-and-tools`, and `skill-sketches` when the change touches the skills' or the cookbook's Markdown ([The docs-only skip](#the-docs-only-skip)) |
-| Pull request ready for review: opened, pushed, reopened, or marked ready, which no branch raises now | Every job: the quick checks, the 7 `browser` shards and the job of the tests that run alone, the 2 `bench` shards, and the `real-browsers` shards in Safari and Firefox |
+| Pull request ready for review: opened, pushed, reopened, or marked ready, which no branch raises now | Every job: the quick checks, the `browser` shards, the job of the tests that run alone, the showcase HUD's job, the 2 `bench` shards, and the `real-browsers` shards in Safari and Firefox |
 | Push to main | Every job, on the code that the merge made. Main's jobs also keep the caches, and `wasm-checks` keeps the commit's sizes |
 | Started by hand | Every job, on the branch that the run names: `gh workflow run ci.yml --ref main` |
 | Merge queue | Every job, only while main's rules still use the queue |
