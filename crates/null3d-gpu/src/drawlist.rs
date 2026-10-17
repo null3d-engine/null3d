@@ -1781,6 +1781,240 @@ pub mod template {
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
     pub const CUSTOM_FIRST: u32 = 128;
+
+    /// Every engine template with its name, in id order: the constants that the TypeScript replay
+    /// loop reads, and the templates whose groups [`super::groups`] knows.
+    pub const NAMES: [(&str, u32); 64] = [
+        ("INSTANCED_LIT", INSTANCED_LIT),
+        ("INSTANCED_UNLIT", INSTANCED_UNLIT),
+        ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
+        ("DEBUG_LINES", DEBUG_LINES),
+        ("INSTANCED_UNLIT_MAP", INSTANCED_UNLIT_MAP),
+        ("INSTANCED_STANDARD_MAPS", INSTANCED_STANDARD_MAPS),
+        ("FINAL", FINAL),
+        ("SHADOW_DEPTH", SHADOW_DEPTH),
+        ("BACKGROUND", BACKGROUND),
+        ("DEBUG_VIEW", DEBUG_VIEW),
+        ("BLOOM", BLOOM),
+        ("FINAL_BLOOM", FINAL_BLOOM),
+        ("CULL", CULL),
+        ("LIGHT_COUNT", LIGHT_COUNT),
+        ("LIGHT_PLACE", LIGHT_PLACE),
+        ("LIGHT_WRITE", LIGHT_WRITE),
+        ("SKIN", SKIN),
+        ("OUTLINE_MASK", OUTLINE_MASK),
+        ("SPRITE", SPRITE),
+        ("SPRITE_MAP", SPRITE_MAP),
+        ("OCCLUSION_EARLY", OCCLUSION_EARLY),
+        ("OCCLUSION_LATE", OCCLUSION_LATE),
+        ("DEPTH_PYRAMID", DEPTH_PYRAMID),
+        ("LINE", LINE),
+        ("LINE_LIT", LINE_LIT),
+        ("AO_DEPTH", AO_DEPTH),
+        ("AO_DEPTH_MS", AO_DEPTH_MS),
+        ("AO", AO),
+        ("AO_DENOISE", AO_DENOISE),
+        ("BACKGROUND_CUBE", BACKGROUND_CUBE),
+        ("BACKGROUND_SKY", BACKGROUND_SKY),
+        ("SKY_TABLE", SKY_TABLE),
+        ("BACKGROUND_ATMOSPHERE", BACKGROUND_ATMOSPHERE),
+        ("SHADOW_CUTOUT", SHADOW_CUTOUT),
+        ("SHADOW_CUTOUT_MAP", SHADOW_CUTOUT_MAP),
+        ("VIEW_COPY", VIEW_COPY),
+        ("DOF_SETUP", DOF_SETUP),
+        ("DOF_SETUP_MS", DOF_SETUP_MS),
+        ("DOF_BLUR", DOF_BLUR),
+        ("DOF_FILTER", DOF_FILTER),
+        ("DOF_COMPOSITE", DOF_COMPOSITE),
+        ("DOF_COMPOSITE_MS", DOF_COMPOSITE_MS),
+        ("TRANSMISSION_COPY", TRANSMISSION_COPY),
+        ("WEIGHTED_COMPOSITE", WEIGHTED_COMPOSITE),
+        ("WEIGHTED_DEPTH", WEIGHTED_DEPTH),
+        ("DECAL", DECAL),
+        ("DECAL_MAPS", DECAL_MAPS),
+        ("PROBE_GRID", PROBE_GRID),
+        ("PROBE_GRID_MAPS", PROBE_GRID_MAPS),
+        ("PARTICLE", PARTICLE),
+        ("PARTICLE_MAP", PARTICLE_MAP),
+        ("PARTICLE_DEPTH", PARTICLE_DEPTH),
+        ("PARTICLE_DEPTH_MS", PARTICLE_DEPTH_MS),
+        ("EXPOSURE_LUMINANCE", EXPOSURE_LUMINANCE),
+        ("EXPOSURE_ADAPT", EXPOSURE_ADAPT),
+        ("EXPOSURE_HISTOGRAM", EXPOSURE_HISTOGRAM),
+        ("EXPOSURE_ADAPT_HISTOGRAM", EXPOSURE_ADAPT_HISTOGRAM),
+        ("FOG_LIGHT", FOG_LIGHT),
+        ("FOG_SUM", FOG_SUM),
+        ("FOG_APPLY", FOG_APPLY),
+        ("FOG_APPLY_MS", FOG_APPLY_MS),
+        ("FOG_BLOCK", FOG_BLOCK),
+        ("PICK", PICK),
+        ("CUSTOM_FIRST", CUSTOM_FIRST),
+    ];
+}
+
+/// The bind group layouts that each engine template's pipeline binds, group by group, as the
+/// render worker declares them in `pipelines.ts`. A draw whose bound group has another layout is
+/// what WebGPU refuses when it validates the pipeline, so the mock backend holds every draw to
+/// this table.
+///
+/// An entry lists the layouts that a build may bind at one group index, over both GPU paths: a
+/// draw list comes from one path and the mock reads both. The WebGL2 path reads each view's
+/// instance data from groups of its own, so a template that draws meshes carries the indices that
+/// path binds beside the indices WebGPU binds. A template from [`template::CUSTOM_FIRST`] up,
+/// whose layouts the page decides, has no entry.
+pub mod groups {
+    use super::{layout, template};
+
+    /// One group of the given layouts, bound at group 0.
+    macro_rules! own {
+        ($($id:expr),+) => {
+            &[&[$($id),+]]
+        };
+    }
+    /// The groups of a template that draws meshes: its shading group, then the groups the two
+    /// paths bind after it. WebGPU binds the joint texture of a build that skins in the vertex
+    /// shader, the maps' group of a build that samples maps, and the view's index group of a build
+    /// that reads its instances by index. WebGL2 reads each view's instance data from groups of its
+    /// own, the draws' group and the instances' one, and binds a material's maps at the group after
+    /// them. A decal adds the scene's depth at a group of its own, at index 2 on WebGPU and after
+    /// the maps on WebGL2.
+    const MESH: &[&[u32]] = &[
+        &[layout::FRAME, layout::DEPTH],
+        &[
+            layout::DRAWS,
+            layout::JOINTS,
+            layout::MATERIAL_MAPS,
+            layout::TEXTURES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+        ],
+        &[
+            layout::INSTANCES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+        ],
+        &[layout::TEXTURES, layout::MATERIAL_MAPS],
+        &[layout::DECAL_DEPTH, layout::DECAL_DEPTH_MS],
+    ];
+    /// [`MESH`] for a decal's templates, whose frame group leaves out the bindings that no decal
+    /// build reads.
+    const DECAL_MESH: &[&[u32]] = &[
+        &[layout::FRAME, layout::DEPTH, layout::DECAL_FRAME],
+        MESH[1],
+        MESH[2],
+        MESH[3],
+        MESH[4],
+    ];
+    /// The groups of a template that draws particles: its system's group, then the view's copy of
+    /// its opaque depth, the group the maps of a build that has them sit in, and the WebGL2 path's
+    /// draws and instances groups.
+    const PARTICLE_MESH: &[&[u32]] = &[
+        &[layout::FRAME],
+        &[layout::PARTICLE, layout::DRAWS],
+        &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
+        &[layout::TEXTURES],
+    ];
+    /// The groups of the background templates: the frame's group, then a texture and the
+    /// background's own group. A cube or sky background binds only the background's own, at the
+    /// group after the frame's, and the WebGL2 path binds each view's instances group last.
+    const BACKGROUND: &[&[u32]] = &[
+        &[layout::FRAME],
+        &[layout::TEXTURES, layout::BACKGROUND],
+        &[layout::BACKGROUND, layout::INSTANCES],
+    ];
+    /// The physical sky's tables and its panorama.
+    const SKY: &[&[u32]] = &[&[layout::ATMOSPHERE]];
+    /// Every engine template with its groups, by template id.
+    const TABLE: &[(u32, &[&[u32]])] = &[
+        (template::INSTANCED_LIT, MESH),
+        (template::INSTANCED_UNLIT, MESH),
+        (template::INSTANCED_TEXCOORDS, MESH),
+        (template::DEBUG_LINES, MESH),
+        (template::INSTANCED_UNLIT_MAP, MESH),
+        (template::INSTANCED_STANDARD_MAPS, MESH),
+        (template::FINAL, own!(layout::FINAL)),
+        (template::SHADOW_DEPTH, MESH),
+        (template::BACKGROUND, BACKGROUND),
+        (template::SKY_TABLE, SKY),
+        (
+            template::BACKGROUND_ATMOSPHERE,
+            &[
+                &[layout::FRAME],
+                &[layout::ATMOSPHERE],
+                &[layout::INSTANCES],
+            ],
+        ),
+        (template::DEBUG_VIEW, MESH),
+        (template::BLOOM, own!(layout::BLOOM)),
+        (template::FINAL_BLOOM, own!(layout::FINAL_BLOOM)),
+        (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
+        (template::CULL, own!(layout::CULL)),
+        (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
+        (template::SKIN, own!(layout::SKIN)),
+        (template::OUTLINE_MASK, MESH),
+        (template::SPRITE, MESH),
+        (template::SPRITE_MAP, MESH),
+        (template::OCCLUSION_EARLY, own!(layout::CULL)),
+        (template::OCCLUSION_LATE, own!(layout::CULL)),
+        (template::EXPOSURE_ADAPT, own!(layout::EFFECT)),
+        (template::EXPOSURE_HISTOGRAM, own!(layout::EXPOSURE)),
+        (template::DEPTH_PYRAMID, own!(layout::DEPTH_PYRAMID)),
+        (template::LINE, MESH),
+        (template::LINE_LIT, MESH),
+        (template::AO_DEPTH, own!(layout::AO_DEPTH)),
+        (template::AO_DEPTH_MS, own!(layout::AO_DEPTH_MS)),
+        (template::AO, own!(layout::AO)),
+        (template::AO_DENOISE, own!(layout::AO)),
+        (template::BACKGROUND_CUBE, BACKGROUND),
+        (template::BACKGROUND_SKY, BACKGROUND),
+        (template::SHADOW_CUTOUT, MESH),
+        (template::SHADOW_CUTOUT_MAP, MESH),
+        (template::VIEW_COPY, own!(layout::VIEW_COPY)),
+        (template::EXPOSURE_ADAPT_HISTOGRAM, own!(layout::EXPOSURE)),
+        (template::DOF_SETUP, own!(layout::EFFECT)),
+        (template::DOF_SETUP_MS, own!(layout::EFFECT_DEPTH_MS)),
+        (template::DOF_BLUR, own!(layout::BLOOM)),
+        (template::DOF_FILTER, own!(layout::BLOOM)),
+        (template::DOF_COMPOSITE, own!(layout::DOF_COMPOSITE)),
+        (template::DOF_COMPOSITE_MS, own!(layout::DOF_COMPOSITE_MS)),
+        (template::TRANSMISSION_COPY, own!(layout::VIEW_COPY)),
+        (template::PARTICLE, PARTICLE_MESH),
+        (template::PARTICLE_MAP, PARTICLE_MESH),
+        (template::PARTICLE_DEPTH, own!(layout::VIEW_COPY)),
+        (template::PARTICLE_DEPTH_MS, own!(layout::PARTICLE_DEPTH_MS)),
+        (template::FOG_LIGHT, &[&[layout::FRAME], &[layout::BLOOM]]),
+        (template::FOG_SUM, own!(layout::BLOOM)),
+        (template::FOG_APPLY, own!(layout::DOF_COMPOSITE)),
+        (template::FOG_APPLY_MS, own!(layout::DOF_COMPOSITE_MS)),
+        (template::DECAL, DECAL_MESH),
+        (template::DECAL_MAPS, DECAL_MESH),
+        (
+            template::WEIGHTED_COMPOSITE,
+            own!(layout::WEIGHTED_COMPOSITE),
+        ),
+        (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::FOG_BLOCK, own!(layout::BLOOM)),
+        (template::PICK, MESH),
+        (template::PROBE_GRID, MESH),
+        (template::PROBE_GRID_MAPS, MESH),
+    ];
+
+    /// The groups of a template's pipeline, group by group from group 0 on: each entry lists the
+    /// layouts that a build may bind at that index. `None` for a template whose page decides the
+    /// layouts, which the mock does not judge.
+    pub fn of(template: u32) -> Option<&'static [&'static [u32]]> {
+        if template >= template::CUSTOM_FIRST {
+            return None;
+        }
+        TABLE
+            .iter()
+            .find(|(id, _)| *id == template)
+            .map(|(_, groups)| *groups)
+    }
 }
 
 /// Why recording failed.
@@ -2126,78 +2360,7 @@ pub fn typescript_constants() -> String {
                 ("DEPTH_OR_EQUAL", state_flags::DEPTH_OR_EQUAL),
             ],
         ),
-        (
-            "TEMPLATE",
-            &[
-                ("INSTANCED_LIT", template::INSTANCED_LIT),
-                ("INSTANCED_UNLIT", template::INSTANCED_UNLIT),
-                ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
-                ("DEBUG_LINES", template::DEBUG_LINES),
-                ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
-                ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
-                ("FINAL", template::FINAL),
-                ("SHADOW_DEPTH", template::SHADOW_DEPTH),
-                ("BACKGROUND", template::BACKGROUND),
-                ("DEBUG_VIEW", template::DEBUG_VIEW),
-                ("BLOOM", template::BLOOM),
-                ("FINAL_BLOOM", template::FINAL_BLOOM),
-                ("CULL", template::CULL),
-                ("LIGHT_COUNT", template::LIGHT_COUNT),
-                ("LIGHT_PLACE", template::LIGHT_PLACE),
-                ("LIGHT_WRITE", template::LIGHT_WRITE),
-                ("SKIN", template::SKIN),
-                ("OUTLINE_MASK", template::OUTLINE_MASK),
-                ("SPRITE", template::SPRITE),
-                ("SPRITE_MAP", template::SPRITE_MAP),
-                ("OCCLUSION_EARLY", template::OCCLUSION_EARLY),
-                ("OCCLUSION_LATE", template::OCCLUSION_LATE),
-                ("DEPTH_PYRAMID", template::DEPTH_PYRAMID),
-                ("LINE", template::LINE),
-                ("LINE_LIT", template::LINE_LIT),
-                ("AO_DEPTH", template::AO_DEPTH),
-                ("AO_DEPTH_MS", template::AO_DEPTH_MS),
-                ("AO", template::AO),
-                ("AO_DENOISE", template::AO_DENOISE),
-                ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
-                ("BACKGROUND_SKY", template::BACKGROUND_SKY),
-                ("SKY_TABLE", template::SKY_TABLE),
-                ("BACKGROUND_ATMOSPHERE", template::BACKGROUND_ATMOSPHERE),
-                ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
-                ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
-                ("VIEW_COPY", template::VIEW_COPY),
-                ("DOF_SETUP", template::DOF_SETUP),
-                ("DOF_SETUP_MS", template::DOF_SETUP_MS),
-                ("DOF_BLUR", template::DOF_BLUR),
-                ("DOF_FILTER", template::DOF_FILTER),
-                ("DOF_COMPOSITE", template::DOF_COMPOSITE),
-                ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
-                ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
-                ("WEIGHTED_COMPOSITE", template::WEIGHTED_COMPOSITE),
-                ("WEIGHTED_DEPTH", template::WEIGHTED_DEPTH),
-                ("DECAL", template::DECAL),
-                ("DECAL_MAPS", template::DECAL_MAPS),
-                ("PROBE_GRID", template::PROBE_GRID),
-                ("PROBE_GRID_MAPS", template::PROBE_GRID_MAPS),
-                ("PARTICLE", template::PARTICLE),
-                ("PARTICLE_MAP", template::PARTICLE_MAP),
-                ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
-                ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
-                ("EXPOSURE_LUMINANCE", template::EXPOSURE_LUMINANCE),
-                ("EXPOSURE_ADAPT", template::EXPOSURE_ADAPT),
-                ("EXPOSURE_HISTOGRAM", template::EXPOSURE_HISTOGRAM),
-                (
-                    "EXPOSURE_ADAPT_HISTOGRAM",
-                    template::EXPOSURE_ADAPT_HISTOGRAM,
-                ),
-                ("FOG_LIGHT", template::FOG_LIGHT),
-                ("FOG_SUM", template::FOG_SUM),
-                ("FOG_APPLY", template::FOG_APPLY),
-                ("FOG_APPLY_MS", template::FOG_APPLY_MS),
-                ("FOG_BLOCK", template::FOG_BLOCK),
-                ("PICK", template::PICK),
-                ("CUSTOM_FIRST", template::CUSTOM_FIRST),
-            ],
-        ),
+        ("TEMPLATE", &template::NAMES),
         (
             "BUFFER_USAGE",
             &[
