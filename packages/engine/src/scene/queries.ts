@@ -251,10 +251,10 @@ function newHit(): RaycastHit {
 	};
 }
 
-/** The scene's queries: see the module comment. */
 /** A view of no numbers, which the queries keep in place of views that they dropped. */
 const NO_NUMBERS = new Float64Array(0);
 
+/** The scene's queries: see the module comment. */
 export class SceneQueries implements ViewHolder {
 	private generation = -1;
 	private input!: Float64Array;
