@@ -273,12 +273,16 @@ impl FrameInput<'_> {
 }
 
 /// True when nothing outside the frame's draw list and upload arena changed: no object transform, no
-/// path through the scene's structure and no instance batch row. The still-camera accumulation then
+/// path through the scene's structure and no instance batch row. An object that a dynamic update
+/// recomputed but that holds its pose did not change. The still-camera accumulation then
 /// compares the list and the arena to decide whether the frame changed at all (see
 /// [`crate::still`]). `enabled` is false where the page turns the accumulation off, such as in hold
 /// mode and the image tests.
 pub(crate) fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
-    enabled && !input.structure_changed && !input.scene.changed().any() && !input.batches.changed()
+    enabled
+        && !input.structure_changed
+        && !input.scene.rows_changed().any()
+        && !input.batches.changed()
 }
 
 /// What a frame builder tells [`ParityLists::restore`] of a frame it recorded, for the still-camera

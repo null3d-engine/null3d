@@ -101,6 +101,11 @@ The measurements:
 - A frame that cannot settle compares nothing and keeps no frame: the next frame of its parity
   reads as changed, as after a change. The page's image tests and hold mode therefore record
   without any comparison.
+- The core tells the two kinds of frame apart with a second change signal. Its changed stamp
+  records every object a dynamic update recomputed, because an object's children recompute from
+  it. The new `SceneStorage::rows_changed` records only the slots whose world row differs from the
+  row their parity held. The comparison reads that one. A camera, which the engine creates as a
+  dynamic object, therefore does not keep a still view from settling.
 - A view never blends while bloom, an outline, an effect that folds into the final pass,
   automatic exposure or the volumetric fog draws, on a canvas that keeps its alpha, or on the
   8-bit path. Their pictures change on the GPU alone, or the blend could not average them.

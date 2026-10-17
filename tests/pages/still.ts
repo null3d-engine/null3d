@@ -71,6 +71,9 @@ run('still', async () => {
 		canvas,
 		sketch: new URL('./sketches/edges-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
+		// The accumulation smooths the edges itself, and every tier then draws on the high dynamic
+		// range path: compatibility mode with MSAA takes the 8-bit path, which never accumulates.
+		antialias: 'none',
 	});
 	await engine.firstFrame;
 	const slots = engineSlots();
