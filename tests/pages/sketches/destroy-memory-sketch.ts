@@ -1,15 +1,16 @@
 // Loads and destroys models again and again, for the memory test: a skinned and animated fox with
 // its texture, a face with morph targets, and a scene whose file stores raycast trees. Each round
 // loads the three, makes copies and an instance batch, plays the fox's clip, casts rays that build
-// the meshes' trees, draws some frames, then destroys it all. After WARM_ROUNDS rounds and after
-// the last one, the sketch posts 'checkpoint' with the GPU bytes of meshes and textures, and waits
-// for the page's 'go', so the page can read the engine's memory while nothing changes.
+// the meshes' trees, draws some frames, then destroys it all. After every round the sketch posts
+// 'checkpoint' with the GPU bytes of meshes and textures, and waits for the page's 'go', so the
+// page can read the engine's memory while nothing changes. The page and the test find the round
+// from which that memory holds one figure, so the engine's start-up may still be arriving when a
+// slow machine draws the first rounds.
 import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';
 import { blenderMorphBuilder } from '../lib/gltf-files';
 
-/** Rounds before the first checkpoint, and in all. */
-const WARM_ROUNDS = 10;
-const ROUNDS = 100;
+/** Rounds in all; the test's warm-up ends once the engine's memory settles. */
+const ROUNDS = 140;
 /** Frames that each round draws with its copies, and after it destroys them. */
 const FRAMES = 2;
 
@@ -80,7 +81,7 @@ export default defineSketch(({ scene, assets, geometry, textures, page }) => {
 		try {
 			for (let k = 1; k <= ROUNDS; k++) {
 				hits += await round();
-				if (k === WARM_ROUNDS || k === ROUNDS) await checkpoint(k);
+				await checkpoint(k);
 			}
 			page.post('done', { hits, rounds: ROUNDS });
 		} catch (error) {
