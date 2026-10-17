@@ -1,8 +1,10 @@
 // The complete sketches that the agent skills and the docs' cookbook show: each TypeScript code
 // block in their Markdown whose code exports `defineSketch(...)`. The tests type check them against
 // the engine and draw them in hold mode, so every call that such a sketch shows exists and runs. A
-// sketch under a heading that names a later version, such as (0.2), (after 1.0) or (later in 0.1),
-// uses parts that are not built yet. The tests leave it out until its heading loses the version.
+// sketch is left out only under a heading that says its parts are not built yet: "not built yet",
+// "later in <version>" or "after <version>". A heading that names only a roadmap step, such as
+// (0.2), runs: the release being built holds steps 0.1, 0.2 and 0.3, so such a part is shipped or
+// says "not built yet" itself. The tests learn of no other reason to skip a sketch.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { walkFiles } from '../../tools/lib/files.ts';
@@ -19,14 +21,17 @@ export interface SkillSketch {
 	/** The heading that the code block sits under. */
 	heading: string;
 	code: string;
-	/** The later version that the heading names, for a sketch the tests leave out. */
+	/** The later version or the not-built mark that the heading names, for a sketch the tests leave out. */
 	later?: string;
 	/** True when the sketch picks a camera, so its frame must show more than the background. */
 	draws: boolean;
 }
 
-/** A group in parentheses that names a later version than the one being built. */
-const LATER_VERSION = /\(([^)]*\b(?:later in 0\.1|after 1\.0|0\.[2-9]|[1-9]\.\d+)\b[^)]*)\)/i;
+/**
+ * A group in parentheses that marks parts the engine lacks today: the words the skills use for
+ * them, or a release after the one being built.
+ */
+const LATER_VERSION = /\(([^)]*(?:\bnot built yet\b|\blater in\b|\bafter\s+\d|[1-9]\.\d+)[^)]*)\)/i;
 
 /** A fence that opens a TypeScript code block, and the fence that closes any code block. */
 const TS_FENCE = /^```(?:ts|typescript)\s*$/;
@@ -112,7 +117,7 @@ export function skillSketches(root: string): SkillSketch[] {
 	return sketches;
 }
 
-/** The sketches that the tests run: those whose headings name no later version. */
+/** The sketches that the tests run: those whose headings name no part that is not built yet. */
 export const runnableSketches = (root: string): SkillSketch[] =>
 	skillSketches(root).filter((sketch) => sketch.later === undefined);
 

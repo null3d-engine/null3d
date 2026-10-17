@@ -103,15 +103,15 @@ async function withLock<T>(cache: string, work: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The switches that the comparison code of the checkout at `root` gives every page, or none when
- * its comparison had none.
+ * The switches that the comparison code of the checkout at `root` gives its pages, or none when its
+ * comparison had none.
  */
 export async function switchesOf(root: string): Promise<readonly string[]> {
 	try {
 		const code = (await import(join(root, 'bench/lib/compare.ts'))) as {
-			COMPARISON_SWITCHES?: readonly string[];
+			ALL_COMPARISON_SWITCHES?: readonly string[];
 		};
-		return code.COMPARISON_SWITCHES ?? [];
+		return code.ALL_COMPARISON_SWITCHES ?? [];
 	} catch {
 		return [];
 	}

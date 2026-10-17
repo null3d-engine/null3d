@@ -91,7 +91,7 @@ A sketch that never imports `@null3d/terrain` ships no terrain code and starts n
 
 ## Compared with three.js
 
-three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, use three.js's `TerrainGenerator`, or add a library such as three-mesh-bvh for large ground.
+three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, shape the ground with three.js's `ImprovedNoise` and a height map, or add a library such as three-mesh-bvh for large ground.
 
 | three.js | null3D |
 | --- | --- |
