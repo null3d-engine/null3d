@@ -53,6 +53,14 @@ shared, which D-177's addendum of 15 October withdrew:
 
 A library module's edit rebuilds only the entries that import it: 31 of 54 in one measurement.
 
+A build whose entry cache holds nothing for the current compiler prints a notice before it starts:
+the first build compiles every shader and can take a few minutes. It then reports how far it has
+got on standard error, as a percentage of the variants to compile: a terminal gets one line that it
+rewrites at each whole percent, and any other stream gets a line at each tenth, so a CI log shows
+steady progress without flooding. A build that reuses the cache prints neither, because it finishes
+in seconds. The notice and the percentage are for a reader who would otherwise think the build had
+stopped.
+
 CI keeps the two shader folders in the Actions cache ([CI's jobs](pull-requests.md#cis-jobs)). On 15
 October 2026 a cold shader build on a CI runner took longer than 34 minutes. One stopped run left
 669 MB of finished entries, which the Actions cache stored as 10.3 MiB. The next run restored them in

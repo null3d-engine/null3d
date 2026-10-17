@@ -161,6 +161,20 @@ pub fn build_with_cache(
     inputs: &Inputs,
     cache: &Cache,
 ) -> Result<(Output, CacheStats), BuildError> {
+    build_with_cache_reporting(inputs, cache, &|_, _| {})
+}
+
+/// How much of a build is done, as the number of variants compiled and the number to compile. The
+/// build calls it from its worker threads after each variant, once per variant, so a caller that
+/// reports progress does its own throttling.
+pub type Progress<'a> = &'a (dyn Fn(usize, usize) + Sync);
+
+/// [`build_with_cache`], reporting each compiled variant to `progress`.
+pub fn build_with_cache_reporting(
+    inputs: &Inputs,
+    cache: &Cache,
+    progress: Progress<'_>,
+) -> Result<(Output, CacheStats), BuildError> {
     let manifest = Manifest::parse(&inputs.manifest).map_err(|messages| {
         messages
             .into_iter()
@@ -174,7 +188,15 @@ pub fn build_with_cache(
     let mut errors = BuildError::default();
     let mut output = Output::default();
     let mut stats = CacheStats::default();
-    let entries = build_entries(compiler, &manifest, inputs, cache, &mut errors, &mut stats)?;
+    let entries = build_entries(
+        compiler,
+        &manifest,
+        inputs,
+        cache,
+        progress,
+        &mut errors,
+        &mut stats,
+    )?;
     for ((shader_name, shader), variants) in manifest.shaders.iter().zip(entries) {
         if shader.custom_effects {
             continue;
@@ -259,6 +281,7 @@ fn build_entries(
     manifest: &Manifest,
     inputs: &Inputs,
     cache: &Cache,
+    progress: Progress<'_>,
     errors: &mut BuildError,
     stats: &mut CacheStats,
 ) -> Result<Vec<BTreeMap<String, VariantOutput>>, BuildError> {
@@ -295,7 +318,7 @@ fn build_entries(
         found.push(cached);
     }
 
-    let mut results = compile_jobs(&mut compiler, &shaders, inputs, &jobs)?
+    let mut results = compile_jobs(&mut compiler, &shaders, inputs, &jobs, progress)?
         .into_iter()
         .zip(&jobs)
         .peekable();
@@ -353,8 +376,11 @@ fn compile_jobs(
     shaders: &[(&String, &manifest::Shader)],
     inputs: &Inputs,
     jobs: &[Job],
+    progress: Progress<'_>,
 ) -> Result<Vec<Result<Built, Vec<Problem>>>, BuildError> {
     let next = AtomicUsize::new(0);
+    let finished = AtomicUsize::new(0);
+    let total = jobs.len();
     let work = |compiler: &mut Compiler| {
         let mut done = Vec::new();
         loop {
@@ -372,6 +398,7 @@ fn compile_jobs(
                 &job.build,
             );
             done.push((index, result));
+            progress(finished.fetch_add(1, Ordering::Relaxed) + 1, total);
         }
     };
     let mut helpers = (1..threads(jobs.len()))
@@ -857,8 +884,17 @@ pub fn write(root: &Path) -> Result<Written, BuildError> {
 /// and deletes device modules that the build no longer makes. It gives whether it wrote a module,
 /// and how many entries it compiled and reused.
 pub fn write_cached(root: &Path, cache: &Cache) -> Result<(Written, CacheStats), BuildError> {
+    write_cached_reporting(root, cache, &|_, _| {})
+}
+
+/// [`write_cached`], reporting each compiled variant to `progress`.
+pub fn write_cached_reporting(
+    root: &Path,
+    cache: &Cache,
+    progress: Progress<'_>,
+) -> Result<(Written, CacheStats), BuildError> {
     let inputs = Inputs::read(root)?;
-    let (output, stats) = build_with_cache(&inputs, cache)?;
+    let (output, stats) = build_with_cache_reporting(&inputs, cache, progress)?;
     let modules = typescript(&output);
     let mut written = Written::Unchanged;
     for path in stale_modules(root, &modules) {
