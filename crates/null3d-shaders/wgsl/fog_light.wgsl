@@ -10,6 +10,7 @@
 // The step binds the camera's frame group at group 0, as the scene's background does, so it reads
 // the sun's cascades, the clustered lights and the shadow atlas as the scene's surfaces do. Its own
 // group holds its settings, the last frame's grid and a sampler.
+#import null3d::fullscreen::{triangle}
 #import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_edge_distance, fog_grid_place, fog_phase, fog_point, fog_slice_edge}
 #import null3d::lighting::{distance_attenuation, spot_attenuation}
 #import null3d::lights::{KIND_RECT, cluster_lights, grid_word, light_of}
@@ -26,10 +27,7 @@ const FADE_SHARE: f32 = 0.1;
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 /// How much of the sun's light reaches a point in the air at `relative`: 1 in full light, 0 in full

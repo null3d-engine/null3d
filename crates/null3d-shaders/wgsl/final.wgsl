@@ -61,6 +61,7 @@
 // path the scene shaders dithered already, and the pass dithers again only where it changes the
 // color. Grading and the dither work on the color that a pixel's coverage divides out, and
 // multiply it back after.
+#import null3d::fullscreen::{triangle}
 #import null3d::color::{limit_hdr, linear_to_srgb}
 #import null3d::tonemap
 
@@ -404,11 +405,7 @@ fn scene_texel(pixel: vec2i) -> vec4f {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space: (-1, -1), (3, -1) and (-1, 3). Its depth sits
-    // halfway, so no depth mode of the WebGL2 path moves it to the edge of the clip range.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 #ifdef FXAA
