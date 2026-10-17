@@ -63,3 +63,37 @@ Five merges of 12 to 14 October 2026 held features, tests or shading that no pla
 How the limits were chosen: the check ran over the 117 merges that the review read. It also ran over the 23 merges on main of 15 October 2026 to 12:00. Some are in both, so there are 133 merges. It refused all nine merges named above. Of the 23 merges of 15 October, 20 pass. The three it refuses add D-174 text: 21d807002 and bc99c4330 among the nine, and 63e7337f3, which adds a paragraph of iPhone 17 figures. It refused 21 of the 133 merges in all. Each of the other refused merges also holds edits beyond its resolutions. They added a demo's whole files, a table of measurements, rewritten paragraphs of decision records, and a demo entry written back. Two adapted code that main moved or changed (594cc304e and 1f1f04501), and would now carry a `Merge-Edit:` trailer. The merges that pass hold at most 26 words of new work, such as a comment or an argument passed on. A limit of 30 words lets that glue through and stops any new paragraph, table or function. One changed shader line can change every image, as e13b05241's did, so shader code has no allowance.
 
 The check misses small edits below the limit, such as 7674e8b10, which dropped a line from one side (11 words). A count of the lines that a side added and the merge lost would catch such a drop. But it gives false alarms where a side already holds the other's change, so a reviewer checks for drops.
+
+## Addendum, 15 October 2026: a check before each push to main
+
+The owner approved it on 15 October 2026, through the coordinator: "OWNER APPROVED (15 Oct) the local pre-push check: build it. On every push to main (and only then, so branch saves stay fast)". A code review that day found that nothing checked the commits that reached main. CI's commit check ran only on pull requests. On 14 October a branch landed with five failing tests of a crate whose test files it never changed. Three merged trees held structs and constants that did not compile.
+
+- `tools/hooks/pre-push.ts` runs before each push to main, through the git hooks that `bun install` sets up. A push to another branch runs nothing.
+- It runs the commit message and trailer checks over the commits that the push adds to main, the same checks as CI's `commits` job: commitlint, then the trailer check. It also runs the merge check over them, so a merge commit that carries new work is refused. When the push changes Rust code or Cargo settings, it runs `cargo check --workspace`, then the tests of each changed crate with `--no-fail-fast`. It prints each command and the reason, and refuses the push when one fails.
+- Where git's `null3d.jobQueue` setting names a job queue script, the steps run through it, so a push does not load a busy machine.
+- The bypass is for emergencies only: a `Push-Check-Skipped: <reason>` trailer on a commit of the push, which names the emergency in the commit body.
+- CI's `commits` job runs the commit message and trailer checks on each push to main too, over the commits after main's commit before the push.
+- [Pull requests and parallel work](../pull-requests.md#commit-messages-and-pushes) gives the details.
+
+## Addendum, 15 October 2026: a Rust-free push needs the type check only
+
+The coordinator ruled it that evening, after a branch that changed no Rust file waited hours in the machine's CPU queue for a compile that could not tell it anything.
+
+- The pre-push check runs `cargo check --workspace` and the changed crates' tests only when the diff between main's commit before the push and the pushed commit holds a Rust or Cargo file. That diff covers the merge too, so a resolution that changes Rust shows there.
+- A helper that lands by hand follows the same rule. `bun run typecheck` gates the push, and `cargo check --workspace` runs as its own queued job straight after. A failure there is fixed by the next push.
+- The criterion is equality of the two Rust trees: `git diff HEAD origin/main` over `*.rs`, `Cargo.toml`, `Cargo.lock` and `rust-toolchain.toml` prints nothing. Both halves must hold, with no Rust file in the branch's own diff and none in the merge that it just resolved. The Rust bytes are then main's own, which main's CI has compiled already, so a local compile repeats a known result at a cost that every helper behind it pays in the queue.
+- The type check still gates the push because it reads the merged tree, merge resolutions included. On 15 October it caught a merged tree whose pages import `@null3d/impostors` before that package was installed.
+- A push that takes this path names, in its report, the commit that main held before it, so a failed cargo check costs one revert.
+
+## Addendum, 16 October 2026: the push holds a connection, and it must be kept alive
+
+The team lead asked on 16 October 2026 for the cause of two pushes to main. Both died with nothing printed by git. He also asked for the check to stop it happening again. The cause is measured, and it is not in the code being pushed.
+
+- `git push` opens the connection to the remote before it runs the hook. It holds it, saying nothing, until the hook returns, because the hook reads the ref list that the negotiation produced. The trace that git wrote on the second failed push puts the connection four seconds before the hook.
+- A connection that says nothing is closed by the far end after about six minutes. A held session to `github.com` that wrote nothing ended after 365.6 seconds, and the ssh client exited 255. It was authenticated and asked for `git-receive-pack`. It sent no ref and no pack, so nothing on the remote changed.
+- The two failed pushes both ran through the job queue, and the same push without it landed. The queue's CPU lane runs its steps at background priority, so the check takes about three times as long. The same cargo test step took 389.9 and 395.1 seconds of test time through the queue, against 134.7 seconds run directly. The longer check outlived its connection, and the shorter one did not.
+- When the connection has gone, git writes the push into a socket that has gone. The hook prints `every check passed`, git prints nothing, and nothing is pushed. The status is 141, which is a write to a closed socket. The minutes that the check spent are lost.
+- So the check refuses a push to main whose remote it reaches over ssh, when nothing keeps that connection alive, and it names the setting. A machine that pushes to main names `ServerAliveInterval` for the host. It goes under `Host <host>` in `~/.ssh/config`, or on the ssh command through `core.sshCommand`.
+- The alternative, running the check's cargo steps as a job after the push, was rejected. It would trade the guarantee that this record's addendum of 15 October added, that a merged tree compiles before it lands, for a shorter check. Keeping the connection alive costs one line of machine setup and keeps the guarantee.
+
+How to recognise it: a push to main that prints `pre-push: every check passed` did not fail its checks. It prints nothing from git, and exits 141. Its connection went quiet for too long. Push again, and add the keepalive setting.

@@ -7,7 +7,9 @@
 //! stays the same, nor when passes switch on and off after it has compiled once, nor when the
 //! render scale changes. WebGPU frames with the depth prepass allocate nothing either. The job
 //! workers and the calling thread assign moving lights to the light grid without allocating, and a
-//! scene pass's grid takes a moving lamp without allocating either.
+//! scene pass's grid takes a moving lamp without allocating either. Neither do frames that draw an
+//! optional feature: decals turning, a weighted layer rising, particles, the exposure meter, the
+//! physical sky, the volumetric fog, bloom, depth of field and the probe grid.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 mod common;
@@ -20,18 +22,27 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
-use null3d_gpu::drawlist::{DrawList, Op, format};
+use null3d_gpu::drawlist::{DrawList, Op, format, template};
 use null3d_render::background::{Background, BackgroundSource};
+use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::dof::Dof;
+use null3d_render::exposure::AutoExposure;
+use null3d_render::fog::{Fog, curve};
+use null3d_render::fog_volume::Volumetric;
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
 use null3d_render::light_grid::{ClusterParams, DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
+use null3d_render::materials::feature;
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
+use null3d_render::particles::PARAM_FLOATS;
+use null3d_render::physical_sky::Atmosphere;
+use null3d_render::probe_grid::ProbeGrid;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::ShadowQuality;
 use null3d_render::view::ViewId;
@@ -1171,4 +1182,396 @@ fn recording_webgl2_frames_with_software_occlusion_allocates_nothing() {
     }
     assert_eq!(CountingAllocator::disarm(), 0);
     assert!(occluded > 0, "the walls hid nothing");
+}
+
+/// The world drawn by the WebGPU builder with an HDR scene color, which bloom, the exposure meter
+/// and the volumetric fog need.
+fn hdr_world() -> World {
+    World::with_config(RendererConfig {
+        canvas: CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            ..CanvasOutput::default()
+        },
+        transient_attachments: true,
+        ..RendererConfig::default()
+    })
+}
+
+/// As [`hdr_world`], for the WebGL2 builder.
+fn hdr_webgl2_world(multi_draw: bool) -> World<CpuCulledRenderer> {
+    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        canvas: CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            ..CanvasOutput::default()
+        },
+        multi_draw,
+        ..CpuCulledConfig::default()
+    }))
+}
+
+/// Records warm-up frames of `world`, then steady frames that call `change` before each, and
+/// returns what the steady frames allocated. `change` writes the feature's own content for the
+/// frame, as a sketch changes it every frame.
+fn feature_allocations<B: FrameBuilder>(
+    world: &mut World<B>,
+    name: &str,
+    templates: &[u32],
+    change: impl Fn(&mut World<B>, u32),
+) -> u64 {
+    // The warm-up frames' lists hold the feature's pipelines: a scenario that draws none of the
+    // feature would pass every allocation check without covering anything. Some features draw
+    // from the second frame, once their pipelines are built or their textures are on the GPU.
+    let mut made = Vec::new();
+    for frame in 1..=8 {
+        world.frame = frame;
+        world.record(frame == 1);
+        made.extend(
+            world
+                .commands()
+                .into_iter()
+                .filter(|(op, _)| {
+                    matches!(op, Op::CreateRenderPipeline | Op::CreateComputePipeline)
+                })
+                .map(|(_, o)| o[1]),
+        );
+    }
+    assert!(
+        made.iter().any(|template| templates.contains(template)),
+        "{name}: no frame draws with template {templates:?}: {made:?}"
+    );
+    CountingAllocator::arm();
+    for frame in 9..=48 {
+        world.frame = frame;
+        change(world, frame);
+        world.record(false);
+    }
+    CountingAllocator::disarm()
+}
+
+/// A ground under the camera's view with an object that draws as a decal, turning every frame.
+fn decal_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let ground = grid(8, 8);
+    world.add_object(&ground, Shading::Lit);
+    world.add_object_with(&ground, Shading::Lit, feature::DECAL);
+    let decal = *world.objects.last().unwrap();
+    feature_allocations(
+        &mut world,
+        "decals",
+        &[template::DECAL],
+        move |world, frame| {
+            let angle = frame as f32 * 0.07;
+            world
+                .scene
+                .set_rotation(decal, [0.0, angle.sin() * 0.3, 0.0, 1.0])
+                .unwrap();
+        },
+    )
+}
+
+#[test]
+fn frames_with_a_turning_decal_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(decal_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            decal_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// An object with a material that draws in the camera's weighted layer, rising every frame.
+fn weighted_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let features = feature::WEIGHTED | feature::BLEND;
+    world.add_object_with(&base_sphere(0.5, [8, 8]), Shading::Lit, features);
+    let puff = *world.objects.last().unwrap();
+    feature_allocations(
+        &mut world,
+        "the weighted layer",
+        &[template::WEIGHTED_COMPOSITE],
+        move |world, frame| {
+            let y = (frame % 24) as f32 * 0.05;
+            world.scene.set_position(puff, [0.0, y, 0.0]).unwrap();
+        },
+    )
+}
+
+#[test]
+fn frames_with_a_weighted_layer_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(weighted_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            weighted_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// A particle system whose emitter writes new births every frame.
+fn particle_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let features = feature::BLEND | feature::ADDITIVE | feature::NO_DEPTH_WRITE;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Particle, features, [1.0; 4])
+        .unwrap()
+        + 1;
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_local_radius(object, 1.0).unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[
+                Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                Command::set_material(object, material),
+            ],
+            world.frame,
+        )
+        .unwrap();
+    let particles = world.renderer.settings_mut().particles_mut();
+    let system = particles.create(object.slot(), 64).unwrap();
+    let values = particles.values_mut(system).unwrap();
+    values[PARAM_FLOATS + 1] = 48.0;
+    feature_allocations(
+        &mut world,
+        "particles",
+        &[template::PARTICLE],
+        move |world, frame| {
+            let values = world
+                .renderer
+                .settings_mut()
+                .particles_mut()
+                .values_mut(system)
+                .unwrap();
+            values[PARAM_FLOATS] = frame as f32 * 0.02;
+        },
+    )
+}
+
+#[test]
+fn frames_of_a_particle_system_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(particle_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            particle_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// Automatic exposure over a scene whose exposure and clock move every frame.
+fn exposure_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world
+        .renderer
+        .settings_mut()
+        .set_auto_exposure(Some(AutoExposure::default()));
+    feature_allocations(
+        &mut world,
+        "automatic exposure",
+        &[template::EXPOSURE_LUMINANCE, template::EXPOSURE_HISTOGRAM],
+        |world, frame| {
+            let settings = world.renderer.settings_mut();
+            settings.set_clock(frame as f32 * 0.016, 0.016, frame);
+            settings.set_output(Output {
+                exposure: 1.0 + (frame % 8) as f32 * 0.25,
+                ..Output::default()
+            });
+        },
+    )
+}
+
+#[test]
+fn frames_with_the_exposure_meter_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(exposure_allocations(hdr_world()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            exposure_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// The physical sky behind the scene, with its sun moving every frame.
+fn physical_sky_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(Background {
+            source: BackgroundSource::Atmosphere(Atmosphere::default()),
+            intensity: 1.0,
+            blur: 0.0,
+            rotation: [0.0; 3],
+        }));
+    feature_allocations(
+        &mut world,
+        "the physical sky",
+        &[template::SKY_TABLE],
+        |world, frame| {
+            let angle = frame as f32 * 0.02;
+            world
+                .renderer
+                .settings_mut()
+                .set_sun([angle.sin(), 0.5, angle.cos()], [1.0, 1.0, 1.0]);
+        },
+    )
+}
+
+/// A scene of exponential fog whose density changes every frame, with the volumetric fog's steps
+/// drawing over it. The fog is on before the warm-up frames: a scene that gains its fog only after
+/// them declares its passes again, which is not a steady frame.
+fn volumetric_fog_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let settings = world.renderer.settings_mut();
+    settings.set_fog_volume(Some(Volumetric::default()));
+    settings.set_fog_slices(32);
+    settings.set_fog(Fog::from_code(
+        curve::EXPONENTIAL,
+        [0.5, 0.5, 0.5],
+        [0.02, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0],
+    ));
+    feature_allocations(
+        &mut world,
+        "the volumetric fog",
+        &[template::FOG_APPLY, template::FOG_APPLY_MS],
+        |world, frame| {
+            let density = 0.02 + (frame % 8) as f32 * 0.005;
+            world.renderer.settings_mut().set_fog(Fog::from_code(
+                curve::EXPONENTIAL,
+                [0.5, 0.5, 0.5],
+                [density, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0],
+            ));
+        },
+    )
+}
+
+/// Bloom over a scene whose intensity changes every frame.
+fn bloom_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world
+        .renderer
+        .settings_mut()
+        .set_bloom(Some(Bloom::default()));
+    feature_allocations(&mut world, "bloom", &[template::BLOOM], |world, frame| {
+        world.renderer.settings_mut().set_bloom(Some(Bloom {
+            intensity: 0.5 + (frame % 4) as f32 * 0.1,
+            ..Bloom::default()
+        }));
+    })
+}
+
+/// Depth of field whose focus moves every frame.
+fn depth_of_field_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.renderer.settings_mut().set_dof(Some(Dof::default()));
+    feature_allocations(
+        &mut world,
+        "depth of field",
+        &[template::DOF_SETUP, template::DOF_SETUP_MS],
+        |world, frame| {
+            world.renderer.settings_mut().set_dof(Some(Dof {
+                focus_distance: 2.0 + (frame % 16) as f32 * 0.5,
+                ..Dof::default()
+            }));
+        },
+    )
+}
+
+#[test]
+fn frames_with_bloom_depth_of_field_the_sky_and_the_volumetric_fog_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(bloom_allocations(hdr_world()), 0, "bloom on WebGPU");
+    assert_eq!(
+        depth_of_field_allocations(hdr_world()),
+        0,
+        "depth of field on WebGPU"
+    );
+    assert_eq!(
+        physical_sky_allocations(hdr_world()),
+        0,
+        "the physical sky on WebGPU"
+    );
+    assert_eq!(
+        volumetric_fog_allocations(hdr_world()),
+        0,
+        "the volumetric fog on WebGPU"
+    );
+    for multi_draw in [true, false] {
+        assert_eq!(
+            bloom_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "bloom on WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            depth_of_field_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "depth of field on WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            physical_sky_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "the physical sky on WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            volumetric_fog_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "the volumetric fog on WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// The scene's light probe grid, which the sketch moves every frame.
+fn probe_grid_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let textures = world.renderer.settings_mut().textures_mut();
+    let texture = textures
+        .create_volume(4, 4, 16, format::RGBA16_FLOAT)
+        .unwrap();
+    // Probe shading turns on once the grid's texture is on the GPU, so its texels upload.
+    textures.set_data(texture, 4, 4).unwrap();
+    let grid = ProbeGrid {
+        texture,
+        origin: [-2.0, -2.0, -2.0],
+        spacing: [1.0, 1.0, 1.0],
+        counts: [4, 4, 4],
+        intensity: 1.0,
+        environment_weight: 1.0,
+    };
+    world.renderer.settings_mut().set_probe_grid(Some(grid));
+    feature_allocations(
+        &mut world,
+        "the probe grid",
+        &[template::PROBE_GRID, template::PROBE_GRID_MAPS],
+        move |world, frame| {
+            world
+                .renderer
+                .settings_mut()
+                .set_probe_grid(Some(ProbeGrid {
+                    origin: [-2.0 + (frame % 8) as f32 * 0.1, -2.0, -2.0],
+                    ..grid
+                }));
+        },
+    )
+}
+
+#[test]
+fn frames_with_the_probe_grid_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(probe_grid_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            probe_grid_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
 }

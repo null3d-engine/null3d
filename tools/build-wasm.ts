@@ -73,8 +73,11 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
-	cargoEnv,
+	hashFiles,
 	hashOf,
+	pruneCacheLocked,
+	runCargo,
+	touchCacheEntry,
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
@@ -301,6 +304,16 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}, cwd 
 	execFileSync(cmd, args, { cwd, stdio: 'inherit', env: { ...process.env, ...env } });
 }
 
+/**
+ * Runs cargo through the caches' one helper, which sets the build folder of the call and sccache,
+ * and throws when it fails.
+ */
+function cargo(args: readonly string[], env: Record<string, string>, targetDir: string): void {
+	const { status, error } = runCargo(root, args, { env, targetDir });
+	if (error) throw error;
+	if (status !== 0) throw new Error(`cargo ${args.join(' ')} failed`);
+}
+
 const git = (args: string[], cwd = root) =>
 	execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -392,8 +405,6 @@ export function cargoTargetBase(checkout: string, override?: string): string {
 }
 
 const CARGO_TARGET_BASE = cargoTargetBase(root, process.env.NULL3D_CARGO_TARGET);
-/** The environment of every cargo run of the build: sccache as the compiler wrapper when installed. */
-const CARGO_ENV = cargoEnv();
 
 /** The Rust build folder of a variant. */
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
@@ -407,6 +418,16 @@ const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.n
  */
 export function variantStagingFolder(variant: Variant): string {
 	return join(root, 'target', `wasm-${variant.name}`, `out-${process.pid}`);
+}
+
+/** The lock that keeps two builds of one set of output files from putting them in place at once. */
+function withInstallLock<T>(name: string, work: () => T): T {
+	const release = acquireLock(join(root, 'target', `install-${name}.lock`));
+	try {
+		return work();
+	} finally {
+		release();
+	}
 }
 
 /**
@@ -486,9 +507,20 @@ function toolVersions(cargoLock: string): ToolVersions {
 const digest = hashOf;
 
 /**
+ * A hash of the build's own code: this script and the module that rewrites a built module's glue.
+ * A build writes the glue itself (see stampGlue and addReleaseInstance), and this script decides the
+ * flags, the module names and the staging, so both decide what an entry holds. Neither is a Rust
+ * source, so neither shows up in the sources' stamp: without this an edit to the glue kept serving
+ * the entry that the earlier version wrote.
+ */
+export function buildCodeHash(checkout: string): string {
+	return hashFiles(checkout, ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']);
+}
+
+/**
  * The key of a core variant's artifacts: the sources' stamp, the variant's flags, the target, the
- * release profile and the tool versions. Any other input gives another key, so a hit holds exactly
- * the bytes that this build would write.
+ * release profile, the tool versions and the build's own code, which rewrites the glue. Any other
+ * input gives another key, so a hit holds exactly the bytes that this build would write.
  */
 export function variantKey(
 	variant: Variant,
@@ -501,6 +533,7 @@ export function variantKey(
 			`format=${ARTIFACT_FORMAT}`,
 			'kind=core',
 			`variant=${variant.name}`,
+			`code=${buildCodeHash(root)}`,
 			`stamp=${stamp}`,
 			`rustflags=${variant.rustflags}`,
 			`cargoArgs=${variant.cargoArgs.join(' ')}`,
@@ -515,12 +548,13 @@ export function variantKey(
 	);
 }
 
-/** The key of the build tools' modules, from their crates' inputs and the same flags and versions. */
+/** The key of the build tools' modules, from their crates' inputs and the same code, flags and versions. */
 export function toolsKey(shaders: string, assets: string, tools: ToolVersions): string {
 	return digest(
 		[
 			`format=${ARTIFACT_FORMAT}`,
 			'kind=tools',
+			`code=${buildCodeHash(root)}`,
 			`shaders=${shaders}`,
 			`assets=${assets}`,
 			'rustflags=-Cstrip=symbols',
@@ -626,24 +660,18 @@ function buildVariant(
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, CORE_ARTIFACTS);
 	if (cached) {
 		console.log(`\nthe ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
-		for (const name of artifactFiles(cached)) copyInPlace(join(cached, name), join(dest, name));
+		// The entry is in use now, so pruning keeps it while this build copies from it.
+		touchCacheEntry(cached);
+		withInstallLock(variant.name, () => {
+			for (const name of artifactFiles(cached)) copyInPlace(join(cached, name), join(dest, name));
+		});
 		return;
 	}
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
-	run(
-		'cargo',
-		[
-			'build',
-			'-p',
-			CRATE,
-			'--release',
-			'--target',
-			'wasm32-unknown-unknown',
-			'--target-dir',
-			targetDir,
-			...variant.cargoArgs,
-		],
-		{ ...CARGO_ENV, RUSTFLAGS: variant.rustflags },
+	cargo(
+		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
+		{ RUSTFLAGS: variant.rustflags },
+		targetDir,
 	);
 	// The files take shape in this build's own staging folder, and go in place whole once every step
 	// and check passed (see variantStagingFolder).
@@ -669,8 +697,23 @@ function buildVariant(
 	const stagedFiles = readdirSync(staged)
 		.filter((name) => !name.endsWith('.partial'))
 		.map((name) => [name, join(staged, name)] as const);
-	if (!noCache) writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
-	replaceFolder(staged, dest);
+	// The key was taken before cargo read the sources. If an edit landed while this build ran, the
+	// output is not what the key names, and storing it would hand these files to every checkout whose
+	// sources match the key. The glue carries the stamp of the sources that the build read, so such a
+	// core fails with E1402 on the next page load and asks for a build.
+	if (!noCache) {
+		if (coreSourcesStamp(root) === stamp) {
+			writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
+			pruneCacheLocked(ARTIFACT_CACHE_BASE);
+		} else
+			console.warn(
+				'the core sources changed while this build ran, so the cache stores nothing for it; build again',
+			);
+	}
+	// Each build stages in a folder of its own, so the put-in-place step is the only place two builds
+	// of one checkout can still meet. A lock over it keeps one build's file set from mixing with
+	// another's, which would leave a module from one build beside a WebAssembly file from the other.
+	withInstallLock(variant.name, () => replaceFolder(staged, dest));
 }
 
 /**
@@ -689,34 +732,48 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 		console.log(
 			"\nthe shader compiler and the asset tool's formats are unchanged, copying them from the cache",
 		);
-		for (const { crate, path } of TOOL_MODULES) copyInPlace(join(cached, `${crate}.wasm`), path);
+		// The entry is in use now, so pruning keeps it while this build copies from it.
+		touchCacheEntry(cached);
+		withInstallLock('tools', () => {
+			for (const { crate, path } of TOOL_MODULES) copyInPlace(join(cached, `${crate}.wasm`), path);
+		});
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	console.log("\nbuilding the shader compiler and the asset tool's formats");
-	run(
-		'cargo',
+	cargo(
 		[
 			'build',
 			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
 			'--release',
 			'--target',
 			'wasm32-unknown-unknown',
-			'--target-dir',
-			targetDir,
 		],
-		{ ...CARGO_ENV, RUSTFLAGS: '-Cstrip=symbols' },
+		{ RUSTFLAGS: '-Cstrip=symbols' },
+		targetDir,
 	);
-	for (const { crate, path } of TOOL_MODULES) {
-		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-		copyInPlace(built, path);
+	withInstallLock('tools', () => {
+		for (const { crate, path } of TOOL_MODULES) {
+			const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
+			copyInPlace(built, path);
+		}
+	});
+	// The tools' crates are hashed before cargo builds them, so an edit during the build means these
+	// modules are not what the key names (see buildVariant, which takes the same care).
+	if (!noCache) {
+		const [nowShaders, nowAssets] = toolInputs(root);
+		if (nowShaders === shaders && nowAssets === assets) {
+			writeArtifacts(
+				ARTIFACT_CACHE_BASE,
+				key,
+				TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
+			);
+			pruneCacheLocked(ARTIFACT_CACHE_BASE);
+		} else
+			console.warn(
+				"the tools' crate sources changed while this build ran, so the cache stores nothing for it; build again",
+			);
 	}
-	if (!noCache)
-		writeArtifacts(
-			ARTIFACT_CACHE_BASE,
-			key,
-			TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
-		);
 }
 
 /**
@@ -744,7 +801,11 @@ function buildEngineTestPage(): BuiltFile[] {
 			return [{ file, text, sources }];
 		}
 		const shaders = /^(shaders-[a-z0-9-]+)-[\w-]{8}\.js$/.exec(file)?.[1];
-		return shaders ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${shaders}.js`] }] : [];
+		if (shaders) return [{ file, text, sources: [`${ENGINE_SOURCE}generated/${shaders}.js`] }];
+		// A target's table of shared paragraphs is emitted at a name of its own, without the hash
+		// that a copied file's name carries, so its name alone says which module it holds.
+		const table = /^(shader-paragraphs-[a-z0-9-]+)\.js$/.exec(file)?.[1];
+		return table ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${table}.js`] }] : [];
 	});
 }
 

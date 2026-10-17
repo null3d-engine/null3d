@@ -13,8 +13,12 @@ test.describe.configure({ timeout: 240_000 });
 /** True on CI's software GPU, which draws the heavy scenes too slowly for the movement probe. */
 const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftshader');
 
-/** Switches that keep a null3D ramp short on the software GPU, where no frame rate is checked. */
-const quick = () => (softwareGpu() ? 'max=400&warmup=0&step=0.5' : '');
+/**
+ * Switches that keep a null3D ramp short on the software GPU, where no frame rate is checked: no
+ * effects, which cost that GPU the most and do not change the scene's updates, the image tests hold
+ * each engine's look; no warmup; and short steps.
+ */
+const quick = () => (softwareGpu() ? 'max=400&warmup=0&step=0.5&effects=' : '');
 
 /** Reads a run's ramp and the scene signatures it took at each step. */
 interface RampProbe {

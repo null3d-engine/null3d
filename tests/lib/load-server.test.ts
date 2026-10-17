@@ -15,6 +15,7 @@ import {
 	loadMiddleware,
 	MARK_SECTION,
 	markCore,
+	prepareLoads,
 } from './load-server.ts';
 
 /** A module with one exported function, `one`, which returns 1. */
@@ -118,6 +119,8 @@ describe('the load routes', () => {
 		writeFileSync(join(build, 'tests/pages/engine.html'), html);
 		writeFileSync(join(build, 'assets/engine-AbCd1234.js'), script);
 		writeFileSync(join(build, 'assets/null3d_bg-Bt249kqm.wasm'), MODULE);
+		// A file large enough that compressing it is worth a line in the log.
+		writeFileSync(join(build, 'assets/big-AbCd1234.js'), 'const a = 1;\n'.repeat(30_000));
 		// A file under bench/ in the startup build's folder belongs to no build, so no load gets it.
 		mkdirSync(join(build, 'bench'));
 		writeFileSync(join(build, 'bench/stray.html'), html);
@@ -230,13 +233,16 @@ describe('the load routes', () => {
 		expect((await get('/tests/pages/engine.html')).status).toBe(418);
 	});
 
-	it('prepares the builds before the first load, and says when it has none', async () => {
+	it('says which builds it serves and how many files they hold, and when it has none', async () => {
 		const ready = await get('/__null3d/load-ready');
 		expect(ready.status).toBe(200);
 		expect(JSON.parse(ready.body.toString())).toEqual({
-			files: 5,
+			files: 6,
 			builds: ['benchmark pages', 'startup'],
 		});
+		// A caller names the builds its loads reach, so the answer leaves the others out.
+		const named = await get('/__null3d/load-ready?builds=startup');
+		expect(JSON.parse(named.body.toString())).toEqual({ files: 4, builds: ['startup'] });
 		const empty = loadMiddleware([{ name: 'startup', prefix: '', dir: join(build, 'missing') }]);
 		const status = await new Promise<number>((resolve) => {
 			const res = {
@@ -249,6 +255,44 @@ describe('the load routes', () => {
 			empty({ url: '/__null3d/load-ready' } as never, res as never, () => resolve(-1));
 		});
 		expect(status).toBe(404);
+	});
+
+	it('prints the builds it serves, once per answer, so a run can read what it waited for', async () => {
+		const lines: string[] = [];
+		const printed = console.log;
+		console.log = (...parts: unknown[]) => void lines.push(parts.join(' '));
+		try {
+			await get('/__null3d/load-ready?builds=benchmark%20pages');
+			// A caller asks again every few seconds, and the same answer is not printed again.
+			await get('/__null3d/load-ready?builds=benchmark%20pages');
+		} finally {
+			console.log = printed;
+		}
+		const said = lines.filter((line) => line.includes('load server: ready to serve'));
+		expect(said).toHaveLength(1);
+		expect(said[0]).toContain('benchmark pages');
+		expect(said[0]).toContain('2 files');
+	});
+
+	it('names a large file while it compresses it, and again with the time it took', async () => {
+		const lines: string[] = [];
+		const printed = console.log;
+		console.log = (...parts: unknown[]) => void lines.push(parts.join(' '));
+		try {
+			await get('/__null3d/load/cold/progress/assets/big-AbCd1234.js', {
+				'accept-encoding': 'br',
+			});
+		} finally {
+			console.log = printed;
+		}
+		const started = lines.filter((line) => line.includes('compressing'));
+		expect(started).toHaveLength(1);
+		expect(started[0]).toContain('big-AbCd1234.js');
+		expect(started[0]).toContain('KB');
+		const ended = lines.filter((line) => line.includes('compressed'));
+		expect(ended).toHaveLength(1);
+		expect(ended[0]).toContain('big-AbCd1234.js');
+		expect(ended[0]).toContain('ms');
 	});
 });
 
@@ -285,5 +329,42 @@ describe('a download that the browser drops', () => {
 			server.close();
 			rmSync(build, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('prepareLoads', () => {
+	it('asks again after a failed attempt and succeeds once the server answers', async () => {
+		let attempts = 0;
+		const server = createServer((req, res) => {
+			attempts++;
+			// The first ask is how a server that is still compressing its files behaves to a caller
+			// whose own request has ended: the answer never comes. The work carries on, and the next
+			// ask is answered from what it has built.
+			if (attempts === 1) {
+				req.socket.destroy();
+				return;
+			}
+			res.setHeader('content-type', 'application/json');
+			res.end(JSON.stringify({ files: 1, builds: ['benchmark pages'] }));
+		});
+		await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
+		const { port } = server.address() as AddressInfo;
+		await prepareLoads(`http://127.0.0.1:${port}`, ['benchmark pages']);
+		expect(attempts).toBe(2);
+		server.close();
+		// The wait between asks is seconds long, since the thing it waits for takes minutes.
+	}, 30_000);
+
+	it('reports a server that serves none of the builds the loads need', async () => {
+		const server = createServer((req, res) => {
+			res.setHeader('content-type', 'application/json');
+			res.end(JSON.stringify({ files: 1, builds: ['startup'] }));
+		});
+		await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
+		const { port } = server.address() as AddressInfo;
+		expect(prepareLoads(`http://127.0.0.1:${port}`, ['benchmark pages'])).rejects.toThrow(
+			'it serves no benchmark pages build',
+		);
+		server.close();
 	});
 });

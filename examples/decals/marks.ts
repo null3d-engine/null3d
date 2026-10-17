@@ -1,9 +1,8 @@
-// The marks that the decals demo lays on its street: road paint and a zebra crossing, puddles,
-// cracks, a scorch mark, moss along the kerbs and mud on the road, plus the wear on the house
-// fronts (stains, grime, bare bricks, posters, graffiti and cracks). Each mark is a box with a decal
-// material, which projects its maps onto every surface inside it. Batches draw the many dashes,
-// stripes and splashes in one draw each. A click throws mud or a scorch from a pool that reuses its
-// oldest row.
+// The decals demo's scenery, and the tools that the demo's sketch places its own marks with: a
+// decal material from the code-made textures, one decal mesh, and a batch of rows. Each mark is a
+// box with a decal material, which projects its maps onto every surface inside it. Here are the
+// wear on the house fronts (stains, grime, bare bricks, posters, graffiti and cracks) and the mud
+// and scorch that a click throws from a pool that reuses its oldest row.
 import {
 	type Group,
 	type Material,
@@ -15,18 +14,14 @@ import {
 } from '@null3d/engine';
 import {
 	bricks,
-	cracks,
 	type DecalTexels,
 	graffiti,
-	moss,
 	mud,
 	poster,
-	puddle,
-	roadPaint,
 	scorch,
 	stain,
-} from './decal-textures';
-import { type House, KERB, LENGTH, ROAD } from './street';
+} from '../lib/decal-textures';
+import type { House } from './street';
 
 /** A rotation that turns a box's +z axis up, so it projects down onto the ground. */
 const DOWN: Quat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
@@ -40,18 +35,17 @@ const facing = (side: number): Quat => [0, -side * Math.SQRT1_2, 0, Math.SQRT1_2
 /** Rows of the pool of marks that clicks throw, which reuse the oldest row. */
 const THROWN = 24;
 
+/** One decal row: where its box stands, how it is turned, and how large it is. */
+export type Row = [position: Vec3, rotation: Quat, size: Vec3];
+
 /** The marks that the demo has built, and throws more of. */
 export interface Marks {
 	/** Throws a mud or a scorch mark where `point` lands on the street's ground. */
 	throwAt(point: Vec3Like): void;
 }
 
-/** Builds every mark on `street` and on the fronts of `houses`, and returns the marks that clicks throw. */
-export function buildMarks(
-	{ scene, geometry, materials, textures }: SketchContext,
-	street: Group,
-	houses: House[],
-): Marks {
+/** The tools that place decals on `street`: a material, one mesh, and batches of rows. */
+export function decalTools({ geometry, materials, scene, textures }: SketchContext, street: Group) {
 	// Each decal's maps from the code-made textures, with mip levels for the far ones.
 	const look = { mipmaps: true, anisotropy: 8 } as const;
 	const decal = (texels: DecalTexels, values: Parameters<typeof materials.decal>[0] = {}) => {
@@ -64,9 +58,9 @@ export function buildMarks(
 		});
 	};
 	const box = geometry.box();
+	/** One decal mesh on the street. Its box projects the material onto everything it covers. */
 	const place = (material: Material, position: Vec3, scale: Vec3, rotation = DOWN) =>
 		scene.createMesh({ mesh: box, material, position, scale, rotation, parent: street });
-	type Row = [position: Vec3, rotation: Quat, size: Vec3];
 	/** A batch of decals, one for each row of a position, a rotation and a size. */
 	const many = (material: Material, rows: Row[]) => {
 		const batch = scene.createInstances(box, rows.length, { material, colors: true });
@@ -83,44 +77,22 @@ export function buildMarks(
 			const [position, angle, size] = at(k);
 			return [position, turned(angle), size];
 		});
+	return { decal, many, place, strewn, turned };
+}
 
-	const paint = decal(roadPaint(), { roughness: 0.6 });
-	// The centre line's dashes, with a gap where the zebra crossing runs.
-	const dashes = Array.from({ length: 12 }, (_, k) => -LENGTH / 2 + 3 + k * 5).filter(
-		(z) => Math.abs(z - 8) > 2,
-	);
-	many(
-		paint,
-		strewn(dashes.length, (k) => [[0, 0, dashes[k] as number], 0, [0.22, 2.4, 0.6]]),
-	);
-	many(
-		paint,
-		strewn(8, (k) => [[-ROAD + 0.6 + k, 0, 8], 0, [0.6, 3.2, 0.6]]),
-	);
-	const water = decal(puddle(), { envIntensity: 0.35 });
-	place(water, [-1.8, 0, 3], [3.4, 2.6, 0.5]);
-	place(water, [2.4, 0, -5], [2.6, 3.4, 0.5], turned(0.6));
-	place(water, [-ROAD - 1, KERB, -9], [2.2, 1.8, 0.6], turned(1.2));
-	place(water, [1, 0, 13], [3, 2.2, 0.5], turned(2.2));
-	const crazing = decal(cracks());
-	place(crazing, [1.5, 0, 0], [4, 4, 0.6], turned(0.4));
-	place(decal(scorch()), [-2.4, 0, -14], [4.5, 4.5, 1], turned(1));
-	many(
-		decal(moss()),
-		strewn(10, (k) => [
-			[(k % 2 ? 1 : -1) * (ROAD + 2.9), KERB, -LENGTH / 2 + 4 + k * 5.5],
-			k * 0.9,
-			[2.2, 2.2, 3],
-		]),
-	);
-	many(
-		decal(mud()),
-		strewn(9, (k) => [[(k % 2 ? 1 : -1) * (ROAD - 0.5), 0, -22 + k * 5], k * 1.7, [1.6, 1.6, 0.8]]),
-	);
-
-	// The house fronts' wear. Each box stands at the wall, reaching out over the ledges and signs.
-	// Stains run down from the window sills, grime from the ledges and the cornice, and the piers
-	// beside the doors and shop windows carry posters, graffiti, cracks or bare bricks.
+/**
+ * Wears each house front with the marks that `tools` makes, reusing `crazing` for the cracks.
+ * Returns the marks that a click throws.
+ */
+export function buildWear(
+	houses: House[],
+	tools: ReturnType<typeof decalTools>,
+	crazing: Material,
+): Marks {
+	const { decal, many, strewn } = tools;
+	// Each box stands at the wall, reaching out over the ledges and signs. Stains run down from the
+	// window sills, grime from the ledges and the cornice, and the piers beside the doors and shop
+	// windows carry posters, graffiti, cracks or bare bricks.
 	const wear = new Map<Material, Row[]>();
 	const mark = (material: Material, side: number, at: Vec3, width: number, height: number) => {
 		const rows = wear.get(material) ?? [];

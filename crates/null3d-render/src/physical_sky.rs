@@ -23,12 +23,12 @@
 //! no table: [`AerialUniform`] gives the shaders' fog step the values of each frame.
 
 use null3d_gpu::drawlist::{
-    DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, filter, format,
+    DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, format,
     layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage, view,
 };
 
 use crate::bloom::bytes_of;
-use crate::frame::{RecordError, SceneSettings, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, SceneSettings, UploadArena, clamp_sampler};
 use crate::physical_sky_light::AirModel;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
@@ -570,21 +570,13 @@ impl PhysicalSkyPass {
             .into_iter()
             .enumerate()
         {
-            list.push(
-                Op::CreateSampler,
-                &[
-                    ids.samplers + k as u32,
-                    across,
-                    address::CLAMP_TO_EDGE,
-                    address::CLAMP_TO_EDGE,
-                    filter::LINEAR,
-                    filter::LINEAR,
-                    filter::NEAREST,
-                    0f32.to_bits(),
-                    0f32.to_bits(),
-                    compare::NONE,
-                    1,
-                ],
+            clamp_sampler(
+                list,
+                ids.samplers + k as u32,
+                across,
+                LINEAR_LEVEL,
+                0.0,
+                compare::NONE,
             )?;
         }
         // Each step binds every table but the one it draws, in whose place it binds another that
@@ -635,5 +627,54 @@ impl PhysicalSkyPass {
         self.air = None;
         self.view = None;
         self.ready = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `const <name>: vec2f = vec2f(<width>.0, <height>.0);` lines of a WGSL source.
+    fn table_sizes(source: &str) -> Vec<(String, (u32, u32))> {
+        source
+            .lines()
+            .filter_map(|line| {
+                let (name, values) = line
+                    .strip_prefix("const ")?
+                    .split_once(": vec2f = vec2f(")?;
+                let (width, height) = values.trim_end_matches(");").split_once(", ")?;
+                let width: f32 = width.parse().ok()?;
+                let height: f32 = height.parse().ok()?;
+                Some((name.to_owned(), (width as u32, height as u32)))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_shaders_place_the_sky_tables_in_targets_of_the_size_the_renderer_makes() {
+        // The renderer sizes each table's target, and the shaders read a texel's place and count
+        // the rows of the table they write by the same numbers. A size that one side changes alone
+        // reads another texel of a table, or a row of another table.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../null3d-shaders/wgsl");
+        let declared: Vec<(String, (u32, u32))> = ["lib/sky_scattering.wgsl", "sky_tables.wgsl"]
+            .iter()
+            .flat_map(|name| {
+                let path = dir.join(name);
+                let source = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                table_sizes(&source)
+            })
+            .collect();
+        for (name, size) in [
+            ("TRANSMITTANCE_SIZE", TRANSMITTANCE_SIZE),
+            ("MULTISCATTER_SIZE", MULTISCATTER_SIZE),
+            ("SKY_VIEW_SIZE", SKY_VIEW_SIZE),
+            ("PANORAMA_SIZE", PANORAMA_SIZE),
+        ] {
+            assert!(
+                declared.contains(&(name.to_owned(), size)),
+                "the shaders declare {declared:?}, and the renderer sizes {name} as {size:?}",
+            );
+        }
     }
 }

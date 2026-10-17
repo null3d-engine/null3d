@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_LEVELS, Quadtree } from './quadtree';
+import { MAX_LEVELS, MAX_SPLIT, Quadtree } from './quadtree';
 
 /** The leaves of a selection, as `[level, column, row]` triples. */
 function leaves(tree: Quadtree, x: number, z: number): [number, number, number][] {
@@ -36,6 +36,32 @@ describe('quadtree', () => {
 		expect(far).toBeLessThan(near);
 	});
 
+	test('a leaf key stays a small integer, and names one leaf', () => {
+		// A number past 2147483647 becomes an object in the browser, one for every leaf of every
+		// selection, so the pack must keep every key below it.
+		const tree = new Quadtree({ size: 1024, maxLevel: 6 });
+		const keys = new Set<number>();
+		let count = 0;
+		for (let level = 0; level <= 6; level++) {
+			const side = 2 ** level;
+			for (let column = 0; column < side; column++)
+				for (let row = 0; row < side; row++) {
+					const key = tree.key(level, column, row);
+					expect(key).toBeGreaterThanOrEqual(0);
+					expect(key).toBeLessThanOrEqual(2147483647);
+					keys.add(key);
+					count++;
+				}
+		}
+		expect(keys.size).toBe(count);
+	});
+
+	test('the deepest level a terrain may take keeps its keys below that', () => {
+		const tree = new Quadtree({ size: 1024, maxLevel: MAX_LEVELS });
+		const side = 2 ** MAX_LEVELS - 1;
+		expect(tree.key(MAX_LEVELS, side, side)).toBeLessThanOrEqual(2147483647);
+	});
+
 	test('the same camera position gives the same leaves, every time', () => {
 		const tree = new Quadtree({ size: 256, maxLevel: 4 });
 		const first = leaves(tree, 10, 20);
@@ -66,6 +92,22 @@ describe('quadtree', () => {
 	test('refuses a size, a level or a split that does not fit', () => {
 		expect(() => new Quadtree({ size: -1, maxLevel: 3 })).toThrow(/positive/);
 		expect(() => new Quadtree({ size: 1, maxLevel: MAX_LEVELS + 1 })).toThrow(/whole number/);
-		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: -1 })).toThrow(/positive/);
+		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: -1 })).toThrow(/above 0/);
+		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: MAX_SPLIT + 0.5 })).toThrow(
+			`up to ${MAX_SPLIT}`,
+		);
+	});
+
+	test('a selection larger than the arrays grows them and keeps every leaf', () => {
+		// A wide split at many levels picks thousands of leaves.
+		const tree = new Quadtree({ size: 10_000, maxLevel: MAX_LEVELS, split: 6 });
+		const picked = leaves(tree, 1, 1);
+		expect(picked.length).toBeGreaterThan(4096);
+		let area = 0;
+		for (const [level, column, row] of picked) {
+			expect(Number.isInteger(column) && Number.isInteger(row)).toBe(true);
+			area += tree.blockSize(level) ** 2;
+		}
+		expect(area / 10_000 ** 2).toBeCloseTo(1, 9);
 	});
 });

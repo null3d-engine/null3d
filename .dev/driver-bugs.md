@@ -186,5 +186,7 @@ Smallest known case: a fragment shader that builds a structure in any of these w
 
 Workaround in the engine: the shader build replaces each structure local, parameter and result with plain ones on naga's code model. It runs before the GLSL writer. A structure argument becomes one argument for each member, a helper's result becomes one `out` parameter for each member, and a structure or private global becomes one local or global for each member. No structure value is materialized. The shader crate's test checks every built shader for a structure-typed local, parameter or result ([Browser faults](implementation-notes.md#browser-faults)).
 
+Consequence for the text the engine adds at run time: a shader the engine builds by joining text into a WebGL2 host holds the flattened form, so text written for that host must carry the members and not the structure. The joined custom effects' chain did not, so every group's shader failed to compile on WebGL2 and the engine drew those effects in a pass each instead. The chain now carries the members, and the shader crate's `check_glsl` refuses a call that does not fit the function it calls ([D-167](decisions/D-167-two-step-output.md)).
+
 To report: Qualcomm, through Chromium's issue tracker, with the probe page.
 
