@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
+import { hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
 	crateFolders,
@@ -11,7 +13,34 @@ import {
 	MODULE_DIR,
 	moduleHash,
 	RECORD,
+	setIsComplete,
 } from './shader-modules';
+
+/**
+ * Runs a test with the shared caches in a scratch folder and a stub `cargo` first on the `PATH`. A
+ * test then never reads or writes the caches of the machine it runs on, and never runs the real
+ * toolchain: the stub prints and exits, which is how a test drives a build that fails.
+ */
+function withScratchCaches(run: () => void, cargoStatus = 3): void {
+	const folder = mkdtempSync(join(tmpdir(), 'null3d-shaders-test-'));
+	const bin = join(folder, 'bin');
+	mkdirSync(bin);
+	const cargo = join(bin, 'cargo');
+	writeFileSync(cargo, `#!/bin/sh\necho "stub cargo" >&2\nexit ${cargoStatus}\n`);
+	chmodSync(cargo, 0o755);
+	const before = { cache: process.env.NULL3D_BUILD_CACHE, path: process.env.PATH };
+	process.env.NULL3D_BUILD_CACHE = join(folder, 'cache');
+	process.env.PATH = `${bin}${delimiter}${before.path ?? ''}`;
+	try {
+		run();
+	} finally {
+		if (before.cache === undefined) delete process.env.NULL3D_BUILD_CACHE;
+		else process.env.NULL3D_BUILD_CACHE = before.cache;
+		if (before.path === undefined) delete process.env.PATH;
+		else process.env.PATH = before.path;
+		rmSync(folder, { recursive: true, force: true });
+	}
+}
 
 /** A repository with the shader crate, its path dependencies and one generated module. */
 function repository(): string {
@@ -43,6 +72,10 @@ describe('the shader modules', () => {
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('shader-features.ts')).toBe(true);
 		expect(isShaderModule('shaders-environment-wgsl.ts')).toBe(true);
+		// A target's table of shared paragraphs is plain JavaScript beside the device modules. Its
+		// name carries no `shaders-` prefix, so the offline file list reads it as no feature.
+		expect(isShaderModule('shader-paragraphs-glsl.js')).toBe(true);
+		expect(isShaderModule('shader-paragraphs-wgsl.js')).toBe(true);
 		expect(isShaderModule('gpu.ts')).toBe(false);
 		expect(isShaderModule('shaders.ts.map')).toBe(false);
 	});
@@ -116,14 +149,82 @@ describe('the shader modules', () => {
 	});
 
 	it('run the build when a module changed, and release the lock when the build fails', () => {
-		const root = repository();
-		mkdirSync(join(root, 'target'));
-		const record = { inputs: inputHash(root), modules: moduleHash(root) };
-		writeFileSync(join(root, RECORD), JSON.stringify(record));
-		writeFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'export const EDITED = 1;\n');
-		// The fixture's Rust settings are empty, so the build that the edit starts fails at once, as
-		// does a machine without Cargo.
-		expect(() => ensureShaderModules(root)).toThrow();
-		expect(existsSync(join(root, 'target/shader-modules.lock'))).toBe(false);
+		withScratchCaches(() => {
+			const root = repository();
+			mkdirSync(join(root, 'target'));
+			const record = { inputs: inputHash(root), modules: moduleHash(root) };
+			writeFileSync(join(root, RECORD), JSON.stringify(record));
+			writeFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'export const EDITED = 1;\n');
+			// The stub cargo fails at once, which is what a build on a machine without the toolchain
+			// does too: the command reports the failure and the lock is released.
+			expect(() => ensureShaderModules(root)).toThrow();
+			expect(existsSync(join(root, 'target/shader-modules.lock'))).toBe(false);
+		});
+	});
+
+	it('fail at once instead of building when the run takes the modules from the build job', () => {
+		withScratchCaches(() => {
+			const root = repository();
+			mkdirSync(join(root, 'target'));
+			process.env.NULL3D_REQUIRE_FRESH_SHADERS = '1';
+			try {
+				// A set that matches its record passes with no build, as it does without the switch.
+				writeFileSync(
+					join(root, RECORD),
+					JSON.stringify({ inputs: inputHash(root), modules: moduleHash(root) }),
+				);
+				expect(ensureShaderModules(root)).toBe(false);
+				// A record that names modules the artifact did not deliver stops the run at once, and
+				// names the file it lacks, in place of a build that costs minutes in every job.
+				writeFileSync(
+					join(root, RECORD),
+					JSON.stringify({
+						inputs: inputHash(root),
+						modules: 'another set',
+						names: ['shaders.ts', 'shader-paragraphs-wgsl.js'],
+					}),
+				);
+				expect(() => ensureShaderModules(root)).toThrow(/shader-paragraphs-wgsl\.js/);
+			} finally {
+				delete process.env.NULL3D_REQUIRE_FRESH_SHADERS;
+			}
+		});
+	});
+});
+
+describe('a set in the shared cache', () => {
+	/** A cache entry that holds `shaders.ts` and one device module, with their record. */
+	function set(folder: string): void {
+		mkdirSync(folder, { recursive: true });
+		const files: Record<string, string> = {
+			'shaders.ts': 'export {};\n',
+			'shaders-wgsl.js': 'export {};\n',
+		};
+		const record: Record<string, string> = {};
+		for (const [name, text] of Object.entries(files)) {
+			writeFileSync(join(folder, name), text);
+			record[name] = hashOf(text);
+		}
+		writeFileSync(join(folder, 'modules.json'), JSON.stringify(record));
+	}
+
+	it('is complete only while every file is the one its record names', () => {
+		const cache = join(mkdtempSync(join(tmpdir(), 'null3d-set-')), 'entry');
+		try {
+			set(cache);
+			expect(setIsComplete(cache)).toBe(true);
+			// A file whose bytes changed, or one that lost a file, is a miss: a set that a stopped or
+			// two racing builds left half written must never be handed to a checkout as a built set.
+			writeFileSync(join(cache, 'shaders-wgsl.js'), 'export const A = 1;\n');
+			expect(setIsComplete(cache)).toBe(false);
+			set(cache);
+			rmSync(join(cache, 'modules.json'));
+			expect(setIsComplete(cache)).toBe(false);
+			set(cache);
+			rmSync(join(cache, 'shaders-wgsl.js'));
+			expect(setIsComplete(cache)).toBe(false);
+		} finally {
+			rmSync(cache, { recursive: true, force: true });
+		}
 	});
 });

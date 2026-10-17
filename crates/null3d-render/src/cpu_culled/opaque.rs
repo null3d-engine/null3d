@@ -266,13 +266,13 @@ impl Opaque {
     /// Records the creation of a view's frame groups, which bind its uniform block, its cell
     /// offsets and the material table's texture, which also holds three.js's table of the
     /// split-sum terms of specular light. A camera's view has one group for each slot of the light
-    /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
-    /// cascades' uniform block that read it, the slot's texture of `lit`'s ring of light data
-    /// textures, the shadow atlas of `lit` with the tiles' uniform block, the texture of ambient
-    /// occlusion, the environment's cube texture of `lit` with its sampler, and the copy of the
-    /// opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or a
-    /// shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
-    /// it draws into.
+    /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler, the
+    /// shadow settings block, which holds the cascades' settings beside the shadow tiles', the
+    /// slot's texture of `lit`'s ring of light data textures, the shadow atlas of `lit`, the light
+    /// probe grid's 3D texture, the texture of ambient occlusion, the environment's cube texture of
+    /// `lit` with its sampler, and the copy of the opaque color of `lit`, which the environment's
+    /// sampler reads too. A shadow cascade's or a shadow tile's view has one group, which binds no
+    /// shadow map, so no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,

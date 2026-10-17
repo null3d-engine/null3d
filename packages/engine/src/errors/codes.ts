@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -354,7 +354,7 @@ const DOCS = {
 	E1414: {
 		title: 'Frame not captured',
 		cause:
-			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it.',
+			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it. The thread that draws can also stop taking messages, as when a GPU call never returns: the engine then fails the request once its wait for the answer has taken longer than its limit, instead of leaving the call to wait with no end.',
 		example: 'E1414: engine.capture() failed: the engine has stopped.',
 		since: '0.1',
 	},

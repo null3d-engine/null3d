@@ -80,9 +80,10 @@ Option C, with these generated pages:
 | The image references, the benchmark records in `bench/results/` and `.dev/benchmark-results.md`, and the README's animation | They are accepted outputs and measurements. Making them needs a real GPU and a person's review |
 | The version numbers, `CHANGELOG.md` and `.claude-plugin/marketplace.json` | The release writes them. Claude Code reads the marketplace file straight from GitHub |
 | `bun.lock`, `Cargo.lock` and the sample content's manifest in `tools/samples/` | They must exist before any install or download |
+| The list of milestone task IDs, `tools/hooks/task-ids.txt` | The commit-msg hook reads it, and its source, the milestone plans, is kept outside git. The maintainers write it from the plans and commit it ([D-157](D-157-direct-pushes-to-main.md#addendum-2026-10-15-task-footers-and-merge-commits)) |
 
 ## Consequences
 
-- A branch from before this change conflicts once when it merges main. [Pull requests](../pull-requests.md#a-branch-from-before-generated-files-left-git) gives the steps.
+- A branch from before this change conflicts once when it merges main. [Branches and parallel work](../pull-requests.md#a-branch-from-before-generated-files-left-git) gives the steps.
 - On GitHub, main has no generated page, so a relative link to one finds no file there. The `generated` branch and each release tag have every page.
-- [AGENTS.md](../../AGENTS.md#docs-and-skills-stay-in-sync), [Pull requests](../pull-requests.md#generated-files) and [Releases](../releases.md) describe the new steps.
+- [AGENTS.md](../../AGENTS.md#docs-and-skills-stay-in-sync), [Branches and parallel work](../pull-requests.md#generated-files) and [Releases](../releases.md) describe the new steps.

@@ -83,15 +83,49 @@ function problemsOf(shader: ShaderSource): readonly ShaderProblem[] {
 	return result.problems;
 }
 
-/** The repository's shader manifest and WGSL files, as `bun run shaders` reads them. */
-function engineShaderInputs(): ShaderBuildInputs {
+/**
+ * The repository's shader manifest and WGSL files, as `bun run shaders` reads them. Given names,
+ * the manifest holds only those shaders and the files hold only theirs beside the library modules,
+ * which is the shape a build tool passes for a project.
+ */
+function engineShaderInputs(names?: readonly string[]): ShaderBuildInputs {
 	const crate = join(import.meta.dir, '../../../crates/null3d-shaders');
 	const read = (path: string) => readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
 	const folder = join(crate, 'wgsl');
 	const files = readdirSync(folder, { recursive: true, encoding: 'utf8' })
 		.filter((file) => file.endsWith('.wgsl'))
 		.map((file) => [file.split(sep).join('/'), read(join(folder, file))]);
-	return { manifest: read(join(crate, 'shaders.toml')), files: Object.fromEntries(files) };
+	const manifest = read(join(crate, 'shaders.toml'));
+	if (!names) return { manifest, files: Object.fromEntries(files) };
+	// Keep the tables of the named shaders. The first-use tables go: they name shaders that the
+	// narrowed manifest no longer holds. An entry shader whose table goes leaves the files too,
+	// because every file that is not a library module needs a table.
+	const kept = new Set(names);
+	const held = new Set<string>();
+	const lines: string[] = [];
+	let skipping = false;
+	let table: string | undefined;
+	for (const line of manifest.split('\n')) {
+		const header = /^\[([^\]]+)\]$/.exec(line)?.[1];
+		if (header) {
+			table = header;
+			const name = header.startsWith('shaders.') ? header.slice('shaders.'.length) : undefined;
+			skipping = header.startsWith('first_use.') || (name !== undefined && !kept.has(name));
+		}
+		if (skipping) continue;
+		const file = table?.startsWith('shaders.') ? /^file = "([^"]+)"$/.exec(line)?.[1] : undefined;
+		if (file) held.add(file);
+		lines.push(line);
+	}
+	return {
+		manifest: lines.join('\n'),
+		files: Object.fromEntries(
+			files.filter((entry) => {
+				const path = entry[0] ?? '';
+				return held.has(path) || path.startsWith('lib/');
+			}),
+		),
+	};
 }
 
 describe.skipIf(!ENABLED)('the shader compiler', () => {
@@ -196,11 +230,19 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		);
 	});
 
-	// Building every variant of the engine's shaders takes over a minute on CI's runners, and
-	// each new permutation bit adds builds.
+	// A few of the engine's shaders, which is the scale a build tool passes: a project's own
+	// manifest. The whole engine manifest takes the module about twelve minutes, past this test's
+	// limit. `standard_maps` alone holds 11,456 builds. The shader crate's own test compares every
+	// entry of the repository through the module, one entry at a time, and the module hands an
+	// entry's answer over in pieces (`.dev/implementation-notes.md`).
+	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit', 'probe_grid'];
+
 	it("gives the native build's output for the engine's shaders", async () => {
-		const result = buildShaders(engineShaderInputs());
+		const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
 		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
-		expect(result.output.shaders).toEqual(await everyShader());
+		const whole = await everyShader();
+		// Every name asked for is an entry of the engine's own manifest, so its variants are there.
+		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
+		expect(result.output.shaders).toEqual(expected);
 	}, 180_000);
 });

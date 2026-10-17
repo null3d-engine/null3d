@@ -16,6 +16,30 @@ import type { GlslPiece, JoinMember, PieceBuilds, ShaderPiece, WgslPiece } from 
 const MULTISAMPLED_SUFFIX = '_depth_multisampled';
 
 /**
+ * The colour that a host's `EffectInput` holds, which the chain threads from member to member.
+ */
+const GLSL_COLOR = 'chain_color';
+
+/**
+ * The members of a host's `EffectInput` after the colour, in the order both hosts declare them,
+ * with the names the chain's GLSL gives them. The WebGL2 build turns every structure parameter
+ * into one parameter for each member (`flatten.rs`, which the Adreno 619's driver needs), so that
+ * build has no `EffectInput` at all and the chain carries the members themselves. A GLSL call is
+ * positional, so the chain's own names serve, and a piece's run takes the same members in the same
+ * order, followed by the slot.
+ * The members follow the structure: a member added there, moved or given another type must be
+ * added, moved or retyped here too. `check_glsl` in the shader crate's `tests/pieces.rs` fails
+ * when a chain's call does not fit the run function it calls.
+ */
+const GLSL_INPUT: readonly (readonly [type: string, name: string])[] = [
+	['vec4', GLSL_COLOR],
+	['vec2', 'chain_uv'],
+	['vec2', 'chain_pixel'],
+	['vec2', 'chain_size'],
+	['float', 'chain_time'],
+];
+
+/**
  * The builds of a host joined with `members`, in order, and with `curve` where the host has the
  * tone curve's hook, for `target`. Each of the host's builds for the target gives one build, and
  * on WebGPU a DEPTH_MULTISAMPLED twin when a member reads depth.
@@ -100,9 +124,16 @@ function joinGlsl(
 		source = replaceFunction(source, 'tone_curve_hook', curve.glsl.items, hook);
 		added.push(curve.glsl);
 	}
-	let chain = 'vec4 effect_chain(EffectInput start) {\n    EffectInput link = start;\n';
-	for (const { piece, slot } of pieces) chain += `    link.color = ${piece.run}(link, ${slot}u);\n`;
-	chain += '    return link.color;\n}\n';
+	// The chain carries the input's members, not the structure: the WebGL2 build flattens the
+	// structure away, so a chain that named `EffectInput` would not build there.
+	const parameters = GLSL_INPUT.map(([type, name]) => `${type} ${name}`).join(', ');
+	const unchanged = GLSL_INPUT.slice(1)
+		.map(([, name]) => name)
+		.join(', ');
+	let chain = `vec4 effect_chain(${parameters}) {\n    vec4 link = ${GLSL_COLOR};\n`;
+	for (const { piece, slot } of pieces)
+		chain += `    link = ${piece.run}(link, ${unchanged}, ${slot}u);\n`;
+	chain += '    return link;\n}\n';
 	source = replaceFunction(
 		source,
 		'effect_chain',

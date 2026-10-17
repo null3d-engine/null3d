@@ -222,7 +222,7 @@ flowchart LR
     controller -- "down 0.05 after 1 s under 95% of the target rate" --> scale["Render scale, from<br/>minRenderScale to maxRenderScale"]
     controller -- "up 0.05 after 5 s with time to spare" --> scale
     scale --> scene["Scene passes draw into a corner<br/>of targets the canvas's size"]
-    scene --> final["The final pass scales the corner<br/>up to the whole canvas"]
+    scene --> final["The final pass scales the corner<br/>up to the whole canvas,<br/>in two steps below it"]
 ```
 
 The engine can draw the scene at a render scale below the canvas's size. Its final pass then scales the image up to the canvas. The render scale is a part of the canvas's width and height. At 0.5, the scene fills a quarter of the canvas's pixels. Most of a frame's GPU work grows with the pixels that it fills. So a lower scale keeps the frame rate on a GPU that falls behind, and the image gets softer.
@@ -259,7 +259,7 @@ export default defineSketch(({ quality, page }) => {
 });
 ```
 
-A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass scales the image up instead of running FXAA: the scaling softens edges already.
+A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass runs in two steps: the first draws at the render size and smooths edges with FXAA, which the pass at the whole canvas's scale always did, and the second scales the image up to the canvas, with a bilinear filter. [The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale) describes both steps, and the two costs that a lowest scale of 1 avoids.
 
 ## The frame-budget governor
 
@@ -280,7 +280,7 @@ Dynamic resolution is the first part of the frame-budget governor. A sketch can 
 4. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.
 5. Ambient occlusion draws at a quarter of the render size instead of half. This step happens only while ambient occlusion draws at half the size.
 6. Contact shadows take 4 steps per ray. This step happens only while the directional light casts shadows and `contactShadowSteps` is above 4.
-7. Far characters update their poses half as often, up to every 4th frame. This step happens only while the `farAnimationInterval` setting is above 1, and a sketch reads `quality.governor.farAnimationInterval` to give it to its far characters ([Animation](../api/animation.md#crowds)).
+7. Far characters update their poses half as often, up to every 4th frame. Each step doubles the interval, so the step happens only while the `farAnimationInterval` setting is below 4. A sketch reads `quality.governor.farAnimationInterval` to give it to its far characters ([Animation](../api/animation.md#crowds)).
 8. The volumetric fog draws half the slices of its grid, into the same textures, so its rays turn a little coarser along the view and no texture is made. This step happens only while the volumetric fog draws.
 
 Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. A lower render scale picks coarser levels of detail too, as the render height counts in each level's error in pixels. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.

@@ -353,10 +353,17 @@ impl<B: FrameBuilder> World<B> {
         self.batches
             .update(&self.jobs, frame, self.scene.cell_table_mut());
         self.snapshot.record(frame, &self.scene, &self.batches);
+        // The newest frame that the thread that draws drew with every pipeline built, as the page
+        // reports it: the whole frame from the start, unless the test names a frame.
+        let built = if self.pipelines_built == u32::MAX {
+            frame
+        } else {
+            self.pipelines_built
+        };
         if let Some(table) = self.light_table.as_mut() {
             let parity = self.scene.parity();
             let settings = self.renderer.settings_mut();
-            settings.gather_lights(table, &self.scene, parity, self.canvas);
+            settings.gather_lights(table, &self.scene, parity, self.canvas, built);
             self.lights.clear();
             self.lights.extend_from_slice(table.visible());
             self.shadow_lights.clear();
@@ -375,11 +382,7 @@ impl<B: FrameBuilder> World<B> {
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
             light_table: self.light_table.as_ref(),
-            pipelines_built: if self.pipelines_built == u32::MAX {
-                frame
-            } else {
-                self.pipelines_built
-            },
+            pipelines_built: built,
             animations: self.animations.as_ref(),
             morphs: &self.morphs,
         };

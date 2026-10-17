@@ -120,7 +120,8 @@ struct EnvironmentLight {
 struct ProbeGrid {
     /// The grid's corner of least x, y and z, and 1 while the scene sets a grid, else 0.
     origin: vec4f,
-    /// One over the spacing between probes along each axis, and a spare.
+    /// One over the spacing between probes along each axis, 0 for an axis one probe deep, and a
+    /// spare. A shader scales the grid's coordinates by it, and divides by 1 in place of the 0.
     inverse_spacing: vec4f,
     /// The probes along each axis, and the depth of one sub-volume along z, `nz + 2`.
     counts: vec4f,

@@ -78,10 +78,10 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::{SHADOW_SETTINGS_BYTES, SHADOW_UNIFORM_BYTES};
-use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
+use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, format};
 
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{LINEAR_LEVEL, NEAREST_TEXELS, RecordError, UploadArena, clamp_sampler};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 use crate::view::ViewFrame;
@@ -944,42 +944,24 @@ pub(crate) fn create_objects(
     )?;
     // Reversed depth: a point is lit where its depth is at least the caster's, nearer the light.
     // The linear filters blend the comparisons of the four nearest texels.
-    let clamp = address::CLAMP_TO_EDGE;
-    list.push(
-        Op::CreateSampler,
-        &[
-            sampler,
-            clamp,
-            clamp,
-            clamp,
-            filter::LINEAR,
-            filter::LINEAR,
-            filter::NEAREST,
-            0f32.to_bits(),
-            0f32.to_bits(),
-            compare::GREATER_EQUAL,
-            1,
-        ],
+    clamp_sampler(
+        list,
+        sampler,
+        address::CLAMP_TO_EDGE,
+        LINEAR_LEVEL,
+        0.0,
+        compare::GREATER_EQUAL,
     )?;
     // The receivers compare each texel of the shadow map with a depth of their own, so they read
     // the texels' depths unfiltered.
     if let Some(texels) = texels {
-        let nearest = filter::NEAREST;
-        list.push(
-            Op::CreateSampler,
-            &[
-                texels,
-                clamp,
-                clamp,
-                clamp,
-                nearest,
-                nearest,
-                nearest,
-                0f32.to_bits(),
-                0f32.to_bits(),
-                compare::NONE,
-                1,
-            ],
+        clamp_sampler(
+            list,
+            texels,
+            address::CLAMP_TO_EDGE,
+            NEAREST_TEXELS,
+            0.0,
+            compare::NONE,
         )?;
     }
     Ok(())

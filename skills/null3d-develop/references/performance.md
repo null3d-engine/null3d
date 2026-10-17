@@ -47,7 +47,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 1. Measure the running page with `await engine.measure(5)`. It returns CPU time per thread and phase, GPU time where WebGPU has timestamp queries, the frame rates, draw calls, uploaded bytes, rebuilds and pipelines. The phase `update` is your code, and `commands`, `transforms`, `batches`, `cull`, `record`, `upload` and `replay` are the engine's. The preset is in `engine.mode.preset`. In the sketch, `debug.stats(true)` shows the frame rates and CPU time per thread and phase on the canvas. In 0.2 a click on its frame rate opens a card. It shows each thread's time and the GPU's time against the target frame rate, split into your code and the engine's work. A line names what holds the frame rate back. It also shows memory and the triangles and objects drawn. `?stats` in the page's address shows it too.
 2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
-3. Read numbers in the sketch: `debug.frameStats()` returns the overlay's figures, as means over the last half second. It allocates nothing, so a sketch can read it every frame, for example to log slow frames.
+3. Read numbers in the sketch: `debug.frameStats()` returns the overlay's figures, as means over the last half second. It allocates nothing, so a sketch can read it every frame, for example to log slow frames. A day cycle moves the time with `timeOfDay(hour, {}, day)`, which fills the `day` object of the first call instead of making one.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread. With `sketchThread: 'main'` it runs on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. The engine never times the GPU on WebGL2, so `gpuMs` is null there, as on WebGPU devices without timestamp queries, such as most phones. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
@@ -71,7 +71,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "update" time | Heavy sketch code | Loop over typed arrays; move work to `onFixedUpdate` at a lower rate; spread AI over frames |
 | Periodic spikes in "update" | Garbage collection | Remove allocations from per-frame code: no `new`, literals or closures; use scratch arrays |
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
-| Frame time grows with each skinned character (0.2) | Many skinned characters | Fewer shadow cascades, since each shadow pass skins the characters again (`guides/performance`). Give far characters a longer pose interval with `animator.setUpdateInterval`, and read `quality.governor.farAnimationInterval` for the value the preset and governor ask for (`api/animation#crowds`). Shared poses between identical characters are not built yet |
+| Frame time grows with each skinned character (0.2) | Many skinned characters | Fewer shadow cascades, since each shadow pass skins the characters again (`guides/performance`). Give far characters a longer pose interval with `animator.setUpdateInterval`, and read `quality.governor.farAnimationInterval` for the value the preset and governor ask for (`api/animation#crowds`). Shared poses between identical characters are (0.2, not built yet) |
 | High "cull" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks |
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (0.2, `concepts/culling`) |
 | Low `occludedEntries` on WebGL2 though buildings merged into one mesh per material fill the view | A blocker mesh past 4,096 triangles blocks nothing | Merge by area as well as by material. Below that limit a merged mesh blocks part by part: each connected part by its own distance (`concepts/culling`) |
@@ -92,7 +92,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - Test on a real phone. Desktop browsers with device emulation do not show phone GPU or heat behavior.
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes. The asset tool's `assets optimize` gives one to each mesh that encloses space, and checks that it lies inside the mesh. It skips blended, alpha-masked, skinned and flat meshes. To keep a mesh from blocking, put `"occluder": false` in its glTF extras. In the scene, use `instantiate(model, { occluder: false })` or `setOccluder(false)`. Blockers on small props cost job worker time and hide little (`guides/assets-pipeline`).
-- The asset tool stores positions in 16,384 steps across each mesh. A mesh that spreads small parts over hundreds of metres, such as a city's buildings merged by material, then moves their corners by centimetres. Put `"quantizePositions": false` in that mesh's glTF extras to keep its positions as floats (`guides/assets-pipeline`).
+- The asset tool stores positions in 16,384 steps across each mesh. A mesh that spreads small parts over hundreds of meters, such as a city's buildings merged by material, then moves their corners by centimeters. Put `"quantizePositions": false` in that mesh's glTF extras to keep its positions as floats (`guides/assets-pipeline`).
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
 - Dynamic resolution is on by default. When frames run over budget, the engine draws the scene at a lower render scale, down to 0.5 on Low. It scales the image up to the canvas, in place of FXAA where the preset uses it. Read it in `quality.renderScale`. `quality.set({ minRenderScale: 1 })` turns it off. One value for both `minRenderScale` and `maxRenderScale` fixes the scale (`concepts/quality-presets`). Draw text and interface in HTML over the canvas, which stays sharp.
 - The engine starts phones and tablets on lighter presets than desktops. WebGL2 and WebGPU's compatibility mode run at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
@@ -126,39 +126,19 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 
 The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. WebGL2 and WebGPU's compatibility mode run at most Medium. When the page names no preset, the engine checks its choice after the first frame, before `createEngine` resolves. It lowers the preset until one holds the target frame rate.
 
-The preset sets these groups of settings. The `concepts/quality-presets` page has each value:
+The preset sets the pixel ratio, the render scale, textures, shadows, effects, occlusion culling, anti-aliasing and the memory maximum. Read the settings from the docs, never from memory. `api/quality` links the full list. It says what each setting takes, and whether it changes during play or only at the start. `concepts/quality-preset-tables` gives each preset's value.
 
-| Group | Settings | Changes |
-| --- | --- | --- |
-| Pixels | `maxPixelRatio`, `minRenderScale`, `maxRenderScale` | During play |
-| Textures | `maxAnisotropy`, `uploadBytesPerFrame`, `textureMemoryMiB` (0.2) | During play |
-| Directional light shadows | `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend`, `contactShadowSteps` (0.2) | During play |
-| Directional light shadow maps | `shadowCascades`, `shadowMapSize` | At the start |
-| Effects and reflections | `bloomSize`, `aoScale`, `dofSamples`, `reflectionScale` (0.2) | During play |
-| WebGL2 occlusion culling | `softwareOcclusion` (0.2), off on Low | During play |
-| Frame budget | `governor` | During play |
-| Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
-| Spot and point light shadows | `shadowTiles`, `shadowTileSize`, `pointLightShadows` (High and Ultra only) | At the start |
-| Depth prepass | `depthPrepass`, on for WebGL2 and off for WebGPU on every preset. Ambient occlusion and contact shadows turn it on while they draw | At the start |
-| GPU occlusion culling | `gpuOcclusion`, off on every preset (WebGPU only) | At the start |
-| Morph targets | `morphTargets` (0.2): the most morph weights per object on WebGL2 | At the start |
-| Engine memory | `memoryMaximumMiB` | Before the engine loads |
-
-The table marks its other rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
+The preset tables mark some rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, contactShadowSteps, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass`, `gpuOcclusion` and `keepTextureCopies`.
+- `quality.set({ ... })` changes any setting that changes during play, for example from a settings menu, such as `quality.set({ maxPixelRatio: 1.5, fogSlices: 32 })`. A setting fixed at the start, or a value out of range, throws E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass`, `gpuOcclusion` and `keepTextureCopies`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor
 
 The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. A game on a 120 or 144 Hz display can defend the full rate with `createEngine({ targetFps: 'display' })` (0.2), at the cost of lighter presets (`concepts/quality-presets`). It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
 
-The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
-
-1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas. Budgets that you register with `quality.setBudget` (0.2) step down by 0.25 before each step of the render scale.
-2. The far shadow cascades draw half as often, up to every 8th frame.
-3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
+The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, from the render scale on, in the order that `concepts/quality-presets#the-frame-budget-governor` lists.
 
 It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that falls behind within 30 seconds doubles the wait before the governor tries that setting again, up to 80 seconds. At 57 to 59 frames per second, the settings stay where they are. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
 
@@ -207,7 +187,8 @@ Apply these habits to `onUpdate` and everything it calls.
 - Use `Math.sqrt(x * x + y * y + z * z)` for a length, not `Math.hypot`.
 - Keep scratch lists at a fixed length. `list.length = 0` frees the storage, and the next write allocates it again.
 - Make no closures, `async` wrappers or promise chains per frame. Keep closures out of per-frame functions, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into its own function.
-- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. A material's `set` and a line material's `set` read the options object that you pass, which the browser boxes where the call has seen objects of a few shapes, so set their values up front.
+- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. The controls write a camera's pose with `camera.setPose(position, rotation)` from the arrays that hold it, so no number crosses the call.
+- A material's `set` is for setup. It reads its numbers from an options object, and the browser boxes a read where it cannot keep the fields unboxed. Change a value that a frame changes with `material.setUniform(name, value)`, which takes the number or the color itself, a custom material's WGSL uniforms included. A line material's `set` allocates nothing: keep one options object and change its values in place.
 - Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.
 
 ## 9. Objects during play
@@ -231,7 +212,7 @@ Performance advice for three.js and other engines assumes things that do not hol
 | Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
 | Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |
 | Compile shaders before the first frame | The first frame waits for its pipelines. Wait for `engine.firstFrame`; warm up later stages with `scene.warmUp()` |
-| Download every shader before play | Skinning, morph targets (`'morph'`), bloom, ambient occlusion (`'ao'`), depth of field (`'dof'`), transmission, per-row values of instance batches (`'row_values'`), sprites, lines, backgrounds that are not a color (`'background'`), the sky (`'sky'`), alpha to coverage (`'coverage'`), the alpha hash (`'hash'`), masked shadows (`'cutout'`), scene passes (`'views'`), joined custom effects (`'effect_groups'`) and GPU occlusion culling (`'occlusion'`) download their shaders on first use. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials, which also downloads each file of a custom material's builds that those pipelines need, such as its builds that skin. Leave the list out otherwise: each listed file grows the start |
+| Download every shader before play | Many features download their shaders on first use, such as skinning, bloom and the sky. `guides/first-use-shaders` lists every such feature by the name that `preload` takes, and when its shaders download; read it rather than guess the names. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials, which also downloads each file of a custom material's builds that those pipelines need, such as its builds that skin. Leave the list out otherwise: each listed file grows the start |
 | Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |

@@ -88,7 +88,12 @@ export class AreaLightTables {
 		const bytes = new Uint8Array(await new Response(unpacked).arrayBuffer());
 		const { core } = this;
 		if (core.stopped) return;
-		const at = core.check(core.glue.areaLightTables(), 'createRectAreaLight', undefined, false);
+		const at = core.checkGrowth(
+			core.glue.areaLightTables(),
+			'createRectAreaLight',
+			undefined,
+			false,
+		);
 		decodeAreaTables(bytes, core.view(Uint16Array, at, AREA_TABLE_HALVES));
 		core.check(core.glue.finishAreaLightTables(), 'createRectAreaLight', undefined, true);
 	}

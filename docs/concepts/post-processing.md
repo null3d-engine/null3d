@@ -3,7 +3,7 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and one final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering."
+summary: "HDR scene color, ambient occlusion at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas."
 ---
 
 # The post-processing chain
@@ -25,12 +25,13 @@ flowchart LR
     dof --> final
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
-    final --> line["In the same pass:<br/>the outline's line"]
-    line --> grade["In the same pass:<br/>color grading table,<br/>then dithering"]
-    grade --> canvas["Canvas"]
+    final --> line["In the same pass:<br/>the outline's line,<br/>the color grading table,<br/>then dithering"]
+    final -- "below the whole canvas,<br/>when the scale can drop" --> scaled["A second step:<br/>scales the image up, then<br/>the outline's line, the color<br/>grading table and dithering"]
+    line --> canvas["Canvas"]
+    scaled --> canvas
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
+Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass, while the render scale cannot drop below the whole canvas. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers. [Below the whole canvas's render scale](#below-the-whole-canvass-render-scale) describes how that work splits in two when the scale can drop.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -50,6 +51,20 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
   return {};
 });
 ```
+
+## Below the whole canvas's render scale
+
+The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). Below the whole canvas's scale, the final pass runs in two steps, while the render scale can drop below 1, which the default presets allow. At the whole canvas's scale, and while the scale cannot drop below 1, one pass does that work, exactly as before the split.
+
+1. The first step draws at the render size, one pixel for each render pixel. It adds bloom's light, darkens the edges with the vignette, and runs the output transform, which is the tone curve and the sRGB encode. It smooths edges with FXAA too. It writes an 8-bit target the size of the canvas, with the image in its corner at the render scale. The second step reads that target as display color. The first step leaves the dither to the second step: that step draws canvas pixels, so the noise lands at the canvas's size.
+2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas, with a bilinear filter. Then it darkens the edges with the vignette, draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+
+Two costs come with the split. Both go away while the render scale cannot drop, which `quality.set({ minRenderScale: 1 })` keeps:
+
+- While the scale can drop, the frame holds an extra 8-bit target the size of the canvas: 4 bytes for each canvas pixel, about 33 MB at 3840 x 2160. A frame at the whole canvas's scale does not draw into it.
+- While the scale can drop, custom effects do not join into fewer passes. The last of them does not fold into the final pass either. Each runs in a full-screen pass of its own, at every scale.
+
+The first step rounds to 8 bits before the second step blends. A frame below the whole canvas's scale can therefore differ from the same frame at scale 1 by one step of that target.
 
 ## Bloom
 
@@ -193,7 +208,7 @@ post.addEffect({ wgsl: warm });
 - Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
 - Effects run from the lowest `order` to the highest, at most 8 at once.
 - Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
-- A full-screen pass reads and writes 8 bytes per pixel. The engine joins an effect that reads only its own pixel into the pass of the effect before it. With bloom and FXAA off, the last of these passes folds into the final pass. [Custom passes](../guides/custom-passes.md#cost) gives the rules.
+- A full-screen pass reads and writes 8 bytes per pixel. The engine joins an effect that reads only its own pixel into the pass of the effect before it, while the render scale cannot drop below the whole canvas. With bloom and FXAA off, the last of these passes folds into the final pass then too. While the scale can drop, each effect draws a pass of its own, at every scale ([below the whole canvas's render scale](#below-the-whole-canvass-render-scale)). [Custom passes](../guides/custom-passes.md#cost) gives the rules.
 
 A custom tone curve replaces the built-in curves. Its WGSL declares `fn toneCurve(color: vec3f) -> vec3f`, and `post.set({ toneMapping })` takes it. The final pass calls it in place of the built-in curve, after bloom and before FXAA and dithering.
 
@@ -272,7 +287,7 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 
 - The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
 - The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
-- Both draw on every GPU path. On the 8-bit path there is no HDR color, so the scene's shaders darken their light by the vignette before their own tone mapping, and a plain background color draws as a background so the vignette darkens it too.
+- Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
 - The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
@@ -302,7 +317,7 @@ The engine finds a still view by comparing each frame's draw commands and upload
 
 Bloom, depth of field, automatic exposure, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
 
-- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Bloom, depth of field, automatic exposure, a custom effect, a custom tone curve or volumetric fog with `fogSlices` above 0 moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
+- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Some features need HDR color: bloom, depth of field, automatic exposure, a custom effect, a custom tone curve, and volumetric fog with `fogSlices` above 0. The first of them moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
 - WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom, depth of field, automatic exposure, volumetric fog and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
 
 The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.

@@ -41,8 +41,9 @@
 //                     the checkout's sources and engine build stay the same. The baseline a may
 //                     also be a prepared baseline from the GPU check's cache, whose pages are
 //                     built already (bench/lib/baseline-cache.ts). Every page runs at the High
-//                     preset, within each GPU path's ceiling, with the quality governor off,
-//                     unless --switches names them. The command fails when b is slower than
+//                     preset, within each GPU path's ceiling, with the quality governor off and
+//                     every animated character posed in every frame, unless --switches names
+//                     them. The command fails when b is slower than
 //                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
 //                     the commits from a to b names it. When those commits change the benchmark
 //                     pages or the comparison's switches, the measurement changed: the command
@@ -576,13 +577,17 @@ async function runComparison(
 		if (!hasScene(scene))
 			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = share.filter((page) => hasScene(page.scene));
-	const switches = withSwitches(
-		[
-			...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
-			...comparisonSwitches(options.switches),
-		],
-		options,
-	);
+	// A page's switches: the seconds of its run, then the preset and governor rules of every
+	// comparison, then the switches that its scene's compared pages need. S5's page takes one, so
+	// the two builds animate their crowds alike.
+	const switchesOfScene = (scene: BenchScene): string =>
+		withSwitches(
+			[
+				...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
+				...comparisonSwitches(scene, options.switches),
+			],
+			options,
+		);
 	const servers: DevServer[] = [];
 	const results: BuildRun[] = [];
 	try {
@@ -612,7 +617,7 @@ async function runComparison(
 				for (const build of roundOrder(round)) {
 					const result = await runPage(
 						browser,
-						`${urls[build]}${pagePath(scene, kind, switches)}`,
+						`${urls[build]}${pagePath(scene, kind, switchesOfScene(scene))}`,
 						pageTimeoutMs(options.seconds, scene),
 					);
 					const name = `${build}-${page}-${round}`;

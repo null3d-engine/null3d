@@ -20,12 +20,12 @@
 //! pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
+    DrawList, Op, address, buffer_usage as usage, compare, format, layout as bind_layout,
     permutation, resource_kind, state_flags, template, texture_usage, view,
 };
 
 use crate::bloom::{BloomIds, FINAL_OFFSET};
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 use crate::grading::Grading;
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, OutputUniform, SceneColor, ToneMapping};
@@ -549,21 +549,13 @@ impl FinalPass {
                 view::D2,
             ],
         )?;
-        list.push(
-            Op::CreateSampler,
-            &[
-                ids.lut_sampler,
-                address::CLAMP_TO_EDGE,
-                address::CLAMP_TO_EDGE,
-                address::CLAMP_TO_EDGE,
-                filter::LINEAR,
-                filter::LINEAR,
-                filter::NEAREST,
-                0f32.to_bits(),
-                0f32.to_bits(),
-                compare::NONE,
-                1,
-            ],
+        clamp_sampler(
+            list,
+            ids.lut_sampler,
+            address::CLAMP_TO_EDGE,
+            LINEAR_LEVEL,
+            0.0,
+            compare::NONE,
         )?;
         Ok(())
     }

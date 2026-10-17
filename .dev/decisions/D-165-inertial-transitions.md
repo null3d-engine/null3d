@@ -49,10 +49,10 @@ Their difference over `step` is the outgoing velocity. The outgoing clips then l
 once, so the frame step samples only the new clip. Each step, the outgoing pose moves at its
 velocity. The layer's pose eases from it toward the new pose by `smoothstep(t / fade)`.
 
-The buffers are made on the first inertial play, as the joint-override table is. They hold
-[`MAX_LAYERS`] poses of the largest skeleton and their velocities per instance, and one timer per
-layer. A scene that never asks for an inertial transition keeps empty buffers, and the frame step
-skips the work with one read.
+The pool is made on the first inertial play, as the joint-override table is. It holds a small set
+of transition records, each a pose of the largest skeleton with its velocity, and an index per
+instance layer saying which record that layer's blend runs in. A scene that never asks for an
+inertial transition keeps no pool, and the frame step skips the work with one read.
 
 ### Why opt-in, and the default
 
@@ -80,3 +80,55 @@ looks. The flip is one line in `Animator.playOptions`.
 - S5 keeps its clip-weight blend; no benchmark scene changes.
 - Prototype A4's frames and the owner's pick decide the default. The result is recorded here or in
   an addendum when the iPad run is done.
+
+## Addendum, 15 October 2026: what a running transition follows
+
+The code review of 15 October 2026 found five ways a running transition left the behaviour above
+(finding M-2). The fix ties the blend to the instance that started it, and follows the clip's own
+speed and the screen:
+
+- The timers sat in a buffer laid out per instance slot, and nothing cleared them with the instance.
+  A unit that died mid-fade therefore passed its running blend to whatever took its id, even a unit
+  of another skeleton. `add_instance` and `remove_instance` now end the instance's blends.
+- A skeleton with more lanes than any before remakes the pose and velocity buffers, and the remake
+  zeroed the pose a running blend decayed from. Its timer ran on, so the layer sank toward a pose of
+  nothing. Every blend now ends with those buffers.
+- The layer sampled its clip's own time one step back by the bare step. A clip at speed 2, a clip
+  that plays backward, or a play-once clip held at its end then gave the wrong outgoing velocity,
+  and the limbs overshot. It now steps back by `step * speed`, and by nothing at all for a clip that
+  ended.
+- The timer advanced by the signed step. A negative time scale therefore left the fade running for
+  ever, and the layer showed the pose it had left. The timer now runs on the size of the step.
+- A second switch during a fade captured the bare clip pose instead of the pose on screen, and
+  jumped by most of the first switch's difference. A capture now takes the pose that the frame
+  showed.
+
+Two cases of the same finding stayed open at that point. A layer above 0 took its shares from the
+new clip's channels only. The pose buffers were also laid out for every instance slot, rather than
+for the transitions that ran. Both are closed below.
+
+## Addendum, 15 October 2026: the pool, and a layer above the first
+
+Finding M-4 measured what those buffers cost. At 1,024 instance slots and a rig of 100 lanes they
+were about 33 MB. The table made them at the first inertial play whether or not a slot ever
+transitioned. Battle's grown table (16,384 to 32,768 slots) reached 357 to 714 MB. Each growth
+copied the whole of it again, so a phone refused the play with E1109.
+
+The transitions now live in a pool. `transition_of` holds one record index per instance layer, and
+[`NO_TRANSITION`] says that no blend runs there. A pool of eight records is made with the index,
+and it doubles as blends need more. A crowd therefore pays for the transitions that run at once,
+not for its size. A record frees when its blend ends, when its instance is removed, or when a wider
+skeleton remakes the pool's records. The first inertial play of that crowd allocates about 74 KB,
+against the 33 MB it replaces, and its growth follows the blends that run.
+
+A doubling is the one allocation a play may make. It is rare: the pool reaches any number of
+concurrent transitions in a few doublings, and it then holds them. The frame step itself still
+allocates nothing. The no-allocation test warms up until a crowd's transitions have reached their
+steady number. It counts only after that, so the pool's growth is not mistaken for a frame cost.
+
+M-2's sixth case was the layer above the first. Its shares come from the channels its own clips
+animate, and the outgoing clips had left their slots. A joint that only they animated therefore
+dropped to the pose below at the switch instead of fading. Each record now keeps the outgoing
+clips' channel weights. The layer gives those lanes `layer_weight * (1 - alpha)` until the fade
+ends, where `alpha` is the fade's own ease. The pose the blend decays from shows at the switch, and
+the pose below takes over by the end. That is what a cross-fade on the layer does.

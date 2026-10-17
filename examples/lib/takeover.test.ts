@@ -14,26 +14,28 @@ const EPSILON = 1e-3;
 /** A context with no input, a still scene and a clock the test moves. */
 function stub() {
 	const time = { now: 0 };
+	const pointer = {
+		x: 0,
+		y: 0,
+		ndcX: 0,
+		ndcY: 0,
+		buttons: 0,
+		dragDx: 0,
+		dragDy: 0,
+		wheel: 0,
+		pinch: 0,
+		locked: false,
+		isTouch: false,
+	};
 	const input = {
 		wasPressed: () => false,
 		isDown: () => false,
-		pointer: {
-			x: 0,
-			y: 0,
-			ndcX: 0,
-			ndcY: 0,
-			buttons: 0,
-			dragDx: 0,
-			dragDy: 0,
-			wheel: 0,
-			pinch: 0,
-			locked: false,
-			isTouch: false,
-		},
+		pointer,
 		touches: [] as unknown[],
 	};
 	return {
 		time,
+		pointer,
 		context: {
 			input,
 			time,
@@ -41,7 +43,11 @@ function stub() {
 			engine: { viewport: { width: 640, height: 360, pixelRatio: 1 } },
 			scene: { raycast: () => false },
 		},
-	} as never as { time: { now: number }; context: never };
+	} as never as {
+		time: { now: number };
+		pointer: { buttons: number; dragDx: number; dragDy: number };
+		context: never;
+	};
 }
 
 /** Runs the cinematic for a stretch of time, in fixed frame steps, with the clock advanced. */
@@ -102,4 +108,67 @@ test('taking over halts the route at once, with no drift', () => {
 			3,
 		);
 	}
+});
+
+test('a fling that damping still carries never resumes after a switch', () => {
+	const { context, time, pointer } = stub();
+	const camera = new StandInCamera();
+	const target: [number, number, number] = [0, 1.4, 0];
+	const cinematic = createCinematic(context, camera as never, { shots: SHOTS, target, speed: 420 });
+	run(2, cinematic, time);
+	cinematic.select('Manual');
+	// A fling: a press, a drag and a release, whose damped motion the controls carry over the frames
+	// that follow.
+	pointer.buttons = 1;
+	cinematic.update(1 / 60);
+	pointer.dragDx = 60;
+	cinematic.update(1 / 60);
+	pointer.dragDx = 0;
+	pointer.buttons = 0;
+	cinematic.update(1 / 60);
+	const flung = [...camera.stored];
+	run(0.2, cinematic, time);
+	expect(moved([...camera.stored], flung)).toBeGreaterThan(0.01);
+	// Auto takes the camera: the route glides onto it. Taking it back must find a camera at rest.
+	cinematic.select('Auto');
+	run(0.5, cinematic, time);
+	cinematic.select('Manual');
+	run(1 / 60, cinematic, time);
+	const held = [...camera.stored];
+	run(1, cinematic, time);
+	expect(
+		moved([...camera.stored], held),
+		`the fling resumed: the camera drifted ${moved([...camera.stored], held).toFixed(4)} m`,
+	).toBeLessThan(EPSILON);
+});
+
+test('a takeover during the glide back to Auto keeps the camera where it is', () => {
+	const { context, time, pointer } = stub();
+	const camera = new StandInCamera();
+	const target: [number, number, number] = [0, 1.4, 0];
+	const cinematic = createCinematic(context, camera as never, { shots: SHOTS, target, speed: 420 });
+	run(2, cinematic, time);
+	cinematic.select('Manual');
+	// Move the camera well away from the route's pose, so the glide has a long way to go.
+	pointer.buttons = 1;
+	cinematic.update(1 / 60);
+	for (let k = 0; k < 6; k++) {
+		pointer.dragDx = 80;
+		cinematic.update(1 / 60);
+		pointer.dragDx = 0;
+		cinematic.update(1 / 60);
+	}
+	pointer.buttons = 0;
+	cinematic.update(1 / 60);
+	cinematic.select('Auto');
+	// Mid-glide: the camera is between the user's pose and the route's, not on the route.
+	run(0.25, cinematic, time);
+	const mid = [...camera.stored];
+	cinematic.select('Manual');
+	cinematic.update(1 / 60);
+	const held = [...camera.stored];
+	expect(
+		moved(held, mid),
+		`the camera jumped ${moved(held, mid).toFixed(4)} m at the takeover`,
+	).toBeLessThan(EPSILON);
 });

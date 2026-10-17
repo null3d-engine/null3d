@@ -14,6 +14,7 @@
 //
 // A texel's place is its fragment position over the target's size. Rows count from the target's
 // first row on every GPU path, as textures sample them, so the tables need no flip.
+#import null3d::fullscreen::{triangle}
 #import null3d::sky_scattering::{SkyValues, medium_at, ray_sphere, ground_hit, transmittance_uv, transmittance_point, multiscatter_uv, sky_view_uv, sky_view_direction, panorama_direction, rayleigh_phase, mie_phase, from_texels, TRANSMITTANCE_SIZE, MULTISCATTER_SIZE, SKY_VIEW_SIZE, PI}
 #import null3d::sky_clouds::{clouds}
 
@@ -33,10 +34,8 @@ struct TableOut {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> TableOut {
-    let index = vertex % 3u;
-    let corner = vec2f(f32((index << 1u) & 2u), f32(index & 2u));
     var out: TableOut;
-    out.clip = vec4f(corner * 2.0 - 1.0, 0.5, 1.0);
+    out.clip = triangle(vertex % 3u);
     out.step = vertex / 3u;
     return out;
 }
@@ -90,11 +89,6 @@ fn transmittance_step(uv: vec2f) -> vec3f {
 
 /// What a march along one ray finds: the light scattered toward its start, and the share of
 /// light that scatters at all, as one sum.
-struct March {
-    light: vec3f,
-    scattered: vec3f,
-}
-
 /// Step 1: the light that reaches a point of the texel's height after scattering more than once,
 /// with the sun at the texel's angle, after Hillaire's isotropic sum (his equations 5 to 10).
 fn multiscatter_step(uv: vec2f) -> vec3f {
