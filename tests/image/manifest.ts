@@ -1138,6 +1138,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'scene',
 	},
 	{ name: 'render-scale-75', sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75', hold: 0 },
+	// The same at 0.75 with FXAA, which below render scale 1 smooths the edges as the first of the
+	// two steps writes the render-size corner of the scene color (D-167). Its taps must stay
+	// inside that corner: a tap past it reads the clear color, which leaves a fringe at the
+	// image's last rows and columns.
+	{
+		name: 'render-scale-75-fxaa',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75',
+		hold: 0,
+		switches: ['antialias=fxaa'],
+	},
 	{
 		name: 'render-scale-50',
 		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.5',

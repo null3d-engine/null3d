@@ -190,3 +190,15 @@ So this record keeps the target and its cost. It is 4 bytes for each canvas pixe
 The crossing promise would have to give way. The target would be made when a frame first draws
 below the whole canvas, and released once the scale has stayed whole. That changes `render_scale.rs`
 and the no-allocation promises in several guides.
+### Addendum: FXAA's taps stay inside the step's corner
+
+17 October 2026. Step 1 writes the render-size corner of the scene color, and it runs FXAA over
+that corner. Its taps clamped to the scene color's whole size. So at the corner's right and bottom
+edges they read up to four texels outside it. Those hold the clear color, or an earlier frame at
+another scale. That left a fringe on the image's last rows and columns whenever the render scale
+was below 1 with FXAA on.
+
+The taps now clamp to the corner's own first and last texel. At the whole canvas's scale the corner
+is the whole texture, so those frames are unchanged. `final.wgsl`'s `pixel_color`, `tap` and
+`texel_at` take the bounds from `fs`. That step knows them from the corner's origin, the render size
+and the RESOLVE flag. The image test `render-scale-75-fxaa` draws that case.

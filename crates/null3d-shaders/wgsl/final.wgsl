@@ -446,18 +446,23 @@ fn unsqueeze(c: vec4f) -> vec4f {
     return vec4f(c.rgb / (1.0 - squeezed), c.a);
 }
 
-/// The squeezed texel at `pixel`, clamped inside the scene color, whose last texel is `last`.
-fn texel_at(pixel: vec2i, last: vec2i) -> vec4f {
-    return squeeze(scene_texel(clamp(pixel, vec2i(0), last)));
+/// The squeezed texel at `pixel`, clamped inside the drawn corner, whose first texel is `first` and
+/// last is `last`.
+fn texel_at(pixel: vec2i, first: vec2i, last: vec2i) -> vec4f {
+    return squeeze(scene_texel(clamp(pixel, first, last)));
 }
 
 /// The squeezed color at a point in pixels, filtered between its four nearest texels.
-fn tap(point: vec2f, last: vec2i) -> vec4f {
+fn tap(point: vec2f, first: vec2i, last: vec2i) -> vec4f {
     let corner = point - 0.5;
     let base = vec2i(floor(corner));
     let f = fract(corner);
-    let top = mix(texel_at(base, last), texel_at(base + vec2i(1, 0), last), f.x);
-    let bottom = mix(texel_at(base + vec2i(0, 1), last), texel_at(base + vec2i(1, 1), last), f.x);
+    let top = mix(texel_at(base, first, last), texel_at(base + vec2i(1, 0), first, last), f.x);
+    let bottom = mix(
+        texel_at(base + vec2i(0, 1), first, last),
+        texel_at(base + vec2i(1, 1), first, last),
+        f.x,
+    );
     return mix(top, bottom, f.y);
 }
 
@@ -468,16 +473,18 @@ fn luma(c: vec4f) -> f32 {
     return select(sqrt(y), y, display_color());
 }
 
-/// The scene color of the pixel at `position`, smoothed along the edge that crosses it.
-fn pixel_color(position: vec2f) -> vec4f {
-    let last = vec2i(textureDimensions(scene_color)) - 1;
+/// The scene color of the pixel at `position`, smoothed along the edge that crosses it. The taps
+/// stay inside the drawn corner's texels, `first` to `last`: below the whole canvas's scale the
+/// scene drew one corner of the scene color only, and a tap past the corner would read another
+/// frame's pixels or the clear color.
+fn pixel_color(position: vec2f, first: vec2i, last: vec2i) -> vec4f {
     let pixel = vec2i(position);
     let texel = scene_texel(pixel);
     let m = luma(squeeze(texel));
-    let nw = luma(texel_at(pixel + vec2i(-1, -1), last));
-    let ne = luma(texel_at(pixel + vec2i(1, -1), last));
-    let sw = luma(texel_at(pixel + vec2i(-1, 1), last));
-    let se = luma(texel_at(pixel + vec2i(1, 1), last));
+    let nw = luma(texel_at(pixel + vec2i(-1, -1), first, last));
+    let ne = luma(texel_at(pixel + vec2i(1, -1), first, last));
+    let sw = luma(texel_at(pixel + vec2i(-1, 1), first, last));
+    let se = luma(texel_at(pixel + vec2i(1, 1), first, last));
     let lowest = min(m, min(min(nw, ne), min(sw, se)));
     let highest = max(m, max(max(nw, ne), max(sw, se)));
     if highest - lowest < max(EDGE_THRESHOLD_MIN, highest * EDGE_THRESHOLD) {
@@ -488,9 +495,11 @@ fn pixel_color(position: vec2f) -> vec4f {
     let reduce = max((nw + ne + sw + se) * (0.25 * REDUCE_MUL), REDUCE_MIN);
     let scale = 1.0 / (min(abs(along.x), abs(along.y)) + reduce);
     let span = clamp(along * scale, vec2f(-SPAN_MAX), vec2f(SPAN_MAX));
-    let inner = 0.5 * (tap(position - span / 6.0, last) + tap(position + span / 6.0, last));
+    let inner = 0.5
+        * (tap(position - span / 6.0, first, last) + tap(position + span / 6.0, first, last));
     let outer = 0.5 * inner
-        + 0.25 * (tap(position - span * 0.5, last) + tap(position + span * 0.5, last));
+        + 0.25
+            * (tap(position - span * 0.5, first, last) + tap(position + span * 0.5, first, last));
     // The wider blend crossed another edge where it leaves the taps' brightness range.
     let outer_luma = luma(outer);
     return unsqueeze(select(outer, inner, outer_luma < lowest || outer_luma > highest));
@@ -590,7 +599,18 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let shade = vignette(local, size);
     var color = vec4f(0.0);
     if whole {
+#ifdef FXAA
+        // The drawn corner's first and last texels of the scene color, which the edge blend stays
+        // inside: this step drew that corner only.
+        let corner_first = vec2i(origin);
+        let corner_last = vec2i(origin + render - 1.0);
+        color = display(shaded(
+            with_glow(pixel_color(position.xy, corner_first, corner_last), light),
+            shade,
+        ));
+#else
         color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
+#endif
     }
 #ifdef WEBGL2
     let from_top = vec2f(position.x, size.y - position.y);
