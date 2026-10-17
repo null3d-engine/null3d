@@ -93,7 +93,8 @@ export class Heightfield {
 
 	/**
 	 * The sample at the column `col` and the row `row`, clamped to the square, so a reader just
-	 * outside the ground gets the edge's height. A negative index counts from the far edge.
+	 * outside the ground gets the edge's height. An index below 0 or past the resolution takes the
+	 * nearest edge's sample.
 	 */
 	sample(col: number, row: number): number {
 		const { resolution, heights } = this;
