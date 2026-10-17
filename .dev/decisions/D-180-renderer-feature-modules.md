@@ -288,3 +288,30 @@ The owner approved items 1 and 2 on 15 October 2026, and step 1 started at once.
 1. Approve the design: the step trait and one module per feature. Ids come from one table with an overlap test, and both GPU paths read one template descriptor with a parity test.
 2. Approve the plan: twelve landings in the order above, each with unchanged draw lists and image references, starting after the open feature branches land.
 3. Whether step 1, the fingerprint and overlap tests, may land at once. It adds only tests, and it catches id clashes from today.
+
+## Addendum, 17 October 2026: the owner defers the plan
+
+The owner deferred this plan on 17 October 2026. The renderer is in a good place, and he does not
+want a change that would drastically alter how the engine works. This record's twelve landings move
+every step behind one trait. They replace both builders' hand-chained id tables, give both backends
+one template descriptor, and move the frame graph's tests into the step modules. That is such a
+change, so none of it starts now. The plan stays here as the record of the debt and of the work it
+needs.
+
+My reading of why it is deferred:
+
+- The figures in this record measure merge cost, not correctness. 200 of 305 conflict hunks fell in
+  places that the plan removes, but the engine draws correctly today. A conflict is paid once by a
+  maintainer. A regression in the step trait or in the id layout would reach every step at once.
+  Both builders and the graph's tests would change with it, and only the image tests would see it.
+- The plan's own precondition has not changed: it starts after the open feature branches land. The
+  renderer's file is contested by several branches today. That is the state the plan is meant to
+  end, and it is also what makes a large landing risky now.
+- Each landing promised unchanged draw lists, and a fingerprint test would guard them. That test
+  does not exist yet, so a landing would be checked by the image tests alone.
+- Nothing in the plan is a promise to a page today. The renderer has no public shape that depends
+  on its internal step structure.
+
+What would make it worth revisiting: renderer conflicts rising again across parallel work, or a
+feature that again needs 20 to 30 places in `frame_graph.rs` and both id tables. Until then the
+debt is recorded here, in review findings M-9, R-16 and R-17, and no code changes for it.
