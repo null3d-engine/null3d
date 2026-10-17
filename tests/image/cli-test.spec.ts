@@ -7,6 +7,7 @@ import {
 	cpSync,
 	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	readFileSync,
 	rmSync,
 	symlinkSync,
@@ -38,10 +39,23 @@ interface ProjectCopy {
 	file(kind: 'reference' | 'image' | 'diff', tier: Tier, name: string): string;
 }
 
+/** The copies that the tests made, removed after each test. */
+const copies: string[] = [];
+
+test.afterEach(() => {
+	for (const root of copies.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
 /**
- * Copies the fixture project into the test's output folder, with a list of tests and, for each
- * named test and tier, the manifest's reference of the fixture's sketch. The copy installs what the
- * fixture installs. Without `typeCheck`, it has no tsconfig.json, so the type check is skipped.
+ * Copies the fixture project into a folder of its own under the repository's build folder, with a
+ * list of tests and, for each named test and tier, the manifest's reference of the fixture's sketch.
+ * The copy installs what the fixture installs. Without `typeCheck`, it has no tsconfig.json, so the
+ * type check is skipped.
+ *
+ * The copy lives under the build folder, not under the test's output folder: CI uploads the output
+ * folder when a job fails, and it follows the copy's link to the dependencies, which would put the
+ * whole installed tree into the artifact. It stays inside the repository, where the copy's dev
+ * server may serve the engine's files.
  */
 function projectCopy({
 	tests,
@@ -52,7 +66,9 @@ function projectCopy({
 	references?: readonly [string, Tier][];
 	typeCheck?: boolean;
 }): ProjectCopy {
-	const root = test.info().outputPath('project');
+	mkdirSync(join(REPO_ROOT, 'target'), { recursive: true });
+	const root = mkdtempSync(join(REPO_ROOT, 'target/cli-test-'));
+	copies.push(root);
 	const environment = environmentNamed(test.info().project.name);
 	cpSync(FIXTURE, root, { recursive: true });
 	// A package of its own, as every project has. Without one, Vite takes the repository as the
