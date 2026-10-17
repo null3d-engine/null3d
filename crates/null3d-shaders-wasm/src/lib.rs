@@ -18,6 +18,11 @@
 //!   [`Output`](null3d_shaders::Output). It writes the first piece of that answer.
 //! - `build_next()` writes the piece after it. The caller runs it until `response_length()` comes
 //!   back zero, which says the answer is complete.
+//! - `prepare_modules()` builds the engine's manifest and answers with the file name of each module
+//!   that its build makes. It keeps the build, and the work that every module shares, for the calls
+//!   below.
+//! - `module()` renders one of those modules: the request names it, and the answer holds its path
+//!   in the folder of the generated modules and its text.
 //! - `response()` and `response_length()` give the last call's response, which is one piece of a
 //!   manifest build's answer: `{"ok": true, "output": ...}` or `{"ok": false, "problems": [...]}`.
 //!   A response of `compile`, `compile_material` or `compile_effect` also holds `"warnings": [...]`
@@ -50,11 +55,11 @@ use std::collections::BTreeMap;
 use std::sync::Once;
 
 use null3d_shaders::{
-    BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, Output,
-    PostTemplates, Problem, Response, ShaderSource, VariantOutput,
+    BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, ModuleSet,
+    Output, PostTemplates, Problem, Response, ShaderSource, VariantOutput,
 };
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 /// The engine's shader files, each by its path in the shader folder with its text: the entry
 /// shaders, and the library modules in `lib/`.
@@ -78,6 +83,8 @@ thread_local! {
     static POST_TEMPLATES: RefCell<Option<PostTemplates>> = const { RefCell::new(None) };
     /// The answer of the last `build`, which `build_next` hands over a piece at a time.
     static STREAM: RefCell<Option<Answer>> = const { RefCell::new(None) };
+    /// The build that `prepare_modules` made, which `module` renders one module at a time.
+    static MODULES: RefCell<Option<Prepared>> = const { RefCell::new(None) };
     /// The module's account of a stop for want of memory, which `stopped` serves. It is written
     /// where it already has room, because the allocator cannot give it any.
     static STOPPED: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -211,6 +218,102 @@ pub extern "C" fn build_next() {
             }
         });
     });
+}
+
+/// Builds the engine's manifest and answers with the file name of each module that its build
+/// makes. The module keeps the build, and the work that every module shares, for `module`.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepare_modules() {
+    respond(|_| {
+        // Drop the previous build before the next one takes its room: the engine's output is most
+        // of what a 32-bit module may hold.
+        MODULES.with_borrow_mut(|slot| *slot = None);
+        let output = null3d_shaders::build(&inputs())?;
+        let prepared = Prepared::new(output);
+        let names: Vec<String> = prepared.set.names().map(str::to_owned).collect();
+        MODULES.with_borrow_mut(|slot| *slot = Some(prepared));
+        Ok(names)
+    });
+}
+
+/// Renders one module of the build that `prepare_modules` made. The request names the module, and
+/// the answer holds the file's path in the folder of the generated modules and its text.
+#[unsafe(no_mangle)]
+pub extern "C" fn module() {
+    respond(|request| {
+        let asked: ModuleRequest = parse(request)?;
+        MODULES.with_borrow(|slot| {
+            let prepared = slot.as_ref().ok_or_else(no_prepared_build)?;
+            let text = prepared
+                .set
+                .text(&asked.name)
+                .ok_or_else(|| unknown_module(&asked.name))?;
+            Ok(ModuleText {
+                path: asked.name,
+                text,
+            })
+        })
+    });
+}
+
+/// A prepared build, with the module set that renders its modules. The set borrows the output, so
+/// both live in one value.
+struct Prepared {
+    /// Declared before the output so that it drops before the output it borrows.
+    set: ModuleSet<'static>,
+    /// The build, at a heap address that does not move when this value does. The set borrows it,
+    /// so the field is held for its ownership alone.
+    #[expect(
+        dead_code,
+        reason = "the set borrows the output; the box keeps it alive"
+    )]
+    output: Box<Output>,
+}
+
+impl Prepared {
+    /// Prepares `output`, whose modules the set renders one at a time.
+    fn new(output: Output) -> Self {
+        let output = Box::new(output);
+        // SAFETY: the set borrows the output through a pointer into the box, which keeps the
+        // output at that address until it drops. The set is declared first, so it drops first.
+        // The output is never reached mutably after this point, and moving this value moves only
+        // the box, not the output that the box owns.
+        let borrowed: &'static Output = unsafe { &*std::ptr::from_ref(&*output) };
+        Self {
+            set: ModuleSet::new(borrowed),
+            output,
+        }
+    }
+}
+
+/// The request of `module`: the file name of one module that `prepare_modules` listed.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModuleRequest {
+    name: String,
+}
+
+/// The answer of `module`: the file's path in the folder of the generated modules, and its text.
+#[derive(Serialize)]
+struct ModuleText {
+    path: String,
+    text: String,
+}
+
+/// The problem of a `module` call before `prepare_modules`.
+fn no_prepared_build() -> BuildError {
+    Problem::general(
+        "the shader compiler has no prepared module build: call prepare_modules first.",
+    )
+    .into()
+}
+
+/// The problem of a `module` call that names a module the build does not make.
+fn unknown_module(name: &str) -> BuildError {
+    Problem::general(format!(
+        "the shader build makes no module named `{name}`: ask for one of the names that prepare_modules lists."
+    ))
+    .into()
 }
 
 /// A manifest build's answer, handed over in pieces. It writes one build's result per piece, so
@@ -490,4 +593,93 @@ fn record_stop(size: usize) {
         stopped.extend_from_slice(&digits[at..]);
         stopped.extend_from_slice(TAIL);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    /// Calls `export` with `body` as its request and answers the JSON response that it wrote.
+    fn call(export: extern "C" fn(), body: &[u8]) -> Value {
+        let at = request(body.len());
+        // SAFETY: `request` made the buffer `body.len()` bytes long and returned where it starts,
+        // so this copy fills exactly the room that it made.
+        unsafe { std::slice::from_raw_parts_mut(at, body.len()) }.copy_from_slice(body);
+        export();
+        let text = RESPONSE.with_borrow(|response| String::from_utf8(response.clone()).unwrap());
+        serde_json::from_str(&text).expect("the response is JSON")
+    }
+
+    /// A request that names one module.
+    fn module_request(name: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({ "name": name })).unwrap()
+    }
+
+    /// A `module` call before `prepare_modules` answers the problem that says to prepare first.
+    #[test]
+    fn module_without_a_prepared_build_answers_a_problem() {
+        let answer = call(module, &module_request("shaders.ts"));
+        assert_eq!(answer["ok"], false);
+        let message = answer["problems"][0]["message"].as_str().unwrap();
+        assert!(message.contains("call prepare_modules first"), "{message}");
+    }
+
+    /// A call prepares the engine's build without rendering it, and the next renders one module,
+    /// whose text is the set's for that module.
+    #[test]
+    fn prepare_modules_lists_every_module_and_module_renders_one() {
+        let prepared = call(prepare_modules, b"");
+        assert_eq!(prepared["ok"], true, "{}", prepared["problems"]);
+        let names: Vec<String> = serde_json::from_value(prepared["output"].clone()).unwrap();
+        assert!(!names.is_empty(), "the build makes modules");
+        MODULES.with_borrow(|slot| {
+            let set = &slot.as_ref().expect("the prepared build").set;
+            assert_eq!(
+                names,
+                set.names().map(str::to_owned).collect::<Vec<String>>()
+            );
+        });
+        // One module of each kind that the engine's build makes: the main module, the features
+        // module, a device module, a table of shared paragraphs, a table of builds of several
+        // features and a shader that loads on a feature's first use as a whole.
+        let mut chosen: Vec<String> = ["shaders.ts", "shader-features.ts"]
+            .map(str::to_owned)
+            .to_vec();
+        let kinds: [fn(&str) -> bool; 4] = [
+            |name| name.starts_with("shaders-") && name.ends_with(".js"),
+            |name| name.starts_with("shader-paragraphs-"),
+            |name| {
+                name.starts_with("shaders-") && name.ends_with(".ts") && name.contains("-combos")
+            },
+            |name| {
+                name.starts_with("shaders-") && name.ends_with(".ts") && !name.contains("-combos")
+            },
+        ];
+        for kind in kinds {
+            if let Some(name) = names.iter().find(|name| kind(name)) {
+                chosen.push(name.clone());
+            }
+        }
+        for name in chosen {
+            let expected = MODULES.with_borrow(|slot| {
+                slot.as_ref()
+                    .expect("the prepared build")
+                    .set
+                    .text(&name)
+                    .expect("the build makes the module")
+            });
+            let answer = call(module, &module_request(&name));
+            assert_eq!(answer["ok"], true, "{}", answer["problems"]);
+            assert_eq!(answer["output"]["path"], name);
+            assert_eq!(answer["output"]["text"], expected, "`{name}`");
+        }
+        let answer = call(module, &module_request("not-a-module.ts"));
+        assert_eq!(answer["ok"], false);
+        let message = answer["problems"][0]["message"].as_str().unwrap();
+        assert!(
+            message.contains("makes no module named `not-a-module.ts`"),
+            "{message}"
+        );
+    }
 }

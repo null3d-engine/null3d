@@ -657,54 +657,129 @@ fn paragraphs_module(table: &SharedParagraphs) -> String {
     ts.out
 }
 
-/// Renders every module, by file name: the main module, TypeScript, and each device module, plain
-/// JavaScript.
-pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
-    let devices = device_builds(output);
-    let shared = shared_paragraphs(&devices);
-    let mut modules = BTreeMap::from([
-        (format!("{MAIN_MODULE}.ts"), main_module(output, &devices)),
-        (format!("{FEATURES_MODULE}.ts"), features_module(output)),
-    ]);
-    for (module, builds) in &devices {
-        // A module of the start keeps its own paragraphs and names no table: a page downloads one
-        // of them before its first frame, and the table belongs to the features that load on first
-        // use. `offlineFiles` in the Vite plugin groups the table by the modules that name it.
-        let table = if module.file.is_some() {
-            shared.get(&(module.target, module.bits))
-        } else {
-            None
-        };
-        modules.insert(
-            format!("{}.{DEVICE_MODULE_EXTENSION}", module.stem()),
-            device_module(module, builds, table),
-        );
+/// The modules that a build makes, named and ready to render one at a time. It computes the work
+/// that every module shares once, and lists the modules' names without rendering any text, so a
+/// caller that writes each module to its own file never holds the whole set's text at once.
+pub struct ModuleSet<'a> {
+    /// The build whose text the modules render from.
+    output: &'a Output,
+    /// The builds of the shaders that load by device, by device module.
+    devices: BTreeMap<DeviceModule, Builds<'a>>,
+    /// The paragraphs that enough device modules of one kind share, by kind.
+    shared: BTreeMap<(Target, u32), SharedParagraphs>,
+    /// The kind of module that each file name holds.
+    plan: BTreeMap<String, ModuleKind<'a>>,
+}
+
+/// The kind of one module of a build: what its text renders from.
+enum ModuleKind<'a> {
+    /// The main module.
+    Main,
+    /// The module that names the features that load on first use.
+    Features,
+    /// A device module, by its name and the builds it holds.
+    Device(DeviceModule),
+    /// The table of shared paragraphs of one kind: a target and one value of the device's bits.
+    Paragraphs(Target, u32),
+    /// A module of a shader that loads on first use, by the shader and the target.
+    FirstUse(&'a str, Target),
+    /// The loader table of a target's device modules of builds that need several features, of the
+    /// half-precision builds or of the rest.
+    Combined(Target, bool),
+}
+
+impl<'a> ModuleSet<'a> {
+    /// The modules that `output` makes. This computes the device modules and their shared
+    /// paragraphs once, and names every module without rendering it.
+    pub fn new(output: &'a Output) -> Self {
+        let devices = device_builds(output);
+        let shared = shared_paragraphs(&devices);
+        let mut plan = BTreeMap::from([
+            (format!("{MAIN_MODULE}.ts"), ModuleKind::Main),
+            (format!("{FEATURES_MODULE}.ts"), ModuleKind::Features),
+        ]);
+        for module in devices.keys() {
+            plan.insert(
+                format!("{}.{DEVICE_MODULE_EXTENSION}", module.stem()),
+                ModuleKind::Device(module.clone()),
+            );
+        }
+        for (&(target, bits), table) in &shared {
+            plan.insert(
+                format!("{}.{DEVICE_MODULE_EXTENSION}", table.stem),
+                ModuleKind::Paragraphs(target, bits),
+            );
+        }
+        for (stem, shader, target) in first_use_modules(output) {
+            plan.insert(format!("{stem}.ts"), ModuleKind::FirstUse(shader, target));
+        }
+        for target in [Target::Wgsl, Target::Glsl] {
+            let combined = first_use_files(&devices, target, true);
+            for half in [false, true] {
+                if !split_by_half(&combined, half).is_empty() {
+                    plan.insert(
+                        format!("{}.ts", combined_module_name(target, half)),
+                        ModuleKind::Combined(target, half),
+                    );
+                }
+            }
+        }
+        Self {
+            output,
+            devices,
+            shared,
+            plan,
+        }
     }
-    for table in shared.values() {
-        modules.insert(
-            format!("{}.{DEVICE_MODULE_EXTENSION}", table.stem),
-            paragraphs_module(table),
-        );
+
+    /// The file name of each module, in order.
+    pub fn names(&self) -> impl Iterator<Item = &str> + '_ {
+        self.plan.keys().map(String::as_str)
     }
-    for (stem, shader, target) in first_use_modules(output) {
-        modules.insert(
-            format!("{stem}.ts"),
-            first_use_module(output, shader, target),
-        );
-    }
-    for target in [Target::Wgsl, Target::Glsl] {
-        let combined = first_use_files(&devices, target, true);
-        for half in [false, true] {
-            let part = split_by_half(&combined, half);
-            if !part.is_empty() {
-                modules.insert(
-                    format!("{}.ts", combined_module_name(target, half)),
-                    combined_module(target, &part),
-                );
+
+    /// The text of the module named `name`, or None when the build makes no such module.
+    pub fn text(&self, name: &str) -> Option<String> {
+        match self.plan.get(name)? {
+            ModuleKind::Main => Some(main_module(self.output, &self.devices)),
+            ModuleKind::Features => Some(features_module(self.output)),
+            ModuleKind::Device(module) => {
+                // A module of the start keeps its own paragraphs and names no table: a page
+                // downloads one of them before its first frame, and the table belongs to the
+                // features that load on first use. `offlineFiles` in the Vite plugin groups the
+                // table by the modules that name it.
+                let table = if module.file.is_some() {
+                    self.shared.get(&(module.target, module.bits))
+                } else {
+                    None
+                };
+                Some(device_module(module, &self.devices[module], table))
+            }
+            ModuleKind::Paragraphs(target, bits) => {
+                Some(paragraphs_module(self.shared.get(&(*target, *bits))?))
+            }
+            ModuleKind::FirstUse(shader, target) => {
+                Some(first_use_module(self.output, shader, *target))
+            }
+            ModuleKind::Combined(target, half) => {
+                let combined = first_use_files(&self.devices, *target, true);
+                Some(combined_module(*target, &split_by_half(&combined, *half)))
             }
         }
     }
-    modules
+}
+
+/// Renders every module, by file name: the main module, TypeScript, and each device module, plain
+/// JavaScript. A caller that writes the modules one at a time uses [`ModuleSet`] instead.
+pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
+    let set = ModuleSet::new(output);
+    set.names()
+        .map(|name| {
+            let text = set
+                .text(name)
+                .expect("a module that the set names has text");
+            (name.to_owned(), text)
+        })
+        .collect()
 }
 
 /// The device modules of `files` whose fixed bits hold the half-precision bit, or those that do
@@ -1708,8 +1783,10 @@ mod tests {
         assert_eq!(sprites.keys().copied().collect::<Vec<_>>(), ["sprite"]);
     }
 
-    #[test]
-    fn builds_that_need_several_features_have_modules_of_their_own() {
+    /// [`output_with_features`], with the features that a build may need several of: alpha hash,
+    /// skinning and bloom. The lit template gains their builds, and the sprite shader one hashed
+    /// build that needs sprites too.
+    fn output_with_combined_features() -> Output {
         use permutation::{ALPHA_HASH, BLOOM, SKIN, TONE_MAP};
         let mut output = output_with_features();
         output.first_use.bits.insert(ALPHA_HASH, "hash".to_owned());
@@ -1725,6 +1802,13 @@ mod tests {
         }
         let sprite = output.shaders.get_mut("sprite").unwrap();
         sprite.insert("webgpu_hash".to_owned(), build(Target::Wgsl, ALPHA_HASH));
+        output
+    }
+
+    #[test]
+    fn builds_that_need_several_features_have_modules_of_their_own() {
+        use permutation::TONE_MAP;
+        let output = output_with_combined_features();
         let modules = device_builds(&output);
         let stems: Vec<String> = modules
             .keys()
@@ -1811,6 +1895,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Asserts that the module set names each module of the build, renders its text on demand, and
+    /// answers None for a name that the build does not make.
+    fn assert_module_set_matches(output: &Output) {
+        let modules = modules(output);
+        let set = ModuleSet::new(output);
+        assert_eq!(
+            set.names().collect::<Vec<_>>(),
+            modules.keys().map(String::as_str).collect::<Vec<_>>(),
+            "the set names each module of the build"
+        );
+        for (name, text) in &modules {
+            assert_eq!(set.text(name).as_deref(), Some(text.as_str()), "`{name}`");
+        }
+        assert_eq!(set.text("not-a-module.ts"), None);
+    }
+
+    #[test]
+    fn the_module_set_names_and_renders_each_module_of_the_build() {
+        assert_module_set_matches(&output());
+        assert_module_set_matches(&output_with_features());
+        assert_module_set_matches(&output_with_combined_features());
+        assert_module_set_matches(&output_with_first_use_shader());
+        assert_module_set_matches(&output_shared_by_features(SHARED_PARAGRAPH_MIN_USES));
     }
 
     #[test]
@@ -2091,8 +2200,9 @@ mod tests {
         assert!(!start.contains(PARAGRAPHS_MODULE_PREFIX), "{start}");
     }
 
-    #[test]
-    fn a_shader_that_loads_on_first_use_has_a_module_per_target_outside_the_main_module() {
+    /// [`output`], with a shader that loads on a feature's first use as a whole: one build for
+    /// each target.
+    fn output_with_first_use_shader() -> Output {
         let mut output = output();
         let environment = BTreeMap::from([
             ("webgpu".to_owned(), build(Target::Wgsl, 0)),
@@ -2100,6 +2210,12 @@ mod tests {
         ]);
         output.shaders.insert("room_light".to_owned(), environment);
         output.first_use_shaders = ["room_light".to_owned()].into();
+        output
+    }
+
+    #[test]
+    fn a_shader_that_loads_on_first_use_has_a_module_per_target_outside_the_main_module() {
+        let output = output_with_first_use_shader();
         let modules = modules(&output);
         let main = &modules[&format!("{MAIN_MODULE}.ts")];
         assert!(!main.contains("ROOM_LIGHT_SHADER"), "{main}");
