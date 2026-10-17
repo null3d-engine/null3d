@@ -576,9 +576,9 @@ The owner raised the start's Brotli budget from 160 KB to 165 KB, which leaves 2
 
 ### The fourth raise, 18 October 2026: the start to 166 KB
 
-The screen-space reflections of M2-EX22 add about 1.6 KB of real start code. Their settings, their share of the governor's steps and the names of their core calls all load with every page. Main's own start measured 163.4 KB after Brotli, so the branch's pipelined WebGL2 start came to 169,010 bytes against the old line of 165 KB, 50 bytes over it.
+The screen-space reflections of M2-EX22 add about 1.6 KB of real start code. Their settings, their share of the governor's steps and the names of their core calls all load with every page. Main's own start measured 167,351 bytes after Brotli, 163.4 KB. The branch's pipelined WebGL2 start came to 169,010 bytes. That is 50 bytes over the old line of 165 KB, 168,960 bytes.
 
-The owner raised the start's Brotli budget from 165 KB to 166 KB and ruled out a trim of the reflections' code. The gzip and uncompressed figures are unchanged at 448 KB and 3,328 KB. `START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
+The coordinator's final ruling on 18 October 2026 raised the start's Brotli budget from 165 KB to 166 KB. It also ruled out a trim of the reflections' code. D-14 asks for the owner's written word for each raise. The owner's coordinator should confirm that this entry names the owner. The gzip and uncompressed figures are unchanged at 448 KB and 3,328 KB. `START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
 
 ### The first-use files raised, 15 October 2026: 48 KB to 49 KB
 
