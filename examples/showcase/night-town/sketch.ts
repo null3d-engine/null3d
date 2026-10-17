@@ -5,9 +5,10 @@
 // houses, the props, the trees and the falling snow.
 //
 // The camera runs a cinematic route made for this scene (see SHOTS). `c` toggles between the route
-// (Auto) and the user's own fly camera (Manual); `h` opens and closes the controls. The controls
-// pick a time of day (Night at its start) and turn the effects on and off, among them a "DSLR" lens
-// with depth of field. For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
+// (Auto) and the engine's orbit controls, which the user drives (Manual); `h` opens and closes the
+// controls. The controls pick a time of day (Night at its start) and turn the effects on and off,
+// among them a "DSLR" lens with depth of field. For held frames, the sketch's address takes the
+// mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';

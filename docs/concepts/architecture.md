@@ -40,7 +40,7 @@ In null3D, a 3D scene is called a sketch: a module that builds the scene and upd
 | Sketch worker | Your sketch code and the engine core. Reading or writing scene data is a plain memory access here. | 1 |
 | Render worker | The GPU device and the canvas. It uploads changed data and replays draw lists into WebGPU or WebGL2 calls. It runs no sketch code. | 1 |
 | Job workers | Parallel loops over scene data in Rust: the animation of clips, transforms and bounds, instance batches, and the sort of see-through objects. On WebGL2 they also cull, hide what occluders hide, and list the lights of each cluster. Between frames, they compute the normals and tangents of new meshes, build the trees that raycasts use, cast batches of rays, and run decoders such as the KTX2 transcoder. | None at the start. They start as the work grows, up to the logical cores minus 2, and at least 1 |
-| Helper workers | Short-lived workers that start on first use. A glTF worker reads model files and decodes their images and meshopt data. A panorama worker reads HDR and EXR files. A task worker runs decoders where the engine has no job workers. They run no frame work. | One of each kind, on first use |
+| Helper workers | Short-lived workers that start on first use. A glTF worker reads model files and decodes their images and meshopt data. A panorama worker reads HDR and EXR files. A task worker runs decoders where no job worker can take them. They run no frame work. | One of each kind, on first use |
 
 ### When the job workers start
 

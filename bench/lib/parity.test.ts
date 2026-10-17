@@ -327,6 +327,7 @@ describe('feature scenes', () => {
 			'gltf-specular',
 			'gltf-ior',
 			'gltf-clearcoat',
+			'gltf-toy-car',
 			'shadows',
 			'bloom-strong',
 			'ao-default',

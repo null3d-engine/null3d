@@ -10,7 +10,6 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	statSync,
 	utimesSync,
@@ -18,7 +17,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { buildBenchPages } from '../../tests/lib/load-server.ts';
-import { acquireLock, cacheDir } from '../../tools/lib/build-cache.ts';
+import { acquireLock, cacheDir, writeFolderAtomic } from '../../tools/lib/build-cache.ts';
 
 /**
  * The cache's folder, which NULL3D_BASELINE_CACHE can move. By default it is a folder under the
@@ -103,15 +102,15 @@ async function withLock<T>(cache: string, work: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The switches that the comparison code of the checkout at `root` gives every page, or none when
- * its comparison had none.
+ * The switches that the comparison code of the checkout at `root` gives its pages, or none when its
+ * comparison had none.
  */
 export async function switchesOf(root: string): Promise<readonly string[]> {
 	try {
 		const code = (await import(join(root, 'bench/lib/compare.ts'))) as {
-			COMPARISON_SWITCHES?: readonly string[];
+			ALL_COMPARISON_SWITCHES?: readonly string[];
 		};
-		return code.COMPARISON_SWITCHES ?? [];
+		return code.ALL_COMPARISON_SWITCHES ?? [];
 	} catch {
 		return [];
 	}
@@ -120,7 +119,8 @@ export async function switchesOf(root: string): Promise<readonly string[]> {
 /** Removes the cache's folders past the kept number, and any build that stopped half way. */
 function prune(cache: string): void {
 	const entries = readdirSync(cache).flatMap((name) => {
-		if (name.endsWith('.part')) {
+		// A folder that a build staged and a stopped build left behind is not an entry.
+		if (name.endsWith('.partial') || name.endsWith('.part')) {
 			rmSync(join(cache, name), { recursive: true, force: true });
 			return [];
 		}
@@ -162,17 +162,28 @@ export async function prepareBaseline(
 		}
 		run(builder, 'bun', 'install');
 		run(builder, 'bun', 'run', 'build');
-		const part = join(cache, `${commit}.part`);
-		rmSync(part, { recursive: true, force: true });
-		buildBenchPages(builder, preparedPages(part));
 		const subject = execFileSync('git', ['-C', builder, 'log', '-1', '--format=%s'], {
 			encoding: 'utf8',
 		}).trim();
 		const record: PreparedBaseline = { commit, subject, switches: await switchesOf(builder) };
-		writeFileSync(join(part, RECORD_FILE), `${JSON.stringify(record, null, '\t')}\n`);
 		const dir = join(cache, commit);
-		rmSync(dir, { recursive: true, force: true });
-		renameSync(part, dir);
+		// The build's pages and its record go into a staging folder and then in place in one step,
+		// as every cache of the build does, so a check that reads the cache never finds half of one.
+		// The write helper keeps a failure to itself, so the reason it happened is kept here.
+		let failure: unknown;
+		const written = writeFolderAtomic(dir, (staging) => {
+			try {
+				buildBenchPages(builder, preparedPages(staging));
+				writeFileSync(join(staging, RECORD_FILE), `${JSON.stringify(record, null, '\t')}\n`);
+			} catch (error) {
+				failure = error;
+				throw error;
+			}
+		});
+		if (!written)
+			throw (
+				failure ?? new Error(`could not write the prepared baseline of ${commit} into ${cache}`)
+			);
 		prune(cache);
 		return dir;
 	});

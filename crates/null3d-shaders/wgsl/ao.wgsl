@@ -34,6 +34,7 @@
 // from the top left. A texel of the steps stands for the pixel of the scene under its center.
 // WebGPU draws a corner into a target's first rows, and WebGL2, which counts rows from the bottom,
 // into its last, so the steps turn rows around there. Every read clamps inside the drawn corner.
+#import null3d::fullscreen::{triangle}
 #import null3d::depth::{view_position}
 
 /// The steps' settings, which the frame builder writes once for all of them.
@@ -92,10 +93,7 @@ fn magic_square(cell: vec2i) -> i32 {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 /// A row counted from the top of a drawn corner, as a row of a texture of `rows` rows: the same on

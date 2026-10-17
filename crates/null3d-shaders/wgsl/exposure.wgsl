@@ -14,6 +14,7 @@
 // sampler, the sampler, and a texture they read as plain floats. The grid's weights are the same
 // in either row order, so WebGL2's rows from the bottom change nothing but where the corner lies.
 
+#import null3d::fullscreen::{triangle}
 #import null3d::exposure::{Settings, adapted, bin_of, center_weight, meter, stops}
 
 @group(0) @binding(0) var<uniform> settings: Settings;
@@ -26,10 +27,7 @@ const TAPS: u32 = 4u;
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 @fragment

@@ -263,7 +263,9 @@ describe('timeOfDay', () => {
 		for (let hours = 6; hours <= 18.0001; hours += 0.05) {
 			const day = timeOfDay(hours, { model: 'physical' });
 			const sun = (Math.asin(day.atmosphere.sunPosition[1]) * 180) / Math.PI;
-			if (sun <= 0) continue;
+			// The light's height is held at the horizon as the sun sinks to it (see the horizon
+			// test), so the two heights meet only while the sun stands above that hold.
+			if (sun <= 1) continue;
 			// While the sun stands up, the main light is the sun, not the moon.
 			const light = (Math.asin(-day.light.direction[1]) * 180) / Math.PI;
 			expect(light).toBeCloseTo(sun, 5);
@@ -277,12 +279,27 @@ describe('timeOfDay', () => {
 		expect(sunHeight('goldenHour')).toBeCloseTo(5, 0);
 		expect(sunHeight('blueHour')).toBeCloseTo(-5, 0);
 		expect(sunHeight('night')).toBeLessThan(-12);
-		// Blue hour is still the setting sun: the moon has not taken the main light yet.
+		// Blue hour is still the setting sun, so the moon has not taken the main light yet, and the
+		// light grazes the horizon from just above it rather than shining up from below.
 		const blue = timeOfDay('blueHour', { model: 'physical' });
-		expect((Math.asin(-blue.light.direction[1]) * 180) / Math.PI).toBeCloseTo(-5, 0);
+		const blueLight = (Math.asin(-blue.light.direction[1]) * 180) / Math.PI;
+		expect(blueLight).toBeGreaterThan(0);
+		expect(blueLight).toBeLessThan(2);
 		// Once night has fallen, the main light is the moon, from the moon's place.
 		const night = timeOfDay('night', { model: 'physical' });
 		expect((Math.asin(-night.light.direction[1]) * 180) / Math.PI).toBeGreaterThan(25);
+	});
+
+	test('keeps the physical main light above the horizon through the handover', () => {
+		// The main light's height passes from the sun's own place to the moon's as the sun sets, and
+		// its intensity is still on through that stretch, so the light must not shine up from under
+		// the ground at any hour of it.
+		for (const model of ['analytic', 'physical'] as const)
+			for (let hours = 17; hours <= 21.0001; hours += 0.1) {
+				const day = timeOfDay(hours, { model });
+				expect(day.light.intensity).toBeGreaterThan(0);
+				expect(day.light.direction[1]).toBeLessThanOrEqual(0);
+			}
 	});
 
 	test('keeps the physical light continuous, with the crossing no darker than night', () => {

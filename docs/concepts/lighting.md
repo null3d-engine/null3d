@@ -431,7 +431,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 - three.js's sky gives no light once its sun is about 2.3 degrees under the horizon, and the tone curve maps what is left to black. So after sunset the helper keeps the sky's own sun just under the horizon, and `skyIntensity` dims the sky to a deep blue.
 - At night the sky's own sun stands at the moon's place, and `skyIntensity` dims it: the "day for night" sky of film. The sky is a navy blue with a lighter horizon and a faint glow around the moon. Its sun's disc draws a small moon, and the sky's environment lights the scene a dim blue. `showSunDisc: false` hides the moon's disc.
 - As the sun sinks from 6 to 12 degrees under the horizon, the sunset's sky fades straight into the moon's sky. No frame goes dark between them. The sky draws both at once: `sky.secondSunPosition` is the moon's place, and `sky.secondSkyWeight` is the moon sky's share. At other times the weight is 0, so pass the whole `sky` each time.
-- Each call returns a new object, and `setColor` converts a color. So call `timeOfDay` when the time changes, not in every frame of a still scene. For a day that passes, a few calls a second are enough: the sky's environment takes about 20 frames to follow anyway.
+- Each call returns a new object, unless you pass one for it to fill. `timeOfDay(hour, {}, day)` writes into `day`, so a day cycle that moves the time in every frame makes no settings object of its own. `setColor` converts a color. A day that changes a few times a second is enough for a still scene: the sky's environment takes about 20 frames to follow anyway.
 
 ## Lights in scene passes
 

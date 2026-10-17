@@ -12,7 +12,6 @@
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { copyInPlace } from './atomic-files';
@@ -20,12 +19,12 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
-	cargoEnv,
 	copyFolderAtomic,
 	filesIn,
 	hashFiles,
 	hashOf,
 	pruneCacheLocked,
+	runCargo,
 	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
@@ -67,12 +66,17 @@ const LOCK = 'target/shader-modules.lock';
 interface ModuleRecord {
 	inputs: string;
 	modules: string;
+	/** The module files of the set, so a run that must not build can name the files it lacks. */
+	names?: readonly string[];
 }
 
 /**
  * True for a file that the shader build writes: the main module, the module of feature names, the
  * module of each shader that loads on first use as a whole and each target's table of the modules
- * of builds that need several features, TypeScript, or a device module, plain JavaScript.
+ * of builds that need several features, TypeScript, or a device module, plain JavaScript. Each kind
+ * of device module has a table of shared paragraphs, one file for each target and each value of the
+ * bits a device fixes. A table is plain JavaScript too, and its name carries no `shaders-` prefix,
+ * so that the list of a build's files for offline play reads it as no feature of its own.
  */
 export function isShaderModule(name: string): boolean {
 	return (
@@ -83,6 +87,7 @@ export function isShaderModule(name: string): boolean {
 		// half-precision bit: `shaders-wgsl-combos` and `shaders-wgsl-combos-half`, and the same for
 		// GLSL. The suffix names the bit value, and a later bit adds another.
 		/^shaders-(wgsl|glsl)-combos(-[a-z0-9-]+)*\.ts$/.test(name) ||
+		/^shader-paragraphs-(wgsl|glsl)(-[a-z0-9-]+)*\.js$/.test(name) ||
 		/^shaders-[a-z0-9-]+\.js$/.test(name)
 	);
 }
@@ -244,6 +249,44 @@ function isFresh(root: string, inputs: string): boolean {
 }
 
 /**
+ * True when the environment says that this run takes the modules from the build job. CI's jobs that
+ * download the build job's artifact set it, so that a set which does not match its record stops the
+ * job at once. The check otherwise builds the set again, which costs minutes in every such job and
+ * hides the fault: a file that the build job wrote and the artifact missed.
+ */
+function freshShadersRequired(): boolean {
+	return process.env.NULL3D_REQUIRE_FRESH_SHADERS === '1';
+}
+
+/** The names in `names`, at most four of them, then the count of the rest. */
+function nameList(names: readonly string[]): string {
+	const shown = names.slice(0, 4).join(', ');
+	return names.length > 4 ? `${shown}, and ${names.length - 4} more` : shown;
+}
+
+/**
+ * The message for a set that does not match its record, in a run that takes the modules from the
+ * build job. It names the files that the record holds and this tree lacks, or the files that this
+ * tree holds and the record does not name, because either is how an artifact that missed a kind of
+ * file shows up.
+ */
+function staleSetMessage(root: string): string {
+	const names = readRecord(root)?.names;
+	const here = moduleNames(root);
+	const missing = names ? names.filter((name) => !here.includes(name)) : [];
+	const extra = names ? here.filter((name) => !names.includes(name)) : [];
+	const faults = [
+		missing.length > 0 ? `it lacks ${nameList(missing)}` : '',
+		extra.length > 0 ? `it holds ${nameList(extra)}, which the record does not name` : '',
+	].filter((fault) => fault !== '');
+	return (
+		`the shader modules in ${MODULE_DIR} are not the set that ${RECORD} records` +
+		(faults.length > 0 ? `: ${faults.join('; ')}` : '') +
+		`. This run takes the modules from the build job, because NULL3D_REQUIRE_FRESH_SHADERS is set, so it never builds them. A file that the shader build writes is missing from the artifact that carried them: add its path to the page-wasm artifact in .github/workflows/ci.yml.`
+	);
+}
+
+/**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
  * holder, and takes over a lock whose holder has stopped.
  */
@@ -256,9 +299,35 @@ function withLock(root: string, work: () => void): void {
 	}
 }
 
-/** Runs the shader build, with its output on standard error so that callers keep a clean output. */
+/**
+ * Says that this build compiles every shader, so the minutes it takes do not look like a hang. The
+ * notice appears only when the entries folder of this compiler holds nothing, which is the first
+ * build of a checkout; a build that reuses most entries is quick and says nothing.
+ */
+export function announceColdBuild(entries: string): void {
+	if (existsSync(entries) && readdirSync(entries).length > 0) return;
+	console.error(
+		`The shader modules are not built in this checkout yet. The first build compiles every shader and can take a few minutes; it shows how far it has got. Later builds use the cache in ${entryCacheDir()}, and a change to one shader rebuilds only that shader.`,
+	);
+}
+
+/**
+ * Runs the shader build, with its output on standard error so that callers keep a clean output.
+ * The shader profile builds the crate's own parsing and validation code optimized, which the
+ * development profile leaves unoptimized.
+ */
 function runShaderBuild(root: string): void {
-	const args = ['run', '--quiet', '-p', 'null3d-shaders', '--bin', 'shader-build', '--'];
+	const args = [
+		'run',
+		'--quiet',
+		'--profile',
+		'shader',
+		'-p',
+		'null3d-shaders',
+		'--bin',
+		'shader-build',
+		'--',
+	];
 	const buildArgs = ['--root', root];
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');
@@ -266,18 +335,17 @@ function runShaderBuild(root: string): void {
 		// A stamp from another compiler changes the folder, so no entry is read with a new meaning.
 		const stamp = compilerStamp(root);
 		buildArgs.push('--cache', join(entryCacheDir(), stamp), '--stamp', stamp);
+		announceColdBuild(join(entryCacheDir(), stamp));
 	}
-	const result = spawnSync('cargo', [...args, ...buildArgs], {
-		cwd: root,
-		// cargoEnv names the checkout's own target folder, so this build never writes another's.
-		env: { ...process.env, ...cargoEnv(root) },
+	// runCargo names the checkout's own target folder, so this build never writes another's.
+	const { status, error } = runCargo(root, [...args, ...buildArgs], {
 		stdio: ['ignore', 2, 2],
 	});
-	if (result.error)
+	if (error)
 		throw new Error(
-			`could not run cargo (${result.error.message}). The shader modules are not in git, and building them needs the Rust toolchain that rust-toolchain.toml names.`,
+			`could not run cargo (${error.message}). The shader modules are not in git, and building them needs the Rust toolchain that rust-toolchain.toml names.`,
 		);
-	if (result.status !== 0) throw new Error('the shader build failed; its output is above');
+	if (status !== 0) throw new Error('the shader build failed; its output is above');
 }
 
 /** The names of the shader modules on disk, in order. */
@@ -316,7 +384,7 @@ function restoreFromCache(root: string, inputs: string): boolean {
 	}
 	const modules = moduleHash(root);
 	if (modules === null) return false;
-	writeRecord(root, { inputs, modules });
+	writeRecord(root, { inputs, modules, names: moduleNames(root) });
 	touchCacheEntry(cache);
 	console.error(`the shader modules came from the shared cache (${dir})`);
 	return true;
@@ -366,6 +434,7 @@ function pruneCaches(): void {
 export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
+	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
 	let built = false;
 	withLock(root, () => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
@@ -386,7 +455,7 @@ export function ensureShaderModules(root: string): boolean {
 			throw new Error(
 				'the shader sources changed while the build ran, so the modules are not the ones this build started from; run the command again',
 			);
-		writeRecord(root, { inputs, modules });
+		writeRecord(root, { inputs, modules, names: moduleNames(root) });
 		built = true;
 		saveToCache(root, inputs);
 		pruneCaches();

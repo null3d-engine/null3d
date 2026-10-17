@@ -6,15 +6,14 @@
 // encodes what the copy writes, so the copy writes the decoded color: the target's levels then
 // average linear color, and a surface that samples it reads linear color.
 
+#import null3d::fullscreen::{triangle}
 #import null3d::color::{srgb_to_linear}
 
 @group(0) @binding(0) var image: texture_2d<f32>;
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // Corners at (-1, -1), (3, -1) and (-1, 3) in clip space.
-    let corner = vec2f(f32((vertex << 1u) & 2u), f32(vertex & 2u));
-    return vec4f(corner * 2.0 - 1.0, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 @fragment

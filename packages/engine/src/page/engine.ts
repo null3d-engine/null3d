@@ -85,7 +85,7 @@ import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
-import { coreDevice, maxCanvasSize, maxInstances } from './limits';
+import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
@@ -602,9 +602,9 @@ export interface Engine {
 	 * the GPU draws nothing for it. While the engine is paused, the image shows the frame on the
 	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. When no
 	 * new frame comes within a second or two, as after a sketch error, the image shows the frame
-	 * drawn last. Fails with E1414 once the engine has stopped, or when the thread that draws could
-	 * not read the frame back, with the cause that the GPU gave, such as a lost device or too little
-	 * memory.
+	 * drawn last. Fails with E1414 once the engine has stopped, when the thread that draws gives no
+	 * answer within the engine's wait, or when that thread could not read the frame back, with the
+	 * cause that the GPU gave, such as a lost device or too little memory.
 	 */
 	capture(): Promise<Blob>;
 	/**
@@ -614,7 +614,8 @@ export interface Engine {
 	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
 	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
 	 * page shows again. When no new frame comes within a second or two, as after a
-	 * sketch error, it returns the frame drawn last.
+	 * sketch error, it returns the frame drawn last. It fails when the thread that draws gives no
+	 * answer within the engine's wait, rather than waiting with no end.
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
@@ -660,6 +661,16 @@ const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
+/**
+ * The longest that a request may wait for a worker's answer, in milliseconds. The slowest answer is
+ * a capture: the thread that draws waits for a frame's pipelines for up to `BUILD_WAIT_LIMIT_MS`
+ * before it draws, reads the frame back and encodes it. On a software renderer that work costs
+ * minutes, and the forest demo's held frame passed a minute on CI's SwiftShader, so this figure
+ * sits well above the slowest frame that was measured and below the image tests' own limit. A
+ * thread that stops taking messages then fails the request with a named error instead of leaving
+ * the page to wait with no end.
+ */
+export const WORKER_REPLY_LIMIT_MS = 300_000;
 
 interface TierChoice {
 	tier: Tier;
@@ -691,6 +702,15 @@ export function chooseTier(
 }
 
 type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) => void };
+
+/**
+ * True while this page is hidden. A hidden page draws no frames, so a capture's answer comes once
+ * the page shows again, however long that takes, and the answer's limit counts only the time the
+ * page shows.
+ */
+function pageHidden(): boolean {
+	return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
 
 /**
  * The error of a worker that failed to start. An engine error keeps its code and message; any
@@ -773,7 +793,7 @@ export class EngineWorker {
 
 	constructor(
 		readonly worker: Worker,
-		role: string,
+		private readonly role: string,
 		events: WorkerEvents,
 	) {
 		this.readyPromise = new Promise((resolve, reject) => {
@@ -903,9 +923,39 @@ export class EngineWorker {
 		for (const pending of this.waiting.splice(0)) pending.reject(new Error('the engine stopped'));
 	}
 
+	/**
+	 * Sends a request and waits for the worker's answer, which ends with a failure once the answer
+	 * has taken longer than the wait's limit. The request keeps its place in the queue, so an answer
+	 * that arrives late is used up in order and reaches no other request.
+	 */
 	request(message: RendererRequest): Promise<WorkerReply> {
 		return new Promise((resolve, reject) => {
-			this.waiting.push({ resolve, reject });
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const pending: Pending = {
+				resolve: (reply) => {
+					clearTimeout(timer);
+					resolve(reply);
+				},
+				reject: (error) => {
+					clearTimeout(timer);
+					reject(error);
+				},
+			};
+			// A hidden page draws no frames, so its answer waits for the page to show again: the
+			// limit then starts over instead of failing the request.
+			const arm = () => {
+				timer = setTimeout(() => {
+					if (pageHidden()) arm();
+					else
+						pending.reject(
+							new Error(
+								`the ${this.role} worker did not answer the ${message.type} within ${WORKER_REPLY_LIMIT_MS / 1000} s`,
+							),
+						);
+				}, WORKER_REPLY_LIMIT_MS);
+			};
+			this.waiting.push(pending);
+			arm();
 			this.worker.postMessage(message);
 		});
 	}
@@ -951,7 +1001,8 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 
 /**
  * Starts job worker `index`. It joins the job system once it is ready: until then the sketch thread
- * and the job workers already running take every chunk, so no frame waits for it. A job worker that
+ * and the job workers already running take every chunk, so no frame waits for it. `started` hears
+ * once it is ready, so the thread that runs the sketch learns which workers run. A job worker that
  * fails to start is reported as a failure of the running engine, and returns undefined when the
  * browser refuses it at once.
  */
@@ -959,6 +1010,7 @@ function startJobWorker(
 	index: number,
 	slots: Int32Array,
 	events: WorkerEvents,
+	started: (index: number) => void,
 ): EngineWorker | undefined {
 	const failed = (error: unknown) => {
 		if (Atomics.load(slots, Slot.Running) !== 0)
@@ -980,7 +1032,10 @@ function startJobWorker(
 			`job ${index}`,
 			events,
 		);
-		job.ready().catch(failed);
+		job.ready().then(
+			() => started(index),
+			(error: unknown) => failed(error),
+		);
 		return job;
 	} catch (thrown) {
 		failed(thrown);
@@ -1227,8 +1282,10 @@ async function startEngine(
 	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
 	 * otherwise (D-164).
 	 */
-	const keepTextureCopies =
-		options.keepTextureCopies ?? deviceKind(presetRequest.hints) !== 'desktop';
+	const keepTextureCopies = keepTextureCopiesOption(
+		options.keepTextureCopies,
+		deviceKind(presetRequest.hints) !== 'desktop',
+	);
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,
@@ -1797,22 +1854,38 @@ async function startEngine(
 		/**
 		 * Makes a port for each job worker that the engine may start, for the on-demand loader's
 		 * tasks, and returns the other end of each, for the thread that runs the sketch. The job
-		 * workers start as that thread asks for them: each gets the core and its port as it starts.
+		 * workers start as that thread asks for them: each gets the core and its port as it starts,
+		 * and that thread then hears which of them run, so it sends its tasks only to those.
 		 * A stop waits until each started job worker reports that it left the job system, which one
 		 * without the core never does.
 		 */
 		const startJobs = (jobs: EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
 			const taskPorts = Array.from({ length: jobWorkers }, () => channel());
+			/** The job workers that started, by index, which the on-demand loader sends its tasks to. */
+			const running: number[] = [];
+			/** Notes a job worker that started, by its index. */
+			const noteStarted = (index: number) => running.push(index);
 			growJobs = (count) => {
+				const starting: Promise<unknown>[] = [];
 				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
-					if (Atomics.load(slots, Slot.Running) === 0) return;
-					const job = startJobWorker(index, slots, events);
-					if (!job) return;
+					if (Atomics.load(slots, Slot.Running) === 0) break;
+					const job = startJobWorker(index, slots, events, noteStarted);
+					if (!job) break;
 					jobs.push(job);
 					const port = (taskPorts[index] as MessageChannel).port1;
 					job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: port }, [port]);
+					starting.push(job.ready());
 				}
+				// The sketch thread hears which of a batch of job workers run once the whole batch has
+				// settled, so it never takes a worker for running before the batch is known. A batch
+				// that started no worker, because the browser refused them or the engine is stopping,
+				// stays unheard: the thread then uses the workers it asked for.
+				if (starting.length === 0) return;
+				void Promise.allSettled(starting).then(() => {
+					running.sort((a, b) => a - b);
+					threads?.sketch?.worker.postMessage({ type: 'job-workers', running: [...running] });
+				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
 		};

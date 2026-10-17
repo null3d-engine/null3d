@@ -131,6 +131,18 @@ export function animationSteps(interval: number): number {
 	return steps;
 }
 
+/**
+ * The kinds of step that take one step each, which `maxSteps` counts with them: the shadow filter
+ * takes the lightest filter, bloom's base halves, ambient occlusion takes its lowest scale, the
+ * contact shadows' march takes the fewest steps, and the volumetric fog draws half its slices. Each
+ * kind has a name of its own, so a merge cannot fold two counts into one.
+ */
+const FILTER_STEPS = 1;
+const BLOOM_STEPS = 1;
+const OCCLUSION_STEPS = 1;
+const CONTACT_STEPS = 1;
+const FOG_STEPS = 1;
+
 /** How long one window of frames lasts, in ms. */
 export const WINDOW_MS = 250;
 /** The stretch of frames that a step down judges, in ms: the last second, as the reports count. */
@@ -208,7 +220,7 @@ const STATE_SIZE = 6;
 /**
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
  * step down. They cover every scale of the widest range, every step of the budgets and every step
- * past the scale.
+ * past the scale, one count for each kind of step that `maxSteps` sums.
  */
 const LEVELS =
 	FULL_SCALE / SCALE_STEP +
@@ -216,11 +228,12 @@ const LEVELS =
 	BUDGET_STEPS +
 	DETAIL_STEPS +
 	farIntervalSteps(1) +
-	1 +
-	1 +
-	1 +
-	1 +
-	animationSteps(1);
+	animationSteps(1) +
+	FILTER_STEPS +
+	BLOOM_STEPS +
+	OCCLUSION_STEPS +
+	CONTACT_STEPS +
+	FOG_STEPS;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
