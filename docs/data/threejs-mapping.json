@@ -1100,7 +1100,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "materials.shadowCatcher({ color, opacity })",
-      "notes": "The plane shows the main directional light's shadow in the material's color where the shadow falls, and nothing where the light reaches it. Create the mesh with receiveShadows: true, or call setReceiveShadows(true), as the material needs it. Point and spot light shadows do not show on it. The scene's fog leaves it alone. Put the plane just above the surface whose shadows it catches.",
+      "notes": "The plane shows the main directional light's shadow in the material's color where the shadow falls, and nothing where the light reaches it. The default color is black, as three.js's. Create the mesh with receiveShadows: true, or call setReceiveShadows(true), as the material needs it. Point and spot light shadows do not show on it. The scene's fog leaves it alone. Put the plane just above the surface whose shadows it catches.",
       "docs": "api/materials",
       "detect": "\\bShadowMaterial\\b"
     },

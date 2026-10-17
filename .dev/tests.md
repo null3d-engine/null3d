@@ -10,6 +10,17 @@ The unit tests run in a few processes, one for each group of them, so what each 
 - A single file that imports the whole set makes the process large on its own. The same file that reads the set's text costs a fraction of that.
 - A generated set is not the only thing a test holds for good. The WebAssembly texture transcoder's heap grows when a check feeds it hostile files, and it does not shrink, so a check that does that holds every growth it has made. The malformed-file checks reach 1.7 GB of memory that way, from a handful of changed files, each of them a few kilobytes on disk.
 - The script leaves out the checks that hold gigabytes, and caps the run. `bun run test:heavy` runs those checks, each in a process of its own under a ceiling of its own (`tests/heavy-checks.ts`). Both read one list of them, `tests/lib/heavy-checks.ts`: a file the unit run left out and no runner named would run nowhere, and the two halves of the list must not drift apart.
+- The files of a group run in the order that the filesystem hands them over. That order is stable on one machine, and it differs between machines. A test that installs a stand-in for a global, such as `Worker`, cannot rely on being the first to touch it. On 17 October 2026 that order hid a fault from the Mac and showed it on CI. The worker starter kept the constructor of the first start, so the capabilities test's stand-in went unused and its probe talked to a real worker. Two things made that a fault in the starter rather than in the test. Its own test comment claimed the starter keeps the first class it wraps, which was the belief the fault rested on and is now gone. And a page that replaces its `Worker`, and not only a test, would have broken the same way, because the cache held a constructor the caller had since put aside.
+
+## Forcing the order the files run in
+
+A failure that only CI shows, in a check that installs a stand-in for a global, is worth forcing the order for. A preload that starts one worker brings the fault out on any machine. Make a file that calls `spawnWorker(() => ({}) as Worker, error)`, and run it before the one test file:
+
+```sh
+bun test --preload ./start-one-worker.ts --conditions=null3d-source packages/engine/src/page/capabilities.test.ts
+```
+
+A folder whose copy of the file that starts the worker is named to run before a copy of the failing test works as well.
 
 ## What the run cost on 16 October 2026
 

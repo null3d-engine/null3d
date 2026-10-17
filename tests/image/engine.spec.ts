@@ -33,6 +33,9 @@ async function withoutIsolation(page: Page): Promise<void> {
 /** The worker probe's script, in development and in a production build. */
 const PROBE_WORKER = /\/probe-worker[^/]*\.(js|ts)(\?|$)/;
 
+/** The job workers' script, which every job worker loads. */
+const JOB_WORKER = /\/job-worker[^/]*\.(js|ts)(\?|$)/;
+
 /**
  * Serves `body` in place of the worker probe's script. The response keeps the server's headers,
  * whose cross-origin isolation headers an isolated page needs to start a worker at all.
@@ -358,6 +361,16 @@ const FEATURE_FILE_OWNERS: Partial<
 	views: { webgl2: null },
 };
 
+/**
+ * How long a first-use page may take to answer. The page itself waits for the frame's pipelines to
+ * build for up to 30 s (`BUILD_WAIT_LIMIT_MS`), and answers with its error when that runs out. So
+ * the test must wait longer than the page's own limit, or it races the page and reports a bare
+ * timeout in place of the page's answer. The clear coat and sheen page builds 24 pipelines, more
+ * than any other feature's page, and needs about 30 s for them on CI's software GPU: it passed at
+ * 30.2 s and failed at 30.5 s and 30.6 s while this wait was 30 s.
+ */
+const FIRST_USE_WAIT_MS = 60_000;
+
 // A page that uses one such feature downloads that feature's shader file once, for its device's
 // fixed bits, and no other feature's shader file. The features come from the shader manifest's
 // first-use tables, so a new table gets a test, and fails it until a sketch uses that feature. The
@@ -391,7 +404,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			await page.goto(
 				`image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`,
 			);
-			const result = await pageResult<{ error?: string }>(page, 30_000);
+			const result = await pageResult<{ error?: string }>(page, FIRST_USE_WAIT_MS);
 			expect(result.error).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
 			const owner = FEATURE_FILE_OWNERS[feature]?.[gpu];
@@ -419,6 +432,46 @@ test('marked occluders download no occlusion shader file with ?occlusion=off on 
 	expect(result.error).toBeUndefined();
 	expect(requests.filter(isFirstUseShaderFile)).toEqual([]);
 });
+
+/**
+ * Serves the job workers' script with a line at its top that stops the worker named `worker` before
+ * it starts, so the engine reports it as a job worker that did not start.
+ */
+async function jobWorkerFails(page: Page, worker: string): Promise<void> {
+	await page.context().route(JOB_WORKER, async (route) => {
+		const response = await route.fetch();
+		const stop = `if (self.name === ${JSON.stringify(worker)}) throw new Error(${JSON.stringify(`${worker} did not start on purpose`)});\n`;
+		await route.fulfill({ response, body: stop + (await response.text()) });
+	});
+}
+
+// A job worker that does not start is survivable, as the engine's own notes say: the engine runs on
+// with the workers it has, and the on-demand loader sends its tasks only to those. The KTX2 sketch
+// loads a file during its setup, so the page needs one task to finish. The loader used to send that
+// task to a job worker by index, started or not, and a worker that did not start never answers: the
+// page then drew nothing at all. Firefox lost the download of that worker's core on 16 October 2026,
+// in real-browsers, with one of two job workers gone. Each case here loads a page that must finish a
+// task of the loader, and every case keeps the engine to two job workers.
+for (const [what, stop] of [
+	[
+		'no job worker starts',
+		(page: Page) => page.context().route(JOB_WORKER, (route) => route.abort()),
+	],
+	['the second of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-1')],
+	['the first of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-0')],
+] as const) {
+	test(`a page draws where ${what}`, async ({ page }, testInfo) => {
+		test.skip(testInfo.project.name === 'production build', 'no image test page');
+		await stop(page);
+		const sketch = encodeURIComponent('/tests/pages/sketches/ktx2-hdr-sketch.ts');
+		await page.goto(
+			`image.html?gpu=webgl2&hold=0&preset=high&size=320x180&jobs=2&sketch=${sketch}`,
+		);
+		const result = await pageResult<{ error?: string; pixels?: string }>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.pixels?.length ?? 0).toBeGreaterThan(0);
+	});
+}
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
