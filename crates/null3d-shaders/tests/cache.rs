@@ -76,9 +76,20 @@ impl Scratch {
         Cache::at(&self.0, "test")
     }
 
-    /// One entry's cache file.
+    /// One entry's cache file: the name it was built under, then the key of that build.
     fn entry(&self, name: &str) -> PathBuf {
-        self.0.join(format!("{name}.json"))
+        let prefix = format!("{name}.");
+        let mut found: Vec<PathBuf> = fs::read_dir(&self.0)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                let file = path.file_name().unwrap_or_default().to_string_lossy();
+                file.starts_with(&prefix) && file.ends_with(".json")
+            })
+            .collect();
+        assert_eq!(found.len(), 1, "one cached entry named {name}");
+        found.pop().unwrap()
     }
 }
 
