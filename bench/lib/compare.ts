@@ -9,7 +9,7 @@
 // real GPU, such as a developer's computer, also catches a change that slows only the GPU.
 import type { Shard } from '../../tests/lib/runs.ts';
 import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
-import { HOLD_EVERY_FRAME_SWITCH, REFERENCE_PRESET_SWITCH } from './parity';
+import { type BenchScene, REFERENCE_PRESET_SWITCH } from './parity';
 import { type BenchResult, median, ownWorkMs, summarizeRuns } from './report';
 
 /** The two builds of a comparison. */
@@ -48,21 +48,41 @@ export interface DroppedRun {
  * on a busy machine that check lowers it in some runs and not in others. A named preset turns the
  * check and the crash marker off, and the desktop's preset, High within each GPU path's ceiling,
  * keeps the work that a desktop draws. The governor stays off, because a step during the measured
- * seconds would change what the rest of the run draws. Every character is posed in every frame,
- * because a far character's longer update interval would otherwise give null3D's crowd less work
- * than the three.js twin does, and D-52 asks a comparison to measure equal work.
+ * seconds would change what the rest of the run draws. A scene whose characters would otherwise do
+ * less work than its twin's adds a switch of its own, in `SCENE_COMPARISON_SWITCHES`.
  * .dev/benchmarks.md gives the measurements.
  */
-export const COMPARISON_SWITCHES: readonly string[] = [
-	REFERENCE_PRESET_SWITCH,
-	'governor=off',
-	HOLD_EVERY_FRAME_SWITCH,
+export const COMPARISON_SWITCHES: readonly string[] = [REFERENCE_PRESET_SWITCH, 'governor=off'];
+
+/**
+ * The switches that one scene's compared pages need beyond those of every page, so that both builds
+ * draw the same work there. S5's page gives a far character a longer update interval by default, as
+ * `api/animation#crowds` advises an app to do, which samples and blends fewer poses in a frame than
+ * the twin's mixers do. The comparison holds every character at every frame, as the hold pages do,
+ * so both engines animate the whole crowd. Nothing else reads the switch.
+ */
+export const SCENE_COMPARISON_SWITCHES: Partial<Record<BenchScene, readonly string[]>> = {
+	s5: ['anim=every'],
+};
+
+/**
+ * Every switch that a comparison applies, for the record and for the check that a stored baseline
+ * had the same ones.
+ */
+export const ALL_COMPARISON_SWITCHES: readonly string[] = [
+	...COMPARISON_SWITCHES,
+	...new Set(Object.values(SCENE_COMPARISON_SWITCHES).flatMap((entries) => entries ?? [])),
 ];
 
-/** The comparison's own switches, less those that the command's `switches` set themselves. */
-export function comparisonSwitches(switches: string): string[] {
+/**
+ * The comparison's own switches for one scene, less those that the command's `switches` set
+ * themselves.
+ */
+export function comparisonSwitches(scene: BenchScene, switches: string): string[] {
 	const named = new Set(switches.split('&').map((entry) => entry.split('=')[0]));
-	return COMPARISON_SWITCHES.filter((entry) => !named.has(entry.split('=')[0]));
+	return [...COMPARISON_SWITCHES, ...(SCENE_COMPARISON_SWITCHES[scene] ?? [])].filter(
+		(entry) => !named.has(entry.split('=')[0]),
+	);
 }
 
 /**
@@ -91,7 +111,7 @@ const switchesText = (switches: readonly string[]) =>
 export function measurementChanges(
 	pageFiles: readonly string[],
 	baselineSwitches: readonly string[],
-	newSwitches: readonly string[] = COMPARISON_SWITCHES,
+	newSwitches: readonly string[] = ALL_COMPARISON_SWITCHES,
 ): string[] {
 	const changes: string[] = [];
 	if (pageFiles.length > 0) {

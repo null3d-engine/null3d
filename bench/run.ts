@@ -577,13 +577,17 @@ async function runComparison(
 		if (!hasScene(scene))
 			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = share.filter((page) => hasScene(page.scene));
-	const switches = withSwitches(
-		[
-			...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
-			...comparisonSwitches(options.switches),
-		],
-		options,
-	);
+	// A page's switches: the seconds of its run, then the preset and governor rules of every
+	// comparison, then the switches that its scene's compared pages need. S5's page takes one, so
+	// the two builds animate their crowds alike.
+	const switchesOfScene = (scene: BenchScene): string =>
+		withSwitches(
+			[
+				...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
+				...comparisonSwitches(scene, options.switches),
+			],
+			options,
+		);
 	const servers: DevServer[] = [];
 	const results: BuildRun[] = [];
 	try {
@@ -613,7 +617,7 @@ async function runComparison(
 				for (const build of roundOrder(round)) {
 					const result = await runPage(
 						browser,
-						`${urls[build]}${pagePath(scene, kind, switches)}`,
+						`${urls[build]}${pagePath(scene, kind, switchesOfScene(scene))}`,
 						pageTimeoutMs(options.seconds, scene),
 					);
 					const name = `${build}-${page}-${round}`;

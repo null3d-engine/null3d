@@ -73,9 +73,10 @@ export interface PlayOptions {
 	 * the layer's old clips with the new one, as three.js's `crossFadeTo` does, and samples both
 	 * while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves
 	 * continues on its path and eases into the new clip, which keeps feet from sliding through a
-	 * mixed gait. It needs a fade above 0, no `weight` and no `join`, and a clip already playing on
-	 * the layer keeps its own fade. `crossFade` always cross-fades, so a port of `crossFadeTo`
-	 * shows the blend that three.js shows.
+	 * mixed gait. It needs a fade above 0, no `weight`, and a clip already playing on the layer,
+	 * whose pose it carries on from. A play of a clip that already plays on the layer keeps that
+	 * clip's time and fades it back in instead, so it is no inertial switch. `crossFade` always
+	 * cross-fades, so a port of `crossFadeTo` shows the blend that three.js shows.
 	 */
 	transition?: 'blend' | 'inertial';
 }

@@ -53,12 +53,28 @@ describe('sketchesIn', () => {
 		expect(sketches[0]?.code).toStartWith("import { defineSketch } from '@null3d/engine';\n");
 	});
 
-	test('marks the sketches under a later version, and those that pick a camera', () => {
+	test('marks the sketches whose headings name parts that are not built yet, and those that pick a camera', () => {
 		expect(sketches.map(({ later, draws }) => [later, draws])).toEqual([
 			[undefined, true],
-			['0.2', false],
+			[undefined, false],
 			['`api/controls`, later in 0.1', false],
 		]);
+	});
+
+	test('runs a sketch under a heading that names only a roadmap step', () => {
+		// The release being built holds steps 0.1, 0.2 and 0.3, so a step's parts are shipped or
+		// say "not built yet" themselves. A sketch left out under one would never be checked.
+		const later = (heading: string) =>
+			sketchesIn(
+				'skills/demo/recipes.md',
+				`# Recipes\n\n## ${heading}\n\n\`\`\`ts\nexport default defineSketch(() => {});\n\`\`\`\n`,
+			)[0]?.later;
+		expect(later('20. Fire, smoke and sparks with particles (0.2)')).toBeUndefined();
+		expect(later('21. Terrain from a height field (0.2)')).toBeUndefined();
+		expect(later('12. Minimap with a second camera (0.2)')).toBeUndefined();
+		expect(later('6. The MCP server for agents (0.3, not built yet)')).toBe('0.3, not built yet');
+		expect(later('5. Nodes (after 1.0)')).toBe('after 1.0');
+		expect(later('7. Ray tracing (later in 1.0)')).toBe('later in 1.0');
 	});
 });
 
