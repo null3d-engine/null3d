@@ -38,6 +38,7 @@ use super::skin::DrawGroups;
 use crate::environment;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::pipelines::PassTargets;
+use crate::probe_grid;
 use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
@@ -62,45 +63,89 @@ pub(super) const ROW_VALUES_BINDING: u32 = 16;
 /// as the mesh shaders declare it.
 pub(super) const OBJECT_RANGES_BINDING: u32 = 17;
 
+/// What a view's frame group binds besides the objects that every view shares: the light grid and
+/// light records of view `lights`, the view's own once they exist, the camera's before, the main
+/// directional light's shadow map, the shadow atlas of point and spot lights, the texture of
+/// ambient occlusion, the environment's cube texture, the light probe grids' 3D texture, and the
+/// copy of the opaque color that surfaces which let light through sample.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct FrameInputs {
+    pub lights: ViewId,
+    pub shadow_map: u32,
+    pub atlas: u32,
+    pub occlusion: u32,
+    pub environment: u32,
+    pub probe_grid: u32,
+    pub transmission: u32,
+}
+
+/// The entries of a frame group, before the environment's.
+const FRAME_ENTRIES: usize = 16;
+
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
-/// the materials' custom values, three.js's table of the split-sum terms of specular light, the
-/// main directional light's shadow map, which is `shadow_map`, with its cascades and the sampler
-/// that reads four of its texels at once, the light grid and light records of view `lights`: the
-/// view's own once they exist, the camera's before, the shadow atlas of point and spot lights,
-/// which is `atlas`, with its comparison sampler and its tiles, the texture of ambient occlusion,
-/// `occlusion`, the environment's cube texture, which is `environment`, with its sampler, and the
-/// copy of the opaque color that surfaces which let light through sample, `transmission`, which
-/// the environment's sampler reads too, and the row values of instance batches. A new shadow map,
-/// atlas, occlusion texture, environment, copy, row values texture or light buffers needs the
-/// group again.
-#[allow(clippy::too_many_arguments)]
+/// the materials' custom values, the light tables, the shadow map with its cascades and the
+/// sampler that reads four of its texels at once, the light grid and light records, the shadow
+/// atlas with its comparison sampler and its tiles, the texture of ambient occlusion, the
+/// environment's cube texture with its sampler, the light probe grids' texture, the copy of the
+/// opaque color, which the environment's sampler reads too, and the row values of instance
+/// batches and the table of object ranges. A new shadow map, atlas, occlusion texture,
+/// environment, grid, copy, row values texture or light buffers needs the group again.
 pub(super) fn bind_frame(
     list: &mut DrawList,
     view: ViewId,
-    lights: ViewId,
-    shadow_map: u32,
-    atlas: u32,
-    occlusion: u32,
-    environment: u32,
-    probe_grid: u32,
-    transmission: u32,
+    inputs: &FrameInputs,
+) -> Result<(), RecordError> {
+    let group = ids::frame_group(view);
+    push_frame_group(list, group, bind_layout::FRAME, view, inputs, |_| true)
+}
+
+/// Records the creation of the decal pass's frame group: the camera's frame group without the
+/// light probe grids' texture and the copy of the opaque color, which no decal build reads, so
+/// that a decal with maps stays within WebGPU's default count of sampled textures per stage.
+pub(super) fn bind_decal_frame(
+    list: &mut DrawList,
+    inputs: &FrameInputs,
+) -> Result<(), RecordError> {
+    let (group, layout) = (ids::DECAL_FRAME_GROUP, bind_layout::DECAL_FRAME);
+    push_frame_group(list, group, layout, ViewId::CAMERA, inputs, |binding| {
+        binding != probe_grid::MAP_BINDING && binding != transmission::BINDING
+    })
+}
+
+/// Records the creation of frame group `group` of `layout` for `view`, with the entries whose
+/// binding `keeps` takes.
+fn push_frame_group(
+    list: &mut DrawList,
+    group: u32,
+    layout: u32,
+    view: ViewId,
+    inputs: &FrameInputs,
+    keeps: impl Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
-    let entries = [
+    let entries: [[u32; 5]; FRAME_ENTRIES] = [
         entry(0, resource_kind::BUFFER, ids::frame(view)),
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
         entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
         entry(3, resource_kind::TEXTURE, ids::LIGHT_TABLES),
-        entry(4, resource_kind::TEXTURE, shadow_map),
+        entry(4, resource_kind::TEXTURE, inputs.shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
-        entry(7, resource_kind::BUFFER, ids::light_grid(lights)),
-        entry(8, resource_kind::BUFFER, ids::lights(lights)),
-        entry(9, resource_kind::TEXTURE, atlas),
-        entry(10, resource_kind::TEXTURE, probe_grid),
-        entry(11, resource_kind::TEXTURE, occlusion),
+        entry(7, resource_kind::BUFFER, ids::light_grid(inputs.lights)),
+        entry(8, resource_kind::BUFFER, ids::lights(inputs.lights)),
+        entry(9, resource_kind::TEXTURE, inputs.atlas),
+        entry(
+            probe_grid::MAP_BINDING,
+            resource_kind::TEXTURE,
+            inputs.probe_grid,
+        ),
+        entry(11, resource_kind::TEXTURE, inputs.occlusion),
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
-        entry(transmission::BINDING, resource_kind::TEXTURE, transmission),
+        entry(
+            transmission::BINDING,
+            resource_kind::TEXTURE,
+            inputs.transmission,
+        ),
         entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
         entry(
             OBJECT_RANGES_BINDING,
@@ -108,15 +153,20 @@ pub(super) fn bind_frame(
             ids::OBJECT_RANGES,
         ),
     ];
-    let listed = 5 * entries.len();
-    // One spare entry, so an extra binding does not change the array's size.
-    let mut words = [0u32; 3 + 5 * 16 + environment::ENTRY_WORDS];
-    let count = (entries.len() + environment::ENTRY_WORDS / 5) as u32;
-    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, count]);
-    words[3..3 + listed].copy_from_slice(entries.as_flattened());
-    words[3 + listed..3 + listed + environment::ENTRY_WORDS]
-        .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
-    list.push(Op::CreateBindGroup, &words)?;
+    let mut words = [0u32; 3 + 5 * FRAME_ENTRIES + environment::ENTRY_WORDS];
+    let mut end = 3;
+    for entry in entries.iter().filter(|entry| keeps(entry[0])) {
+        words[end..end + 5].copy_from_slice(entry);
+        end += 5;
+    }
+    words[end..end + environment::ENTRY_WORDS].copy_from_slice(&environment::entries(
+        inputs.environment,
+        ids::ENVIRONMENT_SAMPLER,
+    ));
+    end += environment::ENTRY_WORDS;
+    let count = ((end - 3) / 5) as u32;
+    words[..3].copy_from_slice(&[group, layout, count]);
+    list.push(Op::CreateBindGroup, &words[..end])?;
     Ok(())
 }
 

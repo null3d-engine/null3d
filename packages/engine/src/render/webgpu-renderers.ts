@@ -10,9 +10,7 @@ import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { FirstPass } from '../gpu/webgpu/first-pass';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
-import { controlViews } from '../shared/control';
 import type { ImageTable } from '../shared/images';
-import { MemoryViews } from '../shared/memory-views';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
 import {
@@ -206,7 +204,6 @@ class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
-		this.backend.readSink = { views: new MemoryViews(memory), slots: controlViews(control).slots };
 		// The skinning pass writes 32-bit float directions in the modes that measure 8-bit ones.
 		if (skinning === SKINNING_FULL || skinning === SKINNING_SKIP_ONLY)
 			this.backend.skinWithFloatDirections();

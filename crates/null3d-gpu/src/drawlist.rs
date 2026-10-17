@@ -147,8 +147,14 @@ pub enum Op {
     /// [texture location (5 words), buffer id, buffer offset, bytes per row, rows per image, width,
     /// height]: copies a box of texels of a texture with `COPY_SRC` usage into a buffer with
     /// `COPY_DST` usage, which `ReadBuffer` then reads back. GPU picking copies its small id target
-    /// through this. The buffer offset aligns to 256 bytes, and each row of the copy starts at a
-    /// multiple of the texture's texel size.
+    /// through this. The texture is `RGBA8_UNORM` or `RGBA32_UINT`, whose texels both paths copy
+    /// as the same bytes. The buffer offset and the bytes per row are multiples of 256, as WebGPU
+    /// requires, the bytes per row hold the box's width, and the rows per image are at least its
+    /// height. Row `r` of the box lands at the offset plus `r` times the bytes per row. The box's x
+    /// and y address texels as stored, as the other copies do. So in a texture that a render pass
+    /// drew, WebGL2's first stored row is the image's bottom row, and a reader of such a target
+    /// flips y and the order of the rows on that path, as a shader that samples it flips its
+    /// texture coordinates. The buffer must not be waiting for a read (`ReadBuffer`).
     CopyTextureToBuffer = 50,
     /// [image id]: closes an image that the backend holds, once no later command uploads it. A
     /// backend that holds no such image does nothing, as when a capture replays a list again.
@@ -157,11 +163,20 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
-    /// [buffer id, offset, size, destination address in engine memory]: once the GPU has run the
-    /// commands before this one, maps `size` bytes of the buffer at `offset` and copies them into
-    /// engine memory at `destination`. The buffer needs `MAP_READ` usage, and the command is
-    /// asynchronous: the bytes land, and the thread that draws marks them ready, one or more frames
-    /// after the command replays. GPU picking reads the ids under the pointer this way.
+    /// [buffer id, offset, size, destination address in engine memory, control slot]: once the GPU
+    /// has run the commands before this one, maps `size` bytes of the buffer at `offset`, copies
+    /// them into engine memory at `destination`, then adds one to the control slot, by its index in
+    /// the control block. The buffer has `MAP_READ` usage, and no other usage than `COPY_DST`. The
+    /// offset is a multiple of 8, and the size a multiple of 4 that is not 0, as WebGPU's map
+    /// requires. Outside passes and bundles. The command is asynchronous: the bytes land, and the
+    /// slot rises, one or more frames after the command replays. Until the slot rises, the buffer
+    /// is waiting: no command writes it, copies into or out of it, or reads it again, because
+    /// WebGPU is mapping it and WebGL2 has yet to collect its bytes. So code that reads in every
+    /// frame keeps a ring of buffers, one for each read in flight. Destroying a waiting buffer
+    /// drops its read, whose slot never rises. A list that replays again while its read waits,
+    /// as a capture's does, finds the buffer waiting: both backends then skip the copy into it
+    /// and the read, and the first read still lands. GPU picking reads the ids under the pointer
+    /// this way.
     ReadBuffer = 53,
     /// [texture id, image id]: runs the generator that the backend holds under the image id, which
     /// fills every mip level of every face of a cube texture on the GPU in one submit, ahead of the
@@ -707,8 +722,8 @@ pub mod layout {
     pub const BLOOM: u32 = 9;
     /// Group 0 of the final pass that adds bloom: [`FINAL`]'s first two bindings, then bloom's
     /// uniform block, the texture of each of bloom's levels and their linear sampler, then
-    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, and its outline mask
-    /// at binding 11.
+    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, its outline mask at
+    /// binding 11, and the texel of the automatic exposure at binding 12.
     pub const FINAL_BLOOM: u32 = 10;
     /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
     /// instance's skinning matrices, which vertex shaders read.
@@ -780,6 +795,12 @@ pub mod layout {
     /// [`DECAL_DEPTH`] for a multisampled depth target, whose sample 0 the decals read. Only WebGPU
     /// has it.
     pub const DECAL_DEPTH_MS: u32 = 37;
+    /// Group 0 of the decal templates on WebGPU: [`FRAME`]'s bindings without the light probe
+    /// grids' texture and the copy of the opaque color, which no decal build reads. A decal with
+    /// maps then reads 15 sampled textures in its fragment stage, within WebGPU's default limit of
+    /// 16. WebGL2 binds the frame group, as its programs take a texture unit only for a texture
+    /// that they read.
+    pub const DECAL_FRAME: u32 = 46;
     /// Group 1 of the particle templates: a particle system's values as a uniform block, then the
     /// block of the view that draws, at a dynamic offset.
     pub const PARTICLE: u32 = 32;
@@ -864,6 +885,12 @@ pub mod permutation {
     pub const CASTER_OFFSET: u32 = 16384;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
+    /// A custom material's template draws an object into GPU picking's id target: the vertex
+    /// shader moves each vertex by the material's vertex offset and places it as the shading
+    /// builds do, and the fragment shader writes the instance's ids, as the pick template does.
+    /// Only custom materials with a vertex offset build it. It shares [`BLOOM`]'s value: only the
+    /// final pass lists BLOOM, and only custom materials' builds of the lit template list PICK.
+    pub const PICK: u32 = BLOOM;
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
@@ -922,7 +949,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 30] = [
+    pub const NAMES: [(&str, u32); 31] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -940,6 +967,7 @@ pub mod permutation {
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
+        ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
@@ -957,7 +985,7 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 1] = [("FXAA", "AREA_LIGHTS")];
+    pub const SHARED: [(&str, &str); 2] = [("FXAA", "AREA_LIGHTS"), ("BLOOM", "PICK")];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -1761,8 +1789,9 @@ pub mod template {
     }
     /// Decals with the standard material: the back faces of each instance's box, which shade the
     /// surface under each pixel from the scene's depth, in the decal pass after the camera's opaque
-    /// pass. It binds the frame's group, then the scene's depth in the group of
-    /// [`super::layout::DECAL_DEPTH`] or [`super::layout::DECAL_DEPTH_MS`].
+    /// pass. It binds the frame's group, of [`super::layout::DECAL_FRAME`] on WebGPU, then the
+    /// scene's depth in the group of [`super::layout::DECAL_DEPTH`] or
+    /// [`super::layout::DECAL_DEPTH_MS`].
     pub const DECAL: u32 = 61;
     /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
     pub const DECAL_MAPS: u32 = 62;
@@ -1817,6 +1846,241 @@ pub mod template {
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
     pub const CUSTOM_FIRST: u32 = 128;
+
+    /// Every engine template with its name, in id order: the constants that the TypeScript replay
+    /// loop reads, and the templates whose groups [`super::groups`] knows.
+    pub const NAMES: [(&str, u32); 66] = [
+        ("INSTANCED_LIT", INSTANCED_LIT),
+        ("INSTANCED_UNLIT", INSTANCED_UNLIT),
+        ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
+        ("DEBUG_LINES", DEBUG_LINES),
+        ("INSTANCED_UNLIT_MAP", INSTANCED_UNLIT_MAP),
+        ("INSTANCED_STANDARD_MAPS", INSTANCED_STANDARD_MAPS),
+        ("FINAL", FINAL),
+        ("SHADOW_DEPTH", SHADOW_DEPTH),
+        ("BACKGROUND", BACKGROUND),
+        ("DEBUG_VIEW", DEBUG_VIEW),
+        ("BLOOM", BLOOM),
+        ("FINAL_BLOOM", FINAL_BLOOM),
+        ("CULL", CULL),
+        ("LIGHT_COUNT", LIGHT_COUNT),
+        ("LIGHT_PLACE", LIGHT_PLACE),
+        ("LIGHT_WRITE", LIGHT_WRITE),
+        ("SKIN", SKIN),
+        ("OUTLINE_MASK", OUTLINE_MASK),
+        ("SPRITE", SPRITE),
+        ("SPRITE_MAP", SPRITE_MAP),
+        ("OCCLUSION_EARLY", OCCLUSION_EARLY),
+        ("OCCLUSION_LATE", OCCLUSION_LATE),
+        ("DEPTH_PYRAMID", DEPTH_PYRAMID),
+        ("LINE", LINE),
+        ("LINE_LIT", LINE_LIT),
+        ("AO_DEPTH", AO_DEPTH),
+        ("AO_DEPTH_MS", AO_DEPTH_MS),
+        ("AO", AO),
+        ("AO_DENOISE", AO_DENOISE),
+        ("BACKGROUND_CUBE", BACKGROUND_CUBE),
+        ("BACKGROUND_SKY", BACKGROUND_SKY),
+        ("SKY_TABLE", SKY_TABLE),
+        ("BACKGROUND_ATMOSPHERE", BACKGROUND_ATMOSPHERE),
+        ("SHADOW_CUTOUT", SHADOW_CUTOUT),
+        ("SHADOW_CUTOUT_MAP", SHADOW_CUTOUT_MAP),
+        ("VIEW_COPY", VIEW_COPY),
+        ("DOF_SETUP", DOF_SETUP),
+        ("DOF_SETUP_MS", DOF_SETUP_MS),
+        ("DOF_BLUR", DOF_BLUR),
+        ("DOF_FILTER", DOF_FILTER),
+        ("DOF_COMPOSITE", DOF_COMPOSITE),
+        ("DOF_COMPOSITE_MS", DOF_COMPOSITE_MS),
+        ("TRANSMISSION_COPY", TRANSMISSION_COPY),
+        ("WEIGHTED_COMPOSITE", WEIGHTED_COMPOSITE),
+        ("WEIGHTED_DEPTH", WEIGHTED_DEPTH),
+        ("DECAL", DECAL),
+        ("DECAL_MAPS", DECAL_MAPS),
+        ("PROBE_GRID", PROBE_GRID),
+        ("PROBE_GRID_MAPS", PROBE_GRID_MAPS),
+        ("PARTICLE", PARTICLE),
+        ("PARTICLE_MAP", PARTICLE_MAP),
+        ("PARTICLE_DEPTH", PARTICLE_DEPTH),
+        ("PARTICLE_DEPTH_MS", PARTICLE_DEPTH_MS),
+        ("EXPOSURE_LUMINANCE", EXPOSURE_LUMINANCE),
+        ("EXPOSURE_ADAPT", EXPOSURE_ADAPT),
+        ("EXPOSURE_HISTOGRAM", EXPOSURE_HISTOGRAM),
+        ("EXPOSURE_ADAPT_HISTOGRAM", EXPOSURE_ADAPT_HISTOGRAM),
+        ("FOG_LIGHT", FOG_LIGHT),
+        ("FOG_SUM", FOG_SUM),
+        ("FOG_APPLY", FOG_APPLY),
+        ("FOG_APPLY_MS", FOG_APPLY_MS),
+        ("FOG_BLOCK", FOG_BLOCK),
+        ("PICK", PICK),
+        ("MOTION", MOTION),
+        ("MOTION_VIEW", MOTION_VIEW),
+        ("CUSTOM_FIRST", CUSTOM_FIRST),
+    ];
+}
+
+/// The bind group layouts that each engine template's pipeline binds, group by group, as the
+/// render worker declares them in `pipelines.ts`. A draw whose bound group has another layout is
+/// what WebGPU refuses when it validates the pipeline, so the mock backend holds every draw to
+/// this table.
+///
+/// An entry lists the layouts that a build may bind at one group index, over both GPU paths: a
+/// draw list comes from one path and the mock reads both. The WebGL2 path reads each view's
+/// instance data from groups of its own, so a template that draws meshes carries the indices that
+/// path binds beside the indices WebGPU binds. A template from [`template::CUSTOM_FIRST`] up,
+/// whose layouts the page decides, has no entry.
+pub mod groups {
+    use super::{layout, template};
+
+    /// One group of the given layouts, bound at group 0.
+    macro_rules! own {
+        ($($id:expr),+) => {
+            &[&[$($id),+]]
+        };
+    }
+    /// The groups of a template that draws meshes: its shading group, then the groups the two
+    /// paths bind after it. WebGPU binds the joint texture of a build that skins in the vertex
+    /// shader, the maps' group of a build that samples maps, and the view's index group of a build
+    /// that reads its instances by index. WebGL2 reads each view's instance data from groups of its
+    /// own, the draws' group and the instances' one, and binds a material's maps at the group after
+    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2.
+    const MESH: &[&[u32]] = &[
+        &[layout::FRAME, layout::DEPTH],
+        &[
+            layout::DRAWS,
+            layout::JOINTS,
+            layout::MATERIAL_MAPS,
+            layout::TEXTURES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+        ],
+        &[
+            layout::INSTANCES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+        ],
+        &[layout::TEXTURES, layout::MATERIAL_MAPS],
+        &[layout::DECAL_DEPTH, layout::DECAL_DEPTH_MS],
+    ];
+    /// [`MESH`] for a decal's templates, whose frame group leaves out the bindings that no decal
+    /// build reads.
+    const DECAL_MESH: &[&[u32]] = &[
+        &[layout::FRAME, layout::DEPTH, layout::DECAL_FRAME],
+        MESH[1],
+        MESH[2],
+        MESH[3],
+        MESH[4],
+    ];
+    /// The groups of a template that draws particles: its system's group, then the view's copy of
+    /// its opaque depth, the group the maps of a build that has them sit in, and the WebGL2 path's
+    /// draws and instances groups.
+    const PARTICLE_MESH: &[&[u32]] = &[
+        &[layout::FRAME],
+        &[layout::PARTICLE, layout::DRAWS],
+        &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
+        &[layout::TEXTURES],
+    ];
+    /// The groups of the background templates: the frame's group, then a texture and the
+    /// background's own group. A cube or sky background binds only the background's own, at the
+    /// group after the frame's, and the WebGL2 path binds each view's instances group last.
+    const BACKGROUND: &[&[u32]] = &[
+        &[layout::FRAME],
+        &[layout::TEXTURES, layout::BACKGROUND],
+        &[layout::BACKGROUND, layout::INSTANCES],
+    ];
+    /// The physical sky's tables and its panorama.
+    const SKY: &[&[u32]] = &[&[layout::ATMOSPHERE]];
+    /// Every engine template with its groups, by template id.
+    const TABLE: &[(u32, &[&[u32]])] = &[
+        (template::INSTANCED_LIT, MESH),
+        (template::INSTANCED_UNLIT, MESH),
+        (template::INSTANCED_TEXCOORDS, MESH),
+        (template::DEBUG_LINES, MESH),
+        (template::INSTANCED_UNLIT_MAP, MESH),
+        (template::INSTANCED_STANDARD_MAPS, MESH),
+        (template::FINAL, own!(layout::FINAL)),
+        (template::SHADOW_DEPTH, MESH),
+        (template::BACKGROUND, BACKGROUND),
+        (template::SKY_TABLE, SKY),
+        (
+            template::BACKGROUND_ATMOSPHERE,
+            &[
+                &[layout::FRAME],
+                &[layout::ATMOSPHERE],
+                &[layout::INSTANCES],
+            ],
+        ),
+        (template::DEBUG_VIEW, MESH),
+        (template::BLOOM, own!(layout::BLOOM)),
+        (template::FINAL_BLOOM, own!(layout::FINAL_BLOOM)),
+        (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
+        (template::CULL, own!(layout::CULL)),
+        (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
+        (template::SKIN, own!(layout::SKIN)),
+        (template::OUTLINE_MASK, MESH),
+        (template::SPRITE, MESH),
+        (template::SPRITE_MAP, MESH),
+        (template::OCCLUSION_EARLY, own!(layout::CULL)),
+        (template::OCCLUSION_LATE, own!(layout::CULL)),
+        (template::EXPOSURE_ADAPT, own!(layout::EFFECT)),
+        (template::EXPOSURE_HISTOGRAM, own!(layout::EXPOSURE)),
+        (template::DEPTH_PYRAMID, own!(layout::DEPTH_PYRAMID)),
+        (template::LINE, MESH),
+        (template::LINE_LIT, MESH),
+        (template::AO_DEPTH, own!(layout::AO_DEPTH)),
+        (template::AO_DEPTH_MS, own!(layout::AO_DEPTH_MS)),
+        (template::AO, own!(layout::AO)),
+        (template::AO_DENOISE, own!(layout::AO)),
+        (template::BACKGROUND_CUBE, BACKGROUND),
+        (template::BACKGROUND_SKY, BACKGROUND),
+        (template::SHADOW_CUTOUT, MESH),
+        (template::SHADOW_CUTOUT_MAP, MESH),
+        (template::VIEW_COPY, own!(layout::VIEW_COPY)),
+        (template::EXPOSURE_ADAPT_HISTOGRAM, own!(layout::EXPOSURE)),
+        (template::DOF_SETUP, own!(layout::EFFECT)),
+        (template::DOF_SETUP_MS, own!(layout::EFFECT_DEPTH_MS)),
+        (template::DOF_BLUR, own!(layout::BLOOM)),
+        (template::DOF_FILTER, own!(layout::BLOOM)),
+        (template::DOF_COMPOSITE, own!(layout::DOF_COMPOSITE)),
+        (template::DOF_COMPOSITE_MS, own!(layout::DOF_COMPOSITE_MS)),
+        (template::TRANSMISSION_COPY, own!(layout::VIEW_COPY)),
+        (template::PARTICLE, PARTICLE_MESH),
+        (template::PARTICLE_MAP, PARTICLE_MESH),
+        (template::PARTICLE_DEPTH, own!(layout::VIEW_COPY)),
+        (template::PARTICLE_DEPTH_MS, own!(layout::PARTICLE_DEPTH_MS)),
+        (template::FOG_LIGHT, &[&[layout::FRAME], &[layout::BLOOM]]),
+        (template::FOG_SUM, own!(layout::BLOOM)),
+        (template::FOG_APPLY, own!(layout::DOF_COMPOSITE)),
+        (template::FOG_APPLY_MS, own!(layout::DOF_COMPOSITE_MS)),
+        (template::DECAL, DECAL_MESH),
+        (template::DECAL_MAPS, DECAL_MESH),
+        (
+            template::WEIGHTED_COMPOSITE,
+            own!(layout::WEIGHTED_COMPOSITE),
+        ),
+        (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::FOG_BLOCK, own!(layout::BLOOM)),
+        (template::PICK, MESH),
+        (template::PROBE_GRID, MESH),
+        (template::PROBE_GRID_MAPS, MESH),
+    ];
+
+    /// The groups of a template's pipeline, group by group from group 0 on: each entry lists the
+    /// layouts that a build may bind at that index. `None` for a template whose page decides the
+    /// layouts, which the mock does not judge.
+    pub fn of(template: u32) -> Option<&'static [&'static [u32]]> {
+        if template >= template::CUSTOM_FIRST {
+            return None;
+        }
+        TABLE
+            .iter()
+            .find(|(id, _)| *id == template)
+            .map(|(_, groups)| *groups)
+    }
 }
 
 /// Why recording failed.
@@ -2109,6 +2373,7 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
                 ("DECAL_DEPTH", layout::DECAL_DEPTH),
                 ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
+                ("DECAL_FRAME", layout::DECAL_FRAME),
                 ("PARTICLE", layout::PARTICLE),
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
@@ -2163,80 +2428,7 @@ pub fn typescript_constants() -> String {
                 ("DEPTH_OR_EQUAL", state_flags::DEPTH_OR_EQUAL),
             ],
         ),
-        (
-            "TEMPLATE",
-            &[
-                ("INSTANCED_LIT", template::INSTANCED_LIT),
-                ("INSTANCED_UNLIT", template::INSTANCED_UNLIT),
-                ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
-                ("DEBUG_LINES", template::DEBUG_LINES),
-                ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
-                ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
-                ("FINAL", template::FINAL),
-                ("SHADOW_DEPTH", template::SHADOW_DEPTH),
-                ("BACKGROUND", template::BACKGROUND),
-                ("DEBUG_VIEW", template::DEBUG_VIEW),
-                ("BLOOM", template::BLOOM),
-                ("FINAL_BLOOM", template::FINAL_BLOOM),
-                ("CULL", template::CULL),
-                ("LIGHT_COUNT", template::LIGHT_COUNT),
-                ("LIGHT_PLACE", template::LIGHT_PLACE),
-                ("LIGHT_WRITE", template::LIGHT_WRITE),
-                ("SKIN", template::SKIN),
-                ("OUTLINE_MASK", template::OUTLINE_MASK),
-                ("SPRITE", template::SPRITE),
-                ("SPRITE_MAP", template::SPRITE_MAP),
-                ("OCCLUSION_EARLY", template::OCCLUSION_EARLY),
-                ("OCCLUSION_LATE", template::OCCLUSION_LATE),
-                ("DEPTH_PYRAMID", template::DEPTH_PYRAMID),
-                ("LINE", template::LINE),
-                ("LINE_LIT", template::LINE_LIT),
-                ("AO_DEPTH", template::AO_DEPTH),
-                ("AO_DEPTH_MS", template::AO_DEPTH_MS),
-                ("AO", template::AO),
-                ("AO_DENOISE", template::AO_DENOISE),
-                ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
-                ("BACKGROUND_SKY", template::BACKGROUND_SKY),
-                ("SKY_TABLE", template::SKY_TABLE),
-                ("BACKGROUND_ATMOSPHERE", template::BACKGROUND_ATMOSPHERE),
-                ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
-                ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
-                ("VIEW_COPY", template::VIEW_COPY),
-                ("DOF_SETUP", template::DOF_SETUP),
-                ("DOF_SETUP_MS", template::DOF_SETUP_MS),
-                ("DOF_BLUR", template::DOF_BLUR),
-                ("DOF_FILTER", template::DOF_FILTER),
-                ("DOF_COMPOSITE", template::DOF_COMPOSITE),
-                ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
-                ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
-                ("MOTION", template::MOTION),
-                ("WEIGHTED_COMPOSITE", template::WEIGHTED_COMPOSITE),
-                ("WEIGHTED_DEPTH", template::WEIGHTED_DEPTH),
-                ("DECAL", template::DECAL),
-                ("DECAL_MAPS", template::DECAL_MAPS),
-                ("PROBE_GRID", template::PROBE_GRID),
-                ("PROBE_GRID_MAPS", template::PROBE_GRID_MAPS),
-                ("PARTICLE", template::PARTICLE),
-                ("PARTICLE_MAP", template::PARTICLE_MAP),
-                ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
-                ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
-                ("MOTION_VIEW", template::MOTION_VIEW),
-                ("EXPOSURE_LUMINANCE", template::EXPOSURE_LUMINANCE),
-                ("EXPOSURE_ADAPT", template::EXPOSURE_ADAPT),
-                ("EXPOSURE_HISTOGRAM", template::EXPOSURE_HISTOGRAM),
-                (
-                    "EXPOSURE_ADAPT_HISTOGRAM",
-                    template::EXPOSURE_ADAPT_HISTOGRAM,
-                ),
-                ("FOG_LIGHT", template::FOG_LIGHT),
-                ("FOG_SUM", template::FOG_SUM),
-                ("FOG_APPLY", template::FOG_APPLY),
-                ("FOG_APPLY_MS", template::FOG_APPLY_MS),
-                ("FOG_BLOCK", template::FOG_BLOCK),
-                ("PICK", template::PICK),
-                ("CUSTOM_FIRST", template::CUSTOM_FIRST),
-            ],
-        ),
+        ("TEMPLATE", &template::NAMES),
         (
             "BUFFER_USAGE",
             &[

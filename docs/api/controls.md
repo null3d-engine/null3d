@@ -98,7 +98,7 @@ The options and the controls' properties have three.js's names and defaults. A s
 
 Call `controls.update(dt)` once per frame in `onUpdate`, with the step that `onUpdate` receives. It returns true when the camera or the target moved.
 
-- `update` allocates nothing.
+- `update` allocates nothing. `tests/image/controls.spec.ts` checks it through every gesture, and `bun run bench:allocation --calls` samples it in every frame.
 - With damping, each frame applies a share of the motion that remains. The share suits the frame's step, so the motion takes the same time at every frame rate. At 60 frames per second, it matches three.js.
 - The sketch can move the camera itself with `camera.setPosition`. The controls carry on from the new position at the next `update`.
 - Auto-rotation stops while the user asks for less motion. [Accessibility](../guides/accessibility.md) explains the preference.

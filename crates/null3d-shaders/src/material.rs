@@ -119,6 +119,34 @@ fn motion_variant(shading: &Variant) -> Variant {
     }
 }
 
+/// The bits of a custom material's shading builds that its pick builds keep: the draw index, and
+/// what moves vertices or a vertex offset may read, skins and row values.
+const PICK_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
+
+/// The variant of a custom material's pick builds beside one of its shading variants: the same
+/// defs with the instance's ids, which the fragment shader writes, and every build with the PICK
+/// bit. The material's vertex offset then moves the object in GPU picking as it moves its surface.
+fn pick_variant(shading: &Variant) -> Variant {
+    let mut defs = shading.defs.clone();
+    if !defs.iter().any(|def| def == OBJECT_IDS_DEF) {
+        defs.push(OBJECT_IDS_DEF.to_owned());
+        defs.sort();
+    }
+    let mut permutations: Vec<String> = shading
+        .permutations
+        .iter()
+        .filter(|bit| PICK_KEEPS.contains(&bit.as_str()))
+        .cloned()
+        .collect();
+    permutations.push("PICK".to_owned());
+    Variant {
+        defs,
+        permutations,
+        required: vec!["PICK".to_owned()],
+        targets: shading.targets.clone(),
+    }
+}
+
 /// The shader defs of every custom material's build: the custom material's built-in values, and
 /// the first texture coordinates.
 const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
@@ -582,9 +610,8 @@ impl Compiler {
                 // that the default surface multiplies. They have no builds of a fading level of
                 // detail, so their levels switch at once. They have no builds of the weighted
                 // layer: the engine's API refuses the weighted blending for them (decision record
-                // D-150).
-                // detail, so their levels switch at once. They always have the area lights' code,
-                // so they have no builds without it.
+                // D-150). They always have the area lights' code, so they have no builds without
+                // it.
                 let left_out = [
                     "HALF",
                     "MORPH",
@@ -620,6 +647,7 @@ impl Compiler {
                     [
                         (format!("{name}_shadow"), caster_variant(variant)),
                         (format!("{name}_motion"), motion_variant(variant)),
+                        (format!("{name}_pick"), pick_variant(variant)),
                     ]
                 })
                 .collect();

@@ -7,7 +7,9 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
+	utimesSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,9 +19,13 @@ import {
 	CACHE_ROOT,
 	cacheDir,
 	cacheOff,
+	cacheRoot,
 	cargoEnv,
 	hashFiles,
 	hashOf,
+	pruneCache,
+	runCargo,
+	touchCacheEntry,
 	writeFileAtomic,
 	writeFolderAtomic,
 } from './build-cache';
@@ -121,8 +127,20 @@ describe('cacheDir', () => {
 	});
 });
 
+describe('cacheRoot', () => {
+	it('takes NULL3D_BUILD_CACHE, else null3d under XDG_CACHE_HOME, else under the home folder', () => {
+		expect(cacheRoot({ NULL3D_BUILD_CACHE: '/elsewhere' })).toBe('/elsewhere');
+		expect(cacheRoot({ XDG_CACHE_HOME: '/xdg' })).toBe(join('/xdg', 'null3d'));
+		expect(cacheRoot({ HOME: '/home/someone' })).toBe(join('/home/someone', '.cache', 'null3d'));
+		// The named variable wins over the base folder, so a test or a job can move one cache alone.
+		expect(cacheRoot({ NULL3D_BUILD_CACHE: '/elsewhere', XDG_CACHE_HOME: '/xdg' })).toBe(
+			'/elsewhere',
+		);
+	});
+});
+
 describe('cargoEnv', () => {
-	it('wraps the compiler in sccache when it is installed and no wrapper is named', () => {
+	it('names the checkout’s own Rust build folder, and sccache when it is installed', () => {
 		withFolder((folder) => {
 			const bin = join(folder, 'bin');
 			mkdirSync(bin);
@@ -130,17 +148,73 @@ describe('cargoEnv', () => {
 			writeFileSync(sccache, '#!/bin/sh\n');
 			chmodSync(sccache, 0o755);
 			const PATH = `${join(folder, 'empty')}:${bin}`;
-			expect(cargoEnv({ PATH })).toEqual({
+			// Every cargo run of a checkout gets that checkout's target folder: Cargo judges a
+			// workspace crate fresh by file times, so a shared folder links one checkout's crates into
+			// another's build.
+			expect(cargoEnv('/work/one', { PATH })).toEqual({
+				CARGO_TARGET_DIR: join('/work/one', 'target'),
 				RUSTC_WRAPPER: sccache,
 				SCCACHE_DIR: join(CACHE_ROOT, 'sccache'),
 			});
-			expect(cargoEnv({ PATH, SCCACHE_DIR: '/elsewhere' }).SCCACHE_DIR).toBe('/elsewhere');
+			expect(cargoEnv('/work/one', { PATH, SCCACHE_DIR: '/elsewhere' }).SCCACHE_DIR).toBe(
+				'/elsewhere',
+			);
 			// A wrapper the caller names, or an empty one that turns wrapping off, is kept as it is.
-			expect(cargoEnv({ PATH, RUSTC_WRAPPER: '' })).toEqual({});
-			expect(cargoEnv({ PATH, RUSTC_WRAPPER: '/usr/bin/other' })).toEqual({});
+			expect(cargoEnv('/work/two', { PATH, RUSTC_WRAPPER: '' })).toEqual({
+				CARGO_TARGET_DIR: join('/work/two', 'target'),
+			});
 			// Without sccache, cargo runs as it would alone, as in CI.
-			expect(cargoEnv({ PATH: join(folder, 'empty') })).toEqual({});
-			expect(cargoEnv({})).toEqual({});
+			expect(cargoEnv('/work/one', { PATH: join(folder, 'empty') })).toEqual({
+				CARGO_TARGET_DIR: join('/work/one', 'target'),
+			});
+		});
+	});
+});
+
+describe('pruneCache', () => {
+	/** An entry of the given size, used `usedMs` ago. */
+	function entry(folder: string, name: string, bytes: number, usedMs: number): string {
+		const path = join(folder, name);
+		mkdirSync(path, { recursive: true });
+		writeFileSync(join(path, 'blob'), Buffer.alloc(bytes, 1));
+		const when = new Date(usedMs);
+		utimesSync(join(path, 'blob'), when, when);
+		utimesSync(path, when, when);
+		return path;
+	}
+
+	it('removes the least recently used entries while the cache holds more than its limit', () => {
+		withFolder((folder) => {
+			const old = Date.now() - 24 * 60 * 60 * 1000;
+			const kept = entry(folder, 'new', 600, Date.now());
+			const gone = entry(folder, 'old', 600, old);
+			const removed = pruneCache(folder, 1024);
+			expect(removed).toEqual(['old']);
+			expect(existsSync(kept)).toBe(true);
+			expect(existsSync(gone)).toBe(false);
+		});
+	});
+
+	it('keeps an entry a build is still reading, and a lock that sits in the folder', () => {
+		withFolder((folder) => {
+			// A build of another checkout may be copying this entry right now, so it stays even while
+			// the cache is over its limit: removing it costs that build its work.
+			const inUse = entry(folder, 'in-use', 600, Date.now() - 60 * 1000);
+			mkdirSync(join(folder, 'builder.lock'));
+			expect(pruneCache(folder, 1)).toEqual([]);
+			expect(existsSync(inUse)).toBe(true);
+			expect(existsSync(join(folder, 'builder.lock'))).toBe(true);
+		});
+	});
+
+	it('counts an entry as used again when a build touches it', () => {
+		withFolder((folder) => {
+			const old = Date.now() - 24 * 60 * 60 * 1000;
+			const entry_ = entry(folder, 'reused', 600, old);
+			touchCacheEntry(entry_);
+			entry(folder, 'other', 600, old);
+			// The touched entry is the newer one now, so the other goes first.
+			expect(pruneCache(folder, 1024)).toEqual(['other']);
 		});
 	});
 });
@@ -150,16 +224,59 @@ describe('acquireLock', () => {
 		withFolder((folder) => {
 			const lock = join(folder, 'build.lock');
 			const release = acquireLock(lock);
-			expect(existsSync(lock)).toBe(true);
-			expect(readFileSync(lock, 'utf8')).toBe(String(process.pid));
+			// The lock is a folder that names its holder, so exactly one process creates it.
+			expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
 			release();
 			expect(existsSync(lock)).toBe(false);
-			// A lock written by a process that has stopped is taken over rather than waited on.
-			writeFileSync(lock, '999999999');
+			// A lock whose holder has stopped is broken rather than waited on.
+			mkdirSync(lock);
+			writeFileSync(join(lock, 'pid'), '999999999');
 			const release2 = acquireLock(lock);
-			expect(readFileSync(lock, 'utf8')).toBe(String(process.pid));
+			expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
 			release2();
 		});
+	});
+
+	it('breaks a lock that names no process and is older than a minute', () => {
+		withFolder((folder) => {
+			const lock = join(folder, 'build.lock');
+			mkdirSync(lock);
+			const old = new Date(Date.now() - 5 * 60 * 1000);
+			utimesSync(lock, old, old);
+			const release = acquireLock(lock);
+			expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
+			release();
+		});
+	});
+
+	it('waits for a lock that names no id and was taken a moment ago', async () => {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
+		const lock = join(folder, 'build.lock');
+		// A lock taken a moment ago by a process that has not written its id yet is live: breaking it
+		// would let this process and that one work at the same time, which is what the old lock did
+		// when it read an empty file as "nobody holds this".
+		mkdirSync(lock);
+		const module = join(import.meta.dir, 'build-cache.ts');
+		const child = spawn(
+			'bun',
+			[
+				'-e',
+				`import { acquireLock } from ${JSON.stringify(module)}; acquireLock(${JSON.stringify(lock)}); console.log('acquired');`,
+			],
+			{ stdio: ['ignore', 'pipe', 'pipe'] },
+		);
+		let out = '';
+		child.stdout.on('data', (chunk) => {
+			out += chunk;
+		});
+		try {
+			await Bun.sleep(700);
+			expect(out).not.toContain('acquired');
+			expect(existsSync(lock)).toBe(true);
+		} finally {
+			child.kill();
+			rmSync(folder, { recursive: true, force: true });
+		}
 	});
 
 	it('makes a second process wait until the first releases it', async () => {
@@ -191,5 +308,69 @@ describe('acquireLock', () => {
 			child.kill();
 			rmSync(folder, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('runCargo', () => {
+	/**
+	 * A folder holding a stub `cargo` first on the PATH, which writes its arguments, its folder and
+	 * its target folder's environment to a file. A test then reads what the one cargo helper gave
+	 * the toolchain, without running it.
+	 */
+	function withStubCargo(run: (checkout: string, read: () => string) => void): void {
+		withFolder((folder) => {
+			const bin = join(folder, 'bin');
+			mkdirSync(bin, { recursive: true });
+			const said = join(folder, 'said');
+			const cargo = join(bin, 'cargo');
+			writeFileSync(
+				cargo,
+				`#!/bin/sh\nprintf '%s\\n' "$PWD" "$CARGO_TARGET_DIR" "$RUSTC_WRAPPER" "$@" > ${said}\n`,
+			);
+			chmodSync(cargo, 0o755);
+			const checkout = join(folder, 'checkout');
+			mkdirSync(checkout);
+			const before = { path: process.env.PATH, target: process.env.CARGO_TARGET_DIR };
+			process.env.PATH = `${bin}:${before.path ?? ''}`;
+			delete process.env.CARGO_TARGET_DIR;
+			try {
+				run(checkout, () => readFileSync(said, 'utf8'));
+			} finally {
+				process.env.PATH = before.path;
+				delete process.env.CARGO_TARGET_DIR;
+			}
+		});
+	}
+
+	it('runs in the checkout, with its own target folder and the call\u2019s own arguments', () => {
+		withStubCargo((checkout, read) => {
+			const run = runCargo(checkout, ['build', '-p', 'null3d-core'], {
+				env: { RUSTFLAGS: '-Cstrip=symbols' },
+			});
+			expect(run.error).toBeUndefined();
+			expect(run.status).toBe(0);
+			const [cwd, target, wrapper, ...args] = read().trim().split('\n');
+			// `/var` is a link to `/private/var` on macOS, so the shell's own directory is compared.
+			expect(cwd).toBe(realpathSync(checkout));
+			// No `--target-dir`, so the checkout's own folder applies.
+			expect(target).toBe(join(checkout, 'target'));
+			// sccache is a wrapper only when it is installed, and an empty value turns it off.
+			expect(!wrapper || existsSync(wrapper)).toBe(true);
+			expect(args).toEqual(['build', '-p', 'null3d-core']);
+		});
+	});
+
+	it('builds into the target folder that the call names', () => {
+		withStubCargo((checkout, read) => {
+			const target = join(checkout, 'target', 'wasm-plain');
+			runCargo(checkout, ['build', '-p', 'null3d-core'], { targetDir: target });
+			expect(read().trim().split('\n').slice(3)).toEqual([
+				'build',
+				'-p',
+				'null3d-core',
+				'--target-dir',
+				target,
+			]);
+		});
 	});
 });

@@ -1,12 +1,14 @@
 // How the page routes a worker's replies once the worker has started: a failure that the worker
 // reports, or that ends it, reaches the page's failure handler, and a stop waits for the worker's
-// answer.
+// answer. A request that the worker never answers fails once its wait has taken longer than the
+// limit, so that a thread that stopped taking messages gives the page a named error.
 import { beforeEach, expect, test } from 'bun:test';
 import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { BUILD_WAIT_LIMIT_MS } from '../render/scene-renderer';
 import type { WorkerReply } from '../workers/protocol';
-import { EngineWorker } from './engine';
+import { EngineWorker, WORKER_REPLY_LIMIT_MS } from './engine';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -22,6 +24,44 @@ function fakeWorker() {
 	const reply = (data: WorkerReply) => worker.onmessage?.({ data } as MessageEvent<WorkerReply>);
 	return { worker: worker as unknown as Worker, reply, sent, raw: worker };
 }
+
+/**
+ * Holds the timers that the code arms, so that a test fires each one by hand instead of waiting for
+ * its delay. The clock is the code's own `setTimeout`, which it reads from the global at each call.
+ */
+function heldTimers() {
+	const armed = new Map<number, () => void>();
+	const cleared: number[] = [];
+	let next = 0;
+	const real = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+	globalThis.setTimeout = ((handler: () => void) => {
+		armed.set(++next, handler);
+		return next;
+	}) as unknown as typeof setTimeout;
+	globalThis.clearTimeout = ((id: number) => {
+		cleared.push(id);
+		armed.delete(id);
+	}) as unknown as typeof clearTimeout;
+	return {
+		/** The number of timers that are still armed. */
+		armed: () => armed.size,
+		cleared,
+		/** Fires each armed timer once, as its delay passing would. */
+		fire: () => {
+			for (const [id, handler] of [...armed]) {
+				armed.delete(id);
+				handler();
+			}
+		},
+		restore: () => {
+			globalThis.setTimeout = real.setTimeout;
+			globalThis.clearTimeout = real.clearTimeout;
+		},
+	};
+}
+
+/** A page whose visibility a test sets, or undefined on a thread that has no document. */
+const page = globalThis as { document?: { visibilityState: string } };
 
 /** An engine worker whose failures the test collects, started with a ready reply. */
 async function started(role = 'job 3') {
@@ -86,6 +126,70 @@ test('a worker that ends with an error event is reported once it had started', a
 	await answered;
 	expect(engineWorker.cleanStop).toBe(false);
 	expect(failures.map(([error]) => error.code)).toEqual(['E1404']);
+});
+
+test('a request that the worker never answers fails once its wait has passed the limit', async () => {
+	const { engineWorker, sent } = await started('render');
+	const timers = heldTimers();
+	try {
+		const answer = engineWorker.request({ type: 'capture' });
+		expect(sent).toEqual([{ type: 'capture' }]);
+		expect(timers.armed()).toBe(1);
+		timers.fire();
+		await expect(answer).rejects.toThrow(
+			`the render worker did not answer the capture within ${WORKER_REPLY_LIMIT_MS / 1000} s`,
+		);
+	} finally {
+		timers.restore();
+	}
+});
+
+test('an answer resolves the request and takes the wait down with it', async () => {
+	const { engineWorker, reply } = await started('render');
+	const timers = heldTimers();
+	try {
+		const answer = engineWorker.request({ type: 'capture' });
+		reply({ type: 'captured', width: 2, height: 2, pixels: new Uint8Array(16) });
+		await expect(answer).resolves.toMatchObject({ type: 'captured', width: 2 });
+		expect(timers.cleared).toHaveLength(1);
+		// The wait is gone, so nothing is left to fire.
+		expect(timers.armed()).toBe(0);
+		timers.fire();
+		await expect(answer).resolves.toMatchObject({ type: 'captured' });
+	} finally {
+		timers.restore();
+	}
+});
+
+test('a wait on a hidden page starts over, since a hidden page draws no frames', async () => {
+	const { engineWorker } = await started('render');
+	const timers = heldTimers();
+	const was = page.document;
+	try {
+		page.document = { visibilityState: 'hidden' };
+		const answer = engineWorker.request({ type: 'capture' });
+		const settled = answer.then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		timers.fire();
+		expect(await Promise.race([settled, Promise.resolve('waiting')])).toBe('waiting');
+		// The wait started over, so the page has as long again to show.
+		expect(timers.armed()).toBe(1);
+		page.document = { visibilityState: 'visible' };
+		timers.fire();
+		await expect(answer).rejects.toThrow('did not answer the capture within');
+	} finally {
+		timers.restore();
+		if (was === undefined) delete page.document;
+		else page.document = was;
+	}
+});
+
+test("the wait's limit sits above the time that a frame's pipelines may take", () => {
+	// A capture waits inside the worker for the frame's pipelines, up to that limit, before it reads
+	// the frame back and encodes it.
+	expect(WORKER_REPLY_LIMIT_MS).toBeGreaterThanOrEqual(2 * BUILD_WAIT_LIMIT_MS);
 });
 
 test('a loop that fails before the worker is ready fails the start', async () => {

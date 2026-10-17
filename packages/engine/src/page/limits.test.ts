@@ -17,6 +17,7 @@ import {
 	type DeviceOptions,
 	type DeviceReport,
 	effectsOutput,
+	keepTextureCopiesOption,
 	maxCanvasSize,
 	maxInstances,
 	portableMaxInstances,
@@ -527,5 +528,30 @@ describe('effectsOutput', () => {
 			sceneColor: FORMAT_CANVAS,
 			antialias: 'msaa',
 		});
+	});
+});
+
+describe('keepTextureCopiesOption', () => {
+	it('keeps the copies of a phone and a tablet, and frees them on a desktop', () => {
+		expect(keepTextureCopiesOption(undefined, true)).toBe(true);
+		expect(keepTextureCopiesOption(undefined, false)).toBe(false);
+	});
+
+	it('lets the option name either value', () => {
+		expect(keepTextureCopiesOption(true, false)).toBe(true);
+		expect(keepTextureCopiesOption(false, true)).toBe(false);
+	});
+
+	it('turns a value that is not a boolean into the value the core uses, so the report is true', () => {
+		// A page in plain JavaScript may pass a truthy value that is not `true`: the core keeps no
+		// copies then, and `engine.mode.keepTextureCopies` says so.
+		for (const value of [1, 'yes', {}, [], 0, '']) {
+			expect(keepTextureCopiesOption(value, true)).toBe(false);
+		}
+	});
+
+	it('takes a value that names none as none, so the device decides', () => {
+		expect(keepTextureCopiesOption(null, true)).toBe(true);
+		expect(keepTextureCopiesOption(null, false)).toBe(false);
 	});
 });

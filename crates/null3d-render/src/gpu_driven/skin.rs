@@ -86,9 +86,11 @@ use crate::view::ViewFrame;
 
 /// The engine's templates with SKIN builds, which skin in the vertex shader. Custom materials'
 /// templates have them too, apart from whole shaders (see `has_skin_builds`).
-const SKIN_TEMPLATES: [u32; 9] = [
+const SKIN_TEMPLATES: [u32; 11] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
+    template::PROBE_GRID,
+    template::PROBE_GRID_MAPS,
     template::INSTANCED_UNLIT,
     template::INSTANCED_UNLIT_MAP,
     template::SHADOW_DEPTH,
@@ -1006,6 +1008,15 @@ mod tests {
     use null3d_gpu::drawlist::vertex::{self, Type};
 
     use super::*;
+
+    /// A skinned mesh keeps its pose while a probe or a grid lights it: the probe templates carry
+    /// the lit builds' skinning, so they must name it here too.
+    #[test]
+    fn the_probe_templates_have_skin_builds() {
+        for probe in [template::PROBE_GRID, template::PROBE_GRID_MAPS] {
+            assert!(has_skin_builds(probe), "template {probe}");
+        }
+    }
 
     #[test]
     fn a_dispatch_spreads_past_an_axis_over_rows_that_cover_every_workgroup() {

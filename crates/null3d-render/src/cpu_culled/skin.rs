@@ -39,9 +39,11 @@ use crate::sorted::SkinnedPipeline;
 const NOT_SKINNED: u32 = u32::MAX;
 
 /// The templates with MORPH builds.
-const MORPH_TEMPLATES: [u32; 9] = [
+const MORPH_TEMPLATES: [u32; 11] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
+    template::PROBE_GRID,
+    template::PROBE_GRID_MAPS,
     template::INSTANCED_UNLIT,
     template::INSTANCED_UNLIT_MAP,
     template::DEBUG_VIEW,
@@ -311,5 +313,24 @@ impl Skins {
         self.gate.forget_gpu();
         self.rows = 0;
         self.pending = self.span.is_some();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use null3d_gpu::drawlist::template;
+
+    use super::MORPH_TEMPLATES;
+
+    /// A morphed mesh keeps its shape while a probe or a grid lights it: the probe templates carry
+    /// the lit builds' morph targets, so they must name them here too.
+    #[test]
+    fn the_probe_templates_have_morph_builds() {
+        for probe in [template::PROBE_GRID, template::PROBE_GRID_MAPS] {
+            assert!(
+                MORPH_TEMPLATES.contains(&probe),
+                "template {probe} morphs as the lit templates do"
+            );
+        }
     }
 }

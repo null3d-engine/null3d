@@ -47,7 +47,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 1. Measure the running page with `await engine.measure(5)`. It returns CPU time per thread and phase, GPU time where WebGPU has timestamp queries, the frame rates, draw calls, uploaded bytes, rebuilds and pipelines. The phase `update` is your code, and `commands`, `transforms`, `batches`, `cull`, `record`, `upload` and `replay` are the engine's. The preset is in `engine.mode.preset`. In the sketch, `debug.stats(true)` shows the frame rates and CPU time per thread and phase on the canvas. In 0.2 a click on its frame rate opens a card. It shows each thread's time and the GPU's time against the target frame rate, split into your code and the engine's work. A line names what holds the frame rate back. It also shows memory and the triangles and objects drawn. `?stats` in the page's address shows it too.
 2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
-3. Read numbers in the sketch: `debug.frameStats()` returns the overlay's figures, as means over the last half second. It allocates nothing, so a sketch can read it every frame, for example to log slow frames.
+3. Read numbers in the sketch: `debug.frameStats()` returns the overlay's figures, as means over the last half second. It allocates nothing, so a sketch can read it every frame, for example to log slow frames. A day cycle moves the time with `timeOfDay(hour, {}, day)`, which fills the `day` object of the first call instead of making one.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread. With `sketchThread: 'main'` it runs on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. The engine never times the GPU on WebGL2, so `gpuMs` is null there, as on WebGPU devices without timestamp queries, such as most phones. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
@@ -137,11 +137,7 @@ The preset tables mark some rows as planned, such as the light caps. A light's o
 
 The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. A game on a 120 or 144 Hz display can defend the full rate with `createEngine({ targetFps: 'display' })` (0.2), at the cost of lighter presets (`concepts/quality-presets`). It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
 
-The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
-
-1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas. Budgets that you register with `quality.setBudget` (0.2) step down by 0.25 before each step of the render scale.
-2. The far shadow cascades draw half as often, up to every 8th frame.
-3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
+The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, from the render scale on, in the order that `concepts/quality-presets#the-frame-budget-governor` lists.
 
 It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that falls behind within 30 seconds doubles the wait before the governor tries that setting again, up to 80 seconds. At 57 to 59 frames per second, the settings stay where they are. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
 
@@ -190,7 +186,8 @@ Apply these habits to `onUpdate` and everything it calls.
 - Use `Math.sqrt(x * x + y * y + z * z)` for a length, not `Math.hypot`.
 - Keep scratch lists at a fixed length. `list.length = 0` frees the storage, and the next write allocates it again.
 - Make no closures, `async` wrappers or promise chains per frame. Keep closures out of per-frame functions, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into its own function.
-- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. A material's `set` and a line material's `set` read the options object that you pass. The browser boxes its values where the call has seen objects of a few shapes, so set their values up front.
+- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. The controls write a camera's pose with `camera.setPose(position, rotation)` from the arrays that hold it, so no number crosses the call.
+- A material's `set` is for setup. It reads its numbers from an options object, and the browser boxes a read where it cannot keep the fields unboxed. Change a value that a frame changes with `material.setUniform(name, value)`, which takes the number or the color itself, a custom material's WGSL uniforms included. A line material's `set` allocates nothing: keep one options object and change its values in place.
 - Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.
 
 ## 9. Objects during play

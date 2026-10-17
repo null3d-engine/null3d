@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	ALL_COMPARISON_SWITCHES,
 	allowedMs,
 	type Build,
 	type BuildRun,
@@ -28,6 +29,7 @@ import {
 	roundNoise,
 	roundOrder,
 	runQualities,
+	SCENE_COMPARISON_SWITCHES,
 	selectRuns,
 	shardPages,
 } from './compare';
@@ -512,12 +514,12 @@ describe('the verdict', () => {
 
 describe('a change to the measurement', () => {
 	test('names the changed page sources, and counts those past the first few', () => {
-		expect(measurementChanges([], COMPARISON_SWITCHES)).toEqual([]);
-		expect(measurementChanges(['bench/scenes/spec.ts'], COMPARISON_SWITCHES)).toEqual([
+		expect(measurementChanges([], ALL_COMPARISON_SWITCHES)).toEqual([]);
+		expect(measurementChanges(['bench/scenes/spec.ts'], ALL_COMPARISON_SWITCHES)).toEqual([
 			'the benchmark pages changed: bench/scenes/spec.ts',
 		]);
 		const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => `bench/pages/${name}.ts`);
-		expect(measurementChanges(files, COMPARISON_SWITCHES)).toEqual([
+		expect(measurementChanges(files, ALL_COMPARISON_SWITCHES)).toEqual([
 			'the benchmark pages changed: bench/pages/a.ts, bench/pages/b.ts, bench/pages/c.ts, bench/pages/d.ts, bench/pages/e.ts and 2 more files',
 		]);
 	});
@@ -541,13 +543,21 @@ describe('a change to the measurement', () => {
 describe('the switches of a comparison', () => {
 	test('fix the preset and turn the governor off on every page', () => {
 		expect(COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off']);
-		expect(comparisonSwitches('')).toEqual(['preset=high', 'governor=off']);
-		expect(comparisonSwitches('shadows=3')).toEqual(['preset=high', 'governor=off']);
+		expect(comparisonSwitches('s2', '')).toEqual(['preset=high', 'governor=off']);
+		expect(comparisonSwitches('s2', 'shadows=3')).toEqual(['preset=high', 'governor=off']);
+	});
+
+	test('add the switches that one scene needs, so both builds draw its work alike', () => {
+		// S5's page otherwise gives a far character a longer pose interval, so its crowd does less
+		// work than the twin's mixers.
+		expect(SCENE_COMPARISON_SWITCHES).toEqual({ s5: ['anim=every'] });
+		expect(comparisonSwitches('s5', '')).toEqual(['preset=high', 'governor=off', 'anim=every']);
+		expect(ALL_COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off', 'anim=every']);
 	});
 
 	test('leave out a switch that the command sets itself', () => {
-		expect(comparisonSwitches('preset=low&shadows=3')).toEqual(['governor=off']);
-		expect(comparisonSwitches('governor=off')).toEqual(['preset=high']);
+		expect(comparisonSwitches('s2', 'preset=low&shadows=3')).toEqual(['governor=off']);
+		expect(comparisonSwitches('s5', 'governor=off&anim=every')).toEqual(['preset=high']);
 	});
 });
 

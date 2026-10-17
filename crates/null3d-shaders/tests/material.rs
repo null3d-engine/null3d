@@ -289,7 +289,27 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     // skins. Then the shadow caster's builds: with and without the caster offset, each plain, with
     // row values or skinned, and on WebGL2 with and without the draw index. Then the motion builds,
     // with and without row values: one on WebGPU, and on WebGL2 with and without the draw index.
-    assert_eq!(built.variants.len(), 144 + 6 + 12 + 6);
+    // Then the pick builds, each plain, with row values or skinned, and on WebGL2 with and without
+    // the draw index.
+    assert_eq!(built.variants.len(), 144 + 6 + 12 + 6 + 3 + 6);
+    // A pick build moves each vertex by the offset, finds the instance's ids and writes them.
+    let pick = &built.variants["webgpu_pick_pick"]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source;
+    assert!(pick.contains("fn vertexOffset("), "{pick}");
+    assert!(pick.contains("object_ranges"), "{pick}");
+    assert!(pick.contains("-> @location(0) vec4<u32>"), "{pick}");
+    let pick = &built.variants["webgl2_pick_draw_index_pick"]
+        .glsl
+        .as_ref()
+        .expect("GLSL")["main"];
+    assert!(
+        pick.fragment.source.contains("uvec4"),
+        "{}",
+        pick.fragment.source
+    );
     let caster = &built.variants["webgpu_shadow_caster_offset_row_values_caster"]
         .wgsl
         .as_ref()

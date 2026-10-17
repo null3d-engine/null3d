@@ -148,3 +148,17 @@ A quick check on the MacBook Pro, on 4 October 2026, while other helpers built a
 The ratio of each pair of loads ran from 0.86 to 1.19, with a median of 1.05. All three kinds moved together in each pair. A third build had the checks in TypeScript but the core from before the fixes. It was no slower than the build before them: its best `raycast` took 57.1 ms against 65.3 ms in the same 6 rounds. The core's own benchmark ran 6 times each in turns, as `bench_scene_queries` in a native release build. Its median `raycast` took 1.92 µs before and 1.82 µs after, and `overlapBox` 23.4 µs and 23.8 µs. So the guards cost no time that this Mac could measure, at most a few hundredths of a microsecond per call. A sketch that casts 1,000 rays in a frame would spend under 0.05 ms more.
 
 How the data was produced: `bun run build` at the branch's base commit and with the fixes, then `NULL3D_BUILD_PAGE=query-loop bunx vite build`. `vite preview` served each build's pages. A Playwright script timed `scene.raycast`, `scene.overlapBox` and `scene.raycastBatch` through a hook in the query loop sketch. The native runs used `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_scene_queries` at both commits.
+
+### Addendum: picking a mesh that a material's own WGSL moves
+
+17 October 2026. The GPU picking template (M2-D6, still to ship) draws each object with the
+camera's view-projection as the shading templates do. Its depth test keeps a pixel only where the two
+positions agree to the last bit. It therefore moves a vertex with every bit that moves one on that
+target: `SKIN` on both paths, and `MORPH` on WebGL2. There the vertex shader adds the morph targets'
+deltas before it skins. WebGPU needs no morph build: its skinning pass moves the vertices already.
+
+A mesh drawn with a custom material that moves its vertices has no picking build. The material's own
+WGSL cannot join the picking shader: the manifest allows one custom-material template, and the mesh
+templates hold it. Picking finds such a mesh on the CPU, through the ray tests this record describes,
+and the picking shader's own comment says so. A manifest test refuses a picking variant that moves
+fewer bits than the shading templates of the same target do.

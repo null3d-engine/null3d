@@ -243,6 +243,18 @@ export type DeviceOptions = Pick<
 	gpuOcclusion: boolean;
 };
 
+/**
+ * Whether the engine keeps its copy of each texture's texels after their upload, from the
+ * `keepTextureCopies` option and the device's own answer: the option wins when it names one,
+ * otherwise a phone and a tablet keep the copies and a desktop frees them (D-164). The page
+ * reports this value and hands the core the same one, so a page in plain JavaScript that passes a
+ * truthy value other than `true` is told what the engine really does with it.
+ */
+export function keepTextureCopiesOption(value: unknown, onDevice: boolean): boolean {
+	if (value === undefined || value === null) return onDevice;
+	return value === true;
+}
+
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
 export const DEPTH_WITHOUT_CLIP_CONTROL: DepthMode = 'reversed-gl';
 

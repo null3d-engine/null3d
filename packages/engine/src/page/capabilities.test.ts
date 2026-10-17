@@ -135,8 +135,8 @@ const ANSWER: WorkerProbe = {
 const probes = { behaviors: [] as ProbeBehavior[], started: 0, terminated: 0 };
 
 /**
- * A probe worker that acts as the next of `probes.behaviors` says. The engine's worker starter keeps
- * the first `Worker` class it wraps, so one class serves every test.
+ * A probe worker that acts as the next of `probes.behaviors` says. One class serves every test: the
+ * engine's worker starter starts each worker through the class that the thread holds at that start.
  */
 class FakeProbeWorker {
 	onmessage: ((event: { data: unknown }) => void) | null = null;
