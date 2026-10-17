@@ -103,6 +103,9 @@ describe('the tracked hooks folder', () => {
 		const root = scratch();
 		const before = process.env.HUSKY;
 		try {
+			// Every CI job sets husky's opt-out, and under it the install writes nothing and no hook
+			// runs. The assertions here are that hooks do run, so this test drops the opt-out.
+			delete process.env.HUSKY;
 			installHooks(root);
 			execFileSync('git', ['add', '-A'], { cwd: root });
 			for (const path of [HOOKS_DIR, SHIM_DIR]) {

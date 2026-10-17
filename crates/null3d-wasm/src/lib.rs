@@ -305,6 +305,7 @@ impl Engine {
                 &self.scene,
                 self.scene.parity(),
                 canvas,
+                pipelines_built,
             );
         }
         let input = FrameInput {

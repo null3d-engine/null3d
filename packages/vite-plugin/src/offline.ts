@@ -44,7 +44,12 @@ export const FEATURE_MODULES: Readonly<Record<string, readonly string[]>> = {
 		'vendor/draco/draco_wasm_wrapper_gltf',
 		'vendor/draco/draco_decoder_gltf.wasm',
 	],
-	ktx2: ['scene/ktx2', 'scene/ktx2-transcode', 'vendor/basis/basis_transcoder.wasm'],
+	ktx2: [
+		'scene/ktx2',
+		'scene/ktx2-file',
+		'scene/ktx2-transcode',
+		'vendor/basis/basis_transcoder.wasm',
+	],
 	environment: [
 		'scene/environment-file',
 		'scene/builtin-environments',
