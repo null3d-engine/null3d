@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
@@ -48,6 +49,10 @@ export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
 	timeout: 60_000,
+	// Refuses a run that times frames at macOS background priority, before any browser starts. The
+	// path is absolute, because Playwright resolves a global setup against the config file that names
+	// it: the benchmark config spreads this one, so a relative path would resolve under bench/.
+	globalSetup: join(import.meta.dirname, 'lib/priority-setup.ts'),
 	forbidOnly: ci,
 	reporter: ci ? [['list'], ['github']] : 'list',
 	use: {
@@ -65,6 +70,10 @@ export default defineConfig({
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
 			reuseExistingServer: false,
+			// The chain builds seven pages before the preview serves them, and on a slow runner the
+			// default minute runs out partway through: the run then fails as if the server never
+			// started, with every build it finished in the log.
+			timeout: 300_000,
 		},
 	],
 	projects: [

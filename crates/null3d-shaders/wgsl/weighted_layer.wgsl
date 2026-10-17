@@ -12,6 +12,8 @@
 // depth, on WebGPU; WebGL2's backend hands it a copy of one sample instead. Every target here
 // counts its pixels as the scene's do, so each step reads the pixel it draws.
 
+#import null3d::fullscreen::{triangle}
+
 #ifdef MULTISAMPLED
 @group(0) @binding(0) var scene_depth: texture_multisampled_2d<f32>;
 #else ifdef DEPTH
@@ -27,9 +29,7 @@ const LEAST_WEIGHT: f32 = 1e-5 / 32.0;
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // Corners at (-1, -1), (3, -1) and (-1, 3) in clip space.
-    let corner = vec2f(f32((vertex << 1u) & 2u), f32(vertex & 2u));
-    return vec4f(corner * 2.0 - 1.0, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 #ifdef DEPTH

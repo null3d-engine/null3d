@@ -1,6 +1,6 @@
 # D-131: Particles in closed form on the GPU
 
-Status: decided by the helper of M2-EX20 on 11 October 2026, for the owner's review. Date: 2026-10-11. Task: M2-EX20.
+Status: decided by the helper of M2-EX20 on 11 October 2026, for the owner's review. Built: the particles add-on is on main (`24f500d5a`). The owner's review is pending. Date: 2026-10-11. Task: M2-EX20.
 
 Summary: The `@null3d/particles` add-on makes particle systems that the GPU works out in closed form, from each particle's birth and age. The motion takes gravity, drag toward the wind, simplex-noise turbulence and a ground; the look takes curves of color, alpha and size over life. The CPU writes a 32-byte record once per birth. No pass simulates particles, so the same shaders run on WebGPU, compatibility mode and WebGL2. Soft particles read a copy of the camera's opaque depth, which the frame makes only while a soft system draws. Nothing downloads or runs until a sketch makes its first system.
 
@@ -96,3 +96,14 @@ Option A for the motion, the soft particles' depth copy for soft particles, and 
 The particle record layout adds data to the shared GPU modules of the page, sketch worker and render worker. Built-in template tables read this layout when a GPU path starts. Particle shader text and the particle add-on still load on first use.
 
 On 13 October 2026, the page module grew from 3,406 to 3,476 bytes after Brotli compression, a 70-byte increase. The branch already records the same cause for the two worker modules. Deferring all built-in template definitions would require a separate engine change.
+
+## Addendum, 15 October 2026: the time base moves over many frames
+
+The code review of 15 October found two costs in long runs, and one fault in a destroyed buffer.
+
+- **The rebase.** Birth times are 32-bit floats, so every 1,024 seconds a system moves the time that its buffer's time counts from. The first version read and rewrote every record up to the capacity in one frame, and marked them all for upload. A rain system of 1,000,000 particles then spent about 1,000,000 reads and writes and a 32 MB upload in one frame, every 17 minutes.
+- **Rewriting only the live records does not work.** A record that the move skips keeps its old birth time, so its age falls by the shift. A particle that died less than one lifetime before the move then comes back to life. A system at its default capacity also has about 90% of its records live, so the saving would be small.
+- **The fix.** The two spare frame values now carry the rebase: the first record whose birth time still counts from the old base, and the shift in seconds. The particle vertex shader takes the shift off the birth times of the records from that one up (`@builtin(instance_index)`, the record's index, since a system draws from its first record). The emitter rewrites 16,384 records per frame, and writes a new birth in a record that the rewrite has not reached with the old base's time. A million records move in 62 frames, about 512 KB of upload each. The unit test `long runs` in `packages/particles/src/system.test.ts` checks every particle's age, as the GPU works it out, in every frame of a move.
+- **The event table.** A system with sub-emitters reserved its table of pending events, 80 bytes per event, for one event per sub-emitter for each record at creation: 80 MB for a capacity of 1,000,000. The table now starts at 64 events and doubles when it fills, up to the same limit. It grows while the system warms up, so `update` allocates only then.
+- **A destroyed buffer kept its views.** `ParticleBuffer.destroy` marked the views stale without dropping them, and `dropViews` then skipped the buffer, so a sketch that held a destroyed buffer kept a view of the engine's memory past a growth, against hard rule 20. `destroy` now drops them, and `packages/engine/src/scene/particles.test.ts` checks both the growth and the destroy.
+- **One cell offset per system.** The render worker computed the offset of every cell in use from each view's camera, for each system in each view, and read one. It now computes the system's own cell's offset (`CellTable::offset`).

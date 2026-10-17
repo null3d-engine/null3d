@@ -222,7 +222,11 @@ export interface LightProbeGridOptions {
 	spacing: ArrayLike<number>;
 	/** The probes along each axis: three whole numbers. */
 	counts: ArrayLike<number>;
-	/** The factor of the grid's light on every surface. The default is 1. */
+	/**
+	 * The factor of the grid's light on every surface. The default is 1. A factor of 0 lights
+	 * nothing from the grid, and the grid still takes the share of the environment's light that
+	 * `environmentWeight` names. A fade to 0 then gives no environment light back.
+	 */
 	intensity?: number;
 	/**
 	 * The share of the environment's diffuse light that the grid takes over, 0 to 1. The default
@@ -360,10 +364,10 @@ export interface BakeProbesOptions {
 	 */
 	environmentOptions?: EnvironmentOptions;
 	/**
-	 * The colour a ray takes when it hits a surface, for one coloured bounce: the surface sends
+	 * The color a ray takes when it hits a surface, for one colored bounce: the surface sends
 	 * back that share of the environment's light at its normal, as a matte surface does. The
 	 * bounce sees the whole sky, so the light of a hit has no occlusion of its own, and the bake
-	 * counts no lamps. A ray whose hit has no colour gives none, so a scene without this bakes sky
+	 * counts no lamps. A ray whose hit has no color gives none, so a scene without this bakes sky
 	 * light and its occlusion alone. `normal` is reused from hit to hit, so copy what you keep,
 	 * and return the same array each time where you can: the bake calls this for every hit.
 	 */

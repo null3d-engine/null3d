@@ -2,6 +2,7 @@
 // images, so they never depend on browser screenshots or on encoding through a page canvas.
 
 import { messageOf } from '../errors/message';
+import type { MemoryViews } from '../shared/memory-views';
 
 const BYTES_PER_PIXEL = 4;
 /** WebGPU copies texture rows into buffers at offsets aligned to this many bytes. */
@@ -166,4 +167,32 @@ export function readbackWebGL2(
 		out.set(bottomUp.subarray(y * rowBytes, (y + 1) * rowBytes), (height - 1 - y) * rowBytes);
 	}
 	return out;
+}
+
+/**
+ * Where the bytes of a draw list's `ReadBuffer` commands land: engine memory, through the frame
+ * replay's own views, and the control slot that each read raises once its bytes are in place, so
+ * the sketch thread knows that it may read them. Both backends deliver through it.
+ */
+export class ReadSink {
+	constructor(
+		private readonly views: MemoryViews,
+		private readonly slots: Int32Array,
+	) {}
+
+	/** The whole engine memory as bytes, for a backend that reads a buffer straight into it. */
+	get bytes(): Uint8Array {
+		return this.views.heap(Uint8Array);
+	}
+
+	/** Copies a read's bytes into engine memory at `destination`, then marks the read done. */
+	deliver(bytes: Uint8Array, destination: number, slot: number): void {
+		this.bytes.set(bytes, destination);
+		this.done(slot);
+	}
+
+	/** Marks a read done, once its bytes are in engine memory: its control slot rises by one. */
+	done(slot: number): void {
+		Atomics.add(this.slots, slot, 1);
+	}
 }

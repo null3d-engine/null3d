@@ -4,6 +4,7 @@
 // the camera at the far plane (null3d::backdrop), and writes linear color as the mesh shaders
 // write theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit path.
 #import null3d::globals::Frame
+#import null3d::noise::{lattice, to_unit}
 #import null3d::tonemap
 #import null3d::backdrop::{box_corner}
 #import null3d::atmosphere::{cloud_noise}
@@ -50,12 +51,11 @@ fn light_at_camera(toward: vec3f, light: f32) -> vec3f {
     return through_air(toward.y) * (light * smoothstep(-0.01, 0.01, toward.y));
 }
 
-/// A hash of a cell to three numbers from 0 to 1, without sines, so every GPU makes the same
-/// stars.
-fn hash3(p: vec3f) -> vec3f {
-    var q = fract(p * vec3f(0.1031, 0.1030, 0.0973));
-    q += dot(q, q.yxz + 33.33);
-    return fract((q.xxy + q.yxx) * q.zyx);
+/// The three numbers from 0 to 1 of a cell of the sky, from an integer hash of its coordinates,
+/// so every GPU places the same stars (hard rule 29).
+fn cell_hash(cell: vec3i) -> vec3f {
+    let h = lattice(cell);
+    return vec3f(to_unit(h.x), to_unit(h.y), to_unit(h.z));
 }
 
 /// The stars' light in the unit direction `d`, for pixels `pixel` radians wide. Each cell of a
@@ -77,7 +77,7 @@ fn stars(d: vec3f, pixel: f32, time: f32) -> vec3f {
     }
     const CELLS = 160.0;
     let cell = floor((uv * 0.5 + 0.5) * CELLS);
-    let h = hash3(vec3f(cell, face * 17.0 + 3.0));
+    let h = cell_hash(vec3i(vec2i(cell), i32(face)));
     if h.x > 0.14 {
         return vec3f(0.0);
     }

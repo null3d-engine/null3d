@@ -7,6 +7,12 @@ import { defineSketch } from '@null3d/engine';
 
 /** The render scale, from the sketch module's ?scale= switch, or none for the whole canvas. */
 const SCALE = new URL(import.meta.url).searchParams.get('scale');
+/**
+ * True adds a lit floor that runs past the frame's edges, for the FXAA test. At a render scale
+ * below 1, the edge blend must stay inside the drawn corner: a tap past it reads the clear color,
+ * which leaves a fringe along the image's last rows and columns. The floor puts lit color there.
+ */
+const EDGE_FLOOR = new URL(import.meta.url).searchParams.has('edge');
 
 export default defineSketch(({ scene, materials, geometry, page, quality, time }) => {
 	const scale = SCALE === null ? 1 : Number(SCALE);
@@ -37,12 +43,30 @@ export default defineSketch(({ scene, materials, geometry, page, quality, time }
 	scene.createMesh({ mesh: ball, material: red, parent: group, position: [0, 1.5, 0] });
 	scene.createMesh({ mesh: box, material: blue, position: [3, 0, 0], name: 'unlit' });
 
-	const floor = scene.createInstances(box, 25, { material: green });
-	for (let i = 0; i < 25; i++) {
-		floor.positions.set([((i % 5) - 2) * 1.2, -1.5, (Math.floor(i / 5) - 2) * 1.2], i * 3);
+	// The edge test lays a wide grid of tiles over a dark slab, so the frame's last rows and
+	// columns cross many lit edges. The other tests keep the small floor.
+	const tiles = EDGE_FLOOR ? 81 : 5;
+	const count = tiles * tiles;
+	const step = EDGE_FLOOR ? 1.5 : 1.2;
+	const floor = scene.createInstances(box, count, { material: green });
+	for (let i = 0; i < count; i++) {
+		floor.positions.set(
+			[
+				((i % tiles) - (tiles - 1) / 2) * step,
+				-1.5,
+				(Math.floor(i / tiles) - (tiles - 1) / 2) * step,
+			],
+			i * 3,
+		);
 		floor.scales.set([1, 0.2, 1], i * 3);
 	}
 	floor.markDirty();
+
+	if (EDGE_FLOOR) {
+		const slab = geometry.box({ width: 260, height: 0.2, depth: 260 });
+		const dark = materials.standard({ color: '#20262e' });
+		scene.createMesh({ mesh: slab, material: dark, position: [0, -1.7, 0], name: 'edge-floor' });
+	}
 
 	page.onMessage((name) => {
 		if (name === 'frame') page.post('frame', time.frame);

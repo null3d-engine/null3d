@@ -512,6 +512,59 @@ fn numbered(name: &str, number: usize) -> Cow<'static, str> {
     Cow::Owned(text)
 }
 
+/// A value that a frame finds in the compiled plan, once for each compile of the graph: the
+/// compile it was found in, and the value. A frame whose graph compiled since finds it again, and
+/// so does one after [`CompileCache::clear`]. The count lives here for every such value, so no
+/// finder carries a comparison of its own.
+#[derive(Clone, Copy, Debug)]
+struct CompileCache<T> {
+    found: Option<(u32, T)>,
+}
+
+impl<T> Default for CompileCache<T> {
+    fn default() -> Self {
+        Self { found: None }
+    }
+}
+
+impl<T: Copy> CompileCache<T> {
+    /// The value, from `find` when this compile of the graph has not found it yet.
+    fn get_or(&mut self, compiles: u32, find: impl FnOnce() -> T) -> T {
+        if let Some((at, value)) = self.found
+            && at == compiles
+        {
+            return value;
+        }
+        let value = find();
+        self.found = Some((compiles, value));
+        value
+    }
+
+    /// Forgets the value, as when the textures that it names are gone.
+    fn clear(&mut self) {
+        self.found = None;
+    }
+
+    /// The value that the last compile found, or `None` before one did.
+    fn last(&self) -> Option<T> {
+        self.found.map(|(_, value)| value)
+    }
+}
+
+/// A group of passes that draws once its pipelines are built. The passes that a group allows
+/// differ between a frame that has them built and one that has not, so a change in that state
+/// declares the frame's passes again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BuiltGroup {
+    Bloom,
+    Dof,
+    Fog,
+    Screen,
+    Transmission,
+    Weighted,
+    ParticleDepth,
+}
+
 /// The render graph of a frame builder's passes, the textures its draw lists made for the compiled
 /// plan, and the final pass.
 #[derive(Debug)]
@@ -599,8 +652,8 @@ pub(crate) struct FrameGraph {
     /// The size of bloom's base and the governor's halvings of it.
     bloom_chain: ChainFrame,
     /// The texture that each of bloom's steps reads, and the base level's, found once for each
-    /// compile of the graph, which the count says.
-    bloom_textures: Option<(u32, [u32; STEPS], u32)>,
+    /// compile of the graph.
+    bloom_textures: CompileCache<([u32; STEPS], u32)>,
     /// The custom effects' passes and their GPU objects, on the HDR path.
     effect_pass: Option<EffectPass>,
     /// The GPU objects that the effects take.
@@ -624,8 +677,8 @@ pub(crate) struct FrameGraph {
     /// The place of the first effect that folds into the final pass, while effects fold.
     folded: Option<usize>,
     /// The color that each unit reads and the scene depth's texture, or 0 while no effect reads
-    /// depth, found once for each compile of the graph, which the count says.
-    effect_textures: Option<(u32, [u32; MAX_EFFECTS], u32)>,
+    /// depth, found once for each compile of the graph.
+    effect_textures: CompileCache<([u32; MAX_EFFECTS], u32)>,
     /// The sketch time and the seconds since the frame before, which effects read.
     effect_clock: [f32; 2],
     /// The inverse of the camera's projection, which effects that read depth use, or `None`
@@ -641,9 +694,8 @@ pub(crate) struct FrameGraph {
     dof_built: bool,
     /// True when the declared passes hold depth of field's steps.
     dof_declared: bool,
-    /// The textures that depth of field's steps read, found once for each compile of the graph,
-    /// which the count says.
-    dof_textures: Option<(u32, DofSources)>,
+    /// The textures that depth of field's steps read, found once for each compile of the graph.
+    dof_textures: CompileCache<DofSources>,
     /// The automatic exposure's meter and its GPU objects, once the sketch first turns it on.
     exposure_pass: Option<ExposurePass>,
     /// The GPU objects that the meter takes.
@@ -664,9 +716,8 @@ pub(crate) struct FrameGraph {
     /// The slices of the grid's textures that the declared passes hold, or 0 when they hold no
     /// volumetric fog.
     fog_declared: u32,
-    /// The textures that the volumetric fog's steps read, found once for each compile of the graph,
-    /// which the count says.
-    fog_textures: Option<(u32, FogVolumeSources)>,
+    /// The textures that the volumetric fog's steps read, found once for each compile of the graph.
+    fog_textures: CompileCache<FogVolumeSources>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -707,9 +758,8 @@ pub(crate) struct FrameGraph {
     /// passes and before the camera's first render pass, or `None` in a frame that captures no
     /// probe (see [`crate::probes`]).
     probe_filter: Option<[u32; 10]>,
-    /// The textures that the copy reads and draws into, found once for each compile of the graph,
-    /// which the count says.
-    transmission_target: Option<(u32, u32, u32)>,
+    /// The textures that the copy reads and draws into, found once for each compile of the graph.
+    transmission_target: CompileCache<(u32, u32)>,
     /// The composite and the depth copy of the camera's weighted layer.
     weighted: WeightedLayer,
     /// True when the device draws into the weighted layer's targets of 16-bit floats.
@@ -722,8 +772,8 @@ pub(crate) struct FrameGraph {
     /// True when the declared passes hold the weighted layer.
     weighted_declared: bool,
     /// The textures that the layer's composite and depth copy read, found once for each compile
-    /// of the graph, which the count says: the two sums, and the scene depth or 0.
-    weighted_textures: Option<(u32, [u32; 3])>,
+    /// of the graph: the two sums, and the scene depth or 0.
+    weighted_textures: CompileCache<[u32; 3]>,
     /// True while some object is a decal.
     decals_wanted: bool,
     /// True while objects on the layers that decals skip draw again after them.
@@ -738,9 +788,8 @@ pub(crate) struct FrameGraph {
     particle_depth_built: bool,
     /// True when the declared passes hold the copy.
     particle_depth_declared: bool,
-    /// The textures that the copy reads and draws into, found once for each compile of the graph,
-    /// which the count says.
-    particle_depth_target: Option<(u32, u32, u32)>,
+    /// The textures that the copy reads and draws into, found once for each compile of the graph.
+    particle_depth_target: CompileCache<(u32, u32)>,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
@@ -834,7 +883,7 @@ impl FrameGraph {
             bloom_built: false,
             ao_built: false,
             bloom_chain: ChainFrame::default(),
-            bloom_textures: None,
+            bloom_textures: CompileCache::default(),
             effect_pass: scene_color
                 .is_hdr()
                 .then(|| EffectPass::new(ids.effects, gpu_culling && antialias.samples() > 1)),
@@ -853,7 +902,7 @@ impl FrameGraph {
             effect_units: [Unit::default(); MAX_EFFECTS],
             unit_count: 0,
             folded: None,
-            effect_textures: None,
+            effect_textures: CompileCache::default(),
             effect_clock: [0.0; 2],
             inverse_projection: None,
             dof_pass: None,
@@ -861,7 +910,7 @@ impl FrameGraph {
             dof: None,
             dof_built: false,
             dof_declared: false,
-            dof_textures: None,
+            dof_textures: CompileCache::default(),
             exposure_pass: None,
             exposure_ids: ids.exposure,
             exposure: None,
@@ -871,7 +920,7 @@ impl FrameGraph {
             fog: None,
             fog_built: false,
             fog_declared: 0,
-            fog_textures: None,
+            fog_textures: CompileCache::default(),
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -887,13 +936,13 @@ impl FrameGraph {
             transmission_built: false,
             transmission_declared: false,
             probe_filter: None,
-            transmission_target: None,
+            transmission_target: CompileCache::default(),
             weighted: WeightedLayer::new(ids.weighted),
             weighted_targets: true,
             weighted_wanted: false,
             weighted_built: false,
             weighted_declared: false,
-            weighted_textures: None,
+            weighted_textures: CompileCache::default(),
             decals_wanted: false,
             redraws_wanted: false,
             decals_declared: false,
@@ -901,7 +950,7 @@ impl FrameGraph {
             particle_depth_wanted: false,
             particle_depth_built: false,
             particle_depth_declared: false,
-            particle_depth_target: None,
+            particle_depth_target: CompileCache::default(),
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -953,7 +1002,7 @@ impl FrameGraph {
         self.effect_views = [0; MAX_EFFECTS];
         self.unit_count = 0;
         self.folded = None;
-        self.effect_textures = None;
+        self.effect_textures.clear();
         // The depth step reads the depth's samples, which the new mode may change, as depth of
         // field's steps do.
         self.ao_pass = None;
@@ -1592,32 +1641,37 @@ impl FrameGraph {
     /// pipeline `built` says is built as one. When the plan changes, the passes are declared again.
     fn plan_effects(&mut self, built: impl Fn(usize) -> bool, fold: Option<usize>) {
         let mut units = [Unit::default(); MAX_EFFECTS];
-        // A joined group writes one target for the whole group. The two-step pass reads that target,
-        // and its own rows differ from a single effect's on WebGL2, so while the render scale can
-        // drop each effect runs alone. Otherwise the sketch's groups stay.
-        let joins = if self.two_step_declared {
-            EffectJoins::default()
-        } else {
-            self.effect_joins
-        };
+        // The sketch's joins run at every render scale: a joined group draws one pass, and the two
+        // steps read its target as the one final pass reads it. Folding is another matter: an
+        // effect may fold only while the frame draws at the whole canvas (`may_fold`), and the
+        // declarations hold the two-step pass for the whole time the render scale can drop, so a
+        // fold would declare the passes again at each crossing of the whole canvas's scale. A
+        // crossing allocates nothing, so a sketch whose scale can drop does not fold.
         let fold = fold.filter(|_| !self.two_step_declared);
-        let count = effects::plan_units(self.effect_count, &joins, built, fold, &mut units);
+        let count = effects::plan_units(
+            self.effect_count,
+            &self.effect_joins,
+            built,
+            fold,
+            &mut units,
+        );
         if count != self.unit_count || units != self.effect_units || fold != self.folded {
             self.effect_units = units;
             self.unit_count = count;
             self.folded = fold;
-            self.effect_textures = None;
+            self.effect_textures.clear();
             self.declared = false;
         }
     }
 
     /// True when the effects from `first` on can fold into the final pass now: no bloom or FXAA
-    /// reads the image between them, and the final pass reads one texel for each pixel.
+    /// reads the image between them, the frame draws at the whole canvas, so the final pass reads
+    /// high dynamic range color, and the render scale cannot drop, so the two-step pass is not
+    /// declared and the plan does not change when the frame's scale does.
     fn may_fold(&self) -> bool {
         !self.bloom_wanted()
             && self.dof.is_none()
             && !self.final_pass.fxaa()
-            // The two-step pass reads display color in its second step, so the effects do not fold.
             && !self.two_step_declared
             && Size::Full.viewport(self.canvas, self.scale) == self.canvas
     }
@@ -1637,7 +1691,7 @@ impl FrameGraph {
             .scene_color
             .is_hdr()
             .then(|| BloomPass::new(self.bloom_ids, self.bloom_chain.size, rows_from_bottom));
-        self.bloom_textures = None;
+        self.bloom_textures.clear();
     }
 
     /// True while bloom draws: the sketch turned it on, the scene color holds HDR color, and
@@ -1818,7 +1872,7 @@ impl FrameGraph {
         if !self.particle_depth_declared {
             return None;
         }
-        self.particle_depth_target.map(|(_, _, target)| target)
+        self.particle_depth_target.last().map(|(_, target)| target)
     }
 
     /// Switches each view's passes on or off with the view, and its transparent pass only while
@@ -2666,6 +2720,59 @@ impl FrameGraph {
         Ok(())
     }
 
+    /// True when `group`'s pipelines are built, as the last frame found them.
+    fn built(&self, group: BuiltGroup) -> bool {
+        match group {
+            BuiltGroup::Bloom => self.bloom_built,
+            BuiltGroup::Dof => self.dof_built,
+            BuiltGroup::Fog => self.fog_built,
+            BuiltGroup::Screen => self.ao_built,
+            BuiltGroup::Transmission => self.transmission_built,
+            BuiltGroup::Weighted => self.weighted_built,
+            BuiltGroup::ParticleDepth => self.particle_depth_built,
+        }
+    }
+
+    /// True when `group` draws with the built state as it stands.
+    fn built_draws(&self, group: BuiltGroup) -> bool {
+        match group {
+            BuiltGroup::Bloom => self.bloom_draws(),
+            BuiltGroup::Dof => self.dof_draws(),
+            BuiltGroup::Fog => self.fog_draws(),
+            BuiltGroup::Screen => self.screen_draws(),
+            BuiltGroup::Transmission => self.transmission_draws(),
+            BuiltGroup::Weighted => self.weighted_draws(),
+            BuiltGroup::ParticleDepth => self.particle_depth_draws(),
+        }
+    }
+
+    /// Marks the passes that the frame declared as gone, so the next frame declares them again.
+    fn declare_again(&mut self) {
+        self.declared = false;
+    }
+
+    /// Records that the pipelines of `group` are `built` now, and calls `again` when the passes
+    /// that its built pipelines allow differ from the last frame's, so the frame declares its
+    /// passes again.
+    fn note_built(&mut self, group: BuiltGroup, built: bool, again: fn(&mut Self)) {
+        if self.built(group) == built {
+            return;
+        }
+        let drew = self.built_draws(group);
+        match group {
+            BuiltGroup::Bloom => self.bloom_built = built,
+            BuiltGroup::Dof => self.dof_built = built,
+            BuiltGroup::Fog => self.fog_built = built,
+            BuiltGroup::Screen => self.ao_built = built,
+            BuiltGroup::Transmission => self.transmission_built = built,
+            BuiltGroup::Weighted => self.weighted_built = built,
+            BuiltGroup::ParticleDepth => self.particle_depth_built = built,
+        }
+        if self.built_draws(group) != drew {
+            again(self);
+        }
+    }
+
     /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's, and those of
     /// bloom and ambient occlusion while the sketch turns them on. A builder asks before it records
     /// the pipelines that its frame creates. Frames that resolve into the canvas ask too, so the
@@ -2712,13 +2819,7 @@ impl FrameGraph {
             steps.request_pipelines(pipelines);
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
-        if dof_built != self.dof_built {
-            let was = self.dof_draws();
-            self.dof_built = dof_built;
-            if self.dof_draws() != was {
-                self.declared = false;
-            }
-        }
+        self.note_built(BuiltGroup::Dof, dof_built, FrameGraph::declare_again);
         self.exposure_built = match self.exposure {
             Some(exposure) => {
                 self.exposure_meter()
@@ -2731,32 +2832,14 @@ impl FrameGraph {
             steps.request_pipelines(pipelines);
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
-        if fog_built != self.fog_built {
-            let was = self.fog_draws();
-            self.fog_built = fog_built;
-            if self.fog_draws() != was {
-                self.declared = false;
-            }
-        }
+        self.note_built(BuiltGroup::Fog, fog_built, FrameGraph::declare_again);
         let ao_built = self.screen_steps() && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
-        if ao_built != self.ao_built {
-            let was = self.screen_draws();
-            self.ao_built = ao_built;
-            if self.screen_draws() != was {
-                self.declared = false;
-            }
-        }
-        if built != self.bloom_built {
-            let was = self.bloom_draws();
-            self.bloom_built = built;
-            if self.bloom_draws() != was {
-                self.enable_outputs();
-            }
-        }
+        self.note_built(BuiltGroup::Screen, ao_built, FrameGraph::declare_again);
+        self.note_built(BuiltGroup::Bloom, built, FrameGraph::enable_outputs);
         let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
         let transmission_built = self.transmission_wanted && {
             let id = self
@@ -2764,13 +2847,11 @@ impl FrameGraph {
                 .request_pipeline(pipelines, format, permutation);
             pipelines.built(id, pipelines_built)
         };
-        if transmission_built != self.transmission_built {
-            let was = self.transmission_draws();
-            self.transmission_built = transmission_built;
-            if self.transmission_draws() != was {
-                self.declared = false;
-            }
-        }
+        self.note_built(
+            BuiltGroup::Transmission,
+            transmission_built,
+            FrameGraph::declare_again,
+        );
         let weighted_built = self.weighted_wanted && {
             let composite =
                 self.weighted
@@ -2781,26 +2862,22 @@ impl FrameGraph {
             pipelines.built(composite, pipelines_built)
                 && depth.is_none_or(|id| pipelines.built(id, pipelines_built))
         };
-        if weighted_built != self.weighted_built {
-            let was = self.weighted_draws();
-            self.weighted_built = weighted_built;
-            if self.weighted_draws() != was {
-                self.declared = false;
-            }
-        }
+        self.note_built(
+            BuiltGroup::Weighted,
+            weighted_built,
+            FrameGraph::declare_again,
+        );
         // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
         let samples = if self.gpu_culling { self.samples } else { 1 };
         let particle_depth_built = self.particle_depth_wanted && {
             let id = self.particle_depth.request_pipeline(pipelines, samples);
             pipelines.built(id, pipelines_built)
         };
-        if particle_depth_built != self.particle_depth_built {
-            let was = self.particle_depth_draws();
-            self.particle_depth_built = particle_depth_built;
-            if self.particle_depth_draws() != was {
-                self.declared = false;
-            }
-        }
+        self.note_built(
+            BuiltGroup::ParticleDepth,
+            particle_depth_built,
+            FrameGraph::declare_again,
+        );
         let views = self.view_colors.len() > 1;
         self.view_copy_built = match self.view_copies.as_mut() {
             Some(copies) if views => {
@@ -3013,30 +3090,27 @@ impl FrameGraph {
     /// The texture that each of bloom's declared steps reads, and the base level's, found by name
     /// once for each compile of the graph.
     fn bloom_textures(&mut self) -> ([u32; STEPS], u32) {
-        let compiles = self.graph.compiles();
-        if let Some((at, sources, base)) = self.bloom_textures
-            && at == compiles
-        {
-            return (sources, base);
-        }
-        let levels = self.bloom_pass.as_ref().map_or(1, BloomPass::levels);
-        let id = |name: &str| {
-            self.sampled_id(name)
-                .expect("each step of bloom reads a planned texture")
-        };
-        let sources = std::array::from_fn(|step| {
-            if step >= 2 * levels - 1 {
-                0
-            } else if step == 0 {
-                id(self.color_output())
-            } else if step < levels {
-                id(BLOOM_LEVELS[step - 1])
-            } else {
-                id(BLOOM_LEVELS[2 * levels - 1 - step])
-            }
+        let mut found = self.bloom_textures;
+        let (sources, base) = found.get_or(self.graph.compiles(), || {
+            let levels = self.bloom_pass.as_ref().map_or(1, BloomPass::levels);
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("each step of bloom reads a planned texture")
+            };
+            let sources = std::array::from_fn(|step| {
+                if step >= 2 * levels - 1 {
+                    0
+                } else if step == 0 {
+                    id(self.color_output())
+                } else if step < levels {
+                    id(BLOOM_LEVELS[step - 1])
+                } else {
+                    id(BLOOM_LEVELS[2 * levels - 1 - step])
+                }
+            });
+            (sources, id(BLOOM_LEVELS[0]))
         });
-        let base = id(BLOOM_LEVELS[0]);
-        self.bloom_textures = Some((compiles, sources, base));
+        self.bloom_textures = found;
         (sources, base)
     }
 
@@ -3146,31 +3220,29 @@ impl FrameGraph {
     /// The color that each unit reads, and the scene depth's texture, or 0 while no effect reads
     /// depth, found by name once for each compile of the graph.
     fn effect_textures(&mut self) -> ([u32; MAX_EFFECTS], u32) {
-        let compiles = self.graph.compiles();
-        if let Some((at, colors, depth)) = self.effect_textures
-            && at == compiles
-        {
-            return (colors, depth);
-        }
-        let depth = if self.effect_depths != 0 {
-            self.sampled_id(SCENE_DEPTH)
-                .expect("an effect that reads depth reads the scene depth")
-        } else {
-            0
-        };
-        let mut colors = [0; MAX_EFFECTS];
-        for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
-            let input = if index == 0 {
-                self.scene_output()
+        let mut found = self.effect_textures;
+        let textures = found.get_or(self.graph.compiles(), || {
+            let depth = if self.effect_depths != 0 {
+                self.sampled_id(SCENE_DEPTH)
+                    .expect("an effect that reads depth reads the scene depth")
             } else {
-                EFFECT_TARGETS[index - 1]
+                0
             };
-            *color = self
-                .sampled_id(input)
-                .expect("each effect reads a planned texture");
-        }
-        self.effect_textures = Some((compiles, colors, depth));
-        (colors, depth)
+            let mut colors = [0; MAX_EFFECTS];
+            for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
+                let input = if index == 0 {
+                    self.scene_output()
+                } else {
+                    EFFECT_TARGETS[index - 1]
+                };
+                *color = self
+                    .sampled_id(input)
+                    .expect("each effect reads a planned texture");
+            }
+            (colors, depth)
+        });
+        self.effect_textures = found;
+        textures
     }
 
     /// Records depth of field's objects and blocks while its steps are declared, and binds each step
@@ -3183,23 +3255,19 @@ impl FrameGraph {
         let Some(frame) = self.dof.filter(|_| self.dof_declared) else {
             return Ok(());
         };
-        let compiles = self.graph.compiles();
-        let sources = match self.dof_textures {
-            Some((at, sources)) if at == compiles => sources,
-            _ => {
-                let id = |name: &str| {
-                    self.sampled_id(name)
-                        .expect("each step of depth of field reads a planned texture")
-                };
-                let sources = DofSources {
-                    color: id(self.effects_output()),
-                    depth: id(SCENE_DEPTH),
-                    halves: std::array::from_fn(|k| id(DOF_TARGETS[k])),
-                };
-                self.dof_textures = Some((compiles, sources));
-                sources
+        let mut found = self.dof_textures;
+        let sources = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("each step of depth of field reads a planned texture")
+            };
+            DofSources {
+                color: id(self.effects_output()),
+                depth: id(SCENE_DEPTH),
+                halves: std::array::from_fn(|k| id(DOF_TARGETS[k])),
             }
-        };
+        });
+        self.dof_textures = found;
         let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
         self.dof_steps()
             .prepare(list, arena, frame_size, frame, sources, made)
@@ -3215,25 +3283,21 @@ impl FrameGraph {
         let Some(frame) = self.fog.filter(|_| self.fog_declared > 0) else {
             return Ok(());
         };
-        let compiles = self.graph.compiles();
-        let sources = match self.fog_textures {
-            Some((at, sources)) if at == compiles => sources,
-            _ => {
-                let id = |name: &str| {
-                    self.sampled_id(name)
-                        .expect("each step of the volumetric fog reads a planned texture")
-                };
-                let sources = FogVolumeSources {
-                    lit: FOG_LIGHT.map(id),
-                    blocks: id(FOG_BLOCKS),
-                    summed: id(FOG_SUMMED),
-                    color: id(SCENE_COLOR),
-                    depth: id(SCENE_DEPTH),
-                };
-                self.fog_textures = Some((compiles, sources));
-                sources
+        let mut found = self.fog_textures;
+        let sources = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("each step of the volumetric fog reads a planned texture")
+            };
+            FogVolumeSources {
+                lit: FOG_LIGHT.map(id),
+                blocks: id(FOG_BLOCKS),
+                summed: id(FOG_SUMMED),
+                color: id(SCENE_COLOR),
+                depth: id(SCENE_DEPTH),
             }
-        };
+        });
+        self.fog_textures = found;
         let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
         self.fog_steps()
             .prepare(list, arena, frame_size, &frame, sources, made)
@@ -3245,19 +3309,15 @@ impl FrameGraph {
         if !self.transmission_declared {
             return Ok(());
         }
-        let compiles = self.graph.compiles();
-        let source = match self.transmission_target {
-            Some((at, source, _)) if at == compiles => source,
-            _ => {
-                let id = |name: &str| {
-                    self.sampled_id(name)
-                        .expect("the transmission copy reads and writes planned textures")
-                };
-                let (source, target) = (id(SCENE_COLOR), id(TRANSMISSION_COLOR));
-                self.transmission_target = Some((compiles, source, target));
-                source
-            }
-        };
+        let mut found = self.transmission_target;
+        let (source, _) = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("the transmission copy reads and writes planned textures")
+            };
+            (id(SCENE_COLOR), id(TRANSMISSION_COLOR))
+        });
+        self.transmission_target = found;
         self.transmission.prepare(list, source, self.textures_made)
     }
 
@@ -3268,24 +3328,20 @@ impl FrameGraph {
         if !self.weighted_declared {
             return Ok(());
         }
-        let compiles = self.graph.compiles();
-        let [sum, cover, depth] = match self.weighted_textures {
-            Some((at, textures)) if at == compiles => textures,
-            _ => {
-                let id = |name: &str| {
-                    self.sampled_id(name)
-                        .expect("the weighted layer reads planned textures")
-                };
-                let depth = if self.weighted_copies_depth() {
-                    id(SCENE_DEPTH)
-                } else {
-                    0
-                };
-                let textures = [id(WEIGHTED_SUM), id(WEIGHTED_COVER), depth];
-                self.weighted_textures = Some((compiles, textures));
-                textures
-            }
-        };
+        let mut found = self.weighted_textures;
+        let [sum, cover, depth] = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("the weighted layer reads planned textures")
+            };
+            let depth = if self.weighted_copies_depth() {
+                id(SCENE_DEPTH)
+            } else {
+                0
+            };
+            [id(WEIGHTED_SUM), id(WEIGHTED_COVER), depth]
+        });
+        self.weighted_textures = found;
         let made = self.textures_made;
         self.weighted.prepare_composite(list, sum, cover, made)?;
         if depth != 0 {
@@ -3302,19 +3358,15 @@ impl FrameGraph {
         if !self.particle_depth_declared {
             return Ok(());
         }
-        let compiles = self.graph.compiles();
-        let source = match self.particle_depth_target {
-            Some((at, source, _)) if at == compiles => source,
-            _ => {
-                let id = |name: &str| {
-                    self.sampled_id(name)
-                        .expect("the depth copy reads and writes planned textures")
-                };
-                let (source, target) = (id(SCENE_DEPTH), id(PARTICLE_DEPTH));
-                self.particle_depth_target = Some((compiles, source, target));
-                source
-            }
-        };
+        let mut found = self.particle_depth_target;
+        let (source, _) = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("the depth copy reads and writes planned textures")
+            };
+            (id(SCENE_DEPTH), id(PARTICLE_DEPTH))
+        });
+        self.particle_depth_target = found;
         self.particle_depth
             .prepare(list, source, self.textures_made)
     }
@@ -3329,7 +3381,7 @@ impl FrameGraph {
         let copied = passes
             .iter()
             .any(|&pass| self.roles[pass.index()] == Role::TransmissionCopy);
-        if let (true, Some((_, _, target))) = (copied, self.transmission_target) {
+        if let (true, Some((_, target))) = (copied, self.transmission_target.last()) {
             list.push(Op::GenerateMipmaps, &[target, 0])?;
         }
         Ok(())
@@ -3999,7 +4051,7 @@ mod tests {
             self.sync_views(views, &names);
         }
     }
-    use null3d_gpu::drawlist::template::CUSTOM_FIRST as CUSTOM;
+    use null3d_gpu::drawlist::template::{self, CUSTOM_FIRST as CUSTOM};
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
@@ -4177,6 +4229,12 @@ mod tests {
         assert_eq!(view_name(31, "Opaque", "Opaque"), "Opaque31");
     }
 
+    /// The ids that the test graphs give their GPU objects. A builder chains each kind of object
+    /// in a run of its own, and this table keeps that order and spacing: the buffers, the samplers
+    /// and the compute pipelines take one number each from their own bands, and the bind groups
+    /// sit in bands that hold every id of a group that takes several, so no two objects of one
+    /// kind can share an id. The textures sit above the ids a graph takes for the plan's own
+    /// targets and their layer views.
     const IDS: GraphIds = GraphIds {
         first_texture: 1,
         final_pass: FinalIds {
@@ -4187,13 +4245,13 @@ mod tests {
             blank_outline: 901,
         },
         output_pass: FinalIds {
-            settings: 907,
-            group: 907,
-            blank_lut: 920,
-            lut_sampler: 921,
-            blank_outline: 922,
+            settings: 19,
+            group: 200,
+            blank_lut: 902,
+            lut_sampler: 17,
+            blank_outline: 903,
         },
-        present_group: 923,
+        present_group: 201,
         bloom: BloomIds {
             buffer: 10,
             sampler: 10,
@@ -4201,52 +4259,224 @@ mod tests {
         },
         ao: AoIds {
             buffer: 11,
-            first_group: 20,
+            first_group: 30,
         },
         effects: EffectIds {
             buffer: 12,
             sampler: 12,
-            first_group: 30,
-            blank_depth: 902,
+            first_group: 40,
+            blank_depth: 904,
         },
         fullscreen: FullscreenIds {
             buffer: 14,
             sampler: 14,
-            first_group: 400,
+            first_group: 150,
             blank_color: 905,
             blank_depth: 906,
         },
         dof: DofIds {
             buffer: 13,
             sampler: 13,
-            first_group: 50,
+            first_group: 100,
         },
         exposure: ExposureIds {
-            buffer: 14,
-            sampler: 14,
-            cells: 904,
-            texel: 905,
-            stored: 906,
-            first_group: 70,
+            buffer: 15,
+            sampler: 15,
+            cells: 907,
+            texel: 908,
+            stored: 909,
+            first_group: 130,
             compute: Some(crate::exposure::ComputeIds {
-                histogram: 15,
-                state: 16,
-                pipelines: [70, 71],
+                histogram: 16,
+                state: 17,
+                pipelines: [700, 701],
             }),
         },
         fog: FogVolumeIds {
-            buffer: 14,
-            sampler: 14,
-            first_group: 60,
+            buffer: 18,
+            sampler: 16,
+            first_group: 110,
         },
-        view_copy: Some(ViewCopyIds { first_group: 40 }),
+        view_copy: Some(ViewCopyIds { first_group: 60 }),
         transmission: TransmissionIds {
-            group: 60,
-            blank: 903,
+            group: 120,
+            blank: 910,
         },
-        weighted: WeightedIds { first_group: 70 },
-        particle_depth: 61,
+        weighted: WeightedIds { first_group: 140 },
+        particle_depth: 121,
     };
+
+    /// One run of ids of a test graph's table: what the first one names, its id, and how many ids
+    /// the group it belongs to takes from there.
+    type IdRun = (String, u32, u32);
+
+    /// Every id of a test graph's table, by the kind of GPU object each one names. Two objects of
+    /// one kind that share an id are one object to a backend, which then loses or destroys the
+    /// other, so a table whose ids collide tests a graph that no builder would make. Rust has no
+    /// reflection, so the walk lists each field of [`IDS`] by hand, and takes the number of ids a
+    /// group takes from the code that takes them.
+    fn ids_by_kind() -> Vec<(&'static str, Vec<IdRun>)> {
+        let (mut buffers, mut textures) = (Vec::new(), Vec::new());
+        let (mut samplers, mut groups, mut pipelines) = (Vec::new(), Vec::new(), Vec::new());
+        let mut final_pass = |what: &str, ids: FinalIds| {
+            buffers.push((format!("{what} settings"), ids.settings, 1));
+            textures.push((format!("{what} blank table"), ids.blank_lut, 1));
+            textures.push((format!("{what} blank outline"), ids.blank_outline, 1));
+            samplers.push((format!("{what} table sampler"), ids.lut_sampler, 1));
+            groups.push((format!("{what} group"), ids.group, 1));
+        };
+        final_pass("the final pass's", IDS.final_pass);
+        final_pass("the output pass's", IDS.output_pass);
+        groups.push(("the present group".to_string(), IDS.present_group, 1));
+        buffers.push(("bloom's block".to_string(), IDS.bloom.buffer, 1));
+        samplers.push(("bloom's sampler".to_string(), IDS.bloom.sampler, 1));
+        groups.push((
+            "bloom's groups".to_string(),
+            IDS.bloom.first_group,
+            bloom::STEPS as u32,
+        ));
+        buffers.push(("ambient occlusion's block".to_string(), IDS.ao.buffer, 1));
+        groups.push((
+            "ambient occlusion's groups".to_string(),
+            IDS.ao.first_group,
+            ao::STEPS as u32,
+        ));
+        buffers.push(("the effects' block".to_string(), IDS.effects.buffer, 1));
+        samplers.push(("the effects' sampler".to_string(), IDS.effects.sampler, 1));
+        textures.push((
+            "the effects' blank depth".to_string(),
+            IDS.effects.blank_depth,
+            1,
+        ));
+        groups.push((
+            "the effects' groups".to_string(),
+            IDS.effects.first_group,
+            EffectPass::GROUPS,
+        ));
+        buffers.push((
+            "full-screen passes' block".to_string(),
+            IDS.fullscreen.buffer,
+            1,
+        ));
+        samplers.push((
+            "full-screen passes' sampler".to_string(),
+            IDS.fullscreen.sampler,
+            1,
+        ));
+        textures.push((
+            "full-screen passes' blank color".to_string(),
+            IDS.fullscreen.blank_color,
+            1,
+        ));
+        textures.push((
+            "full-screen passes' blank depth".to_string(),
+            IDS.fullscreen.blank_depth,
+            1,
+        ));
+        groups.push((
+            "full-screen passes' groups".to_string(),
+            IDS.fullscreen.first_group,
+            crate::view::MAX_VIEWS as u32,
+        ));
+        buffers.push(("depth of field's block".to_string(), IDS.dof.buffer, 1));
+        samplers.push(("depth of field's sampler".to_string(), IDS.dof.sampler, 1));
+        groups.push((
+            "depth of field's groups".to_string(),
+            IDS.dof.first_group,
+            dof::STEPS as u32,
+        ));
+        buffers.push(("the meter's block".to_string(), IDS.exposure.buffer, 1));
+        samplers.push(("the meter's sampler".to_string(), IDS.exposure.sampler, 1));
+        textures.push(("the meter's cells".to_string(), IDS.exposure.cells, 1));
+        textures.push(("the exposure's texel".to_string(), IDS.exposure.texel, 1));
+        textures.push((
+            "the exposure's stored texel".to_string(),
+            IDS.exposure.stored,
+            1,
+        ));
+        groups.push((
+            "the meter's groups".to_string(),
+            IDS.exposure.first_group,
+            crate::exposure::GROUPS,
+        ));
+        let compute = IDS
+            .exposure
+            .compute
+            .expect("the test graphs take the histogram's objects");
+        buffers.push(("the histogram's bins".to_string(), compute.histogram, 1));
+        buffers.push(("the stored exposure".to_string(), compute.state, 1));
+        pipelines.extend(
+            compute
+                .pipelines
+                .map(|id| ("a compute pipeline".to_string(), id, 1)),
+        );
+        buffers.push(("the fog's block".to_string(), IDS.fog.buffer, 1));
+        samplers.push(("the fog's sampler".to_string(), IDS.fog.sampler, 1));
+        groups.push((
+            "the fog's groups".to_string(),
+            IDS.fog.first_group,
+            fog_volume::GROUPS,
+        ));
+        groups.push((
+            "the copies of views".to_string(),
+            IDS.view_copy
+                .expect("the test graphs copy views")
+                .first_group,
+            crate::view::MAX_VIEWS as u32,
+        ));
+        groups.push((
+            "the transmission copy".to_string(),
+            IDS.transmission.group,
+            1,
+        ));
+        textures.push((
+            "the transmission blank".to_string(),
+            IDS.transmission.blank,
+            1,
+        ));
+        groups.push((
+            "the weighted layer's groups".to_string(),
+            IDS.weighted.first_group,
+            WeightedIds::GROUPS,
+        ));
+        groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        // The graph takes its own textures from `first_texture` on: one for each texture of its
+        // plan and one view for each of their layers, each run at most [`LAYER_VIEWS`] long.
+        textures.push((
+            "the plan's textures and views".to_string(),
+            IDS.first_texture,
+            3 * LAYER_VIEWS,
+        ));
+        vec![
+            ("buffer", buffers),
+            ("texture", textures),
+            ("sampler", samplers),
+            ("bind group", groups),
+            ("compute pipeline", pipelines),
+        ]
+    }
+
+    #[test]
+    fn the_test_graphs_ids_are_distinct_within_each_kind() {
+        for (kind, runs) in ids_by_kind() {
+            let mut ids: Vec<(u32, String)> = Vec::new();
+            for (what, first, count) in runs {
+                for id in first..first + count {
+                    ids.push((id, what.clone()));
+                }
+            }
+            ids.sort_unstable();
+            for pair in ids.windows(2) {
+                let [(id, what), (next, next_what)] = pair else {
+                    unreachable!("a window holds two ids");
+                };
+                assert_ne!(
+                    id, next,
+                    "two {kind}s share the id {id}: {what} and {next_what}"
+                );
+            }
+        }
+    }
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling
     /// and transient attachments.
@@ -4333,6 +4563,26 @@ mod tests {
         frames.sync(&[View::default()]);
         assert_eq!(frames.graph().pass_count(), 7);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
+    }
+
+    #[test]
+    fn a_custom_tone_curve_reaches_the_first_step_while_the_scale_can_drop() {
+        // The curve reaches both steps of the final pass, so a frame below the whole canvas's scale
+        // draws its first step, and the second, with the curve's builds and not the pass's own.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_scaling(true);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.set_tone_curve(Some(CUSTOM));
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
+        // The curve's plain and bloom builds come first, and the first step draws with the bloom
+        // one. Neither step keeps a build of the pass's own curves.
+        assert_eq!(templates[..2], [CUSTOM, CUSTOM + 1]);
+        assert!(!templates.contains(&template::FINAL_BLOOM));
+        // The second step always scales plainly.
+        assert!(templates.contains(&template::FINAL));
     }
 
     #[test]
@@ -4936,7 +5186,10 @@ mod tests {
             .unwrap();
         let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
             .iter()
-            .filter(|group| group[0] >= 30 && group[0] < 30 + MAX_EFFECTS as u32)
+            .filter(|group| {
+                (IDS.effects.first_group..IDS.effects.first_group + EffectPass::GROUPS)
+                    .contains(&group[0])
+            })
             .map(|group| group[1])
             .collect();
         assert_eq!(
@@ -5045,7 +5298,9 @@ mod tests {
             .unwrap();
         let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
             .iter()
-            .filter(|group| (50..50 + dof::STEPS as u32).contains(&group[0]))
+            .filter(|group| {
+                (IDS.dof.first_group..IDS.dof.first_group + dof::STEPS as u32).contains(&group[0])
+            })
             .map(|group| group[1])
             .collect();
         assert_eq!(
@@ -5289,7 +5544,7 @@ mod tests {
             .unwrap();
         let bound: Vec<Vec<u32>> = operands(&list, Op::CreateBindGroup)
             .into_iter()
-            .filter(|group| group[0] == 30 + MAX_EFFECTS as u32 + 1)
+            .filter(|group| group[0] == IDS.effects.first_group + MAX_EFFECTS as u32 + 1)
             .collect();
         assert_eq!(bound.len(), 1, "the group binds once");
         assert_eq!(bound[0][3 + 4], effects::BUFFER_BYTES as u32);
@@ -5496,7 +5751,10 @@ mod tests {
                 .map(|entry| entry[2])
                 .collect();
             assert_eq!(outline_entries.len(), 1);
-            assert_ne!(outline_entries[0], 901, "the mask, not the blank texture");
+            assert_ne!(
+                outline_entries[0], IDS.final_pass.blank_outline,
+                "the mask, not the blank texture"
+            );
 
             // Nothing outlined: the mask pass and the mask are gone.
             frames.set_outline(Some(Outline::default()), false);

@@ -24,6 +24,13 @@ run('replay', async () => {
 	const adapter = await navigator.gpu?.requestAdapter();
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const device = await adapter.requestDevice();
+	// A bind group that mismatches one of its layout's bindings makes the browser drop the whole
+	// command buffer: the page draws nothing and has no error of its own to show. Publish what the
+	// device says, as the other replay pages do, so a list that drifted from the engine says so.
+	const errors: string[] = [];
+	device.addEventListener('uncapturederror', (event) =>
+		errors.push((event as GPUUncapturedErrorEvent).error.message),
+	);
 	const target = device.createTexture({
 		size: [SIZE, SIZE],
 		format: 'rgba8unorm',
@@ -105,8 +112,9 @@ run('replay', async () => {
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
 		// A one-entry table of the split-sum terms of specular light that the frame group binds:
-		// the scale and bias of a smooth surface seen head on.
-		dfg: memory.put(new Float32Array([1, 0, 0, 0])),
+		// the scale and bias of a smooth surface seen head on, as the 16-bit halves that the light
+		// tables hold. One is `0x3c00` as a half, and zero is zero.
+		dfg: memory.put(new Uint16Array([0x3c00, 0, 0, 0])),
 	};
 	const U = {
 		VERTEX: 0x20,
@@ -225,26 +233,28 @@ run('replay', async () => {
 		G.COMPARE_NONE,
 		1,
 	);
+	// The blank light probe grid, which the frame group binds while a scene has none: one black
+	// texel, as the engine makes it.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
-		3,
+		11,
 		1,
 		1,
 		1,
-		G.FORMAT_RGBA32_FLOAT,
-		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		G.FORMAT_RGBA16_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
 		1,
 		1,
-		G.VIEW_2D,
+		G.VIEW_3D,
 	);
-	memory.push(G.OP_WRITE_TEXTURE, 3, 0, 0, 0, 0, 1, 1, 1, blobs.dfg, 16);
-	// The materials' custom values, whose columns from 11 hold three.js's table of the split-sum
+	// The materials' custom values, whose columns from 13 hold three.js's table of the split-sum
 	// terms of specular light, as the engine keeps it. No material here has custom values, so the
-	// texture reads as zero except the table.
+	// texture reads as zero except the table. Ambient occlusion's texture and the row values of
+	// instance batches bind it too, and nothing here reads them.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
-		27,
+		29,
 		1,
 		1,
 		G.FORMAT_RGBA32_FLOAT,
@@ -254,7 +264,7 @@ run('replay', async () => {
 		G.VIEW_2D,
 	);
 	// The table's one entry: the scale and bias of a smooth surface seen head on.
-	memory.push(G.OP_WRITE_TEXTURE, 5, 0, 11, 0, 0, 1, 1, 1, blobs.dfg, 16);
+	memory.push(G.OP_WRITE_TEXTURE, 5, 0, 13, 0, 0, 1, 1, 1, blobs.dfg, 16);
 	// The offset from the camera to each grid cell, which the culling group binds: cell 0 in row 0,
 	// whose offset is zero, as a new texture reads.
 	memory.push(
@@ -368,14 +378,16 @@ run('replay', async () => {
 		...[7, G.RESOURCE_BUFFER, 14, 0, 0],
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
+		// The light probe grid, which only shaders built to read it do.
+		...[10, G.RESOURCE_TEXTURE, 11, 0, 0],
 		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
-		...[11, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[11, G.RESOURCE_TEXTURE, 5, 0, 0],
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
 		...[15, G.RESOURCE_TEXTURE, 8, 0, 0],
 		// The row values of instance batches, which only shaders built for them read.
-		...[16, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[16, G.RESOURCE_TEXTURE, 5, 0, 0],
 		...[17, G.RESOURCE_BUFFER, 18, 0, 0],
 		// The view's list of reflection probes, which the shader reads only while its count is
 		// above zero.
@@ -447,5 +459,11 @@ run('replay', async () => {
 	await counts.mapAsync(GPUMapMode.READ);
 	const drawn = new Uint32Array(counts.getMappedRange().slice(0));
 	const pixels = await readbackWebGPU(device, target);
-	return { visible: [drawn[1], drawn[6]], width: SIZE, height: SIZE, pixels: toBase64(pixels) };
+	return {
+		visible: [drawn[1], drawn[6]],
+		width: SIZE,
+		height: SIZE,
+		pixels: toBase64(pixels),
+		errors,
+	};
 });

@@ -26,12 +26,12 @@
 //! off, nothing of it is made or recorded.
 
 use null3d_gpu::drawlist::{
-    DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, filter, format,
+    DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, format,
     layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage, view,
 };
 
 use crate::bloom::{Area, CornerMap, bytes_of};
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey, built_by};
 
@@ -205,8 +205,8 @@ pub(crate) struct ExposureIds {
 /// The bind groups that the meter makes.
 pub(crate) const GROUPS: u32 = 3;
 
-/// What a frame's meter draws with: the settings, the meter, the seconds since the frame before,
-/// and whether to take the metered stops at once.
+/// What a frame's meter draws with: the settings, the meter, and the seconds since the frame
+/// before.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ExposureFrame {
     pub(crate) settings: AutoExposure,
@@ -403,21 +403,13 @@ impl ExposurePass {
             Op::CreateBuffer,
             &[ids.buffer, BLOCK_BYTES, usage::UNIFORM | usage::COPY_DST],
         )?;
-        list.push(
-            Op::CreateSampler,
-            &[
-                ids.sampler,
-                address::CLAMP_TO_EDGE,
-                address::CLAMP_TO_EDGE,
-                address::CLAMP_TO_EDGE,
-                filter::LINEAR,
-                filter::LINEAR,
-                filter::NEAREST,
-                0f32.to_bits(),
-                0f32.to_bits(),
-                compare::NONE,
-                1,
-            ],
+        clamp_sampler(
+            list,
+            ids.sampler,
+            address::CLAMP_TO_EDGE,
+            LINEAR_LEVEL,
+            0.0,
+            compare::NONE,
         )?;
         let drawn = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
         let storage = if ids.compute.is_some() {

@@ -393,7 +393,7 @@ flowchart LR
 
 The engine draws the first two tables when the air's settings change, and the sky view when the air, the sun, the moon or the camera's height changes. A still sky draws none of them. The background then reads one texel of the sky view per pixel, and adds the sun's disc, the moon, the stars and the clouds.
 
-The aerial perspective needs no table. Over a scene's distances, the air's density falls with height as height fog's does, and the sun's light along the way barely changes. So each surface's shader integrates Rayleigh's and Mie's scattering along its ray exactly, from a few values that the engine works out each frame. It costs about what fog costs. Past a few tens of kilometres, the earth's curve, which this leaves out, would show.
+The aerial perspective needs no table. Over a scene's distances, the air's density falls with height as height fog's does, and the sun's light along the way barely changes. So each surface's shader integrates Rayleigh's and Mie's scattering along its ray exactly, from a few values that the engine works out each frame. It costs about what fog costs. Past a few tens of kilometers, the earth's curve, which this leaves out, would show.
 
 At night the moon is a second light of the air: it lights the sky as the sun does, a little bluer at the scene's exposure. The moon's disc shows its phase, lit from the sun's side. The stars add their light to the sky's, so they show only where the sky is dark enough, and the air dims them toward the horizon.
 
@@ -471,7 +471,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 - three.js's sky gives no light once its sun is about 2.3 degrees under the horizon, and the tone curve maps what is left to black. So after sunset the helper keeps the sky's own sun just under the horizon, and `skyIntensity` dims the sky to a deep blue.
 - At night the sky's own sun stands at the moon's place, and `skyIntensity` dims it: the "day for night" sky of film. The sky is a navy blue with a lighter horizon and a faint glow around the moon. Its sun's disc draws a small moon, and the sky's environment lights the scene a dim blue. `showSunDisc: false` hides the moon's disc.
 - As the sun sinks from 6 to 12 degrees under the horizon, the sunset's sky fades straight into the moon's sky. No frame goes dark between them. The sky draws both at once: `sky.secondSunPosition` is the moon's place, and `sky.secondSkyWeight` is the moon sky's share. At other times the weight is 0, so pass the whole `sky` each time.
-- Each call returns a new object, and `setColor` converts a color. So call `timeOfDay` when the time changes, not in every frame of a still scene. For a day that passes, a few calls a second are enough: the sky's environment takes about 20 frames to follow anyway.
+- Each call returns a new object, unless you pass one for it to fill. `timeOfDay(hour, {}, day)` writes into `day`, so a day cycle that moves the time in every frame makes no settings object of its own. `setColor` converts a color. A day that changes a few times a second is enough for a still scene: the sky's environment takes about 20 frames to follow anyway.
 
 ## Lights in scene passes
 

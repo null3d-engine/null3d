@@ -23,6 +23,7 @@
 // texture and a sampler), and the apply step as depth of field's composite, with the summed grid at
 // binding 4.
 // The MULTISAMPLED builds read sample 0 of a multisampled depth, on WebGPU.
+#import null3d::fullscreen::{triangle}
 #import null3d::fog::{fog_height_ratio}
 #import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_cell_uv, fog_edge_distance, fog_phase, fog_ray, fog_screen_place, fog_volume_blend, fog_volume_place}
 
@@ -42,10 +43,7 @@ const BACKGROUND: f32 = 1e7;
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 /// A cell's place in the grid's texture: its column and row in the slice, and its slice.

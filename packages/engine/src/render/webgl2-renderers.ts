@@ -9,9 +9,7 @@ import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
 import type { CoreDevice } from '../page/limits';
-import { controlViews } from '../shared/control';
 import type { ImageTable } from '../shared/images';
-import { MemoryViews } from '../shared/memory-views';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss } from './loss';
 import {
@@ -166,7 +164,6 @@ class WebGL2SceneRenderer implements Renderer {
 			device.transparent,
 		);
 		this.backend.moreShaders = shaders;
-		this.backend.readSink = { views: new MemoryViews(memory), slots: controlViews(control).slots };
 		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;

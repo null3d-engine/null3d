@@ -362,4 +362,29 @@ mod tests {
         // Every kind from RECT on is an area light.
         assert_eq!(kind::LAST, kind::TUBE);
     }
+
+    #[test]
+    fn the_light_loops_leave_out_the_area_lights_that_they_cannot_shade() {
+        // The light grid lists area lights while the lit templates draw with their `AREA_LIGHTS`
+        // builds. Decals, particles, sprites and the fog's light step draw with templates that
+        // never take that bit, and a record's fields hold a rectangle's shape and image layer
+        // where a point light keeps its decay, cone and shadow tile. So a light loop that has no
+        // tables must leave an area light out (D-145's addendum of 16 October).
+        let lights = include_str!("../../null3d-shaders/wgsl/lib/lights.wgsl");
+        assert_eq!(
+            lights.matches("if kind >= KIND_RECT {").count(),
+            2,
+            "lib/lights.wgsl must test the kind in both arms of its light loop"
+        );
+        assert!(
+            lights.contains("#else\n"),
+            "lib/lights.wgsl must give a build without the tables an arm that leaves area lights out"
+        );
+        let fog = include_str!("../../null3d-shaders/wgsl/fog_light.wgsl");
+        assert_eq!(
+            fog.matches(">= KIND_RECT {\n            continue;").count(),
+            1,
+            "fog_light.wgsl must skip an area light rather than read its record as a lamp"
+        );
+    }
 }

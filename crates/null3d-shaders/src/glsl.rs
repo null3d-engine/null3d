@@ -40,8 +40,9 @@ pub(crate) fn write_program(
         }
         // The Adreno 619 driver of a Galaxy Tab A9 Plus keeps every value that a GLSL structure
         // holds at 16 bits. Replace every structure local, parameter and result with plain ones
-        // before the writer sees the module.
-        crate::flatten::flatten_structs(&mut stage_module, &info);
+        // before the writer sees the module, or refuse a shape that cannot be split.
+        crate::flatten::flatten_structs(&mut stage_module, &info)
+            .map_err(|message| format!("pipeline `{name}`: {message}"))?;
         let info = validate_stage(&stage_module, capabilities, entry_point)?;
         write_stage(
             &stage_module,

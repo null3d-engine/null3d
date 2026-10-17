@@ -24,6 +24,15 @@ export interface HeightfieldOptions {
 }
 
 /**
+ * The offsets of a vertex and of the four points around it that a normal reads, in samples along x
+ * then along z: the vertex itself, then one sample each way across and along.
+ */
+const AROUND_OFFSETS = new Int32Array([0, 0, 1, 0, -1, 0, 0, 1, 0, -1]);
+
+/** The heights of those five points, which a write of a block reuses. */
+const AROUND = new Float64Array(5);
+
+/**
  * The height field that a terrain builds every block from: the height of a square piece of ground,
  * sampled once and read back with bilinear interpolation.
  *
@@ -84,7 +93,8 @@ export class Heightfield {
 
 	/**
 	 * The sample at the column `col` and the row `row`, clamped to the square, so a reader just
-	 * outside the ground gets the edge's height. A negative index counts from the far edge.
+	 * outside the ground gets the edge's height. An index below 0 or past the resolution takes the
+	 * nearest edge's sample.
 	 */
 	sample(col: number, row: number): number {
 		const { resolution, heights } = this;
@@ -124,7 +134,7 @@ export class Heightfield {
 		const d = this.step;
 		const dx = this.heightAt(x + d, z) - this.heightAt(x - d, z);
 		const dz = this.heightAt(x, z + d) - this.heightAt(x, z - d);
-		return Math.hypot(dx, dz) / (2 * d);
+		return Math.sqrt(dx * dx + dz * dz) / (2 * d);
 	}
 
 	/**
@@ -135,10 +145,71 @@ export class Heightfield {
 		const d = this.step;
 		const dx = (this.heightAt(x + d, z) - this.heightAt(x - d, z)) / (2 * d);
 		const dz = (this.heightAt(x, z + d) - this.heightAt(x, z - d)) / (2 * d);
-		const length = Math.hypot(dx, 1, dz);
+		// The length by hand: `Math.hypot` makes one object per call.
+		const length = Math.sqrt(dx * dx + 1 + dz * dz);
 		out[0] = -dx / length;
 		out[1] = 1 / length;
 		out[2] = -dz / length;
+	}
+
+	/**
+	 * Writes the heights and normals of a grid of `quads` faces along each side into `positions` and
+	 * `normals`, three numbers per vertex, for a block whose low corner stands at the world point
+	 * (`originX`, `originZ`). Each height is the field's at that world point and each normal the
+	 * ground's slope there, as `heightAt` and `normalAt` give them, and both arrays carry the
+	 * block's own coordinates from that corner. A builder of a mesh reads a whole grid in one call,
+	 * so its loop crosses no call per vertex: a call carries a fraction as an object of its own
+	 * wherever the browser does not inline it. Allocates nothing.
+	 */
+	writeGridVertices(
+		blockSize: number,
+		originX: number,
+		originZ: number,
+		quads: number,
+		positions: Float32Array,
+		normals: Float32Array,
+	): void {
+		const { resolution, heights, step, corner } = this;
+		const cell = blockSize / quads;
+		const last = resolution - 2;
+		const around = AROUND;
+		const offsets = AROUND_OFFSETS;
+		let at = 0;
+		for (let row = 0; row <= quads; row++)
+			for (let col = 0; col <= quads; col++, at += 3) {
+				const x = col * cell;
+				const z = row * cell;
+				const fx = (originX + x - corner) / step;
+				const fz = (originZ + z - corner) / step;
+				// The vertex, then the four points one sample each way from it, whose heights give the
+				// slope. Reading them in this loop keeps the arithmetic of the whole block in one place.
+				for (let k = 0; k < 5; k++) {
+					const gx = fx + (offsets[k * 2] as number);
+					const gz = fz + (offsets[k * 2 + 1] as number);
+					const cx = Math.min(Math.max(Math.floor(gx), 0), last);
+					const cz = Math.min(Math.max(Math.floor(gz), 0), last);
+					const tx = Math.min(Math.max(gx - cx, 0), 1);
+					const tz = Math.min(Math.max(gz - cz, 0), 1);
+					const a = heights[cz * resolution + cx] as number;
+					const b = heights[cz * resolution + cx + 1] as number;
+					const c = heights[(cz + 1) * resolution + cx] as number;
+					const d = heights[(cz + 1) * resolution + cx + 1] as number;
+					const top = a + (b - a) * tx;
+					const bottom = c + (d - c) * tx;
+					around[k] = top + (bottom - top) * tz;
+				}
+				positions[at] = x;
+				positions[at + 1] = around[0] as number;
+				positions[at + 2] = z;
+				// The rise over the run a sample each way, made one unit long. The length is the square
+				// root of the squares, because `Math.hypot` of three numbers makes an object of its own.
+				const dx = ((around[1] as number) - (around[2] as number)) / (2 * step);
+				const dz = ((around[3] as number) - (around[4] as number)) / (2 * step);
+				const length = Math.sqrt(dx * dx + 1 + dz * dz);
+				normals[at] = -dx / length;
+				normals[at + 1] = 1 / length;
+				normals[at + 2] = -dz / length;
+			}
 	}
 }
 

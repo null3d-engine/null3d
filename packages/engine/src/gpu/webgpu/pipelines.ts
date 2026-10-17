@@ -14,6 +14,7 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_DECAL_DEPTH,
 	LAYOUT_DECAL_DEPTH_MS,
+	LAYOUT_DECAL_FRAME,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
 	LAYOUT_DOF_COMPOSITE,
@@ -526,24 +527,44 @@ export class Pipelines {
 			objectRanges,
 		]);
 		// The materials' custom values, with the table of specular terms in the columns after the
-		// first rows, the shared texture array of the reflection probes' maps and the light tables'
-		// layers, which the environment's sampler reads, then the shadow map, whose
-		// depths the receivers read as floats, the sampler that compares depths in the shadow
-		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
-		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
-		// textureLoad, the environment's cube map with its filtering sampler, the sampler that reads
-		// four texels of the shadow map at once, the copy of the opaque color that surfaces which
-		// let light through sample with the environment's sampler, the row values of instance
-		// batches and the table of object ranges, which only vertex shaders read, and the view's
-		// list of reflection probes.
-		this.defineLayout(LAYOUT_FRAME, 'frame', [
+		// first rows, then the shared texture array of the reflection probes' maps and the light
+		// tables' layers, which the environment's sampler reads, the shadow map, whose depths the
+		// receivers read as floats, the sampler that compares depths in the shadow atlas, the
+		// cascades, the camera's light grid and light list, the shadow atlas of point and spot lights
+		// with its tiles, the light probe grids' 3D texture, ambient occlusion's texture, which the
+		// lit shading reads with textureLoad, the environment's cube map with its filtering sampler,
+		// the sampler that reads four texels of the shadow map at once, the copy of the opaque color
+		// that surfaces which let light through sample with the environment's sampler, the row
+		// values of instance batches and the table of object ranges, which only vertex shaders read,
+		// and the view's list of reflection probes.
+		const probes: GPUBindGroupLayoutEntry = {
+			binding: 3,
+			visibility: fragment,
+			texture: { viewDimension: '2d-array' },
+		};
+		const probeList: GPUBindGroupLayoutEntry = {
+			binding: PROBE_LIST_BINDING,
+			visibility: fragment,
+			buffer: { type: 'uniform' },
+		};
+		const probeGrid: GPUBindGroupLayoutEntry = {
+			binding: 10,
+			visibility: fragment,
+			texture: { viewDimension: '3d' },
+		};
+		const transmission: GPUBindGroupLayoutEntry = {
+			binding: 15,
+			visibility: fragment,
+			texture: { viewDimension: '2d-array' },
+		};
+		const frame: GPUBindGroupLayoutEntry[] = [
 			...frameEntries,
 			{
 				binding: 2,
 				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
-			{ binding: 3, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			probes,
 			{
 				binding: 4,
 				visibility: fragment,
@@ -559,16 +580,27 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
-			{ binding: 10, visibility: fragment, texture: { viewDimension: '3d' } },
+			probeGrid,
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
-			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			transmission,
 			rowValues,
 			objectRanges,
-			{ binding: PROBE_LIST_BINDING, visibility: fragment, buffer: { type: 'uniform' } },
-		]);
+			probeList,
+		];
+		this.defineLayout(LAYOUT_FRAME, 'frame', frame);
+		// The decals' frame group leaves out the probe grid, the copy of the opaque color and the
+		// probes' shared array, which no decal build reads, so that a decal with maps stays within
+		// the default count of sampled textures in the fragment stage. It is made at the first
+		// decal.
+		this.defineLayout(
+			LAYOUT_DECAL_FRAME,
+			'decal frame',
+			frame.filter((entry) => entry !== probeGrid && entry !== transmission && entry !== probes),
+			true,
+		);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{ binding: 1, visibility: fragment, sampler: {} },
@@ -872,7 +904,7 @@ export class Pipelines {
 				depthFragment: id === TEMPLATE_SHADOW_CUTOUT || id === TEMPLATE_SHADOW_CUTOUT_MAP,
 			});
 		}
-		// Decals: the frame's group, the maps' where the build samples them, then the scene's depth,
+		// Decals: their frame group, the maps' where the build samples them, then the scene's depth,
 		// which the builds that read a multisampled depth bind through a layout of their own. They
 		// read the position of the box's corners alone.
 		this.defineLayout(LAYOUT_DECAL_DEPTH, 'decal depth', [unfiltered(0)]);
@@ -885,8 +917,8 @@ export class Pipelines {
 				label: `mesh ${label}`,
 				shader,
 				pipeline: 'main',
-				layouts: [LAYOUT_FRAME, ...maps, LAYOUT_DECAL_DEPTH],
-				multisampledLayouts: [LAYOUT_FRAME, ...maps, LAYOUT_DECAL_DEPTH_MS],
+				layouts: [LAYOUT_DECAL_FRAME, ...maps, LAYOUT_DECAL_DEPTH],
+				multisampledLayouts: [LAYOUT_DECAL_FRAME, ...maps, LAYOUT_DECAL_DEPTH_MS],
 				meshLocations: [0],
 				vertexBuffers: INSTANCE_BUFFERS,
 			});

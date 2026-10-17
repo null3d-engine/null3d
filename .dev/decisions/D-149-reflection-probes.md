@@ -1,6 +1,6 @@
 # D-149: Box-projected reflection probes
 
-Status: decided by the helper of M2-EX32 on 12 October 2026, for the owner's review. Date: 2026-10-12. Task: M2-EX32.
+Status: decided by the helper of M2-EX32 on 12 October 2026, for the owner's review. Built: on the M2-EX32 branch; main takes it after the review. Date: 2026-10-12. Task: M2-EX32.
 
 Summary: `scene.createReflectionProbe({ box, position })` captures the scene around a point on the GPU, through six square views, and filters it for each roughness as the environment's map is. Each probe is an octahedral map in one layer of one half-float texture array. A surface inside a probe's box reflects along a ray that meets the box's sides, so a room's walls and a street's houses reflect where they stand. Up to two probes blend at their boxes' edges, inner probes first, and the environment takes the rest. Mirror reflections win over the probes, and screen-space reflections will sit between them. The array takes the texture slot of the split-sum table on WebGPU, which moves into the columns of an existing data texture, as on WebGL2. So probes add no texture slot to the main pass on WebGPU, and one texture unit on WebGL2. A scene without probes draws as before, and its pages download no probe sampling: that loads on first use with the light probe grid's templates (addendum of 15 October).
 

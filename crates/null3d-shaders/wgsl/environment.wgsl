@@ -24,6 +24,7 @@
 // face's level of a shared-exponent cube texture, which the next draws sample with a linear
 // filter.
 
+#import null3d::fullscreen::{triangle}
 #import null3d::atmosphere::{SkySettings, second_sun, sky_light, sky_whole}
 #import null3d::cubemap::{face_direction, frame_bitangent, frame_tangent, radical_inverse}
 
@@ -60,10 +61,7 @@ const PI: f32 = 3.14159265358979;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // Corners at (-1, -1), (3, -1) and (-1, 3) in clip space, at a depth that every WebGL2 depth
-    // mapping keeps inside the clip volume.
-    let corner = vec2f(f32((vertex << 1u) & 2u), f32(vertex & 2u));
-    return vec4f(corner * 2.0 - 1.0, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 /// The face of the texel under the fragment, from 0 to 5, and the texel's column and row on it.

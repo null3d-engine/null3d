@@ -186,8 +186,12 @@ function checkFog(fog: FogOptions, values: Float64Array): void {
  * Throws E1108 for a volumetric fog option out of its range, and E1203 for a value that is not
  * finite. Call it inside `if (DEV)`.
  */
-function checkVolume(volume: FogVolumeOptions, values: readonly [number, number, number]): void {
-	const [intensity, anisotropy, distance] = values;
+function checkVolume(
+	volume: FogVolumeOptions | undefined,
+	intensity: number,
+	anisotropy: number,
+	distance: number,
+): void {
 	checkNumber(CALL, 'volumetric.intensity', intensity, FOG);
 	checkNumber(CALL, 'volumetric.anisotropy', anisotropy, FOG);
 	checkNumber(CALL, 'volumetric.distance', distance, FOG);
@@ -202,7 +206,7 @@ function checkVolume(volume: FogVolumeOptions, values: readonly [number, number,
 			'E1108',
 			`${CALL}() got the volumetric distance ${distance}; it takes a number above 0.`,
 		);
-	if ('density' in volume)
+	if (volume && 'density' in volume)
 		throw new EngineError(
 			'E1108',
 			`${CALL}() got a density in volumetric. The volumetric fog takes the fog's own density: set density beside color.`,
@@ -233,24 +237,31 @@ export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	values[FIRST + 4] = fog.heightFalloff ?? 0;
 	values[FIRST + 5] = fog.sunGlow ?? 0;
 	values[FIRST + 6] = fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT;
-	const volume = fog.volumetric === true ? {} : fog.volumetric || undefined;
-	const volumeValues = [
-		volume?.intensity ?? DEFAULT_VOLUME_INTENSITY,
-		volume?.anisotropy ?? DEFAULT_ANISOTROPY,
-		volume?.distance ?? DEFAULT_VOLUME_DISTANCE,
-	] as const;
+	// `volumetric: true` takes every default. Each number of the sketch's own options goes into a
+	// local, read only where the object holds it: a read that can give `undefined` boxes a fraction.
+	const { volumetric } = fog;
+	const volume = volumetric && typeof volumetric === 'object' ? volumetric : undefined;
+	const on = volumetric === true || volume !== undefined;
+	let intensity = DEFAULT_VOLUME_INTENSITY;
+	let anisotropy = DEFAULT_ANISOTROPY;
+	let distance = DEFAULT_VOLUME_DISTANCE;
+	if (volume !== undefined) {
+		if ('intensity' in volume) intensity = volume.intensity ?? intensity;
+		if ('anisotropy' in volume) anisotropy = volume.anisotropy ?? anisotropy;
+		if ('distance' in volume) distance = volume.distance ?? distance;
+	}
 	if (DEV) {
 		checkFog(fog, values);
-		if (volume) checkVolume(volume, volumeValues);
+		if (on) checkVolume(volume, intensity, anisotropy, distance);
 	}
 	writeLinearColor(values, fog.color, CALL);
 	core.glue.setFog(CURVES[fog.curve ?? 'exponential']);
 	// The volumetric fog reads its four numbers from the call values, which setFog has read.
 	const density = values[FIRST] as number;
-	values[0] = volumeValues[0];
-	values[1] = volumeValues[1];
-	values[2] = volumeValues[2];
+	values[0] = intensity;
+	values[1] = anisotropy;
+	values[2] = distance;
 	values[3] = density;
-	core.glue.setFogVolume(volume !== undefined);
-	return volume !== undefined;
+	core.glue.setFogVolume(on);
+	return on;
 }
