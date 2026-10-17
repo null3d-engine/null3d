@@ -4628,6 +4628,18 @@ mod tests {
             WeightedIds::GROUPS,
         ));
         groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        buffers.push(("the motion view's block".to_string(), IDS.motion.buffer, 1));
+        samplers.push((
+            "the motion view's sampler".to_string(),
+            IDS.motion.sampler,
+            1,
+        ));
+        textures.push((
+            "the motion view's blank map".to_string(),
+            IDS.motion.blank,
+            1,
+        ));
+        groups.push(("the motion view's step".to_string(), IDS.motion.group, 1));
         // The graph takes its own textures from `first_texture` on: one for each texture of its
         // plan and one view for each of their layers, each run at most [`LAYER_VIEWS`] long.
         textures.push((
