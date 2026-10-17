@@ -301,6 +301,18 @@ function withLock(root: string, work: () => void): void {
 }
 
 /**
+ * Says that this build compiles every shader, so the minutes it takes do not look like a hang. The
+ * notice appears only when the entries folder of this compiler holds nothing, which is the first
+ * build of a checkout; a build that reuses most entries is quick and says nothing.
+ */
+export function announceColdBuild(entries: string): void {
+	if (existsSync(entries) && readdirSync(entries).length > 0) return;
+	console.error(
+		`The shader modules are not built in this checkout yet. The first build compiles every shader and can take a few minutes; it shows how far it has got. Later builds use the cache in ${entryCacheDir()}, and a change to one shader rebuilds only that shader.`,
+	);
+}
+
+/**
  * Runs the shader build, with its output on standard error so that callers keep a clean output.
  * The shader profile builds the crate's own parsing and validation code optimized, which the
  * development profile leaves unoptimized.
@@ -324,6 +336,7 @@ function runShaderBuild(root: string): void {
 		// A stamp from another compiler changes the folder, so no entry is read with a new meaning.
 		const stamp = compilerStamp(root);
 		buildArgs.push('--cache', join(entryCacheDir(), stamp), '--stamp', stamp);
+		announceColdBuild(join(entryCacheDir(), stamp));
 	}
 	const result = spawnSync('cargo', [...args, ...buildArgs], {
 		cwd: root,
