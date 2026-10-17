@@ -299,7 +299,7 @@ describe('the runs of a test', () => {
 		expect(run('boxes-webgpu-pipelined')).toMatchObject({
 			tolerance: TOLERANCE,
 			deviceTolerance: DEVICE_TOLERANCE,
-			timeoutSeconds: 30,
+			timeoutSeconds: 60,
 			reference: { test: 'boxes', tier: 'webgpu', devices: [] },
 		});
 		expect(run('boxes-copied-webgl2-pipelined')).toMatchObject({
