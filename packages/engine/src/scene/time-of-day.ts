@@ -427,6 +427,13 @@ export function emptyTimeOfDay(): TimeOfDay {
 const SUN_ABOVE_AIR = 3.6;
 
 /**
+ * The lowest height, in degrees, of the physical model's main light. The sun's place sinks below
+ * the horizon while its light is still on, so the light is held here as it sets: it sweeps the
+ * horizon instead of rising from under the ground.
+ */
+const LIGHT_FLOOR = 1;
+
+/**
  * The physical sky's light for a light of 1 above the earth's default air, by the light's height
  * in degrees, falling: the share of each primary that reaches the ground from it, the sky's mean
  * light over the whole sphere, and the sky's light 3 degrees up, averaged all around. It comes
@@ -566,7 +573,11 @@ function physicalDay(
 	const moonIntensity = PHYSICAL_MOON * handover;
 	scale(SUN_COLOR, SET_THROUGH, 1 / Math.max(sunPeak, 1e-9));
 	const bearing = Math.atan2(sun[2] as number, sun[0] as number) + Math.PI * handover;
-	const height = mix(Math.asin(sun[1] as number), moonHeight * DEGREE, handover);
+	// The main light's height, which the sun's own place and the moon's blend between. The sun's
+	// own place is held just above the horizon once it sinks to it, so the light grazes the ground
+	// instead of shining up from under it through the handover.
+	const sunHeight = Math.max(elevation, LIGHT_FLOOR) * DEGREE;
+	const height = mix(sunHeight, moonHeight * DEGREE, handover);
 	const across = Math.cos(height);
 	const light = out.light;
 	light.direction[0] = -across * Math.cos(bearing);
