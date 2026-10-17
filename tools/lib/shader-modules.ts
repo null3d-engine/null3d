@@ -12,7 +12,6 @@
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { copyInPlace } from './atomic-files';
@@ -20,12 +19,12 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
-	cargoEnv,
 	copyFolderAtomic,
 	filesIn,
 	hashFiles,
 	hashOf,
 	pruneCacheLocked,
+	runCargo,
 	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
@@ -325,17 +324,15 @@ function runShaderBuild(root: string): void {
 		const stamp = compilerStamp(root);
 		buildArgs.push('--cache', join(entryCacheDir(), stamp), '--stamp', stamp);
 	}
-	const result = spawnSync('cargo', [...args, ...buildArgs], {
-		cwd: root,
-		// cargoEnv names the checkout's own target folder, so this build never writes another's.
-		env: { ...process.env, ...cargoEnv(root) },
+	// runCargo names the checkout's own target folder, so this build never writes another's.
+	const { status, error } = runCargo(root, [...args, ...buildArgs], {
 		stdio: ['ignore', 2, 2],
 	});
-	if (result.error)
+	if (error)
 		throw new Error(
-			`could not run cargo (${result.error.message}). The shader modules are not in git, and building them needs the Rust toolchain that rust-toolchain.toml names.`,
+			`could not run cargo (${error.message}). The shader modules are not in git, and building them needs the Rust toolchain that rust-toolchain.toml names.`,
 		);
-	if (result.status !== 0) throw new Error('the shader build failed; its output is above');
+	if (status !== 0) throw new Error('the shader build failed; its output is above');
 }
 
 /** The names of the shader modules on disk, in order. */
