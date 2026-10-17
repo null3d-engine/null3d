@@ -93,7 +93,8 @@ export class Heightfield {
 
 	/**
 	 * The sample at the column `col` and the row `row`, clamped to the square, so a reader just
-	 * outside the ground gets the edge's height. A negative index counts from the far edge.
+	 * outside the ground gets the edge's height. An index below 0 or past the resolution takes the
+	 * nearest edge's sample.
 	 */
 	sample(col: number, row: number): number {
 		const { resolution, heights } = this;
@@ -133,7 +134,7 @@ export class Heightfield {
 		const d = this.step;
 		const dx = this.heightAt(x + d, z) - this.heightAt(x - d, z);
 		const dz = this.heightAt(x, z + d) - this.heightAt(x, z - d);
-		return Math.hypot(dx, dz) / (2 * d);
+		return Math.sqrt(dx * dx + dz * dz) / (2 * d);
 	}
 
 	/**
@@ -144,7 +145,8 @@ export class Heightfield {
 		const d = this.step;
 		const dx = (this.heightAt(x + d, z) - this.heightAt(x - d, z)) / (2 * d);
 		const dz = (this.heightAt(x, z + d) - this.heightAt(x, z - d)) / (2 * d);
-		const length = Math.hypot(dx, 1, dz);
+		// The length by hand: `Math.hypot` makes one object per call.
+		const length = Math.sqrt(dx * dx + 1 + dz * dz);
 		out[0] = -dx / length;
 		out[1] = 1 / length;
 		out[2] = -dz / length;

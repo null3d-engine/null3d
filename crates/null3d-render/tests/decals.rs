@@ -158,6 +158,73 @@ fn objects_on_layers_that_decals_skip_draw_again_on_webgl2() {
     )));
 }
 
+/// The operands of each group of `layout` that a frame's commands create.
+fn groups_of(commands: &[(Op, Vec<u32>)], layout: u32) -> Vec<Vec<u32>> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout)
+        .map(|(_, o)| o.clone())
+        .collect()
+}
+
+/// The entries of a group that a command creates: each one's binding, kind and object.
+fn entries(group: &[u32]) -> Vec<&[u32]> {
+    group[3..].chunks(5).collect()
+}
+
+/// The frame group's bindings of the light probe grids' texture and of the copy of the opaque
+/// color, which no decal build reads.
+const UNREAD_BY_DECALS: [u32; 2] = [10, 15];
+
+#[test]
+fn decals_bind_the_frame_group_without_the_textures_they_never_read_on_webgpu() {
+    let plane = grid(1, 1);
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.add_object(&plane, Shading::Lit);
+    let plain = frames(&mut world, &mut mock);
+    for commands in &plain {
+        assert!(groups_of(commands, layout::DECAL_FRAME).is_empty());
+    }
+    let camera = groups_of(&plain[0], layout::FRAME).swap_remove(0);
+
+    // The decal pass's frame group binds the camera's, without the grid and the copy, so a decal
+    // with maps reads 15 sampled textures in its fragment stage, within WebGPU's 16.
+    world.add_object_with(&plane, Shading::Lit, feature::DECAL);
+    let decal = frames(&mut world, &mut mock);
+    let made: Vec<Vec<u32>> = decal
+        .iter()
+        .flat_map(|c| groups_of(c, layout::DECAL_FRAME))
+        .collect();
+    assert_eq!(made.len(), 1, "the decal frame group is made once");
+    let kept: Vec<&[u32]> = entries(&camera)
+        .into_iter()
+        .filter(|e| !UNREAD_BY_DECALS.contains(&e[0]))
+        .collect();
+    assert_eq!(entries(&made[0]), kept);
+    assert_eq!(made[0][2] as usize, kept.len());
+
+    // The decal pass binds it at group 0 before it draws.
+    let last = decal.last().unwrap();
+    let pipeline = decal
+        .iter()
+        .flat_map(|c| decal_pipelines(c))
+        .next()
+        .unwrap();
+    let drawn = first_draw_with(last, pipeline[0]).expect("the decal draws");
+    let bound = last[..drawn]
+        .iter()
+        .rev()
+        .find(|(op, o)| *op == Op::SetBindGroup && o[0] == 0)
+        .map(|(_, o)| o[1]);
+    assert_eq!(bound, Some(made[0][0]));
+
+    // New render targets make the camera's frame group again, and the decals' with it.
+    world.canvas = (800, 450);
+    let resized = world.step(&mut mock, false);
+    assert_eq!(groups_of(&resized, layout::DECAL_FRAME).len(), 1);
+}
+
 #[test]
 fn decals_draw_after_the_opaque_objects_only_while_one_exists_on_webgpu() {
     check(World::new());

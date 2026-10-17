@@ -55,7 +55,6 @@ import {
 import { summarizeTrace } from '../../bench/pages/lib/trace.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { DEMOS, sketchPath } from '../../examples/demos.ts';
-import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { STOP_TIMEOUT_MS } from '../../packages/engine/src/page/stop-jobs.ts';
 import {
 	choosePreset,
@@ -83,7 +82,11 @@ import {
 	ratesParted,
 } from '../pages/lib/overload.ts';
 import { ROOM_KEPT, ROOM_LOST_ONCE } from '../pages/lib/room.ts';
-import { glslProgramsOf, inShaderSet, type ShaderSet } from '../pages/lib/shader-list.ts';
+import {
+	MULTI_DRAW_EXTENSION,
+	type ShaderSet,
+	skippedForNoMultiDraw,
+} from '../pages/lib/shader-list.ts';
 import {
 	frameSaving,
 	pathTiming,
@@ -145,6 +148,7 @@ import {
 	type PlanItem,
 	slug,
 } from './runs.ts';
+import { glslProgramCountOf } from './shader-programs.ts';
 import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
@@ -452,19 +456,15 @@ const SHADERS_BASE_SECONDS = 30;
  */
 const SHADERS_SECONDS_PER_PROGRAM = 0.5;
 
-/** The GLSL programs of the engine, by set, which the parts of the shaders page share. */
-const ALL_PROGRAMS = glslProgramsOf(await everyShader()).map(([name]) => name);
-const programsIn = (set: ShaderSet) => ALL_PROGRAMS.filter((name) => inShaderSet(name, set)).length;
-
 /**
  * The most GLSL programs that one part of the shaders page compiles. Each part is a page of its
  * own, with a WebGL2 context of its own that it gives up at its end. Safari on CI's Mac lost the
  * context of a page that compiled every program in one context, after 2,240 programs and 266 s.
  */
-const SHADER_PROGRAMS_PER_PART = 400;
+export const SHADER_PROGRAMS_PER_PART = 400;
 
 /** The parts of a set of programs: enough that none holds more than that many programs. */
-const partsOf = (set: ShaderSet) => Math.ceil(programsIn(set) / SHADER_PROGRAMS_PER_PART);
+const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_PROGRAMS_PER_PART);
 
 /**
  * Which builds the checks plan compiles. `all` compiles every one: the builds without the coat and
@@ -482,14 +482,6 @@ const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
 };
 
 /**
- * The parts of every build of the shaders page: enough that each holds about that many programs. A
- * build that several device modules hold counts in each part that downloads one of them, so a part
- * may hold somewhat more. Each set's parts of the checks plan number by its own programs, as
- * [`partsOf`] gives, so this counts only the builds of the shaders page in one module.
- */
-export const SHADER_PARTS = Math.ceil(ALL_PROGRAMS.length / SHADER_PROGRAMS_PER_PART);
-
-/**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
  * more shader variants never make it time out. A slower device gets more: after each batch, the page
  * tells the runner page when it expects to end, from its own pace, and the runner page waits that
@@ -500,7 +492,7 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 		SHADERS_SECONDS_PER_PROGRAM *
 			Math.max(
 				...(['base', 'coat', 'coat-sample'] as const).map((set) =>
-					Math.ceil(programsIn(set) / partsOf(set)),
+					Math.ceil(glslProgramCountOf(set) / partsOf(set)),
 				),
 			),
 );
@@ -2410,7 +2402,21 @@ export function judge(
 				context?.note?.(
 					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
-			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
+			// A part holds one share of the builds, and the browser's extension decides which of them
+			// it can compile at all: a browser without `WEBGL_multi_draw` cannot compile the builds
+			// that read the draw index, and a share can hold nothing but those. The part then
+			// compiles no program, which is the device's limit rather than a fault of the page.
+			const skipped = (result.skipped ?? []) as string[];
+			const noProgramToCompile =
+				Number(result.glslPrograms) === 0 &&
+				result.multiDraw === false &&
+				skipped.length > 0 &&
+				skipped.every(skippedForNoMultiDraw);
+			if (noProgramToCompile)
+				context?.note?.(
+					`the device has no ${MULTI_DRAW_EXTENSION}, so the page skipped all ${skipped.length} programs of this part, which read the draw index`,
+				);
+			else if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
 		}

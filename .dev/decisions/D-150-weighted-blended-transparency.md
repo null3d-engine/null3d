@@ -98,6 +98,12 @@ The allocation check drew the production S1 page at 100,000 instances, with its 
 
 Without a weighted material the frame stays inside every budget on both paths. With the smoke, the WebGPU render worker's replay of the draw list allocates about 410 bytes a frame against its 320-byte budget. The same run with the browser's inlining off names the real places: `replay webgpu/backend.ts`, and the sketch worker's own smoke code (`onUpdate`, `visibleEntries`, `occludedEntries`) beside `endPhase` and `slotChange`. The smoke puffs are the benchmark page's code. The engine replay's share needs its cause found and a fix, and it is recorded here as a known cost of a weighted scene on WebGPU.
 
+### Addendum, 17 October 2026: the replay is inside its budget
+
+`bun run bench:allocation --weighted --gpu webgpu` passes on the Mac at 100,000 instances. It took two samples of 5 s after 30 s, over 1,209 frames. The render worker's replay of the draw list took 168.6 bytes a frame against its 320-byte budget, down from the 410 in the table above. The whole render worker took 550.9 bytes a frame, with every place inside its budget, and the sketch worker took 228.2.
+
+Two changes landed after that table's run. The first stopped the WebGPU pass setup boxing clear colors, in `27126d489`. The second gave the staging write an allowance of 32 bytes in `WEIGHTED_BUDGETS`, from a measurement of 15 October 2026. The table above keeps the 12 October figures as the record of what the feature cost then.
+
 The size check: the `WEIGHTED` builds and the sets they share with skinning, sprites, transmission and texcoords add 45 first-use shader files of 3 KB to 20 KB after Brotli each, all inside the 32 KB budget of a first-use file. None of them loads at a page's start. A page downloads the weighted layer's two steps and its templates' `WEIGHTED` builds only when its first weighted material draws, so a scene without one downloads and runs none of it.
 
 The GPU check: the two-step `bun run bench:gpu-check` (prepare, then measure) is recorded by the `GPU-Checked:` trailer on the commit that lands this feature.

@@ -37,7 +37,7 @@ export function createTerrainGround(context: SketchContext): (eye: Float64Array)
 		],
 		maxLevel: 6,
 	});
-	return (eye) => terrain.update(eye[0] as number, eye[2] as number);
+	return (eye) => terrain.update(eye);
 }
 
 /** The views of the impostors' atlas, and the texels along each side of one view's cell. */

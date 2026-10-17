@@ -12,7 +12,9 @@
 //
 // The Rust build folder is not a cache under the root: each checkout keeps its own, because Cargo
 // judges the engine's crates fresh by file times, and sccache, when installed, shares the compiled
-// dependency crates instead (see cargoEnv).
+// dependency crates instead (see cargoEnv). Every cargo run of the repository goes through
+// `runCargo`, so that rule holds at each of them.
+import { type StdioOptions, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	accessSync,
@@ -97,6 +99,33 @@ export function cargoEnv(
 /** True when the environment asks every cache to be ignored, so each build runs again. */
 export function cacheOff(): boolean {
 	return NO_CACHE.some((name) => process.env[name] === '1');
+}
+
+/** How a cargo run ended: its status, or the error that kept it from starting. */
+export interface CargoRun {
+	status: number | null;
+	error?: Error;
+}
+
+/**
+ * Runs cargo with `args` in `checkout`, through one helper so that every cargo call of the
+ * repository sets its build folder the same way: `targetDir`, when given, names the folder of this
+ * call, and cargoEnv's own folder applies without it. `env` adds what one call needs, such as a
+ * build's flags, and `stdio` picks where its output goes. The caller reports its own failure.
+ */
+export function runCargo(
+	checkout: string,
+	args: readonly string[],
+	options: { env?: Record<string, string>; targetDir?: string; stdio?: StdioOptions } = {},
+): CargoRun {
+	const { env = {}, targetDir, stdio = 'inherit' } = options;
+	const full = targetDir ? [...args, '--target-dir', targetDir] : [...args];
+	const result = spawnSync('cargo', full, {
+		cwd: checkout,
+		stdio,
+		env: { ...process.env, ...cargoEnv(checkout), ...env },
+	});
+	return { status: result.status, error: result.error ?? undefined };
 }
 
 /** A SHA-256 of the given values, in order, for a cache key. */

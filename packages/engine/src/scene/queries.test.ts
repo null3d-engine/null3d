@@ -63,6 +63,8 @@ function fakeCore() {
 	let script: (Scripted | null)[] = [];
 	const calls: { name: string; kind: number; layers: number; input: number[]; rays?: number[] }[] =
 		[];
+	/** The steps that a query before the first frame took, in order. */
+	const steps: string[] = [];
 	const f64 = (at: number, length: number) => new Float64Array(memory.buffer, at, length);
 	const fields: Record<number, number> = {
 		[C.SCENE_FIELD_POSITIONS]: AT.positions,
@@ -151,18 +153,34 @@ function fakeCore() {
 			return query('raycastBatch', C.QUERY_CLOSEST, layers, count);
 		},
 		overlap: (kind: number, layers: number) => query('overlap', kind, layers),
+		beginFrame: (frame: number) => {
+			steps.push(`beginFrame ${frame}`);
+			return 0;
+		},
+		updateTransforms: () => {
+			steps.push('updateTransforms');
+			return 0;
+		},
+		updateBatches: (frame: number) => {
+			steps.push(`updateBatches ${frame}`);
+			return 0;
+		},
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	const scene = new Scene(core, { frame: 3 }, false);
+	const time = { frame: 3 };
+	const scene = new Scene(core, time, false);
 	const box = new MeshGeometry(1, 0.87, core);
 	const paint = new Material(1, core, 'materials.standard.set');
 	return {
 		scene,
+		time,
 		box,
 		paint,
 		calls,
+		/** The steps that the first frame took before a query, in order. */
+		steps,
 		/** The hits that the next queries return, in order; null is a miss for a batch's ray. */
 		script(hits: (Scripted | null)[]) {
 			script = hits;
@@ -306,6 +324,30 @@ describe('raycasts', () => {
 		script([]);
 		expect(scene.raycastAny([0, 0, 0], [0, 0, -1])).toBe(false);
 		expect(calls.map((call) => call.kind)).toEqual([C.QUERY_ANY, C.QUERY_ANY]);
+	});
+
+	test('a query before the first frame applies the queued changes and updates the world', () => {
+		const { scene, time, steps, box, paint } = fakeCore();
+		scene.createMesh({ mesh: box, material: paint });
+		// The sketch's setup queries before the runner starts a frame, as a probe bake does: the
+		// query applies the objects that setup created, then updates their transforms and the
+		// batches, as the runner's first frame would.
+		time.frame = 0;
+		scene.raycastAny([0, 0, 0], [0, 0, -1]);
+		expect(steps).toEqual(['beginFrame 1', 'updateTransforms', 'updateBatches 1']);
+		// A bake casts many batches of rays, which settle nothing while setup adds nothing.
+		steps.length = 0;
+		scene.raycastAny([0, 0, 0], [0, 0, -1]);
+		expect(steps).toEqual([]);
+		// Setup may build more before it queries again, so a new command settles again.
+		scene.createMesh({ mesh: box, material: paint });
+		scene.raycastAny([0, 0, 0], [0, 0, -1]);
+		expect(steps).toEqual(['beginFrame 1', 'updateTransforms', 'updateBatches 1']);
+		// The runner's frame loop keeps the world current from the first frame on.
+		steps.length = 0;
+		time.frame = 1;
+		scene.raycastAny([0, 0, 0], [0, 0, -1]);
+		expect(steps).toEqual([]);
 	});
 
 	test('raycastAll fills the list, adds hit objects as it grows, and follows the moved hit array', () => {

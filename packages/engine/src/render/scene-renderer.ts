@@ -7,6 +7,7 @@
 
 import type { JoinedBuilds } from '../gpu/effect-join';
 import type { GpuMemory } from '../gpu/memory';
+import { ReadSink } from '../gpu/readback';
 import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
 import { MemoryViews } from '../shared/memory-views';
 import { Counter, type FrameRecorder } from '../shared/metrics';
@@ -46,6 +47,8 @@ interface SceneBackend {
 	readonly gpuMemory: GpuMemory;
 	/** The backend's builds of joined effects' shaders. */
 	readonly joins: JoinedBuilds;
+	/** Where the bytes of the draw lists' reads land, which the frame replay sets. */
+	readSink: ReadSink | undefined;
 }
 
 /**
@@ -99,6 +102,7 @@ export class FrameReplay {
 	) {
 		this.views = new MemoryViews(memory);
 		this.slots = controlViews(control).slots;
+		backend.readSink = new ReadSink(this.views, this.slots);
 		backend.joins.onFailed = (template) => Atomics.store(this.slots, Slot.JoinFailed, template);
 	}
 

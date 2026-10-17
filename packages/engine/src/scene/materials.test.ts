@@ -378,6 +378,14 @@ describe('Material.set', () => {
 		expect(table[0]?.[MATERIAL_PARAM_OPACITY]).toBe(0.25);
 	});
 
+	test("gives a shadow catcher without a color black shadows, as three.js's ShadowMaterial", () => {
+		const { table, materials } = fakeCore();
+		materials.shadowCatcher({ opacity: 0.6 });
+		materials.shadowCatcher();
+		expect(table[0]?.slice(0, 4)).toEqual([0, 0, 0, 0.6]);
+		expect(table[1]?.slice(0, 4)).toEqual([0, 0, 0, 1]);
+	});
+
 	test('refuses the weighted blending beside transmission, and on custom materials', () => {
 		const { features, materials } = fakeCore();
 		const glass = thrown(() =>
@@ -1147,5 +1155,40 @@ describe('material.destroy', () => {
 			);
 		}
 		expect(destroyed).toEqual([1, 2]);
+	});
+});
+
+describe('material values in every frame', () => {
+	test('reads each number of set by its own name, inside a test that the object holds it', async () => {
+		// A read by a key from a list boxes each fraction, and so does a plain read by name where
+		// some of the objects that reach the call lack the name: `bench:allocation --setters` calls
+		// set in every frame.
+		const source = await Bun.file(new URL('./resources.ts', import.meta.url)).text();
+		const body = source.slice(
+			source.indexOf('function writeValues('),
+			source.indexOf('function sendValue('),
+		);
+		expect(body).not.toMatch(/values\[/);
+		expect(body).not.toMatch(/\bof RANGED\b/);
+		for (const name of [
+			'opacity',
+			'alphaCutoff',
+			'metalness',
+			'roughness',
+			'emissiveIntensity',
+			'aoMapIntensity',
+			'lightMapIntensity',
+			'specularIntensity',
+			'envIntensity',
+			'transmission',
+			'thickness',
+			'clearcoat',
+			'clearcoatRoughness',
+			'sheenRoughness',
+			'edgeFade',
+			'ior',
+			'attenuationDistance',
+		])
+			expect(body).toContain(`if ('${name}' in values) {\n\t\tconst `);
 	});
 });
