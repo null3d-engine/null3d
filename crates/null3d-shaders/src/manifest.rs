@@ -243,15 +243,15 @@ pub struct BuildCounts {
 ///
 /// Every build costs the shader build its compile time and costs a page the bytes that carry it,
 /// and a permutation bit on a lit template multiplies the count. The figures are the count on
-/// 17 October 2026, when a review found that the count had grown four times in two days with
-/// nothing to hold it. The implementation notes give the measurement and the reason to raise a
-/// figure ([the count the manifest may not
+/// 18 October 2026, when the translucency bit and the two subsurface templates of M2-EX36 joined
+/// the manifest and the review of 17 October's growth still held. The implementation notes give the
+/// measurement and the reason to raise a figure ([the count the manifest may not
 /// pass](../../../.dev/implementation-notes.md#the-count-the-manifest-may-not-pass)). A commit
 /// that adds builds on purpose raises the figure it passes and records why there. The test
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
-    glsl: 14_994,
-    wgsl: 6_170,
+    glsl: 21_907,
+    wgsl: 8_668,
 };
 
 impl Manifest {

@@ -1090,9 +1090,12 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 21,164 builds on 17 October 2026: 14,994 GLSL builds and 6,170
-WGSL ones. The GLSL figure rose by four when the picking template took the MORPH bit on WebGL2, so a
-morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
+The manifest's 115 variants make 30,575 builds on 18 October 2026: 21,907 GLSL builds and 8,668
+WGSL ones. The translucency bit of M2-EX36 joins the lit, standard-material, probe grid and custom
+material templates, and its two subsurface templates add one more pair, so the count rose from
+14,994 and 6,170. The count includes the probe grid's translucency builds, which the engine draws
+when a translucent mesh stands in a scene with a probe grid. A build counts once for each target
+that its variant writes, so a variant that writes
 both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
 files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
 builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping

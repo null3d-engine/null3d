@@ -4502,7 +4502,7 @@ mod tests {
         },
         subsurface: SubsurfaceIds {
             buffer: 20,
-            first_group: 70,
+            first_group: 210,
         },
         weighted: WeightedIds { first_group: 140 },
         particle_depth: 121,
