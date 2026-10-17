@@ -92,7 +92,7 @@ return {
 | `additive` | `false` | `true` adds the clip's change on top of the other layers. |
 | `time` | the first frame | Seconds into the clip at which it starts. A repeating clip wraps the time into its length. A clip that plays once holds the time within its length. |
 | `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
-| `transition` | `'blend'` | How a play with a fade switches what its layer plays. `'blend'` cross-fades the layer's old clips with the new one, and samples both while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves carries on at its own speed and eases into the new clip, as [Inertial transitions](#inertial-transitions) shows. It needs a fade above 0, no `weight` and no clip already playing on the layer. |
+| `transition` | `'blend'` | How a play with a fade switches what its layer plays. `'blend'` cross-fades the layer's old clips with the new one, and samples both while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves carries on at its own speed and eases into the new clip, as [Inertial transitions](#inertial-transitions) shows. It needs a fade above 0, no `weight` and a clip already playing on the layer to switch from. |
 
 `crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, because three.js's `crossFadeTo` shows the mix of two clips. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
 
@@ -168,9 +168,12 @@ which that pose moves. The new clip then plays alone. Each frame of the fade, th
 on at that rate. The layer's pose moves toward the new clip's by the ease `x²(3 - 2x)` of the
 fade's share `x`. The pose reaches the new clip exactly when the fade ends.
 
-An inertial transition needs a fade above 0, and no `weight`. No clip may already play on the layer.
-A play that joins its layer keeps the weighted blend. So do a layer with a 1D blend and an additive
-clip. `crossFade` always cross-fades too, so a port of three.js's `crossFadeTo` shows the mix that
+An inertial transition needs a fade above 0, no `weight`, and a clip already playing on the layer.
+The layer's pose carries on from that clip. A play that joins its layer keeps the weighted blend, and
+so does a layer with a 1D blend or an additive clip. A play of a clip that already plays there keeps
+its time and fades it back in.
+
+`crossFade` always cross-fades too, so a port of three.js's `crossFadeTo` shows the mix that
 three.js shows.
 
 A transition costs one extrapolated pose and its velocity per joint of the layer. A scene that
