@@ -110,6 +110,22 @@ On 18 October 2026 the same checks ran again, after this branch merged main's ne
 
 **Size.** `bun run build:check-size` against main at ec8f5cca7, after Brotli, on 12 October 2026. The pipelined start grew from 133.0 to 133.4 KB on WebGPU, and from 130.2 to 130.5 KB on WebGL2, of 140 KB. The material options and their checks make most of it. The glTF worker grew by 1.7%, since it reads one more extension. The WebAssembly files kept their sizes. The twelve new shader files of the `translucency` feature take 24,530 to 29,589 bytes, under their 32 KB limit, and 1,428 KB at most before compression, under 1,536 KB. They load only with the first material that lets light through to its other side. The other shader files grew by at most 0.4%: the material row's new field shows in every build's declaration of the row.
 
+### Part B, the skin blur
+
+**The blur's own checks.** `tests/image/subsurface.spec.ts` measures the blur against the plain panel beside it, on every tier of both sets. On 18 October 2026 both of its checks passed on the Mac's GPU and on SwiftShader. The box's shadow on the skin lifts by more than 0.01 of full brightness and turns redder by more than 0.02, while the lit skin away from the shadow stays within 0.03 of the plain panel. With no taps the two panels draw alike within 0.01. A box in front of the skin takes no blur. A base color map's stripes soften to less than 0.8 of their sharp edge energy, and half the render scale blurs the same way.
+
+**Image tests.** Five tests cover the blur: `subsurface`, `subsurface-off`, `subsurface-maps`, `subsurface-scale-50` and `demo-subsurface`. Their references were made on 18 October 2026, in both sets, with the checks above passing first.
+
+**First use.** The builds of the blur are the `subsurface` set of the shader manifest: the skin pass's standard material with and without maps, and the blur's two steps. A page downloads them with its first material that gives `subsurfaceRadius`. Their files take 14,075 to 33,549 bytes after Brotli, under the 49 KB limit for a first-use shader file.
+
+**Allocation.** `bun run bench:allocation --subsurface` and `--translucency` on the Mac's GPU on 18 October 2026, both paths: every run passes. With the blur on S1's 64 scattered spheres, the sketch worker allocated 215.4 bytes per frame on WebGPU and the render worker 564.4; on WebGL2 they allocated 208.6 and 176.2. With S1's boxes letting half their light through, they allocated 224.7 and 487.7 on WebGPU, and 220.4 and 166.1 on WebGL2. The figures for the blur differ from part A's because the two switches add different objects.
+
+**The builds.** The translucency bit and the blur's templates take the shader manifest from 14,994 GLSL and 6,170 WGSL builds to 21,907 and 8,668. The notes record the new figure and its reason.
+
+**GPU check.** `bun run bench:gpu-check --measure` on the Mac's GPU on 18 October 2026, over `a616befb6..2e93cbf5b`. The tool did not judge the run, because the benchmark pages changed between the two commits: this branch adds the `--subsurface` and `--translucency` switches to them. Its line reads: `GPU-Checked: a616befb6..2e93cbf5b not judged: s4 medium 4.08 to 4.09 ms (-0.0%); s6 medium 5.25 to 4.93 ms (-5.6%); s4 high 4.84 to 3.74 ms (-14.3%); s6 high 7.17 to 10.30 ms (+43.7%); the benchmark pages changed between the commits`. Both builds drew the same quality steps in every run.
+
+**What the blur costs.** With the blur off, a page draws exactly as before and holds no blur layout. With it on, High draws 17 taps in each step and Ultra 25, over 11 for the lightest setting. The skin pass and its culling pass are one extra draw per scattering object per frame, and the two full-screen steps cost the render size. The render scale bounds all of it.
+
 ## Decision
 
 Options A throughout, for light through thin surfaces: glTF's diffuse transmission as the Khronos sample renderer draws it, with glTF's names, its maps in the specular maps' slots, and one permutation bit whose builds load on first use. For skin, option A of "Skin: the screen-space blur": a skin pass of the subsurface view, two separable steps with Burley's profile, and the quality setting `subsurfaceSamples`, on High and Ultra.
