@@ -59,6 +59,6 @@ export default defineSketch((ctx) => {
 			receiveShadows: true,
 		});
 	}
-	terrain.update(-90, 150);
+	terrain.update([-90, 0, 150]);
 	return {};
 });
