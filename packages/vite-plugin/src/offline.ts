@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import { posix, relative, resolve, sep } from 'node:path';
 import type { Plugin, Rollup } from 'vite';
-import { engineShadersRoot } from './engine-shaders.ts';
+import { ENGINE_SHADERS_ENV, engineShadersRoot } from './engine-shaders.ts';
 import type { Null3dPackage } from './package-files.ts';
 
 /** The file that a production build writes beside the page, with the build's files by group. */
@@ -101,9 +101,10 @@ export function engineModule(
 ): string | undefined {
 	if (id.startsWith('\0')) return undefined;
 	const file = id.split('?')[0] ?? id;
-	// The engine's generated shader modules come from the set on this machine, not from the
-	// package, and keep the names that the engine's files import them by.
-	if (file.startsWith(engineShadersRoot() + sep)) {
+	// The engine's generated shader modules come from the set on this machine, or from the folder
+	// that names one, not from the package, and keep the names that the engine's files import.
+	for (const root of [engineShadersRoot(), process.env[ENGINE_SHADERS_ENV]]) {
+		if (!root || !file.startsWith(root + sep)) continue;
 		const name = file.slice(file.lastIndexOf(sep) + 1).replace(/\.[cm]?[jt]s$/, '');
 		return `generated/${name}`;
 	}

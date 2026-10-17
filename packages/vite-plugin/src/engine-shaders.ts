@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 
 /** What a release asset holds, and what the installed package says about it. */
@@ -32,6 +32,13 @@ export function engineShadersRoot(): string {
 		'engine-shaders',
 	);
 }
+
+/**
+ * A folder of the engine's generated modules to use as they are, named by `NULL3D_ENGINE_SHADERS`.
+ * A build of the engine's sources writes the same modules to `packages/engine/src/generated`, so a
+ * checkout that has them, and CI's package test, need neither the download nor a build.
+ */
+export const ENGINE_SHADERS_ENV = 'NULL3D_ENGINE_SHADERS';
 
 /** The record of a set that a project may use: its hash and the files it holds. */
 const MARKER = '.complete';
@@ -58,6 +65,11 @@ export function engineShaderFolder(
 	let folder = folders.get(lib);
 	if (!folder) {
 		folder = (async () => {
+			const named = process.env[ENGINE_SHADERS_ENV];
+			if (named) {
+				const given = resolve(named);
+				if (existsSync(join(given, 'shaders.ts'))) return given;
+			}
 			const artifact = readArtifact(lib);
 			if (artifact) {
 				const fetched = await sources.fetch(artifact);
