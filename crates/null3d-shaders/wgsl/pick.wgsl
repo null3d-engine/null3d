@@ -12,11 +12,16 @@
 // 32-bit id and its row read back in one texel.
 //
 // The SKIN builds skin each vertex with the joint texture, as WebGL2 and the other engine templates
-// do, so a skinned character picks where it draws.
+// do, so a skinned character picks where it draws. The MORPH builds, which only WebGL2 has, add the
+// morph targets' deltas before that, as its shading templates do, so a morphed mesh picks where it
+// draws too.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, object_ids, relative_position}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_point}
+#endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
 #endif
 
 /// The vertex attributes that the template reads. The mask's and the material's values are not
@@ -26,6 +31,9 @@ struct VertexIn {
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
+#endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
 #endif
 }
 
@@ -38,10 +46,21 @@ struct VertexOut {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
-#ifdef SKIN
-    let position = skinned_point(skin_of(found, v.joints, v.weights), mesh_position(v.position));
+#ifdef MORPH
+    // Only the position matters here, so the normal and the tangent enter as zero.
+    let rest = morph_vertex(
+        found,
+        v.morph,
+        Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0)),
+    );
+    let rest_position = rest.position;
 #else
-    let position = mesh_position(v.position);
+    let rest_position = mesh_position(v.position);
+#endif
+#ifdef SKIN
+    let position = skinned_point(skin_of(found, v.joints, v.weights), rest_position);
+#else
+    let position = rest_position;
 #endif
     var out: VertexOut;
     out.position = clip_of(found, relative_position(found, position));
