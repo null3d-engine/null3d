@@ -50,7 +50,7 @@ use null3d_gpu::drawlist::{
     template, texture_usage, view as view_dimension,
 };
 
-use crate::frame::{CellOffsets, RecordError, SceneSettings, UploadArena};
+use crate::frame::{RecordError, SceneSettings, UploadArena};
 use crate::materials::MapSlot;
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 use crate::view::{ViewFrame, ViewId};
@@ -377,8 +377,6 @@ pub(crate) struct ParticlePass {
     camera_depth: u32,
     /// True once the blank depth texture exists.
     blank: bool,
-    /// Scratch: the offsets of the cells from a view's camera.
-    offsets: CellOffsets,
 }
 
 impl ParticlePass {
@@ -389,7 +387,6 @@ impl ParticlePass {
             depth_views: 0,
             camera_depth: 0,
             blank: false,
-            offsets: CellOffsets::default(),
         }
     }
 
@@ -620,18 +617,13 @@ impl ParticlePass {
     ) -> Result<(), RecordError> {
         let slot = system.slot as usize;
         let matrix = &scene.world(parity).matrices()[slot * MATRIX_FLOATS..][..MATRIX_FLOATS];
-        let cell = scene.cells()[slot] as usize;
+        let cell = scene.cells()[slot];
+        let cells = scene.cell_table();
         for k in 0..views {
             let Some(frame) = frame_of(k) else {
                 continue;
             };
-            self.offsets.update(scene, &frame.camera);
-            let offset = self
-                .offsets
-                .as_slice()
-                .get(cell)
-                .copied()
-                .unwrap_or([0.0; 4]);
+            let offset = cells.offset_of(cell, &frame.camera);
             let mut block = [0f32; VIEW_WRITTEN_BYTES / 4];
             for (r, row) in matrix.as_chunks::<4>().0.iter().enumerate() {
                 block[r * 4..r * 4 + 4].copy_from_slice(row);
