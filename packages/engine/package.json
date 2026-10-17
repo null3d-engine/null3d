@@ -46,6 +46,9 @@
 	},
 	"files": [
 		"lib",
+		"!lib/generated/shaders*.js",
+		"!lib/generated/shader-features.js",
+		"!lib/generated/shader-paragraphs-*.js",
 		"dist/wasm/*/*.js",
 		"dist/wasm/*/*.wasm",
 		"vendor",
