@@ -65,14 +65,19 @@ export default defineSketch(async ({ scene, assets }) => {
   const eye: [number, number, number] = [0, 0, 0];
   return {
     onUpdate() {
-      camera.getWorldPosition(eye);
+      // The camera has no parent here, so its own position is its world position.
+      camera.getPosition(eye);
       trees.update(eye);
     },
   };
 });
 ```
 
-`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position in the world. Keep one array for the position, as above, so the frame loop allocates nothing. A card shows one view: three-way blending is a later step.
+`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position in the world. Keep one array for the position, as above, so the frame loop allocates nothing.
+
+A camera with no parent reports its own position at once with `getPosition`. `camera.getWorldPosition` reports the world matrix of the frame that last ran. A sketch's first update therefore reads the world's origin, and every card shows the view from there. Use `getWorldPosition` from the second frame on, or `getPosition` while the camera has no parent.
+
+A card shows one view: three-way blending is a later step.
 
 The cards are a static sprite batch. `update` marks only the cards whose view changed, so a still camera uploads nothing. When the eye has not moved since the last call, `update` returns at once. After you change cards' positions, sizes or colors through `trees.sprites`, call `trees.markDirty(start, count)` for those cards. The batch then uploads them, and the next `update` picks every view again.
 
