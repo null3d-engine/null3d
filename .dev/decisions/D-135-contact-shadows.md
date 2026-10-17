@@ -121,7 +121,7 @@ WebGL2 draws the depth prepass on every preset, so its Medium pays only the copy
 
 ## The governor
 
-The governor's last step lowers the steps to 4. It comes after ambient occlusion's step, and only while the main directional light casts shadows. Contact shadows cost less than ambient occlusion, and they show more where they draw.
+The governor's last step lowers the steps to 4. It comes after the steps of ambient occlusion and screen-space reflections, and only while the main directional light casts shadows. Contact shadows cost less than ambient occlusion, and they show more where they draw.
 
 ## Cost
 

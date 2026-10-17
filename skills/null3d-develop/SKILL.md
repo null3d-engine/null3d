@@ -160,6 +160,7 @@ Effects:
 | Color grading made in code, with no file | `post.set({ lut: await assets.lutFromData({ size, data }) })` (0.2): three numbers per texel, red fastest, as a `.cube` file | `api/assets` |
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
+| Wet streets, polished floors and metal that reflect the scene | `post.set({ ssr: { maxDistance, thickness } })` (0.2) with smooth materials; `ssrScale` 0 on Low; an environment shows where rays miss. A flat mirror: a reflection pass | `api/post`, `concepts/post-processing` |
 | Depth of field, a camera's lens | `camera.setFocalLength(mm)` and `post.set({ dof: { aperture, focusDistance or focusPoint } })` (0.2); quality setting `dofSamples`, 0 on Low | `api/post`, `api/cameras`, `concepts/post-processing` |
 | An eye that adapts from bright to dark places, automatic exposure | `post.set({ autoExposure: { minEv, maxEv, speedUp, speedDown, compensation } })` (0.2), from the camera's `exposure` or `ev100`; quality setting `exposureMeter` | `api/post`, `concepts/post-processing` |
 | A custom full-screen effect, or a tone curve of your own | `post.addEffect({ wgsl, uniforms, order })`, or `post.set({ toneMapping: wgsl })` (0.2) | `guides/custom-passes` |

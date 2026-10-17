@@ -78,6 +78,7 @@ export interface Null3dPageOptions {
  * - `extraBox` adds a small box to S1.
  * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into.
  * - `transmission` puts clear water under S1's swarm that lets light through.
+ * - `ssr` puts a polished floor under S1's swarm with screen-space reflections on.
  * - `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them with `coatSheen=coat` or
  *   `coatSheen=sheen`.
  * - `weighted` puts a column of smoke of the weighted blending over S1, and `weighted=sorted` the
@@ -125,6 +126,7 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
+	'ssr',
 	'coatSheen',
 	'weighted',
 	'particles',
