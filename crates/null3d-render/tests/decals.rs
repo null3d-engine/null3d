@@ -172,9 +172,8 @@ fn entries(group: &[u32]) -> Vec<&[u32]> {
     group[3..].chunks(5).collect()
 }
 
-/// The frame group's bindings of the light probe grids' texture and of the copy of the opaque
-/// color, which no decal build reads.
-const UNREAD_BY_DECALS: [u32; 2] = [10, 15];
+/// The frame group's binding of the light probe grids' texture, which no decal build reads.
+const UNREAD_BY_DECALS: [u32; 1] = [10];
 
 #[test]
 fn decals_bind_the_frame_group_without_the_textures_they_never_read_on_webgpu() {
@@ -188,8 +187,9 @@ fn decals_bind_the_frame_group_without_the_textures_they_never_read_on_webgpu() 
     }
     let camera = groups_of(&plain[0], layout::FRAME).swap_remove(0);
 
-    // The decal pass's frame group binds the camera's, without the grid and the copy, so a decal
-    // with maps reads 15 sampled textures in its fragment stage, within WebGPU's 16.
+    // The decal pass's frame group binds the camera's without the grid, so a decal with maps reads
+    // 16 sampled textures in its fragment stage, within WebGPU's 16. The copy of the opaque color
+    // stays: the reflections' lit code reads it in every lit build.
     world.add_object_with(&plane, Shading::Lit, feature::DECAL);
     let decal = frames(&mut world, &mut mock);
     let made: Vec<Vec<u32>> = decal

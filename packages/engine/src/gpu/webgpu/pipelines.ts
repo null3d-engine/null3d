@@ -576,13 +576,14 @@ export class Pipelines {
 			objectRanges,
 		];
 		this.defineLayout(LAYOUT_FRAME, 'frame', frame);
-		// The decals' frame group leaves out the probe grid and the copy of the opaque color, which
-		// no decal build reads, so that a decal with maps stays within the default count of sampled
-		// textures in the fragment stage. It is made at the first decal.
+		// The decals' frame group leaves out the probe grid, which no decal build reads, so that a
+		// decal with maps stays within the default count of sampled textures in the fragment stage.
+		// It carries the copy of the opaque color, which the reflections' lit code reads in every
+		// lit build, decals included. It is made at the first decal.
 		this.defineLayout(
 			LAYOUT_DECAL_FRAME,
 			'decal frame',
-			frame.filter((entry) => entry !== probeGrid && entry !== transmission),
+			frame.filter((entry) => entry !== probeGrid),
 			true,
 		);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
