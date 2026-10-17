@@ -102,13 +102,14 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
-#import null3d::gtao::{screen_occlusion, screen_values}
+#import null3d::gtao::{screen_occlusion, screen_read}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #ifdef PROBE_GRID
 #import null3d::probe_grid::{has_probe_grid, probe_grid_irradiance}
 #endif
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
+#import null3d::ssr::{screen_reflection}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -940,9 +941,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// `vertex_normal`. `contact` is the share of the sun's light that the sun's contact shadows let
 /// through. `relative` is the surface's position relative to the camera, `to_view` points from the
 /// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
-/// view angle. In custom materials, `reflection` holds light from the mirror direction and its
-/// share, which takes the place of that share of the environment's reflection, with or without an
-/// environment.
+/// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
+/// reflections and a custom material's planar reflection, which takes the place of that share of
+/// the environment's reflection, with or without an environment.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -953,9 +954,7 @@ fn light_surface(
     extra: vec3f,
     occlusion: f32,
     contact: f32,
-#ifdef CUSTOM
     reflection: vec4f,
-#endif
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     let to_sun = -engine_frame.sun_direction.xyz;
@@ -994,7 +993,6 @@ fn light_surface(
     diffuse_light = sun.diffuse + clustered.diffuse + indirect;
 #endif
     let env = engine_frame.environment;
-#ifdef CUSTOM
     let mirrored = saturate(reflection.a);
 #ifdef PROBE_GRID
     if has_environment(env) || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
@@ -1005,16 +1003,6 @@ fn light_surface(
         var irradiance = environment_irradiance(env, normal) * strength;
         let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
         let radiance = mix(surrounding, reflection.rgb, mirrored);
-#else
-#ifdef PROBE_GRID
-    if has_environment(env) || has_probe_grid(engine_frame.probe_grid) {
-#else
-    if has_environment(env) {
-#endif
-        let strength = material_row.uv_u.w;
-        var irradiance = environment_irradiance(env, normal) * strength;
-        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
-#endif
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
         if has_probe_grid(engine_frame.probe_grid) {
@@ -1029,11 +1017,7 @@ fn light_surface(
         let share = layered_ambient(irradiance, n_dot_v, occlusion);
         image.diffuse *= share;
         image.specular *= share;
-#ifdef CUSTOM
         let coat_radiance = mix(coat_environment(env, to_view, strength), reflection.rgb, mirrored);
-#else
-        let coat_radiance = coat_environment(env, to_view, strength);
-#endif
         layered_environment(coat_radiance, to_view, occlusion);
 #endif
         let fading = horizon_occlusion(to_view, normal, vertex_normal);
@@ -1124,7 +1108,25 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
 #endif
-    let screen = screen_values(pixel.xyz, blended);
+    // The screen texture's values, then what the screen showed along the mirror direction, with a
+    // planar reflection over it: the planar reflection's share wins on its plane.
+    let screen = screen_read(pixel.xyz, blended);
+    let mirrored = screen_reflection(
+        screen.hit,
+        input.relativePosition,
+        normal,
+        input.viewDirection,
+        pbr.roughness,
+    );
+#ifdef CUSTOM
+    let planar = saturate(s.reflection.a);
+    let screen_share = mirrored.a * (1.0 - planar);
+    let mirror_share = planar + screen_share;
+    let mirror = (s.reflection.rgb * planar + mirrored.rgb * screen_share) / max(mirror_share, 1e-6);
+    let reflection = vec4f(mirror, mirror_share);
+#else
+    let reflection = mirrored;
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -1133,11 +1135,9 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
-        s.occlusion * screen_occlusion(screen),
-        screen.w,
-#ifdef CUSTOM
-        s.reflection,
-#endif
+        s.occlusion * screen_occlusion(screen.values),
+        screen.values.w,
+        reflection,
     );
 #ifdef TRANSMISSION
     // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less

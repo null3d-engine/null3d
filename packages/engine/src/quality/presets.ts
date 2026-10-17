@@ -186,6 +186,24 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 16, 22, 43, 71],
 	},
+	// The size of screen-space reflections' grid, as a share of the render size each way: 0 on Low,
+	// which phones run, where reflective surfaces keep the environment's light. A share above 0 draws
+	// a corner of the same targets, so it changes during play with no new GPU object; a change to or
+	// from 0 adds or removes the reflections' passes. The reflections share ambient occlusion's grid,
+	// at the larger of the two scales (D-134).
+	ssrScale: {
+		presets: [0, 0.25, 0.5, 0.5],
+		changes: 'live',
+		values: [0, 0.25, 0.5],
+	},
+	// The most steps of each reflected ray's march through the depth pyramid. A step crosses a cell
+	// of the pyramid, which grows as the ray finds open space, so rays that travel far need more
+	// steps. They live in a uniform block, so a change makes no GPU object (D-134).
+	ssrSteps: {
+		presets: [16, 24, 48, 64],
+		changes: 'live',
+		values: [16, 24, 32, 48, 64],
+	},
 	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
 	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
 	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
@@ -479,6 +497,19 @@ export interface QualitySettings {
 	 */
 	dofSamples: 0 | 16 | 22 | 43 | 71;
 	/**
+	 * The size of screen-space reflections' grid, as a share of the render size each way: 0.5,
+	 * 0.25, or 0, which draws no screen-space reflections even when `post.set` turns them on. A
+	 * smaller share costs less, with blockier edges where reflections start and stop. It changes
+	 * during play: 0.5 and 0.25 make no GPU object, and a change to or from 0 adds or removes the
+	 * reflections' passes.
+	 */
+	ssrScale: 0 | 0.25 | 0.5;
+	/**
+	 * The most steps of each reflected ray's march: 16, 24, 32, 48 or 64. More steps let rays reach
+	 * farther objects and cost more. It changes during play.
+	 */
+	ssrSteps: 16 | 24 | 32 | 48 | 64;
+	/**
 	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
 	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
 	 * 16 x 16 cells of the image, on every GPU path. WebGL2 always takes the downsample. The
@@ -537,10 +568,11 @@ export interface QualitySettings {
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
 	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
-	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the steps of contact
-	 * shadows, how often far characters' poses update, and the volumetric fog's slices while it
-	 * draws. It raises them again, in the reverse order, once frames have time
-	 * to spare. `quality.governor` reports its steps. False keeps the render scale at
+	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the scale of
+	 * screen-space reflections while they draw, the steps of contact shadows, how often far
+	 * characters' poses update, and the volumetric fog's slices while it draws. It raises them
+	 * again, in the reverse order, once frames have time to spare. `quality.governor`
+	 * reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
 	 */

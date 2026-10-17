@@ -278,6 +278,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'wet-street',
+		group: 'Light, materials and effects',
+		sketch: new URL('./wet-street/sketch.ts', import.meta.url),
+		code: 'wet-street/',
+		title: 'Screen-space reflections',
+		scene: 'Wet street at night',
+		summary:
+			'A street after the rain, whose puddles mirror the lit windows, the neon shop signs, the street lamps and a passing taxi, while the dry asphalt between them stays matte. Dark window panes, wet curbs and chrome bollards shine too.',
+		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'auto-exposure',
 		group: 'Light, materials and effects',
 		sketch: new URL('./auto-exposure/sketch.ts', import.meta.url),

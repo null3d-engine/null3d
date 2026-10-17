@@ -106,6 +106,12 @@ export const LOWEST_AO_SCALE = thousandths(QUALITY_SETTINGS.aoScale.values[1]);
 export const FEWEST_CONTACT_STEPS = QUALITY_SETTINGS.contactShadowSteps.values[1];
 
 /**
+ * The smallest scale of screen-space reflections' grid above none, in thousandths of the render
+ * size.
+ */
+export const LOWEST_SSR_SCALE = thousandths(QUALITY_SETTINGS.ssrScale.values[1]);
+
+/**
  * The governor's steps of the far cascades' interval from `interval` on: each step doubles it, up to
  * the longest interval.
  */
@@ -263,6 +269,11 @@ export class Governor {
 	aoScale = 0;
 	/** The steps of each march of contact shadows: the setting's, or the fewest after a step. */
 	contactSteps = 0;
+	/**
+	 * The scale of screen-space reflections' grid in thousandths of the render size: the setting's,
+	 * or the lowest above none after a step.
+	 */
+	ssrScale = 0;
 	/** The frames between two updates of a far character's pose: the setting's, or longer after a
 	 * step. A sketch reads it and gives it to the characters that the camera sees from far.
 	 */
@@ -271,7 +282,8 @@ export class Governor {
 	fogHalvings = 0;
 	/**
 	 * Counts each change of `detailFactor`, `farInterval`, `filter`, `bloomHalvings`, `aoScale`,
-	 * `contactSteps`, `animationInterval` or `fogHalvings`, so the frame loop applies them.
+	 * `ssrScale`, `contactSteps`, `animationInterval` or `fogHalvings`, so the frame loop applies
+	 * them.
 	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
@@ -300,6 +312,9 @@ export class Governor {
 	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
 	private aoSetting = 0;
 	private ao = false;
+	/** The scale of screen-space reflections that their step starts from, and whether they are on. */
+	private ssrSetting = 0;
+	private ssr = false;
 	/** The volumetric fog's slices that its step halves, and whether it is on. */
 	private fogSetting = 0;
 	private fog = false;
@@ -386,6 +401,17 @@ export class Governor {
 	}
 
 	/**
+	 * Sets the scale of screen-space reflections' grid that their step starts from, in thousandths,
+	 * and whether the sketch has them on, which the step needs.
+	 */
+	setSsr(on: boolean, scale: number): void {
+		if (on === this.ssr && scale === this.ssrSetting) return;
+		this.ssr = on;
+		this.ssrSetting = scale;
+		this.applySteps();
+	}
+
+	/**
 	 * Sets the frames between two updates of a far character's pose that the step starts from. A
 	 * sketch reads the result and gives it to its far characters.
 	 */
@@ -440,7 +466,8 @@ export class Governor {
 
 	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
-	 * occlusion, contact shadows, far characters' pose updates and the settings allow.
+	 * occlusion, screen-space reflections, contact shadows, the far characters' update interval,
+	 * the volumetric fog's slices and the settings allow.
 	 */
 	get maxSteps(): number {
 		return (
@@ -449,6 +476,7 @@ export class Governor {
 			this.filterSteps() +
 			this.bloomSteps() +
 			this.aoSteps() +
+			this.ssrSteps() +
 			this.contactStepCount() +
 			this.animationStepCount() +
 			this.fogSteps()
@@ -662,6 +690,11 @@ export class Governor {
 		return this.ao && this.aoSetting > LOWEST_AO_SCALE ? 1 : 0;
 	}
 
+	/** Screen-space reflections' step while they draw above the lowest scale: to the lowest. */
+	private ssrSteps(): number {
+		return this.ssr && this.ssrSetting > LOWEST_SSR_SCALE ? 1 : 0;
+	}
+
 	/** The volumetric fog's step while it draws: it halves the slices that each frame draws. */
 	private fogSteps(): number {
 		return this.fog && this.fogSetting > 0 ? 1 : 0;
@@ -689,8 +722,9 @@ export class Governor {
 	 * that frames draw with: the threshold of the levels of detail doubles with each of its steps,
 	 * then the far cascades' interval doubles with each of its steps, the filter takes the lightest
 	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale, then
-	 * contact shadows take their fewest steps, then the far characters' update interval doubles with
-	 * each of its steps, and last the volumetric fog draws half its slices.
+	 * screen-space reflections take theirs, then contact shadows take their fewest steps, then the
+	 * far characters' update interval doubles with each of its steps, and last the volumetric fog
+	 * draws half its slices.
 	 */
 	private applySteps(): void {
 		const detailSteps = this.detailSteps();
@@ -698,7 +732,8 @@ export class Governor {
 		const shadowSteps = detailSteps + intervalSteps + this.filterSteps();
 		const bloomSteps = this.bloomSteps();
 		const aoSteps = this.aoSteps();
-		const before = shadowSteps + bloomSteps + aoSteps;
+		const ssrSteps = this.ssrSteps();
+		const before = shadowSteps + bloomSteps + aoSteps + ssrSteps;
 		const contactStepCount = this.contactStepCount();
 		const animationStepCount = this.animationStepCount();
 		this.steps = Math.min(
@@ -713,6 +748,10 @@ export class Governor {
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
 		const aoScale =
 			aoSteps > 0 && this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
+		const ssrScale =
+			ssrSteps > 0 && this.steps > shadowSteps + bloomSteps + aoSteps
+				? LOWEST_SSR_SCALE
+				: this.ssrSetting;
 		const contactSteps = this.steps > before ? FEWEST_CONTACT_STEPS : this.contactSetting;
 		const animationTaken = Math.max(0, this.steps - before - contactStepCount);
 		const animationInterval = Math.min(
@@ -726,6 +765,7 @@ export class Governor {
 			filter === this.filter &&
 			bloomHalvings === this.bloomHalvings &&
 			aoScale === this.aoScale &&
+			ssrScale === this.ssrScale &&
 			contactSteps === this.contactSteps &&
 			animationInterval === this.animationInterval &&
 			fogHalvings === this.fogHalvings
@@ -736,6 +776,7 @@ export class Governor {
 		this.filter = filter;
 		this.bloomHalvings = bloomHalvings;
 		this.aoScale = aoScale;
+		this.ssrScale = ssrScale;
 		this.contactSteps = contactSteps;
 		this.animationInterval = animationInterval;
 		this.fogHalvings = fogHalvings;
