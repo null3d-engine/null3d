@@ -1,14 +1,17 @@
-// Levels of detail: a mixed forest of 40,000 trees over rolling hills at golden hour, climbing to
+// Levels of detail: a mixed forest of 56,000 trees over rolling hills at golden hour, climbing to
 // wooded ridges in the haze, in one static instance batch per kind of tree. Three firs and a
 // broadleaf tree are made in code at four levels of detail each (./woods.ts), and each base mesh
 // names its three coarser levels with their errors. Every tree then picks its own level in each
 // frame, on the GPU or on the job workers: the coarsest whose error covers less than a pixel. Near
 // a switch the two levels share the pixels through a dither, so no tree pops, and the shadows draw
-// a coarser level still. On phones, the nearest 8,000 trees draw in full and the rest as cut-out
-// cards. Press L to draw every tree at its full detail, and compare the stats.
+// a coarser level still. An understory of bushes hides the ground between the trunks, in a batch of
+// its own. On phones, the nearest 8,000 trees draw in full and the rest as cut-out cards. Press L to
+// draw every tree at its full detail, and compare the stats.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import {
+	BUSH,
+	bushRows,
 	cardArrays,
 	cardTexture,
 	countRows,
@@ -17,15 +20,19 @@ import {
 	KINDS,
 	landArrays,
 	litterTexture,
+	meshOf,
 	plantRows,
-	treeLevels,
 	woodTexture,
 } from './woods';
 
 /** Trees in all, the trees that draw in full on Low, and the radius of the forest in meters. */
-const TREES = 40_000;
+const TREES = 56_000;
 const NEAR = 8000;
 const RADIUS = 650;
+/** Bushes of the understory, the bushes that draw on Low, and how far out they cover, in meters. */
+const BUSHES = 30_000;
+const BUSH_NEAR = 12_000;
+const BUSH_RADIUS = 360;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
@@ -74,14 +81,9 @@ export default defineSketch(async (ctx) => {
 	const rows = plantRows(TREES, RADIUS);
 	const { before, all } = countRows(rows, NEAR);
 	const kinds = KINDS.map((kind, n) => {
-		const [base, ...coarser] = treeLevels(kind).map(({ arrays, error }) => ({
-			mesh: geometry.fromArrays(arrays),
-			error,
-		}));
-		base?.mesh.setLevels(coarser);
 		const count = all[n] as number;
 		const near = before[n] as number;
-		const trees = scene.createInstances(base?.mesh ?? geometry.box(), count, {
+		const trees = scene.createInstances(meshOf(geometry, kind), count, {
 			material: bark,
 			castShadows: true,
 			receiveShadows: true,
@@ -99,12 +101,21 @@ export default defineSketch(async (ctx) => {
 		fillRows(cards, rows, n, near);
 		return { trees, cards, count, near };
 	});
+	// The understory: broad bushes that cover the ground between the trunks, at their own levels.
+	const undergrowth = scene.createInstances(meshOf(geometry, BUSH), BUSHES, {
+		material: bark,
+		castShadows: true,
+		receiveShadows: true,
+		colors: true,
+	});
+	fillRows(undergrowth, bushRows(BUSHES, BUSH_RADIUS), 0);
 	const fit = () => {
 		const low = quality.preset === 'low';
 		for (const { trees, cards, count, near } of kinds) {
 			trees.setActiveCount(low ? near : count);
 			cards.setActiveCount(low ? count - near : 0);
 		}
+		undergrowth.setActiveCount(low ? BUSH_NEAR : BUSHES);
 	};
 	fit();
 	quality.onChange(fit);
