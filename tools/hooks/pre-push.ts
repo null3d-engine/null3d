@@ -12,6 +12,12 @@
 // NULL3D_JOB_QUEUE, names its script: the trailer check in its quick lane, the cargo steps in its
 // CPU lane, so a push does not load a busy machine outside the queue. Elsewhere the steps run
 // directly. The emergency bypass is a `Push-Check-Skipped: <reason>` trailer on a pushed commit.
+// git opens the connection to the remote before it runs this check, and holds it, silent, for the
+// whole check, so the machine's ssh must keep that connection alive: a peer closes a quiet one after
+// a few minutes, and git then writes the push into a socket that has gone. The push ends with no
+// message from git, nothing pushed, and a status that says only that a write failed. The check
+// refuses such a push and names the setting, since a queue that makes the check long makes a lost
+// connection likely.
 // The check compares with the commit that git reports for main before the push. When the remote
 // holds no such commit to compare with, and no local main ref meets the pushed commit, it refuses
 // the push and asks for a fetch, since it cannot say what the push adds.
@@ -63,6 +69,23 @@ export function skipReason(messages: readonly string[]): string | undefined {
 		if (reason) return reason;
 	}
 	return undefined;
+}
+
+/** The host that an ssh remote reaches, or undefined when the remote is another transport. */
+export function sshHost(url: string): string | undefined {
+	const scheme = /^(?:ssh|git\+ssh):\/\/(?:[^@/]*@)?([^:/]+)/.exec(url);
+	if (scheme?.[1]) return scheme[1];
+	if (url.includes('://') || /^[./~]/.test(url)) return undefined;
+	return /^(?:[^@/]+@)?([^:/]+):/.exec(url)?.[1];
+}
+
+/**
+ * The keepalive interval that a command line asks ssh for, in seconds, or 0 when it asks for none. A
+ * `-o ServerAliveInterval=` option wins over the ssh configuration, as ssh reads it itself.
+ */
+export function keepaliveSeconds(command: string | undefined): number {
+	const asked = /serveraliveinterval[= \t]*(\d+)/i.exec(command ?? '');
+	return asked ? Number(asked[1]) : 0;
 }
 
 /**
@@ -149,19 +172,37 @@ function workspaceCrates(): Map<string, string> {
 
 /** The job queue's script, when this machine names one. */
 function jobQueue(): string | undefined {
-	let configured = process.env.NULL3D_JOB_QUEUE;
-	if (!configured) {
-		try {
-			configured = git('config', '--get', 'null3d.jobQueue');
-		} catch {
-			// No setting: the steps run directly.
-		}
-	}
+	const configured = process.env.NULL3D_JOB_QUEUE || gitConfig('null3d.jobQueue');
 	return configured && existsSync(configured) ? configured : undefined;
 }
 
 function hasNextest(): boolean {
 	return spawnSync('cargo', ['nextest', '--version'], { stdio: 'ignore' }).status === 0;
+}
+
+/**
+ * Whether ssh keeps a connection to this host alive while no other data flows. git opens the
+ * connection before this check runs and holds it, silent, until the check passes, so a host whose
+ * ssh sends nothing while the check runs loses the connection part way through it. Either the ssh
+ * command line or the ssh configuration may name the setting. When ssh cannot say, the check lets
+ * the push through rather than hold it for a reason it cannot read.
+ */
+function keepsAlive(host: string): boolean {
+	const command = process.env.GIT_SSH_COMMAND || gitConfig('core.sshCommand');
+	if (keepaliveSeconds(command) > 0) return true;
+	const listed = spawnSync('ssh', ['-G', host], { encoding: 'utf8' });
+	if (listed.status !== 0) return true;
+	const seconds = /^serveraliveinterval\s+(\d+)/m.exec(listed.stdout)?.[1];
+	return Number(seconds ?? 0) > 0;
+}
+
+/** A git setting's value, or undefined when it is not set here. */
+function gitConfig(key: string): string | undefined {
+	try {
+		return git('config', '--get', key) || undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -206,6 +247,23 @@ function main(): void {
 	}
 	const files = git('diff', '--name-only', base, push.localSha).split('\n').filter(Boolean);
 	const queue = jobQueue();
+	// git names the remote it pushes to on the hook's command line: its name, then its URL.
+	const host = sshHost(process.argv[3] ?? '');
+	if (host && !keepsAlive(host)) {
+		console.error(
+			`pre-push: this check leaves the connection to ${host} open and silent while it runs, and ssh here sends nothing to keep it alive.`,
+		);
+		console.error(
+			'A peer closes a quiet connection after a few minutes. The push would then end with no message from git, nothing pushed, and a status that says only that a write failed.',
+		);
+		console.error(
+			`pre-push: add \`ServerAliveInterval 20\` under \`Host ${host}\` in ~/.ssh/config, or name it on the ssh command, as \`git config core.sshCommand "ssh -o ServerAliveInterval=20"\` does. See .dev/pull-requests.md.`,
+		);
+		console.error(
+			`Only in an emergency, add a \`${SKIP_TRAILER}: <reason>\` trailer to a commit of the push.\n`,
+		);
+		process.exit(1);
+	}
 	console.log(
 		`pre-push: checking the push to main (${range})${queue ? `, through the job queue ${queue}` : ''}`,
 	);

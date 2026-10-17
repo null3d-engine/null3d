@@ -128,9 +128,10 @@ export const QUALITY_SETTINGS = {
 	},
 	// How often a far character's pose updates: once in this many frames. A sketch reads it and
 	// gives it to `animator.setUpdateInterval`, which holds out a character near the camera at 1.
-	// The job workers then sample, blend and compose a far crowd less often, and a held pose skips
-	// the skinning pass too. A higher value costs less, with more visible stepping. The governor
-	// raises it after every other live step.
+	// The job workers then sample, blend and compose a far crowd less often, which is the saving:
+	// the vertex shaders still skin every character in every pass, and only a mesh the skinning
+	// pass skins skips a held pose. A higher value costs less, with more visible stepping. The
+	// governor raises it after every other live step.
 	farAnimationInterval: {
 		presets: [4, 4, 2, 1],
 		changes: 'live',

@@ -75,15 +75,49 @@ Option A for the ground, a skirt for the seam, a custom splat surface function, 
 
 ## Consequences
 
-- The add-on `@null3d/terrain`: `createTerrain(ctx, options)` and the `Terrain` class, the `Heightfield`, the `Quadtree`, the splat material and `terrainTextures`. `terrain.update(x, z)` rebuilds only when the camera crosses a cell of the finest level, so a still camera costs no work. `heightAt` and `normalAt` place objects. No collision.
+- The add-on `@null3d/terrain`: `createTerrain(ctx, options)` and the `Terrain` class, the `Heightfield`, the `Quadtree`, the splat material and `terrainTextures`. `terrain.update(eye)` rebuilds only when the camera crosses a cell of the finest level, so a still camera costs no work. `heightAt` and `normalAt` place objects. No collision.
 - The tools: the package build copies a package's `.wgsl` files into `lib/`, and the pack check requires them. This serves any add-on that ships a surface function.
 - The engine: no change. The add-on adds no template, bind layout, permutation bit, opcode, state flag, control slot, format, capability or error code.
 - Docs and skills: `api/terrain`, the three.js mapping's terrain entry, the develop skill's table, quick reference and recipe.
 - A demo, `examples/terrain`, and an image test on all three GPU tiers.
 - Limits: the ground carries no collision, the seam closes with a skirt rather than a morph, and the layers carry color and a roughness, not normal or occlusion maps. The demo and the image test exercise the add-on; no benchmark scene uses it yet.
 
+## Addendum: the frame path takes the camera's position array (16 October 2026)
+
+`bench:allocation --terrain` failed when the switch landed. The add-on's frame path allocated about
+5 KB per frame, and hard rule 1 allows none. Removing the allocations found four objects per call,
+and the last one decided the shape of `update`.
+
+Three were objects the browser made inside the add-on and inside the engine's vertex update. A leaf
+key was packed past the small-integer range. The quadtree's selection called `Math.hypot` and used
+`2 ** level`. And `updateVertices` searched its attribute table with a callback that closed over the
+attribute's name. Each is now a habit in the [implementation notes](../implementation-notes.md#hot-paths-without-allocation).
+
+The fourth was `update(x, z)` itself. A fraction that crosses a call the browser does not inline
+becomes an object of its own, and the camera's ground position is a fraction. Passing whole numbers
+in place of it made the switch pass, which named the cause. So `update` takes the camera's world
+position in one array that the caller keeps, and reads the x and the z from it. The impostor add-on
+already takes the camera's position this way. Both add-ons now ask a sketch for the same thing: one
+array, kept by the caller, passed once a frame.
+
+A parity check covers the change. Over a 1,024 meter ground at `maxLevel` 6, 66,049 camera positions
+pick exactly the same leaves as before, and every height and normal is unchanged. `quadtree.test.ts`
+now fails on a leaf key above the small-integer range.
+
+The switch passes at 308.1 bytes per frame, and every terrain place is under the 4 byte budget.
+
 ## References
 
 - The technique review's section 13 places terrain after 1.0 as a package of its own, after Strugar (2010), CDLOD.
 - [D-142](D-142-more-techniques-before-1-0.md), which moved terrain into M2.
 - [D-54](D-54-addon-modules.md), the add-on rules.
+
+## Addendum, 15 October 2026: visibility, a build limit and large splits
+
+The code review of 15 October found three faults in `Terrain` and its quadtree.
+
+- **`setVisible(true)` showed every cached block.** The cache keeps up to `maxBlocks` blocks of earlier selections, at every level, and `update` does nothing while the camera stays in its cell. Coarse and fine blocks then drew over the same ground until the camera moved. The terrain now keeps the list of blocks that draw, and `setVisible` shows or hides only those. A hidden ground stays hidden through updates.
+- **A cell crossing built every new block in one frame.** Crossing the edge of a coarse block needs up to 30 new blocks at the defaults, and about 70 on a 10 km ground, each with its grid of heights and normals, a mesh upload and a scene object. `update` now builds at most `blocksPerUpdate` blocks, 16 by default, per call. Until the new selection is complete, the ground draws the last complete one, which tiles the whole ground, so no hole shows. The first update builds its whole selection, since there is nothing to draw before it. A block that draws keeps its mesh until the newest selection is built, so a build that finds no free mesh makes one rather than taking it from the ground on screen. One pass over the map finds the block that waited longest for a mesh.
+- **A large split overflowed the selection's arrays.** The arrays held 4,096 leaves, and `split` had no upper bound: a 10 km ground at 15 levels picks 4,798 leaves at a split of 6. Writes past the end were dropped while the count kept them, so blocks got a `NaN` key and origin. The arrays now grow when a selection needs more, and `split` must be at most 8, about 8,000 leaves at 15 levels.
+
+`packages/terrain/src/terrain.test.ts` drives `Terrain` through a fake sketch context and checks each case: the selection always tiles the ground once, the build limit, the old ground while the new one builds, `setVisible`, eviction and `destroy`.

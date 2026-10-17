@@ -4,17 +4,28 @@
 // It compiles each WebAssembly module once per page with WebAssembly.compileStreaming, and posts
 // the compiled module to each worker that runs it, which only instantiates it. Tasks run in the
 // engine's job workers: a job worker leaves the job loop between frame jobs to run its tasks, and
-// with two or more job workers the first never takes tasks, so one always serves frames. Where the
-// engine has no job workers, the loader starts one task worker with its first task. The glTF
-// worker takes compiled modules from the loader too (scene/gltf.ts). When the engine on this thread
-// stops, the loader stops its task worker and fails the tasks that wait, and the next engine's
-// tasks start afresh.
+// with two or more job workers the first never takes tasks, so one always serves frames. The page
+// says which job workers run. A worker whose script or its core did not load is left out of the
+// tasks, because it would never answer, and where no job worker is left to take them the loader
+// starts one task worker with its first task. The glTF worker takes compiled modules from the
+// loader too (scene/gltf.ts). When the engine on this thread stops, the loader stops its task
+// worker and fails the tasks that wait, and the next engine's tasks start afresh.
 
 import type { TaskAnswer, TaskRequest, TaskStage } from '../workers/tasks';
 import { onEngineStop } from './helper-workers';
-import { type JobTaskHost, jobTasks } from './task-host';
+import { type JobTaskHost, jobTasks, taskTakers } from './task-host';
 import { compileWasm, type WasmError } from './wasm';
 import { bootstrapFailure, spawnWorker } from './worker-start';
+
+/**
+ * How long the first task waits for the page's word on which job workers run, in ms. The word comes
+ * once the workers that the thread asked for have started, so it follows their downloads. A page
+ * that never says gives the workers the thread asked for, as before the page could say at all.
+ */
+const ANNOUNCE_WAIT_MS = 10_000;
+
+/** How often it looks for the page's word while it waits, in ms. */
+const ANNOUNCE_POLL_MS = 4;
 
 /** A WebAssembly file that loads on first use. */
 export interface WasmFile {
@@ -109,6 +120,8 @@ class Runners {
 	): Promise<unknown> {
 		const modules = await Promise.all((task.wasm ?? []).map((file) => compileOnce(file, error)));
 		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
+		await this.starting();
+		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
 		const runner = this.leastBusy(error);
 		const id = ++this.next;
 		const request: TaskRequest = { id, task: task.name, input };
@@ -127,13 +140,28 @@ class Runners {
 		});
 	}
 
-	private leastBusy(error: WasmError): Runner {
+	/**
+	 * Settles which job workers this thread's tasks go to, before the first task picks one: it asks
+	 * the page for the first job workers, which start as the thread asks for them, and waits for the
+	 * page's word on which of them run. Waiting keeps a task from going to a job worker that did not
+	 * start, which would never answer. Nothing waits once the thread's runners are settled.
+	 */
+	private async starting(): Promise<void> {
 		// A later engine on this thread brings job workers of its own.
 		const host = jobTasks();
 		if (host !== this.host) {
 			this.host = host;
 			this.runners = undefined;
 		}
+		if (this.runners || !host) return;
+		host.want(2);
+		if (host.running) return;
+		const deadline = performance.now() + ANNOUNCE_WAIT_MS;
+		while (host.running === undefined && !this.ended && performance.now() < deadline)
+			await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_POLL_MS));
+	}
+
+	private leastBusy(error: WasmError): Runner {
 		this.runners ??= this.start(error);
 		let best = this.runners[0] as Runner;
 		for (const runner of this.runners) if (runner.running < best.running) best = runner;
@@ -148,19 +176,18 @@ class Runners {
 	 */
 	private addJobRunners(host: JobTaskHost): Runner | undefined {
 		const runners = this.runners as Runner[];
-		const added = this.jobRunners(host, runners.length + 1, host.want(2 * (runners.length + 1)));
+		const takers = taskTakers(host.running, host.want(2 * (runners.length + 1)));
+		const added = this.jobRunners(host, takers, runners.length);
 		runners.push(...added);
 		return added[0];
 	}
 
 	/**
-	 * Runners for the job workers from index `from` up to `asked`. With two or more job workers,
-	 * the first stays in the job loop for the frames, so it takes no tasks.
+	 * Runners for the job workers that take tasks, from position `from` in `takers` on. A job worker
+	 * that the page says did not start is left out of `takers`, so it takes no task.
 	 */
-	private jobRunners(host: JobTaskHost, from: number, asked: number): Runner[] {
-		const indices: number[] = [];
-		for (let index = Math.max(from, asked > 1 ? 1 : 0); index < asked; index++) indices.push(index);
-		return indices.map((index) => {
+	private jobRunners(host: JobTaskHost, takers: readonly number[], from: number): Runner[] {
+		return takers.slice(from).map((index) => {
 			const port = host.ports[index] as MessagePort;
 			port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
 			return {
@@ -175,11 +202,16 @@ class Runners {
 		});
 	}
 
-	/** The job workers that take tasks; or, without job workers, a task worker that starts now. */
+	/** The job workers that take tasks; or, without one, a task worker that starts now. */
 	private start(error: WasmError): Runner[] {
 		const host = this.host;
 		// The tasks start on the first job workers, and ask for more as they pile up.
-		if (host) return this.jobRunners(host, 0, host.want(2));
+		if (host) {
+			const runners = this.jobRunners(host, taskTakers(host.running, host.want(2)), 0);
+			// No job worker takes this thread's tasks, because none started: a task worker answers them
+			// instead, as on a thread without job workers. The frames keep the workers they have.
+			if (runners.length > 0) return runners;
+		}
 		const worker = spawnWorker(
 			() =>
 				new Worker(new URL('../workers/task-worker.ts', import.meta.url), {

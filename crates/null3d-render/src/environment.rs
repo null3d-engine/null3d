@@ -14,10 +14,10 @@
 
 use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, compare, filter, format, resource_kind, texture_usage, view,
+    DrawList, Op, address, compare, format, resource_kind, texture_usage, view,
 };
 
-use crate::frame::RecordError;
+use crate::frame::{LINEAR_MIPMAP, RecordError, clamp_sampler};
 
 /// The frame group's binding of the environment's cube texture; its sampler takes the next one.
 pub(crate) const MAP_BINDING: u32 = 12;
@@ -97,21 +97,13 @@ pub(crate) fn create_objects(
             view::CUBE,
         ],
     )?;
-    list.push(
-        Op::CreateSampler,
-        &[
-            sampler,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            filter::LINEAR,
-            filter::LINEAR,
-            filter::LINEAR,
-            0f32.to_bits(),
-            32f32.to_bits(),
-            compare::NONE,
-            1,
-        ],
+    clamp_sampler(
+        list,
+        sampler,
+        address::CLAMP_TO_EDGE,
+        LINEAR_MIPMAP,
+        32.0,
+        compare::NONE,
     )?;
     Ok(())
 }

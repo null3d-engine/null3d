@@ -158,6 +158,8 @@ export class ShaderCache implements ShaderCompiler {
 	/** Requests that are compiling now, by key, so a second one waits for the first. */
 	private readonly running = new Map<string, Promise<unknown>>();
 	private stamp: string | undefined;
+	/** True once this build has said that it compiles shaders, so it says it once. */
+	private announced = false;
 
 	constructor(
 		private readonly root: () => string,
@@ -186,12 +188,27 @@ export class ShaderCache implements ShaderCompiler {
 		return hashOf(String(FORMAT), this.stamp, kind, JSON.stringify(request));
 	}
 
+	/**
+	 * Says once per build that the shaders are compiled, so the pause before the first result does
+	 * not look like a hang, and names the cache that later builds read instead.
+	 */
+	private announceCompile(request: unknown): void {
+		if (this.announced) return;
+		this.announced = true;
+		const path = (request as { path?: unknown }).path;
+		const what = typeof path === 'string' ? path : 'this project';
+		console.log(
+			`null3D: compiling the shaders of ${what}. A compile takes up to a second, and the results are kept in ${shaderCacheFolder(this.root())}, so later builds do not compile again.`,
+		);
+	}
+
 	private async run<T>(kind: string, request: unknown, compile: () => Promise<T>): Promise<T> {
 		if (this.options.disabled?.()) return compile();
 		const key = this.key(kind, request);
 		const file = join(shaderCacheFolder(this.root()), `${key}.json`);
 		const cached = readCached(file);
 		if (cached !== undefined) return cached as T;
+		this.announceCompile(request);
 		const pending = this.running.get(key);
 		if (pending) return pending as Promise<T>;
 		const work = (async () => {

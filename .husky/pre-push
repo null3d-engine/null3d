@@ -1,1 +1,2 @@
-bun tools/hooks/pre-push.ts
+# The check reads the remote that git pushes to from the hook's own arguments, so pass them on.
+bun tools/hooks/pre-push.ts "$@"

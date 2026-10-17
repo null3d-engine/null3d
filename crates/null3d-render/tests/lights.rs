@@ -46,10 +46,15 @@ fn record<B: FrameBuilder>(world: &mut World<B>, lights: &mut LightTable) {
     world.scene.begin_frame(world.frame);
     world.scene.update_transforms(&world.jobs);
     let parity = world.scene.parity();
+    let built = if world.pipelines_built == u32::MAX {
+        world.frame
+    } else {
+        world.pipelines_built
+    };
     world
         .renderer
         .settings_mut()
-        .gather_lights(lights, &world.scene, parity, world.canvas);
+        .gather_lights(lights, &world.scene, parity, world.canvas, built);
     world.record(true);
 }
 
@@ -239,4 +244,57 @@ fn the_clock_the_camera_and_the_target_reach_the_frame() {
     let half = frame(RenderScale::from_thousandths(500));
     assert_eq!(half.target_size, [320.0, 180.0, 1.0 / 320.0, 1.0 / 180.0]);
     assert_eq!(half.view_proj, u.view_proj);
+}
+
+/// A frame that finds the area lights' tables lists a rectangle light, when no pipeline of the
+/// device has been built yet: such a frame waits for every pipeline its own list creates, so the
+/// renderer's area shading is on for it however early in the frame its light list is made. Hold
+/// mode draws just such a frame, because the thread that draws waits for the one frame the sketch
+/// publishes, so a held frame of a rectangle or tube light scene shades with its area lights.
+fn a_frame_that_finds_the_area_tables_lists_its_area_light<B: FrameBuilder>(mut world: World<B>) {
+    let mut lights = LightTable::new();
+    let (_, rect) = light(&mut world, &mut lights, kind::RECT, [0.0, 3.0, 0.0], 0.0);
+    for (which, number) in [
+        (value::RANGE, 20.0),
+        (value::WIDTH, 4.0),
+        (value::HEIGHT, 2.0),
+        (value::INTENSITY, 3.0),
+    ] {
+        lights.set_value(rect, which, number).unwrap();
+    }
+    // The camera stands at z = 20 and looks down -Z, so the light above the origin is in view. No
+    // frame has drawn on this device, as in hold mode, where the thread that draws waits for the
+    // frame that the sketch publishes.
+    world.pipelines_built = 0;
+
+    // Before the tables arrive the light stays out of the list, whatever the device has drawn.
+    record(&mut world, &mut lights);
+    assert!(lights.visible().is_empty());
+
+    // The frame that finds them shades with them. It draws them with its builds that hold their
+    // code, because it waits for its own pipelines.
+    let tables = world.renderer.settings_mut().light_tables_mut();
+    assert!(tables.area_texels_mut().is_some());
+    tables.finish_area();
+    world.frame += 1;
+    record(&mut world, &mut lights);
+    let visible = lights.visible();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].kind, kind::RECT);
+    assert_eq!(visible[0].position, [0.0, 3.0, -20.0]);
+    assert_eq!(visible[0].range, 20.0);
+}
+
+#[test]
+fn a_frame_that_finds_the_area_tables_lists_its_area_light_on_webgpu() {
+    a_frame_that_finds_the_area_tables_lists_its_area_light(World::build(GpuDrivenRenderer::new(
+        RendererConfig::default(),
+    )));
+}
+
+#[test]
+fn a_frame_that_finds_the_area_tables_lists_its_area_light_on_webgl2() {
+    a_frame_that_finds_the_area_tables_lists_its_area_light(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
 }

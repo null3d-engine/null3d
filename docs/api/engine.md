@@ -183,6 +183,7 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 - A page in a hidden tab draws no frames, so its image comes when the tab shows again.
 - When no new frame comes within a second or two, such as after an error stopped the sketch, the image shows the frame drawn last.
 - After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode. On WebGPU, the message names the cause when the GPU gives one: a lost device with its reason, or too little GPU memory.
+- A capture also fails when the thread that draws gives no answer within the engine's wait. That wait is twice the time that a frame's pipelines may take, and the message names it and the time. The wait counts only the time that the page shows. A page in a hidden tab draws no frames, so it keeps its whole wait until the tab shows again.
 
 ## Related pages
 

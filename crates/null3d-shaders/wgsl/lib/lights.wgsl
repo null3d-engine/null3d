@@ -38,12 +38,10 @@
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
 
-#ifdef AREA_LIGHTS
 /// The kind of a rectangle light's record: the core's `RECT`. Kinds from it on are area lights.
 const KIND_RECT: u32 = 6u;
 /// The kind of a tube light's record: the core's `TUBE`.
 const KIND_TUBE: u32 = 7u;
-#endif
 
 /// A point or spot light, as the light list holds it. Colors are linear and include the
 /// intensity. A point light shines in every direction: its cone cosines let every direction
@@ -176,16 +174,14 @@ fn clustered_light(
     var sum = Reflected(vec3f(0.0), vec3f(0.0));
     let found = cluster_lights(relative);
 #ifdef AREA_LIGHTS
-    // The area lights' tables for the surface, read with the cluster's first area light. The
-    // builds without AREA_LIGHTS meet no area light: the light grid lists them only while the lit
-    // pipelines draw with these builds.
+    // The area lights' tables for the surface, read with the cluster's first area light.
     var terms = AreaTerms(vec4f(0.0), vec2f(0.0));
     var have_terms = false;
 #endif
     for (var k = 0u; k < found.y; k++) {
         let light = light_of(grid_word(found.x + k));
-#ifdef AREA_LIGHTS
         let kind = bitcast<u32>(light.penumbra.y);
+#ifdef AREA_LIGHTS
         if kind >= KIND_RECT {
             if !have_terms {
                 terms = area_terms(dot(normal, to_view), m.roughness);
@@ -194,6 +190,14 @@ fn clustered_light(
             let reflected = area_light(m, terms, light, kind, relative, normal, to_view);
             sum.diffuse += reflected.diffuse;
             sum.specular += reflected.specular;
+            continue;
+        }
+#else
+        // The light grid lists area lights while any pipeline that shades them draws, which the
+        // lit templates do once the scene holds one. This build has no tables to shade them with,
+        // and its record's fields hold a rectangle's shape and image layer where a point or spot
+        // light keeps its decay, cone and shadow tile, so it leaves those lights out.
+        if kind >= KIND_RECT {
             continue;
         }
 #endif

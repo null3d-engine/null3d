@@ -4,8 +4,14 @@
 // gives the buffer the frame's time. The GPU does the rest: each particle moves, turns, changes
 // color and dies in closed form, so a system of a million particles costs the CPU only its births.
 //
-// `update` allocates nothing. Its numbers move through typed arrays and fields, never as the
-// arguments or the results of calls that the engine may not inline, which would box them.
+// `update` allocates nothing once a system with sub-emitters has grown its table of pending
+// events. Its numbers move through typed arrays and fields, never as the arguments or the results
+// of calls that the engine may not inline, which would box them.
+//
+// Birth times are 32-bit floats on the GPU, so every 1,024 seconds a system moves the time that
+// its buffer's time counts from. It rewrites the records' birth times a share at a time, over
+// many frames, and meanwhile the GPU takes the move off the birth times of the records that the
+// rewrite has not reached.
 
 import type {
 	Mat4Like,
@@ -154,8 +160,12 @@ export interface ParticleSystemOptions extends Omit<ParticleBufferOptions, 'capa
 
 /** Seconds of the buffer's time after which the system moves its time back, for precision. */
 const REBASE_AFTER = 1024;
+/** Records whose birth times one frame moves to the new time base, while the base moves. */
+const REBASE_RECORDS = 16384;
 /** Floats of a pending sub-emitter event: its time and sub-emitter, then the particle's numbers. */
 const EVENT_FLOATS = 2 + PARTICLE_FLOATS;
+/** The pending sub-emitter events that a system makes room for at first, before it doubles them. */
+const FIRST_EVENTS = 64;
 /** The random channels of a particle: its speed, shape, direction, place in a box, and lifetime. */
 const SPEED = 0;
 const U = 1;
@@ -211,6 +221,13 @@ export class ParticleSystem {
 	private nextBirth = Infinity;
 	/** The time that the buffer's time counts from. */
 	private base = 0;
+	/**
+	 * While the base moves: the seconds by which the records from `rebased` up still count from
+	 * the old base, which the GPU takes off their birth times. 0 otherwise.
+	 */
+	private shift = 0;
+	/** The first record whose birth time still counts from the old base, while the base moves. */
+	private rebased = 0;
 	private readonly motion: MotionValues = {
 		gx: 0,
 		gy: 0,
@@ -240,8 +257,10 @@ export class ParticleSystem {
 	/** The culling sphere last given to the object, and the point that carries its center. */
 	private readonly bounds = new Float64Array(4);
 	private readonly center = [0, 0, 0];
-	/** The pending sub-emitter events, EVENT_FLOATS each. */
-	private readonly events: Float64Array;
+	/** The pending sub-emitter events, EVENT_FLOATS each, which double when they fill up. */
+	private events: Float64Array;
+	/** The most pending events: one per sub-emitter for each record. */
+	private readonly maxEvents: number;
 	private eventCount = 0;
 	/** The emitter's numbers: see FROM, TO, BIRTH_TIME and SHARE. */
 	private readonly span = new Float64Array(4);
@@ -276,7 +295,8 @@ export class ParticleSystem {
 		this.speed = span(options.speed, 1);
 		this.seeds[SYSTEM_SEED] = pcg(options.seed ?? 1);
 		const subs = options.subEmitters?.length ?? 0;
-		this.events = new Float64Array(subs > 0 ? buffer.capacity * subs * EVENT_FLOATS : 0);
+		this.maxEvents = buffer.capacity * subs;
+		this.events = new Float64Array(Math.min(this.maxEvents, FIRST_EVENTS) * EVENT_FLOATS);
 		this.resetBirths();
 		this.readMotion(options);
 		this.frame.set(IDENTITY);
@@ -343,7 +363,8 @@ export class ParticleSystem {
 	/**
 	 * Moves the system on by the frame's step, or by `dt` seconds: emits the particles born in that
 	 * time, fires the sub-emitters of particles that died or met the ground, and gives the buffer
-	 * its time. Call it once per frame in `onLateUpdate`. It allocates nothing.
+	 * its time. Call it once per frame in `onLateUpdate`. It allocates nothing, apart from the
+	 * table of a system with sub-emitters, which grows while the system warms up.
 	 */
 	update(dt?: number): void {
 		const s = this.span;
@@ -364,10 +385,13 @@ export class ParticleSystem {
 		this.emitBetween();
 		this.time = s[TO] as number;
 		this.fireEvents();
-		if (this.time - this.base > REBASE_AFTER) this.rebase();
+		if (this.shift === 0 && this.time - this.base > REBASE_AFTER) this.startRebase();
+		if (this.shift !== 0) this.rebaseStep();
 		const frame = this.buffer.frame;
 		frame[0] = this.time - this.base;
 		frame[1] = Math.min(this.emitted, this.buffer.capacity);
+		frame[2] = this.rebased;
+		frame[3] = this.shift;
 		this.buffer.commit();
 		this.updateBounds();
 	}
@@ -456,9 +480,12 @@ export class ParticleSystem {
 		if (add) for (let c = 0; c < 3; c++) r[4 + c] = (r[4 + c] as number) + (add[c] as number);
 		const shortest = this.lifetime[0];
 		r[RECORD_LIFE] = shortest + (this.lifetime[1] - shortest) * (this.random[LIFE] as number);
-		r[RECORD_TIME] = (this.span[BIRTH_TIME] as number) - this.base;
+		const index = number % this.buffer.capacity;
+		// A record that the moving base has not reached yet counts from the old base.
+		r[RECORD_TIME] =
+			(this.span[BIRTH_TIME] as number) - this.base + (index >= this.rebased ? this.shift : 0);
 		const seed = (seeds[PARTICLE_SEED] as number) & 0xffff;
-		this.buffer.write(number % this.buffer.capacity, r, seed);
+		this.buffer.write(index, r, seed);
 		this.growBirths();
 		const subs = this.options.subEmitters;
 		if (subs) for (let k = 0; k < subs.length; k++) this.planEvent(k);
@@ -577,7 +604,7 @@ export class ParticleSystem {
 			if (on === 'ground' && hit < 0) return;
 			if (hit >= 0 && (on === 'ground' || m.groundMode === GROUND_KILL)) age = hit;
 		} else if (on === 'ground') return;
-		if ((this.eventCount + 1) * EVENT_FLOATS > this.events.length) return;
+		if ((this.eventCount + 1) * EVENT_FLOATS > this.events.length && !this.growEvents()) return;
 		const e = this.events;
 		const at = this.eventCount++ * EVENT_FLOATS;
 		e[at] = (this.span[BIRTH_TIME] as number) + age;
@@ -696,22 +723,51 @@ export class ParticleSystem {
 	}
 
 	/**
-	 * Moves the buffer's time back by whole seconds, with every record's birth time, so the GPU's
-	 * 32-bit times keep their precision in a system that runs for hours.
+	 * Doubles the table of pending sub-emitter events, up to one event per sub-emitter for each
+	 * record. False when it holds that many already. The table grows while the system warms up,
+	 * and then its frames allocate nothing.
 	 */
-	private rebase(): void {
+	private growEvents(): boolean {
+		const size = Math.min(this.maxEvents, (this.events.length / EVENT_FLOATS) * 2);
+		if (size * EVENT_FLOATS <= this.events.length) return false;
+		const grown = new Float64Array(size * EVENT_FLOATS);
+		grown.set(this.events);
+		this.events = grown;
+		return true;
+	}
+
+	/**
+	 * Starts to move the buffer's time back by whole seconds, so the GPU's 32-bit times keep their
+	 * precision in a system that runs for hours. The records keep their birth times for now: the
+	 * GPU takes the shift off the birth times of the records that `rebaseStep` has not reached.
+	 */
+	private startRebase(): void {
 		const shift = Math.floor(this.time - this.base - this.lifetime[1] - 1);
 		if (shift <= 0) return;
+		this.base += shift;
+		this.shift = shift;
+		this.rebased = 0;
+	}
+
+	/**
+	 * Moves the birth times of the next records to the new base, a share in each frame, so no frame
+	 * rewrites and uploads every record. The move ends with the last record.
+	 */
+	private rebaseStep(): void {
 		const count = Math.min(this.emitted, this.buffer.capacity);
+		const end = Math.min(this.rebased + REBASE_RECORDS, count);
 		const saved = this.saved;
 		const r = this.record;
-		for (let i = 0; i < count; i++) {
+		for (let i = this.rebased; i < end; i++) {
 			this.buffer.read(i, saved);
 			for (let k = 0; k < 8; k++) r[k] = saved[k] as number;
-			r[RECORD_TIME] = (r[RECORD_TIME] as number) - shift;
+			r[RECORD_TIME] = (r[RECORD_TIME] as number) - this.shift;
 			this.buffer.write(i, r, saved[8] as number);
 		}
-		this.base += shift;
+		this.rebased = end;
+		if (end < count) return;
+		this.shift = 0;
+		this.rebased = 0;
 	}
 
 	/** Removes the system and its particles from the scene. */
