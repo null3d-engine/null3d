@@ -28,7 +28,8 @@ pub struct ProbeGrid {
     pub spacing: [f32; 3],
     /// The probes along each axis.
     pub counts: [u32; 3],
-    /// The factor of the grid's light on every surface.
+    /// The factor of the grid's light on every surface. 0 lights nothing from the grid, and the
+    /// grid still takes the share of the environment's light that `environment_weight` names.
     pub intensity: f32,
     /// The share of the environment's diffuse light that the grid takes over.
     pub environment_weight: f32,

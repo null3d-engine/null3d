@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
@@ -20,6 +22,12 @@ import type { CoreMemory } from './memory';
 import type { RaycastBatchHits } from './queries';
 import type { Scene } from './scene';
 import type { Texture, Textures } from './textures';
+
+/** The probe grid's shader, which decides what the grid's values mean per pixel. */
+const SHADER_FILE = join(
+	import.meta.dir,
+	'../../../../crates/null3d-shaders/wgsl/lib/probe_grid.wgsl',
+);
 
 test('fibonacci directions are unit length and spread evenly', () => {
 	const count = 64;
@@ -114,6 +122,21 @@ test('the CPU irradiance matches the shader formula for every axis and a diagona
 		l1Irradiance(coefficients, at, x, y, z, out);
 		for (let c = 0; c < 3; c++) expect(out[c]).toBeCloseTo(shader(x, y, z, c), 5);
 	}
+});
+
+test('the shader keeps a grid in place at an intensity of 0, lighting nothing', () => {
+	// probe_grid.wgsl runs only on a device, so its source is the thing to check: a grid's
+	// presence comes from the scene's own marker and never from the intensity, so fading the
+	// intensity to 0 fades the grid's light out and does not hand the environment's back.
+	const source = readFileSync(SHADER_FILE, 'utf8');
+	const presence = source.slice(
+		source.indexOf('fn has_probe_grid'),
+		source.indexOf('fn probe_grid_irradiance'),
+	);
+	expect(presence).toContain('grid.origin.w');
+	expect(presence).not.toContain('grid.params');
+	// The light itself takes the intensity, so 0 gives none of it.
+	expect(source).toContain('return result * grid.params.x;');
 });
 
 test('packing puts each coefficient in its sub-volume and leaves the padding zero', () => {

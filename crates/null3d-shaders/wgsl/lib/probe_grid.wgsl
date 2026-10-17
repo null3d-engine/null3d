@@ -13,9 +13,10 @@
 
 @group(0) @binding(10) var probe_grid_map: texture_3d<f32>;
 
-/// True while the scene sets a light probe grid.
+/// True while the scene sets a light probe grid. An intensity of 0 keeps the grid in place, so the
+/// grid's light fades to nothing instead of the environment returning.
 fn has_probe_grid(grid: ProbeGrid) -> bool {
-    return grid.origin.w > 0.5 && grid.params.x != 0.0;
+    return grid.origin.w > 0.5;
 }
 
 /// The irradiance that the scene's probe grid gives a surface at world position `world`, whose
