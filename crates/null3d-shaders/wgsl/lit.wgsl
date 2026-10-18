@@ -1550,7 +1550,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
 #else ifdef PICK
-fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4u {
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
