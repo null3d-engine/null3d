@@ -403,7 +403,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Area lights',
 		scene: 'Neon street after rain',
 		summary:
-			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot.",
+			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot, and mirrors the glowing sign and windows through screen-space reflections.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
