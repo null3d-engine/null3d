@@ -514,10 +514,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'instances',
 		group: 'Scale',
 		sketch: new URL('./instances/sketch.ts', import.meta.url),
+		code: 'instances/',
 		title: 'Instancing',
 		scene: '100,000 columns',
 		summary:
-			'100,000 columns in one batch at golden hour, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at golden hour, and 10,000 on phones, with lanes of hover cars streaming across the sky in two more batches. Each frame the sketch writes the height of every row, and the place of every car, into the batch arrays, with no call per row.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
