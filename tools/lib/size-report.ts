@@ -276,11 +276,6 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'job-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'job-worker.js' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
-	{
-		name: 'draw-path-probe.js',
-		module: 'gpu/webgpu/draw-path-probe.ts',
-		loadedBy: 'probe-worker.js',
-	},
 ];
 
 /**
