@@ -7474,7 +7474,13 @@ mod tests {
         );
         list.clear();
         frames
-            .record(&mut list, |_| [0.5; 4], |_| false, |_, _| Ok(()), |_| Ok(()))
+            .record(
+                &mut list,
+                |_| [0.5; 4],
+                |_| false,
+                |_, _| Ok(()),
+                |_| Ok(()),
+            )
             .unwrap();
         let skin_light = frames.sampled_id(SKIN_LIGHT).unwrap();
         let cleared: Vec<_> = operands(&list, Op::BeginRenderPass)
