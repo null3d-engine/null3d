@@ -1,9 +1,10 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact shadows, with
-// ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone or
-// ?effect=vignette names it. The effects effect adds ?count= custom effects, 4 by default, to
-// bloom's scene. ?effect=area measures ?count= area lights over the light scenes' floor, 4 by
-// default: rectangle lights, or ?kind=point or ?kind=tube lights, and ?image gives the rectangle
+// ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact
+// shadows, with ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone,
+// ?effect=vignette or ?effect=motion names it. The effects effect adds ?count= custom effects, 4 by
+// default, to bloom's scene. Motion measures the motion vectors with their debug view, so it runs in
+// development builds only. ?effect=area measures ?count= area lights over the light scenes' floor,
+// 4 by default: rectangle lights, or ?kind=point or ?kind=tube lights, and ?image gives the rectangle
 // lights pictures. With exposure, ?meter=downsample asks for the downsample meter, which is
 // otherwise the preset's. The physical sky's side is measured against three.js's analytic sky,
 // or a color with ?base=none, with the sun still, or moving in every frame with ?moving. With
@@ -53,6 +54,7 @@ const SKETCHES = {
 	contact: './sketches/contact-shadows-sketch.ts',
 	fog: './sketches/fog-volume-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
+	motion: './sketches/motion-cost-sketch.ts',
 	area: './sketches/area-cost-sketch.ts',
 	sky: './sketches/sky-cost-sketch.ts',
 	vignette: './sketches/vignette-cost-sketch.ts',

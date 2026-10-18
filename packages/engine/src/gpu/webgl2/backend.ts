@@ -328,6 +328,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_RGBA8_UNORM, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA8_UNORM_SRGB, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA16_FLOAT, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, color);
+	add(G.FORMAT_RG16_FLOAT, gl.RG16F, gl.RG, gl.HALF_FLOAT, color);
 	add(G.FORMAT_RG11B10_UFLOAT, gl.R11F_G11F_B10F, gl.RGB, gl.UNSIGNED_INT_10F_11F_11F_REV, color);
 	add(G.FORMAT_RGB9E5_UFLOAT, gl.RGB9_E5, gl.RGB, gl.UNSIGNED_INT_5_9_9_9_REV, color);
 	add(G.FORMAT_RGBA32_FLOAT, gl.RGBA32F, gl.RGBA, gl.FLOAT, color);

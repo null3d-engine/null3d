@@ -484,7 +484,7 @@ describe('debug.view', () => {
 	test('refuses a view that it does not know with E1213', () => {
 		const { draw, views } = fakeCore();
 		expect(() => draw.view('flat' as DebugView)).toThrow(
-			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw' or 'shadows'.`,
+			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw', 'shadows' or 'motion'.`,
 		);
 		expect(views).toEqual([]);
 	});

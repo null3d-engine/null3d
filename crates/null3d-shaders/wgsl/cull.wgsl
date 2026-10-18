@@ -76,6 +76,15 @@
 //
 // The OCCLUSION build holds the two phases, `early` and `late`, and the build without it holds
 // `main` alone, so a page that never culls against a pyramid downloads none of the phases.
+//
+// The MOTION build culls the motion view: the camera's view of the motion layout, whose buckets
+// draw each moving object's motion (decision record D-140). It reads the last frame's matrices
+// where the pyramid sits, and keeps an instance in view only when its matrix changed since the
+// last frame, or when its bucket moves by itself, as skinned meshes and swaying materials do. Each
+// copy holds the last frame's matrix after the ids, both moved by the cell's offset, 112 bytes in
+// all. An instance that changed grid cells keeps a last matrix relative to the old cell's center:
+// the move of whole cells that brings it nearest to the new matrix puts it right. An instance draws
+// its motion with the level of detail that the camera's view picks, without the fading band.
 
 /// An entry holds its bucket in the bits below OCCLUDER, the occluder mark at OCCLUDER, and the
 /// instance's cell index from CELL_SHIFT up.
@@ -126,7 +135,9 @@ struct CullParams {
 /// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A bucket of
 /// skinned objects names the first joint of their skin, which the vertex shaders that skin read
 /// beside the material, or PER_SOURCE_JOINT, which sends each copy to its own. A bucket with
-/// `indices` 1 writes each survivor's index instead, one entry each, from entry `base` on.
+/// `indices` 1 writes each survivor's index instead, one entry each, from entry `base` on. In the
+/// motion layout, whose buckets never read by index, `indices` 1 marks a bucket whose instances
+/// move by themselves.
 struct Bucket {
     base: u32,
     material: u32,
@@ -156,9 +167,15 @@ struct Bucket {
 @group(0) @binding(6) var<storage, read> instance_layers: array<u32>;
 /// The instances in cell order: each cell's still instances, then the ones that move.
 @group(0) @binding(7) var<storage, read> order: array<u32>;
+#ifdef MOTION
+/// The last frame's world matrices, three rows per instance, as `matrices` holds this frame's. The
+/// binding is the pyramid's, which the motion view never reads.
+@group(0) @binding(8) var<storage, read_write> previous: array<vec4f>;
+#else
 /// The view's depth pyramid, which only the occlusion phases bind: the count of the frame's
 /// occluders, then the levels' depths as the bits of 32-bit floats.
 @group(0) @binding(8) var<storage, read_write> pyramid: array<atomic<u32>>;
+#endif
 /// The offset from each view's camera to the center of each grid cell: texel x of row y holds
 /// cell x's offset for the view whose row is y.
 @group(0) @binding(9) var cell_offsets: texture_2d<f32>;
@@ -256,36 +273,51 @@ fn survivor(i: u32) -> Survivor {
     return out;
 }
 
+/// The level of detail that an instance in view draws: its bucket, the bucket of the level before
+/// it, and how far past the level's switch distance the instance lies, as a share of that distance.
+struct Level {
+    bucket: u32,
+    before: u32,
+    past: f32,
+}
+
+/// The level of detail that an instance in view draws, its base level where the view picks none.
+fn level_of(s: Survivor) -> Level {
+    var out = Level(s.bucket, s.bucket, 0.0);
+    let factor = params.levels.x;
+    var next = buckets[s.bucket].next;
+    if next == 0u || factor <= 0.0 {
+        return out;
+    }
+    let reach = s.scale * factor;
+    let distance = select(length(s.center), 1.0, params.levels.y > 0.5);
+    while next != 0u && buckets[next - 1u].error * reach < distance {
+        out.before = out.bucket;
+        out.bucket = next - 1u;
+        next = buckets[out.bucket].next;
+    }
+    if out.bucket != s.bucket {
+        out.past = distance / (buckets[out.bucket].error * reach) - 1.0;
+    }
+    return out;
+}
+
 /// Appends an instance in the view to the bucket of the level of detail it draws, and to the fade
 /// buckets of two levels inside a fading band. The draws start `draws_before` draws into the
 /// indirect draws.
 fn append(s: Survivor, draws_before: u32) {
-    let base = buckets[s.bucket];
-    let factor = params.levels.x;
-    if base.next == 0u || factor <= 0.0 {
-        append_to(s, s.bucket, draws_before, 0.0);
-        return;
-    }
-    let reach = s.scale * factor;
-    let distance = select(length(s.center), 1.0, params.levels.y > 0.5);
-    var before = s.bucket;
-    var level = s.bucket;
-    var next = base.next;
-    while next != 0u && buckets[next - 1u].error * reach < distance {
-        before = level;
-        level = next - 1u;
-        next = buckets[level].next;
-    }
+    let level = level_of(s);
     let band = params.levels.z;
-    if level != s.bucket && band > 0.0 && buckets[level].fade != 0u && buckets[before].fade != 0u {
-        let t = (distance / (buckets[level].error * reach) - 1.0) / band;
+    let fades = buckets[level.bucket].fade != 0u && buckets[level.before].fade != 0u;
+    if level.bucket != s.bucket && band > 0.0 && fades {
+        let t = level.past / band;
         if t < 1.0 {
-            append_to(s, buckets[level].fade - 1u, draws_before, max(t, 1e-6));
-            append_to(s, buckets[before].fade - 1u, draws_before, -max(t, 0.0));
+            append_to(s, buckets[level.bucket].fade - 1u, draws_before, max(t, 1e-6));
+            append_to(s, buckets[level.before].fade - 1u, draws_before, -max(t, 0.0));
             return;
         }
     }
-    append_to(s, level, draws_before, 0.0);
+    append_to(s, level.bucket, draws_before, 0.0);
 }
 
 /// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
@@ -313,7 +345,64 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
     visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, bitcast<u32>(fade));
 }
 
-#ifndef OCCLUSION
+#ifdef MOTION
+/// The width of a grid cell in meters.
+const CELL_SIZE: f32 = 1024.0;
+
+/// The last frame's row `k` of instance `i`, moved by whole cells to the cell of `now`, this
+/// frame's row, and by the cell's `offset` from the camera.
+fn previous_row(i: u32, k: u32, now: vec4f, offset: f32) -> vec4f {
+    var row = previous[i * 3u + k];
+    row.w += CELL_SIZE * round((now.w - row.w) / CELL_SIZE) + offset;
+    return row;
+}
+
+/// Culls the motion view: keeps each instance in view that moved since the last frame, or whose
+/// bucket moves by itself, with both its matrices.
+@compute @workgroup_size(128)
+fn main(
+    @builtin(workgroup_id) group: vec3u,
+    @builtin(local_invocation_index) lane: u32,
+) {
+    let i = instance_of(group.x, lane);
+    if i == NONE {
+        return;
+    }
+    let s = survivor(i);
+    if s.bucket == HIDDEN {
+        return;
+    }
+    let bucket = buckets[level_of(s).bucket];
+    let now = array<vec4f, 3>(matrices[i * 3u], matrices[i * 3u + 1u], matrices[i * 3u + 2u]);
+    let last = array<vec4f, 3>(previous[i * 3u], previous[i * 3u + 1u], previous[i * 3u + 2u]);
+    let still = all(now[0] == last[0]) && all(now[1] == last[1]) && all(now[2] == last[2]);
+    if still && bucket.indices == 0u {
+        return;
+    }
+    let offset = vec3f(s.r0.w - now[0].w, s.r1.w - now[1].w, s.r2.w - now[2].w);
+    let first = bucket.first_draw * INDIRECT_WORDS + 1u;
+    let slot = atomicAdd(&indirect[first], 1u);
+    for (var d = 1u; d < bucket.draws; d++) {
+        atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
+    }
+    let dst = (bucket.base + slot) * 7u;
+    visible[dst] = bitcast<vec4u>(s.r0);
+    visible[dst + 1u] = bitcast<vec4u>(s.r1);
+    visible[dst + 2u] = bitcast<vec4u>(s.r2);
+    // A bucket of skinned copies sends each copy to its own skin in `skin_firsts`. The motion pass
+    // reads the first joint from this record, as every other pass does.
+    var first_joint = bucket.first_joint;
+    if first_joint == PER_SOURCE_JOINT {
+        let row = (1u << INDEX_ROW_SHIFT) - 1u;
+        first_joint = textureLoad(skin_firsts, vec2u(s.index & row, s.index >> INDEX_ROW_SHIFT), 0).x;
+    }
+    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, 0u);
+    visible[dst + 4u] = bitcast<vec4u>(previous_row(i, 0u, now[0], offset.x));
+    visible[dst + 5u] = bitcast<vec4u>(previous_row(i, 1u, now[1], offset.y));
+    visible[dst + 6u] = bitcast<vec4u>(previous_row(i, 2u, now[2], offset.z));
+}
+
+#else ifndef OCCLUSION
 /// Culls once, against the frustum alone, into the first set of indirect draws, or for a camera
 /// view that culls in two phases, in a frame without marked occluders, into its second set.
 @compute @workgroup_size(128)

@@ -42,12 +42,12 @@ use crate::view::{ViewFrame, ViewId};
 const ROW_VALUES_BINDING: u32 = 8;
 /// The binding of the table of object ranges in the frame group, where WebGL2's mesh shaders
 /// declare it.
-const OBJECT_RANGES_BINDING: u32 = 8;
+pub(super) const OBJECT_RANGES_BINDING: u32 = 8;
 /// The binding of the light tables in the frame group (see [`crate::light_tables`]).
 const LIGHT_TABLES_BINDING: u32 = 3;
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
-const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
+pub(super) const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
 /// Bytes of the offsets from the camera to the cells, as the vertex shader's block holds them.
 pub(super) const OFFSETS_BYTES: u32 = MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, then the
@@ -206,6 +206,50 @@ fn visible_in<'a>(draws: &'a [Draw], starts: &'a [u32]) -> impl Fn(usize) -> u32
         let words = starts[b + 1] - starts[b];
         if draws[d].pairs { words / 2 } else { words }
     }
+}
+
+/// Records one call's draws: a multi-draw call of its drawn draws where the device has
+/// `WEBGL_multi_draw`, or one call per drawn draw, each with its visible instances, which a draw of
+/// clusters draws `shift` times over.
+fn draw_call(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    draws: &[Draw],
+    visible: &dyn Fn(usize) -> u32,
+    shift: &dyn Fn(usize) -> u32,
+    call: Call,
+    multi_draw: bool,
+) -> Result<(), RecordError> {
+    let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
+    if multi_draw {
+        let n = call.drawn as usize;
+        let (counts_at, counts) = arena.push_zeroed(n * 4)?;
+        for (k, d) in drawn.clone().enumerate() {
+            put_u32(counts, k, draws[d].index_count);
+        }
+        let (offsets_at, offsets) = arena.push_zeroed(n * 4)?;
+        for (k, d) in drawn.clone().enumerate() {
+            put_u32(offsets, k, draws[d].first_index * 2);
+        }
+        let (instances_at, instances) = arena.push_zeroed(n * 4)?;
+        for (k, d) in drawn.enumerate() {
+            put_u32(instances, k, visible(d) << shift(d));
+        }
+        list.push(
+            Op::MultiDrawIndexed,
+            &[call.drawn, counts_at, offsets_at, instances_at],
+        )?;
+    } else {
+        for d in drawn {
+            let draw = draws[d];
+            let instances = visible(d) << shift(d);
+            list.push(
+                Op::DrawIndexed,
+                &[draw.index_count, instances, draw.first_index, 0, 0],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Bytes that one call's records take in the ring slot: a block for a multi-draw call, one aligned
@@ -645,36 +689,68 @@ impl Opaque {
                 Op::SetBindGroup,
                 &[1, ids::draws_group(view), 1, slot + index * stride],
             )?;
-            let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
-            if multi_draw {
-                let n = call.drawn as usize;
-                let (counts_at, counts) = arena.push_zeroed(n * 4)?;
-                for (k, d) in drawn.clone().enumerate() {
-                    put_u32(counts, k, draws[d].index_count);
-                }
-                let (offsets_at, offsets) = arena.push_zeroed(n * 4)?;
-                for (k, d) in drawn.clone().enumerate() {
-                    put_u32(offsets, k, draws[d].first_index * 2);
-                }
-                let (instances_at, instances) = arena.push_zeroed(n * 4)?;
-                for (k, d) in drawn.enumerate() {
-                    put_u32(instances, k, visible(d) << shift(d));
-                }
-                list.push(
-                    Op::MultiDrawIndexed,
-                    &[call.drawn, counts_at, offsets_at, instances_at],
-                )?;
-            } else {
-                for d in drawn {
-                    let draw = draws[d];
-                    let instances = visible(d) << shift(d);
-                    list.push(
-                        Op::DrawIndexed,
-                        &[draw.index_count, instances, draw.first_index, 0, 0],
-                    )?;
-                }
+            draw_call(list, arena, draws, &visible, &shift, call, multi_draw)
+        })
+    }
+
+    /// Records the motion pass inside the render pass that the render graph began, from the camera
+    /// view's index list, draw records and instance textures, as its opaque pass draws: each call
+    /// of the opaque pass that draws a bucket that `moving` marks, with its draws' motion pipeline
+    /// and the map that it reads, and the motion view's frame group `group` in place of the
+    /// camera's.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn record_motion(
+        &self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        starts: &[u32],
+        layout: &Layout,
+        meshes: &MeshBuffers,
+        group: u32,
+        moving: &[bool],
+    ) -> Result<(), RecordError> {
+        let view = ViewId::CAMERA;
+        let slots = self.views[self.slot(view)].slots;
+        let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
+        let visible = visible_in(draws, starts);
+        let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
+        let stride = record_stride(multi_draw);
+        let slot = slots.listed * layout.draws_slot_bytes;
+        self.bind_view(list, view, 0)?;
+        let frame_slot = self.frame_slot(view);
+        list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
+        let mut pipeline = None;
+        let mut textures = 0;
+        let mut run = usize::MAX;
+        for_each_call(draws, &visible, multi_draw, |index, call| {
+            let first = draws[call.run];
+            let moves = (call.from..call.to)
+                .any(|d| visible(d) > 0 && moving.get(draws[d].bucket as usize) == Some(&true));
+            if first.motion == 0 || !moves {
+                return Ok(());
             }
-            Ok(())
+            if call.run != run {
+                run = call.run;
+                if pipeline != Some(first.motion) {
+                    list.push(Op::SetPipeline, &[first.motion])?;
+                    pipeline = Some(first.motion);
+                }
+                if first.motion_textures != 0 && first.motion_textures != textures {
+                    list.push(
+                        Op::SetBindGroup,
+                        &[TEXTURES_GROUP, first.motion_textures, 0],
+                    )?;
+                    textures = first.motion_textures;
+                }
+                let (vertices, indices) = meshes.ids(first.page);
+                list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+            }
+            list.push(
+                Op::SetBindGroup,
+                &[1, ids::draws_group(view), 1, slot + index * stride],
+            )?;
+            draw_call(list, arena, draws, &visible, &shift, call, multi_draw)
         })
     }
 
@@ -696,6 +772,8 @@ mod tests {
             pipeline,
             prepass: 0,
             textures: 0,
+            motion: 0,
+            motion_textures: 0,
             page,
             bucket: 0,
             index_count: 36,
@@ -760,6 +838,7 @@ mod tests {
                     material: 1,
                     group: 0,
                     shift: 0,
+                    moves: false,
                 });
                 layout.draws.push(Draw {
                     textures: if bucket == 0 { 9 } else { 0 },

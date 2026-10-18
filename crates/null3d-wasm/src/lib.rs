@@ -3631,6 +3631,24 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
     })
 }
 
+/// Says whether the device draws the motion target, two half floats per pixel, with one sample,
+/// and with MSAA's samples, as the page's test of its float targets found. Where it does not draw
+/// it at the scene's samples, the motion debug view shows the camera's motion alone.
+#[wasm_bindgen(js_name = allowMotion)]
+pub fn allow_motion(one_sample: bool, multisampled: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.allow_motion(one_sample, multisampled);
+        0
+    })
+}
+
+/// 1 when the frame's passes read the motion since the frame before, as the motion debug view
+/// does, so that hold mode draws the frame before the held one first, else 0.
+#[wasm_bindgen(js_name = holdsFrameBefore)]
+pub fn holds_frame_before() -> u32 {
+    value_with_engine(|e| Ok(u32::from(e.renderer.settings().motion_wanted())))
+}
+
 /// The texels on the short side of bloom's base, and the governor's halvings of it, from the
 /// next frame on.
 #[wasm_bindgen(js_name = setBloomChain)]

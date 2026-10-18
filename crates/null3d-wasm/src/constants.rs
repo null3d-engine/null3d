@@ -1019,6 +1019,7 @@ pub fn typescript() -> String {
                 ("OVERDRAW", debug_view::code::OVERDRAW),
                 ("WIREFRAME", debug_view::code::WIREFRAME),
                 ("SHADOWS", debug_view::code::SHADOWS),
+                ("MOTION", debug_view::code::MOTION),
             ],
         ),
         // The fog curves that `setFog` takes, and its code for no fog.

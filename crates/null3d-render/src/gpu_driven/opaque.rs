@@ -24,6 +24,12 @@
 //! The subsurface view's bundle draws the subsurface layout's buckets into the skin pass's target,
 //! with the skin pass's pipelines. They shade with the camera's lights, so the bundle binds the
 //! camera view's frame group, and its own compacted instances and indirect draws.
+//!
+//! The motion view has a bundle for each frame parity, which draws the motion layout's buckets into
+//! the motion target (see [`crate::motion`]). Each binds the parity's motion frame group, which
+//! holds the last frame's joints, and reads the last frame's place of each vertex from vertex buffer
+//! slot 2: the parity's copy of a skinned part's region, or the mesh page's own vertices. Every
+//! bucket binds a map's group after the frame's, a blank one's where its material has no map.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -200,6 +206,9 @@ pub(super) enum Bundle {
     /// The subsurface view's objects into the skin pass's target, each bucket with its skin pass
     /// pipeline and its material's maps, lit through the camera view's frame group.
     Subsurface,
+    /// The motion view's moving objects into the motion target, with the last frame's data of the
+    /// copy of a frame parity.
+    Motion(usize),
 }
 
 impl Bundle {
@@ -207,6 +216,7 @@ impl Bundle {
         match self {
             Self::Opaque | Self::Outline | Self::Tile | Self::Subsurface => ids::bundle(view),
             Self::Prepass => ids::prepass_bundle(view),
+            Self::Motion(parity) => ids::motion_bundle(parity),
         }
     }
 }
@@ -231,11 +241,16 @@ pub(super) fn record_bundle(
     let frame_group = match kind {
         Bundle::Prepass => ids::prepass_group(view),
         Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
+        Bundle::Motion(parity) => ids::motion_frame_group(parity),
         _ => ids::frame_group(view),
     };
     let shading_group = match kind {
         Bundle::Subsurface => frame_group,
         _ => ids::frame_group(view),
+    };
+    let motion = match kind {
+        Bundle::Motion(parity) => Some(parity),
+        _ => None,
     };
     list.push(
         Op::BeginBundle,
@@ -255,11 +270,13 @@ pub(super) fn record_bundle(
         first_draw,
         hidden,
         counts: None,
+        motion,
     };
     match kind {
         Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
         Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
         Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
+        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false)?,
         Bundle::Outline => {
             draws.record(list, |b| b.pipeline, |_| false)?;
             draws.record(list, |b| b.prepass, |_| false)?;
@@ -286,6 +303,7 @@ pub(super) fn record_direct(
     let frame_group = match kind {
         Bundle::Prepass => ids::prepass_group(view),
         Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
+        Bundle::Motion(parity) => ids::motion_frame_group(parity),
         _ => ids::frame_group(view),
     };
     let shading_group = match kind {
@@ -301,11 +319,16 @@ pub(super) fn record_direct(
         first_draw: 0,
         hidden,
         counts: Some(counts),
+        motion: match kind {
+            Bundle::Motion(parity) => Some(parity),
+            _ => None,
+        },
     };
     match kind {
         Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
         Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
         Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
+        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false)?,
         Bundle::Outline => {
             draws.record(list, |b| b.pipeline, |_| false)?;
             draws.record(list, |b| b.prepass, |_| false)?;
@@ -325,7 +348,10 @@ struct Draws<'a> {
     shading_group: u32,
     first_draw: u32,
     hidden: &'a dyn Fn(u32) -> bool,
+    /// Each bucket's instance count on the direct-draw path, or `None` for a bundle.
     counts: Option<&'a [u32]>,
+    /// The frame parity whose last frame's data a motion bundle reads, or `None` for any other.
+    motion: Option<usize>,
 }
 
 impl Draws<'_> {
@@ -348,8 +374,10 @@ impl Draws<'_> {
             first_draw,
             hidden,
             counts,
+            motion,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
+        let mut last_vertices = None;
         let mut groups = DrawGroups::default();
         let mut bound = None;
         for (b, bucket) in layout.buckets.iter().enumerate() {
@@ -367,11 +395,15 @@ impl Draws<'_> {
                 list.push(Op::SetPipeline, &[id])?;
                 pipeline = Some(id);
             }
-            let maps = if own { bucket.group } else { 0 };
+            let maps = if own || motion.is_some() {
+                bucket.group
+            } else {
+                0
+            };
             let (stride, index) = if bucket.indexed {
                 (sizes::INDEX_STRIDE, ids::index_group(view))
             } else {
-                (sizes::INSTANCE_STRIDE, 0)
+                (layout.copy_stride(), 0)
             };
             groups.set(list, maps, bucket.skins, index)?;
             list.push(
@@ -391,6 +423,16 @@ impl Draws<'_> {
                 if vertices != Some(source) {
                     list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
                     vertices = Some(source);
+                }
+                if let Some(parity) = motion {
+                    let last = match draw.vertices {
+                        Some((buffer, offset)) => (ids::last_skinned_of(buffer, parity), offset),
+                        None => source,
+                    };
+                    if last_vertices != Some(last) {
+                        list.push(Op::SetVertexBuffer, &[2, last.0, last.1, 0])?;
+                        last_vertices = Some(last);
+                    }
                 }
                 if indices != Some(page_indices) {
                     list.push(

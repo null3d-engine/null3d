@@ -39,7 +39,7 @@ use crate::sorted::SkinnedPipeline;
 const NOT_SKINNED: u32 = u32::MAX;
 
 /// The templates with MORPH builds.
-const MORPH_TEMPLATES: [u32; 10] = [
+const MORPH_TEMPLATES: [u32; 11] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
     template::PROBE_GRID,
@@ -50,6 +50,7 @@ const MORPH_TEMPLATES: [u32; 10] = [
     template::SHADOW_DEPTH,
     template::SHADOW_CUTOUT,
     template::SHADOW_CUTOUT_MAP,
+    template::MOTION,
 ];
 
 /// The joint texture, the morph texture and the texture of first joints and weights, with what the
@@ -297,6 +298,11 @@ impl Skins {
     /// The morph texture.
     pub(super) fn morph(&self) -> &MorphTexture {
         &self.morph
+    }
+
+    /// The joint texture.
+    pub(super) fn joints(&self) -> &JointTexture {
+        &self.joints
     }
 
     /// Forgets the textures, so they are made and filled again, after the thread that draws

@@ -717,6 +717,16 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "SKIN", "MORPH"], targets = ["glsl"] }
 
+# The motion debug view's step, which development builds draw over the scene color: each pixel's
+# whole motion as a color, from the motion target and the depth. TONE_MAP writes display color for
+# the 8-bit path, and DEPTH_MULTISAMPLED reads sample 0 of a multisampled depth, on WebGPU. It
+# stays in shaders.ts, where only development builds import it.
+[shaders.motion_view]
+file = "motion_view.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP", "DEPTH_MULTISAMPLED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["TONE_MAP"], targets = ["glsl"] }
+
 # The depth of shadow casters, drawn from a light into one cascade's layer of the shadow map or one
 # tile of the shadow atlas. The CASTER_OFFSET builds move casters that draw only their back faces
 # toward the light. The PREPASS builds draw the depth of a camera's opaque objects for the depth
@@ -765,6 +775,31 @@ variants.webgpu = { targets = ["wgsl"] }
 file = "cull.wgsl"
 by_device = true
 variants.webgpu = { defs = ["OCCLUSION"], targets = ["wgsl"] }
+
+# The motion view's culling, from the same file: its `main` keeps the instances that moved since the
+# last frame, or whose bucket moves by itself, with both frames' matrices. WebGPU only.
+[shaders.cull_motion]
+file = "cull.wgsl"
+by_device = true
+variants.webgpu = { permutations = ["MOTION"], required = ["MOTION"], targets = ["wgsl"] }
+
+# The motion of moving objects, which the motion pass draws from the motion view (decision record
+# D-140): each vertex in this frame and in the last, and the surface's own motion on the screen.
+# SKIN skins with both frames' joints, and WebGL2's MORPH morphs with both frames' weights. WebGPU
+# reads the last frame's place of each vertex from a second vertex buffer, which holds the last
+# frame's copy of the skinning pass's vertices for the objects that it skins or morphs. A masked
+# material tests its alpha as masked casters do: VERTEX_COLOR, ALPHA_MASK and ALPHA_HASH as in
+# shadow_cutout, with the base color map's group after the frame's in every WebGPU build.
+[shaders.motion]
+file = "motion.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["VERTEX_COLOR", "ALPHA_MASK", "SKIN", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_HASH"], targets = ["glsl"] }
+
+# A page downloads the motion pass's shaders when a pass first reads the motion.
+[first_use.motion]
+shaders = ["motion", "cull_motion"]
 
 # The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
 # the backends make the mip levels of textures that the scene uploads. The copy pipeline copies a

@@ -182,7 +182,10 @@ impl DataTexture {
                     *rows,
                     1,
                     self.format,
-                    texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                    // The motion pass copies the matrices into its copies of the last frame's.
+                    texture_usage::TEXTURE_BINDING
+                        | texture_usage::COPY_DST
+                        | texture_usage::COPY_SRC,
                     1,
                     1,
                     view::D2,

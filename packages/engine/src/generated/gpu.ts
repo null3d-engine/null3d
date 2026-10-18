@@ -71,6 +71,7 @@ export const FORMAT_R32_FLOAT = 20;
 export const FORMAT_BC6H_RGB_UFLOAT = 21;
 export const FORMAT_DEPTH16_UNORM = 22;
 export const FORMAT_RGBA32_UINT = 23;
+export const FORMAT_RG16_FLOAT = 24;
 export const FORMAT_R16_FLOAT = 25;
 
 export const VIEW_2D = 0;
@@ -138,6 +139,7 @@ export const LAYOUT_VIEW_COPY = 25;
 export const LAYOUT_ACCUMULATE = 26;
 export const LAYOUT_DOF_COMPOSITE = 27;
 export const LAYOUT_DOF_COMPOSITE_MS = 28;
+export const LAYOUT_MOTION_FRAME = 43;
 export const LAYOUT_SSR_REDUCE = 30;
 export const LAYOUT_SSR_TRACE = 31;
 export const LAYOUT_WEIGHTED_COMPOSITE = 41;
@@ -183,6 +185,8 @@ export const PERMUTATION_TRANSMISSION = 8388608;
 export const PERMUTATION_ROW_VALUES = 16777216;
 export const PERMUTATION_CASTER = 33554432;
 export const PERMUTATION_TRANSLUCENCY = 268435456;
+export const PERMUTATION_MOTION = 536870912;
+
 export const PERMUTATION_COAT_SHEEN = 1073741824;
 export const PERMUTATION_WEIGHTED = 2147483648;
 
@@ -291,6 +295,9 @@ export const TEMPLATE_SUBSURFACE_MAPS = 52;
 export const TEMPLATE_SUBSURFACE_BLUR = 66;
 export const TEMPLATE_SUBSURFACE_COMPOSITE = 67;
 export const TEMPLATE_SUBSURFACE_COMPOSITE_MS = 68;
+export const TEMPLATE_MOTION = 73;
+export const TEMPLATE_MOTION_VIEW = 74;
+
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -310,6 +317,7 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
+export const SIZE_MOTION_INSTANCE_STRIDE = 112;
 export const SIZE_INDEX_STRIDE = 16;
 export const SIZE_FRAME_UNIFORM_BYTES = 992;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
@@ -338,7 +346,7 @@ export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 export const SIZE_BACKGROUND_UNIFORM_BYTES = 144;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
-export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16, 0, 2];
+export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16, 4, 2];
 /** Texels on each side of a block of each format, by format code. */
 export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 4, 1, 1, 1, 1];
 /** Each vertex attribute type by code: its bytes per value, its largest value (1 for floats), and whether it reads as fractions. */

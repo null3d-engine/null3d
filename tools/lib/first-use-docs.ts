@@ -32,6 +32,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
 	subsurface:
 		'with the first material whose light spreads under its surface (`subsurfaceRadius`). The skin pass and the blur draw its light. The frames draw it as a plain surface until those are built',
+	motion:
+		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
 	coat_sheen: 'with the first material with a clear coat or a sheen',
 	weighted:
 		"with the first material of the `'weighted'` blending. Until it is built, such materials draw as blended ones",
