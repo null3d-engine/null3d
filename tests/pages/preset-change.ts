@@ -13,8 +13,7 @@ import { run } from './lib/result';
 const params = new URLSearchParams(location.search);
 /**
  * How long the measurement runs, long enough to hold the whole switch. A software GPU on a slow
- * runner takes seconds to apply a preset and build its pipelines, and a window that ended first
- * counted no pipeline at all.
+ * runner needs a few seconds to apply a preset and build its pipelines.
  */
 const MEASURE_SECONDS = 4;
 
@@ -46,28 +45,17 @@ run('preset-change', async () => {
 			resolve(data);
 		});
 	});
+	// The frame figures load on the measurement's first use, and the first measurement waits for
+	// them. A switch posted during that wait built its pipeline before the window counted
+	// anything, so a short measurement loads them first and the window that matters starts at once.
+	await engine.measure(0.01);
 	const measuring = engine.measure(MEASURE_SECONDS);
 	const swap = params.has('swap');
 	if (swap) engine.postToSketch('swap');
 	else engine.postToSketch('set-preset', params.get('to') ?? 'low');
 	const sketch = swap ? undefined : await answered;
 	const mode = { ...engine.mode };
-	let measured = await measuring;
-	if (!swap) {
-		// A slow machine applies the preset and draws its new pipeline after the first window
-		// closed, so measure again until that pipeline is counted, and add each window's figures.
-		// The cap keeps a real fault failing instead of measuring for ever.
-		const deadline = performance.now() + 30_000;
-		while (measured.pipelines === 0 && performance.now() < deadline) {
-			const more = await engine.measure(MEASURE_SECONDS);
-			measured = {
-				...measured,
-				frames: measured.frames + more.frames,
-				pipelines: measured.pipelines + more.pipelines,
-				skippedDraws: measured.skippedDraws + more.skippedDraws,
-			};
-		}
-	}
+	const measured = await measuring;
 	const after = await engine.captureFrame();
 	await engine.destroy();
 	return {
