@@ -598,6 +598,16 @@ than a new resting size. The reclaim is a task of its own, and the start should 
 
 `START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
 
+### The probe's measurement in each start, 18 October 2026
+
+The size report undercounted every start that probes the drawing path. The probe worker's
+`draw-path-probe.ts` loads on demand from the probe worker, and every device with WebGPU probes
+that path whichever path the page draws with. The report listed the file among those that load
+after the start, so no start counted its 1,134 bytes after Brotli.
+
+`DOWNLOADS` in `tools/lib/size-report.ts` now names the part in every start. The report's start
+figures rise by that figure, and the later-parts section no longer lists the file.
+
 ### The first-use files raised, 15 October 2026: 48 KB to 49 KB
 
 The screen-space reflections work was over budget on two of its device modules rather than on the

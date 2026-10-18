@@ -100,7 +100,9 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 
 /**
  * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
- * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
+ * starts the core's download, and every thread mode loads it. The probe worker's measurement of
+ * the direct drawing path loads in a file of its own when the probe runs, so a device with WebGPU
+ * downloads it whichever path the page draws with, and each start counts it. The renderer loads on demand on the
  * page and in the sketch worker, so a page downloads it only for the thread that draws. Each GPU
  * path's renderers load on demand in the thread that draws, so a page downloads one path's only
  * (`drawingParts`). The sketch runner and the scene API load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
@@ -441,7 +443,14 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 	GPU_PATHS.map((path) => ({
 		mode: `${mode}, ${path.name}`,
 		shaders: path.shaders,
-		parts: [...parts, `${drawing}-${path.part}.js`, `${drawing}-gpu-shared.js`],
+		parts: [
+			...parts,
+			// The probe worker measures the direct path on every device with WebGPU, whichever path
+			// the page draws with, and the measurement loads in a file of its own.
+			'draw-path-probe.js',
+			`${drawing}-${path.part}.js`,
+			`${drawing}-gpu-shared.js`,
+		],
 	})),
 );
 
