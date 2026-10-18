@@ -1707,23 +1707,28 @@ impl GpuDrivenRenderer {
         }
         if skin_drawn && (upload_everything || buffers_remade || groups_remade || new_skin) {
             let view = ViewId::SUBSURFACE;
-            let recreated = shared_recreated || upload_everything;
-            self.culling.apply(
-                list,
-                view,
-                &self.scattering,
-                recreated,
-                binding_bytes,
-                false,
-            )?;
-            let targets = self.graph.skin_targets();
-            // The skin pass leaves out what the camera's view leaves out.
-            let hidden_targets = self.settings.hidden_targets(ViewId::CAMERA);
-            let textures = self.settings.textures();
-            let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
-            let (scattering, meshes) = (&self.scattering, &self.meshes);
-            let kind = Bundle::Subsurface;
-            opaque::record_bundle(list, view, scattering, meshes, targets, kind, 0, &hidden)?;
+            if self.config.direct_draws {
+                self.culling
+                    .apply_direct(list, view, &self.scattering, binding_bytes)?;
+            } else {
+                let recreated = shared_recreated || upload_everything;
+                self.culling.apply(
+                    list,
+                    view,
+                    &self.scattering,
+                    recreated,
+                    binding_bytes,
+                    false,
+                )?;
+                let targets = self.graph.skin_targets();
+                // The skin pass leaves out what the camera's view leaves out.
+                let hidden_targets = self.settings.hidden_targets(ViewId::CAMERA);
+                let textures = self.settings.textures();
+                let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
+                let (scattering, meshes) = (&self.scattering, &self.meshes);
+                let kind = Bundle::Subsurface;
+                opaque::record_bundle(list, view, scattering, meshes, targets, kind, 0, &hidden)?;
+            }
         }
         let first_cascade_to_apply = if upload_everything || buffers_remade {
             0
@@ -1878,18 +1883,35 @@ impl GpuDrivenRenderer {
             let view = ViewId::SUBSURFACE;
             let (layout, scattering, cells) = (&self.layout, &self.scattering, &self.cells);
             let detail = self.settings.level_view(view, input.canvas);
-            self.culling.upload(
-                list,
-                arena,
-                view,
-                &frame,
-                layout,
-                scattering,
-                input.scene,
-                cells,
-                None,
-                &detail,
-            )?;
+            if self.config.direct_draws {
+                self.direct.record(
+                    list,
+                    arena,
+                    input.jobs,
+                    view,
+                    &frame,
+                    input.scene,
+                    input.batches,
+                    cells,
+                    layout,
+                    scattering,
+                    detail,
+                    parity,
+                )?;
+            } else {
+                self.culling.upload(
+                    list,
+                    arena,
+                    view,
+                    &frame,
+                    layout,
+                    scattering,
+                    input.scene,
+                    cells,
+                    None,
+                    &detail,
+                )?;
+            }
         }
         self.cascade_frames = [None; MAX_CASCADES];
         if shadow.is_none() && self.cascades_held && shadows {
@@ -2127,7 +2149,14 @@ impl GpuDrivenRenderer {
         // draws in the pass instead of replaying a bundle.
         let record_direct_view =
             |list: &mut DrawList, view: ViewId, kind: Bundle| -> Result<(), RecordError> {
-                let hidden_targets = settings.hidden_targets(view);
+                // The skin pass draws the camera's objects into its own target, so it leaves out
+                // what the camera's view leaves out, as its bundle does.
+                let targets_view = if kind == Bundle::Subsurface {
+                    ViewId::CAMERA
+                } else {
+                    view
+                };
+                let hidden_targets = settings.hidden_targets(targets_view);
                 let textures = settings.textures();
                 let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
                 opaque::record_direct(
@@ -2190,7 +2219,11 @@ impl GpuDrivenRenderer {
                     }
                 }
                 Role::SkinLight if drawn(ViewId::SUBSURFACE) => {
-                    opaque::record(list, ViewId::SUBSURFACE, Bundle::Subsurface)
+                    if direct_draws {
+                        record_direct_view(list, ViewId::SUBSURFACE, Bundle::Subsurface)
+                    } else {
+                        opaque::record(list, ViewId::SUBSURFACE, Bundle::Subsurface)
+                    }
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),

@@ -1822,8 +1822,11 @@ impl CpuCulledRenderer {
                 ),
                 None,
                 skin_views,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
