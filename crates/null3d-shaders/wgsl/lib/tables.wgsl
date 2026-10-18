@@ -18,7 +18,7 @@
 
 /// The first column of the split-sum table in the material table's texture: one past a
 /// material's texels.
-const DFG_COLUMN: u32 = 13u;
+const DFG_COLUMN: u32 = 15u;
 #endif
 
 /// The light tables, at binding 3 of the frame's group: see the module notes.

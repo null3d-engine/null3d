@@ -12,13 +12,14 @@ import {
 	glslProgramsOf,
 	inShaderSet,
 	type ShaderSet,
-	variantInShaderSet,
+	shaderOf,
 	variantOf,
 } from '../pages/lib/shader-list.ts';
 import { SHADER_PROGRAMS_PER_PART } from './plans.ts';
 import {
 	glslProgramCount,
 	glslProgramCountOf,
+	glslProgramsByName,
 	glslProgramsByVariant,
 	glslVariantsByModule,
 } from './shader-programs.ts';
@@ -30,7 +31,7 @@ const MODULE = /^shaders-.*\.(js|ts)$/;
 /** The main module, which the tests read as the engine's own build rather than as a file. */
 const MAIN_MODULE = 'shaders.ts';
 /** The sets of builds that the shaders page compiles, each in parts of its own. */
-const SETS: readonly ShaderSet[] = ['base', 'coat', 'coat-sample'];
+const SETS: readonly ShaderSet[] = ['base', 'coat', 'coat-sample', 'first-use', 'first-use-sample'];
 /** The most GLSL programs that one page compiles: more than a part's share holds, with room. */
 const MOST_PROGRAMS_PER_PART = 600;
 /** Loading every module takes seconds on a busy machine, which the tests may have. */
@@ -42,9 +43,12 @@ async function programsLoadedFrom(name: string): Promise<Map<string, number>> {
 		SHADERS?: Readonly<Record<string, ShaderVariants>>;
 	};
 	const programs = new Map<string, number>();
-	for (const variants of Object.values(SHADERS ?? {}))
+	for (const [shader, variants] of Object.entries(SHADERS ?? {}))
 		for (const [variant, built] of Object.entries(variants))
-			programs.set(variant, (programs.get(variant) ?? 0) + Object.keys(built.glsl ?? {}).length);
+			programs.set(
+				`${shader}.${variant}`,
+				(programs.get(`${shader}.${variant}`) ?? 0) + Object.keys(built.glsl ?? {}).length,
+			);
 	return programs;
 }
 
@@ -56,8 +60,8 @@ const moduleFiles = () =>
 
 /** The builds of one set that the modules' text holds, each with at least one program. */
 const buildsOfSet = (set: ShaderSet) =>
-	[...glslProgramsByVariant()]
-		.filter(([build, programs]) => programs > 0 && variantInShaderSet(build, set))
+	[...glslProgramsByName()]
+		.filter(([build, programs]) => programs > 0 && inShaderSet(build, set))
 		.map(([build]) => build)
 		.sort();
 
@@ -74,7 +78,7 @@ async function partsOfSet(set: ShaderSet) {
 		const share = glslProgramsOf(await everyShader(part, parts)).filter(([name]) =>
 			inShaderSet(name, set),
 		);
-		for (const [name] of share) loaded.add(variantOf(name));
+		for (const [name] of share) loaded.add(`${shaderOf(name)}.${variantOf(name)}`);
 		if (share.length > most) most = share.length;
 	}
 	return { loaded, most };

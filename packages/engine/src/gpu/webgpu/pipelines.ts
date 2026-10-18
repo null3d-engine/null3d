@@ -38,6 +38,9 @@ import {
 	LAYOUT_SKIN,
 	LAYOUT_SSR_REDUCE,
 	LAYOUT_SSR_TRACE,
+	LAYOUT_SUBSURFACE_BLUR,
+	LAYOUT_SUBSURFACE_COMPOSITE,
+	LAYOUT_SUBSURFACE_COMPOSITE_MS,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
 	LAYOUT_WEIGHTED_COMPOSITE,
@@ -127,6 +130,11 @@ import {
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_SSR_REDUCE,
 	TEMPLATE_SSR_TRACE,
+	TEMPLATE_SUBSURFACE,
+	TEMPLATE_SUBSURFACE_BLUR,
+	TEMPLATE_SUBSURFACE_COMPOSITE,
+	TEMPLATE_SUBSURFACE_COMPOSITE_MS,
+	TEMPLATE_SUBSURFACE_MAPS,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
@@ -787,6 +795,19 @@ export class Pipelines {
 			unfiltered(3, true),
 			blurred,
 		]);
+		// The subsurface blur's steps read every texture with textureLoad: the across step the skin
+		// pass's light, and the down step that, the across step's light, the scene color and the
+		// scene's depth as plain floats.
+		this.defineLayout(LAYOUT_SUBSURFACE_BLUR, 'subsurface blur', [aoSettings, unfiltered(1)]);
+		const composite = [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)];
+		this.defineLayout(LAYOUT_SUBSURFACE_COMPOSITE, 'subsurface composite', [
+			...composite,
+			unfiltered(4),
+		]);
+		this.defineLayout(LAYOUT_SUBSURFACE_COMPOSITE_MS, 'subsurface composite ms', [
+			...composite,
+			unfiltered(4, true),
+		]);
 		// The final pass with custom effects folded into it: the pass's own entries, then every
 		// effect's block and the scene's depth, which the effects read as a group does. The effects
 		// sample the scene color with a linear filter, so it binds as a filterable float texture:
@@ -882,6 +903,14 @@ export class Pipelines {
 				[LAYOUT_DEPTH, LAYOUT_TEXTURES],
 			],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_SUBSURFACE, 'subsurface', shaders.subsurface, [0, 1], [LAYOUT_FRAME]],
+			[
+				TEMPLATE_SUBSURFACE_MAPS,
+				'subsurface maps',
+				shaders.subsurface_maps,
+				[0, 1, 2, 3],
+				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
+			],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],
@@ -970,6 +999,27 @@ export class Pipelines {
 				shaders.dof_ms,
 				'composite',
 				LAYOUT_DOF_COMPOSITE_MS,
+			],
+			[
+				TEMPLATE_SUBSURFACE_BLUR,
+				'subsurface across',
+				shaders.subsurface_blur,
+				'across',
+				LAYOUT_SUBSURFACE_BLUR,
+			],
+			[
+				TEMPLATE_SUBSURFACE_COMPOSITE,
+				'subsurface down',
+				shaders.subsurface_blur,
+				'down',
+				LAYOUT_SUBSURFACE_COMPOSITE,
+			],
+			[
+				TEMPLATE_SUBSURFACE_COMPOSITE_MS,
+				'subsurface down ms',
+				shaders.subsurface_blur_ms,
+				'down',
+				LAYOUT_SUBSURFACE_COMPOSITE_MS,
 			],
 			// The volumetric fog's block step and sum bind as steps of bloom, and its apply step as
 			// depth of field's composite, with the summed grid in place of the blurred image.

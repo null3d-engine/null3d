@@ -96,6 +96,15 @@
 //! needs. The outline passes and the mask are off while nothing is outlined, and on every path the
 //! final pass then runs as it did.
 //!
+//! While some object's material has a scatter radius and the quality setting gives the subsurface
+//! blur taps, on the HDR path, the subsurface passes come after the outline's (see
+//! [`crate::subsurface`]). On WebGPU a culling pass culls those objects for the subsurface view.
+//! The skin pass draws them into a target and a depth of their own, of one sample, with the
+//! camera's lights. The across step blurs that target into one of its own, and the down step adds
+//! the blurred light less the sharp light to a copy of the scene color, which the custom effects,
+//! depth of field, bloom and the final pass then read in its place. They are declared only while
+//! the blur draws, once its steps' pipelines are built.
+//!
 //! While the sketch turns ambient occlusion on, the camera's view has three ambient occlusion
 //! passes between its depth prepass and its opaque pass (see [`crate::ao`]), and the prepass runs
 //! for every view even where the builder started without it. The first reads the scene depth as
@@ -174,6 +183,7 @@ use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
+use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, SubsurfaceSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
@@ -215,6 +225,8 @@ pub(crate) struct GraphIds {
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
     pub(crate) transmission: TransmissionIds,
+    /// The subsurface blur's steps.
+    pub(crate) subsurface: SubsurfaceIds,
     pub(crate) ssr: SsrIds,
     /// The composite and the depth copy of the camera's weighted layer.
     pub(crate) weighted: WeightedIds,
@@ -367,6 +379,19 @@ const OUTLINE_CULLING: &str = "OutlineCulling";
 const OUTLINE_VISIBLE: &str = "outlineVisible";
 /// The outline mask, which the mask pass creates and the final pass reads.
 const OUTLINE_MASK: &str = "outlineMask";
+/// The subsurface view's culling pass on WebGPU, and the buffer of its compacted instances and
+/// indirect draws.
+const SUBSURFACE_CULLING: &str = "SubsurfaceCulling";
+const SUBSURFACE_VISIBLE: &str = "subsurfaceVisible";
+/// The skin pass, and the light and the depth that it creates, which the steps read.
+const SKIN_PASS: &str = "Skin";
+const SKIN_LIGHT: &str = "skinLight";
+const SKIN_DEPTH: &str = "skinDepth";
+/// The subsurface blur's steps and the targets they create: the across step's, then the copy of
+/// the scene color with the blurred light, which the custom effects, depth of field, bloom and the
+/// final pass read.
+const SUBSURFACE_PASSES: [&str; subsurface::STEPS] = ["SubsurfaceAcross", "SubsurfaceDown"];
+const SUBSURFACE_TARGETS: [&str; subsurface::STEPS] = ["subsurfaceAcross", "subsurfaceColor"];
 /// Each step of ambient occlusion and the target it creates: the depth copy, the horizon search and
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
@@ -489,6 +514,11 @@ pub(crate) enum Role {
     Bloom(u8),
     /// Draws the outlined objects into the outline mask, from the outline view.
     OutlineMask,
+    /// Draws the objects whose material has a scatter radius into the skin pass's target, from the
+    /// subsurface view.
+    SkinLight,
+    /// A step of the subsurface blur, by its place. The graph records it itself.
+    Subsurface(u8),
     /// A step of ambient occlusion, by its place. The graph records it itself.
     Ao(u8),
     /// A step of screen-space reflections, by its place: a level of the depth pyramid, then the
@@ -636,6 +666,7 @@ enum BuiltGroup {
     Dof,
     Fog,
     Screen,
+    Subsurface,
     Transmission,
     Weighted,
     ParticleDepth,
@@ -798,6 +829,21 @@ pub(crate) struct FrameGraph {
     dof_built: bool,
     /// True when the declared passes hold depth of field's steps.
     dof_declared: bool,
+    /// The subsurface blur's steps and their GPU objects, once the blur is first wanted.
+    subsurface_pass: Option<SubsurfacePass>,
+    /// The GPU objects that the blur's steps take.
+    subsurface_ids: SubsurfaceIds,
+    /// What the blur draws with in the frame, while the quality setting gives it taps on the HDR
+    /// path.
+    subsurface: Option<SubsurfaceFrame>,
+    /// True while some object's material has a scatter radius.
+    subsurface_objects: bool,
+    /// True once the blur's steps' pipelines draw: built, after the frame whose list created them.
+    subsurface_built: bool,
+    /// True when the declared passes hold the skin pass and the blur's steps.
+    subsurface_declared: bool,
+    /// The textures that the blur's steps read, found once for each compile of the graph.
+    subsurface_textures: CompileCache<SubsurfaceSources>,
     /// The textures that depth of field's steps read, found once for each compile of the graph.
     dof_textures: CompileCache<DofSources>,
     /// The automatic exposure's meter and its GPU objects, once the sketch first turns it on.
@@ -1036,6 +1082,13 @@ impl FrameGraph {
             dof_built: false,
             dof_declared: false,
             dof_textures: CompileCache::default(),
+            subsurface_pass: None,
+            subsurface_ids: ids.subsurface,
+            subsurface: None,
+            subsurface_objects: false,
+            subsurface_built: false,
+            subsurface_declared: false,
+            subsurface_textures: CompileCache::default(),
             exposure_pass: None,
             exposure_ids: ids.exposure,
             exposure: None,
@@ -1500,6 +1553,11 @@ impl FrameGraph {
         } else {
             0
         };
+        let subsurface = if self.subsurface.is_some() {
+            SubsurfacePass::UPLOAD_BYTES
+        } else {
+            0
+        };
         let fog = if self.fog.is_some() {
             FogVolumePass::UPLOAD_BYTES
         } else {
@@ -1532,6 +1590,7 @@ impl FrameGraph {
             + ssr
             + effects
             + dof
+            + subsurface
             + fog
             + fullscreen
             + exposure
@@ -1745,13 +1804,23 @@ impl FrameGraph {
         self.still_pass.set_tone_curve(template);
     }
 
-    /// The resource that holds the scene's color after the scene's passes: the volumetric fog's
-    /// target while its steps are declared, or else the scene color. The custom effects read it.
+    /// The resource that holds the scene's lit color: the subsurface blur's copy while its passes
+    /// are declared, or else the scene color. The volumetric fog's apply step reads it.
+    fn lit_output(&self) -> &'static str {
+        if self.subsurface_declared {
+            SUBSURFACE_TARGETS[subsurface::STEPS - 1]
+        } else {
+            SCENE_COLOR
+        }
+    }
+
+    /// The resource that holds the scene's color before the custom effects: the volumetric fog's
+    /// target while its steps are declared, or else the lit color. The custom effects read it.
     fn scene_output(&self) -> &'static str {
         if self.fog_declared > 0 {
             FOG_COLOR
         } else {
-            SCENE_COLOR
+            self.lit_output()
         }
     }
 
@@ -1877,6 +1946,52 @@ impl FrameGraph {
         let rows_from_bottom = !self.gpu_culling;
         self.dof_pass
             .get_or_insert_with(|| DofPass::new(self.dof_ids, samples, rows_from_bottom))
+    }
+
+    /// Turns the subsurface blur on with what the frame draws it with, or off with `None`, for the
+    /// next frames, while `objects` says that some object's material has a scatter radius. The
+    /// passes are declared again only when the blur starts or stops drawing, so a moving camera
+    /// changes only the steps' blocks. The 8-bit path draws no blur.
+    pub(crate) fn set_subsurface(&mut self, frame: Option<SubsurfaceFrame>, objects: bool) {
+        let was = self.subsurface_draws();
+        self.subsurface = frame.filter(|_| self.scene_color.is_hdr());
+        self.subsurface_objects = objects;
+        if self.subsurface_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while the blur is wanted: the quality setting gives it taps on the HDR path, and some
+    /// object's material has a scatter radius.
+    fn subsurface_wanted(&self) -> bool {
+        self.subsurface.is_some() && self.subsurface_objects
+    }
+
+    /// True while the subsurface blur draws: it is wanted, and its steps' pipelines are built.
+    /// Until then the frames draw without it.
+    pub(crate) fn subsurface_draws(&self) -> bool {
+        self.subsurface_wanted() && self.subsurface_built
+    }
+
+    /// What the skin pass's pipelines draw into: its light's format and its own depth, of one
+    /// sample.
+    pub(crate) fn skin_targets(&self) -> PassTargets {
+        PassTargets {
+            color_format: subsurface::SKIN_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: 1,
+            permutation: 0,
+        }
+    }
+
+    /// The subsurface blur's steps, made for the scene depth's samples when first asked for.
+    /// WebGL2 has no multisampled textures: its backend gives the down step a copy of one sample.
+    fn subsurface_steps(&mut self) -> &mut SubsurfacePass {
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let rows_from_bottom = !self.gpu_culling;
+        let ids = self.subsurface_ids;
+        self.subsurface_pass
+            .get_or_insert_with(|| SubsurfacePass::new(ids, samples, rows_from_bottom))
     }
 
     /// Plans the effects' passes: the units of the effects before `fold`, with each group whose
@@ -2481,6 +2596,10 @@ impl FrameGraph {
             .extend(views.iter().map(|view| view.target().draws()));
         self.enable_views();
         self.declare_outline(color.samples);
+        self.subsurface_declared = self.subsurface_draws() && !views.is_empty();
+        if self.subsurface_declared {
+            self.declare_subsurface(views, &named);
+        }
         self.fog_declared = if self.fog_draws() {
             self.fog.map_or(0, |fog| fog.slices)
         } else {
@@ -2658,6 +2777,52 @@ impl FrameGraph {
         self.outline_passes.push(pass);
     }
 
+    /// Declares the subsurface blur's passes: on WebGPU the subsurface view's culling pass, then
+    /// the skin pass, which draws with the camera's lights, shadows, ambient occlusion and the
+    /// textures that the camera's view reads, into a light and a depth of its own; then the across
+    /// step, which reads the skin pass's light, and the down step, which reads it with the across
+    /// step's target and the scene's color and depth as every pass leaves them.
+    fn declare_subsurface(&mut self, views: &[View], named: &[ViewPassNames]) {
+        let mut pass = Pass::new(SKIN_PASS, PassKind::Scene)
+            .creates(SKIN_LIGHT, Target::color(subsurface::SKIN_FORMAT))
+            .creates(SKIN_DEPTH, Target::depth(DEPTH_FORMAT));
+        if self.gpu_culling {
+            let culling = Pass::new(SUBSURFACE_CULLING, PassKind::Compute)
+                .reads(OBJECTS)
+                .creates_buffer(SUBSURFACE_VISIBLE);
+            self.add(culling, Role::Cull(ViewId::SUBSURFACE));
+            pass = pass.reads(SUBSURFACE_VISIBLE).reads(LIGHT_GRID);
+        }
+        if self.skins() {
+            pass = pass.reads(SKINNED);
+        }
+        if self.shadow_map {
+            pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
+        }
+        if self.depth_prepass() && self.screen_draws() {
+            pass = pass.reads(AO_TARGETS[ao::STEPS - 1]);
+        }
+        if self.transmission_declared {
+            pass = pass.reads(TRANSMISSION_COLOR);
+        }
+        let pass = reads_targets(pass, views, named, ViewId::CAMERA.index());
+        self.add(pass, Role::SkinLight);
+        let across = Pass::new(SUBSURFACE_PASSES[0], PassKind::Fullscreen)
+            .reads(SKIN_LIGHT)
+            .creates(
+                SUBSURFACE_TARGETS[0],
+                Target::color(subsurface::ACROSS_FORMAT),
+            );
+        self.add(across, Role::Subsurface(0));
+        let down = Pass::new(SUBSURFACE_PASSES[1], PassKind::Fullscreen)
+            .reads(SKIN_LIGHT)
+            .reads(SUBSURFACE_TARGETS[0])
+            .reads(SCENE_COLOR)
+            .reads(SCENE_DEPTH)
+            .creates(SUBSURFACE_TARGETS[1], Target::color(subsurface::FORMAT));
+        self.add(down, Role::Subsurface(1));
+    }
+
     /// Declares the custom effects' passes, one for each unit: each reads the color that the pass
     /// before it left, and the scene's depth as every pass leaves it when one of its effects reads
     /// depth, and creates a target of its own.
@@ -2686,10 +2851,10 @@ impl FrameGraph {
     /// Declares the volumetric fog's steps for a grid of `slices` slices: the two light steps, each
     /// into a kept light texture that it reads the other one of, then the block step, which reads
     /// both, the sum, which reads the block step's target, and the apply step, which reads the
-    /// scene's color and depth as every pass leaves them and the sum's target. The light steps bind
-    /// the camera's frame group, so they read what its opaque pass reads of the lights and the
-    /// shadows. The first light step reads the second's texture as the frame starts, before the
-    /// second step writes it.
+    /// lit color and the scene's depth as every pass leaves them and the sum's target. The light
+    /// steps bind the camera's frame group, so they read what its opaque pass reads of the lights
+    /// and the shadows. The first light step reads the second's texture as the frame starts, before
+    /// the second step writes it.
     fn declare_fog(&mut self, slices: u32) {
         let size = fog_volume::grid_size(slices);
         let grid = Target::color(fog_volume::GRID_FORMAT);
@@ -2725,7 +2890,7 @@ impl FrameGraph {
             .creates(FOG_SUMMED, grid);
         self.add(sum, Role::FogSum);
         let apply = Pass::new(FOG_APPLY_PASS, PassKind::Fullscreen)
-            .reads(SCENE_COLOR)
+            .reads(self.lit_output())
             .reads(SCENE_DEPTH)
             .reads(FOG_SUMMED)
             .creates(FOG_COLOR, Target::color(fog_volume::FORMAT));
@@ -3097,6 +3262,7 @@ impl FrameGraph {
             BuiltGroup::Dof => self.dof_built,
             BuiltGroup::Fog => self.fog_built,
             BuiltGroup::Screen => self.ao_built,
+            BuiltGroup::Subsurface => self.subsurface_built,
             BuiltGroup::Transmission => self.transmission_built,
             BuiltGroup::Weighted => self.weighted_built,
             BuiltGroup::ParticleDepth => self.particle_depth_built,
@@ -3110,6 +3276,7 @@ impl FrameGraph {
             BuiltGroup::Dof => self.dof_draws(),
             BuiltGroup::Fog => self.fog_draws(),
             BuiltGroup::Screen => self.screen_draws(),
+            BuiltGroup::Subsurface => self.subsurface_draws(),
             BuiltGroup::Transmission => self.transmission_draws(),
             BuiltGroup::Weighted => self.weighted_draws(),
             BuiltGroup::ParticleDepth => self.particle_depth_draws(),
@@ -3134,6 +3301,7 @@ impl FrameGraph {
             BuiltGroup::Dof => self.dof_built = built,
             BuiltGroup::Fog => self.fog_built = built,
             BuiltGroup::Screen => self.ao_built = built,
+            BuiltGroup::Subsurface => self.subsurface_built = built,
             BuiltGroup::Transmission => self.transmission_built = built,
             BuiltGroup::Weighted => self.weighted_built = built,
             BuiltGroup::ParticleDepth => self.particle_depth_built = built,
@@ -3200,6 +3368,16 @@ impl FrameGraph {
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
         self.note_built(BuiltGroup::Dof, dof_built, FrameGraph::declare_again);
+        let subsurface_built = self.subsurface_wanted() && {
+            let steps = self.subsurface_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        self.note_built(
+            BuiltGroup::Subsurface,
+            subsurface_built,
+            FrameGraph::declare_again,
+        );
         self.exposure_built = match self.exposure {
             Some(exposure) => {
                 self.exposure_meter()
@@ -3349,6 +3527,7 @@ impl FrameGraph {
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
         self.upload_ssr(list, arena)?;
+        self.upload_subsurface(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
         self.upload_dof(list, arena)?;
@@ -3723,6 +3902,35 @@ impl FrameGraph {
             .prepare(list, arena, frame_size, frame, sources, made)
     }
 
+    /// Records the subsurface blur's objects and blocks while its passes are declared, and binds
+    /// each step to the textures it reads, found by name once for each compile of the graph.
+    fn upload_subsurface(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.subsurface.filter(|_| self.subsurface_declared) else {
+            return Ok(());
+        };
+        let mut found = self.subsurface_textures;
+        let sources = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("each step of the subsurface blur reads a planned texture")
+            };
+            SubsurfaceSources {
+                skin: id(SKIN_LIGHT),
+                across: id(SUBSURFACE_TARGETS[0]),
+                color: id(SCENE_COLOR),
+                depth: id(SCENE_DEPTH),
+            }
+        });
+        self.subsurface_textures = found;
+        let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
+        self.subsurface_steps()
+            .prepare(list, arena, frame_size, frame, sources, made)
+    }
+
     /// Records the volumetric fog's objects and block while its steps are declared, and binds the
     /// steps to the textures they read, found by name once for each compile of the graph.
     fn upload_fog(
@@ -3743,7 +3951,7 @@ impl FrameGraph {
                 lit: FOG_LIGHT.map(id),
                 blocks: id(FOG_BLOCKS),
                 summed: id(FOG_SUMMED),
-                color: id(SCENE_COLOR),
+                color: id(self.lit_output()),
                 depth: id(SCENE_DEPTH),
             }
         });
@@ -3988,12 +4196,12 @@ impl FrameGraph {
 
     /// Records the plan's render and compute passes, then submits them. The graph records the
     /// final pass, and `record` the commands of each other declared pass. Each render pass clears
-    /// its color targets to `clear`, except the outline mask's pass, which clears to zero: no
-    /// object covers the mask there. A render pass whose passes all have roles that `skips` names
-    /// is left out, so its targets keep what earlier frames drew. The words that differ between a
-    /// frame that blends a still view and one that does not are noted for
-    /// [`FrameGraph::word_marks`]: the accumulation's steps, the two-step pass's first step and the
-    /// commands of the final pass or its still build.
+    /// its color targets to `clear`, except the outline mask's pass and the skin pass, which clear
+    /// to zero: no object covers the mask there, and no skin drew there. A render pass whose passes
+    /// all have roles that `skips` names is left out, so its targets keep what earlier frames drew.
+    /// The words that differ between a frame that blends a still view and one that does not are
+    /// noted for [`FrameGraph::word_marks`]: the accumulation's steps, the two-step pass's first
+    /// step and the commands of the final pass or its still build.
     pub(crate) fn record(
         &mut self,
         list: &mut DrawList,
@@ -4064,9 +4272,13 @@ impl FrameGraph {
                     if finals && let Some(meter) = self.exposure_pass.as_ref() {
                         meter.record(list)?;
                     }
-                    // The outline mask and the weighted layer's sums start from nothing.
+                    // The outline mask, the weighted layer's sums and the skin pass's light start
+                    // from nothing.
                     let masks = passes.iter().any(|&pass| {
-                        matches!(self.roles[pass.index()], Role::OutlineMask | Role::Weighted)
+                        matches!(
+                            self.roles[pass.index()],
+                            Role::OutlineMask | Role::SkinLight | Role::Weighted
+                        )
                     });
                     let clear = if masks {
                         [0.0; 4]
@@ -4136,6 +4348,11 @@ impl FrameGraph {
                                 .dof_pass
                                 .as_ref()
                                 .expect("depth of field's steps run once they are declared")
+                                .record(list, usize::from(step))?,
+                            Role::Subsurface(step) => self
+                                .subsurface_pass
+                                .as_ref()
+                                .expect("the subsurface blur's steps run once they are declared")
                                 .record(list, usize::from(step))?,
                             Role::FogLight(parity) => {
                                 let fog = self.fog_steps_ref();
@@ -4391,6 +4608,9 @@ impl FrameGraph {
         }
         if let Some(dof) = self.dof_pass.as_mut() {
             dof.reset_gpu();
+        }
+        if let Some(subsurface) = self.subsurface_pass.as_mut() {
+            subsurface.reset_gpu();
         }
         if let Some(meter) = self.exposure_pass.as_mut() {
             meter.reset_gpu();
@@ -4856,9 +5076,14 @@ mod tests {
             group: 120,
             blank: 910,
         },
+        subsurface: SubsurfaceIds {
+            buffer: 20,
+            first_group: 210,
+        },
+        // The reflections' own bands, clear of the view copies' groups, which take 32 ids from 60.
         ssr: SsrIds {
-            buffer: 14,
-            first_group: 70,
+            buffer: 21,
+            first_group: 220,
         },
         weighted: WeightedIds { first_group: 140 },
         particle_depth: 121,
@@ -4996,6 +5221,22 @@ mod tests {
             "the weighted layer's groups".to_string(),
             IDS.weighted.first_group,
             WeightedIds::GROUPS,
+        ));
+        buffers.push((
+            "the subsurface blur's block".to_string(),
+            IDS.subsurface.buffer,
+            1,
+        ));
+        groups.push((
+            "the subsurface blur's groups".to_string(),
+            IDS.subsurface.first_group,
+            subsurface::STEPS as u32,
+        ));
+        buffers.push(("the reflections' block".to_string(), IDS.ssr.buffer, 1));
+        groups.push((
+            "the reflections' groups".to_string(),
+            IDS.ssr.first_group,
+            ssr::STEPS as u32,
         ));
         groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
         // The graph takes its own textures from `first_texture` on: one for each texture of its
@@ -6825,6 +7066,149 @@ mod tests {
 
     /// Turns transmission on in `frames` and builds the copy's pipeline, as a builder's frames do:
     /// the first frame asks for it, and a later one finds it built.
+    fn subsurface_frame() -> SubsurfaceFrame {
+        let lens = crate::camera::Lens::Perspective(crate::camera::Perspective {
+            fov_degrees: 50.0,
+            near: 0.1,
+            far: 100.0,
+        });
+        let projection = lens.projection(16.0 / 9.0);
+        SubsurfaceFrame {
+            taps: subsurface::TAP_COUNTS[1],
+            projection,
+            inverse_projection: crate::camera::invert(&projection).unwrap(),
+        }
+    }
+
+    #[test]
+    fn the_subsurface_blur_draws_after_the_scene_feeds_the_effects_and_costs_nothing_while_off() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let without = steps(&frames);
+        let textures = frames.graph().plan().unwrap().textures().len();
+        let keys = pipelines.keys().len();
+
+        // With taps but no object whose material scatters, the frame declares and asks for
+        // nothing of the blur, and so it does without taps.
+        for (frame, objects) in [(Some(subsurface_frame()), false), (None, true)] {
+            frames.set_subsurface(frame, objects);
+            frames.sync(&[View::default()]);
+            frames.request_pipelines(&mut pipelines, 1);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert_eq!(pipelines.keys().len(), keys);
+        }
+
+        let effect = Effect {
+            template: CUSTOM,
+            depth: false,
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_subsurface(Some(subsurface_frame()), true);
+        frames.sync(&[View::default()]);
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(
+            !frames.subsurface_draws(),
+            "the blur waits for its steps' pipelines"
+        );
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.subsurface_draws());
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        // The skin view culls before the skin pass, which draws after the camera's passes, and the
+        // steps run before the effects, which read the down step's copy.
+        assert!(place(SUBSURFACE_CULLING) < place(SKIN_PASS));
+        assert!(place("Opaque") < place(SKIN_PASS));
+        assert!(place(SKIN_PASS) < place(SUBSURFACE_PASSES[0]));
+        assert!(place(SUBSURFACE_PASSES[0]) < place(SUBSURFACE_PASSES[1]));
+        assert!(place(SUBSURFACE_PASSES[1]) < place("Effect0"));
+        assert_eq!(frames.scene_output(), SUBSURFACE_TARGETS[1]);
+        assert_eq!(frames.effects_output(), EFFECT_TARGETS[0]);
+        // The skin pass draws in a render pass of its own, which clears its light to zero.
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .filter(|group| {
+                let first = IDS.subsurface.first_group;
+                (first..first + subsurface::STEPS as u32).contains(&group[0])
+            })
+            .map(|group| group[1])
+            .collect();
+        assert_eq!(
+            layouts,
+            [
+                bind_layout::SUBSURFACE_BLUR,
+                bind_layout::SUBSURFACE_COMPOSITE_MS
+            ]
+        );
+        list.clear();
+        frames
+            .record(&mut list, |_| [0.5; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
+        let skin_light = frames.sampled_id(SKIN_LIGHT).unwrap();
+        let cleared: Vec<_> = operands(&list, Op::BeginRenderPass)
+            .into_iter()
+            .filter(|pass| pass[0] == skin_light)
+            .collect();
+        assert_eq!(
+            cleared.len(),
+            1,
+            "the skin pass has a render pass of its own"
+        );
+        assert_eq!(&cleared[0][3..7], &[0f32.to_bits(); 4], "it clears to zero");
+        // A moving camera uploads the blocks again and declares nothing.
+        let compiles = frames.graph().compiles();
+        let mut moved = subsurface_frame();
+        moved.projection[0] *= 1.1;
+        frames.set_subsurface(Some(moved), true);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.graph().compiles(), compiles);
+
+        // Off again, the plan loses every pass and target of the blur.
+        frames.set_effects(&[], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_subsurface(None, true);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames), without);
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+    }
+
+    #[test]
+    fn the_8_bit_path_draws_no_subsurface_blur() {
+        let mut frames = frame_graph(format::RGBA8_UNORM, Antialias::Msaa, true, false);
+        frames.set_subsurface(Some(subsurface_frame()), true);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(!frames.subsurface_wanted());
+        assert!(!frames.subsurface_draws());
+    }
+
     #[test]
     fn the_weighted_layer_draws_after_the_transparent_pass_only_while_it_is_used() {
         let canvas = (320, 180);

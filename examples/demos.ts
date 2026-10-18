@@ -196,6 +196,30 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 120,
 	},
 	{
+		name: 'translucency',
+		group: 'Light, materials and effects',
+		sketch: new URL('./translucency/sketch.ts', import.meta.url),
+		code: 'translucency/',
+		title: 'Light through leaves',
+		scene: 'Garden at golden hour',
+		summary:
+			'Broad leaves and coral petals let the low sun behind them through, with the shade of the leaves in front and darker veins, and a paper lantern glows from the lamp inside it. The pointer carries the lantern.',
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'subsurface',
+		group: 'Light, materials and effects',
+		sketch: new URL('./subsurface/sketch.ts', import.meta.url),
+		code: 'subsurface/',
+		title: 'Light under the surface',
+		scene: 'Wax, jade and soap by candlelight',
+		summary:
+			'Light spreads under the surface of wax candles, a jade knot and a soap egg, redder the further it goes, so their shadows and edges glow soft while their highlights stay sharp, on the High and Ultra presets. The pointer carries the tea light.',
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),

@@ -61,6 +61,9 @@
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--particles` adds two particle systems to S1, whose emitters write
 // births every frame, one of them soft, so the frame copies the opaque depth for it.
+// `--translucency` makes S1's boxes let light through to their other side, which lights their
+// backs, and `--subsurface` adds 64 spheres to S1 whose light spreads under their surface, which the
+// skin pass draws again and the subsurface blur's steps spread.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
 // frame. `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
@@ -136,6 +139,8 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --translucency --gpu webgl2
+//   bun run bench:allocation --subsurface --gpu webgl2
 //   bun run bench:allocation --ssr --gpu webgl2
 //   bun run bench:allocation --weighted --gpu webgl2
 //   bun run bench:allocation --decals --gpu webgl2
@@ -543,6 +548,10 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 		passes: 1,
 		budgets: TRANSMISSION_MIPS_BUDGETS,
 	},
+	{ flag: '--translucency', query: '&translucency' },
+	// The skin pass, the culling pass that follows it on the GPU-driven path, and the blur's two
+	// steps.
+	{ flag: '--subsurface', query: '&subsurface', passes: 4 },
 	{
 		flag: '--ssr',
 		query: '&ssr',

@@ -468,17 +468,18 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
 
 /**
  * Which builds the checks plan compiles. `all` compiles every one: the builds without the coat and
- * sheen bit in their parts, then those with it in theirs. `sampled` compiles the builds without it
- * and one part of a sample of those with it, which keeps Safari's shards on CI's few Macs short
- * (D-147).
+ * sheen bit in their parts, the builds of the features that load on first use in theirs, then those
+ * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
+ * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
+ * short (D-147, D-189).
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
 
 /** The sets of the shaders page that each kind of plan compiles, each in its parts. */
 const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
-	all: ['base', 'coat'],
-	sampled: ['base', 'coat-sample'],
+	all: ['base', 'first-use', 'coat'],
+	sampled: ['base', 'first-use-sample', 'coat-sample'],
 };
 
 /**
@@ -491,7 +492,7 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 	SHADERS_BASE_SECONDS +
 		SHADERS_SECONDS_PER_PROGRAM *
 			Math.max(
-				...(['base', 'coat', 'coat-sample'] as const).map((set) =>
+				...(['base', 'coat', 'coat-sample', 'first-use', 'first-use-sample'] as const).map((set) =>
 					Math.ceil(glslProgramCountOf(set) / partsOf(set)),
 				),
 			),
@@ -1113,9 +1114,18 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, the volumetric fog, 4 custom effects, or the physical sky.
+ * sun's contact shadows, the subsurface blur of skin, the volumetric fog, 4 custom effects, or
+ * the physical sky.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'fog' | 'effects' | 'sky';
+export type CostedEffect =
+	| 'bloom'
+	| 'ao'
+	| 'dof'
+	| 'subsurface'
+	| 'contact'
+	| 'fog'
+	| 'effects'
+	| 'sky';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1135,9 +1145,10 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * steps, the steps of Medium on WebGL2 and of High, with the prepass on in both halves too, as for
  * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
  * with the sun still and with the sun moving in every frame, which draws the sky view table again
- * in each frame. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * in each frame. The subsurface plan times the skin blur at 17 and 25 taps, High's and
+ * Ultra's. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
  * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
- * contact plan, and D-143 those of the physical sky plan.
+ * contact plan, D-143 those of the physical sky plan, and D-153 those of the subsurface plan.
  */
 export function effectPlan(
 	effect: CostedEffect,
@@ -1172,6 +1183,10 @@ export function effectPlan(
 		sky: [
 			['', []],
 			['-moving', ['moving']],
+		],
+		subsurface: [
+			['-17', ['taps=17']],
+			['-25', ['taps=25']],
 		],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
@@ -1814,6 +1829,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	dof: () => effectPlan('dof'),
+	subsurface: () => effectPlan('subsurface'),
 	contact: () => effectPlan('contact'),
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
@@ -1944,6 +1960,7 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-coat-sample-/, 15],
+	[/^shaders-first-use-sample-/, 15],
 	[/^shaders-/, 48],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],

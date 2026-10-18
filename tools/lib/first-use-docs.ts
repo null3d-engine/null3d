@@ -28,6 +28,10 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	decals: 'with the first mesh of a decal material (`materials.decal`)',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
+	translucency:
+		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
+	subsurface:
+		'with the first material whose light spreads under its surface (`subsurfaceRadius`). The skin pass and the blur draw its light. The frames draw it as a plain surface until those are built',
 	coat_sheen: 'with the first material with a clear coat or a sheen',
 	weighted:
 		"with the first material of the `'weighted'` blending. Until it is built, such materials draw as blended ones",

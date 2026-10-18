@@ -60,6 +60,10 @@ import {
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_SSR_REDUCE,
 	TEMPLATE_SSR_TRACE,
+	TEMPLATE_SUBSURFACE,
+	TEMPLATE_SUBSURFACE_BLUR,
+	TEMPLATE_SUBSURFACE_COMPOSITE,
+	TEMPLATE_SUBSURFACE_MAPS,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
 	TEMPLATE_WEIGHTED_DEPTH,
@@ -247,6 +251,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);
 	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = mesh(shaders.standard_maps);
+	templates[TEMPLATE_SUBSURFACE] = mesh(shaders.subsurface);
+	templates[TEMPLATE_SUBSURFACE_MAPS] = mesh(shaders.subsurface_maps);
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
@@ -296,6 +302,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
 	templates[TEMPLATE_ACCUMULATE] = { shader: shaders.accumulate, pipeline: 'main' };
+	// The subsurface blur's down step reads the same one-sample copy of the depth.
+	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
+	templates[TEMPLATE_SUBSURFACE_COMPOSITE] = { shader: shaders.subsurface_blur, pipeline: 'down' };
 	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
 	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.

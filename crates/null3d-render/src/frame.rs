@@ -71,6 +71,7 @@ use crate::shadows::{
 };
 use crate::sky_maps::{MapSky, SkyMaps};
 use crate::ssr::{self, Ssr, TraceFrame};
+use crate::subsurface::{self, SubsurfaceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -903,6 +904,8 @@ pub struct SceneSettings {
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// The taps of each step of the subsurface blur, which the quality settings set: 0 draws none.
+    subsurface_taps: u32,
     /// Screen-space reflections' settings while the sketch turns them on.
     ssr: Option<Ssr>,
     /// The size of screen-space reflections' grid, as a share of the render size each way, which
@@ -1057,6 +1060,7 @@ impl SceneSettings {
             contact_steps: 0,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            subsurface_taps: subsurface::TAP_COUNTS[1],
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_steps: ssr::DEFAULT_STEPS,
@@ -1615,6 +1619,52 @@ impl SceneSettings {
             inverse_projection,
             taps: self.dof_taps,
         })
+    }
+
+    /// Sets the taps of each step of the subsurface blur, one of [`subsurface::TAP_COUNTS`] or 0,
+    /// which draws no blur and no skin pass, from the next recorded frame on. A count above 0
+    /// changes only the steps' blocks, so it makes no GPU object.
+    pub fn set_subsurface_taps(&mut self, taps: u32) {
+        self.subsurface_taps = taps;
+    }
+
+    /// The taps of each step of the subsurface blur while it may draw: 0 while the quality
+    /// settings give it none, or a debug view draws.
+    pub fn subsurface_taps(&self) -> u32 {
+        if self.debug_view.is_debug() {
+            0
+        } else {
+            self.subsurface_taps
+        }
+    }
+
+    /// What the subsurface blur draws with for the camera's view of a canvas of `canvas` pixels,
+    /// or `None` while it has no taps or without a camera.
+    pub(crate) fn subsurface_frame(&self, canvas: (u32, u32)) -> Option<SubsurfaceFrame> {
+        let taps = self.subsurface_taps();
+        if taps == 0 {
+            return None;
+        }
+        let (projection, inverse_projection) = self.camera_projection(canvas)?;
+        Some(SubsurfaceFrame {
+            taps,
+            projection,
+            inverse_projection,
+        })
+    }
+
+    /// True when the material, by engine id, has a scatter radius whose light the subsurface blur
+    /// spreads: the standard material's, with or without maps.
+    pub fn scatters(&self, material: u32) -> bool {
+        material
+            .checked_sub(1)
+            .is_some_and(|id| self.materials.scatters(id))
+    }
+
+    /// True while the frame builders hold the subsurface blur's layout: the blur has taps, and
+    /// some live material has a scatter radius.
+    pub fn holds_scattering(&self) -> bool {
+        self.subsurface_taps() > 0 && self.materials.any_scatters()
     }
 
     /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without
@@ -2821,7 +2871,9 @@ impl SceneSettings {
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
     /// A material that lets light through draws with the shader variant that samples the copy of
     /// the opaque objects behind it, in the transparent pass too, where its shading has one. A
-    /// layered material draws with the builds that light its clear coat and sheen.
+    /// material that lets light through a thin surface draws with the builds that light its back,
+    /// unless it lets light through by transmission or has layers, which win. A layered material
+    /// draws with the builds that light its clear coat and sheen.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         self.rows_pipeline_of(mesh, material, false)
@@ -2869,6 +2921,8 @@ impl SceneSettings {
         let masked = base_color && feature::masks(features);
         let transmits = has(feature::TRANSMISSION) && shading.transmits();
         let layers = has(feature::COAT_SHEEN) && shading.layers();
+        let translucent =
+            has(feature::TRANSLUCENCY) && shading.translucent() && !transmits && !layers;
         let rows = row_values && shading.reads_row_values() && !transmits;
         let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
@@ -2885,6 +2939,7 @@ impl SceneSettings {
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
                 | bit(rows, permutation::ROW_VALUES)
+                | bit(translucent, permutation::TRANSLUCENCY)
                 | bit(layers, permutation::COAT_SHEEN),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)

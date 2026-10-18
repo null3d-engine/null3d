@@ -52,6 +52,8 @@
 //!   vertex format of skinned vertices, which both frame builders share
 //! - `sorted`: the objects of the transparent pass, which blend or let light through, culled and
 //!   sorted back to front
+//! - `subsurface`: the subsurface blur of skin: a skin pass of the objects whose material has a
+//!   scatter radius, and two separable steps that spread their diffuse light with Burley's profile
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `transmission`: the copy of the camera's opaque color with a mip chain, which surfaces that
 //!   let light through sample, as three.js's transmission does
@@ -112,6 +114,7 @@ pub mod sky_maps;
 pub mod sorted;
 pub mod ssr;
 pub mod still;
+pub mod subsurface;
 pub mod textures;
 mod transmission;
 pub mod view;

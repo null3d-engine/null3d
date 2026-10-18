@@ -1076,6 +1076,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'ao-calls',
 	'ao-calls-sync',
 	'dof',
+	'subsurface',
 	'contact',
 	'effects',
 	'effects-joined',

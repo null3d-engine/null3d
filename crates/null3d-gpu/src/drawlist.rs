@@ -793,6 +793,16 @@ pub mod layout {
     /// The copy of a multisampled scene depth for the weighted layer: the depth, read with
     /// `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
     pub const WEIGHTED_DEPTH_MS: u32 = 42;
+    /// Group 0 of the subsurface blur's across step: its block at binding 0 and the skin pass's
+    /// target at binding 1, which it reads with `textureLoad` as plain floats.
+    pub const SUBSURFACE_BLUR: u32 = 43;
+    /// Group 0 of the subsurface blur's down step: [`SUBSURFACE_BLUR`]'s bindings, then the across
+    /// step's target, the scene color and the scene's depth at bindings 2 to 4, each read with
+    /// `textureLoad` as plain floats.
+    pub const SUBSURFACE_COMPOSITE: u32 = 44;
+    /// [`SUBSURFACE_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads.
+    /// Only WebGPU has it.
+    pub const SUBSURFACE_COMPOSITE_MS: u32 = 45;
     /// The group of the decal pass's scene depth: the depth target, which the decal templates read
     /// with `textureLoad` as plain floats. It is group 1 of [`super::template::DECAL`] and group 2
     /// of [`super::template::DECAL_MAPS`] on WebGPU, and group 4 on WebGL2, which reads a copy of
@@ -932,6 +942,11 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The surface lets light through to its other side, as glTF's diffuse transmission does: the
+    /// light that reaches its back shows on its front through the material's transmission color,
+    /// as leaves, petals and ears show the sun behind them. The material's row holds its values in
+    /// one more `vec4f`.
+    pub const TRANSLUCENCY: u32 = 1 << 28;
     /// The surface has a clear coat, a sheen or both above its base, as three.js's
     /// `MeshPhysicalMaterial` draws them: a second GGX lobe at the coat's normal and roughness,
     /// and the Charlie lobe of cloth. The material's row holds their values in two more `vec4f`s.
@@ -944,7 +959,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 30] = [
+    pub const NAMES: [(&str, u32); 31] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -973,6 +988,7 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("TRANSLUCENCY", TRANSLUCENCY),
         ("COAT_SHEEN", COAT_SHEEN),
         ("WEIGHTED", WEIGHTED),
     ];
@@ -1004,6 +1020,10 @@ pub mod permutation {
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
+    /// Transmission wins over light through a thin surface, as glTF orders them, and only the test
+    /// switch reads instances by index, which no build of such a surface needs. Layers win over
+    /// light through a thin surface, whose maps would take their slots, and a weighted surface lets
+    /// no light through a thin surface either, so neither doubles the builds of the other.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once.
@@ -1011,7 +1031,7 @@ pub mod permutation {
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
     /// instances by index.
-    pub const APART: [(u32, u32); 32] = [
+    pub const APART: [(u32, u32); 37] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1030,6 +1050,11 @@ pub mod permutation {
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
         (CASTER, AREA_LIGHTS),
+        (TRANSLUCENCY, TRANSMISSION),
+        (TRANSLUCENCY, CASTER),
+        (TRANSLUCENCY, INSTANCE_INDEX),
+        (TRANSLUCENCY, COAT_SHEEN),
+        (TRANSLUCENCY, WEIGHTED),
         (LOD_FADE, SKIN),
         (LOD_FADE, MORPH),
         (LOD_FADE, INSTANCE_INDEX),
@@ -1549,9 +1574,11 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: thirteen `vec4f`s. On WebGL2 each row
-    /// is a row of thirteen `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 208;
+    /// Bytes of one material's row in the material table: fifteen `vec4f`s. The row holds the base
+    /// values, the transmission's values, the attenuation's, the clear coat's, the sheen's, the
+    /// diffuse transmission's and the subsurface scatter's. On WebGL2 each row is a row of fifteen
+    /// `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 240;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1752,6 +1779,22 @@ pub mod template {
     /// Screen-space reflections' trace: one triangle over the grid of the screen texture, which
     /// marches each texel's mirror ray through the depth pyramid and writes the ray's length.
     pub const SSR_TRACE: u32 = 50;
+    /// The skin pass's build of the standard material, from the lit template's file: it writes the
+    /// diffuse light that scatters under the surface, with the view distance and the material's
+    /// scatter distances, for the subsurface blur. It binds as [`INSTANCED_LIT`] does.
+    pub const SUBSURFACE: u32 = 51;
+    /// [`SUBSURFACE`] with the standard material's maps. It binds as [`INSTANCED_STANDARD_MAPS`]
+    /// does.
+    pub const SUBSURFACE_MAPS: u32 = 52;
+    /// The subsurface blur's across step: one triangle over its target, which blurs the skin pass's
+    /// light along the rows.
+    pub const SUBSURFACE_BLUR: u32 = 66;
+    /// The subsurface blur's down step: one triangle over its target, which blurs the across
+    /// step's light along the columns and adds the change to a copy of the scene color.
+    pub const SUBSURFACE_COMPOSITE: u32 = 67;
+    /// [`SUBSURFACE_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads.
+    /// Only WebGPU has it.
+    pub const SUBSURFACE_COMPOSITE_MS: u32 = 68;
     /// The blend of weighted blended transparency's layer over the scene color: one triangle that
     /// reads the weighted color sum and the coverage, each one texel per pixel, with the layout
     /// [`WEIGHTED_COMPOSITE`](super::layout::WEIGHTED_COMPOSITE), and writes their average color
@@ -1828,7 +1871,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 67] = [
+    pub const NAMES: [(&str, u32); 72] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -1895,6 +1938,11 @@ pub mod template {
         ("FOG_APPLY_MS", FOG_APPLY_MS),
         ("FOG_BLOCK", FOG_BLOCK),
         ("PICK", PICK),
+        ("SUBSURFACE", SUBSURFACE),
+        ("SUBSURFACE_MAPS", SUBSURFACE_MAPS),
+        ("SUBSURFACE_BLUR", SUBSURFACE_BLUR),
+        ("SUBSURFACE_COMPOSITE", SUBSURFACE_COMPOSITE),
+        ("SUBSURFACE_COMPOSITE_MS", SUBSURFACE_COMPOSITE_MS),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2046,6 +2094,17 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::SUBSURFACE, MESH),
+        (template::SUBSURFACE_MAPS, MESH),
+        (template::SUBSURFACE_BLUR, own!(layout::SUBSURFACE_BLUR)),
+        (
+            template::SUBSURFACE_COMPOSITE,
+            own!(layout::SUBSURFACE_COMPOSITE),
+        ),
+        (
+            template::SUBSURFACE_COMPOSITE_MS,
+            own!(layout::SUBSURFACE_COMPOSITE_MS),
+        ),
         (template::FOG_BLOCK, own!(layout::BLOOM)),
         (template::PICK, MESH),
         (template::PROBE_GRID, MESH),
@@ -2355,6 +2414,9 @@ pub fn typescript_constants() -> String {
                 ("SSR_TRACE", layout::SSR_TRACE),
                 ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
+                ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
+                ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
+                ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
                 ("DECAL_DEPTH", layout::DECAL_DEPTH),
                 ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
                 ("DECAL_FRAME", layout::DECAL_FRAME),
