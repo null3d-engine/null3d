@@ -31,6 +31,11 @@ pub const FORMAT: u32 = null3d_gpu::drawlist::format::RGBA8_UNORM;
 /// The reads of the ring that waits for the GPU, one for each pick in flight.
 pub const RING: usize = 4;
 
+/// The frames that keep the pick's passes declared after a read. A renderer records a frame or two
+/// ahead of the GPU, so a plan that released the pick's targets in the frame after the copy could
+/// destroy one while the copy's submit still waits.
+pub const KEEP_FRAMES: u8 = 8;
+
 /// The words of one read's result that land in engine memory: the source key, then three words
 /// that the sketch does not read.
 pub const RESULT_WORDS: usize = 4;
@@ -54,6 +59,16 @@ const MESH_TEMPLATES: [u32; 7] = [
     template::PROBE_GRID,
     template::PROBE_GRID_MAPS,
 ];
+
+/// The templates of those above that bind every map slot, which a masked material's pick reads to
+/// test the same texels that its shading tests.
+const MATERIAL_MAP_TEMPLATES: [u32; 2] =
+    [template::INSTANCED_STANDARD_MAPS, template::PROBE_GRID_MAPS];
+
+/// The mask modes whose pixels the pick template can cut as the shading cuts them: the cutoff
+/// alone. Coverage depends on the sample, and the hash on the pixel's pattern, which an id target
+/// of one sample per pixel does not draw; those keep to a raycast.
+const PICKABLE_MASKS: u32 = permutation::ALPHA_MASK;
 
 /// The bias of the pick pass on WebGL2, toward the camera: two programs that place a vertex with
 /// the same steps can still give its depth a step apart, as ANGLE did in Chrome on a Mac (D-43).
@@ -158,6 +173,9 @@ pub struct PickState {
     pub bound: u32,
     /// True once the ring's read buffers exist.
     pub buffers_made: bool,
+    /// How many more frames declare the pick's passes after a read, while its copy may still wait
+    /// for the GPU.
+    pub keep: u8,
 }
 
 impl PickState {
@@ -201,8 +219,14 @@ pub fn key_of(shading: DrawKey, custom_sways: bool, webgl2: bool) -> Option<(Dra
     };
     if shading.template >= template::CUSTOM_FIRST {
         // The custom template's builds read their instances by index only where the pick builds
-        // keep that bit, which they do not: such a pair keeps to a raycast.
-        if !custom_sways || shading.permutation & permutation::INSTANCE_INDEX != 0 {
+        // keep that bit, which they do not, and they run none of the material's masks: such a
+        // pair keeps to a raycast.
+        if !custom_sways
+            || shading.permutation & permutation::INSTANCE_INDEX != 0
+            || shading.permutation
+                & (permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE | permutation::ALPHA_HASH)
+                != 0
+        {
             return None;
         }
         // The custom template's pick build keeps the row values its vertex offset may read and its
@@ -222,16 +246,37 @@ pub fn key_of(shading: DrawKey, custom_sways: bool, webgl2: bool) -> Option<(Dra
     if !MESH_TEMPLATES.contains(&shading.template) {
         return None;
     }
+    let masks = shading.permutation
+        & (permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE | permutation::ALPHA_HASH);
+    if masks & !PICKABLE_MASKS != 0 {
+        return None;
+    }
+    // A masked material with a map tests the map's alpha, so its pick build binds the same group
+    // of maps that its shading binds: a standard material's slots, or an unlit map alone.
+    let maps = masks != 0
+        && (MATERIAL_MAP_TEMPLATES.contains(&shading.template)
+            || shading.template == template::INSTANCED_UNLIT_MAP);
+    let pick_template = if !maps {
+        template::PICK
+    } else if MATERIAL_MAP_TEMPLATES.contains(&shading.template) {
+        template::PICK_MAPS
+    } else {
+        template::PICK_TEXTURE_MAPS
+    };
     // The engine's mesh templates draw into the id target with the pick template's own builds.
     let pick = DrawKey {
-        template: template::PICK,
+        template: pick_template,
         permutation: shading.permutation
-            & (permutation::SKIN | permutation::INSTANCE_INDEX | permutation::MORPH),
+            & (permutation::SKIN
+                | permutation::INSTANCE_INDEX
+                | permutation::MORPH
+                | permutation::VERTEX_COLOR
+                | permutation::ALPHA_MASK),
         vertex_format: shading.vertex_format,
         state: faces | state,
         bias,
     };
-    Some((pick, false))
+    Some((pick, maps))
 }
 
 #[cfg(test)]
@@ -257,14 +302,46 @@ mod tests {
         );
         let (key, maps) = key_of(pair, false, false).expect("an engine mesh picks");
         assert_eq!(key.template, template::PICK);
-        assert_eq!(key.permutation, permutation::SKIN);
+        assert_eq!(key.permutation, permutation::SKIN | permutation::ALPHA_MASK);
         assert_eq!(key.vertex_format, pair.vertex_format);
         assert_eq!(key.state & state_flags::CULL_NONE, state_flags::CULL_NONE);
         assert_eq!(key.state & state_flags::BLEND, 0);
         assert_ne!(key.state & state_flags::DEPTH_EQUAL, 0);
         assert_ne!(key.state & state_flags::NO_DEPTH_WRITE, 0);
-        assert!(!maps, "the pick template reads no maps");
+        assert!(
+            !maps,
+            "a template without maps tests the tangent's alpha alone"
+        );
         assert_eq!(key.bias, DepthBias::NONE, "WebGPU needs no bias");
+    }
+
+    #[test]
+    fn a_masked_material_with_a_map_picks_with_the_map_template() {
+        let pair = shading(
+            template::INSTANCED_STANDARD_MAPS,
+            state_flags::CULL_NONE,
+            permutation::ALPHA_MASK | permutation::VERTEX_COLOR | permutation::TONE_MAP,
+        );
+        let (key, maps) = key_of(pair, false, true).expect("a masked map picks");
+        assert_eq!(key.template, template::PICK_MAPS);
+        assert_eq!(
+            key.permutation,
+            permutation::ALPHA_MASK | permutation::VERTEX_COLOR
+        );
+        assert!(maps, "the mask samples the base color map");
+
+        let unlit = shading(template::INSTANCED_UNLIT_MAP, 0, permutation::ALPHA_MASK);
+        let (key, maps) = key_of(unlit, false, false).expect("a masked unlit map picks");
+        assert_eq!(key.template, template::PICK_TEXTURE_MAPS);
+        assert!(maps, "its single map group binds too");
+    }
+
+    #[test]
+    fn a_coverage_or_hash_mask_keeps_to_a_raycast() {
+        for mask in [permutation::ALPHA_COVERAGE, permutation::ALPHA_HASH] {
+            let pair = shading(template::INSTANCED_LIT, 0, mask);
+            assert_eq!(key_of(pair, false, false), None);
+        }
     }
 
     #[test]

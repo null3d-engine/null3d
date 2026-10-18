@@ -1065,8 +1065,10 @@ impl GpuDrivenRenderer {
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
         let settings = &self.settings;
         // A pick that waits declares the pick's passes for this frame, and builds the layout
-        // again with their pipelines. The request stays until a frame records its read.
-        let picking = settings.picking();
+        // again with their pipelines. The request stays until a frame records its read, and the
+        // passes stay declared for a few frames after it, while its copy may still wait.
+        let requested = settings.picking();
+        let picking = requested || self.pick.keep > 0;
         self.graph.set_picking(picking);
         self.graph.set_ao(
             settings.ao(),
@@ -1246,6 +1248,8 @@ impl GpuDrivenRenderer {
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
                 )?;
             } else {
                 self.scattering.clear();
@@ -1380,10 +1384,17 @@ impl GpuDrivenRenderer {
         // The pick's passes are switched on before the graph compiles this frame: a change that
         // follows the compile would leave them out of the plan, and the frame would copy a stale
         // target. A frame whose pick pipelines still build keeps the passes off.
-        let pick_drawing = self.pick_ready(input, picking);
+        let pick_drawing = self.pick_ready(input, requested);
         self.graph.set_picking_draws(pick_drawing);
         self.graph.prepare(list, input.canvas, input.render_scale)?;
         let pick_frame = self.begin_pick(list, input, pick_drawing)?;
+        self.pick.keep = if pick_frame.is_some() {
+            crate::pick::KEEP_FRAMES
+        } else if requested {
+            self.pick.keep
+        } else {
+            self.pick.keep.saturating_sub(1)
+        };
         let graph = &self.graph;
         self.settings
             .set_view_targets(|view| graph.view_target(view), graph.textures_made());
@@ -2371,8 +2382,8 @@ impl GpuDrivenRenderer {
 
     /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
     /// of every bucket are built. A frame that gives false records no read, so the request stays.
-    fn pick_ready(&self, input: &FrameInput<'_>, picking: bool) -> bool {
-        if !picking {
+    fn pick_ready(&self, input: &FrameInput<'_>, requested: bool) -> bool {
+        if !requested {
             return false;
         }
         let pipeline = self.pick.resolve.map(|(id, _)| id);

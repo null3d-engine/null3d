@@ -60,11 +60,15 @@ four steps toward the camera. The outline mask's visible draw uses the same bias
 that wrote the depth passes. An object behind it fails by more than the bias. The bias is tiny
 against a real distance, so it cannot reach an object in front of the surface.
 
-A fragment that a mask discarded wrote no depth. Its id fragment does not meet the scene's depth,
-so it never wins. A masked object therefore picks by its mask, with no mask code in the pick
-shader. A custom material with a vertex offset has its own template's pick builds. They move each
-vertex as its surface draws. A whole shader of the sketch's, a blended pair, and a surface that
-lets light through have no pick build in the scene's layout.
+A fragment that a mask discarded wrote no depth. On WebGPU the equal test rejects its id fragment,
+so a masked object picks by its mask. On WebGL2 the biased test would keep it, so the pick shader
+repeats the material's cutoff test: it reads the material's alpha, the vertex alpha and the base
+color map's alpha. A standard material binds every map slot and an unlit map binds the base color
+map alone, so each has a pick template of its own. Coverage and hash masks keep to a raycast, since
+an id target of one sample per pixel does not draw their patterns. A custom material with a vertex
+offset has its own template's pick builds; a masked custom material keeps to a raycast. A whole
+shader of the sketch's, a blended pair, and a surface that lets light through have no pick build in
+the scene's layout.
 
 ### Reading a multisampled target
 
@@ -80,7 +84,8 @@ silhouette pixel.
 The id target is the render size and takes the scene's samples. A render pass's targets share a
 size and a sample count with the scene's depth. The graph declares the pass only while a pick
 waits. Its textures exist for the frames of a pick alone. At 1,080p with four samples the id target
-is about 8 MiB. The resolved copy is another 2 MiB.
+is about 8 MiB. The resolved copy is another 2 MiB. The passes stay declared for a few frames after
+a read, so a later plan cannot release the resolved copy while the submit that reads it still waits.
 
 ### Which camera answers
 
@@ -97,10 +102,12 @@ reports false for it. A rested frame would never copy the ids back.
 ### The rest of the scene
 
 A scene whose sources all have pick builds and draw opaque answers with the GPU. The core answers
-`pickCoversScene` from the layout. It is true when every drawn pair has a pick build, and when the
-transparent pass's list is empty. Otherwise the pick answers with a raycast. The ray uses the
-camera of the frame that last ran. It tests triangles and ignores masks. This is the documented CPU
-path for custom materials that D-30's addendum asks for.
+`pickCoversScene` from the frame that recorded the read, not from the frame that polls for it: the
+scene can change between the two, and a later frame may have dropped the pick builds. It is true
+when every drawn pair had a pick build, and when the transparent pass's list was empty. Otherwise
+the pick answers with a raycast. The ray uses the camera of the frame that last ran. It tests
+triangles and ignores masks. This is the documented CPU path for custom materials that D-30's
+addendum asks for.
 
 ## Consequences
 

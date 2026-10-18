@@ -90,15 +90,9 @@ export default defineSketch(({ scene, materials, geometry, textures, post, page,
 			});
 			void (async () => {
 				const answers: { name: string; expect: string | null; got: string | null }[] = [];
-				for (const probe of points) {
-					const hit = await scene.pick(probe.x, probe.y);
-					answers.push({ name: probe.name, expect: probe.expect, got: nameOf(hit) });
-				}
-				// A raycast at the card's hole tests triangles only, so it hits the card. The pick
-				// above answers the backdrop, which is the difference between the two.
-				const hole = points.find((probe) => probe.name === 'hole');
+				const rays: { name: string; got: string | null }[] = [];
 				const ray = { origin: [0, 0, 0], direction: [0, 0, 0] };
-				const hit = {
+				const rayHit = {
 					object: null,
 					instance: -1,
 					point: [0, 0, 0],
@@ -106,11 +100,36 @@ export default defineSketch(({ scene, materials, geometry, textures, post, page,
 					distance: 0,
 					triangle: -1,
 				};
-				camera.screenToRay(hole?.x ?? 0, hole?.y ?? 0, ray);
-				const raysCard = scene.raycast(ray.origin, ray.direction, undefined, hit)
-					? nameOf(hit)
-					: null;
-				page.post('picks', { answers, raysCard });
+				for (const probe of points) {
+					let hit: { object: unknown } | null = null;
+					try {
+						hit = await Promise.race([
+							scene.pick(probe.x, probe.y),
+							new Promise<never>((_, reject) =>
+								setTimeout(() => reject(new Error('pick timed out')), 15_000),
+							),
+						]);
+					} catch (error) {
+						answers.push({
+							name: probe.name,
+							expect: probe.expect,
+							got: `error: ${error instanceof Error ? error.message : String(error)}`,
+						});
+						continue;
+					}
+					answers.push({ name: probe.name, expect: probe.expect, got: nameOf(hit) });
+					camera.screenToRay(probe.x, probe.y, ray);
+					rays.push({
+						name: probe.name,
+						got: scene.raycast(ray.origin, ray.direction, undefined, rayHit)
+							? nameOf(rayHit)
+							: null,
+					});
+				}
+				// A raycast at the card's hole tests triangles only, so it hits the card. The pick
+				// above answers the backdrop, which is the difference between the two.
+				const raysCard = rays.find((entry) => entry.name === 'hole')?.got ?? null;
+				page.post('picks', { answers, rays, raysCard });
 			})();
 		},
 	};

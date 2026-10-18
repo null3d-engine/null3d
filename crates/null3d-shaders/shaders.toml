@@ -455,8 +455,25 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VI
 file = "pick.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["SKIN", "INSTANCE_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
+
+# The pick template of a masked material that reads its base color map: the same mask's texels cut
+# the same pixels that the shading cuts. It binds the material's maps, as the shading does. A
+# standard material's map group holds every map slot, and an unlit map's the base color map alone.
+[shaders.pick_maps]
+file = "pick.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP", "MATERIAL_MAPS"], permutations = ["SKIN", "INSTANCE_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP", "MATERIAL_MAPS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
+
+[shaders.pick_texture_maps]
+file = "pick.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP"], permutations = ["SKIN", "INSTANCE_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
 
 # GPU picking's resolve: one triangle over the render size, which copies the id target that the
 # device resolved into one sample per pixel, so the frame can copy the picked pixel into a buffer.
@@ -470,7 +487,7 @@ variants.webgl2 = { targets = ["glsl"] }
 
 # A page downloads the picking templates with its first pick.
 [first_use.picking]
-shaders = ["pick", "pick_resolve"]
+shaders = ["pick", "pick_maps", "pick_texture_maps", "pick_resolve"]
 
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and

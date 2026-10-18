@@ -232,6 +232,9 @@ struct Engine {
     /// True when the last recorded frame drew a pick and copied its ids back, so the thread that
     /// draws must take that frame.
     pick_recorded: bool,
+    /// True when that frame's id pass drew every source of the scene. The sketch reads it to decide
+    /// whether a landed answer is the GPU's or needs a ray, after later frames moved the layout on.
+    pick_covered: bool,
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
     world_matrix: [f64; 12],
@@ -618,6 +621,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
         pick_recorded: false,
+        pick_covered: false,
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
@@ -1124,8 +1128,10 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
         let picked = renderer.settings().picking();
         let recorded = renderer.record(&input);
         let pick_recorded = picked && !renderer.settings().picking();
+        let pick_covered = pick_recorded && renderer.pick_covers_scene();
         e.lines.clear();
         e.pick_recorded = pick_recorded;
+        e.pick_covered = pick_covered;
         match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
@@ -4602,11 +4608,12 @@ pub fn pick_result_address() -> u32 {
     value_with_engine(|e| Ok(address(&e.pick_results[..])))
 }
 
-/// True when GPU picking finds every source that the scene draws. Else a pick answers with a
-/// raycast, which tests triangles and ignores masks.
+/// True when the frame that recorded the landed pick drew every source of the scene. Else a pick
+/// answers with a raycast, which tests triangles and ignores masks. The frame is the one that
+/// copied the ids, not the frame that reads them, since the scene can change between the two.
 #[wasm_bindgen(js_name = pickCoversScene)]
 pub fn pick_covers_scene() -> u32 {
-    value_with_engine(|e| Ok(u32::from(e.renderer.pick_covers_scene())))
+    value_with_engine(|e| Ok(u32::from(e.pick_covered)))
 }
 
 /// The object or batch id that a pick's source key names, or 0 for a key that names nothing, such

@@ -136,6 +136,31 @@ fn check_pick<B: FrameBuilder>(mut world: World<B>, rows_from_bottom: bool) {
         0,
         "the copy needs the resolved ids after the pass"
     );
+    // The resolve pass samples the texture that the id pass resolved into, and the copy reads the
+    // texture that the resolve pass drew.
+    let start = commands
+        .iter()
+        .position(|(op, words)| *op == Op::BeginRenderPass && words == resolved_pass)
+        .expect("the resolve pass begins");
+    let group = commands[start..]
+        .iter()
+        .find(|(op, words)| *op == Op::SetBindGroup && words[0] == 0)
+        .map(|(_, words)| words[1])
+        .expect("the resolve pass binds its ids");
+    let sampled = operands(&commands, Op::CreateBindGroup)
+        .into_iter()
+        .find(|words| words[0] == group)
+        .map(|words| words[5])
+        .expect("the resolve pass's bind group is made");
+    assert_eq!(
+        id_pass[1], sampled,
+        "the resolve samples the ids' resolved texture"
+    );
+    let copied = operands(&commands, Op::CopyTextureToBuffer);
+    assert_ne!(
+        copied[0][0], sampled,
+        "the copy reads the resolve pass's own target"
+    );
 
     // The id pass shades only the picked pixel.
     let scissor = operands(&commands, Op::SetScissor);
@@ -153,6 +178,12 @@ fn check_pick<B: FrameBuilder>(mut world: World<B>, rows_from_bottom: bool) {
     // The copy takes one texel of the resolved target at the requested pixel.
     let copy = operands(&commands, Op::CopyTextureToBuffer);
     assert_eq!(copy.len(), 1, "one copy feeds the read");
+    assert!(
+        !operands(&commands, Op::DestroyTexture)
+            .iter()
+            .any(|id| id[0] == copy[0][0]),
+        "the copy's texture lives until the submit that reads it"
+    );
     let at = copy[0][2];
     assert_eq!(at, 4, "the copy's column is the request's x");
     let expected_y = if rows_from_bottom {
@@ -165,6 +196,10 @@ fn check_pick<B: FrameBuilder>(mut world: World<B>, rows_from_bottom: bool) {
     assert_eq!(copy[0][9], 1, "the copy takes one texel across");
     assert_eq!(copy[0][10], 1, "the copy takes one texel down");
 
+    assert!(
+        world.renderer.pick_covers_scene(),
+        "the pick's layout gives every draw a pick build"
+    );
     // The request is consumed, so the next frame copies nothing.
     assert!(world.renderer.settings().pick().is_none());
     let after = world.step(&mut mock, true);
@@ -206,6 +241,102 @@ fn a_pick_waits_for_its_pipelines_and_records_no_read_until_they_are_built() {
         "the frame that has the pipelines draws the pick and reads its pixel"
     );
     assert!(world.renderer.settings().pick().is_none());
+}
+
+#[test]
+fn a_masked_map_picks_with_the_template_that_tests_its_texels() {
+    let mut world = World::build(GpuDrivenRenderer::new(RendererConfig::default()));
+    let mut mock = MockBackend::with_capabilities(Capabilities::MSAA_FLOAT16);
+    world.step(&mut mock, true);
+    let mesh = {
+        let settings = world.renderer.settings_mut();
+        let mesh = settings.meshes_mut().add(&common::grid(1, 1)).unwrap() + 1;
+        let texture = settings.textures_mut().create(common::map_desc(4)).unwrap();
+        let _ = &texture;
+        settings.textures_mut().set_image(texture, 4, 4, 0).unwrap();
+        let material = settings
+            .materials_mut()
+            .create(
+                null3d_render::materials::Shading::UnlitMap,
+                null3d_render::materials::feature::ALPHA_MASK,
+                [1.0; 4],
+            )
+            .expect("a material");
+        settings
+            .materials_mut()
+            .set_map(
+                material,
+                null3d_render::materials::MapSlot::BaseColor,
+                texture,
+                false,
+            )
+            .unwrap();
+        let object = world.scene.reserve().unwrap();
+        world.scene.set_local_radius(object, 1.0).unwrap();
+        let commands = [
+            null3d_core::scene::Command::create(
+                object,
+                null3d_core::handle::Handle::NONE,
+                mesh,
+                null3d_core::scene::flags::VISIBLE,
+            ),
+            null3d_core::scene::Command::set_material(object, material + 1),
+        ];
+        world.scene.apply_commands(&commands, world.frame).unwrap();
+        mesh
+    };
+    assert_ne!(mesh, 0);
+    // A frame that draws the material, so its map's bind group exists before the pick asks for it.
+    let drawn = world.step(&mut mock, true);
+    assert!(
+        operands(&drawn, Op::SetBindGroup)
+            .iter()
+            .any(|words| words[0] == 1 && words[1] != 0),
+        "the shading binds the material's map group: {:?}",
+        operands(&drawn, Op::SetBindGroup)
+    );
+    world.renderer.settings_mut().set_pick(PickRequest {
+        x: 4.0,
+        y: 3.0,
+        ring: 0,
+        slot: SLOT,
+        destination: DESTINATION,
+    });
+    let commands = world.step(&mut mock, true);
+    let pick_maps = operands(&commands, Op::CreateRenderPipeline)
+        .into_iter()
+        .find(|p| p[1] == template::PICK_TEXTURE_MAPS)
+        .expect("a masked unlit map picks with the map template");
+    assert_ne!(
+        pick_maps[2] & null3d_gpu::drawlist::permutation::ALPHA_MASK,
+        0,
+        "the build tests the mask's texels"
+    );
+    assert!(
+        world.renderer.pick_covers_scene(),
+        "the id pass draws every source, so a landed answer is the GPU's"
+    );
+    // The pick pass binds the material's maps: the mask's texels cut the fragments.
+    let start = commands
+        .iter()
+        .position(|(op, words)| *op == Op::SetScissor && words.as_slice() == [4, 3, 1, 1])
+        .expect("the pick pass is scissored to the request's pixel");
+    let end = commands[start..]
+        .iter()
+        .position(|(op, _)| *op == Op::EndRenderPass)
+        .map_or(commands.len(), |end| start + end);
+    assert!(
+        commands[start..end]
+            .iter()
+            .any(|(op, words)| *op == Op::SetBindGroup && words[0] != 0 && words[1] != 0),
+        "the mask's maps are bound in the pick pass"
+    );
+    assert!(
+        commands[start..end]
+            .iter()
+            .any(|(op, _)| matches!(op, Op::Draw | Op::DrawIndexed | Op::DrawIndexedIndirect)),
+        "the pick pass draws the masked object"
+    );
 }
 
 #[test]
