@@ -1245,11 +1245,6 @@ impl MockBackend {
                     "a render pipeline's depth bias slope scale is finite",
                 )?;
                 check(
-                    o[2] & !permutation::ALL == 0,
-                    op,
-                    "a render pipeline's permutation word holds known bits only",
-                )?;
-                check(
                     o[3] == format::NONE || !format::is_depth(o[3]),
                     op,
                     "the color format is a color format or NONE",

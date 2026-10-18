@@ -506,6 +506,19 @@ describe('Material.set', () => {
 		expect(glass.message).toStartWith(
 			'E1217: materials.standard() got parallax with transmission;',
 		);
+		// A surface that lets light through reads the view's copy, which would take a parallax
+		// build's fragment stage one texture past the limit that WebGPU gives it.
+		const thin = thrown(() =>
+			materials.standard({
+				displacementMap: texture(5),
+				parallax: true,
+				diffuseTransmission: 0,
+			}),
+		);
+		expect(thin.code).toBe('E1217');
+		expect(thin.message).toStartWith(
+			'E1217: materials.standard() got parallax with diffuseTransmission;',
+		);
 		const bump = thrown(() => materials.standard({ bumpScale: Number.POSITIVE_INFINITY }));
 		expect(bump.code).toBe('E1108');
 		expect(table).toHaveLength(0);
