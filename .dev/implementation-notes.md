@@ -1123,7 +1123,11 @@ A build costs twice. The shader build compiles every one of them, and a page dow
 of its own GPU path. A permutation bit on a lit template multiplies the count: area lights and
 coat-sheen each added about 8,600 builds by October 2026. The count grew four times in two days
 with nothing to hold it. The cold build then grew past the CI job's time limit
-([Branches and parallel work](pull-requests.md)).
+([Branches and parallel work](pull-requests.md)). The CI build job measured the growth on 18
+October 2026: 6.5 minutes for 14,997 builds (run 39097238563) and 13.5 minutes for 21,909 (run
+39099279063), on the same runner class. The split of the shared tables, which
+[D-190](decisions/D-190-hold-relief-until-the-split.md) holds the relief materials for, is the
+change that brings it back down.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
