@@ -1217,9 +1217,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'still',
 		page: 'tests/pages/still.html',
 		size: [320, 180],
-		switches: ['still-camera=on', 'image'],
+		// The page waits for the view to rest, which takes tens of seconds on a slow software GPU.
+		// ?target-fps=1 keeps the frame-budget governor from lowering the render scale meanwhile: a
+		// lower scale resets the accumulation and draws the converged picture upscaled, so its
+		// edges no longer match the reference. It also keeps the preset at the references' one.
+		switches: ['still-camera=on', 'image', 'target-fps=1'],
 		expect: { rested: true },
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	...bloomTests(),
 	...dofTests(),
