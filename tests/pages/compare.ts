@@ -4,8 +4,8 @@
 // held frame at its hold count, or at `?count=`, and the page publishes the frame, as the image
 // tests read it. Without
 // it, the engine runs live, and the page runs a short ramp and publishes its steps; `?ramp=full`
-// runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
-// WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`
+// runs the device class's whole ramp instead, and `?renderer=webgpu` or `?renderer=webgl` puts
+// three.js on that renderer in place of the one that the GPU path names. `?measure=<count>`
 // runs at that count in place of a ramp, and measures the frames over `?seconds=` (5 by default)
 // and then the whole page's memory, which `?memory=off` leaves out, as the browser can take a
 // minute or more to measure it. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
@@ -61,17 +61,9 @@ run('compare', async () => {
 	const full = params.get('ramp') === 'full';
 	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
 	const warmup = params.has('warmup') ? Number(params.get('warmup')) : undefined;
-	// The image tests and the short ramp draw three.js with the renderer of the tier; the full ramp
-	// and a measurement take the faster one unless the address names one.
+	// three.js draws on the renderer of the GPU path unless the address names one.
 	const named = params.get('renderer');
-	const threeRenderer =
-		named === 'webgpu' || named === 'webgl'
-			? named
-			: full || fixed !== undefined
-				? undefined
-				: gpu === 'webgpu'
-					? 'webgpu'
-					: 'webgl';
+	const threeRenderer = named === 'webgpu' || named === 'webgl' ? named : undefined;
 	const started = await startComparison({
 		canvas,
 		comparison,

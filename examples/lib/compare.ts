@@ -54,7 +54,7 @@ export const FAIRNESS_RULES: readonly string[] = [
 	'Both engines build the scene the same way in each mode: the same tree of one object per part in the scene graph mode, and one batch of copies per part kind, posed by the same loop, in the instanced mode.',
 	"Both draw at the same pixel ratio, the device class's cap, with 4x MSAA, the same effects and the high-performance GPU.",
 	"null3D runs with its quality governor off and a fixed preset, High or WebGL2's Medium, and draws every pixel. Ambient occlusion draws at half the size in each direction in both engines.",
-	'three.js 0.186.1 runs on the faster of its two renderers for the GPU path, in one worker with an OffscreenCanvas, with its add-ons and the methods of its official examples.',
+	'three.js 0.186.1 runs on the renderer of the GPU path, WebGPURenderer on WebGPU and WebGLRenderer on WebGL2, in one worker with an OffscreenCanvas, with its add-ons and the methods of its official examples.',
 	'One engine runs at a time: the page loads again for the other one.',
 	"Memory has one definition: the browser's measurement of the whole page and its workers, with null3D's shared memory counted once.",
 	"The ramp runs with the stats panel collapsed in both engines, so the figures carry none of the panel's cost.",
@@ -232,18 +232,13 @@ async function gpuPath(choice: GpuChoice): Promise<'webgpu' | 'webgl2'> {
 }
 
 /**
- * three.js's renderer on a GPU path: WebGLRenderer on WebGL2, and the faster of its two renderers
- * for the comparison on WebGPU, which `?renderer=` can change. In Chrome on the Mac, WebGLRenderer
- * took a quarter of WebGPURenderer's CPU time per frame on Factory. Night town needs
- * WebGPURenderer's clustered lighting for its hundreds of lights.
+ * three.js's renderer on a GPU path: WebGLRenderer on WebGL2 and WebGPURenderer on WebGPU, so an
+ * engine on a path meets the other engine on the same path. `?renderer=webgl` puts the WebGPU path
+ * on WebGLRenderer, to compare the two renderers.
  */
-function threeRendererFor(
-	comparison: Comparison,
-	gpu: 'webgpu' | 'webgl2',
-	asked?: ThreeRenderer,
-): ThreeRenderer {
+function threeRendererFor(gpu: 'webgpu' | 'webgl2', asked?: ThreeRenderer): ThreeRenderer {
 	if (gpu === 'webgl2') return 'webgl';
-	return asked ?? comparison.fasterThree;
+	return asked ?? 'webgpu';
 }
 
 /** Starts a comparison with one engine, and resolves once it draws. */
@@ -264,7 +259,7 @@ export async function startComparison(options: ComparisonOptions): Promise<Compa
 	// A mode that only WebGPURenderer can draw takes it on both GPU paths: in its WebGL2 mode on
 	// the WebGL2 path.
 	const needed = comparison.threeRenderers?.[mode];
-	const renderer = needed ?? threeRendererFor(comparison, gpu, options.threeRenderer);
+	const renderer = needed ?? threeRendererFor(gpu, options.threeRenderer);
 	return startThree(canvas, options, common, renderer, needed !== undefined && gpu === 'webgl2');
 }
 

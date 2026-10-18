@@ -285,7 +285,7 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 - The same scene description in both engines: the same seed, layout, meshes, surfaces, lights, camera path and fixed-step simulation.
 - The same pixel ratio, the device class's cap, with 4x MSAA, the same effects and the high-performance GPU.
 - null3D's quality governor off, a fixed preset (High, which WebGL2 caps at Medium), and every pixel drawn. Ambient occlusion draws at half the render size each way in both engines.
-- three.js on the faster of its two renderers for the GPU path, in one worker with an OffscreenCanvas. It uses its add-ons and the methods of its official examples.
+- three.js on the renderer of the GPU path, WebGPURenderer on WebGPU and WebGLRenderer on WebGL2, in one worker with an OffscreenCanvas. It uses its add-ons and the methods of its official examples.
 - One engine at a time: each runs on a page of its own.
 - One memory definition: the browser's measurement of the whole page and its workers, with null3D's shared memory counted once.
 - The ramp runs with the stats panel collapsed in both engines.

@@ -57,6 +57,9 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 				expect(result.tier).toBe(gpu);
 				expect(result.build).toBe(mode);
 				expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
+				// three.js draws on the renderer of the GPU path.
+				if (engine === 'threejs' && mode === 'scene-graph')
+					expect(result.label).toContain(gpu === 'webgpu' ? 'WebGPURenderer' : 'WebGLRenderer');
 				const { ramp } = result;
 				expect(ramp.floorFps).toBe(FLOOR_FPS);
 				expect(ramp.steps.length).toBeGreaterThanOrEqual(2);
@@ -130,6 +133,8 @@ for (const engine of ['null3d', 'threejs'] as const)
 			expect(result.error).toBeUndefined();
 			expect(result.tier).toBe(gpu);
 			expect(result.build).toBe(mode);
+			if (engine === 'threejs')
+				expect(result.label).toContain(gpu === 'webgpu' ? 'WebGPURenderer' : 'WebGLRenderer');
 			const { ramp } = result;
 			expect(ramp.steps.length).toBeGreaterThanOrEqual(1);
 			// The ramp counts lights, and stops at three.js's limit where WebGLRenderer finds one.
@@ -186,9 +191,12 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 				expect(result.tier).toBe(gpu);
 				expect(result.build).toBe(mode);
 				expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
-				// The instanced mode draws three.js's crowd with WebGPURenderer on both GPU paths.
-				if (engine === 'threejs' && mode === 'instanced')
-					expect(result.label).toContain('WebGPURenderer');
+				// three.js draws on the renderer of the GPU path. The instanced mode draws its crowd
+				// with WebGPURenderer on both paths.
+				if (engine === 'threejs')
+					expect(result.label).toContain(
+						mode === 'instanced' || gpu === 'webgpu' ? 'WebGPURenderer' : 'WebGLRenderer',
+					);
 				const { ramp } = result;
 				expect(ramp.steps.length).toBeGreaterThanOrEqual(2);
 				expect(ramp.steps.map((step) => step.count)).toEqual(
