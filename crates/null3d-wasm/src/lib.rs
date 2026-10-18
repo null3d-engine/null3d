@@ -490,8 +490,10 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// read each culled instance by index from storage buffers, not from a copy that the culling
 /// shader writes, for the test of decision record D-23. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
-/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid. The
-/// shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid. With
+/// `direct_draws`, WebGPU culls on the CPU and draws every bucket directly, which a start-up probe
+/// picks on a device where the GPU's indirect draws are measurably slower. The shadow cascades
+/// store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
 /// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
 /// on.
@@ -515,6 +517,7 @@ pub fn init_engine(
     index_instances: bool,
     large_world: bool,
     gpu_occlusion: bool,
+    direct_draws: bool,
     shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -583,7 +586,8 @@ pub fn init_engine(
                 depth_prepass,
                 skinning: SkinningMode::from_code(skinning).unwrap_or_default(),
                 index_instances,
-                gpu_occlusion,
+                gpu_occlusion: gpu_occlusion && !direct_draws,
+                direct_draws,
                 cascade_depth,
                 ..RendererConfig::default()
             }))

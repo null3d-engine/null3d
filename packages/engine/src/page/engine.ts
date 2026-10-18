@@ -425,6 +425,12 @@ export interface EngineCapabilities {
 	 * `reversed` depth, which stays precise far from the camera.
 	 */
 	depth: DepthMode;
+	/**
+	 * True when the start-up probe measured direct draws to be clearly faster than the engine's
+	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. False on
+	 * WebGL2, which always draws directly.
+	 */
+	directDraws: boolean;
 }
 
 /**
@@ -1767,6 +1773,7 @@ async function startEngine(
 			maxInstances: maxInstances(device),
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
+			directDraws: device.directDraws,
 		};
 		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.

@@ -14,8 +14,10 @@ use std::collections::TryReserveError;
 use std::ops::Range;
 
 use null3d_core::cells::CELL_SHIFT;
+use null3d_core::culling::NO_BUCKET;
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
+use null3d_core::levels::{LevelLink, NO_LINK};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
@@ -30,7 +32,7 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
-use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
+use crate::levels::{BucketKey, KeyLinks, expand_level_keys, is_fade_key, links_of};
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
@@ -156,6 +158,9 @@ pub(super) struct Bucket {
     pub(super) indexed: bool,
     /// Its level of detail's error and links, for a bucket of a mesh with levels.
     pub(super) levels: KeyLinks,
+    /// True for a fade bucket, whose slice holds each instance as a pair: its entry, then its
+    /// fade value's bits.
+    pub(super) pairs: bool,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -256,10 +261,29 @@ fn sync_rows(
     changed
 }
 
-/// A batch's part of the tables as they were last written: its bucket, the active row count its
-/// bucket table entries hold, and the mask its rows hold in the layer table.
+/// A source's bucket as the CPU culling reads it, or `NO_BUCKET` for a source that draws nowhere:
+/// its bucket-table entry without the occluder bit and the cell index.
+fn cull_entry(entry: u32) -> u32 {
+    if entry == HIDDEN {
+        NO_BUCKET
+    } else {
+        entry & (OCCLUDER - 1)
+    }
+}
+
+/// Writes the CPU culling's copy of the bucket of every source in `rows` from their entries.
+fn sync_cull(cull_buckets: &mut [u32], entries: &[u32], rows: Range<u32>) {
+    let range = rows.start as usize..rows.end as usize;
+    for (cull, &entry) in cull_buckets[range.clone()].iter_mut().zip(&entries[range]) {
+        *cull = cull_entry(entry);
+    }
+}
+
+/// A batch's part of the tables as they were last written: its raw id, its bucket, the active row
+/// count its bucket table entries hold, and the mask its rows hold in the layer table.
 #[derive(Clone, Copy, Debug)]
 struct BatchRows {
+    id: u32,
     bucket: u32,
     active: u32,
     layers: u32,
@@ -301,6 +325,17 @@ pub(super) struct Layout {
     /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
     /// mesh or material.
     home_buckets: Vec<u32>,
+    /// The sources that are scene slots: the rows that `home_buckets` and the scene's world
+    /// buffers hold. The sources after them are batch rows.
+    pub(super) scene_rows: u32,
+    /// The bucket of every source as the CPU culling reads it, or `NO_BUCKET` for a source that
+    /// draws nowhere. It is `instance_buckets` without the occluder bit and the cell index.
+    cull_buckets: Vec<u32>,
+    /// Each bucket's link to its next level of detail, as the CPU culling reads it.
+    level_links: Vec<LevelLink>,
+    /// The most words that the CPU culling lists for one view: a source that fades between levels
+    /// lists three words more than one that does not.
+    cull_rows: u32,
     /// Each batch's part of the tables, in `batch_bases` order.
     batch_rows: Vec<BatchRows>,
     /// The per-frame reset of every indirect draw: instance counts at zero.
@@ -341,6 +376,65 @@ impl Layout {
             .max(sizes::INSTANCE_STRIDE)
     }
 
+    /// Each source's bucket as the CPU culling reads it, or `NO_BUCKET` for a source that draws
+    /// nowhere.
+    pub(super) fn cull_buckets(&self) -> &[u32] {
+        &self.cull_buckets
+    }
+
+    /// Each bucket's link to its next level of detail, as the CPU culling reads it.
+    pub(super) fn level_links(&self) -> &[LevelLink] {
+        &self.level_links
+    }
+
+    /// True when the CPU culling picks a level for rows of `bucket`.
+    pub(super) fn picks(&self, bucket: u32) -> bool {
+        self.level_links
+            .get(bucket as usize)
+            .is_some_and(LevelLink::has_next)
+    }
+
+    /// The most words that the CPU culling lists for one view of this layout.
+    pub(super) fn cull_rows(&self) -> u32 {
+        self.cull_rows.max(self.sources)
+    }
+
+    /// The layer mask of every source, which the scene's layout owns.
+    pub(super) fn layers(&self) -> &[u32] {
+        &self.source_layers
+    }
+
+    /// The first joint of the skin of every source up to the last that the vertex shaders skin,
+    /// which the scene's layout owns.
+    pub(super) fn skin_firsts(&self) -> &[u32] {
+        &self.skin_firsts
+    }
+
+    /// Each batch's raw id and the first source of its rows.
+    pub(super) fn batch_bases(&self) -> &[(u32, u32)] {
+        &self.batch_bases
+    }
+
+    /// The number of batches that the layout lists rows of.
+    pub(super) fn batch_count(&self) -> usize {
+        self.batch_rows.len()
+    }
+
+    /// The raw id of batch `index`'s rows.
+    pub(super) fn batch_id(&self, index: usize) -> u32 {
+        self.batch_rows[index].id
+    }
+
+    /// The bucket of batch `index`'s rows, or `NO_BUCKET` for a batch that draws nowhere.
+    pub(super) fn batch_bucket(&self, index: usize) -> u32 {
+        self.batch_rows[index].bucket
+    }
+
+    /// The first source of batch `index`'s rows.
+    pub(super) fn batch_base(&self, index: usize) -> u32 {
+        self.batch_bases[index].1
+    }
+
     /// An empty layout of buckets that draw `drawn`, whose pipelines read their instances by index
     /// where their templates can, with `index_instances`.
     pub(super) fn new(drawn: Drawn, index_instances: bool) -> Self {
@@ -372,10 +466,6 @@ impl Layout {
     }
 
     /// The first source of the rows of the batch at `index` in the batch table's order.
-    pub(super) fn batch_base(&self, index: usize) -> u32 {
-        self.batch_bases[index].1
-    }
-
     fn base_of(&self, target: u32) -> Option<u32> {
         if target == SCENE_TARGET {
             return Some(0);
@@ -798,6 +888,7 @@ impl Layout {
                 first_joint: if skins { sizes::PER_SOURCE_JOINT } else { 0 },
                 indexed: by_index,
                 levels: links,
+                pairs: is_fade_key(&key),
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -857,10 +948,11 @@ impl Layout {
         }
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
-        for (_, batch) in batches.iter() {
+        for (id, batch) in batches.iter() {
             let bucket = bucket_of(batch_key(batch));
             let (active, layers) = (batch.frame_active_count(parity), batch.layers());
             self.batch_rows.push(BatchRows {
+                id: id.raw(),
                 bucket,
                 active,
                 layers,
@@ -872,6 +964,26 @@ impl Layout {
                 self.source_layers.resize(rows, layers);
             }
         }
+
+        self.scene_rows = self.home_buckets.len() as u32;
+        // The CPU culling reads each source's bucket without the bits that the culling shader
+        // packs beside it.
+        self.cull_buckets.clear();
+        self.cull_buckets
+            .extend(self.instance_buckets.iter().copied().map(cull_entry));
+        self.level_links.clear();
+        self.level_links
+            .extend(self.buckets.iter().map(|bucket| LevelLink {
+                error: bucket.levels.error,
+                next: bucket.levels.next.unwrap_or(NO_LINK),
+                fade: bucket.levels.fade.unwrap_or(NO_LINK),
+            }));
+        let fades = self.level_links.iter().any(LevelLink::has_next);
+        self.cull_rows = if fades {
+            self.sources.saturating_mul(4)
+        } else {
+            self.sources
+        };
 
         self.fit_skinned(scene);
         self.indirect_template.clear();
@@ -1071,10 +1183,11 @@ impl Layout {
         let check_layers = owns_sources && !(all_default && self.scene_layers_default);
         self.scene_layers_default = all_default;
         let home_buckets = &self.home_buckets;
-        let (instance_buckets, source_layers, occluders) = (
+        let (instance_buckets, source_layers, occluders, cull_buckets) = (
             &mut self.instance_buckets,
             &mut self.source_layers,
             &mut self.occluders,
+            &mut self.cull_buckets,
         );
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let slots = start..(start + count).min(scene_rows);
@@ -1084,7 +1197,8 @@ impl Layout {
             let before = occluders_in(&instance_buckets[range.clone()]);
             if let Some(rows) = sync_rows(instance_buckets, slots.clone(), entry) {
                 *occluders = *occluders - before + occluders_in(&instance_buckets[range]);
-                write_rows(list, arena, entries, instance_buckets, rows)?;
+                write_rows(list, arena, entries, instance_buckets, rows.clone())?;
+                sync_cull(cull_buckets, instance_buckets, rows);
             }
             if check_layers && let Some(rows) = sync_rows(source_layers, slots, |s| layers[s]) {
                 write_rows(list, arena, ids::SOURCE_LAYERS, source_layers, rows)?;
@@ -1105,6 +1219,7 @@ impl Layout {
                 bucket,
                 active: was,
                 layers: had,
+                ..
             } = self.batch_rows[index];
             let base = self.batch_bases[index].1;
             let mask = batch.layers();
@@ -1131,7 +1246,8 @@ impl Layout {
             }
             self.batch_rows[index].active = now;
             let rows = base + low..base + high;
-            write_rows(list, arena, entries, &self.instance_buckets, rows)?;
+            write_rows(list, arena, entries, &self.instance_buckets, rows.clone())?;
+            sync_cull(&mut self.cull_buckets, &self.instance_buckets, rows);
         }
         Ok(())
     }

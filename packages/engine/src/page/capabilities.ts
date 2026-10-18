@@ -105,6 +105,12 @@ export interface WebGPUReport {
 	 */
 	transientAttachments: boolean;
 	/**
+	 * True when the start-up probe measured the device drawing a bucket faster with direct draws
+	 * than with the engine's indirect draws, so the engine draws directly. The probe runs on a
+	 * worker's device and never reads a browser or GPU name. False on WebGL2.
+	 */
+	directDraws: boolean;
+	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
 	 * earlier start's, to tell whether a stored preset check came from the same GPU.
 	 */
@@ -222,6 +228,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		wgslLanguageFeatures: [],
 		preferredCanvasFormat: null,
 		transientAttachments: false,
+		directDraws: false,
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -248,6 +255,9 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			transientAttachments:
 				(globalThis.GPUTextureUsage as unknown as Record<string, number> | undefined)
 					?.TRANSIENT_ATTACHMENT === TEXTURE_USAGE_TRANSIENT_ATTACHMENT,
+			// The worker's probe measures this on the device that draws; until then the engine
+			// keeps its current path.
+			directDraws: false,
 			adapterInfo: info
 				? {
 						vendor: info.vendor,
@@ -532,6 +542,9 @@ export async function probeCapabilities(
 	hints: DeviceHints = readDeviceHints(),
 ): Promise<CapabilityReport> {
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
+	// The probe worker measures the draw paths on a device of its own, which the render worker's
+	// device answers the same way for the browser and the driver.
+	const directDraws = 'directDraws' in worker && worker.directDraws;
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
@@ -543,7 +556,7 @@ export async function probeCapabilities(
 		transferControlToOffscreen:
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
-		webgpu,
+		webgpu: { ...webgpu, directDraws: webgpu.available && directDraws },
 		webgl2: probeWebGL2(powerPreference),
 		worker,
 	};

@@ -52,6 +52,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	depthPrepass: false,
 	skinning: C.SKINNING_VERTEX,
 	indexInstances: false,
+	directDraws: false,
 	shadowDepthBits: 16,
 	largeWorld: false,
 	expectedObjects: 0,
@@ -74,7 +75,7 @@ const F16 = C.CAPABILITY_FLOAT16_TARGETS;
 /** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {}, features, transientAttachments: false },
+		webgpu: { limits: {}, features, transientAttachments: false, directDraws: false },
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
@@ -98,6 +99,7 @@ const PLAIN: DeviceOptions = {
 	join: true,
 	skinning: 'vertex',
 	indexInstances: false,
+	direct: 'auto',
 	shadowDepthBits: 16,
 	hdr: true,
 	sceneFormat: undefined,
@@ -371,6 +373,16 @@ describe('coreDevice on WebGL2', () => {
 		for (const tier of ['webgpu-compat', 'webgl2'] as const) {
 			expect(coreDevice(tier, report({}), on).indexInstances).toBe(false);
 		}
+	});
+
+	it('draws directly where the probe measured it faster, as ?direct= forces', () => {
+		const probed = report({});
+		probed.webgpu.directDraws = true;
+		expect(coreDevice('webgpu', probed, PLAIN).directDraws).toBe(true);
+		expect(coreDevice('webgpu', report({}), PLAIN).directDraws).toBe(false);
+		expect(coreDevice('webgpu', report({}), { ...PLAIN, direct: 'on' }).directDraws).toBe(true);
+		expect(coreDevice('webgpu', probed, { ...PLAIN, direct: 'off' }).directDraws).toBe(false);
+		expect(coreDevice('webgl2', probed, { ...PLAIN, direct: 'on' }).directDraws).toBe(false);
 	});
 
 	it('culls in two phases on WebGPU where the options ask for it', () => {

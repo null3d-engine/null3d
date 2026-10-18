@@ -116,6 +116,7 @@
 //! new batch, mesh, view, or mesh and material pair, allocate.
 
 mod cull;
+mod direct;
 mod layout;
 mod lights;
 mod opaque;
@@ -171,6 +172,7 @@ use crate::view::{ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
+use direct::Direct;
 use layout::{Drawn, Layout};
 use lights::LightClusters;
 use opaque::{Bundle, FrameInputs};
@@ -570,6 +572,11 @@ pub struct RendererConfig {
     /// True to cull each camera view in two phases against a depth pyramid of what it drew, so
     /// objects that others hide do not draw. The depth prepass turns it off.
     pub gpu_occlusion: bool,
+    /// True to cull on the CPU and draw every bucket with `drawIndexed` and a known instance
+    /// count, instead of drawing the GPU's indirect draws. A start-up probe picks it on a device
+    /// where indirect draws are measurably slower (decision record D-174). It turns GPU occlusion
+    /// culling and the `index_instances` test switch off, which both need the GPU's counts.
+    pub direct_draws: bool,
     /// How the shadow cascades store depth.
     pub cascade_depth: CascadeDepth,
 }
@@ -589,6 +596,7 @@ impl Default for RendererConfig {
             skinning: SkinningMode::default(),
             index_instances: false,
             gpu_occlusion: false,
+            direct_draws: false,
             cascade_depth: CascadeDepth::default(),
         }
     }
@@ -624,6 +632,8 @@ pub struct GpuDrivenRenderer {
     /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
+    /// The views' CPU culling on the direct-draw path.
+    direct: Direct,
     /// Each camera view's depth pyramid, with occlusion culling.
     pyramids: Pyramids,
     lines: LinesPass,
@@ -712,6 +722,13 @@ fn scene_settings(config: &RendererConfig) -> SceneSettings {
 
 impl GpuDrivenRenderer {
     pub fn new(config: RendererConfig) -> Self {
+        let mut config = config;
+        if config.direct_draws {
+            // Both need the instance counts that the culling shader writes; the direct path keeps
+            // the counts on the CPU.
+            config.index_instances = false;
+            config.gpu_occlusion = false;
+        }
         Self {
             config,
             settings: scene_settings(&config),
@@ -816,8 +833,9 @@ impl GpuDrivenRenderer {
             outline_made: false,
             layout_prepass: false,
             prepass_views: 0,
-            cells: CellCulling::new(config.cell_culling, false),
+            cells: CellCulling::new(config.cell_culling, config.direct_draws),
             culling: Culling::new(config.index_instances),
+            direct: Direct::default(),
             pyramids: Pyramids::default(),
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
@@ -1158,7 +1176,9 @@ impl GpuDrivenRenderer {
         let mut created_pipelines = !self.created;
         let occlusion = self.graph.occlusion();
         if !self.created {
-            cull::create_pipeline(list)?;
+            if !self.config.direct_draws {
+                cull::create_pipeline(list)?;
+            }
             lights::create_pipelines(list)?;
         }
         self.lines.request_pipeline(
@@ -1516,9 +1536,14 @@ impl GpuDrivenRenderer {
             let recreated = shared_recreated || pyramid_made;
             let (layout, meshes) = (&self.layout, &self.meshes);
             let occludes = occlusion && self.graph.occludes(view);
-            self.culling
-                .apply(list, view, layout, recreated, binding_bytes, occludes)?;
-            if !records {
+            if self.config.direct_draws {
+                self.culling
+                    .apply_direct(list, view, layout, binding_bytes)?;
+            } else {
+                self.culling
+                    .apply(list, view, layout, recreated, binding_bytes, occludes)?;
+            }
+            if !records || self.config.direct_draws {
                 continue;
             }
             // With occlusion culling, the opaque pass draws the second set of indirect draws, and
@@ -1561,12 +1586,19 @@ impl GpuDrivenRenderer {
             let view = ViewId::OUTLINE;
             // The outlined layout's tables are new whenever the layouts are.
             let recreated = shared_recreated || upload_everything;
-            self.culling
-                .apply(list, view, &self.outlined, recreated, binding_bytes, false)?;
-            let targets = self.graph.outline_targets();
-            let (outlined, meshes) = (&self.outlined, &self.meshes);
-            let kind = Bundle::Outline;
-            opaque::record_bundle(list, view, outlined, meshes, targets, kind, 0, &|_| false)?;
+            if self.config.direct_draws {
+                self.culling
+                    .apply_direct(list, view, &self.outlined, binding_bytes)?;
+            } else {
+                self.culling
+                    .apply(list, view, &self.outlined, recreated, binding_bytes, false)?;
+            }
+            if !self.config.direct_draws {
+                let targets = self.graph.outline_targets();
+                let (outlined, meshes) = (&self.outlined, &self.meshes);
+                let kind = Bundle::Outline;
+                opaque::record_bundle(list, view, outlined, meshes, targets, kind, 0, &|_| false)?;
+            }
         }
         let first_cascade_to_apply = if upload_everything || buffers_remade {
             0
@@ -1583,6 +1615,11 @@ impl GpuDrivenRenderer {
             .chain((first_tile_to_apply..tiles).map(ViewId::tile));
         for view in shadow_views {
             let recreated = shared_recreated || casters_recreated;
+            if self.config.direct_draws {
+                self.culling
+                    .apply_direct(list, view, &self.casters, binding_bytes)?;
+                continue;
+            }
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
@@ -1636,19 +1673,40 @@ impl GpuDrivenRenderer {
                 };
                 let (layout, cells) = (&self.layout, &self.cells);
                 let detail = self.settings.level_view(view, input.canvas);
-                self.culling.upload(
-                    list,
-                    arena,
-                    view,
-                    frame,
-                    layout,
-                    layout,
-                    input.scene,
-                    cells,
-                    levels.as_ref(),
-                    &detail,
-                )?;
-                let offsets = self.culling.offsets();
+                if self.config.direct_draws {
+                    self.direct.record(
+                        list,
+                        arena,
+                        input.jobs,
+                        view,
+                        frame,
+                        input.scene,
+                        input.batches,
+                        cells,
+                        layout,
+                        layout,
+                        detail,
+                        parity,
+                    )?;
+                } else {
+                    self.culling.upload(
+                        list,
+                        arena,
+                        view,
+                        frame,
+                        layout,
+                        layout,
+                        input.scene,
+                        cells,
+                        levels.as_ref(),
+                        &detail,
+                    )?;
+                }
+                let offsets = if self.config.direct_draws {
+                    self.direct.offsets()
+                } else {
+                    self.culling.offsets()
+                };
                 self.skinning
                     .see(frame, offsets, input.scene, parity, false);
             }
@@ -1658,18 +1716,35 @@ impl GpuDrivenRenderer {
             opaque::upload(list, arena, view, &frame)?;
             let (layout, outlined, cells) = (&self.layout, &self.outlined, &self.cells);
             let detail = self.settings.level_view(view, input.canvas);
-            self.culling.upload(
-                list,
-                arena,
-                view,
-                &frame,
-                layout,
-                outlined,
-                input.scene,
-                cells,
-                None,
-                &detail,
-            )?;
+            if self.config.direct_draws {
+                self.direct.record(
+                    list,
+                    arena,
+                    input.jobs,
+                    view,
+                    &frame,
+                    input.scene,
+                    input.batches,
+                    cells,
+                    layout,
+                    outlined,
+                    detail,
+                    parity,
+                )?;
+            } else {
+                self.culling.upload(
+                    list,
+                    arena,
+                    view,
+                    &frame,
+                    layout,
+                    outlined,
+                    input.scene,
+                    cells,
+                    None,
+                    &detail,
+                )?;
+            }
         }
         self.cascade_frames = [None; MAX_CASCADES];
         if shadow.is_none() && self.cascades_held && shadows {
@@ -1688,29 +1763,22 @@ impl GpuDrivenRenderer {
             };
             opaque::upload(list, arena, view, &frame)?;
             let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
-            self.culling.upload(
-                list,
-                arena,
-                view,
-                &frame,
-                layout,
-                casters,
-                input.scene,
-                cells,
-                None,
-                &shadow_detail,
-            )?;
-            let offsets = self.culling.offsets();
-            self.skinning
-                .see(&frame, offsets, input.scene, parity, true);
-        }
-        if let Some(shadow) = &shadow {
-            shadows::upload(list, arena, ids::SHADOWS, shadow)?;
-            for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
-                let view = ViewId::cascade(cascade);
-                let frame = shadow.view_frame(cascade);
-                opaque::upload(list, arena, view, &frame)?;
-                let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
+            if self.config.direct_draws {
+                self.direct.record(
+                    list,
+                    arena,
+                    input.jobs,
+                    view,
+                    &frame,
+                    input.scene,
+                    input.batches,
+                    cells,
+                    layout,
+                    casters,
+                    shadow_detail,
+                    parity,
+                )?;
+            } else {
                 self.culling.upload(
                     list,
                     arena,
@@ -1723,7 +1791,56 @@ impl GpuDrivenRenderer {
                     None,
                     &shadow_detail,
                 )?;
-                let offsets = self.culling.offsets();
+            }
+            let offsets = if self.config.direct_draws {
+                self.direct.offsets()
+            } else {
+                self.culling.offsets()
+            };
+            self.skinning
+                .see(&frame, offsets, input.scene, parity, true);
+        }
+        if let Some(shadow) = &shadow {
+            shadows::upload(list, arena, ids::SHADOWS, shadow)?;
+            for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
+                let view = ViewId::cascade(cascade);
+                let frame = shadow.view_frame(cascade);
+                opaque::upload(list, arena, view, &frame)?;
+                let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
+                if self.config.direct_draws {
+                    self.direct.record(
+                        list,
+                        arena,
+                        input.jobs,
+                        view,
+                        &frame,
+                        input.scene,
+                        input.batches,
+                        cells,
+                        layout,
+                        casters,
+                        shadow_detail,
+                        parity,
+                    )?;
+                } else {
+                    self.culling.upload(
+                        list,
+                        arena,
+                        view,
+                        &frame,
+                        layout,
+                        casters,
+                        input.scene,
+                        cells,
+                        None,
+                        &shadow_detail,
+                    )?;
+                }
+                let offsets = if self.config.direct_draws {
+                    self.direct.offsets()
+                } else {
+                    self.culling.offsets()
+                };
                 self.skinning
                     .see(&frame, offsets, input.scene, parity, true);
                 self.cascade_frames[cascade] = Some(frame);
@@ -1857,6 +1974,25 @@ impl GpuDrivenRenderer {
         let particles = &self.particles;
         let (settings, meshes) = (&self.settings, &self.meshes);
         let weighted = self.graph.weighted_declared();
+        let direct_draws = self.config.direct_draws;
+        let direct = &self.direct;
+        // A direct draw's instance count changes every frame, so the direct path records the
+        // draws in the pass instead of replaying a bundle.
+        let record_direct_view =
+            |list: &mut DrawList, view: ViewId, kind: Bundle| -> Result<(), RecordError> {
+                let hidden_targets = settings.hidden_targets(view);
+                let textures = settings.textures();
+                let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
+                opaque::record_direct(
+                    list,
+                    view,
+                    layout_of(view),
+                    meshes,
+                    kind,
+                    direct.counts(view),
+                    &hidden,
+                )
+            };
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -1864,6 +2000,7 @@ impl GpuDrivenRenderer {
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
                 Role::Skin => skinning.record(list),
+                Role::Cull(view) if direct_draws && drawn(view) => Ok(()),
                 Role::Cull(view) if drawn(view) => {
                     let phase = if occluding && culling.occludes(view) {
                         Phase::Early
@@ -1873,14 +2010,22 @@ impl GpuDrivenRenderer {
                     culling.record(list, view, layout_of(view), phase)
                 }
                 Role::Prepass(view) | Role::Occluders(view) if drawn(view) => {
-                    opaque::record(list, view, Bundle::Prepass)
+                    if direct_draws {
+                        record_direct_view(list, view, Bundle::Prepass)
+                    } else {
+                        opaque::record(list, view, Bundle::Prepass)
+                    }
                 }
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     let backdrop = settings.draws_background(view);
                     if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
-                    opaque::record(list, view, Bundle::Opaque)?;
+                    if direct_draws {
+                        record_direct_view(list, view, Bundle::Opaque)?;
+                    } else {
+                        opaque::record(list, view, Bundle::Opaque)?;
+                    }
                     if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::Last)?;
                     }
@@ -1891,7 +2036,11 @@ impl GpuDrivenRenderer {
                     culling.record(list, view, layout, Phase::Late)
                 }
                 Role::OutlineMask if drawn(ViewId::OUTLINE) => {
-                    opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
+                    if direct_draws {
+                        record_direct_view(list, ViewId::OUTLINE, Bundle::Outline)
+                    } else {
+                        opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
+                    }
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
@@ -2084,6 +2233,11 @@ impl GpuDrivenRenderer {
         let per_view = |layout: &Layout| {
             (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize
+                + if self.config.direct_draws {
+                    layout.compacted_bytes() as usize
+                } else {
+                    0
+                }
         };
         let camera_views = self.settings.views().len();
         let pyramids = if self.graph.occlusion() {
