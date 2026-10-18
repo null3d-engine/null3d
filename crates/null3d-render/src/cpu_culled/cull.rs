@@ -249,7 +249,8 @@ impl Culling {
 
     /// A view's values in the frame that culled last, to add to them.
     pub(super) fn frame_mut(&mut self, view: ViewId) -> Option<&mut ViewFrame> {
-        self.views.get_mut(view.index())?.frame.as_mut()
+        let slot = view.index().checked_sub(self.first.index())?;
+        self.views.get_mut(slot)?.frame.as_mut()
     }
 
     /// The offset from a view's camera to each cell in use, in the frame that culled last.
