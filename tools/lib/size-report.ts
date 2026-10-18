@@ -94,13 +94,6 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			loadedBy: drawing,
 		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
-		...(['wgsl', 'glsl'] as const).flatMap((target) =>
-			['', '-half'].map((half) => ({
-				name: `${prefix}-shaders-${target}-combos${half}.js`,
-				module: `generated/shaders-${target}-combos${half}.ts`,
-				loadedBy: drawing,
-			})),
-		),
 	];
 }
 
@@ -308,6 +301,15 @@ export const SHADER_PARTS: readonly string[] = [
  */
 export function isParagraphTable(name: string): boolean {
 	return /^shader-paragraphs-[a-z0-9-]+\.js$/.test(name);
+}
+
+/**
+ * True for the loader table of the combinations of one feature family, as
+ * `shaders-glsl-combos-bump.js`. A page loads the table of the family of the build it asks for, so
+ * a feature's combinations never grow another feature's file past its budget (D-190).
+ */
+export function isCombosPart(name: string): boolean {
+	return /^shaders-(wgsl|glsl)-combos(-[a-z0-9-]+)*\.js$/.test(name);
 }
 
 /**
@@ -542,7 +544,7 @@ export function findEngineParts(
 	for (const file of files) {
 		const part = claimed.has(file) ? undefined : shaderPartOf(file);
 		if (!part) continue;
-		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part))
+		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part) && !isCombosPart(part))
 			throw new Error(
 				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
 			);
@@ -592,7 +594,7 @@ export function downloadSizes(
 	return downloads.map(({ mode, parts, shaders }) => {
 		const size = totalSize(parts.flatMap((part) => sizes.get(part) ?? []));
 		const shaderSizes = [...sizes].filter(
-			([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part),
+			([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part) && !isCombosPart(part),
 		);
 		for (const column of COLUMNS)
 			size[column] += Math.max(0, ...shaderSizes.map(([, shader]) => shader[column]));
@@ -685,13 +687,15 @@ export function budgetProblems(
 			return overBudget(`js/${name}, which loads after the start,`, size, budget);
 		}),
 		...[...sizes].flatMap(([name, size]) =>
-			isFirstUseShaderPart(name)
-				? overBudget(
-						`js/${name}, the shader builds of a feature that loads on first use,`,
-						size,
-						FIRST_USE_SHADER_BUDGET,
-					)
-				: [],
+			isCombosPart(name)
+				? overBudget(`js/${name}, which loads after the start,`, size, COMBOS_BUDGET)
+				: isFirstUseShaderPart(name)
+					? overBudget(
+							`js/${name}, the shader builds of a feature that loads on first use,`,
+							size,
+							FIRST_USE_SHADER_BUDGET,
+						)
+					: [],
 		),
 	];
 }
