@@ -283,22 +283,27 @@ pub(super) fn record_direct(
     counts: &[u32],
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
-    let frame_group = if kind == Bundle::Prepass {
-        ids::prepass_group(view)
-    } else {
-        ids::frame_group(view)
+    let frame_group = match kind {
+        Bundle::Prepass => ids::prepass_group(view),
+        Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
+        _ => ids::frame_group(view),
+    };
+    let shading_group = match kind {
+        Bundle::Subsurface => frame_group,
+        _ => ids::frame_group(view),
     };
     let draws = Draws {
         view,
         layout,
         meshes,
         frame_group,
+        shading_group,
         first_draw: 0,
         hidden,
         counts: Some(counts),
     };
     match kind {
-        Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
+        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
         Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
         Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
         Bundle::Outline => {
