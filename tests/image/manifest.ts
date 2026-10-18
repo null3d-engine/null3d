@@ -2203,6 +2203,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['origin=off'],
 		size: [320, 180],
 		hold: 0,
+		// The origin only changes the precision of the positions, so this draws the same picture.
+		reference: 'sprite-origin',
 	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
