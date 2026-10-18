@@ -8,7 +8,8 @@
 // ?volume gives the panels a thick red volume, which tints the light that passes through.
 // ?leaves draws masked leaf cards with alpha to coverage in front of the panels, whose cut outlines
 // cast shadows too. Without it and ?maps, the page downloads one shader file that loads on first
-// use: the builds that let light through to the other side.
+// use: the builds that let light through to the other side. ?no-contact turns the sun's contact
+// shadows off, whose passes load ambient occlusion's shader file on their first use.
 import { defineSketch } from '@null3d/engine';
 import {
 	BOX,
@@ -57,7 +58,7 @@ export default defineSketch(({ scene, materials, geometry, textures }) => {
 		color: '#fff1d8',
 		intensity: 3,
 		castShadows: true,
-		shadow: { distance: 20 },
+		shadow: { distance: 20, ...(params.has('no-contact') ? { contactDistance: 0 } : {}) },
 	});
 	scene.createAmbientLight({ color: '#a8c0ff', intensity: 0.25 });
 	scene.createPointLight({

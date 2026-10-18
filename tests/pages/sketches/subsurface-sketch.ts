@@ -6,7 +6,9 @@
 // ?off draws the same scene with no taps, so neither panel blurs.
 // ?maps gives both panels a base color map of fine stripes, which the right panel softens.
 // ?scale=0.5 draws at half the render size, into the corner of the targets. ?taps= gives the blur
-// that many taps in place of 17.
+// that many taps in place of 17. ?no-contact turns the sun's contact shadows off, whose passes load
+// ambient occlusion's shader file on their first use: a page that tests another feature's own file
+// alone asks for that.
 //
 // On the page's 'subsurface' message it gives the blur its taps, waits until its pipelines are
 // built, and posts the frames and milliseconds that took as 'settled'. The 'subsurface-off'
@@ -45,7 +47,7 @@ export default defineSketch(({ scene, materials, geometry, textures, quality, ti
 		color: '#fff4e6',
 		intensity: 3,
 		castShadows: true,
-		shadow: { distance: 12 },
+		shadow: { distance: 12, ...(params.has('no-contact') ? { contactDistance: 0 } : {}) },
 	});
 	scene.createAmbientLight({ color: '#9fb4d8', intensity: 0.2 });
 
