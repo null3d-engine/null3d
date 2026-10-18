@@ -754,6 +754,9 @@ pub(crate) struct FrameGraph {
     outline_passes: Vec<PassId>,
     /// True while a pick waits for a frame: the next declared graph holds the pick's passes.
     picking_wanted: bool,
+    /// True once the graph has declared the pick's passes. They stay declared, so the plan keeps
+    /// their targets and never remakes one while a copy may still read it.
+    pick_declared: bool,
     /// The pick's id pass, once declared.
     pick_pass: Option<PassId>,
     /// The pass that resolves the pick's ids into the target a copy reads, once declared.
@@ -1052,6 +1055,7 @@ impl FrameGraph {
             outlined: false,
             outline_passes: Vec::new(),
             picking_wanted: false,
+            pick_declared: false,
             pick_pass: None,
             pick_resolve_pass: None,
             scale: RenderScale::FULL,
@@ -2786,9 +2790,10 @@ impl FrameGraph {
     fn declare_pick(&mut self, views: &[View]) {
         self.pick_pass = None;
         self.pick_resolve_pass = None;
-        if !self.picking_wanted || views.is_empty() {
+        if views.is_empty() || (!self.picking_wanted && !self.pick_declared) {
             return;
         }
+        self.pick_declared = true;
         let size = view_size(&views[ViewId::CAMERA.index()]);
         let ids = Target::color(pick::FORMAT).samples(self.samples);
         let pass = Pass::new(PICK_PASS, PassKind::Scene)
@@ -2804,23 +2809,27 @@ impl FrameGraph {
         self.pick_resolve_pass = Some(self.add(resolve, Role::PickResolve));
     }
 
-    /// Turns the pick's passes on while a frame draws a pick, and off otherwise. The graph
-    /// compiles again only when the passes are first declared or last left out.
+    /// Declares the pick's passes when the first pick waits, and leaves them declared afterwards.
+    /// Their targets stay in every plan, so no plan releases one while a copy may still read it. A
+    /// frame without a pick skips their step and draws nothing.
     pub(crate) fn set_picking(&mut self, on: bool) {
-        if self.picking_wanted != on {
-            self.picking_wanted = on;
+        self.picking_wanted = on;
+        if on && !self.pick_declared {
             self.declared = false;
         }
     }
 
-    /// Switches the pick's passes on in a frame that draws a pick, and off in one that does not,
-    /// such as a frame that waits for their pipelines.
+    /// Switches the pick's passes on once they are declared. A frame without a pick leaves them on:
+    /// the plan keeps their targets, and the frame's skip of their step draws nothing.
     pub(crate) fn set_picking_draws(&mut self, on: bool) {
+        if !on {
+            return;
+        }
         for pass in [self.pick_pass, self.pick_resolve_pass]
             .into_iter()
             .flatten()
         {
-            self.graph.set_enabled(pass, on);
+            self.graph.set_enabled(pass, true);
         }
     }
 

@@ -97,14 +97,15 @@ fn pick_key(found: Instance) -> u32 {
 #endif
 }
 
-/// The color that the id target holds for a source key: its four bytes, each as the fraction an
-/// 8-bit target stores. The four bytes read back as the key itself.
+/// The color that the id target holds for a source key: its four bytes, the lowest in red, each as
+/// the fraction an 8-bit target stores. A little-endian read of the copy's first four bytes then
+/// gives the key itself.
 fn pick_color(key: u32) -> vec4f {
     let bytes = vec4u(
-        (key >> 24u) & 0xffu,
-        (key >> 16u) & 0xffu,
-        (key >> 8u) & 0xffu,
         key & 0xffu,
+        (key >> 8u) & 0xffu,
+        (key >> 16u) & 0xffu,
+        (key >> 24u) & 0xffu,
     );
     return vec4f(bytes) / 255.0;
 }
