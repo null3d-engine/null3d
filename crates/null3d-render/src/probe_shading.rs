@@ -2,10 +2,11 @@
 //! the grid's sampling in the light's loop and load on first use. The plain lit templates carry no
 //! grid code, so a page that sets no grid never downloads it.
 //!
-//! Probe shading turns on once the scene sets a grid whose texture is on the GPU and the pipelines
-//! in use have their grid builds. Until then frames draw with the plain lit templates, and the
-//! frame's values name no grid, so no build meets a grid it cannot read. It turns off as soon as
-//! the scene sets no grid, since the plain builds are there.
+//! Probe shading turns on once the scene sets a grid that the texture store holds and the pipelines
+//! in use have their grid builds. Until then frames draw with the plain lit templates. A grid whose
+//! texels are not on the GPU yet names no grid in the frame's values, so no build meets a grid it
+//! cannot read, and the frame that uploads the texels draws with the grid. Probe shading turns off
+//! as soon as the scene sets no grid, since the plain builds are there.
 //!
 //! The grid templates build a smaller set of permutation bits than the plain lit templates do, so a
 //! pair that carries one of the bits they leave out keeps its plain template and draws without grid
@@ -57,11 +58,11 @@ impl ProbeShading {
         self.on
     }
 
-    /// Moves toward `wanted`: on when the scene sets a grid whose texture is on the GPU. Before the
-    /// first frame, while `pipelines_built` is 0, it turns on at once, as that frame waits for
-    /// every pipeline. After it, it first asks `pipelines` for the grid build of each lit pipeline
-    /// that exists, and turns on once all of them are built. Returns true when it turns on or off,
-    /// so the layouts take their keys again. It allocates only while it asks.
+    /// Moves toward `wanted`: on when the scene sets a grid. Before the first frame, while
+    /// `pipelines_built` is 0, it turns on at once, as that frame waits for every pipeline. After
+    /// it, it first asks `pipelines` for the grid build of each lit pipeline that exists, and turns
+    /// on once all of them are built. Returns true when it turns on or off, so the layouts take
+    /// their keys again. It allocates only while it asks.
     pub fn update(
         &mut self,
         wanted: bool,

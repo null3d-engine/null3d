@@ -3,11 +3,13 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, thirteen `vec4f`s, which the WGSL
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, fifteen `vec4f`s, which the WGSL
 //! struct `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine
 //! into a `Material`. Only the builds that let light through read the next two, the transmission's
-//! values, and only the builds of layered materials read the last two, the clear coat's and the
-//! sheen's values. The [`param`] module names where each
+//! values; only the builds of layered materials read the next two, the clear coat's and the
+//! sheen's; only the builds that let light through a thin surface read the one after, the diffuse
+//! transmission's values; and only the skin pass's builds read the last, the scatter distances of
+//! the subsurface blur. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
 //! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
@@ -178,6 +180,16 @@ impl Shading {
         }
     }
 
+    /// True when its shader has the builds that let light through a thin surface: the standard
+    /// material's, with or without maps, and a custom material's. A custom material has the
+    /// feature only when its WGSL has such builds, which the engine checks when it creates it.
+    pub const fn translucent(self) -> bool {
+        matches!(
+            self,
+            Shading::Lit | Shading::StandardMaps | Shading::Custom(_)
+        )
+    }
+
     /// True when its shader has the builds that light layers above the base: the standard
     /// material's, with or without maps, and a custom material's. A custom material has the
     /// feature only when its WGSL has such builds, which the engine checks when it creates it.
@@ -285,20 +297,26 @@ pub mod feature {
     /// material's transmission value sets how much light passes. It takes no mask, so it wins over
     /// [`ALPHA_MASK`].
     pub const TRANSMISSION: u32 = 8192;
-    /// Each triangle's edges draw as lines, from the part's edge list, with the material's own
-    /// shading, as three.js's `wireframe` draws them. Flat shading and bump maps are off, as they
-    /// read derivatives that lines do not have.
-    pub const WIREFRAME: u32 = 16384;
-    /// The displacement map also shifts where the fragment shader reads the maps, by parallax
-    /// occlusion mapping, so relief finer than the mesh's vertices hides and shows the surface
-    /// behind it. Only opaque and masked surfaces take it.
-    pub const PARALLAX: u32 = 32768;
+    /// Light that reaches the surface's back shows on its front, as glTF's diffuse transmission
+    /// draws a leaf, a petal or an ear against the light. The material's diffuse transmission
+    /// value sets how much of its diffuse light passes through, and its transmission color tints
+    /// it. It picks the shader builds that light the back, so a material without it pays nothing
+    /// for them. In such a material, the specular maps' slots hold the diffuse transmission maps,
+    /// which read the same channels ([`MapSlot::DIFFUSE_TRANSMISSION`]). [`TRANSMISSION`] wins
+    /// over it.
+    pub const TRANSLUCENCY: u32 = 262144;
     /// The surface has layers above its base, as three.js's `MeshPhysicalMaterial` draws them: a
     /// clear coat, a sheen or both, whose values sit at the end of the material's row. It picks
     /// the shader builds that light them, so a material without layers pays nothing for them. In
     /// a layered material, the map slots of the light map and the specular maps hold the layers'
     /// maps ([`LayerMap`]).
     pub const COAT_SHEEN: u32 = 65536;
+    /// Light that enters the surface leaves it nearby, as in skin: the subsurface blur spreads the
+    /// surface's diffuse light over its scatter radius, redder the further where its scatter color
+    /// says so, so its shadows' edges and the detail of its maps soften. Its objects draw again in
+    /// the skin pass, which only the standard material has, while the quality setting gives the
+    /// blur taps. A material without it pays nothing for the blur.
+    pub const SUBSURFACE: u32 = 1048576;
     /// With [`BLEND`] and normal blending, the surface blends with the other such surfaces in any
     /// order, by a weighted average, in the camera's weighted layer (see [`crate::weighted`]).
     /// Elsewhere it draws back to front with the blended surfaces. A surface that lets light
@@ -309,6 +327,14 @@ pub mod feature {
     /// mesh of its own. Only the standard material has it. It blends, and wins over every other
     /// feature that picks a pass, a mask or faces.
     pub const DECAL: u32 = 131072;
+    /// Each triangle's edges draw as lines, from the part's edge list, with the material's own
+    /// shading, as three.js's `wireframe` draws them. Flat shading and bump maps are off, as they
+    /// read derivatives that lines do not have.
+    pub const WIREFRAME: u32 = 16384;
+    /// The displacement map also shifts where the fragment shader reads the maps, by parallax
+    /// occlusion mapping, so relief finer than the mesh's vertices hides and shows the surface
+    /// behind it. Only opaque and masked surfaces take it.
+    pub const PARALLAX: u32 = 32768;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -324,12 +350,14 @@ pub mod feature {
         | ALPHA_HASH
         | SINGLE_PASS
         | TRANSMISSION
-        | WIREFRAME
-        | PARALLAX
         | SHADOW_CATCHER
         | COAT_SHEEN
         | WEIGHTED
-        | DECAL;
+        | DECAL
+        | TRANSLUCENCY
+        | SUBSURFACE
+        | WIREFRAME
+        | PARALLAX;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -488,6 +516,17 @@ pub mod param {
     pub const SHEEN_COLOR: usize = 48;
     /// The perceptual roughness of the sheen, from 0 to 1.
     pub const SHEEN_ROUGHNESS: usize = 51;
+    /// The color that tints the light that passes through a thin surface, linear: 3 floats, in
+    /// materials with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION_COLOR: usize = 52;
+    /// How much of the surface's diffuse light passes through it to its other side, from 0 to 1.
+    pub const DIFFUSE_TRANSMISSION: usize = 55;
+    /// Each channel's share of the scatter radius, linear: 3 floats, in materials with the
+    /// subsurface feature. Skin's red light scatters furthest.
+    pub const SUBSURFACE_COLOR: usize = 56;
+    /// How far light spreads under the surface before it leaves it, in world units, taken as
+    /// metres: the scatter distance of a channel whose share is 1.
+    pub const SUBSURFACE_RADIUS: usize = 59;
     /// A decal material's values take the place of the transmission's, which a decal never has.
     /// The cosine of the angle from the decal's direction at which it starts to fade.
     pub const DECAL_FADE_START: usize = TRANSMISSION;
@@ -500,14 +539,21 @@ pub mod param {
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         match at {
-            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR | ATTENUATION_COLOR | SHEEN_COLOR => {
-                Some(3)
-            }
+            COLOR
+            | EMISSIVE
+            | UV_U
+            | UV_V
+            | SPECULAR_COLOR
+            | ATTENUATION_COLOR
+            | SHEEN_COLOR
+            | DIFFUSE_TRANSMISSION_COLOR
+            | SUBSURFACE_COLOR => Some(3),
             NORMAL_SCALE | CLEARCOAT_NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
             | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
             | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE
-            | CLEARCOAT | CLEARCOAT_ROUGHNESS | SHEEN_ROUGHNESS => Some(1),
+            | CLEARCOAT | CLEARCOAT_ROUGHNESS | SHEEN_ROUGHNESS | DIFFUSE_TRANSMISSION
+            | SUBSURFACE_RADIUS => Some(1),
             _ => None,
         }
     }
@@ -552,6 +598,17 @@ pub enum MapSlot {
     SpecularIntensity = 6,
     /// The specular color, in sRGB, which multiplies the specular color value.
     SpecularColor = 7,
+}
+
+impl MapSlot {
+    /// The slot that holds the diffuse transmission map of a material with the translucency
+    /// feature: its alpha scales the diffuse transmission, in linear color, as the specular
+    /// intensity map's alpha scales the specular intensity.
+    pub const DIFFUSE_TRANSMISSION: MapSlot = MapSlot::SpecularIntensity;
+    /// The slot that holds the diffuse transmission color map of a material with the translucency
+    /// feature: its sRGB color scales the transmission color, as the specular color map's scales
+    /// the specular color.
+    pub const DIFFUSE_TRANSMISSION_COLOR: MapSlot = MapSlot::SpecularColor;
 }
 
 /// A map of a layered material ([`feature::COAT_SHEEN`]). Such a material has no light map and no
@@ -685,10 +742,12 @@ impl MapSlot {
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
 /// identity texture coordinate transform, a white specular color at full intensity with glTF's
-/// index of refraction, no maps, no transmission through a thin wall that absorbs nothing, no clear
-/// coat and a black sheen of full roughness. The metalness and roughness are three.js's
-/// `MeshStandardMaterial` defaults; the alpha cutoff, the index of refraction and the volume's
-/// values are glTF's, and the layers' values three.js's `MeshPhysicalMaterial` defaults.
+/// index of refraction, no maps, no transmission through a thin wall that absorbs nothing, no
+/// clear coat and a black sheen of full roughness, no diffuse transmission with a white
+/// transmission color, and no scatter radius with a white scatter color. The metalness and
+/// roughness are three.js's `MeshStandardMaterial` defaults; the alpha cutoff, the index of
+/// refraction, the volume's values and the diffuse transmission's values are glTF's, and the
+/// layers' values three.js's `MeshPhysicalMaterial` defaults.
 const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut row = [0.0; MATERIAL_FLOATS];
     let mut k = 0;
@@ -726,6 +785,16 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::CLEARCOAT_NORMAL_SCALE] = 1.0;
     row[param::CLEARCOAT_NORMAL_SCALE + 1] = 1.0;
     row[param::SHEEN_ROUGHNESS] = 1.0;
+    let mut k = 0;
+    while k < 3 {
+        row[param::DIFFUSE_TRANSMISSION_COLOR + k] = 1.0;
+        k += 1;
+    }
+    let mut k = 0;
+    while k < 3 {
+        row[param::SUBSURFACE_COLOR + k] = 1.0;
+        k += 1;
+    }
     row
 };
 
@@ -771,6 +840,14 @@ pub struct MaterialTable {
     values_changed: Range<u32>,
     /// True when a map changed since its layer was last written.
     maps_changed: bool,
+    /// The live materials whose light the subsurface blur spreads.
+    scattering: u32,
+}
+
+/// True for a material of the standard shading, with or without maps, whose features give it a
+/// scatter radius.
+fn scatters(shading: Shading, features: u32) -> bool {
+    features & feature::SUBSURFACE != 0 && matches!(shading, Shading::Lit | Shading::StandardMaps)
 }
 
 /// Why a material could not be created or changed.
@@ -804,6 +881,7 @@ impl MaterialTable {
             changed: 0..0,
             values_changed: 0..0,
             maps_changed: false,
+            scattering: 0,
         }
     }
 
@@ -853,6 +931,7 @@ impl MaterialTable {
         self.margins[at] = 0.0;
         self.biases[at] = DepthBias::NONE;
         self.states[at] = State::Live;
+        self.scattering += u32::from(scatters(shading, features));
         let values = &mut self.values[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
         values.fill(0.0);
         let textures = match shading {
@@ -881,6 +960,7 @@ impl MaterialTable {
             return Err(MaterialError::Unknown(id));
         }
         self.states[at] = State::Destroyed;
+        self.scattering -= u32::from(scatters(self.shading[at], self.features[at]));
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
         self.heights[at] = Handle::NONE;
         self.maps_changed = true;
@@ -915,6 +995,19 @@ impl MaterialTable {
     /// True when a material with this id lives: created, and not destroyed.
     pub fn is_live(&self, id: u32) -> bool {
         self.states.get(id as usize) == Some(&State::Live)
+    }
+
+    /// True when the material, by id, has a scatter radius whose light the subsurface blur
+    /// spreads: the standard material's, with or without maps.
+    pub fn scatters(&self, id: u32) -> bool {
+        let at = id as usize;
+        at < self.features.len() && scatters(self.shading[at], self.features[at])
+    }
+
+    /// True while some live material has a scatter radius, so the frame builders hold the
+    /// subsurface blur's layout.
+    pub fn any_scatters(&self) -> bool {
+        self.scattering > 0
     }
 
     /// True when a live material's shader reads the table of object ranges, which the frame
@@ -1190,18 +1283,6 @@ impl MaterialTable {
         }
     }
 
-    /// Gives a material's displacement map the shared unit that the fragment stage samples it
-    /// through, as [`MaterialTable::set_map_units`] does for the maps. The vertex stage samples it
-    /// through a binding of its own, and ignores the unit.
-    pub fn set_height_unit(&mut self, id: u32, unit: u8) {
-        if let Some(held) = self.height_units.get_mut(id as usize)
-            && *held != unit
-        {
-            *held = unit;
-            self.maps_changed = true;
-        }
-    }
-
     /// Gives a layered material one of its layers' maps: a texture, or none with `Handle::NONE`.
     /// The map takes its slot ([`LayerMap::slot`]), and its row flag says that its channel
     /// applies while it has a texture. Two maps that share a slot share its texture, so the last
@@ -1219,6 +1300,18 @@ impl MaterialTable {
         let on = if texture.is_none() { 0 } else { bit };
         *flags = ((*flags as u32 & !bit) | on) as f32;
         Ok(())
+    }
+
+    /// Gives a material's displacement map the shared unit that the fragment stage samples it
+    /// through, as [`MaterialTable::set_map_units`] does for the maps. The vertex stage samples it
+    /// through a binding of its own, and ignores the unit.
+    pub fn set_height_unit(&mut self, id: u32, unit: u8) {
+        if let Some(held) = self.height_units.get_mut(id as usize)
+            && *held != unit
+        {
+            *held = unit;
+            self.maps_changed = true;
+        }
     }
 
     /// A material's maps by slot, `Handle::NONE` where it has none.
@@ -1492,6 +1585,12 @@ mod tests {
         );
         assert_eq!(&row[param::SHEEN_COLOR..param::SHEEN_COLOR + 3], &[0.0; 3]);
         assert_eq!(row[param::SHEEN_ROUGHNESS], 1.0);
+        // No diffuse transmission, and glTF's white transmission color.
+        assert_eq!(row[param::DIFFUSE_TRANSMISSION], 0.0);
+        assert_eq!(
+            &row[param::DIFFUSE_TRANSMISSION_COLOR..param::DIFFUSE_TRANSMISSION_COLOR + 3],
+            &[1.0; 3]
+        );
     }
 
     #[test]
@@ -1524,6 +1623,8 @@ mod tests {
             (param::CLEARCOAT_NORMAL_SCALE, 2),
             (param::SHEEN_COLOR, 3),
             (param::SHEEN_ROUGHNESS, 1),
+            (param::DIFFUSE_TRANSMISSION_COLOR, 3),
+            (param::DIFFUSE_TRANSMISSION, 1),
         ];
         starts.sort();
         for pair in starts.windows(2) {

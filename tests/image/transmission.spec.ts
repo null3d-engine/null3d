@@ -3,80 +3,32 @@
 // no blur, still draws a plausible picture, which a new reference could take in. This spec measures
 // each effect against the same scene drawn another way, so it fails even before a test has
 // references.
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
 	BALL_RADIUS,
 	TRANSMISSION_BALLS,
 	TRANSMISSION_CAMERA,
 } from '../../bench/scenes/transmission.ts';
-import { pageResult } from '../lib/page-result.ts';
+import {
+	difference,
+	type Image,
+	imageOf,
+	luma,
+	meanOf,
+	project,
+	type Vec3,
+	variant,
+} from '../lib/frame-pixels.ts';
 import { IMAGE_RUNS } from './manifest.ts';
 
 test.describe.configure({ mode: 'parallel' });
 
-interface Frame {
-	error?: string;
-	width: number;
-	pixels: string;
-}
-
-interface Image {
-	width: number;
-	height: number;
-	/** Each pixel's red, green and blue, from 0 to 1. */
-	rgb: Float32Array;
-}
-
-type Vec3 = readonly [number, number, number];
-
-async function imageOf(page: Page, path: string): Promise<Image> {
-	await page.goto(path);
-	const frame = await pageResult<Frame>(page, 60_000);
-	expect(frame.error).toBeUndefined();
-	const pixels = new Uint8Array(Buffer.from(frame.pixels, 'base64'));
-	const rgb = new Float32Array((pixels.length / 4) * 3);
-	for (let i = 0, j = 0; i < pixels.length; i += 4, j += 3)
-		for (let c = 0; c < 3; c++) rgb[j + c] = (pixels[i + c] ?? 0) / 255;
-	return { width: frame.width, height: pixels.length / 4 / frame.width, rgb };
-}
-
-/** The page of a run with `query` added to its sketch's address. */
-function variant(path: string, sketch: string, query: string): string {
-	expect(path).toContain(sketch);
-	return path.replace(sketch, `${sketch}${encodeURIComponent(query)}`);
-}
-
-const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec3, b: Vec3): Vec3 => [
-	a[1] * b[2] - a[2] * b[1],
-	a[2] * b[0] - a[0] * b[2],
-	a[0] * b[1] - a[1] * b[0],
-];
-const unit = (a: Vec3): Vec3 => {
-	const length = Math.hypot(...a);
-	return [a[0] / length, a[1] / length, a[2] / length];
-};
-
-/** Where a point of the glass scene lands in an image of its size, in pixels from the top left. */
-function project(point: Vec3, width: number, height: number): { x: number; y: number } {
-	const { fov, position, target } = TRANSMISSION_CAMERA;
-	const forward = unit(sub(target, position));
-	const right = unit(cross(forward, [0, 1, 0]));
-	const up = cross(right, forward);
-	const relative = sub(point, position);
-	const depth = dot(relative, forward);
-	const scale = 1 / Math.tan((fov * Math.PI) / 360);
-	const ndcX = (dot(relative, right) * scale) / (depth * (width / height));
-	const ndcY = (dot(relative, up) * scale) / depth;
-	return { x: (ndcX * 0.5 + 0.5) * width, y: (0.5 - ndcY * 0.5) * height };
-}
-
 /** The pixels of the disc in the middle of a ball, two thirds of its radius on the screen across. */
 function discOf(image: Image, ball: number): number[] {
 	const { position } = TRANSMISSION_BALLS[ball] as (typeof TRANSMISSION_BALLS)[number];
-	const center = project(position, image.width, image.height);
+	const center = project(TRANSMISSION_CAMERA, position, image.width, image.height);
 	const edge = project(
+		TRANSMISSION_CAMERA,
 		[position[0] + BALL_RADIUS, position[1], position[2]],
 		image.width,
 		image.height,
@@ -88,30 +40,6 @@ function discOf(image: Image, ball: number): number[] {
 			if (Math.hypot(x - center.x, y - center.y) <= radius) pixels.push(y * image.width + x);
 	return pixels;
 }
-
-/** The mean difference of color between two images over `pixels`, from 0 to 1 per channel. */
-function difference(a: Image, b: Image, pixels: readonly number[]): number {
-	let sum = 0;
-	for (const p of pixels)
-		for (let c = 0; c < 3; c++) sum += Math.abs((a.rgb[3 * p + c] ?? 0) - (b.rgb[3 * p + c] ?? 0));
-	return sum / (3 * pixels.length);
-}
-
-/** The mean color over `pixels`. */
-function meanOf(image: Image, pixels: readonly number[]): Vec3 {
-	let [r, g, b] = [0, 0, 0];
-	for (const p of pixels) {
-		r += image.rgb[3 * p] ?? 0;
-		g += image.rgb[3 * p + 1] ?? 0;
-		b += image.rgb[3 * p + 2] ?? 0;
-	}
-	return [r / pixels.length, g / pixels.length, b / pixels.length];
-}
-
-const luma = (image: Image, p: number) =>
-	0.2126 * (image.rgb[3 * p] ?? 0) +
-	0.7152 * (image.rgb[3 * p + 1] ?? 0) +
-	0.0722 * (image.rgb[3 * p + 2] ?? 0);
 
 /**
  * The mean squared change of brightness from each pixel of `pixels` to the one at its right: high

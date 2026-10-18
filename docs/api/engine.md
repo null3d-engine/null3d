@@ -103,6 +103,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
 | `preload` | None | Features whose shaders load before the first frame, such as `['skinning', 'bloom']`, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: [Loading screens](../guides/loading-screens.md). A name that the engine does not know throws [E1421](../errors/E1421.md). |
+| `still` | true | `false` draws every frame of a view that holds still, which otherwise blends its frames into a sharper picture and then stops drawing until something changes: [Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation). The `?still-camera=off` switch turns it off too. |
 | `stats` | false | `true` shows the stats overlay from the first frame, and `{ collapsed: true }` shows it with its card closed: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
 
 ## A transparent canvas
@@ -135,7 +136,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `directDraws` field says whether the device draws buckets directly, as its start-up measurement chose. The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
 - `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum. The `keepTextureCopies` field says whether the engine keeps each texture's copy. It restores a map after a GPU loss ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). `renderFallback` says why the page draws where a worker was meant to, or is null.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 

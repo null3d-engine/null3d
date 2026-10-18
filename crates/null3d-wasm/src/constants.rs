@@ -129,16 +129,19 @@ pub mod map_slot {
     pub const LIGHT: u32 = MapSlot::Light as u32;
     pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
+    /// A bump map, which takes the normal map's slot.
+    pub const BUMP: u32 = MAP_SLOTS as u32 + LayerMap::ALL.len() as u32;
+    /// A displacement map, which has a binding of its own.
+    pub const DISPLACEMENT: u32 = BUMP + 1;
+    /// The diffuse transmission map's slot in a material with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION: u32 = MapSlot::DIFFUSE_TRANSMISSION as u32;
+    /// The diffuse transmission color map's slot in a material with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION_COLOR: u32 = MapSlot::DIFFUSE_TRANSMISSION_COLOR as u32;
     pub const COAT: u32 = layer(LayerMap::Coat);
     pub const COAT_ROUGHNESS: u32 = layer(LayerMap::CoatRoughness);
     pub const COAT_NORMAL: u32 = layer(LayerMap::CoatNormal);
     pub const SHEEN_COLOR: u32 = layer(LayerMap::SheenColor);
     pub const SHEEN_ROUGHNESS: u32 = layer(LayerMap::SheenRoughness);
-
-    /// A bump map, which takes the normal map's slot. Its number follows the layer maps'.
-    pub const BUMP: u32 = (MAP_SLOTS + LayerMap::ALL.len()) as u32;
-    /// A displacement map, which has a binding of its own.
-    pub const DISPLACEMENT: u32 = BUMP + 1;
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -151,6 +154,14 @@ pub mod map_slot {
         }
         u32::MAX
     }
+}
+
+/// The flags of a reflection probe, which `setReflectionProbe` takes.
+pub mod probe_flag {
+    /// The probe projects its reflections onto its box.
+    pub const BOX_PROJECTION: u32 = 1;
+    /// The probe captures again in turns, as long as it exists.
+    pub const ALWAYS: u32 = 2;
 }
 
 /// The flags of an effect that `setEffect` takes, and of a full-screen pass that `addPass` takes.
@@ -243,8 +254,14 @@ pub mod post_value {
     pub const AUTO_EXPOSURE_MIN_EV: u32 = 56;
     pub const AUTO_EXPOSURE_MAX_EV: u32 = 57;
     pub const AUTO_EXPOSURE_COMPENSATION: u32 = 58;
+    /// Screen-space reflections' intensity, most distance, thickness and most roughness, in this
+    /// order.
+    pub const SSR_INTENSITY: u32 = 59;
+    pub const SSR_MAX_DISTANCE: u32 = 60;
+    pub const SSR_THICKNESS: u32 = 61;
+    pub const SSR_MAX_ROUGHNESS: u32 = 62;
     /// The values in the block.
-    pub const COUNT: u32 = 59;
+    pub const COUNT: u32 = 63;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -996,12 +1013,14 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
-                ("WIREFRAME", feature::WIREFRAME),
-                ("PARALLAX", feature::PARALLAX),
+                ("TRANSLUCENCY", feature::TRANSLUCENCY),
+                ("SUBSURFACE", feature::SUBSURFACE),
                 ("SHADOW_CATCHER", feature::SHADOW_CATCHER),
                 ("COAT_SHEEN", feature::COAT_SHEEN),
                 ("WEIGHTED", feature::WEIGHTED),
                 ("DECAL", feature::DECAL),
+                ("WIREFRAME", feature::WIREFRAME),
+                ("PARALLAX", feature::PARALLAX),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1014,6 +1033,7 @@ pub fn typescript() -> String {
                 ("OVERDRAW", debug_view::code::OVERDRAW),
                 ("WIREFRAME", debug_view::code::WIREFRAME),
                 ("SHADOWS", debug_view::code::SHADOWS),
+                ("MOTION", debug_view::code::MOTION),
             ],
         ),
         // The fog curves that `setFog` takes, and its code for no fog.
@@ -1037,6 +1057,11 @@ pub fn typescript() -> String {
                 ("LIGHT", map_slot::LIGHT),
                 ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
                 ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
+                ("DIFFUSE_TRANSMISSION", map_slot::DIFFUSE_TRANSMISSION),
+                (
+                    "DIFFUSE_TRANSMISSION_COLOR",
+                    map_slot::DIFFUSE_TRANSMISSION_COLOR,
+                ),
                 ("COAT", map_slot::COAT),
                 ("COAT_ROUGHNESS", map_slot::COAT_ROUGHNESS),
                 ("COAT_NORMAL", map_slot::COAT_NORMAL),
@@ -1071,6 +1096,13 @@ pub fn typescript() -> String {
                 ("IOR", param::IOR as u32),
                 ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
                 ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
+                (
+                    "DIFFUSE_TRANSMISSION_COLOR",
+                    param::DIFFUSE_TRANSMISSION_COLOR as u32,
+                ),
+                ("DIFFUSE_TRANSMISSION", param::DIFFUSE_TRANSMISSION as u32),
+                ("SUBSURFACE_COLOR", param::SUBSURFACE_COLOR as u32),
+                ("SUBSURFACE_RADIUS", param::SUBSURFACE_RADIUS as u32),
                 ("CLEARCOAT", param::CLEARCOAT as u32),
                 ("CLEARCOAT_ROUGHNESS", param::CLEARCOAT_ROUGHNESS as u32),
                 (
@@ -1116,6 +1148,17 @@ pub fn typescript() -> String {
         (
             "SCENE_PASS",
             &[("MAX", null3d_render::view::MAX_VIEWS as u32 - 1)],
+        ),
+        // Reflection probes: the most a scene has, the views that their captures take while it has
+        // one, and the flags of `setReflectionProbe`.
+        (
+            "REFLECTION_PROBE",
+            &[
+                ("MAX", null3d_render::probes::MAX_PROBES as u32),
+                ("VIEWS", 6),
+                ("BOX_PROJECTION", probe_flag::BOX_PROJECTION),
+                ("ALWAYS", probe_flag::ALWAYS),
+            ],
         ),
         (
             "POST_VALUE",
@@ -1171,6 +1214,10 @@ pub fn typescript() -> String {
                     "AUTO_EXPOSURE_COMPENSATION",
                     post_value::AUTO_EXPOSURE_COMPENSATION,
                 ),
+                ("SSR_INTENSITY", post_value::SSR_INTENSITY),
+                ("SSR_MAX_DISTANCE", post_value::SSR_MAX_DISTANCE),
+                ("SSR_THICKNESS", post_value::SSR_THICKNESS),
+                ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("COUNT", post_value::COUNT),
             ],
         ),

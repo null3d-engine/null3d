@@ -1,7 +1,10 @@
 // A short-lived worker that tests what a dedicated worker can do: the worker frame timer, WebGL2 in
-// an OffscreenCanvas, and WebGPU with a canvas context. The render worker depends on all three.
+// an OffscreenCanvas, and WebGPU with a canvas context. The render worker depends on all three. It
+// also measures the device's two draw paths, so the engine can draw the faster one (D-174).
 
 import { messageOf } from '../errors/message';
+import { probeDirectDraws } from '../gpu/webgpu/draw-path-probe';
+import { needsOwnArguments } from '../gpu/webgpu/indirect-arguments';
 
 /**
  * What a dedicated worker can do, in `CapabilityReport.worker`. A render worker needs the frame
@@ -16,6 +19,11 @@ export interface WorkerProbe {
 	offscreenWebGL2: boolean;
 	/** True when a worker can draw with WebGPU into an `OffscreenCanvas`. */
 	offscreenWebGPU: boolean;
+	/**
+	 * True when the device draws a bucket faster with direct draws than with the engine's indirect
+	 * draws, measured on the worker's own device at start.
+	 */
+	directDraws: boolean;
 	/** Why the WebGPU check failed, when it threw. The WebGL2 check's answer still holds. */
 	webgpuError?: string;
 }
@@ -35,6 +43,7 @@ async function probe(): Promise<WorkerProbe> {
 			'function',
 		offscreenWebGL2: false,
 		offscreenWebGPU: false,
+		directDraws: false,
 	};
 	try {
 		const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
@@ -52,6 +61,11 @@ async function probe(): Promise<WorkerProbe> {
 			if (context) {
 				context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat() });
 				result.offscreenWebGPU = true;
+				result.directDraws = await probeDirectDraws(
+					device,
+					adapter.info,
+					needsOwnArguments(globalThis.navigator?.userAgent ?? ''),
+				);
 			}
 			device.destroy();
 		}

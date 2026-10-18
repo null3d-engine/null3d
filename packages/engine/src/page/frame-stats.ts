@@ -264,28 +264,6 @@ export interface MainThreadStats {
 	inputDelayMs: Percentiles | null;
 }
 
-/**
- * The thread each role runs on in an engine mode, keyed by thread name. The sketch runs in the
- * sketch worker unless the mode names the page's thread for it, as the single-threaded build does.
- */
-export function threadRoles(mode: {
-	latency: string;
-	renderThread: string;
-	jobWorkers: number;
-	sketchThread?: string;
-}): Map<string, number[]> {
-	const threads = new Map<string, number[]>();
-	const sketch =
-		mode.latency === 'single' || mode.sketchThread === 'main' ? 'main' : 'sketch-worker';
-	if (mode.renderThread === sketch) threads.set(sketch, [Role.Sketch, Role.Render]);
-	else {
-		threads.set(sketch, [Role.Sketch]);
-		threads.set(mode.renderThread, [Role.Render]);
-	}
-	for (let k = 0; k < mode.jobWorkers; k++) threads.set(`job-${k}`, [Role.Job + k]);
-	return threads;
-}
-
 const NO_RECORDS: RingRecords = {
 	frames: [],
 	busy: [],

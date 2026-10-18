@@ -96,6 +96,29 @@ fn caster_variant(shading: &Variant) -> Variant {
     }
 }
 
+/// The bits of a custom material's shading builds that its motion builds keep: the draw index,
+/// and row values, which a vertex offset may read.
+const MOTION_KEEPS: [&str; 2] = ["DRAW_INDEX", "ROW_VALUES"];
+
+/// The variant of a custom material's motion builds beside one of its shading variants: the same
+/// defs and targets, every build with the MOTION bit. The motion pass then draws the motion of the
+/// material's vertex offset, as the material's sway moves its surface (decision record D-140).
+fn motion_variant(shading: &Variant) -> Variant {
+    let mut permutations: Vec<String> = shading
+        .permutations
+        .iter()
+        .filter(|bit| MOTION_KEEPS.contains(&bit.as_str()))
+        .cloned()
+        .collect();
+    permutations.push("MOTION".to_owned());
+    Variant {
+        defs: shading.defs.clone(),
+        permutations,
+        required: vec!["MOTION".to_owned()],
+        targets: shading.targets.clone(),
+    }
+}
+
 /// The bits of a custom material's shading builds that its pick builds keep: the draw index, and
 /// what moves vertices or a vertex offset may read, skins and row values.
 const PICK_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
@@ -465,6 +488,18 @@ fn sets_transmission(tokens: &[Token]) -> bool {
         .any(|pair| pair[0].text == "." && pair[1].text == "transmission")
 }
 
+/// True when a custom material's WGSL sets or reads the surface's diffuse transmission or its
+/// color, so the material can let light through a thin surface.
+fn names_diffuse_transmission(tokens: &[Token]) -> bool {
+    tokens.windows(2).any(|pair| {
+        pair[0].text == "."
+            && matches!(
+                pair[1].text,
+                "diffuseTransmission" | "diffuseTransmissionColor"
+            )
+    })
+}
+
 /// The fields of the surface record that a layered material's builds light: the clear coat's and
 /// the sheen's values.
 const LAYER_FIELDS: [&str; 5] = [
@@ -549,6 +584,7 @@ impl Compiler {
         }
 
         let transmits = sets_transmission(&tokens);
+        let translucent = names_diffuse_transmission(&tokens);
         let layered = names_coat_sheen(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let inputs = read_inputs(&tokens);
@@ -581,8 +617,10 @@ impl Compiler {
                 // have no INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
                 // Only WGSL that sets the surface's transmission has the builds that let light
-                // through, and only WGSL that names a layer's value has the builds of the clear
-                // coat and the sheen, so other materials keep their builds as few as before. Every material
+                // through, only WGSL that names its diffuse transmission has the builds that let
+                // light through a thin surface, and only WGSL that names a layer's value has the
+                // builds of the clear coat and the sheen, so other materials keep their builds as
+                // few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies. They have no builds of a fading level of
                 // detail, so their levels switch at once. They have no builds of the weighted
@@ -605,6 +643,7 @@ impl Compiler {
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
+                    .filter(|bit| translucent || *bit != "TRANSLUCENCY")
                     .filter(|bit| layered || *bit != "COAT_SHEEN")
                     .cloned()
                     .collect();
@@ -618,16 +657,17 @@ impl Compiler {
             })
             .collect();
         if offsets {
-            let moved: Vec<(String, Variant)> = variants
+            let more: Vec<(String, Variant)> = variants
                 .iter()
                 .flat_map(|(name, variant)| {
                     [
                         (format!("{name}_shadow"), caster_variant(variant)),
+                        (format!("{name}_motion"), motion_variant(variant)),
                         (format!("{name}_pick"), pick_variant(variant)),
                     ]
                 })
                 .collect();
-            variants.extend(moved);
+            variants.extend(more);
         }
         let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
         let source = format!("{}{own_source}{loader}{bindings}", template.source);

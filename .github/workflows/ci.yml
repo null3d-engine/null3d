@@ -391,7 +391,10 @@ jobs:
     needs: [build, size-base, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Bundling the engine test page for each thread mode takes about 19 minutes once the
+    # shader set has the translucency builds, so the limit leaves room for a slower runner
+    # rather than cutting a check that is still measuring.
+    timeout-minutes: 30
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"

@@ -132,15 +132,15 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // The camera's render pass resolves into the canvas. The side view's draws into an image of
     // its own, which resolves for the copy into its target. The textures: the color and depth
     // targets, the side view's image and target, the shadow map and the shadow atlas, one texel
-    // each while no light casts shadows, the table of specular terms, the materials' custom
-    // values, the environment's blank cube, the blank textures that stand in for ambient
-    // occlusion and for the copy that surfaces which let light through sample, the views' cell
-    // offsets, the white texel that the side view's texture shows until it draws, the row values
-    // texture of instance batches, one texel row while no batch has row values, and the first
-    // joints of skinned objects, one texel row while nothing is skinned.
+    // each while no light casts shadows, the table of specular terms, the blank array of
+    // reflection probes, the materials' custom values, the environment's blank cube, the blank
+    // textures that stand in for ambient occlusion and for the copy that surfaces which let light
+    // through sample, the views' cell offsets, the white texel that the side view's texture shows
+    // until it draws, the row values texture of instance batches, one texel row while no batch has
+    // row values, and the first joints of skinned objects, one texel row while nothing is skinned.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 16);
+    assert_eq!(count(&commands, Op::CreateTexture), 18);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -261,12 +261,13 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
-    // light casts shadows, the table of specular terms, the materials' custom values, the
-    // environment's blank cube, the blank textures that stand in for ambient occlusion and for
-    // the copy that surfaces which let light through sample, the views' cell offsets, the row
-    // values texture of instance batches, the first joints of skinned objects, and the blank 3D
-    // texture that the frame groups bind while the scene has no light probe grid.
-    assert_eq!(count(&commands, Op::CreateTexture), 13);
+    // light casts shadows, the blank array that holds the light tables and the probes' maps, the
+    // materials' custom values, the environment's blank cube, the blank textures that stand in for
+    // ambient occlusion and for the copy that surfaces which let light through sample, the views'
+    // cell offsets, the row values texture of instance batches, the first joints of skinned
+    // objects, and the blank 3D texture that the frame groups bind while the scene has no light
+    // probe grid.
+    assert_eq!(count(&commands, Op::CreateTexture), 15);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -1298,5 +1299,55 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
         } else {
             assert_eq!(by_index, 0);
         }
+    }
+}
+
+#[test]
+fn the_direct_path_culls_on_the_cpu_and_draws_each_bucket_with_its_count() {
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let commands = world.commands();
+    // No culling dispatch reads the buckets, and no draw reads an indirect buffer: the CPU
+    // counted each bucket's instances before the frame recorded.
+    assert!(
+        !commands
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL),
+        "the direct path binds no culling group"
+    );
+    assert_eq!(count(&commands, Op::DrawIndexedIndirect), 0);
+    let counts: Vec<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexed)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert!(!counts.is_empty(), "the frame draws its buckets");
+    // The camera sees the batch's rows and the objects that draw, so a bucket of the box and the
+    // lit material counts them both.
+    assert!(
+        counts.iter().any(|&instances| instances > BATCH_ROWS),
+        "{counts:?}"
+    );
+    // The visible instances went into the buffer that each draw reads at vertex slot 1, which
+    // the frame uploaded.
+    let visible: Vec<u32> = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert!(!visible.is_empty(), "a draw binds its view's instances");
+    for buffer in visible {
+        assert!(
+            commands
+                .iter()
+                .any(|(op, o)| *op == Op::WriteBuffer && o[0] == buffer),
+            "the frame uploads the instances that the draws read"
+        );
     }
 }

@@ -1589,6 +1589,9 @@ pub struct BatchTable {
     kernels: Vec<Option<RowKernel>>,
     work: Vec<WorkItem>,
     work_needed: usize,
+    /// True when the last update recomputed any row, so a batch moved. The still-camera
+    /// accumulation reads it: a frame with no other change is still only when no batch row moved.
+    changed: bool,
     epoch: AtomicU32,
 }
 
@@ -1602,8 +1605,15 @@ impl BatchTable {
             kernels: vec![None; slots],
             work: Vec::new(),
             work_needed: 0,
+            changed: true,
             epoch: AtomicU32::new(0),
         }
+    }
+
+    /// True when the last [`BatchTable::update`] recomputed any row. A table that no frame has
+    /// updated reads as changed.
+    pub fn changed(&self) -> bool {
+        self.changed
     }
 
     /// The number of batches the table holds.
@@ -1807,6 +1817,7 @@ impl BatchTable {
             }
             self.kernels[slot as usize] = kernel;
         }
+        self.changed = !self.work.is_empty();
         let (work, kernels) = (&self.work, &self.kernels);
         jobs.parallel_for(work.len() as u32, 1, &|range, _| {
             for item in &work[range.start as usize..range.end as usize] {

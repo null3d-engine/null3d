@@ -28,12 +28,23 @@ import type { Texture, Textures } from './textures';
 // The coefficient order is the shader's, which is three.js's own: L0, then L1 along y, along z and
 // along x, four RGB coefficients in all.
 
-/** The probes along the least axis of a grid, and the most. */
-export const FEWEST_PROBES = 2;
-export const MOST_PROBES = 128;
-
 /** The sub-volumes of a probe's texture along Z: three, because L1 needs three `vec4f`. */
 export const PROBE_SUBVOLUMES = 3;
+
+/** The texels along each side of a 3D texture that every device holds, as the core's limit. */
+export const VOLUME_TEXELS = 256;
+
+/** The probes along the least axis of a grid. */
+export const FEWEST_PROBES = 2;
+/**
+ * The most probes along x, along y and along z. Along z the three sub-volumes and their padding
+ * slices share one side of the 3D texture.
+ */
+export const MOST_PROBES: ProbeCounts = [
+	VOLUME_TEXELS,
+	VOLUME_TEXELS,
+	Math.floor(VOLUME_TEXELS / PROBE_SUBVOLUMES) - 2,
+];
 
 /** The floats of one probe's four RGB coefficients. */
 export const PROBE_FLOATS = 12;
@@ -254,7 +265,8 @@ export class SceneLightProbeGrid implements ViewHolder {
 	/**
 	 * Lights the scene with `grid`, or with none for null, from the next frame on. Throws E1203 for
 	 * a number that is not finite, E1108 for a value out of range, E1213 for something that is not
-	 * a texture, and E1101 for a texture that was destroyed.
+	 * a texture, E1222 for a texture that is not a 3D texture, and E1101 for a texture that was
+	 * destroyed.
 	 */
 	set(grid: LightProbeGridOptions | null): void {
 		if (DEV) checkGrid(grid);
@@ -314,6 +326,7 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 			'E1108',
 			`${CALL}() got a count below 2 or a fraction; give whole numbers of 2 or more.`,
 		);
+	checkCounts(CALL, grid.counts);
 	const intensity = grid.intensity ?? 1;
 	if (!Number.isFinite(intensity) || intensity < 0)
 		throw new EngineError('E1108', `${CALL}() got the intensity ${intensity}; it takes 0 or more.`);
@@ -323,6 +336,16 @@ function checkGrid(grid: LightProbeGridOptions | null): void {
 			'E1108',
 			`${CALL}() got the environmentWeight ${weight}; it takes 0 to 1.`,
 		);
+}
+
+/** Throws E1108 for more probes along an axis than a grid's texture holds. */
+function checkCounts(call: string, counts: ArrayLike<number>): void {
+	for (let k = 0; k < 3; k++)
+		if ((counts[k] as number) > (MOST_PROBES[k] as number))
+			throw new EngineError(
+				'E1108',
+				`${call}() got ${counts[k]} probes along ${'xyz'[k]}, more than the ${MOST_PROBES[k]} that a grid holds. Use a larger spacing or a smaller box.`,
+			);
 }
 
 /** True for three finite numbers in an array or a typed array. */
@@ -400,7 +423,14 @@ export class LightProbeGridData {
 		const [width, height, depth] = gridTexels(this.counts);
 		const texels = new Uint16Array(width * height * depth * 4);
 		packProbes(this.counts, this.coefficients, texels, toHalfFloat);
-		return textures.fromData({ width, height, depth, format: 'rgba16float', data: texels });
+		return textures.fromVolumeData(
+			width,
+			height,
+			depth,
+			'rgba16float',
+			texels,
+			'LightProbeGridData.toTexture',
+		);
 	}
 }
 
@@ -518,6 +548,7 @@ export class ProbeBake {
 			diagonal += span * span;
 		}
 		const shown = counts as ProbeCounts;
+		if (DEV) checkCounts('bakeProbes', shown);
 		this.samples = Math.max(8, Math.min(options.samples ?? 64, 1024));
 		this.distance = options.distance ?? (Math.sqrt(diagonal) || 1);
 		this.total = shown[0] * shown[1] * shown[2];

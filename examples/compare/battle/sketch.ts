@@ -42,6 +42,7 @@ import {
 	sampleCameraLoop,
 	surfaceMaps,
 } from '../../lib/compare-scene';
+import { LENS_WGSL } from '../../lib/lens';
 import { createSpriteRows, fireAtlas, smokeAtlas } from '../../lib/particles';
 import { null3dSprites } from '../../lib/particles-null3d';
 import { sampleUrl } from '../../lib/samples';
@@ -80,6 +81,7 @@ import {
 	particleCapacity,
 	RIFLE,
 	RUINS,
+	SCORCHES,
 	SURFACE_SIZE,
 	setActiveUnits,
 	stepBattle,
@@ -348,6 +350,7 @@ export default defineSketch(
 			bloom: effects.bloom && { ...look.bloomChain, threshold: look.bloom.threshold, blend: 'add' },
 			ao: effects.ao && { radius: look.ao.radius, intensity: look.ao.intensity },
 		});
+		if (effects.lens) post.addEffect({ wgsl: LENS_WGSL, uniforms: look.lens });
 		if (effects.grade) {
 			const table = gradeTable(look.grade);
 			const data = Float32Array.from(
@@ -500,6 +503,38 @@ export default defineSketch(
 			material: ground,
 			receiveShadows: effects.shadows,
 		});
+
+		// The scorch marks: one decal box at each crater and each burnt wreck. The box's z axis points
+		// up out of the ground, so the decal looks down onto the terrain.
+		if (effects.decals) {
+			const map = surface('scorch');
+			const decal = materials.decal({
+				map: map.color,
+				normalMap: map.normal,
+				roughness: 0.95,
+				metalness: 0,
+			});
+			const box = geometry.box();
+			const down: readonly [number, number, number, number] = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+			const turn = quat.create();
+			const wanted = quat.create();
+			for (const mark of SCORCHES) {
+				quat.setAxisAngle(turn, [0, 1, 0], mark.yaw);
+				quat.multiply(wanted, turn, down);
+				scene.createMesh({
+					mesh: box,
+					material: decal,
+					position: [mark.x, mark.y, mark.z],
+					rotation: [
+						wanted[0] as number,
+						wanted[1] as number,
+						wanted[2] as number,
+						wanted[3] as number,
+					],
+					scale: [mark.reach * 2, mark.reach * 2, 3],
+				});
+			}
+		}
 
 		/** A still batch of placed copies of one mesh, written once. */
 		const scatter = (

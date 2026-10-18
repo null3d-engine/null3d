@@ -195,6 +195,7 @@ export async function runPipelined(
 	fault: (error: unknown) => void,
 ): Promise<void> {
 	const { slots } = controlViews(control);
+	sketch.context.scene.attachPickControl(slots);
 	try {
 		while (Atomics.load(slots, Slot.Running) !== 0) {
 			const paused = Atomics.load(slots, Slot.Paused);
@@ -244,6 +245,8 @@ export class SketchRunner {
 	/** The page's count of canvas size changes when the viewport last read them. */
 	private viewportSerial = -1;
 	private gpuEpoch = 0;
+	/** True while the page lets a still view accumulate its frames, as the frame loop last read it. */
+	private stillEnabled = true;
 	/**
 	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
 	 * 0 while nobody samples, so the first frame that samples publishes them.
@@ -312,7 +315,18 @@ export class SketchRunner {
 	private aoSetting = 0;
 	/** True while ambient occlusion draws: the sketch has it on, and its scale is above 0. */
 	private aoDrawn = false;
-	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
+	/** True while the sketch has screen-space reflections on, as the governor knows it. */
+	private ssrOn = false;
+	/** The scale of the reflections' grid that the `ssrScale` setting gives, in thousandths. */
+	private ssrSetting = 0;
+	/** The most steps of the reflections' march that the `ssrSteps` setting gives. */
+	private ssrStepSetting = 0;
+	/** True while screen-space reflections draw: the sketch has them on, and their scale is above 0. */
+	private ssrDrawn = false;
+	/**
+	 * True once the core draws HDR color for an effect or the subsurface blur, on a device that
+	 * started on the 8-bit path.
+	 */
 	private hdrForEffects = false;
 	/** True while the scene's fog is volumetric, as the governor knows it. */
 	private fogOn = false;
@@ -364,9 +378,11 @@ export class SketchRunner {
 			device.indexInstances,
 			device.largeWorld,
 			device.gpuOcclusion,
+			device.directDraws,
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		if (glue.allowMotion(...device.motionTargets) !== 0) throw coreFailure(glue, 'createEngine');
 		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		const {
 			shadowTiles,
@@ -456,6 +472,9 @@ export class SketchRunner {
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
 				},
+				get ssrScale() {
+					return governor.ssrScale / FULL_SCALE;
+				},
 				get contactShadowSteps() {
 					return governor.contactSteps;
 				},
@@ -498,6 +517,11 @@ export class SketchRunner {
 			this.input,
 		);
 		geometry.users = scene;
+		scene.probeHost = {
+			sendGenerator: (id) => textures.sendProbeGenerator(id),
+			floatTargets: device.occlusionTargets,
+			time: this.recorded,
+		};
 		this.post = new Post(
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,
@@ -685,6 +709,7 @@ export class SketchRunner {
 		} catch (error) {
 			console.error(error);
 		}
+		this.context.scene.stopPicks();
 		this.core.stop();
 		stopHelperWorkers();
 		this.restoreRandom?.();
@@ -814,6 +839,9 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		this.ssrSetting = Math.round(settings.ssrScale * FULL_SCALE);
+		this.ssrStepSetting = settings.ssrSteps;
+		governor.setSsr(this.ssrOn, this.ssrSetting);
 		this.fogSetting = settings.fogSlices;
 		governor.setFog(this.fogOn, this.fogSetting);
 		governor.setContact(settings.contactShadowSteps);
@@ -825,12 +853,15 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
+			glue.setSubsurfaceTaps(settings.subsurfaceSamples) !== 0 ||
 			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
 			glue.setFogSlices(settings.fogSlices) !== 0 ||
 			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setProbeSize(settings.probeSize) !== 0 ||
 			glue.setAreaLightCap(settings.areaLights) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
@@ -887,6 +918,7 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setFogHalvings(governor.fogHalvings) !== 0
 		)
@@ -916,11 +948,28 @@ export class SketchRunner {
 	 */
 	private followEffects(): boolean {
 		const ao = this.followAo();
+		const ssr = this.followSsr();
 		const bloom = this.followBloom();
 		this.followFog();
 		const custom = this.post.takeNewPipelines();
 		const passes = this.render.takeNewPipelines();
-		return ao || bloom || custom || passes;
+		return ao || ssr || bloom || custom || passes;
+	}
+
+	/**
+	 * Follows the sketch's screen-space reflections: the governor's step needs them on. Returns true
+	 * when they start or stop drawing: the frame adds or removes the depth prepass and the steps.
+	 */
+	private followSsr(): boolean {
+		const on = this.post.ssrOn;
+		if (on !== this.ssrOn) {
+			this.ssrOn = on;
+			this.governor.setSsr(on, this.ssrSetting);
+		}
+		const drawn = on && this.ssrSetting > 0;
+		if (drawn === this.ssrDrawn) return false;
+		this.ssrDrawn = drawn;
+		return true;
 	}
 
 	/**
@@ -950,10 +999,11 @@ export class SketchRunner {
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
 	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
-	 * with slices to draw turns on, on a device that started
-	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
-	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
-	 * until they are built, and the frame before stays on screen meanwhile.
+	 * with slices to draw turns on, or the page or the sketch itself gives the subsurface blur taps,
+	 * on a device that started on the 8-bit path only for MSAA, the core moves to HDR color with
+	 * FXAA for the engine's life. A preset's taps alone do not move it. Returns true then: the frame
+	 * has new targets and pipelines, so the thread that draws holds it until they are built, and the
+	 * frame before stays on screen meanwhile.
 	 */
 	private followBloom(): boolean {
 		const on = this.post.bloomOn;
@@ -962,8 +1012,11 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
-		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		if (this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		const { quality } = this;
+		const blur = quality.settings.subsurfaceSamples > 0 && quality.chose('subsurfaceSamples');
+		const fog = this.context.scene.needsHdr && this.fogSetting > 0;
+		if (!this.post.needsHdr && !fog && !blur) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		this.preloads.setUsable('coverage', device.effectsAntialias === ANTIALIAS_MSAA);
@@ -997,28 +1050,44 @@ export class SketchRunner {
 	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
 	 * loss, textures included. It waits for the area lights' tables to load and for every texture
-	 * image to reach that thread first. The
-	 * first failure in the sketch or the core stops the hold with E1408.
+	 * image to reach that thread first. When that frame draws with what the frame before it drew, as
+	 * screen-space reflections read the frame before's color, or a reflection probe waits for its
+	 * capture, it steps the sketch once more at the
+	 * same time, and that thread draws both frames in turn. The first failure in the sketch or the
+	 * core stops the hold with E1408.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
 		const { slots } = this.sketch.control;
 		const { glue } = this.sketch;
 		let frame = 0;
+		let first = 0;
 		this.holding = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
-				if (step === steps) {
+				// A held frame whose passes read the motion since the frame before it, as the motion
+				// debug view does, has the thread that draws draw the frame before it first.
+				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
+				if (first === 0 && (before || step === steps)) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
-					// earlier frames' lists created, so the last frame records as it does after a GPU
-					// loss.
+					// earlier frames' lists created, so the first frame that it draws records as it
+					// does after a GPU loss.
 					this.gpuEpoch = -1;
 				}
+				frame = this.frame();
+				if (first === 0 && (before || step === steps)) first = frame;
+			}
+			// A reflection probe captures in one frame and lights surfaces from then on, and the
+			// capture views take one probe a frame, so a second frame at the same time captures the
+			// next. The thread that draws keeps two frames' lists.
+			Atomics.store(slots, Slot.HeldFrom, frame);
+			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+				this.clock.holdStep(steps, steps, seconds);
 				frame = this.frame();
 			}
 		} catch (error) {
@@ -1029,6 +1098,7 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 		}
+		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
 	}
@@ -1201,6 +1271,11 @@ export class SketchRunner {
 		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
 		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		const scale = this.renderScale();
+		const stillEnabled = Atomics.load(slots, Slot.StillOff) === 0;
+		if (stillEnabled !== this.stillEnabled) {
+			this.stillEnabled = stillEnabled;
+			glue.setStillEnabled(stillEnabled);
+		}
 		if (glue.cullFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
@@ -1245,6 +1320,7 @@ export class SketchRunner {
 		const parity = frame & 1;
 		Atomics.store(slots, Slot.DrawListAddress0 + parity, glue.drawListAddress(parity));
 		Atomics.store(slots, Slot.DrawListWords0 + parity, glue.drawListWords(frame));
+		Atomics.store(slots, Slot.FrameRest0 + parity, glue.frameRests() ? 1 : 0);
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		// The first frame that records after a restart, whether the sketch asked for it between
 		// frames or in this frame's own code, has the new settings, so the thread that draws holds it
@@ -1262,6 +1338,8 @@ export class SketchRunner {
 			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		this.growJobs(glue, asked);
+		// A pick whose read landed answers now, before the next frame's update.
+		this.context.scene.pollPicks(this.sketch.control.slots);
 		return frame;
 	}
 }

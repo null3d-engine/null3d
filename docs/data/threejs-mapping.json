@@ -548,10 +548,10 @@
       "category": "Cameras",
       "three": "CubeCamera (dynamic reflections)",
       "status": "changed",
-      "since": "0.3",
-      "target": "A static environment map, or a reflection pass for a flat mirror: render.addPass({ kind: 'reflection', writes, plane }) (0.2)",
-      "notes": "Not built yet. In step 0.3, a reflection probe captures the scene again when the sketch asks, which is what CubeCamera.update does. Until then, use the target.",
-      "docs": "porting/threejs-unsupported",
+      "since": "0.2",
+      "target": "scene.createReflectionProbe({ box: { min, max }, position, refresh: 'always' }); a reflection pass for a flat mirror: render.addPass({ kind: 'reflection', writes, plane })",
+      "notes": "A CubeCamera with a WebGLCubeRenderTarget, filtered by PMREMGenerator and set as a material's envMap, becomes a reflection probe. The probe captures the scene from its position on the GPU and filters it for each roughness. It lights every surface inside its box, not one material, and its box projects the reflections, so walls reflect at their own distance. Give the probe a box around the space that the object moves in. boxProjection: false reads it as three.js reads a cube map, as light from far away. cubeCamera.update() in every frame becomes refresh: 'always'; one update after a change becomes probe.capture(). The near and far of the CubeCamera fall away: captures draw from 5 cm out to the camera's far plane. Leave the reflecting object out of its own probe's captures with layers.",
+      "docs": "api/scene",
       "detect": "\\bCubeCamera\\b"
     },
     {
@@ -872,6 +872,17 @@
       "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet (they come in 1.0), and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
+    },
+    {
+      "id": "mat-subsurface",
+      "category": "Materials",
+      "three": "MeshSSSNodeMaterial / SubsurfaceScatteringShader (thicknessColor, thicknessDistortion, thicknessAmbient, thicknessAttenuation, thicknessPower, thicknessScale, thicknessMap)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ diffuseTransmission, diffuseTransmissionColor, diffuseTransmissionMap, doubleSided: true }), with subsurfaceRadius and subsurfaceColor for skin",
+      "notes": "Light from behind a thin surface shows on its front through glTF's diffuse transmission, which glTF's KHR_materials_diffuse_transmission also loads into. Map thicknessColor to diffuseTransmissionColor and thicknessScale to diffuseTransmission, kept from 0 to 1, and a thicknessMap to diffuseTransmissionMap with its value in alpha. three.js's term glows most when the camera looks toward the light, with thicknessDistortion and thicknessPower shaping the glow; null3D's light from behind spreads evenly, as glTF describes, so those two have no option and the glow looks softer head on. thicknessAmbient maps to the ambient and environment light, which shine through by themselves. The front keeps 1 - diffuseTransmission of its diffuse light, where three.js adds the glow on top. A custom material sets s.diffuseTransmission in its surface function. For skin, wax and marble, whose light spreads under the surface, which three.js's term does not draw, add subsurfaceRadius and subsurfaceColor: the subsurface blur spreads the diffuse light on the High and Ultra presets.",
+      "docs": "api/materials",
+      "detect": "\\b(MeshSSSNodeMaterial|SubsurfaceScatteringShader|thicknessColor|thicknessDistortion|thicknessPower)\\b"
     },
     {
       "id": "mat-clearcoat",
@@ -1463,7 +1474,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "baseMesh.setLevels([{ mesh, distance }]) on the base mesh, then draw the base mesh; or levels from `bunx @null3d/cli assets optimize --lod`, which assets.loadGltf reads",
-      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error on the screen. A distance converts to an error at a 50 degree field of view on a screen 1,080 pixels high. Dithered bands replace hysteresis. Shadows draw a coarser level. getCurrentLevel and autoUpdate have no match.",
+      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error on the screen. A distance converts to an error at a 50 degree field of view on a screen 1,080 pixels high. Dithered bands replace hysteresis. Shadows draw a coarser level. getCurrentLevel and autoUpdate have no match. Far copies can also draw as impostor cards or as one merged mesh per far cell, from @null3d/impostors.",
       "docs": "concepts/lod",
       "detect": "new\\s+(THREE\\.)?LOD\\s*\\(|\\.addLevel\\s*\\("
     },
@@ -1683,7 +1694,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
-      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA, SSAA and TAA have no equivalent.",
+      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA has no equivalent. TAARenderPass and SSAARenderPass need no pass on a still camera, and sampleLevel has no counterpart: a view that holds still blends jittered frames into a sharper picture by itself and then stops drawing (concepts/post-processing). TAA of a moving view comes after 1.0. The engine records each object's motion vectors, which the motion debug view reads.",
       "docs": "concepts/quality-presets",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
     },
@@ -1789,12 +1800,12 @@
     {
       "id": "ssr",
       "category": "Post-processing",
-      "three": "SSRPass / ReflectorForSSRPass",
+      "three": "SSRPass / ReflectorForSSRPass / ssr() node",
       "status": "changed",
       "since": "0.2",
-      "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
-      "notes": "Not built yet. Until then, a flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
-      "docs": "porting/threejs-unsupported",
+      "target": "post.set({ ssr: { maxDistance, thickness, intensity } }) with quality.set({ ssrScale })",
+      "notes": "Reflects what the screen shows in smooth opaque surfaces, in place of the environment's reflection, through the material's Fresnel term, where SSRPass adds its reflections over the finished image. maxDistance and thickness keep their names, and opacity becomes intensity. The material's roughness picks the surfaces and blurs their reflections, up to maxRoughness, so selects and blur have no settings. A groundReflector (ReflectorForSSRPass) becomes a reflection pass, which wins on its plane. The ssr() node's resolutionScale becomes the ssrScale quality setting, which is 0 on the Low preset of phones, and its quality becomes ssrSteps, the most steps of each ray. Where a ray hits nothing on the screen, the environment's reflection shows.",
+      "docs": "api/post",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
     {

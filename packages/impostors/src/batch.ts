@@ -79,9 +79,11 @@ export class ImpostorBatch {
 	/**
 	 * Picks the view each card shows, from where the eye is: the card shows the stored view whose
 	 * direction is nearest the direction from the card toward the eye. Call it once a frame with the
-	 * camera's position in the world, which `camera.getWorldPosition(eye)` writes into an array you
-	 * keep. It marks dirty only the cards whose view changed, does nothing while the eye stays where
-	 * it was, and allocates nothing.
+	 * camera's position in the world, written into an array you keep. A camera with no parent
+	 * reports that at once with `camera.getPosition(eye)`; `camera.getWorldPosition(eye)` reports
+	 * the frame that last ran, which is the world's origin on a sketch's first frame, and every
+	 * card then shows the view from there. It marks dirty only the cards whose view changed, does
+	 * nothing while the eye stays where it was, and allocates nothing.
 	 */
 	update(eye: Vec3Like): void {
 		const origin = this.origin;

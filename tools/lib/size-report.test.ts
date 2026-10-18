@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	type BuiltFile,
 	budgetProblems,
+	COMBOS_BUDGET,
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_PARTS,
@@ -347,7 +348,7 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(165 * 1024);
+		expect(START_BUDGET.brotli).toBe(176 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
@@ -385,6 +386,37 @@ describe('budgetProblems', () => {
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
 			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+		]);
+	});
+
+	it('gives a generated combination table more raw room and the same compressed limits', () => {
+		const tables = [
+			{
+				name: 'page-shaders-glsl-combos.js',
+				module: 'generated/shaders-glsl-combos.ts',
+				loadedBy: 'page.js',
+			},
+		];
+		expect(COMBOS_BUDGET.raw).toBe(96 * 1024);
+		expect(COMBOS_BUDGET.gzip).toBe(LATER_BUDGET.gzip);
+		expect(COMBOS_BUDGET.brotli).toBe(LATER_BUDGET.brotli);
+		// A table past the shared raw figure is within its own, which is what the translucency
+		// builds asked for.
+		const within = new Map([
+			['page-shaders-glsl-combos.js', size(LATER_BUDGET.raw + 12 * 1024, 8 * 1024, 7 * 1024)],
+		]);
+		expect(budgetProblems(within, downloads, tables)).toEqual([]);
+		// Its compressed figures stay at the shared limits.
+		const over = new Map([
+			[
+				'page-shaders-glsl-combos.js',
+				size(COMBOS_BUDGET.raw + 1, COMBOS_BUDGET.gzip + 1, COMBOS_BUDGET.brotli + 1),
+			],
+		]);
+		expect(budgetProblems(over, downloads, tables)).toEqual([
+			`js/page-shaders-glsl-combos.js, which loads after the start, is ${(COMBOS_BUDGET.raw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${COMBOS_BUDGET.raw / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/page-shaders-glsl-combos.js, which loads after the start, is ${(COMBOS_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${COMBOS_BUDGET.gzip / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/page-shaders-glsl-combos.js, which loads after the start, is ${(COMBOS_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${COMBOS_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 

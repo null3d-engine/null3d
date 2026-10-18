@@ -105,6 +105,12 @@ export interface QualityGovernor {
 	 */
 	readonly aoScale: number;
 	/**
+	 * The size of screen-space reflections' grid now: `settings.ssrScale`, or a quarter of the
+	 * render size after the governor's step that follows ambient occlusion's while reflections
+	 * draw.
+	 */
+	readonly ssrScale: number;
+	/**
 	 * The steps of each search for the sun's contact shadows now: `settings.contactShadowSteps`, or
 	 * the fewest after the governor's last step.
 	 */
@@ -408,6 +414,9 @@ export class SketchQuality implements Quality {
 			get aoScale() {
 				return settings.aoScale;
 			},
+			get ssrScale() {
+				return settings.ssrScale;
+			},
 			get contactShadowSteps() {
 				return settings.contactShadowSteps;
 			},
@@ -448,6 +457,14 @@ export class SketchQuality implements Quality {
 	 */
 	own(name: QualitySettingName): void {
 		this.owned.add(name);
+	}
+
+	/**
+	 * True when the page's options give the setting, or the sketch chose it itself since the preset
+	 * it last asked for, rather than taking the preset's value.
+	 */
+	chose(name: keyof QualitySettings): boolean {
+		return this.options[name] !== undefined || this.owned.has(name);
 	}
 
 	/**

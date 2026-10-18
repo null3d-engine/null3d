@@ -45,7 +45,10 @@ import {
 	drawNightSprites,
 	FACADE_KINDS,
 	FACADE_LIT_SHARE,
+	FACADE_WINDOW,
+	FLYER_COUNT,
 	facadeMaps,
+	flyerPose,
 	groundSide,
 	HEADLAMPS,
 	HEADLIGHT_AIM,
@@ -66,6 +69,7 @@ import {
 	nightMeshes,
 	PARKED_PER_BLOCK,
 	parkedPose,
+	ROOM_DEPTH,
 	SIDEWALK_TILE,
 	SIGN,
 	SIGNS_PER_BLOCK,
@@ -285,6 +289,8 @@ export async function buildNightTown({
 				windowLight: look.windows.intensity,
 				shopLight: look.windows.shops,
 				neonLight: look.windows.neon,
+				window: FACADE_WINDOW[facade],
+				roomDepth: ROOM_DEPTH,
 			},
 			setup,
 		);
@@ -874,6 +880,45 @@ export async function buildNightTown({
 
 	const blocks = options.mode === 'instanced' ? instanced() : sceneGraph();
 
+	// The flying cars cross the town's sky in both modes, as scenery of its own: their batches keep
+	// the measured scene graph to the town's blocks.
+	const flyerPaint = standard({ color: '#363c46', roughness: 0.3, metalness: 0.7 });
+	const flyers = (
+		[
+			['flyerBody', flyerPaint],
+			['flyerHead', headlamp],
+			['flyerTail', tailLamp],
+		] as const
+	).map(([name, material]) => {
+		const made = new three.InstancedMesh(toGeometry(three, data[name]), material, FLYER_COUNT);
+		made.instanceMatrix.setUsage(three.DynamicDrawUsage);
+		made.frustumCulled = false;
+		scene.add(made);
+		return made;
+	});
+	const flyerMatrix = new three.Matrix4();
+	const flyerPosition = new three.Vector3();
+	const flyerTurn = new three.Quaternion();
+	const flyerUnit = new three.Vector3(1, 1, 1);
+	const flyerUp = new three.Vector3(0, 1, 0);
+	const flyerAt = new Float64Array(4);
+	const poseFlyers = (seconds: number) => {
+		for (let i = 0; i < FLYER_COUNT; i++) {
+			flyerPose(seconds, i, flyerAt);
+			flyerMatrix.compose(
+				flyerPosition.set(flyerAt[0] as number, flyerAt[1] as number, flyerAt[2] as number),
+				flyerTurn.setFromAxisAngle(flyerUp, flyerAt[3] as number),
+				flyerUnit,
+			);
+			for (const batch of flyers) batch.setMatrixAt(i, flyerMatrix);
+		}
+		for (const batch of flyers) {
+			batch.instanceMatrix.clearUpdateRanges();
+			batch.instanceMatrix.addUpdateRange(0, FLYER_COUNT * 16);
+			batch.instanceMatrix.needsUpdate = true;
+		}
+	};
+
 	// Particles: an instanced quad for each layer of the town's sprite rows.
 	const sprites = effects.particles
 		? await makeNightSprites(capacity, async (layer) => {
@@ -913,6 +958,7 @@ export async function buildNightTown({
 			bloom: look.bloom,
 			ao: { radius: look.ao.radius, scale: look.ao.scale },
 			grade: gradeTable(look.grade),
+			lens: look.lens,
 		},
 		limit:
 			limitBlocks < capacity
@@ -929,6 +975,7 @@ export async function buildNightTown({
 		step() {},
 		pose(seconds) {
 			blocks.pose(seconds);
+			poseFlyers(seconds);
 			for (const material of timed) material.setTime(seconds);
 			for (let b = 0; b < town.activeBlocks; b++)
 				for (const sign of signLights[b] ?? [])

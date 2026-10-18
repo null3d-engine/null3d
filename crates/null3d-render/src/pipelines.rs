@@ -291,10 +291,10 @@ impl DrawKey {
     /// The key of the pipeline that draws the pair in the camera's weighted layer (see
     /// [`crate::weighted`]): the build that writes the weighted color sum and the coverage, which
     /// both add into their targets, so the order of draws does not matter. It writes no depth, and
-    /// a double-sided pair draws both faces in one draw.
+    /// a double-sided pair draws both faces in one draw. It lets no light through a thin surface.
     pub const fn weighted(self) -> DrawKey {
         DrawKey {
-            permutation: self.permutation | permutation::WEIGHTED,
+            permutation: (self.permutation & !permutation::TRANSLUCENCY) | permutation::WEIGHTED,
             state: (self.state & !state_flags::BLEND)
                 | state_flags::BLEND_ADDITIVE
                 | state_flags::NO_DEPTH_WRITE,
@@ -374,6 +374,14 @@ impl DrawKey {
 /// one before it. Frames compare by their order around the count, which goes round.
 pub fn built_by(created: u32, pipelines_built: u32) -> bool {
     !frame_after(created, pipelines_built)
+}
+
+/// True when a pipeline of `template` reads the frame's clock from the frame's values: the physical
+/// sky, whose stars twinkle, and every custom material, whose shaders may read the time. The
+/// still-camera comparison leaves the clock out (see [`crate::still`]), so a frame that draws with
+/// such a pipeline must not read as still: its image changes with the clock alone.
+pub fn reads_frame_clock(template: u32) -> bool {
+    template == template::BACKGROUND_ATMOSPHERE || template >= template::CUSTOM_FIRST
 }
 
 /// The render pipelines that a frame builder draws with, by key. Ids count from 1 in the order in
@@ -499,6 +507,14 @@ impl PipelineCache {
                     .created_in
                     .get(index)
                     .is_some_and(|&frame| built_by(frame, pipelines_built)))
+    }
+
+    /// True when a pipeline that the cache holds reads the frame's clock from the frame's values,
+    /// by [`reads_frame_clock`]. A frame of such a builder never reads as still.
+    pub fn reads_clock(&self) -> bool {
+        self.keys
+            .iter()
+            .any(|key| key.template != RELEASED && reads_frame_clock(key.template))
     }
 
     /// True when every pipeline of `ids` draws, by [`Self::built`].
@@ -1042,5 +1058,37 @@ mod tests {
             };
             assert!(!quad.blends_both_faces(), "template {faces_camera}");
         }
+    }
+
+    /// Every shader that reads the clock from the frame's values must have its templates in
+    /// `reads_frame_clock`, or a still view of it would rest while its image still changes. A
+    /// shader that reads a clock from its own block, which the frame uploads each frame, needs
+    /// nothing: the comparison sees that block change.
+    #[test]
+    fn only_the_shaders_that_reads_frame_clock_names_read_the_frame_clock() {
+        fn walk(dir: &std::path::Path, found: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    walk(&path, found);
+                } else if path.extension().is_some_and(|e| e == "wgsl")
+                    && std::fs::read_to_string(&path)
+                        .unwrap()
+                        .contains("frame.clock")
+                {
+                    found.push(path.file_name().unwrap().to_string_lossy().into_owned());
+                }
+            }
+        }
+        let wgsl = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../null3d-shaders/wgsl");
+        let mut found = Vec::new();
+        walk(&wgsl, &mut found);
+        found.sort();
+        // The physical sky draws with its own template; the frame values that custom materials
+        // read come from the builtins.
+        assert_eq!(found, ["builtins.wgsl", "sky_physical.wgsl"]);
+        assert!(reads_frame_clock(template::BACKGROUND_ATMOSPHERE));
+        assert!(reads_frame_clock(template::CUSTOM_FIRST));
+        assert!(!reads_frame_clock(template::FINAL));
     }
 }

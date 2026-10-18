@@ -191,7 +191,8 @@ export function environmentGenerator(
 		return ready;
 	};
 	const run = (device: GPUDevice, target: GPUTexture, source: GeneratorSource) => {
-		if (source === 'sky') return;
+		// The engine core fills a sky map in stages, and runs each probe's filter on its own.
+		if (source === 'sky' || source === 'probes') return;
 		const { layouts, pipelines, samplers } = keep(device);
 		const size = target.width;
 		const [steps, values] = environmentSteps(source, size, target.mipLevelCount, ALIGNMENT);

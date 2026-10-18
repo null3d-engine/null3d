@@ -5,8 +5,7 @@
 
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
-import { EngineError, errorOfMessage, setErrorFixes } from '../errors/engine-error';
-import { ERROR_FIXES } from '../errors/fixes';
+import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
@@ -41,7 +40,7 @@ import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
-import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
@@ -73,14 +72,7 @@ import {
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
-import {
-	type FrameMetrics,
-	HeapSampler,
-	secondRates,
-	summarizeFrames,
-	threadRoles,
-	wasmDownloadBytes,
-} from './frame-stats';
+import type { FrameMetrics } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
@@ -348,10 +340,11 @@ export interface EngineOptions {
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
 	 * until its shaders are built, `'transmission'` with the first material that lets light
-	 * through, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'`
-	 * with the first material of the `weighted` blending, and `'occlusion'` with the first object that
-	 * `setOccluder(true)`
-	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * through, `'translucency'` with the first material that lets light through to its other side,
+	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
+	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
+	 * the first material of the `weighted` blending, and `'occlusion'` with the first object that
+	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
@@ -367,6 +360,12 @@ export interface EngineOptions {
 	 * whatever this option says. A held engine for image tests shows no overlay.
 	 */
 	stats?: boolean | StatsOverlayOptions;
+	/**
+	 * False draws every frame of a view that holds still. By default such a view blends its frames
+	 * into a sharper picture and then stops drawing until something changes. The
+	 * `?still-camera=off` switch turns it off too, and hold mode draws without it.
+	 */
+	still?: boolean;
 }
 
 /**
@@ -396,7 +395,8 @@ export interface EngineCapabilities {
 	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
 	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
 	 * averages the samples after the tone mapping. It reports the path that the engine started on:
-	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on.
+	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on,
+	 * and so does a `subsurfaceSamples` setting above 0 that the page or the sketch gives.
 	 */
 	hdr: boolean;
 	/**
@@ -425,6 +425,12 @@ export interface EngineCapabilities {
 	 * `reversed` depth, which stays precise far from the camera.
 	 */
 	depth: DepthMode;
+	/**
+	 * True when the start-up probe measured direct draws to be clearly faster than the engine's
+	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. A software
+	 * renderer never takes the path (D-174). False on WebGL2, which always draws directly.
+	 */
+	directDraws: boolean;
 }
 
 /**
@@ -579,7 +585,8 @@ export interface Engine {
 	attach(container: Element): void;
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
-	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
+	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. The first call
+	 * downloads the code that turns the frame records into these figures.
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
@@ -743,6 +750,11 @@ let pageSketch: Holder | undefined;
  */
 function loadRunnerModule(): Promise<RunnerModule> {
 	return awaitLater(import('../sketch/runner'));
+}
+
+/** Loads the frame figures that a measurement reads, in a file of their own. */
+function loadFrameStats(): Promise<typeof import('./frame-stats')> {
+	return import('./frame-stats');
 }
 
 /** What the page does with the replies of a worker that answer no request. */
@@ -1125,9 +1137,6 @@ function prefetch(url: string): void {
  * @category api/engine
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
-	// The page's errors end with the fixes from its own table, and each worker gets the same table
-	// in its handoff.
-	setErrorFixes(ERROR_FIXES);
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
@@ -1182,6 +1191,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		return await startEngine(options, switches, hold, place, canvas, holder, release);
 	} catch (error) {
 		release();
+		// A coded error's fix arrives in a file of its own, and a failed start reports it whole.
+		await errorFixesReady();
 		if (holding) publishHold(holdFailure(error));
 		throw error;
 	} finally {
@@ -1394,6 +1405,15 @@ async function startEngine(
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
+	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
+	// or rest, so a captured frame is the frame the sketch drew once.
+	if (
+		!switches.still ||
+		options.still === false ||
+		options.hold !== undefined ||
+		switches.hold !== undefined
+	)
+		Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,
 		metrics,
@@ -1767,6 +1787,7 @@ async function startEngine(
 			maxInstances: maxInstances(device),
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
+			directDraws: device.directDraws,
 		};
 		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
@@ -1779,7 +1800,6 @@ async function startEngine(
 			control,
 			metrics,
 			device,
-			errorFixes: ERROR_FIXES,
 			wakeByMessage,
 		};
 		// Only a canvas that no engine used before may need its CSS size fixed: the fix resizes the
@@ -2154,12 +2174,16 @@ async function startEngine(
 				applyPause();
 			},
 			async measure(seconds) {
+				// The window opens now, before the frame figures load on their first use: a page that
+				// measures and then starts some work must count that work, whatever the load takes.
 				const reader = new MetricsReader(metrics);
-				const heap = new HeapSampler();
 				const mainThread = new MainThreadWatch();
 				reader.begin();
-				heap.start();
 				const started = performance.now();
+				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
+					await loadFrameStats();
+				const heap = new HeapSampler();
+				heap.start();
 				const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
 				await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 				clearInterval(drain);
@@ -2232,11 +2256,13 @@ async function startEngine(
 			await stop();
 			throw error;
 		}
+		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,
 			time: hold,
 			frame: Atomics.load(slots, Slot.FramesTaken),
 			tier,
+			directDraws: device.directDraws,
 			...held,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 		});
@@ -2245,6 +2271,9 @@ async function startEngine(
 		starting = false;
 		signal?.removeEventListener('abort', cancelStart);
 		await stop();
+		// The fix text of a coded error arrives in a file of its own, so a failed start waits for it
+		// to end the message it rejects with.
+		await errorFixesReady();
 		throw e;
 	}
 }

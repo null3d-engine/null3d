@@ -1,12 +1,13 @@
 // High-contrast edges for the anti-aliasing tests: thin white bars at shallow angles on a black
 // background, where a frame without anti-aliasing shows stair steps, and a lit box whose sunlit
-// faces are far brighter than white, where the HDR path matters.
+// faces are far brighter than white, where the HDR path matters. The page's 'move' message moves
+// the box a little, once, for the still-camera test: the scene changes for one frame.
 import { defineSketch, type Quat } from '@null3d/engine';
 
 /** A turn of `angle` radians about the view axis. */
 const turn = (angle: number): Quat => [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)];
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, page }) => {
 	scene.setBackground('#000000');
 	const camera = scene.createPerspectiveCamera({
 		fov: 40,
@@ -28,11 +29,14 @@ export default defineSketch(({ scene, materials, geometry }) => {
 			rotation: turn(0.02 + k * 0.1),
 		});
 	const half = Math.PI / 8;
-	scene.createMesh({
+	const box = scene.createMesh({
 		mesh: geometry.box({ width: 1.6, height: 1.6, depth: 1.6 }),
 		material: materials.standard({ color: '#ff9a50' }),
 		position: [3.6, 0, 0],
 		rotation: [Math.sin(half) * 0.6, Math.sin(half) * 0.8, 0, Math.cos(half)],
+	});
+	page.onMessage((message) => {
+		if (message === 'move') box.setPosition(3.6, 0.2, 0);
 	});
 	return {};
 });

@@ -64,6 +64,12 @@ export interface EnginePart {
 	loadedBy?: string;
 	/** True for a part that every page may load after its first frame, with no feature to ask for it. */
 	afterFirstFrame?: boolean;
+	/**
+	 * True for a part that loads at the first call that reads it, not with a feature's first use: the
+	 * frame figures behind `measure()` and the fixes of the errors' messages. A page that makes
+	 * neither call downloads neither part.
+	 */
+	onFirstCall?: boolean;
 }
 
 /**
@@ -100,7 +106,9 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 
 /**
  * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
- * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
+ * starts the core's download, and every thread mode loads it. The probe worker's measurement of
+ * the direct drawing path loads in a file of its own when the probe runs, so a device with WebGPU
+ * downloads it whichever path the page draws with, and each start counts it. The renderer loads on demand on the
  * page and in the sketch worker, so a page downloads it only for the thread that draws. Each GPU
  * path's renderers load on demand in the thread that draws, so a page downloads one path's only
  * (`drawingParts`). The sketch runner and the scene API load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
@@ -119,6 +127,9 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
+ * The measurement's own frame figures load on the page at the first `measure()`, and the fixes of
+ * the errors' messages load in each thread at its first error, so a page that measures and throws
+ * nothing downloads neither.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
  * Each GPU path's table of the shader files of builds that need several features that load on
@@ -134,6 +145,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
 	{ name: 'page.js', module: 'page/engine.ts' },
+	{
+		name: 'page-message.js',
+		module: 'errors/message.ts',
+		loadedBy: 'page.js',
+	},
+	{ name: 'page-gpu.js', module: 'generated/gpu.ts', loadedBy: 'page.js' },
+	{ name: 'page-control.js', module: 'shared/control.ts', loadedBy: 'page.js' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
@@ -175,6 +193,24 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'page-stats-overlay.js', module: 'debug/overlay.ts', loadedBy: 'page.js' },
 	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
+	{
+		name: 'page-frame-figures.js',
+		module: 'page/frame-stats.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-error-fixes.js',
+		module: 'errors/fixes.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-error-fixes.js',
+		module: 'errors/fixes.ts',
+		loadedBy: 'sketch-worker.js',
+		onFirstCall: true,
+	},
 	{ name: 'page-label-loop.js', module: 'page/label-loop.ts', loadedBy: 'page.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
@@ -436,7 +472,16 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 	GPU_PATHS.map((path) => ({
 		mode: `${mode}, ${path.name}`,
 		shaders: path.shaders,
-		parts: [...parts, `${drawing}-${path.part}.js`, `${drawing}-gpu-shared.js`],
+		parts: [
+			...parts,
+			// Small modules that many files share, which the bundler puts in files of their own that
+			// every page loads.
+			'page-message.js',
+			'page-gpu.js',
+			'page-control.js',
+			`${drawing}-${path.part}.js`,
+			`${drawing}-gpu-shared.js`,
+		],
 	})),
 );
 
@@ -561,11 +606,29 @@ export function downloadSizes(
  * Each column's budget is the owner's, and decision record D-14 holds its figures and approvals.
  * The gzip and raw budgets stop a start that grows on a gzip host, or on a host that sends files as
  * they are. The start's shader file fills most of each column.
+ *
+ * The owner raised the Brotli figure from 165 KB to 166 KB on 18 October 2026, for the screen-space
+ * reflections: their code adds about 1.6 KB of real start code, and the branch sat 50 bytes over
+ * the old line. The owner chose the raise over trimming. The owner raised it again to 176 KB the
+ * same day, for the still view, the surfaces that let light through and the skin scatter, with the
+ * draw probe back in its worker's script: the branch measured 170,517 bytes against 169,984 and the
+ * reflection probes still to land add about 1.4 KB. The raise comes with the reclaim the owner asked
+ * for: the frame figures behind `measure()` and the error-fix table load on their first use.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 165 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 176 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+
+/**
+ * The budget for a generated combination table, whose name holds `-combos`: the list of module
+ * addresses for the builds that need several features. The table gains a line set with every
+ * combination that a feature's bits can form, so its uncompressed size grows with the engine's
+ * features while its compressed figure, which is what a page downloads, stays small. The owner
+ * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
+ * past 64 KB; the compressed figures stay at [`LATER_BUDGET`]'s.
+ */
+export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 
 /** A column's name as a problem names it. */
 const COLUMN_NAMES: Readonly<Record<Column, string>> = {
@@ -615,7 +678,11 @@ export function budgetProblems(
 		),
 		...later.flatMap(({ name }) => {
 			const size = sizes.get(name);
-			return size ? overBudget(`js/${name}, which loads after the start,`, size, LATER_BUDGET) : [];
+			if (!size) return [];
+			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
+			// own; its compressed figure, which a page downloads, stays within the shared one.
+			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
+			return overBudget(`js/${name}, which loads after the start,`, size, budget);
 		}),
 		...[...sizes].flatMap(([name, size]) =>
 			isFirstUseShaderPart(name)

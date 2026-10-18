@@ -151,6 +151,7 @@ The engine reads these switches from the page's address in development builds, o
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
+| `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
@@ -169,5 +170,6 @@ The engine reads these switches from the page's address in development builds, o
 | `?scene-format=rg11b10`, `?scene-format=rgba16f` | Draw the HDR scene color in the packed small float format, 4 bytes a pixel, or in 16-bit floats, 8 bytes a pixel, where the device can draw it. A transparent canvas always takes 16-bit floats ([GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier)) |
 | `?shadowdepth=32` | Store the directional light's shadow map in 32-bit float depth, instead of 16-bit depth, to compare the two ([Shadows](../concepts/shadows.md#bias)) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision. WebGPU needs the device feature `shader-f16`, and a device without it keeps full precision. `engine.capabilities.halfPrecision` says which one the engine took |
+| `?still-camera=off` | Draw every frame of a view that holds still, without the [still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation): the view neither blends nor rests. Hold mode draws without it too |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
 | `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |

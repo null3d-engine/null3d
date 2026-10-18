@@ -5,9 +5,10 @@
 // phones then draws only the first rows, the middle of the field. A lamp hovers over the center of
 // the wave, which drifts by itself and follows the pointer, and lights the columns around it.
 // Batches cast no shadows yet, so the low sun, the sky's light, the lamp, ambient occlusion and fog
-// give the field its depth.
+// give the field its depth. Hover cars stream across the sky above the field in their own batches.
 import { defineSketch, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { createTraffic } from './traffic';
 
 /** Columns along each side of the field at each preset: 100,489 in all above Low. */
 const SIDES = { low: 101, medium: 317, high: 317, ultra: 317 } as const;
@@ -85,11 +86,13 @@ export default defineSketch(async (ctx) => {
 	scene.createPointLight({ parent: bulb, color: '#ffb35c', intensity: 120, range: 16 });
 
 	const center = vec3.create();
+	const traffic = createTraffic(ctx);
 	/** The part of each row's height that depends only on its column, worked out once per frame. */
 	const ripple = new Float32Array(SIDES.high);
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			traffic.update(t);
 			if (!view.userCamera) {
 				camera.setPosition(Math.sin(t * 0.1) * 40, 11, Math.cos(t * 0.1) * 40);
 				camera.lookAt(TARGET[0], TARGET[1], TARGET[2]);

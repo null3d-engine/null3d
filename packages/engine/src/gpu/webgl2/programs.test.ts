@@ -53,18 +53,38 @@ const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 
 /**
  * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
- * as probes of light or the tables of area lights. The builds that let light through take one of
- * them for the copy of the opaque color that they sample (decision record D-122), the decal
+ * as a grid of light probes or the tables of area lights. The builds that let light through take one
+ * of them for the copy of the opaque color that they sample (decision record D-122), the decal
  * builds one for the scene depth that they read (decision record D-144), and the builds that shade
- * area lights one for their tables (D-145).
+ * area lights one for their tables (D-145). The reflection probes' maps share that array at
+ * binding 3, so they take no further unit where a build already reads it, and one unit where it
+ * did not (D-149). The decal builds read no probes: a decal modulates the surface under it, which
+ * reflects them already. Every lit build reads the screen-space reflections through that copy too
+ * (D-134), which is why the number this test allows fell by one.
  */
 const SPARE_TEXTURE_UNITS = 3;
 
-/** The spare texture units of a stage, by its name. */
-const spareUnits = (name: string) =>
-	name.includes('_transmission') || name.startsWith('decal')
-		? SPARE_TEXTURE_UNITS - 1
-		: SPARE_TEXTURE_UNITS;
+/** The copy of the opaque color's binding in the scene shaders' frame group. */
+const OPAQUE_COPY = { group: 0, binding: 15 };
+
+/** The probes' maps' binding, which the light tables share in the scene shaders' frame group. */
+const PROBES = { group: 0, binding: 3 };
+
+/**
+ * The spare texture units of a stage: one fewer where it samples the copy of the opaque color, and
+ * one fewer where it samples the probes' maps.
+ */
+const spareUnits = (name: string, stage: GlslStage) => {
+	const reads = (binding: { group: number; binding: number }) =>
+		stage.textures.some(
+			(texture) => texture.group === binding.group && texture.binding === binding.binding,
+		);
+	return (
+		SPARE_TEXTURE_UNITS -
+		(reads(OPAQUE_COPY) || name.includes('_transmission') || name.startsWith('decal') ? 1 : 0) -
+		(reads(PROBES) ? 1 : 0)
+	);
+};
 
 describe('WebGL2 slots of bind groups', () => {
 	const stages = glslStages();
@@ -106,7 +126,10 @@ describe('WebGL2 slots of bind groups', () => {
 		let most: [string, number] = ['', 0];
 		for (const [name, stage] of stages) {
 			const units = new Set(stage.textures.map(key)).size;
-			expect([name, units <= MIN_STAGE_TEXTURE_UNITS - spareUnits(name)]).toEqual([name, true]);
+			expect([name, units <= MIN_STAGE_TEXTURE_UNITS - spareUnits(name, stage)]).toEqual([
+				name,
+				true,
+			]);
 			if (units > most[1]) most = [name, units];
 		}
 		for (const [name, program] of glslPrograms()) {

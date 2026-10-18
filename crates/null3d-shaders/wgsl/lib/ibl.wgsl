@@ -73,18 +73,25 @@ fn roughness_level(roughness: f32, last_level: f32) -> f32 {
     return last_level * g * (2.0 - g);
 }
 
+/// The direction whose light a surface of perceptual `roughness` reflects toward the camera, as
+/// three.js's `getIBLRadiance` finds it: the reflection of the view about the unit `normal`, bent
+/// toward the normal on rough surfaces, which keeps them from gathering light from behind
+/// themselves.
+fn reflected_direction(to_view: vec3f, normal: vec3f, roughness: f32) -> vec3f {
+    let r2 = roughness * roughness;
+    return normalize(mix(reflect(-to_view, normal), normal, r2 * r2));
+}
+
 /// The light that a surface of perceptual `roughness` reflects toward the camera from the
-/// environment, as three.js's `getIBLRadiance`: the reflection of the view about the unit
-/// `normal`, bent toward the normal on rough surfaces, which keeps them from gathering light from
-/// behind themselves, times the environment's intensity.
+/// environment, as three.js's `getIBLRadiance`: the light along [`reflected_direction`], times the
+/// environment's intensity.
 fn environment_radiance(
     env: EnvironmentLight,
     to_view: vec3f,
     normal: vec3f,
     roughness: f32,
 ) -> vec3f {
-    let r2 = roughness * roughness;
-    let reflected = normalize(mix(reflect(-to_view, normal), normal, r2 * r2));
+    let reflected = reflected_direction(to_view, normal, roughness);
     let level = roughness_level(roughness, env.params.x);
     let light = textureSampleLevel(
         environment_map,

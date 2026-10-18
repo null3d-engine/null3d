@@ -18,6 +18,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the page that measures the levels' saving uses |
 | `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the bushes of its understory, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
+| `examples/impostors/forest.ts` | The impostors demo's scenery: the shared pines split into three bands by distance, the octahedral atlas drawn in code from the pine's own tiers, and the transform that places each copy in a merged far mesh |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -158,7 +159,7 @@ On 8 October 2026 the owner asked for feature demos that look much better, while
 | Demo | What it shows now |
 | --- | --- |
 | math | A flock of 300 drones circles a lamp over a landing pad at dusk. Each drone has a body, two arms, four spinning rotors, a cyan tail light that blooms and a small point light of its own. The lamp is a point light that casts the crates' shadows. The floor's texture is concrete grain with painted lines |
-| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
+| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones, with lanes of hover cars streaming across the sky in two more batches. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
 | generators | The nine shapes in polished, gold and brushed metal, plastic, a tile texture that shows each shape's texture coordinates, and a ring that blooms, over a tiled terrace at golden hour |
 
 The rules that the reworked demos follow, and why:
@@ -178,6 +179,7 @@ The rules that the reworked demos follow, and why:
 - The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
 - The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
 - The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
+- The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
 
@@ -283,7 +285,7 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 - The same scene description in both engines: the same seed, layout, meshes, surfaces, lights, camera path and fixed-step simulation.
 - The same pixel ratio, the device class's cap, with 4x MSAA, the same effects and the high-performance GPU.
 - null3D's quality governor off, a fixed preset (High, which WebGL2 caps at Medium), and every pixel drawn. Ambient occlusion draws at half the render size each way in both engines.
-- three.js on the faster of its two renderers for the GPU path, in one worker with an OffscreenCanvas. It uses its add-ons and the methods of its official examples.
+- three.js on the renderer of the GPU path, WebGPURenderer on WebGPU and WebGLRenderer on WebGL2, in one worker with an OffscreenCanvas. It uses its add-ons and the methods of its official examples.
 - One engine at a time: each runs on a page of its own.
 - One memory definition: the browser's measurement of the whole page and its workers, with null3D's shared memory counted once.
 - The ramp runs with the stats panel collapsed in both engines.
@@ -307,6 +309,39 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). The particles add-on is on main now, so a scene that moves to it changes only the null3D side.
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
+
+### The Battle and Factory upgrades for both comparisons (M2-EX43, 18 October 2026)
+
+Both comparisons took the Rive City study's touches ([D-172](decisions/D-172-rive-city-follow-ups.md)). A comparison draws one description in both engines and holds one frame for each, so every touch draws the same content in both halves. The lens grade and the scorch marks are switches, on in both halves or off in both.
+
+Battle:
+
+- A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the linear light before bloom and tone mapping in both engines. null3D uses its custom effect. three.js uses a shader pass on WebGLRenderer, or a TSL node on WebGPURenderer.
+- Smoke takes the fire's light at its base, so the smoke at a blast or a burning wreck turns warm. Each tracer carries a small bright glint, which the lens grade streaks. Both engines draw these colors from one set of sprite rows.
+- Scorch marks cover the craters and the burnt wrecks. null3D's decal material projects a box onto the terrain, and three.js's `DecalGeometry` projects a mesh onto the same terrain. Both take one map, made in code. The decal's angle fade keeps the mark off vertical surfaces such as legs and walls. three.js projects its marks when the worker builds the scene, which adds a moment to the page's start.
+- The light shafts stay out. null3D's shafts are a volumetric pass through the sun's shadow map. three.js's worker draws no such pass, and cones would approximate a different effect. Flying traffic and rooms behind windows belong to Night town and the instances demo by D-172.
+
+Factory:
+
+- The hall powers up in a wave from its middle. The spot lights, lenses, cones of haze, floor lines, warning lamps and status screens follow one shared function of the simulation time. Both engines read the same function. The held frame at 6 seconds is fully on.
+- Six status screens hang under the spot lights. One texture, drawn in code, shows a parts count, load bars, cell lamps and a warning strip behind the LCD's red, green and blue stripes. Both engines show it as an emissive map.
+- Each spot light draws a cone of haze. One open cone mesh fades from the lens to the floor through its vertex colors. A surface function in null3D and a shader or node material in three.js fade it where its surface turns away from the camera. Both add its light.
+- Three pooled point lights flash where the arms grip and release. Both engines place them and set their intensity from one shared function.
+- The screen-space reflections stay out. Battle's ground is not planar, and the worker has no screen-space path. Factory's floor could mirror the hall. The task does not name it. A second view of thousands of parts would change the draw cost that the published ramps measure.
+
+Against the old pictures the drawn ones differ in 3.8% to 5.8% of their pixels for the Battle tests. They differ in 7.6% to 12.8% of their pixels for the Factory tests, against the limit of 0.1%. The references moved in both sets. The image tests' time limit rose to 600 seconds for both comparisons, because the lens grade and the decals cost the software GPU more.
+
+### The Night town upgrade for its comparison (M2-EX43, 19 October 2026)
+
+Night town took the Rive City touches that D-172 gives it. As in the other comparisons, one description draws the same content in both halves at the same simulation time.
+
+- A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. Its settings are softer than Battle's, because the town is dark and its lights are small. It runs on the linear light before bloom and tone mapping in both engines, and it is a switch.
+- Every lit window shows a room behind its glass. The eye's ray reaches the back wall and the side walls of a box that starts at the glass. A window thus shows more of its room from the side of the street than from in front. The window boxes and the room's depth come from the scene description. null3D draws it in the facade's WGSL surface function. three.js draws it in the GLSL it adds to `MeshStandardMaterial`, and in the node material on WebGPURenderer. The rooms multiply the window's light, so an unlit window stays dark.
+- Flying cars cross the sky above the streets: four lanes, two heights and four cars a lane. The scene description gives each car's place and turn from the simulation time. Both engines draw them as batches in both modes, so they add no parts to the measured scene graph. Their nose and tail strips are emissive, with a halo in each car's layer of glows. They add no lights, so the count keeps its meaning.
+- The power-on wave stays out. It would set the intensity of every lamp, sign and car light each frame for its first seconds. Those thousands of lights are what the comparison's ramp measures. Factory shows the wave with its five spot lights.
+- The LCD screens stay out. Factory took the LCD technique this task. Night town's shop windows already show shelves, neon and the room's depth, where a screen would replace the window that the touch before it adds.
+- The reflection probes wait for M2-EX32. The page's effect list reserves the switch after the lens grade, and no half reads it yet.
+- The cars' halos, the rooms and the lens grade change every held picture. Against the old pictures the drawn ones differ in 9.6% to 11.0% of their pixels, against the limit of 0.1%. The references moved in both sets. The held frame stays at 3 seconds and 96 lights, and SwiftShader still draws 24.
 
 ### The stats panel of three.js
 
@@ -442,11 +477,11 @@ Each feature gets a decision record of its own when it is built.
 | Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
 | Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
 | Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |
-| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 | D-142 |
+| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 ([D-149](decisions/D-149-reflection-probes.md)) | D-142 |
 | Weighted blended transparency | Smoke and fire, and glass: `blending: 'weighted'` | M2-EX33 | D-142, [D-150](decisions/D-150-weighted-blended-transparency.md) |
 | Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
-| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
+| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' ears and hands against the light: `diffuseTransmission` on standard and custom materials. Skin, wax and marble: `subsurfaceRadius` and `subsurfaceColor` on standard materials, a screen-space blur on High and Ultra | M2-EX36 ([D-153](decisions/D-153-subsurface-and-translucency.md)) | D-142 |
 
 The particles demo uses the particles add-on. The showcase and comparison scenes still draw their particles with sprites behind a small interface of their own. Their look pass moves them to the add-on. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
@@ -612,14 +647,14 @@ The owner's bar for every feature demo is the reworked generators demo. Eight mo
 
 | Demo | What it shows now |
 | --- | --- |
-| picking | Six pieces in glazed, chrome, gold, lacquer, satin and gloss finishes stand on pedestals on a turning plinth in a dark gallery. Three spotlights light them, two of which cast shadows, and the built-in room environment gives the reflections. Hover, click, outline and labels work as before |
+| picking | Six pieces in glazed, chrome, gold, lacquer, satin and gloss finishes stand on pedestals on a turning plinth in a dark gallery. Three spotlights light them, two of which cast shadows, and the built-in room environment gives the reflections. Hover, click, outline and labels work as before, and a plan on the wall marks each click where it lands |
 | sprites-lines | A fountain of sparks at nightfall over a dark pool, inside a stone rim. A reflection pass draws the sparks, the neon helix and the dashed loop in the water, and ripples bend the reflection. The sparks and the lines have colors above white, so bloom spreads them |
 | large-world | The drive at golden hour from `timeOfDay`, lit by the sky's environment, with fog that thickens with distance and glows toward the sun. The asphalt, with a white line along each edge, and the grass are textures made in code. Each stretch has its own batch of low hills, 250 to 900 m from the road |
-| security-camera | A wet yard at nightfall under a floodlight. The monitor shows the feed as a night camera does: gray, brightened, with scan lines and a band that rolls down. Puddles are dark, smooth patches from a texture made in code |
+| security-camera | A wet yard at nightfall under a floodlight. The monitor shows the feed as a night camera does: gray, brightened, with scan lines and a band that rolls down, and its panel shows LCD stripes and dead cells up close |
 | gltf-model | The BoomBox turns on a turntable in a dark studio. The turntable's polished top mirrors it through a reflection pass. A key light casts its shadow, the room environment gives its reflections, the neutral tone curve keeps its colors true, and depth of field blurs the floor beyond it |
 | character | The Knight walks in a courtyard of cobblestones under the afternoon sun. A color map and a normal map made in code shape the stones. Plaster walls stand on three sides, with a stone pillar at each corner |
 | environment | The spheres stand over a polished floor that reflects them and the background. The cycle is the sunset from the HDR file, the studio from the EXR file, and the light of the generated sky, in place of the built-in room |
-| post-effects | The crates stand at the dead end of a neon alley at night, on wet asphalt. Depth of field focuses on the outlined crate, and an amber bar joins the pink and cyan neon |
+| post-effects | The crates stand at the dead end of a neon alley at night, on wet asphalt that mirrors the neon through screen-space reflections. Depth of field focuses on the outlined crate, an amber bar joins the pink and cyan neon, and a lens grade adds color fringes, an anamorphic streak and grain |
 
 The rules that these demos follow, and why:
 
@@ -631,6 +666,10 @@ The rules that these demos follow, and why:
 - Picking turns its plinth and its pieces from `time.now`. It used to add `dt` each frame, which made the held frame depend on the frame rate.
 - Depth of field draws nothing on the Low preset, which phones start on, as [Post-processing](../docs/api/post.md#depth-of-field) says. The two demos look right without it.
 - Some demos make the room or the sky environment, or load large files. Their image tests may take 60 s, as the reworked math, instances and generators demos do.
+- The post effects demo took screen-space reflections and the lens grade on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The lens grade adds color fringes, an anamorphic streak on light brighter than white, and grain that changes 24 times a second. The two grading tables moved to `grades.ts` beside the sketch, so the sketch stays under 150 lines, and the demo's code link points at its folder. Against the old pictures the drawn ones differ in 0.39% to 0.43% of their pixels, against the limit of 0.1%. The references moved in both sets. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
+- The security camera demo took the LCD look on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). The monitor's shader moved to `monitor.ts` beside the sketch. It draws the panel's red, green and blue stripes when the screen is near enough to show them, and a few dead cells. Against the old pictures the drawn ones differ in 0.12% to 0.13% of their pixels, against the limit of 0.1%. The references moved in both sets.
+- The area lights demo took screen-space reflections on 18 October 2026 (M2-EX43). Its road is smooth where the puddles lie, so the glowing shop windows, the neon sign and the street around them mirror in it, beside each light's own shaped highlight. The reflections stop at a roughness of 0.35, so the dry asphalt stays matte. Against the old pictures the drawn ones differ in 0.33% to 0.77% of their pixels, against the limit of 0.1%. The references moved in both sets.
+- The picking demo gained a clickable plan on its wall on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). The plan is drawn into a texture from code, with a grid and a square for each click. The sketch turns a click's world point into the plane's own coordinates, so the square lands where the pointer points. The texture changes only when a click adds a mark, so a held frame is the same on every run. The plan lives in `screen.ts` beside the sketch. Against the old pictures the drawn ones differ in 0.56% to 0.72% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates of the rendering demos on the Mac
 
@@ -648,3 +687,16 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026. E
 | post-effects | 120 fps, GPU 4.5 to 5.5 ms | 120 fps, GPU 11.7 to 13.5 ms |
 
 On WebGL2, the two demos with depth of field read 10 to 13.5 ms of GPU time, more than one frame at 120 Hz. The overlay still counted 120 fps. Other helpers loaded the Mac during the run, so the WebGL2 timer may count time that the GPU spent on their work. A phone or tablet check at Medium settles it. Depth of field draws nothing on Low.
+
+## The translucency demo (M2-EX36, 12 October 2026)
+
+The translucency demo shows light through thin surfaces ([D-153](decisions/D-153-subsurface-and-translucency.md)): a garden at golden hour with the low sun behind broad leaves and coral tulips, and a paper lantern that glows from the lamp inside it. The leaves, the ground and the plants' places are made in code in `examples/translucency/plants.ts`, so the sketch stays under 150 lines.
+
+The look came from five rounds of screenshots on the Mac, and these points decided it:
+
+- Light through a leaf shows only where the camera sees the side away from the light. The first camera looked down on leaves that faced up, so the sun lit their tops and few leaves glowed. The camera now stands low, under the arching leaves, and looks toward the sun.
+- The sun stands to one side of the view. In the middle of the view, its glare and bloom washed out the frame. The demo takes 17:21 of `timeOfDay`, a little higher than its golden hour preset, since a sun 5 degrees up sent too little light through the leaves' undersides.
+- The exposure, the fog and the bloom are lower than the other golden hour demos'. At their values, the haze turned the leaves pale and the sky white.
+- One leaf texture serves three slots: its color as the base color map, its alpha as the diffuse transmission map, which lets less light through the veins, and so the veins show dark against the sun.
+- The lantern's lamp has an intensity of 0.4. Inside a sphere of 0.2 m, a brighter lamp turned the paper white.
+- The tulips' petals lean out at most 0.6 radians, so they open as cups. With the leaves' lean, up to 1.05 radians, they lay flat like umbrellas.

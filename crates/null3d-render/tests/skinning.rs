@@ -97,7 +97,7 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
             joint_rows(&world),
             1,
             format::RGBA32_FLOAT,
-            texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
+            texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST | texture_usage::COPY_SRC
         ]
     );
     let uploads = operands(&first, Op::WriteTexture);
@@ -107,7 +107,7 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
     let buffers = operands(&first, Op::CreateBuffer);
     let pool = buffers
         .iter()
-        .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX)
+        .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX | buffer_usage::COPY_SRC)
         .expect("the skinned vertex buffer");
     assert!(pool[1] >= skinned_bytes);
     let groups = operands(&first, Op::CreateBindGroup);
@@ -562,7 +562,7 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
         // camera's bundle, once for the outline's.
         let pool = operands(&first, Op::CreateBuffer)
             .into_iter()
-            .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX)
+            .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX | buffer_usage::COPY_SRC)
             .expect("the skinned vertex buffer");
         let draws_pool = operands(&first, Op::SetVertexBuffer)
             .iter()
@@ -911,7 +911,7 @@ fn a_skinned_object_added_during_play_draws_once_its_pipelines_are_built() {
     );
     let pool = operands(&asked, Op::CreateBuffer)
         .into_iter()
-        .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX)
+        .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX | buffer_usage::COPY_SRC)
         .expect("the skinned vertex buffer");
     let draws_pool = |commands: &[(Op, Vec<u32>)]| {
         operands(commands, Op::SetVertexBuffer)

@@ -75,10 +75,13 @@ use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::probe_grid::ProbeGrid;
+use null3d_render::probes::ProbeSettings;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
 use null3d_render::sky_maps::MapSky;
+use null3d_render::ssr::Ssr;
+use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
@@ -181,6 +184,8 @@ mod render_detail {
     /// Levels of detail that a mesh cannot take; the second detail says why
     /// (`constants::level_problem`).
     pub const BAD_LEVELS: u32 = 15;
+    /// A light probe grid's texture that is not a 3D texture.
+    pub const NOT_A_VOLUME: u32 = 17;
 }
 
 struct Engine {
@@ -223,6 +228,15 @@ struct Engine {
     query_hits: Vec<f64>,
     /// The rays of a batch, `query::RAY_FLOATS` numbers each.
     query_rays: Vec<f64>,
+    /// The bytes that GPU picking's reads land in: four words for each read of the ring.
+    pick_results: Box<[u32; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]>,
+    /// True when the last recorded frame drew a pick and copied its ids back, so the thread that
+    /// draws must take that frame.
+    pick_recorded: bool,
+    /// True when that frame's id pass drew every source of the scene. The sketch reads it to decide
+    /// whether a landed answer is the GPU's or needs a ray, after later frames moved the layout on.
+    pick_covered: bool,
+
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
     world_matrix: [f64; 12],
@@ -259,13 +273,14 @@ struct Engine {
 /// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
 /// 2% of the image's height and round aperture, with no focus point, then the automatic
 /// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
-/// per second, range of 4 stops either way and no compensation.
+/// per second, range of 4 stops either way and no compensation, then screen-space reflections'
+/// full intensity, most distance of 100, thickness of 0.5 and most roughness of 0.5.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
-        3.0, 1.0, -4.0, 4.0, 0.0,
+        3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -488,8 +503,10 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// read each culled instance by index from storage buffers, not from a copy that the culling
 /// shader writes, for the test of decision record D-23. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
-/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid. The
-/// shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid. With
+/// `direct_draws`, WebGPU culls on the CPU and draws every bucket directly, which a start-up probe
+/// picks on a device where the GPU's indirect draws are measurably slower. The shadow cascades
+/// store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
 /// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
 /// on.
@@ -513,6 +530,7 @@ pub fn init_engine(
     index_instances: bool,
     large_world: bool,
     gpu_occlusion: bool,
+    direct_draws: bool,
     shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -581,7 +599,8 @@ pub fn init_engine(
                 depth_prepass,
                 skinning: SkinningMode::from_code(skinning).unwrap_or_default(),
                 index_instances,
-                gpu_occlusion,
+                gpu_occlusion: gpu_occlusion && !direct_draws,
+                direct_draws,
                 cascade_depth,
                 ..RendererConfig::default()
             }))
@@ -602,6 +621,10 @@ pub fn init_engine(
         query_input: [0.0; query::INPUT_FLOATS as usize],
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
         query_rays: Vec::new(),
+        pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
+        pick_recorded: false,
+        pick_covered: false,
+
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
@@ -1105,8 +1128,17 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
         let scale = RenderScale::from_thousandths(scale);
         e.renderer.settings_mut().set_level_scale(scale);
         let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
+        let picked = renderer.settings().picking();
         let recorded = renderer.record(&input);
+        let pick_recorded = picked && !renderer.settings().picking();
+        let pick_covered = pick_recorded && renderer.pick_covers_scene();
         e.lines.clear();
+        e.pick_recorded = pick_recorded;
+        if pick_recorded {
+            // The answer stays until the next read: the sketch may poll frames after the one that
+            // copied it, and those frames would otherwise overwrite it.
+            e.pick_covered = pick_covered;
+        }
         match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
@@ -1150,6 +1182,30 @@ pub fn draw_tables_rebuilt() -> bool {
         0
     });
     rebuilt
+}
+
+/// Says whether a still view may accumulate its frames and rest: the image tests and hold mode turn
+/// the accumulation off, so a captured frame is the frame the sketch drew once.
+#[wasm_bindgen(js_name = setStillEnabled)]
+pub fn set_still_enabled(enabled: bool) {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_still_enabled(enabled);
+        0
+    });
+}
+
+/// True when the last recorded frame's still view has accumulated enough frames that the thread
+/// that draws may take frames without drawing them.
+#[wasm_bindgen(js_name = frameRests)]
+pub fn frame_rests() -> bool {
+    let mut rests = false;
+    with_engine(|e| {
+        // A frame with a pick's read must draw, whatever the still view accumulated: a frame the
+        // thread that draws takes without drawing it would never copy the ids back.
+        rests = !e.pick_recorded && e.renderer.still().rests();
+        0
+    });
+    rests
 }
 
 /// Makes the next recorded frame create every GPU object again and upload the whole scene, after
@@ -2185,15 +2241,23 @@ pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
 /// after the slots, which the shader reads at the second texture coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
-    // The engine's own calls name only the slots, layer maps and height maps that exist.
-    let index = slot as usize;
-    let layer = index
+    // The engine's own calls name only the slots and layer maps that exist, and the height maps'
+    // two slots of their own.
+    let raw = slot;
+    let height = raw == map_slot::BUMP || raw == map_slot::DISPLACEMENT;
+    let slot = raw as usize;
+    let layer = slot
         .checked_sub(MapSlot::ALL.len())
-        .and_then(|k| LayerMap::ALL.get(k));
-    let height = slot == map_slot::BUMP || slot == map_slot::DISPLACEMENT;
-    if MapSlot::ALL.get(index).is_none() && layer.is_none() && !height {
-        return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
-    }
+        .map(|k| LayerMap::ALL.get(k));
+    let (slot, layer) = if height {
+        (MapSlot::Normal, None)
+    } else {
+        match (MapSlot::ALL.get(slot), layer) {
+            (Some(&slot), _) => (slot, None),
+            (None, Some(Some(&layer))) => (layer.slot(), Some(layer)),
+            _ => return render_failure(render_detail::UNKNOWN_MATERIAL, 0),
+        }
+    };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
         let map = match texture_or_none(settings, texture) {
@@ -2203,15 +2267,17 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
         let table = settings.materials_mut();
         let id = material.wrapping_sub(1);
         let second_uv = second_uv != 0;
-        let set = match (slot, layer) {
-            (map_slot::BUMP, _) => table.set_bump_map(id, map, second_uv),
-            (map_slot::DISPLACEMENT, _) => table.set_displacement_map(id, map, second_uv),
-            (_, Some(&layer)) => table.set_layer_map(id, layer, map, second_uv),
-            _ => table.set_map(id, MapSlot::ALL[index], map, second_uv),
+        let set = match raw {
+            map_slot::BUMP => table.set_bump_map(id, map, second_uv),
+            map_slot::DISPLACEMENT => table.set_displacement_map(id, map, second_uv),
+            _ => match layer {
+                Some(layer) => table.set_layer_map(id, layer, map, second_uv),
+                None => table.set_map(id, slot, map, second_uv),
+            },
         };
         match set {
             Ok(()) => {
-                if slot == map_slot::DISPLACEMENT {
+                if raw == map_slot::DISPLACEMENT {
                     grow_bounds(e, material);
                 }
                 e.structure_changed = true;
@@ -3097,11 +3163,12 @@ pub fn area_light_image(light: u32) -> u32 {
 #[wasm_bindgen(js_name = finishAreaLightImage)]
 pub fn finish_area_light_image(light: u32) -> u32 {
     with_engine(|e| {
+        let probe_layers = e.renderer.settings().probes().probe_layers();
         let layer = e
             .renderer
             .settings_mut()
             .light_tables_mut()
-            .finish_image(light);
+            .finish_image(light, probe_layers);
         let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
         e.lights
             .set_value(light, light_value::IMAGE, image)
@@ -3456,6 +3523,25 @@ pub fn set_dof_taps(taps: u32) -> u32 {
     })
 }
 
+/// Sets the taps of each step of the subsurface blur, which the quality settings set, from the
+/// next frame on: one of 11, 17 or 25, or 0, which draws no blur and no skin pass. Other counts
+/// take the next count up, at most 25.
+#[wasm_bindgen(js_name = setSubsurfaceTaps)]
+pub fn set_subsurface_taps(taps: u32) -> u32 {
+    with_engine(|e| {
+        let counts = subsurface::TAP_COUNTS;
+        let taps = match taps {
+            0 => 0,
+            _ => counts
+                .into_iter()
+                .find(|&count| count >= taps)
+                .unwrap_or(counts[counts.len() - 1]),
+        };
+        e.renderer.settings_mut().set_subsurface_taps(taps);
+        0
+    })
+}
+
 /// Turns ambient occlusion on with its settings from the post-processing values, or off, from the
 /// next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setAo)]
@@ -3485,6 +3571,47 @@ pub fn set_ao_scale(thousandths: u32) -> u32 {
         e.renderer
             .settings_mut()
             .set_ao_scale(thousandths as f32 / 1000.0);
+        0
+    })
+}
+
+/// Turns screen-space reflections on with their intensity, most distance, thickness and most
+/// roughness from the post-processing values, or off, from the next frame on. The TypeScript API
+/// checks the values.
+#[wasm_bindgen(js_name = setSsr)]
+pub fn set_ssr(on: bool) -> u32 {
+    with_engine(|e| {
+        let value = |place| e.post_value(place);
+        use constants::post_value as v;
+        let ssr = on.then(|| Ssr {
+            intensity: value(v::SSR_INTENSITY),
+            max_distance: value(v::SSR_MAX_DISTANCE),
+            thickness: value(v::SSR_THICKNESS),
+            max_roughness: value(v::SSR_MAX_ROUGHNESS),
+        });
+        e.renderer.settings_mut().set_ssr(ssr);
+        0
+    })
+}
+
+/// 1 when the frame recorded last draws with what the frame before it drew, as screen-space
+/// reflections read the frame before's color, else 0. Hold mode then records its frame twice.
+#[wasm_bindgen(js_name = readsLastFrame)]
+pub fn reads_last_frame() -> u32 {
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    u32::from(engine.is_some_and(|e| e.renderer.reads_last_frame()))
+}
+
+/// Sets the size of screen-space reflections' grid, in thousandths of the render size each way,
+/// and the most steps of their march, which the quality settings set, from the next frame on: a
+/// size of 0 draws none.
+#[wasm_bindgen(js_name = setSsrQuality)]
+pub fn set_ssr_quality(thousandths: u32, steps: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        settings.set_ssr_scale(thousandths as f32 / 1000.0);
+        settings.set_ssr_steps(steps);
         0
     })
 }
@@ -3560,7 +3687,7 @@ pub fn set_environment(texture: u32) -> u32 {
 /// none when `texture` is 0, from the next frame on. The grid's placement, spacing, counts, factor
 /// and the share of the environment's diffuse light it takes come from the block that
 /// `lightProbeValues` gives. The TypeScript API checks the values. Fails for a texture that is not
-/// live.
+/// live, or not a 3D texture, which the frame's group could not bind.
 #[wasm_bindgen(js_name = setLightProbeGrid)]
 pub fn set_light_probe_grid(texture: u32) -> u32 {
     with_engine(|e| {
@@ -3575,6 +3702,9 @@ pub fn set_light_probe_grid(texture: u32) -> u32 {
             Ok(texture) => texture,
             Err(failure) => return failure,
         };
+        if !texture.is_none() && !settings.textures().is_volume(texture) {
+            return render_failure(render_detail::NOT_A_VOLUME, 0);
+        }
         settings.set_probe_grid((!texture.is_none()).then_some(ProbeGrid {
             texture,
             origin,
@@ -3633,6 +3763,24 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
         e.structure_changed = true;
         0
     })
+}
+
+/// Says whether the device draws the motion target, two half floats per pixel, with one sample,
+/// and with MSAA's samples, as the page's test of its float targets found. Where it does not draw
+/// it at the scene's samples, the motion debug view shows the camera's motion alone.
+#[wasm_bindgen(js_name = allowMotion)]
+pub fn allow_motion(one_sample: bool, multisampled: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.allow_motion(one_sample, multisampled);
+        0
+    })
+}
+
+/// 1 when the frame's passes read the motion since the frame before, as the motion debug view
+/// does, so that hold mode draws the frame before the held one first, else 0.
+#[wasm_bindgen(js_name = holdsFrameBefore)]
+pub fn holds_frame_before() -> u32 {
+    value_with_engine(|e| Ok(u32::from(e.renderer.settings().motion_wanted())))
 }
 
 /// The texels on the short side of bloom's base, and the governor's halvings of it, from the
@@ -3808,6 +3956,109 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         }
         maps.add(texture, stages);
         0
+    })
+}
+
+// Sets reflection probe `slot`, from 0, adding it when the slot is empty (decision record D-149):
+// its box from the low corner to the high one, the point it captures from, its blend distance and
+// intensity, its flags (`constants::probe_flag`), the layers its captures draw and its priority.
+// Positions are in the world, in 64-bit floats. The first probe adds the six capture views, and
+// fails with TOO_MANY_VIEWS when the view list has no room for them.
+/// Sets a reflection probe.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen(js_name = setReflectionProbe)]
+pub fn set_reflection_probe(
+    slot: u32,
+    low_x: f64,
+    low_y: f64,
+    low_z: f64,
+    high_x: f64,
+    high_y: f64,
+    high_z: f64,
+    capture_x: f64,
+    capture_y: f64,
+    capture_z: f64,
+    blend: f32,
+    intensity: f32,
+    flags: u32,
+    layers: u32,
+    priority: f32,
+) -> u32 {
+    with_engine(|e| {
+        let settings = ProbeSettings {
+            low: [low_x, low_y, low_z],
+            high: [high_x, high_y, high_z],
+            capture: [capture_x, capture_y, capture_z],
+            blend,
+            intensity,
+            box_projection: flags & constants::probe_flag::BOX_PROJECTION != 0,
+            always: flags & constants::probe_flag::ALWAYS != 0,
+            layers,
+            priority,
+        };
+        match e.renderer.settings_mut().set_probe(slot as usize, settings) {
+            Ok(()) => 0,
+            Err(_) => render_failure(render_detail::TOO_MANY_VIEWS, MAX_VIEWS as u32),
+        }
+    })
+}
+
+// Removes reflection probe `slot`. The last probe takes the capture views with it.
+/// Removes a reflection probe.
+#[wasm_bindgen(js_name = removeReflectionProbe)]
+pub fn remove_reflection_probe(slot: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().remove_probe(slot as usize);
+        0
+    })
+}
+
+// Makes reflection probe `slot` capture the scene again, in a frame soon.
+/// Makes a reflection probe capture again.
+#[wasm_bindgen(js_name = captureReflectionProbe)]
+pub fn capture_reflection_probe(slot: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .probes_mut()
+            .capture(slot as usize);
+        0
+    })
+}
+
+// Sets the texels across each reflection probe map's largest level, 128, 256 or 512, from the
+// next frame on: the quality preset's probe size. A new size captures every probe again.
+/// Sets the size of reflection probes' maps.
+#[wasm_bindgen(js_name = setProbeSize)]
+pub fn set_probe_size(size: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_probe_size(size);
+        0
+    })
+}
+
+// Returns 1 while a reflection probe waits for its first capture, and 0 otherwise. Hold mode then
+// records the held frame once more, so the frame that it draws has the probe.
+/// True while a reflection probe waits for its first capture.
+#[wasm_bindgen(js_name = probesWaiting)]
+pub fn probes_waiting() -> u32 {
+    with_engine(|e| u32::from(e.renderer.settings().probes().waiting()))
+}
+
+// Returns the image id under which TypeScript sends the generator that runs each probe's filter,
+// once: the thread that draws keeps the generator for the page's life. Probes capture once it holds
+// it.
+/// Takes the id of the reflection probes' generator.
+#[wasm_bindgen(js_name = probeGenerator)]
+pub fn probe_generator() -> u32 {
+    value_with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        if let Some(id) = settings.probes().generator() {
+            return Ok(id);
+        }
+        let id = settings.textures_mut().take_image_id();
+        settings.probes_mut().set_generator(id);
+        Ok(id)
     })
 }
 
@@ -4575,6 +4826,62 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
         }
     });
     if status == 0 { count } else { query::FAILED }
+}
+
+/// Asks the next recorded frame to answer which object draws at a pixel of the canvas. `x` and
+/// `y` are whole CSS pixels from its top-left corner, `ring` names the read of the pick ring that
+/// the answer lands in, and `slot` the control slot that the read raises once its bytes are in
+/// engine memory. Returns 0 when the frame will draw the pick, and 1 when a pick already waits for
+/// a frame.
+#[wasm_bindgen(js_name = requestPick)]
+pub fn request_pick(x: i32, y: i32, ring: u32, slot: u32) -> u32 {
+    with_engine(|e| {
+        if ring as usize >= null3d_render::pick::RING {
+            return 1;
+        }
+        if e.renderer.settings().picking() {
+            return 1;
+        }
+        let words = null3d_render::pick::RESULT_WORDS as u32;
+        let destination = address(&e.pick_results[..]) + ring * words * 4;
+        e.renderer
+            .settings_mut()
+            .set_pick(null3d_render::pick::PickRequest {
+                x: x as f32,
+                y: y as f32,
+                ring,
+                slot,
+                destination,
+            });
+        0
+    })
+}
+
+/// The address in engine memory of the pick ring's results, four words for each read.
+#[wasm_bindgen(js_name = pickResultAddress)]
+pub fn pick_result_address() -> u32 {
+    value_with_engine(|e| Ok(address(&e.pick_results[..])))
+}
+
+/// True when the frame that recorded the landed pick drew every source of the scene. Else a pick
+/// answers with a raycast, which tests triangles and ignores masks. The frame is the one that
+/// copied the ids, not the frame that reads them, since the scene can change between the two.
+#[wasm_bindgen(js_name = pickCoversScene)]
+pub fn pick_covers_scene() -> u32 {
+    value_with_engine(|e| Ok(u32::from(e.pick_covered)))
+}
+
+/// The object or batch id that a pick's source key names, or 0 for a key that names nothing, such
+/// as a miss.
+#[wasm_bindgen(js_name = pickTargetId)]
+pub fn pick_target_id(key: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.pick_target(key).map_or(0, |(id, _)| id)))
+}
+
+/// The instance row that a pick's source key names, or 0xFFFFFFFF for an object of the scene.
+#[wasm_bindgen(js_name = pickTargetRow)]
+pub fn pick_target_row(key: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.pick_target(key).map_or(u32::MAX, |(_, row)| row)))
 }
 
 /// The address of a query array, or the hit array's capacity in records.

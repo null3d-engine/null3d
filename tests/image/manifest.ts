@@ -57,6 +57,7 @@ import {
 } from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
 
 /**
  * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
@@ -677,12 +678,75 @@ function reflectionTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the screen-space reflection tests: boxes, a ball and a lamp on a shiny floor. */
+export const SSR_SKETCH = 'tests/pages/sketches/ssr-sketch.ts';
+
+/** The screen-space reflection tests' image size: wide enough for the reflections' edges to show. */
+const SSR_SIZE = [480, 270] as const;
+
+/**
+ * Screen-space reflections on a smooth steel floor, which reflects no environment, so it shows only
+ * what the reflections find on the screen, on every tier: off, on, on a rough floor, which blurs
+ * them, on a wet plastic floor, which reflects most at a low angle, at a quarter of the render
+ * size, at half the render scale, with ambient occlusion on the same grid, with a planar reflection
+ * on the floor's left half, which wins there, and with a glass ball that draws through the color
+ * copy that the reflections read too. The held frame draws twice, so the reflections read the frame
+ * before it. The reflection spec checks where the boxes' reflections land.
+ */
+function ssrTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${SSR_SKETCH}${query}`,
+		hold: 0,
+		size: SSR_SIZE,
+	});
+	return [
+		test('ssr-off', ''),
+		test('ssr-floor', '?ssr'),
+		test('ssr-rough', '?ssr&rough'),
+		test('ssr-wet', '?ssr&wet'),
+		test('ssr-quarter', '?ssr&ssrscale=0.25'),
+		test('ssr-scale-50', '?ssr&scale=0.5'),
+		test('ssr-ao', '?ssr&ao'),
+		test('ssr-planar', '?ssr&planar'),
+		test('ssr-glass', '?ssr&glass'),
+	];
+}
+
 /** The sketch of weighted blending's crossing panes and overlapping puffs. */
 const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
+/** The sketch of the reflection probe tests: a room of glowing walls over a mirror floor. */
+export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
+
+/**
+ * Reflection probes on every tier. A probe fills a room whose walls glow a color each, so the
+ * mirror floor and a chrome ball reflect each wall on its own side, where it stands: the probe spec
+ * checks the colors there. The rough test blurs the floor's reflections, from the probe's rougher
+ * levels. The flat test turns box projection off, so the floor reflects the walls as if they lay
+ * far away. The blend test splits the room into two probes that fade into each other. The probe
+ * captures in the held frame, whose filter runs before the camera's passes.
+ */
+function probeTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${PROBE_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('probe-room', ''),
+		test('probe-rough', '?rough'),
+		test('probe-flat', '?flat'),
+		test('probe-blend', '?two'),
+	];
+}
+
 /** The sketch of the glass scene, which three.js's transmission draws too. */
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** Panels and leaf cards that let the light behind them through to the camera's side. */
+const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
+const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
 /** The sketch of decals on a stone yard. */
@@ -1173,6 +1237,21 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	...toneMappingTests(),
 	...antialiasTests(),
+	// The edges scene in a live engine with the still-camera accumulation on, captured once the
+	// view has blended its frames and rests (tests/pages/still.ts). Its edges come out smoother
+	// than any single frame's.
+	{
+		name: 'still',
+		page: 'tests/pages/still.html',
+		size: [320, 180],
+		// The page waits for the view to rest, which takes tens of seconds on a slow software GPU.
+		// ?target-fps=1 keeps the frame-budget governor from lowering the render scale meanwhile: a
+		// lower scale resets the accumulation and draws the converged picture upscaled, so its
+		// edges no longer match the reference. It also keeps the preset at the references' one.
+		switches: ['still-camera=on', 'image', 'target-fps=1'],
+		expect: { rested: true },
+		timeoutSeconds: 120,
+	},
 	...bloomTests(),
 	...dofTests(),
 	...exposureTests(),
@@ -1184,6 +1263,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...ssrTests(),
+	...probeTests(),
 	...fullscreenTests(),
 	...occlusionTests(),
 	...gradingTests(),
@@ -1296,6 +1377,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// The motion debug view (D-140) of a scene where most things move: a drifting camera, a sliding
+	// box, a spinning box, a dynamic batch, grass that a custom material sways, a skinned tube, a
+	// morphed sphere and a masked pane. The motion spec checks exact cases pixel by pixel.
+	{
+		name: 'motion-vectors',
+		sketch: 'tests/pages/sketches/motion-vectors-sketch.ts',
+		hold: MOTION_HOLD,
+	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.
@@ -1747,6 +1836,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// A light probe grid that the sketch bakes in the browser, in a room with a red wall at the left
+	// and a green wall at the right (D-146): the grey spheres take red light at the left and green
+	// at the right. The same room without the grid, and with a mirror on the floor, whose reflection
+	// pass reads the grid at each reflected sphere's own place. The room's environment makes its
+	// map in the held frame, so the runs take the room's longer limit.
+	...(['', 'off', 'mirror'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `probe-grid-${variant}` : 'probe-grid',
+			sketch: `tests/pages/sketches/probe-grid-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: 0,
+			size: [320, 180],
+			timeoutSeconds: 60,
+		}),
+	),
 	// The room's light with a hemisphere light added, which the parity test compares with three.js:
 	// the hemisphere light adds to the environment's light, and the environment's intensity does
 	// not scale it.
@@ -2162,6 +2265,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/impostors-sketch.ts',
 		hold: 0,
 	},
+	// A sprite batch with an origin: eight cards, one per frame of a four column, two row atlas of
+	// flat colors, standing around an origin far from the world's. Each card must draw its own cell,
+	// so the picture holds eight cell colors in order. The second test draws the same cards at their
+	// world positions with no origin, which must change nothing but the precision of the positions.
+	{
+		name: 'sprite-origin',
+		page: 'tests/pages/sprite-origin.html',
+		size: [320, 180],
+		hold: 0,
+	},
+	{
+		name: 'sprite-origin-no-origin',
+		page: 'tests/pages/sprite-origin.html',
+		switches: ['origin=off'],
+		size: [320, 180],
+		hold: 0,
+		// The origin only changes the precision of the positions, so this draws the same picture.
+		reference: 'sprite-origin',
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
@@ -2254,6 +2376,82 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Four panels with a low sun behind them let 0, 1/3, 2/3 and all of their diffuse light through
+	// to the camera's side (glTF's diffuse transmission). A box's shadow shows through the last
+	// panel, and an orange lamp lights the second from behind. The translucency spec measures each.
+	// The first use of these shaders compiles slowly on SwiftShader: on the Mac, with six tests at
+	// once, four of eighteen runs passed 30 s, so the tests take 60 s.
+	{
+		name: 'translucency',
+		sketch: TRANSLUCENCY_SKETCH,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// The same panels with a custom material whose surface function sets the diffuse transmission:
+	// they draw as the standard material does, so the references are copies of the first test's.
+	{
+		name: 'translucency-custom',
+		sketch: `${TRANSLUCENCY_SKETCH}?custom`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+		reference: 'translucency',
+	},
+	// The last panel's diffuse transmission map and color map in stripes, a thick red volume that
+	// tints the light through every panel, and masked leaf cards with alpha to coverage, whose cut
+	// outlines cast shadows.
+	{
+		name: 'translucency-maps',
+		sketch: `${TRANSLUCENCY_SKETCH}?maps`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'translucency-volume',
+		sketch: `${TRANSLUCENCY_SKETCH}?volume`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'translucency-leaves',
+		sketch: `${TRANSLUCENCY_SKETCH}?leaves`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// The subsurface blur of skin: two panels of one skin tone in a low sun, plain on the left and
+	// with a scatter radius on the right, crossed by a bar's shadow. The right panel's light spreads
+	// into the shadow, redder, and a box in front of it takes no blur. The sketch gives the blur 17
+	// taps on every tier. The subsurface spec measures each effect.
+	{ name: 'subsurface', sketch: SUBSURFACE_SKETCH, hold: 0, size: [640, 360], timeoutSeconds: 60 },
+	// The same scene without taps: neither panel blurs.
+	{
+		name: 'subsurface-off',
+		sketch: `${SUBSURFACE_SKETCH}?off`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// Both panels with a base color map of fine stripes, which the skin's blur softens: the skin
+	// pass's builds with maps.
+	{
+		name: 'subsurface-maps',
+		sketch: `${SUBSURFACE_SKETCH}?maps`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// Half the render size, which the skin pass and the blur draw into the corner of their targets.
+	{
+		name: 'subsurface-scale-50',
+		sketch: `${SUBSURFACE_SKETCH}?scale=0.5`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
 	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
 	// function sets its coat, in the room's light. The layers spec checks that layers turned off
 	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly.

@@ -1,11 +1,10 @@
-// Area lights: a narrow street after rain, at night. Two shop windows on the left and a strip at
-// the far end are rectangle lights, the neon sign on the right is one rectangle light that shows a
-// picture of its tubes, and a loose tube light floats down the street, or follows the pointer. The
-// wet street shows each light's whole shape, where a point light would leave a dot. A light draws
-// nothing itself, so each has a glowing mesh of its shape. One neon tube flickers. The street's
-// scenery is in street.ts.
+// Area lights: a narrow street after rain, at night. Two shop windows, a far strip and the neon
+// sign are rectangle lights, and a tube light floats down the street or follows the pointer. The
+// wet street shows each light's whole shape and mirrors the street through screen-space
+// reflections. Each light has a glowing mesh, and one tube flickers. Its scenery is in street.ts.
 import { defineSketch, math, quat, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { enableReflections } from '../lib/ssr';
 import { street } from './street';
 
 /** A quarter turn about Y, which turns a plane that faces +Z to face +X. */
@@ -36,7 +35,9 @@ const SIGN_NITS = NEON_NITS * 4;
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials, textures, post, time } = ctx;
 	const exposure = await street(ctx);
+	enableReflections(ctx);
 	post.set({ exposure, bloom: { intensity: 0.35, threshold: 1 }, vignette: {} });
+	post.set({ ssr: { maxDistance: 60, thickness: 1, maxRoughness: 0.35 } });
 	const glow = (emissive: string, emissiveIntensity: number) =>
 		materials.standard({ color: '#000000', emissive, emissiveIntensity });
 

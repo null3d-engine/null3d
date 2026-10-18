@@ -1,79 +1,35 @@
-// Post effects: crates at the dead end of a neon alley at night, on wet ground, and the camera
-// sways in front of them. Bloom spreads the neon past its edges, ambient occlusion darkens the
-// corner, an outline marks one crate, depth of field focuses on that crate, and a vignette darkens
-// the edges. A custom effect splits red from blue toward the edges, as a cheap lens does. Every 3
-// seconds the grading table changes: none, warm, then cool, each made in code from a few numbers.
-// The pointer moves the pink lamp, and the bloom, the shading and the shine of the puddles follow.
-import { type Assets, defineSketch, type Vec3, vec3 } from '@null3d/engine';
+// Post effects: crates at the dead end of a neon alley at night, on wet asphalt that mirrors the
+// neon, and the camera sways in front of them. Bloom spreads the neon past its edges, ambient
+// occlusion darkens the corner, an outline marks one crate, depth of field focuses on that crate,
+// and a vignette darkens the edges. A lens grade splits red from blue toward the edges, bleeds the
+// bright neon sideways into an anamorphic streak and adds film grain. Every 3 seconds the grading
+// table changes: none, warm, then cool, each made in code from a few numbers. The pointer moves the
+// pink lamp, and the bloom, the shading and the reflections in the puddles follow.
+import { defineSketch, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { LENS_WGSL } from '../lib/lens';
+import { enableReflections } from '../lib/ssr';
+import { COOL, grade, WARM } from './grades';
 
 /** Seconds that each color grading table shows. */
 const STEP = 3;
 
-type Rgb = readonly [number, number, number];
-
-/** A grade: contrast and saturation, then lift, gamma and gain per channel, as a colorist sets them. */
-interface Look {
-	contrast?: number;
-	saturation?: number;
-	lift?: Rgb;
-	gamma?: Rgb;
-	/** Gain per channel, which sets the white balance too. */
-	gain: Rgb;
-}
-
-/** Warmer whites and lifted shadows. */
-const WARM: Look = { lift: [0.02, 0.01, 0], gamma: [0.95, 1, 1.05], gain: [1.04, 1.01, 0.9] };
-/** More contrast, less saturation and a blue cast. */
-const COOL: Look = { contrast: 1.15, saturation: 0.85, gain: [0.94, 0.99, 1.06] };
-
-/** A table of 33 texels a side that grades each color by `look`, red fastest as in a .cube file. */
-function grade(assets: Assets, look: Look) {
-	const { contrast = 1, saturation = 1, lift = [0, 0, 0], gamma = [1, 1, 1], gain } = look;
-	const size = 33;
-	const data = new Float32Array(size ** 3 * 3);
-	const contrasted = (v: number) =>
-		Math.min(Math.max((v / (size - 1) - 0.5) * contrast + 0.5, 0), 1);
-	const channel = (value: number, luma: number, i: 0 | 1 | 2) =>
-		lift[i] + Math.max(luma + (value - luma) * saturation, 0) ** gamma[i] * gain[i];
-	let at = 0;
-	for (let b = 0; b < size; b++)
-		for (let g = 0; g < size; g++)
-			for (let r = 0; r < size; r++) {
-				const [red, green, blue] = [contrasted(r), contrasted(g), contrasted(b)];
-				const luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-				data[at++] = channel(red, luma, 0);
-				data[at++] = channel(green, luma, 1);
-				data[at++] = channel(blue, luma, 2);
-			}
-	return assets.lutFromData({ size, data });
-}
-
-// Moves red out and blue in, by up to `shift` pixels at the corners.
-const fringe = /* wgsl */ `
-struct Uniforms { shift: f32 }
-
-fn effect(input: EffectInput) -> vec4f {
-    let toward = (input.uv - vec2f(0.5)) * uniforms.shift / input.size;
-    let red = effectColor(input.uv + toward).r;
-    let blue = effectColor(input.uv - toward).b;
-    return vec4f(red, input.color.g, blue, input.color.a);
-}
-`;
-
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, time } = ctx;
 	const [warm, cool] = await Promise.all([grade(assets, WARM), grade(assets, COOL)]);
-	// Ambient occlusion draws on every preset, at half the canvas's resolution.
+	// Ambient occlusion draws on every preset, at half the canvas's resolution. Phones start with
+	// the reflections off, so the demo turns them on at a quarter of the size.
 	quality.set({ aoScale: 0.5 });
+	enableReflections(ctx);
 	post.set({
 		bloom: { intensity: 0.3, threshold: 1 },
 		ao: { radius: 0.6, intensity: 1 },
 		outline: { color: '#ffd166', width: 2 },
 		vignette: { intensity: 0.9, size: 1.1 },
 		dof: { aperture: 1.4, focusPoint: [-0.3, 0.35, -1.45] },
+		ssr: { maxDistance: 24, thickness: 0.6 },
 	});
-	post.addEffect({ wgsl: fringe, uniforms: { shift: 6 } });
+	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0.25, grain: 0.05 } });
 	scene.setBackground('#05060a');
 	scene.setFog({ color: '#0a0c14', density: 0.03 });
 	const camera = scene.createPerspectiveCamera({ fov: 45 });
@@ -94,7 +50,7 @@ export default defineSketch(async (ctx) => {
 	for (let i = 0; i < 64 * 64; i++) {
 		const [u, v] = [((i % 64) / 32) * Math.PI, ((i >> 6) / 32) * Math.PI];
 		const wet = Math.sin(u * 2) + Math.sin(v * 3 + u) + Math.sin((u - v) * 2) > 0.5;
-		finish.set([255, wet ? 76 : 140, 0, 255], i * 4);
+		finish.set([255, wet ? 14 : 150, 0, 255], i * 4);
 	}
 	const box = geometry.box();
 	const wall = materials.standard({ color: '#857a72', roughness: 0.9 });

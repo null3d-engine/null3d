@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { CORE_NOT_COUNTED } from '../generated/core';
-import {
-	gpuPassStats,
-	secondRates,
-	summarizeFrames,
-	threadRoles,
-	timerStep,
-} from '../page/frame-stats';
+import { gpuPassStats, secondRates, summarizeFrames, timerStep } from '../page/frame-stats';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import {
 	Counter,
@@ -26,6 +20,7 @@ import {
 	SUM_PHASES,
 	SUM_RECORDS,
 	sampleFrames,
+	threadRoles,
 	UNTIMED,
 } from './metrics';
 import { ratePerSecond } from './stats';

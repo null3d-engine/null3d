@@ -50,6 +50,7 @@ function report(change: Partial<CapabilityReport> = {}): CapabilityReport {
 			features: ['float32-filterable'],
 			limits: { maxTextureDimension2D: 16384 },
 			preferredCanvasFormat: 'bgra8unorm',
+			directDraws: false,
 		},
 		webgl2: {
 			renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max)',
