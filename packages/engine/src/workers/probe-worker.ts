@@ -3,6 +3,8 @@
 // also measures the device's two draw paths, so the engine can draw the faster one (D-174).
 
 import { messageOf } from '../errors/message';
+import { probeDirectDraws } from '../gpu/webgpu/draw-path-probe';
+import { needsOwnArguments } from '../gpu/webgpu/indirect-arguments';
 
 /**
  * What a dedicated worker can do, in `CapabilityReport.worker`. A render worker needs the frame
@@ -59,9 +61,11 @@ async function probe(): Promise<WorkerProbe> {
 			if (context) {
 				context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat() });
 				result.offscreenWebGPU = true;
-				// The probe loads on demand, so the engine's start does not carry it.
-				const { probeDirectDraws } = await import('../gpu/webgpu/draw-path-probe');
-				result.directDraws = await probeDirectDraws(device, adapter.info);
+				result.directDraws = await probeDirectDraws(
+					device,
+					adapter.info,
+					needsOwnArguments(globalThis.navigator?.userAgent ?? ''),
+				);
 			}
 			device.destroy();
 		}
