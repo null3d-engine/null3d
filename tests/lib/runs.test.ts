@@ -37,6 +37,7 @@ import {
 	PLANS,
 	parityPlan,
 	REPORT_ON_TOP_PLANS,
+	SHADER_PROGRAMS_PER_PART,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -1102,11 +1103,14 @@ describe('the checks plan', () => {
 			[sampled, { base, 'first-use-sample': firstUseSample, 'coat-sample': sample }],
 		] as const) {
 			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
-				Object.values(sets).reduce((sum, programs) => sum + Math.ceil(programs / 400), 0),
+				Object.values(sets).reduce(
+					(sum, programs) => sum + Math.ceil(programs / SHADER_PROGRAMS_PER_PART),
+					0,
+				),
 			);
 			for (const [set, programs] of Object.entries(sets) as [ShaderSet, number][]) {
 				const parts = partsOf(plan, set);
-				expect(parts.length).toBe(Math.ceil(programs / 400));
+				expect(parts.length).toBe(Math.ceil(programs / SHADER_PROGRAMS_PER_PART));
 				expect(parts[0]?.id).toBe(set === 'base' ? 'shaders-1' : `shaders-${set}-1`);
 				expect(parts.map(({ path }) => path)).toEqual(
 					parts.map(

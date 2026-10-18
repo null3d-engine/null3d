@@ -96,6 +96,7 @@ import {
 	type BuiltFile,
 	budgetProblems,
 	COLUMNS,
+	COMBOS_BUDGET,
 	type CORE_BUILDS,
 	CORE_FILES,
 	type Column,
@@ -104,6 +105,7 @@ import {
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findFirstUseFiles,
+	isCombosPart,
 	isFirstUseShaderPart,
 	LATER_BUDGET,
 	LATER_PARTS,
@@ -1028,12 +1030,17 @@ async function main(): Promise<void> {
 		]),
 	);
 
-	const later = new Map(
-		LATER_PARTS.flatMap(({ name }) => {
+	const later = new Map([
+		...LATER_PARTS.flatMap(({ name }) => {
 			const size = parts.get(name);
 			return size ? [[name, size] as const] : [];
 		}),
-	);
+		// The loader table of each feature family's combinations. The build names each after its
+		// family, so the report learns them from the build rather than a fixed list (D-190).
+		...[...parts]
+			.filter(([name]) => isCombosPart(name))
+			.map(([name, size]) => [name, size] as const),
+	]);
 	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? { brotli: WASM_BUDGET_BYTES } : undefined);
@@ -1045,7 +1052,8 @@ async function main(): Promise<void> {
 	console.log(
 		`\nthe engine's JavaScript that loads after the start, on a feature's first use, at the first call that reads it, or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
 	);
-	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
+	for (const [part, size] of later)
+		printSize(`js/${part}`, size, isCombosPart(part) ? COMBOS_BUDGET : LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
 		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,

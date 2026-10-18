@@ -317,3 +317,13 @@ Status: decided, 2026-10-16, by the coordinator for the owner (the owner raised 
 **Why not split by shader.** A device module file holds the builds that need one set of features, for every template that needs it, so the `lit` and `standard_maps` builds of a key share one file. A table per shader would list the same addresses twice and shrink nothing. The half bit partitions the addresses instead.
 
 **Figures.** The WebGL2 tables are 39.6 KB and 38.6 KB uncompressed (3.7 and 3.3 KB after Brotli); the WebGPU tables are 13.0 and 12.7 KB. `bun run build:check-size` prints each beside its cap.
+
+## Addendum, 2026-10-18: each feature family has a combination table
+
+Status: decided, 2026-10-18, by the tooling change for M2-J4 (D-190, D-191).
+
+**Question.** The relief materials add BUMP, DISPLACEMENT and PARALLAX builds, and the combined keys that name them grew the WebGL2 table to 310,974 bytes uncompressed, over the 96 KB cap of a file that loads after the start.
+
+**Rule.** The build writes one table for each family of a kind. A family starts as the key's first feature and splits by the next feature while its rendered table would pass 64 KB. The main module writes the depth of each split, and the loader imports the table of the family of the build that it asks for. A preload loads the table of each key that it expects, not every table.
+
+**Figures.** 214 tables replace up to 8; the largest is 34,609 bytes uncompressed and 1,288 after Brotli, against 96 KB and 16 KB. D-191 gives the split of the paragraph tables that went with it.

@@ -460,8 +460,13 @@ const SHADERS_SECONDS_PER_PROGRAM = 0.5;
  * The most GLSL programs that one part of the shaders page compiles. Each part is a page of its
  * own, with a WebGL2 context of its own that it gives up at its end. Safari on CI's Mac lost the
  * context of a page that compiled every program in one context, after 2,240 programs and 266 s.
+ *
+ * The relief materials add many builds of the standard material, and the modules that hold them
+ * are uneven in size: at 400 a part of the first-use set reached 638 programs, since a part loads
+ * every `parts`-th module and a few large modules can meet in one. At 350 the same set's largest
+ * part holds 432, so each page stays near its share ([Test memory](tests.md)).
  */
-export const SHADER_PROGRAMS_PER_PART = 400;
+export const SHADER_PROGRAMS_PER_PART = 350;
 
 /** The parts of a set of programs: enough that none holds more than that many programs. */
 const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_PROGRAMS_PER_PART);

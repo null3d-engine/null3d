@@ -5,7 +5,7 @@
 // The size check reads the trailers through explainedFiles.
 import { readFileSync } from 'node:fs';
 import { MAX_GROWTH, MIN_GROWTH_BYTES } from '../lib/size-check';
-import { isFirstUseShaderPart, REPORTED_FILES } from '../lib/size-report';
+import { isCombosPart, isFirstUseShaderPart, REPORTED_FILES } from '../lib/size-report';
 import { effectiveMessage, findAckValues, isBareAck, isExemptCommit } from './commit-ack';
 
 export const SIZE_GROWTH_TRAILER = 'Size-Growth';
@@ -59,7 +59,10 @@ function firstUseShaderFiles(value: string): string[] {
 			/(?<![\w./-])js\/((?:shaders|shader-paragraphs)-[a-z0-9-]+\.js)(?![\w/-]|\.\w)/g,
 		),
 	]
-		.filter((match) => isFirstUseShaderPart(match[1] as string))
+		.filter((match) => {
+			const name = match[1] as string;
+			return isFirstUseShaderPart(name) || isCombosPart(name);
+		})
 		.map((match) => match[0]);
 }
 
