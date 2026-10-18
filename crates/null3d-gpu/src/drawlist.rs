@@ -836,7 +836,7 @@ pub mod layout {
     /// binding 4 and the last frame's joint texture at 5. On WebGL2 the texture at 5 also holds
     /// the last frame's morph weights after its joints, and the group holds the last frame's
     /// matrix rows at 7 and 9, resident and streamed.
-    pub const MOTION_FRAME: u32 = 43;
+    pub const MOTION_FRAME: u32 = 47;
     /// The physical sky's group: at binding 0 its uniform block, at bindings 1, 2 and 3 its
     /// transmittance, multiple scattering and sky view tables, at binding 4 a linear sampler that
     /// clamps, and at binding 5 one that repeats across the width. Group 0 of its tables' steps,
