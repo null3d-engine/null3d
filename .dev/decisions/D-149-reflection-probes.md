@@ -49,7 +49,7 @@ One probe captures per frame: first the probes that wait for a capture, then in 
 
 1. `gather` copies each view's image into its layer of the chain, a six-layer half-float array.
 2. The chain gets its smaller levels: `half` draws on WebGPU, `generateMipmap` on WebGL2.
-3. `prefilter` fills each level of the probe's layer: GGX importance sampling with a level of the chain per sample, as the environment's filter does, from 128 directions at level 1 up to 1,024.
+3. `prefilter` fills each level of the probe's layer: GGX importance sampling with a level of the chain per sample, as the environment's filter does, from 128 directions at level 1 up to 1,024. The probe's layer is its slot plus the light tables' three layers, which the shared array holds first.
 
 The array grows by doubling its layers, and a new quality size makes it again; either way every probe captures again. A new array takes the other of two pairs of texture ids, and the next frame's list destroys the old pair: a capture replays a frame's list, so a list never destroys a texture that its own bind groups name. The capture views list no probe, so a probe sees the environment alone, and no map reads itself. Hold mode, which the image tests draw, records the held frame once more while a probe waits for its capture, as screen-space reflections need the frame before (D-134). The thread that draws keeps two frames' lists, so a held frame shows up to two probes. The filter's code loads with the environment's generators, the first time a sketch makes a probe or an environment. Its draws' uniform values, views, bind groups and passes stay with the textures, so a filter allocates nothing after its first.
 
