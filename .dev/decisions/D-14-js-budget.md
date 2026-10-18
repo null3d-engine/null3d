@@ -608,6 +608,37 @@ after the start, so no start counted its 1,134 bytes after Brotli.
 `DOWNLOADS` in `tools/lib/size-report.ts` now names the part in every start. The report's start
 figures rise by that figure, and the later-parts section no longer lists the file.
 
+### The reclaim, 18 October 2026: the start to 161.8 KB
+
+The reclaim that this record has named since 4 October landed on 18 October 2026. Two blocks of
+code left the start. Every page downloaded them, but few pages read them:
+
+- The frame figures behind `engine.measure` load at the first measurement, in a file of their own.
+  `threadRoles`, the one piece of that module that the start reads, moved to `shared/metrics.ts`,
+  which every page already loads.
+- The table of error fixes loads in each thread at its first error. Until it arrives the error
+  carries its code and detail. The fix then completes the message, so the error reports the whole
+  message once the file arrives. A failed start waits for the file before it rejects, so its error
+  reports the whole message at once.
+
+The page no longer hands the table to its workers: each thread loads it where it raises its first
+error. The sketch worker's first synchronous errors reach the sketch before the text arrives, so
+their messages gain the fix shortly after. The sketch worker loads the text once, and later errors
+carry it at once.
+
+The split moved three small modules that many files share into files of their own, which every
+page loads: the message helper, the GPU constants and the control block. Together they take
+913 bytes after Brotli and three requests. The page asks for all three while it loads, so they do
+not add a round trip in turn.
+
+The pipelined WebGL2 start fell from 171,526 bytes to 165,632 bytes after Brotli, under the 166 KB
+line of 169,984 bytes that the owner named by 4,352 bytes. The budget stays at 176 KB as the
+ceiling for the end of M2. The new files measure 1,755 bytes for the frame figures and 5,453 bytes
+for the fixes after Brotli, and the sketch worker's copy of the fixes 5,454 bytes.
+
+The two figures count the probe worker's direct-path file in both builds, as [the section
+above](#the-probes-measurement-in-each-start-18-october-2026) records.
+
 ### The first-use files raised, 15 October 2026: 48 KB to 49 KB
 
 The screen-space reflections work was over budget on two of its device modules rather than on the
