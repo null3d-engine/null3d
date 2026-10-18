@@ -46,12 +46,23 @@ run('errors', async () => {
 		await failedStart(missingSketch),
 	];
 	const engine = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
-	const inSketch = await new Promise<unknown>((resolve) => {
-		engine.onSketchMessage((name, data) => {
-			if (name === 'raised') resolve(data);
-		});
-		engine.postToSketch('raise');
+	// The sketch reports the errors that it caught at once, and again once the fixes' text has had
+	// time to arrive.
+	let raisedNow: (value: unknown) => void = () => {};
+	let raisedFixed: (value: unknown) => void = () => {};
+	const now = new Promise<unknown>((resolve) => {
+		raisedNow = resolve;
 	});
+	const fixed = new Promise<unknown>((resolve) => {
+		raisedFixed = resolve;
+	});
+	engine.onSketchMessage((name, data) => {
+		if (name === 'raised') raisedNow(data);
+		else if (name === 'patched') raisedFixed(data);
+	});
+	engine.postToSketch('raise');
+	const inSketch = await now;
+	const patched = await fixed;
 	await engine.firstFrame;
 	const queries = await new Promise<unknown>((resolve) => {
 		engine.onSketchMessage((name, data) => {
@@ -71,6 +82,7 @@ run('errors', async () => {
 		missingSketch: missingSketch.href,
 		failedStarts,
 		inSketch,
+		patched,
 		queries,
 		beside,
 		framesAfterRestart: stats.frames,
