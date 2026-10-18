@@ -13,7 +13,7 @@ null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch c
 
 ## 1. Find the docs that match the installed engine
 
-The engine docs are the source of truth. This skill describes the first release, null3D 0.1.0, and marks the parts that are not built yet. A project may use another version, so check before you rely on anything here.
+The engine docs are the source of truth. This skill describes null3D 0.1.0 and marks the parts not built yet. A project may use another version, so check it first.
 
 1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
