@@ -358,9 +358,28 @@ mod tests {
         let pair = shading(
             template::CUSTOM_FIRST + 3,
             state_flags::CULL_FRONT,
-            permutation::ROW_VALUES | permutation::ALPHA_MASK,
+            permutation::ROW_VALUES | permutation::INSTANCE_INDEX,
+        );
+        assert_eq!(
+            key_of(pair, true, false),
+            None,
+            "a custom build that reads instances by index keeps to a raycast"
+        );
+        let pair = shading(
+            template::CUSTOM_FIRST + 3,
+            state_flags::CULL_FRONT,
+            permutation::ROW_VALUES,
         );
         let (key, maps) = key_of(pair, true, false).expect("its pick builds exist");
+        assert_eq!(
+            key_of(
+                shading(template::CUSTOM_FIRST + 3, 0, permutation::ALPHA_MASK),
+                true,
+                false
+            ),
+            None,
+            "a masked custom material keeps to a raycast"
+        );
         assert_eq!(key.template, pair.template);
         assert_eq!(key.permutation, permutation::ROW_VALUES | permutation::PICK);
         assert_eq!(key.state & state_flags::CULL_FRONT, state_flags::CULL_FRONT);

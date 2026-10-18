@@ -235,6 +235,7 @@ struct Engine {
     /// True when that frame's id pass drew every source of the scene. The sketch reads it to decide
     /// whether a landed answer is the GPU's or needs a ray, after later frames moved the layout on.
     pick_covered: bool,
+
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
     world_matrix: [f64; 12],
@@ -622,6 +623,7 @@ pub fn init_engine(
         pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
         pick_recorded: false,
         pick_covered: false,
+
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
@@ -1131,7 +1133,11 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
         let pick_covered = pick_recorded && renderer.pick_covers_scene();
         e.lines.clear();
         e.pick_recorded = pick_recorded;
-        e.pick_covered = pick_covered;
+        if pick_recorded {
+            // The answer stays until the next read: the sketch may poll frames after the one that
+            // copied it, and those frames would otherwise overwrite it.
+            e.pick_covered = pick_covered;
+        }
         match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
