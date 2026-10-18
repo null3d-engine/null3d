@@ -12,7 +12,7 @@ Battle on the iPhone 17 runs at 13 fps in null3D and 40 fps in three.js, both on
 
 ## Rule
 
-- Choose the draw path only from a measurement of a real draw, never from a browser or GPU name (hard rule 14).
+- Choose the draw path only from a measurement of a real draw, never from a browser or GPU name (hard rule 14). One exception, added on 2026-10-18 by the coordinator's ruling: a software renderer identified from the adapter's reported description never takes the direct path. Its slow indirect draws say nothing about the per-draw GPU cost that the path removes, and its held frames must stay the ones the current path draws. The stop is a capability exclusion, not a way to pick between real GPUs; the choice among those stays measured.
 - Keep per-instance data in vertex buffers (hard rule 7).
 - Never draw wrongly. The probe picks from a real first-frame draw, and the current path stays the fallback.
 

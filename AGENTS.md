@@ -101,7 +101,7 @@ No reviewer reads a branch before it lands ([D-157](.dev/decisions/D-157-direct-
 11. Optional WebGPU features are used only after a capability check. They are transient attachments, immediates, subgroups, timestamp queries, `shader-f16`, `rg11b10ufloat-renderable`, `float32-filterable`, `float32-blendable`, and each texture-compression family. A missing limit counts as absent, not as zero.
 12. Float textures that need filtering use 16-bit floats. 32-bit float data textures are read without filtering (`textureLoad`, `texelFetch`).
 13. On WebGL2, request each extension by name with `getExtension()`. Never trust `getSupportedExtensions()`, because Brave shuffles it.
-14. Never decide anything from GPU names or user agents. Firefox and Brave can hide GPU names.
+14. Never decide anything from GPU names or user agents. Firefox and Brave can hide GPU names. The one exception, from the coordinator's ruling of 18 October 2026, is a software renderer named by the adapter's reported description: it never takes the direct-draw path, because its slow draws are not the GPU work that the path removes and its held frames must not change ([D-174](.dev/decisions/D-174-apple-gpu-direct-draws.md)). The choice among real GPUs stays measured.
     - One exception, until Safari ships WebKit's fix: the WebGPU backend copies indirect draw arguments only in Apple's WebKit ([D-87](.dev/decisions/D-87-webkit-indirect-arguments.md), which says how to remove it).
 15. Core Rust code never calls APIs that fail on `wasm32-unknown-unknown`, such as `std::time::SystemTime::now()`. Time comes from the engine clock, and a lint enforces this.
 16. Tests read pixels back through the engine. They never encode images through a canvas in the page and never rely on browser screenshots.
