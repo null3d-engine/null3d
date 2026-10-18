@@ -147,6 +147,19 @@ The direct path recorded every shadow view with the opaque pipeline. A view of o
 
 `tests/image/direct-draws.spec.ts` now draws one scene both ways in one browser and compares the two frames. It reads the path from `HeldFrame.directDraws`, so it proves its switch took effect. It needs no reference pictures, so a divergence fails even on a device whose pictures were never saved. The fix changed no reference.
 
+## The iPhone 17's own run
+
+On 2026-10-18 the same comparison pages ran on a cloud iPhone 17 in Safari 26.5, with every page at 603 by 1009. The probe chose the direct path on both scenes, and the forced pages reported the path asked for.
+
+| Page | Indirect | Direct | Gain |
+| --- | --- | --- | --- |
+| Battle, WebGPU | 26.1 fps, 29.10 ms GPU | 26.4 fps, 27.84 ms | 1.26 ms |
+| Factory, WebGPU | 22.3 fps, 35.03 ms | 22.4 fps, 34.27 ms | 0.76 ms |
+
+The clamp holds about a millisecond of Battle's frame there, which matches this record's estimate of 0.8 ms. Against three.js on the same device, Battle was 26.1 fps against 46.9 on WebGPU, and Battle won on WebGL2 at 48.3 against 32.0. Factory lost on WebGPU at 23.6 against 59.4, and tied on WebGL2 at 60.0 against 59.5. The page reported three.js drawing through its WebGL renderer even for the WebGPU query, so those three.js WebGPU figures compare a WebGL renderer against null3D's WebGPU one.
+
+So the direct path helps the phone as far as the clamp reaches, and the phone's gap is other work: pass and pixel cost, as Factory's figures have shown since the first device run.
+
 ## What this changes
 
-The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the comparisons above run on the Mac; the iPhone 17 still needs its own run.
+The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the comparisons above run on the Mac, and a cloud iPhone 17 ran the same pages.
