@@ -20,6 +20,13 @@ filter = 'binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_s
 threads-required = 2
 priority = 50
 
+# The one test that prepares every shader module and renders one through the WebAssembly compiler
+# takes about four minutes on a fast machine, and longer under the load of the other tests. It gets
+# its own timeout so a slow machine does not stop it as if it had hung.
+[[profile.default.overrides]]
+filter = 'binary_id(null3d-shaders-wasm) & test(=prepare_modules_lists_every_module_and_module_renders_one)'
+slow-timeout = { period = "120s", terminate-after = 30 }
+
 # The custom material and effect tests build their templates' variants, which take seconds each.
 [[profile.default.overrides]]
 filter = 'binary_id(null3d-shaders::material) | binary_id(null3d-shaders::effect) | binary_id(null3d-shaders::pieces)'
