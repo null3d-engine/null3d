@@ -2198,7 +2198,14 @@ impl GpuDrivenRenderer {
                         background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
                     if direct_draws {
-                        record_direct_view(list, view, Bundle::Opaque)?;
+                        // A shadow view of the atlas's tiles draws with its tile pipeline, as its
+                        // bundle did; a cascade draws with the cascade pipeline.
+                        let kind = if view.tile_index().is_some() {
+                            Bundle::Tile
+                        } else {
+                            Bundle::Opaque
+                        };
+                        record_direct_view(list, view, kind)?;
                     } else {
                         opaque::record(list, view, Bundle::Opaque)?;
                     }
