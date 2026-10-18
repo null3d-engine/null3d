@@ -52,7 +52,7 @@ A later run on main (2026-10-14, the same device and settings, with M2-EX41's dr
 
 The probe runs on a device of its own, in the probe worker that already checks what a worker can draw. The engine picks its GPU tier before its core starts, so the choice must be known then: the answer travels with the capability report into `initEngine`, and the core builds its frame builder for it. The probe worker's device is a dedicated worker's, like the render worker's own, and the per-draw cost it measures is a browser and driver property, so the answer holds for the device that draws.
 
-The probe draws a fixed workload twice: 512 indexed draws of a small mesh with a vertex buffer, once with the engine's indirect draws and once with direct draws, into a 64 pixel target. The indirect arm has the shape the engine records on this browser: an argument buffer for each draw on Apple's WebKit, whose indirect draws from one buffer race ([D-87](D-87-webkit-indirect-arguments.md)), and one buffer for every draw elsewhere. Each arm runs six frames, three times, and its fastest run is its figure; both arms warm up first, so a driver that drops a device's first indirect pass misleads neither. An arm whose warm-up frame takes over 50 ms ends the probe, so a software renderer or a very slow device keeps the current path instead of spending seconds in it. The probe worker requests its adapter without a power preference, as the capability probe does, so a machine with two GPUs measures the browser's own pick.
+The probe draws a fixed workload twice: 512 indexed draws of a small mesh with a vertex buffer, once with the engine's indirect draws and once with direct draws, into a 64 pixel target. The indirect arm has the shape the engine records on this browser: an argument buffer for each draw on Apple's WebKit, whose indirect draws from one buffer race ([D-87](D-87-webkit-indirect-arguments.md)), and one buffer for every draw elsewhere. Each arm runs six frames, three times, and its fastest run is its figure; both arms warm up first, so a driver that drops a device's first indirect pass misleads neither. An arm whose warm-up frame takes over 50 ms ends the probe, so a very slow device keeps the current path instead of spending seconds in it. A software renderer, named by the adapter's reported description, never takes the direct path at all. The probe worker requests its adapter without a power preference, as the capability probe does, so a machine with two GPUs measures the browser's own pick.
 
 The probe picks the direct path only when the direct arm is at least 25 percent faster and at least 0.15 ms a frame faster. Any other answer, a failure or a device lost during the probe keeps the engine's current path. The engine reads no browser or GPU name for the choice, and the answer is kept for the session.
 
@@ -138,6 +138,14 @@ Safari chose the direct path and Chrome kept the indirect one, as their probes m
 Safari with the same pages forced to the indirect path, `?direct=off`: Battle 51.2 fps and 15.55 ms of GPU time at 1040x848, Factory 59.8 fps and 5.03 ms at 1040x848. So the direct path halved Battle's GPU time and took the frame from 51.2 to 59.9 fps. Factory did not move, and its GPU time stayed within the noise either way. The loads were 6.4 to 8.9, recorded beside each figure.
 
 So the bar holds on the Mac: null3D beats three.js on Battle and Factory on both backends in Safari, where every run drew 1040 by 848. In Chrome null3D beats three.js on both Battle backends at four times the pixels, and Factory reaches the display's 120 frames like three.js. Factory's remaining gap on the iPhone 17 is pass and pixel work that no draw path removes.
+
+## The two paths draw one frame
+
+A forced comparison on SwiftShader held one scene at 320 by 180 and drew it with `?direct=on` and with `?direct=off`. The first run differed by 0.2153% of pixels, against a 0.1% limit, on two crates.
+
+The direct path recorded every shadow view with the opaque pipeline. A view of one shadow atlas tile draws with the tile pipeline. The opaque pipeline draws nothing where the scene has no sun cascades, so the tile's casters went missing. After the fix both paths draw 33 calls, and the frames differ in no pixel.
+
+`tests/image/direct-draws.spec.ts` now draws one scene both ways in one browser and compares the two frames. It reads the path from `HeldFrame.directDraws`, so it proves its switch took effect. It needs no reference pictures, so a divergence fails even on a device whose pictures were never saved. The fix changed no reference.
 
 ## What this changes
 
