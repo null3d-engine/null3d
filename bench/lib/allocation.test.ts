@@ -5,6 +5,7 @@ import { Glob } from 'bun';
 import {
 	BUDGETS,
 	PAGE_SWITCHES,
+	placeBudget,
 	SKY_ENVIRONMENT_BUDGETS,
 	STATS_BUDGETS,
 	SWIFTSHADER_BUDGETS,
@@ -138,6 +139,27 @@ describe('budgets', () => {
 			'(?:(?:export|async|static|private|public|protected|get|set|function|const|let)\\s+)*';
 		return new RegExp(`^\\s*${modifiers}${name}\\s*[(<=:]`, 'm').test(source);
 	}
+
+	test('judge the draw frame by SwiftShader there, and by the real GPU elsewhere', () => {
+		const frame = 'drawFrame render/webgpu-renderers.ts';
+		// SwiftShader pays the frame's own work at each call of the render worker, which the browser
+		// makes at the display's rate, while the check counts the frames that S1 steps. One slow CI
+		// runner read 444.4 bytes per frame, and a healthy run 110.7.
+		const swift = placeBudget('render-worker', frame, { swiftShader: true });
+		expect(swift).toBe(512);
+		expect(444.4 > swift).toBe(false);
+		// A regression of about a hundred bytes over the healthy figure still fails on SwiftShader.
+		expect(620 > swift).toBe(true);
+		// The Mac's gate keeps the tight figure, so the same sample fails on a real GPU.
+		const real = placeBudget('render-worker', frame, { swiftShader: false });
+		expect(real).toBe(192);
+		expect(444.4 > real).toBe(true);
+		// The replay keeps its budget, and each pass adds the browser's encoder to it.
+		const replay = 'replay webgpu/backend.ts';
+		expect(placeBudget('render-worker', replay, { swiftShader: true })).toBe(320);
+		expect(placeBudget('render-worker', replay, { swiftShader: true, extra: 32 })).toBe(352);
+		expect(380 > placeBudget('render-worker', replay, { swiftShader: true })).toBe(true);
+	});
 
 	test('name a function that its file still defines, so a moved function keeps its budget', () => {
 		const stale: string[] = [];
