@@ -58,6 +58,7 @@ import {
 	particleCapacity,
 	RIFLE,
 	RUINS,
+	SCORCHES,
 	SURFACE_SIZE,
 	setActiveUnits,
 	stepBattle,
@@ -251,10 +252,51 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 		earth: layerMaps(earthLayer.surface),
 		rock: layerMaps(rockLayer.surface),
 	});
-	still(withShadows(new three.Mesh(toGeometry(three, data.single.field), ground), M.ground));
+	const field = still(
+		withShadows(new three.Mesh(toGeometry(three, data.single.field), ground), M.ground),
+	) as ThreeModule.Mesh;
 	const land = new three.Mesh(toGeometry(three, data.single.land), ground);
 	land.receiveShadow = effects.shadows;
 	still(land);
+
+	// The scorch marks: three.js's DecalGeometry projects each one onto the field, as null3D's decal
+	// material projects its box onto the same terrain. The projector box's local z axis points at the
+	// ground, with the same reach and turn as the null3D half.
+	if (effects.decals) {
+		const [map, , normalMap] = surface('scorch', 1) as ThreeModule.Texture[];
+		const decalMaterial = new three.MeshStandardMaterial({
+			map,
+			normalMap,
+			roughness: 0.95,
+			metalness: 0,
+			transparent: true,
+			depthWrite: false,
+			polygonOffset: true,
+			polygonOffsetFactor: -4,
+		});
+		const { DecalGeometry } = await import('three/addons/geometries/DecalGeometry.js');
+		field.updateMatrixWorld(true);
+		const position = new three.Vector3();
+		const orientation = new three.Euler();
+		const size = new three.Vector3();
+		const down = new three.Quaternion().setFromEuler(new three.Euler(-Math.PI / 2, 0, 0));
+		const upAxis = new three.Vector3(0, 1, 0);
+		const turn = new three.Quaternion();
+		const wanted = new three.Quaternion();
+		for (const mark of SCORCHES) {
+			position.set(mark.x, mark.y, mark.z);
+			turn.setFromAxisAngle(upAxis, mark.yaw);
+			wanted.copy(turn).multiply(down);
+			orientation.setFromQuaternion(wanted);
+			size.set(mark.reach * 2, mark.reach * 2, 3);
+			const decal = new three.Mesh(
+				new DecalGeometry(field, position, orientation, size),
+				decalMaterial,
+			);
+			decal.receiveShadow = effects.shadows;
+			scene.add(decal);
+		}
+	}
 
 	/** A still batch of placed copies of one mesh. */
 	const scatter = (
@@ -680,6 +722,7 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 			bloom: look.bloom,
 			ao: look.ao,
 			grade: gradeTable(look.grade),
+			lens: look.lens,
 		},
 		setCount,
 		step: () => stepBattle(state),
