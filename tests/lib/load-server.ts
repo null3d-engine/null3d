@@ -43,6 +43,9 @@ function viteBuild(root: string, args: readonly string[], env: Record<string, st
 	const build = spawnSync('bunx', ['vite', 'build', ...args], {
 		cwd: root,
 		encoding: 'utf8',
+		// A page build prints a line for every file it writes. The capture's default limit kills
+		// a build whose report runs past it, and the build then reports no error of its own.
+		maxBuffer: 256 << 20,
 		env: { ...process.env, ...env },
 	});
 	if (build.status !== 0)

@@ -67,7 +67,9 @@ a branch on a moved main is cheap.
 - The build keeps the page build's printed report, which lists every file it writes. On 19 October 2026
   that report passed a megabyte after the first-use shader files were split by feature family. The
   capture's default limit killed the child, and the build reported only "the production build failed"
-  with no error. The capture now holds 64 MB.
+  with no error. The capture now holds 64 MB. The test tool's page build prints the same kind of
+  report, and its capture now holds 256 MB for the same reason: the texture-cache page's build fills
+  the default limit, which killed builds of the browser checks.
 - A cache is used only when its entry is whole. The shader modules cache, for example, requires every
   module that `shaders.ts` loads, from its imports and the device module names its tables hold, and a
   record that names the bytes of each of them. A set that misses one, or holds a file with other bytes
