@@ -112,6 +112,8 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const engine: EngineName = params.get('engine') === 'threejs' ? 'threejs' : 'null3d';
 	const effects = effectsFromText(params.get('effects'));
 	const mode = modeFromText(params.get('mode'));
+	const named = params.get('renderer');
+	const threeRenderer = named === 'webgpu' || named === 'webgl' ? named : undefined;
 	document.title = `${comparison.title}, null3D and three.js: null3D demos`;
 	const address = (changes: Record<string, string | null>) => {
 		const next = new URLSearchParams(params);
@@ -218,7 +220,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 			count: startCount(params.get('count'), comparison.ramps[thisDeviceClass()]),
 			effects,
 			gpu: (params.get('gpu') as GpuChoice | null) ?? 'auto',
-			threeRenderer: params.get('renderer') === 'webgpu' ? 'webgpu' : undefined,
+			threeRenderer,
 			stats: params.get('stats') === 'off' ? false : params.get('stats') === 'open' ? 'open' : true,
 		});
 	} catch (error) {
