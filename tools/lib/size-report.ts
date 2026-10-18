@@ -569,9 +569,13 @@ export function downloadSizes(
  *
  * The owner raised the Brotli figure from 165 KB to 166 KB on 18 October 2026, for the screen-space
  * reflections: their code adds about 1.6 KB of real start code, and the branch sat 50 bytes over
- * the old line. The owner chose the raise over trimming.
+ * the old line. The owner chose the raise over trimming. The owner raised it again to 176 KB the
+ * same day, for the still view, the surfaces that let light through and the skin scatter, with the
+ * draw probe back in its worker's script: the branch measured 170,517 bytes against 169,984 and the
+ * reflection probes still to land add about 1.4 KB. The raise comes with the reclaim the owner asked
+ * for: the frame figures behind `measure()` and the error-fix table load on their first use.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 166 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 176 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
