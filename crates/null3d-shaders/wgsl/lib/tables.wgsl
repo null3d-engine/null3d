@@ -1,31 +1,35 @@
 #define_import_path null3d::tables
 
-// The engine's tables in the frame's group: the material table, three.js's table of the
-// split-sum terms of specular light, the two tables of area lights, and the images of rectangle
-// lights. The light tables texture at binding 3 is an array of layers (the light_tables module of
-// the render crate): the split-sum table in the corner of layer 0, the area lights' tables in the
-// corner of layers 1 and 2, and an image in each later layer, with its mip levels. Shaders read
-// the split-sum table texel by texel with `textureLoad`, and the rest through the frame's
-// filtering sampler. On WebGPU the material table is a storage buffer (null3d::mesh). On WebGL2
-// it is a data texture, one row of texels per material, and the split-sum table sits in the
-// columns after each row's texels, so the material and split-sum tables take one texture unit of
-// a stage, and the light tables one more.
+// The engine's tables in the frame's group: the material table, three.js's table of the split-sum
+// terms of specular light, the two tables of area lights, the images of rectangle lights, and the
+// reflection probes' maps. Binding 3 is one texture array of half floats (the light_tables module
+// of the render crate): layer 0 is spare, layers 1 and 2 hold the area lights' tables in their
+// corner, the reflection probes' maps take the layers after them, and an image follows in each
+// later layer, with its mip levels. The split-sum table takes no texture of its own: on WebGL2 it
+// sits in the columns of the material table's texture, and on WebGPU in the materials' custom
+// values. Shaders read the split-sum table texel by texel with `textureLoad`, and the rest of the
+// array through the frame's filtering sampler. The array is one unit of a WebGL2 stage.
 
 #ifdef WEBGL2
 /// The material table: row `id` holds material `id`, one texel per `vec4f` of its `Material`.
 /// The split-sum table follows in the columns from DFG_COLUMN.
 @group(0) @binding(1) var materials: texture_2d<f32>;
-
-/// The first column of the split-sum table in the material table's texture: one past a
-/// material's texels.
-const DFG_COLUMN: u32 = 15u;
+#else
+/// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
+/// shaders read them too, and read no storage buffers, so they have a data texture of their own.
+/// The split-sum table follows in the columns from DFG_COLUMN.
+@group(0) @binding(2) var custom_values: texture_2d<f32>;
 #endif
 
-/// The light tables, at binding 3 of the frame's group: see the module notes.
+/// The first column of the split-sum table in its data texture: one past a material's texels.
+const DFG_COLUMN: u32 = 15u;
+
+/// The light tables and the probes' maps, at binding 3 of the frame's group: see the module notes.
 @group(0) @binding(3) var light_tables: texture_2d_array<f32>;
 
 /// The frame group's filtering sampler: linear between texels and between mip levels, clamped at
-/// the edges. The environment's map, the copy of the opaque color and the light tables share it.
+/// the edges. The environment's map, the copy of the opaque color, the light tables and the
+/// probes' maps share it.
 @group(0) @binding(13) var environment_sampler: sampler;
 
 /// Entries along each side of the split-sum table.
@@ -33,6 +37,9 @@ const DFG_SIZE: u32 = 16u;
 
 /// Entries along each side of each area light table.
 const AREA_SIZE: u32 = 64u;
+
+/// Texels along each side of a rectangle light's image.
+const IMAGE_SIZE: u32 = 128u;
 
 /// Mip levels of a rectangle light's image, down to one texel.
 const IMAGE_LEVELS: f32 = 8.0;
@@ -42,7 +49,7 @@ fn dfg_entry(at: vec2u) -> vec2f {
 #ifdef WEBGL2
     return textureLoad(materials, vec2u(DFG_COLUMN, 0u) + at, 0).xy;
 #else
-    return textureLoad(light_tables, at, 0, 0).xy;
+    return textureLoad(custom_values, vec2u(DFG_COLUMN, 0u) + at, 0).xy;
 #endif
 }
 
@@ -73,8 +80,10 @@ fn table(layer: i32, uv: vec2f) -> vec4f {
 }
 
 /// A rectangle light's image in layer `layer`, at `uv` from its corner at +X and -Y, at mip level
-/// `level`: 0 is the sharpest.
+/// `level`: 0 is the sharpest. The image fills the corner of its layer, which the probes' maps may
+/// make larger than the image.
 fn light_image(layer: i32, uv: vec2f, level: f32) -> vec3f {
     let at = clamp(level, 0.0, IMAGE_LEVELS - 1.0);
-    return textureSampleLevel(light_tables, environment_sampler, saturate(uv), layer, at).rgb;
+    let scale = f32(IMAGE_SIZE) / f32(textureDimensions(light_tables).x);
+    return textureSampleLevel(light_tables, environment_sampler, saturate(uv) * scale, layer, at).rgb;
 }

@@ -1,30 +1,34 @@
-//! The light tables: one 2D array texture of half floats, at binding 3 of the frame's group on
-//! both GPU paths (`null3d::tables`), which the environment's filtering sampler reads.
+//! The light tables: three.js's split-sum table (WebGL2 only), the two tables of area lights and
+//! the images of rectangle lights, kept in the frame group's shared texture array ([`crate::probes`]
+//! owns that array; its module notes describe the layers). The array is one 2D array texture of
+//! half floats at binding 3 of the frame's group on both GPU paths (`null3d::tables`), which the
+//! environment's filtering sampler reads.
 //!
-//! - Layer 0 holds three.js's split-sum table ([`crate::dfg`]) in its corner: the scale and the
-//!   bias of each entry, then two zeros. WebGPU reads it there. WebGL2 reads its copy beside the
-//!   material table, which takes no texture unit of its own.
-//! - Layers 1 and 2 hold the two tables of area lights in their corner, 64 x 64 texels: the values
-//!   of the inverse matrices that fit GGX by linearly transformed cosines, and the scale and bias
-//!   of their Fresnel terms, with two zeros. They load on first use. Until they arrive both layers
-//!   hold zeros, and the core lists no area light
+//! - Layer 0 is spare: it held the split-sum table before the probes took the array over. WebGL2
+//!   reads the split-sum table beside the material table, and WebGPU in the materials' custom
+//!   values, so no layer holds it.
+//! - Layers 1 and 2 ([`AREA_LAYER`]) hold the two tables of area lights in their corner, 64 x 64
+//!   texels: the values of the inverse matrices that fit GGX by linearly transformed cosines, and
+//!   the scale and bias of their Fresnel terms, with two zeros. They load on first use. Until they
+//!   arrive both layers hold zeros, and the core lists no area light
 //!   ([`null3d_core::lights::LightTable::set_area_ready`]).
-//! - Each layer from 3 on holds the image of a rectangle light, 128 x 128 texels with every mip
-//!   level, in linear light.
+//! - The reflection probes' maps take the layers from [`FIRST_IMAGE_LAYER`] on, one each.
+//! - Each layer after the probes holds the image of a rectangle light, 128 x 128 texels with every
+//!   mip level, in linear light, in its corner.
 //!
-//! The texture starts at 64 x 64 texels and 3 layers with one level. A light's first image makes
-//! it again at 128 x 128 texels with every level, and room for 4 images, then 8, 16 and 32 as more
-//! lights take images. A frame builder then binds it again in every frame group.
+//! The texture starts at 64 x 64 texels and 3 layers with one level, and grows on demand: a probe
+//! or a light's first image makes it again at the size and layers that both need. A regrow copies
+//! the existing layers into the new texture, so no probe captures again and the images are
+//! re-uploaded from engine memory, which costs nothing.
 //!
 //! The tables are those of three.js 0.186.1's `RectAreaLightTexturesLib`, from Heitz, Dupuy, Hill
 //! and Neubelt's fit (`selfshadow/ltc_code`, under the BSD two-clause licence that the engine's
 //! third-party notices hold). The engine's package ships them in a file of their own, which the
 //! sketch thread reads into [`LightTables::area_texels_mut`].
 
-use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, view};
+use null3d_gpu::drawlist::{DrawList, Op};
 
-use crate::dfg;
-use crate::frame::{RecordError, UploadArena, address};
+use crate::frame::{RecordError, address};
 
 /// Texels along each side of each area table.
 pub const TABLE_SIZE: u32 = 64;
@@ -38,20 +42,21 @@ pub const IMAGE_SIZE: u32 = 128;
 pub const IMAGE_LEVELS: u32 = 8;
 /// Half floats of one image with every level: four per texel.
 pub const IMAGE_HALVES: usize = 4 * (4usize.pow(IMAGE_LEVELS) - 1) / 3;
-/// The layer of the first light's image.
+/// The first layer of the probes' maps, and so of the images that follow them.
 pub const FIRST_IMAGE_LAYER: u32 = 3;
 /// The most lights with images at once.
 pub const MAX_IMAGES: usize = 32;
-/// Bytes that [`upload_dfg`] copies into a frame's upload arena: the split-sum table as
-/// `RGBA16_FLOAT` texels.
-pub const DFG_BYTES: usize = (8 * dfg::SIZE * dfg::SIZE) as usize;
 
-/// The size, layers and mip levels of the light tables' texture.
+/// The size, layers and mip levels that the light tables need of the shared texture, beside the
+/// probes' maps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Shape {
-    size: u32,
-    layers: u32,
-    levels: u32,
+pub struct Shape {
+    /// Texels across a side of each layer.
+    pub size: u32,
+    /// The layers: the area tables, the probes' maps, then the images' room.
+    pub layers: u32,
+    /// Mip levels the light images need, or 1 while no image is present.
+    pub levels: u32,
 }
 
 /// A rectangle light's image in engine memory.
@@ -65,20 +70,20 @@ struct Image {
     pending: bool,
 }
 
-/// The area lights' tables and the lights' images in engine memory, and the texture that holds
-/// them on the GPU. See the module documentation.
+/// The area lights' tables and the lights' images in engine memory, and the layers of the frame
+/// group's shared array that hold them. See the module documentation.
 #[derive(Debug, Default)]
 pub struct LightTables {
     /// The half floats of layers 1 and 2, texel after texel: empty until the load starts.
     area: Vec<u16>,
     /// True from when the load finishes, so the shaders can read the tables.
     ready: bool,
-    /// True while the texture lacks the area tables.
+    /// True while the array lacks the area tables.
     area_pending: bool,
-    /// The lights' images, by place: the place of an image is its layer less the first image's.
+    /// The lights' images, by place: an image's layer is the probes' layers, then its place.
     images: Vec<Image>,
-    /// The shape of the texture on the GPU, or `None` before the frame builder makes it.
-    made: Option<Shape>,
+    /// The probe layers that the array holds, from the last frame's shape: the images follow them.
+    probe_layers: u32,
 }
 
 impl LightTables {
@@ -137,14 +142,15 @@ impl LightTables {
     }
 
     /// Marks light `light`'s image as filled, so the next frame uploads it, and returns its layer
-    /// in the texture, or `None` when the light has no image.
-    pub fn finish_image(&mut self, light: u32) -> Option<u32> {
+    /// in the shared array, or `None` when the light has no image. The images follow the probe
+    /// layers, which `probe_layers` gives.
+    pub fn finish_image(&mut self, light: u32, probe_layers: u32) -> Option<u32> {
         let place = self.place_of(light)?;
         self.images[place].pending = true;
-        Some(FIRST_IMAGE_LAYER + place as u32)
+        Some(FIRST_IMAGE_LAYER + probe_layers + place as u32)
     }
 
-    /// Frees light `light`'s image's place for another light. The texture keeps its layers.
+    /// Frees light `light`'s image's place for another light. The array keeps its layers.
     pub fn remove_image(&mut self, light: u32) {
         if let Some(place) = self.place_of(light) {
             let image = &mut self.images[place];
@@ -159,76 +165,63 @@ impl LightTables {
             .flatten()
     }
 
-    /// The shape that the texture needs for the tables and the images.
-    fn wanted(&self) -> Shape {
+    /// The image layers' room: a power of two of at least four once a light has an image, else 0.
+    fn image_room(&self) -> u32 {
         if self.images.is_empty() {
-            Shape {
-                size: TABLE_SIZE,
-                layers: FIRST_IMAGE_LAYER,
-                levels: 1,
-            }
+            0
         } else {
-            let room = self.images.len().next_power_of_two().max(4) as u32;
-            Shape {
-                size: IMAGE_SIZE,
-                layers: FIRST_IMAGE_LAYER + room,
-                levels: IMAGE_LEVELS,
-            }
+            self.images.len().next_power_of_two().max(4) as u32
         }
     }
 
-    /// Forgets the texture, after the GPU is lost: the frame builder makes it again.
-    pub fn reset_gpu(&mut self) {
-        self.made = None;
+    /// The shape the shared array needs for the light content beside `probe_layers` layers of
+    /// `probe_size` texels: the size the larger of the two needs, the layers of the tables, the
+    /// probes and the images, and the levels the images need.
+    pub fn shape(&self, probe_size: u32, probe_layers: u32) -> Shape {
+        let images = self.image_room();
+        let size = if probe_layers > 0 {
+            probe_size.max(IMAGE_SIZE)
+        } else if images > 0 {
+            IMAGE_SIZE
+        } else {
+            TABLE_SIZE
+        };
+        Shape {
+            size,
+            layers: FIRST_IMAGE_LAYER + probe_layers + images,
+            levels: if images > 0 { IMAGE_LEVELS } else { 1 },
+        }
     }
 
-    /// Records the creation of the texture under id `texture`, in the shape that the tables and
-    /// images need, and marks everything it holds for an upload.
-    pub(crate) fn create(&mut self, list: &mut DrawList, texture: u32) -> Result<(), RecordError> {
-        let shape = self.wanted();
-        list.push(
-            Op::CreateTexture,
-            &[
-                texture,
-                shape.size,
-                shape.size,
-                shape.layers,
-                format::RGBA16_FLOAT,
-                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
-                1,
-                shape.levels,
-                view::D2_ARRAY,
-            ],
-        )?;
-        self.made = Some(shape);
+    /// Forgets the array, after the GPU is lost: the next frame uploads everything again.
+    pub fn reset_gpu(&mut self) {
         self.area_pending = self.ready;
         for image in &mut self.images {
             image.pending = image.light != 0;
         }
-        Ok(())
     }
 
-    /// Records what the texture lacks: the texture again in a new shape when the images need more
-    /// room, the area tables once they arrive, and each image once it is filled. The copies read
-    /// the tables and images where they stay in engine memory. Returns true when it made the
-    /// texture again, so the frame builder uploads the split-sum table and binds the texture
-    /// again.
+    /// Records what the array lacks: the area tables once they arrive, and each image once it is
+    /// filled, into `array`, which the probes own. `probe_layers` gives the probe layers that the
+    /// images follow, as the frame's shape set them.
     pub(crate) fn record(
         &mut self,
         list: &mut DrawList,
-        texture: u32,
+        array: u32,
+        probe_layers: u32,
     ) -> Result<bool, RecordError> {
-        let remade = self.made.is_some_and(|made| made != self.wanted());
-        if remade {
-            list.push(Op::DestroyTexture, &[texture])?;
-            self.create(list, texture)?;
-        }
+        let changed = self.probe_layers != probe_layers
+            || self
+                .images
+                .iter()
+                .any(|image| image.pending && image.light != 0);
+        self.probe_layers = probe_layers;
         if self.area_pending {
             let bytes = halves_as_bytes(&self.area);
             list.push(
                 Op::WriteTexture,
                 &[
-                    texture,
+                    array,
                     0,
                     0,
                     0,
@@ -243,9 +236,10 @@ impl LightTables {
             self.area_pending = false;
         }
         for (place, image) in self.images.iter_mut().enumerate() {
-            if !image.pending {
+            if !image.pending || image.light == 0 {
                 continue;
             }
+            let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
             let mut from = 0;
             for level in 0..IMAGE_LEVELS {
                 let side = IMAGE_SIZE >> level;
@@ -254,11 +248,11 @@ impl LightTables {
                 list.push(
                     Op::WriteTexture,
                     &[
-                        texture,
+                        array,
                         level,
                         0,
                         0,
-                        FIRST_IMAGE_LAYER + place as u32,
+                        layer,
                         side,
                         side,
                         1,
@@ -270,7 +264,7 @@ impl LightTables {
             }
             image.pending = false;
         }
-        Ok(remade)
+        Ok(changed)
     }
 }
 
@@ -278,35 +272,6 @@ impl LightTables {
 fn halves_as_bytes(halves: &[u16]) -> &[u8] {
     // SAFETY: a u16 has no padding bytes, and the slice covers exactly the halves' bytes.
     unsafe { std::slice::from_raw_parts(halves.as_ptr().cast::<u8>(), size_of_val(halves)) }
-}
-
-/// Records the upload of the split-sum table into the corner of layer 0 of `texture`.
-pub(crate) fn upload_dfg(
-    list: &mut DrawList,
-    arena: &mut UploadArena,
-    texture: u32,
-) -> Result<(), RecordError> {
-    let (at, texels) = arena.push_zeroed(DFG_BYTES)?;
-    for (texel, entry) in texels.as_chunks_mut::<8>().0.iter_mut().zip(dfg::entries()) {
-        texel[..2].copy_from_slice(&entry[0].to_le_bytes());
-        texel[2..4].copy_from_slice(&entry[1].to_le_bytes());
-    }
-    list.push(
-        Op::WriteTexture,
-        &[
-            texture,
-            0,
-            0,
-            0,
-            0,
-            dfg::SIZE,
-            dfg::SIZE,
-            1,
-            at,
-            DFG_BYTES as u32,
-        ],
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -324,42 +289,49 @@ mod tests {
         assert!(tables.ready() && tables.area_pending);
         tables.area_pending = false;
         tables.reset_gpu();
-        assert_eq!(tables.made, None);
+        assert!(tables.area_pending);
     }
 
     #[test]
-    fn images_take_free_places_and_grow_the_texture_in_steps() {
+    fn images_take_free_places_and_the_shape_grows_in_steps() {
         let mut tables = LightTables::default();
-        assert_eq!(tables.wanted().layers, FIRST_IMAGE_LAYER);
+        assert_eq!(
+            tables.shape(256, 0),
+            Shape {
+                size: TABLE_SIZE,
+                layers: FIRST_IMAGE_LAYER,
+                levels: 1,
+            }
+        );
         assert_eq!(
             tables.image_texels_mut(7).map(|t| t.len()),
             Some(IMAGE_HALVES)
         );
-        assert_eq!(tables.finish_image(7), Some(FIRST_IMAGE_LAYER));
-        assert_eq!(tables.finish_image(8), None);
+        assert_eq!(tables.finish_image(7, 4), Some(FIRST_IMAGE_LAYER + 4));
+        assert_eq!(tables.finish_image(8, 4), None);
         assert_eq!(
-            tables.wanted(),
+            tables.shape(256, 4),
             Shape {
-                size: IMAGE_SIZE,
-                layers: FIRST_IMAGE_LAYER + 4,
+                size: IMAGE_SIZE.max(256),
+                layers: FIRST_IMAGE_LAYER + 4 + 4,
                 levels: IMAGE_LEVELS,
             }
         );
         // A light keeps its place for a new image, and a freed place goes to the next light.
         tables.image_texels_mut(9).unwrap();
-        assert_eq!(tables.finish_image(9), Some(FIRST_IMAGE_LAYER + 1));
+        assert_eq!(tables.finish_image(9, 4), Some(FIRST_IMAGE_LAYER + 5));
         tables.image_texels_mut(7).unwrap();
-        assert_eq!(tables.finish_image(7), Some(FIRST_IMAGE_LAYER));
+        assert_eq!(tables.finish_image(7, 4), Some(FIRST_IMAGE_LAYER + 4));
         tables.remove_image(7);
         tables.image_texels_mut(11).unwrap();
-        assert_eq!(tables.finish_image(11), Some(FIRST_IMAGE_LAYER));
+        assert_eq!(tables.finish_image(11, 4), Some(FIRST_IMAGE_LAYER + 4));
         for light in 20..(20 + MAX_IMAGES as u32 - 2) {
             assert!(tables.image_texels_mut(light).is_some());
         }
         assert!(tables.image_texels_mut(99).is_none());
         assert_eq!(
-            tables.wanted().layers,
-            FIRST_IMAGE_LAYER + MAX_IMAGES as u32
+            tables.shape(128, 2).layers,
+            FIRST_IMAGE_LAYER + 2 + MAX_IMAGES as u32
         );
     }
 
@@ -368,6 +340,7 @@ mod tests {
         let tables = include_str!("../../null3d-shaders/wgsl/lib/tables.wgsl");
         for line in [
             format!("const AREA_SIZE: u32 = {TABLE_SIZE}u;"),
+            format!("const IMAGE_SIZE: u32 = {IMAGE_SIZE}u;"),
             format!("const IMAGE_LEVELS: f32 = {IMAGE_LEVELS}.0;"),
             "@group(0) @binding(3) var light_tables: texture_2d_array<f32>;".to_string(),
             format!("table({AREA_LAYER}, uv), table({}, uv).xy", AREA_LAYER + 1),

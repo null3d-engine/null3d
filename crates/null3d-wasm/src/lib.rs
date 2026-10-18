@@ -75,6 +75,7 @@ use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::probe_grid::ProbeGrid;
+use null3d_render::probes::ProbeSettings;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
@@ -3030,11 +3031,12 @@ pub fn area_light_image(light: u32) -> u32 {
 #[wasm_bindgen(js_name = finishAreaLightImage)]
 pub fn finish_area_light_image(light: u32) -> u32 {
     with_engine(|e| {
+        let probe_layers = e.renderer.settings().probes().probe_layers();
         let layer = e
             .renderer
             .settings_mut()
             .light_tables_mut()
-            .finish_image(light);
+            .finish_image(light, probe_layers);
         let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
         e.lights
             .set_value(light, light_value::IMAGE, image)
@@ -3810,6 +3812,109 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         }
         maps.add(texture, stages);
         0
+    })
+}
+
+// Sets reflection probe `slot`, from 0, adding it when the slot is empty (decision record D-149):
+// its box from the low corner to the high one, the point it captures from, its blend distance and
+// intensity, its flags (`constants::probe_flag`), the layers its captures draw and its priority.
+// Positions are in the world, in 64-bit floats. The first probe adds the six capture views, and
+// fails with TOO_MANY_VIEWS when the view list has no room for them.
+/// Sets a reflection probe.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen(js_name = setReflectionProbe)]
+pub fn set_reflection_probe(
+    slot: u32,
+    low_x: f64,
+    low_y: f64,
+    low_z: f64,
+    high_x: f64,
+    high_y: f64,
+    high_z: f64,
+    capture_x: f64,
+    capture_y: f64,
+    capture_z: f64,
+    blend: f32,
+    intensity: f32,
+    flags: u32,
+    layers: u32,
+    priority: f32,
+) -> u32 {
+    with_engine(|e| {
+        let settings = ProbeSettings {
+            low: [low_x, low_y, low_z],
+            high: [high_x, high_y, high_z],
+            capture: [capture_x, capture_y, capture_z],
+            blend,
+            intensity,
+            box_projection: flags & constants::probe_flag::BOX_PROJECTION != 0,
+            always: flags & constants::probe_flag::ALWAYS != 0,
+            layers,
+            priority,
+        };
+        match e.renderer.settings_mut().set_probe(slot as usize, settings) {
+            Ok(()) => 0,
+            Err(_) => render_failure(render_detail::TOO_MANY_VIEWS, MAX_VIEWS as u32),
+        }
+    })
+}
+
+// Removes reflection probe `slot`. The last probe takes the capture views with it.
+/// Removes a reflection probe.
+#[wasm_bindgen(js_name = removeReflectionProbe)]
+pub fn remove_reflection_probe(slot: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().remove_probe(slot as usize);
+        0
+    })
+}
+
+// Makes reflection probe `slot` capture the scene again, in a frame soon.
+/// Makes a reflection probe capture again.
+#[wasm_bindgen(js_name = captureReflectionProbe)]
+pub fn capture_reflection_probe(slot: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .probes_mut()
+            .capture(slot as usize);
+        0
+    })
+}
+
+// Sets the texels across each reflection probe map's largest level, 128, 256 or 512, from the
+// next frame on: the quality preset's probe size. A new size captures every probe again.
+/// Sets the size of reflection probes' maps.
+#[wasm_bindgen(js_name = setProbeSize)]
+pub fn set_probe_size(size: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_probe_size(size);
+        0
+    })
+}
+
+// Returns 1 while a reflection probe waits for its first capture, and 0 otherwise. Hold mode then
+// records the held frame once more, so the frame that it draws has the probe.
+/// True while a reflection probe waits for its first capture.
+#[wasm_bindgen(js_name = probesWaiting)]
+pub fn probes_waiting() -> u32 {
+    with_engine(|e| u32::from(e.renderer.settings().probes().waiting()))
+}
+
+// Returns the image id under which TypeScript sends the generator that runs each probe's filter,
+// once: the thread that draws keeps the generator for the page's life. Probes capture once it holds
+// it.
+/// Takes the id of the reflection probes' generator.
+#[wasm_bindgen(js_name = probeGenerator)]
+pub fn probe_generator() -> u32 {
+    value_with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        if let Some(id) = settings.probes().generator() {
+            return Ok(id);
+        }
+        let id = settings.textures_mut().take_image_id();
+        settings.probes_mut().set_generator(id);
+        Ok(id)
     })
 }
 

@@ -222,6 +222,9 @@ pub struct View {
     removed: bool,
     /// What a mirror view mirrors, or `None` for a view of its own camera.
     mirror: Option<Mirroring>,
+    /// The face of a reflection probe's cube that a capture view draws, from 0, or `None` for
+    /// another view.
+    probe_face: Option<u8>,
     /// What a full-screen pass draws, or `None` for a view of a scene.
     fullscreen: Option<Fullscreen>,
 }
@@ -283,6 +286,7 @@ impl Default for View {
             target: ViewTarget::default(),
             removed: false,
             mirror: None,
+            probe_face: None,
             fullscreen: None,
         }
     }
@@ -318,6 +322,23 @@ impl View {
         }
     }
 
+    /// A capture view of reflection probes (see [`crate::probes`]): it draws face `face` of the
+    /// cube around the capturing probe's capture point into a square target of `size` texels,
+    /// background included. It stays switched off while no probe captures, and the render graph
+    /// keeps it, so switching it on makes no new plan.
+    pub fn probe_face(face: u8, size: u32) -> Self {
+        Self {
+            probe_face: Some(face),
+            target: ViewTarget {
+                size: Some((size, size)),
+                enabled: false,
+                shown: true,
+                ..ViewTarget::default()
+            },
+            ..Self::default()
+        }
+    }
+
     /// A full-screen pass, which draws `fullscreen` over the whole of `target`: of its own size, or
     /// of the render size halved as many times as it says.
     pub fn fullscreen(fullscreen: Fullscreen, target: ViewTarget) -> Self {
@@ -329,6 +350,11 @@ impl View {
             },
             ..Self::default()
         }
+    }
+
+    /// The face that a capture view of reflection probes draws, or `None` for another view.
+    pub fn captured_face(&self) -> Option<u8> {
+        self.probe_face
     }
 
     /// What a full-screen pass draws, or `None` for a view of a scene.

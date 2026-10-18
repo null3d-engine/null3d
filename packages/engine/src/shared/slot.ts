@@ -112,7 +112,8 @@ export const ReplayDelayMs = 32;
 /**
  * In hold mode, the first frame that the thread that draws draws, up to the frame published. The
  * sketch thread records the held frame twice when a feature draws with what the frame before it
- * drew, as screen-space reflections read the frame before's color, so the held frame has one.
+ * drew, as screen-space reflections read the frame before's color and a reflection probe that
+ * captures in one frame lights surfaces from then on, so the held frame has it.
  */
 export const HeldFrom = 35;
 /**

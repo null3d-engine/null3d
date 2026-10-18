@@ -436,6 +436,42 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	addSkyMap(texture: number, stages: number): number;
 	/**
+	 * Sets reflection probe `slot`, adding it when the slot is empty: its box from the low corner to
+	 * the high one, the point it captures from, its blend and intensity, its flags
+	 * (`REFLECTION_PROBE_*`), the layers its captures draw and its priority. The first probe adds
+	 * the six capture views, and fails when the view list has no room for them.
+	 */
+	setReflectionProbe(
+		slot: number,
+		lowX: number,
+		lowY: number,
+		lowZ: number,
+		highX: number,
+		highY: number,
+		highZ: number,
+		captureX: number,
+		captureY: number,
+		captureZ: number,
+		blend: number,
+		intensity: number,
+		flags: number,
+		layers: number,
+		priority: number,
+	): number;
+	/** Removes reflection probe `slot`. The last probe takes the capture views with it. */
+	removeReflectionProbe(slot: number): number;
+	/** Makes reflection probe `slot` capture the scene again, in a frame soon. */
+	captureReflectionProbe(slot: number): number;
+	/** Sets the texels across each reflection probe map's largest level, 128, 256 or 512. */
+	setProbeSize(size: number): number;
+	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
+	probesWaiting(): number;
+	/**
+	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
+	 * filters, once.
+	 */
+	probeGenerator(): number;
+	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
 	 * layer, and level after level for a texture whose data brings its mip levels.
@@ -999,6 +1035,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setCubeImages',
 	'generateTexture',
 	'addSkyMap',
+	'setReflectionProbe',
+	'removeReflectionProbe',
+	'captureReflectionProbe',
+	'setProbeSize',
+	'probesWaiting',
+	'probeGenerator',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
