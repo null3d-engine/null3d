@@ -36,6 +36,7 @@ import {
 	sampleCameraLoop,
 	type TextureData,
 } from '../../lib/compare-scene';
+import { LENS_WGSL } from '../../lib/lens';
 import { null3dSprites } from '../../lib/particles-null3d';
 import { SIGNATURE_MESSAGE } from '../scene-signature';
 import {
@@ -48,7 +49,10 @@ import {
 	drawNightSprites,
 	FACADE_KINDS,
 	FACADE_LIT_SHARE,
+	FACADE_WINDOW,
+	FLYER_COUNT,
 	facadeMaps,
+	flyerPose,
 	HEADLAMPS,
 	HEADLIGHT_AIM,
 	LAMP_LIGHT,
@@ -67,6 +71,7 @@ import {
 	nightMeshes,
 	PARKED_PER_BLOCK,
 	parkedPose,
+	ROOM_DEPTH,
 	SIDEWALK_TILE,
 	SIGN,
 	SIGNS_PER_BLOCK,
@@ -150,6 +155,7 @@ export default defineSketch(
 			bloom: effects.bloom && { ...look.bloomChain, threshold: look.bloom.threshold, blend: 'add' },
 			ao: effects.ao && { radius: look.ao.radius, intensity: look.ao.intensity },
 		});
+		if (effects.lens) post.addEffect({ wgsl: LENS_WGSL, uniforms: look.lens });
 		if (effects.grade) {
 			const table = gradeTable(look.grade);
 			const data = Float32Array.from(
@@ -199,6 +205,11 @@ export default defineSketch(
 					windowLight: look.windows.intensity,
 					shopLight: look.windows.shops,
 					neonLight: look.windows.neon,
+					winU0: FACADE_WINDOW[kind][0],
+					winU1: FACADE_WINDOW[kind][1],
+					winV0: FACADE_WINDOW[kind][2],
+					winV1: FACADE_WINDOW[kind][3],
+					roomDepth: ROOM_DEPTH,
 				},
 				textures: {
 					colorMap: upload(maps.color),
@@ -288,6 +299,7 @@ export default defineSketch(
 			materials.standard({ color, roughness: 0.28, metalness: 0.55 }),
 		);
 		const whitePaint = materials.standard({ color: '#ffffff', roughness: 0.28, metalness: 0.55 });
+		const flyerPaint = materials.standard({ color: '#363c46', roughness: 0.3, metalness: 0.7 });
 		const cabin = materials.standard({ color: '#0b0d10', roughness: 0.12, metalness: 0.2 });
 		const headlamp = materials.standard({
 			color: '#000000',
@@ -762,6 +774,19 @@ export default defineSketch(
 
 		const blocks = mode === 'instanced' ? instanced() : sceneGraph();
 
+		// The flying cars cross the town's sky in both modes, as scenery of its own: their batches
+		// keep the measured scene graph to the town's blocks.
+		const flyers = (
+			[
+				['flyerBody', flyerPaint],
+				['flyerHead', headlamp],
+				['flyerTail', tailLamp],
+			] as const
+		).map(([name, material]) =>
+			scene.createInstances(mesh(name), FLYER_COUNT, { material, dynamic: true }),
+		);
+		const flyerAt = new Float64Array(4);
+
 		// Particles: a sprite batch for each layer of the town's sprite rows.
 		const sprites = effects.particles
 			? await makeNightSprites(capacity, (layer) => null3dSprites({ scene, textures }, layer))
@@ -793,6 +818,16 @@ export default defineSketch(
 		const pose = () => {
 			const seconds = steps * SIM_STEP;
 			blocks.pose(seconds);
+			for (let i = 0; i < FLYER_COUNT; i++) {
+				flyerPose(seconds, i, flyerAt);
+				for (const batch of flyers) {
+					batch.positions[i * 3] = flyerAt[0] as number;
+					batch.positions[i * 3 + 1] = flyerAt[1] as number;
+					batch.positions[i * 3 + 2] = flyerAt[2] as number;
+					writeYaw(batch.rotations, i, flyerAt[3] as number);
+				}
+			}
+			for (const batch of flyers) batch.markDirty();
 			time.time = seconds;
 			for (const material of timed) material.set(time as never);
 			for (let b = 0; b < town.activeBlocks; b++)

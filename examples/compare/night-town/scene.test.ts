@@ -12,8 +12,12 @@ import {
 	createNightTown,
 	EXHAUST_PER_CAR,
 	FLICKER_LOW,
+	FLYER_COUNT,
+	FLYER_LANES,
+	FLYERS_PER_LANE,
 	facadeMaps,
 	facadeMesh,
+	flyerPose,
 	GLOWS_PER_BLOCK,
 	LIGHTS_PER_BLOCK,
 	LOOP_HALF,
@@ -61,6 +65,36 @@ describe('Night town', () => {
 		expect(nightBlocks(1e9)).toBe(MAX_BLOCKS);
 		expect(nightObjects(120, 'scene-graph')).toBeGreaterThan(nightObjects(12, 'scene-graph'));
 		expect(nightObjects(120, 'instanced')).toBeLessThan(nightObjects(120, 'scene-graph'));
+	});
+
+	test('the flying cars keep their lanes, move with the clock and wrap at the lane ends', () => {
+		expect(FLYER_COUNT).toBe(FLYERS_PER_LANE * FLYER_LANES.length);
+		const first = new Float64Array(4);
+		const again = new Float64Array(4);
+		flyerPose(0, 0, first);
+		flyerPose(0, 0, again);
+		expect([...again]).toEqual([...first]);
+		// Each car stays on its lane's line and height as it crosses.
+		for (let i = 0; i < FLYER_COUNT; i++) {
+			flyerPose(0, i, first);
+			for (let t = 0; t < 240; t += 7) {
+				flyerPose(t, i, again);
+				expect(again[1]).toBe(first[1]);
+				const lane = FLYER_LANES[i % FLYER_LANES.length];
+				if (lane?.axis === 'x') expect(again[2]).toBe(first[2]);
+				else expect(again[0]).toBe(first[0]);
+			}
+		}
+		// The lanes sit at distinct heights, and a car moves along its own.
+		flyerPose(0, 0, first);
+		flyerPose(3, 0, again);
+		expect(again[0]).not.toBe(first[0]);
+		const heights = new Set<number>();
+		for (let i = 0; i < FLYER_COUNT; i++) {
+			flyerPose(0, i, again);
+			heights.add(again[1] as number);
+		}
+		expect(heights.size).toBe(FLYER_LANES.length);
 	});
 
 	test('the ramps stay under the 1,024 lights that both engines list at once, and the hold fits', () => {
