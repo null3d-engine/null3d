@@ -76,7 +76,6 @@ Options D, A and the capture and blend above. The quality setting `probeSize` se
 - Code: `crates/null3d-render/src/probes.rs` (probes, their scheduling, the filter command, the capture views' cameras and each view's list), `view.rs` (capture views), `frame.rs`, both frame builders (the array, the lists, the split-sum table's move on WebGPU), `dfg.rs`, `textures.rs` (image ids for generators without a texture), `crates/null3d-gpu` (`Op::ProbeFilter`), the core's calls, `lib/probes.wgsl`, `lib/cubemap.wgsl`, `lib/tables.wgsl`, `lit.wgsl`, `probe.wgsl`, and the backends' `probes.ts`.
 - Docs: `api/scene`, `concepts/lighting`, the quality preset table, the error page E1430, and the three.js mapping's `cube-camera` entry.
 - Skills: the develop skill's quick reference and lighting notes, and the port skill's mapping notes.
-=======
 
 ## Addendum, 2026-10-14: binding 3 is now shared with the area lights
 
