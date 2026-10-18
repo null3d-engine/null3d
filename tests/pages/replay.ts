@@ -156,6 +156,9 @@ run('replay', async () => {
 		// The table of object ranges, which the frame group binds and only shaders that read ids
 		// search.
 		[18, 16, U.UNIFORM | U.COPY_DST, -1],
+		// The view's list of reflection probes, which the frame group binds and the shader skips
+		// while its head count is zero.
+		[20, 528, U.UNIFORM | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -230,22 +233,6 @@ run('replay', async () => {
 		G.COMPARE_NONE,
 		1,
 	);
-	// The light tables, which the frame group binds: an array of half-float layers whose first
-	// layer holds the split-sum table, which the shader loads texel by texel. This view reads one
-	// entry of it, so one layer of one texel holds the scale and the bias above.
-	memory.push(
-		G.OP_CREATE_TEXTURE,
-		3,
-		1,
-		1,
-		1,
-		G.FORMAT_RGBA16_FLOAT,
-		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-		1,
-		1,
-		G.VIEW_2D_ARRAY,
-	);
-	memory.push(G.OP_WRITE_TEXTURE, 3, 0, 0, 0, 0, 1, 1, 1, blobs.dfg, 8);
 	// The blank light probe grid, which the frame group binds while a scene has none: one black
 	// texel, as the engine makes it.
 	memory.push(
@@ -260,21 +247,24 @@ run('replay', async () => {
 		1,
 		G.VIEW_3D,
 	);
-	// The frame group's other texture bindings, which nothing here reads: the materials' custom
-	// values, ambient occlusion's texture, and the row values of instance batches. A texture that
-	// nothing writes reads as zero.
+	// The materials' custom values, whose columns from 13 hold three.js's table of the split-sum
+	// terms of specular light, as the engine keeps it. No material here has custom values, so the
+	// texture reads as zero except the table. Ambient occlusion's texture and the row values of
+	// instance batches bind it too, and nothing here reads them.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
-		8,
+		29,
 		1,
 		1,
 		G.FORMAT_RGBA32_FLOAT,
-		GPUTextureUsage.TEXTURE_BINDING,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
 		1,
 		1,
 		G.VIEW_2D,
 	);
+	// The table's one entry: the scale and bias of a smooth surface seen head on.
+	memory.push(G.OP_WRITE_TEXTURE, 5, 0, 13, 0, 0, 1, 1, 1, blobs.dfg, 16);
 	// The offset from the camera to each grid cell, which the culling group binds: cell 0 in row 0,
 	// whose offset is zero, as a new texture reads.
 	memory.push(
@@ -345,6 +335,20 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
+	// The blank array of reflection probes, one texel, which the frame group binds at binding 3
+	// while the view lists no probe.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		19,
+		1,
+		1,
+		1,
+		G.FORMAT_RGBA16_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D_ARRAY,
+	);
 	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
@@ -367,7 +371,7 @@ run('replay', async () => {
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
-		...[3, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[3, G.RESOURCE_TEXTURE, 19, 0, 0],
 		...[4, G.RESOURCE_TEXTURE, 4, 0, 0],
 		...[5, G.RESOURCE_SAMPLER, 1, 0, 0],
 		...[6, G.RESOURCE_BUFFER, 13, 0, 0],
@@ -385,6 +389,9 @@ run('replay', async () => {
 		// The row values of instance batches, which only shaders built for them read.
 		...[16, G.RESOURCE_TEXTURE, 5, 0, 0],
 		...[17, G.RESOURCE_BUFFER, 18, 0, 0],
+		// The view's list of reflection probes, which the shader reads only while its count is
+		// above zero.
+		...[18, G.RESOURCE_BUFFER, 20, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

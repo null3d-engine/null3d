@@ -62,3 +62,17 @@ A code review of the first build found five faults. Each fix has a unit test in 
 - **The back pole.** The fold of the back half used `Math.sign`, which gives 0 for 0. So the back pole landed on the front pole's cell, and back directions with x or y at 0 landed on front or side cells. The fold now counts 0 as positive, as other octahedral encoders do. The back pole lands on the corner (1, 1).
 - **Tangents and mirrored copies.** `mergeFarGeometry` copied tangents without turning them, so a turned copy lit its normal map from the wrong side. It now turns each tangent by the copy's transform. A copy whose transform has a negative determinant is mirrored: the merge reverses its triangles' winding and negates its tangents' fourth number, so its front faces stay outward.
 - **The docs.** The docs page, the doc comment of `update` and the develop skill called `update(camera.position)`, which does not exist. They now fill one kept array with `camera.getWorldPosition(eye)`.
+
+## Addendum, 17 October 2026: the demo
+
+The demo `examples/impostors` draws one pine forest three ways by distance. The nearest band is the shared pine generator at four levels of detail in one instance batch. The middle band is the same pine at its coarsest level, merged into one mesh per grid cell with `farCellGroups` and `mergeFarGeometry`. The far band is one sprite batch of `createImpostors` cards.
+
+The atlas is drawn in code from the pine's own tiers. Each cell is one octahedral direction, shaded for the sun's side, so a card's picture follows the view of it. The key `L` swaps the far band between the cards and a batch of detail meshes. The look at the switch distance then compares in one frame. The demo has references on both sets and all three tiers.
+
+### The first frame's eye
+
+The add-on's page pointed a sketch at `camera.getWorldPosition(eye)` in `onUpdate`. The engine reports the world matrix of the frame that last ran. A sketch's first update runs before any frame has, so the eye read as the world's origin. Every card then picked the view from that direction.
+
+A camera far from the world's origin showed one cell on all its cards. Finding M-74 mistook this for a fault in the sprite batch's frame bits. The unit test feeds its own eye, and the picture was captured on the first frame, so both now agree with this cause.
+
+The docs, the `update` comment and the demo now read the eye with `camera.getPosition` while the camera has no parent. The docs name the caveat, and the test page picks from its known camera position. The `impostors` picture is redrawn in this change. A second image test, `sprite-origin`, pins the sprite batch's own frame picking. It draws four columns and two rows of flat colors, with and without an origin, on all three GPU paths.

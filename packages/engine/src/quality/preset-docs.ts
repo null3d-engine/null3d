@@ -89,6 +89,16 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	subsurfaceSamples: {
+		label: 'Subsurface blur of skin',
+		print: (value) => (Number(value) > 0 ? `${value} taps each way` : 'off'),
+	},
+	ssrScale: {
+		label: 'Screen-space reflections',
+		print: (value) =>
+			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
+	},
+	ssrSteps: { label: 'Screen-space reflection steps per ray' },
 	exposureMeter: {
 		label: "Automatic exposure's meter",
 		print: (value) =>
@@ -104,6 +114,10 @@ export const SETTING_DOCS: {
 			({ 0.25: 'quarter resolution', 0.5: 'half resolution', 1: 'full resolution' })[
 				Number(value)
 			] ?? '',
+	},
+	probeSize: {
+		label: 'Reflection probe maps',
+		print: (value) => `${value} x ${value}`,
 	},
 	areaLights: { label: 'Area lights per frame' },
 	lodThreshold: {

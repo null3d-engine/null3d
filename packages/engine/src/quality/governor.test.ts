@@ -24,6 +24,7 @@ import {
 	GRACE_MS,
 	LONGEST_RAISE_AFTER_MS,
 	LOWEST_AO_SCALE,
+	LOWEST_SSR_SCALE,
 	RAISE_AFTER_MS,
 	SCALE_STEP,
 	SETTLE_MS,
@@ -414,7 +415,7 @@ describe('the bloom steps', () => {
 		expect(controller.stepChanges).toBe(before + 1);
 	});
 
-	it("halve ambient occlusion's scale last, while it draws at half the render size", () => {
+	it("halve ambient occlusion's scale after bloom's base, while it draws at half the render size", () => {
 		const { controller, untilStep } = controlled(950);
 		controller.setBloom(true, 128);
 		controller.setAo(true, 500);
@@ -436,6 +437,27 @@ describe('the bloom steps', () => {
 		controller.setAo(true, 0);
 		expect(controller.maxSteps).toBe(1);
 		expect(LOWEST_AO_SCALE).toBe(250);
+	});
+
+	it("halve screen-space reflections' scale after ambient occlusion's", () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAo(true, 500);
+		controller.setSsr(true, 500);
+		const seen: string[] = [];
+		for (let k = 0; k < 3; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.aoScale} ${controller.ssrScale}`);
+		}
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then the
+		// reflections trace at a quarter.
+		expect(seen).toEqual(['950 500 500', '950 250 500', '950 250 250']);
+		expect(controller.maxSteps).toBe(2);
+		// Turned off, they take their step back at once.
+		controller.setSsr(false, 500);
+		expect([controller.steps, controller.ssrScale]).toEqual([1, 500]);
+		controller.setSsr(true, 250);
+		expect(controller.maxSteps).toBe(1);
+		expect(LOWEST_SSR_SCALE).toBe(250);
 	});
 
 	it("halve the volumetric fog's slices after ambient occlusion's step, while it draws", () => {

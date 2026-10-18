@@ -1,12 +1,13 @@
 // A security camera: at night, a camera on a pole sweeps a wet yard behind a brick wall, or aims
 // where the pointer points, and a scene pass draws its view into a texture. A monitor on the near
-// side of the wall shows it as a night camera does: gray, brightened, with rolling scan lines. The
-// robot that patrols out of the main camera's sight shows there. The pass never draws an object
-// that shows its own texture, so the monitor stays out of its own picture. The floodlight is the
-// scene's directional light, which the pass draws with its shadows, and the night sky fills the
-// shade. The puddles come from code.
+// side of the wall shows it as a night camera does: gray, brightened, with rolling scan lines and,
+// up close, red, green and blue stripes with a few dead cells. The robot that patrols out of the
+// main camera's sight shows on the monitor. The pass never draws an object that shows its own texture, so the monitor stays out of
+// its own picture. The floodlight is the scene's directional light, which the pass draws with its
+// shadows, and the night sky fills the shade.
 import { defineSketch, type Material, math, timeOfDay, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { monitor } from './monitor';
 
 /** A quarter turn about X, which lays a plane flat or points a cylinder along Z. */
 const QUARTER_X = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
@@ -22,23 +23,6 @@ const CRATES = [
 const PATROL = { x: 3.2, z: 2, centerZ: -4.6, start: Math.PI, speed: 0.6 };
 /** The security camera's place, on top of its pole behind the wall. */
 const EYE: Vec3 = [3, 3.9, -0.8];
-
-// The monitor: the feed's brightness, raised and tinted as an infrared camera shows it, with scan
-// lines, a brighter band that rolls down, and a darker rim. The screen gives off its picture.
-const monitor = /* wgsl */ `
-var feed: texture_2d<f32>;
-
-fn surface(input: SurfaceInput) -> Surface {
-    var s = defaultSurface(input);
-    let light = dot(textureSample(feed, feedSampler, input.uv).rgb, vec3f(0.2126, 0.7152, 0.0722));
-    let lines = 0.8 + 0.2 * sin(input.uv.y * 450.0 + frame.time * 6.0);
-    let roll = 1.0 + 0.15 * smoothstep(0.9, 1.0, fract(input.uv.y * 0.5 - frame.time * 0.15));
-    let rim = 1.0 - pow(length(input.uv - vec2f(0.5)) * 1.2, 4.0);
-    s.baseColor = vec3f(0.0);
-    s.emissive = vec3f(0.8, 0.95, 1.0) * sqrt(light * 3.0) * lines * roll * rim;
-    return s;
-}
-`;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time } = ctx;

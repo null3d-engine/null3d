@@ -49,6 +49,16 @@ const PRESET_RUN_MS = 100_000;
  */
 const SWIFTSHADER_PRESET_READS = 24;
 
+/**
+ * How long a preset's run may take on SwiftShader. Each read draws a frame twice there, and the
+ * heaviest preset of a slow CI machine went past the real GPU's window while still drawing.
+ */
+const SWIFTSHADER_PRESET_RUN_MS = 200_000;
+
+/** How long a preset's run may take in the environment that the test runs in. */
+const presetRunMs = (testInfo: TestInfo) =>
+	testInfo.project.name === 'chromium-swiftshader' ? SWIFTSHADER_PRESET_RUN_MS : PRESET_RUN_MS;
+
 /** The frames that a preset's run reads back in the environment that the test runs in. */
 const presetReads = (testInfo: TestInfo) =>
 	testInfo.project.name === 'chromium-swiftshader' ? SWIFTSHADER_PRESET_READS : PRESET_READS;
@@ -91,10 +101,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		test(`a moving caster's shadow follows it at ${preset} with its own setting on ${gpu}`, async ({
 			page,
 		}, testInfo) => {
-			test.setTimeout(240_000);
+			test.setTimeout(presetRunMs(testInfo) * 2 + 40_000);
 			const switches = `&preset=${preset}&reads=${presetReads(testInfo)}&gap=1`;
-			const expected = median(await offsets(page, gpu, 1, switches, PRESET_RUN_MS));
-			const kept = await offsets(page, gpu, 8, switches, PRESET_RUN_MS);
+			const expected = median(await offsets(page, gpu, 1, switches, presetRunMs(testInfo)));
+			const kept = await offsets(page, gpu, 8, switches, presetRunMs(testInfo));
 			for (const offset of kept)
 				expect(Math.abs(offset - expected), `offsets at ${preset}: ${kept}`).toBeLessThan(
 					MAX_STRAY,

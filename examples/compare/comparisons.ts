@@ -69,21 +69,22 @@ export interface Comparison {
 	imageDevices?: readonly string[];
 	/** The effects that the scene draws, each a switch on the page. */
 	effects: readonly EffectName[];
-	/**
-	 * three.js's faster renderer on a WebGPU device for this scene, from the measured ramps:
-	 * WebGLRenderer unless the scene needs WebGPURenderer's own features.
-	 */
-	fasterThree: 'webgl' | 'webgpu';
 	/** Why the comparison loads files, when it does: the same files in both engines. */
 	assets?: string;
 	/** three.js's renderer in a mode that only it can draw, on both GPU paths. */
 	threeRenderers?: Partial<Record<CompareMode, 'webgl' | 'webgpu'>>;
 }
 
-/** The effects of a scene with no reflections and no particles. */
+/** The effects of a scene with no reflections, particles, lens grade or decals. */
 const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', 'grade'];
-/** Night town's effects: every one. */
-const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'reflections', 'particles'];
+/** A scene with the lens grade on its light. */
+const LENS_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens'];
+/**
+ * Night town's effects: every one it draws. The comparison leaves out box-projected reflection
+ * probes, which three.js has no form of: the town shows the engine's reflection pass instead, as
+ * the three.js half draws a Reflector, and the reflection-probes example demonstrates the probes.
+ */
+const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens', 'reflections', 'particles'];
 
 export const COMPARISONS: readonly Comparison[] = [
 	{
@@ -102,7 +103,7 @@ export const COMPARISONS: readonly Comparison[] = [
 		ramps: BATTLE_RAMPS,
 		hold: BATTLE_HOLD,
 		swiftShaderHoldCount: 120,
-		holdTimeoutSeconds: 240,
+		holdTimeoutSeconds: 600,
 		objectsAt: battleObjects,
 		shadowTiles: 0,
 		modes: {
@@ -116,12 +117,14 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Each engine draws each effect its own way: null3D's generated sky and its environment light, cascaded sun shadows, height fog, bloom chain, ambient occlusion and grading table; three.js's Sky with its light through PMREMGenerator, the CSM add-on or the CSM shadow node, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
 			'Smoke, fire, sparks and muzzle flashes are sprites: a sprite batch in null3D, which sorts the smoke from back to front, and an instanced quad that faces the camera in three.js, which does not sort it.',
 			"Grass and flags sway, and the wrecks' embers glow, through custom materials: WGSL surface and vertex functions in null3D, GLSL added to MeshStandardMaterial on WebGLRenderer, and node materials on WebGPURenderer.",
+			'Smoke takes the firelight at its base, and each tracer carries a bright glint, in the shared sprite rows that both engines draw.',
+			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
+			'Scorch marks lie over the craters and the burnt wrecks: null3D projects them with its decal material, and three.js with DecalGeometry, over the same terrain and the same maps.',
 		],
 		assets:
 			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
 		threeRenderers: { instanced: 'webgpu' },
-		effects: PLAIN_EFFECTS,
-		fasterThree: 'webgl',
+		effects: [...LENS_EFFECTS, 'decals'],
 	},
 	{
 		name: 'factory',
@@ -138,6 +141,7 @@ export const COMPARISONS: readonly Comparison[] = [
 			}),
 		ramps: FACTORY_RAMPS,
 		hold: FACTORY_HOLD,
+		holdTimeoutSeconds: 600,
 		objectsAt: factoryObjects,
 		shadowTiles: SPOT_COUNT,
 		modes: {
@@ -150,9 +154,12 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Each engine draws each effect its own way: null3D's shadow atlas, height fog, bloom chain, ambient occlusion and grading table, and three.js's spot light shadow maps, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
 			"Bloom is set once, as UnrealBloomPass's settings. The bloom node takes three times the strength, and null3D's bloom chain takes the mapped settings for the same glow.",
 			'Ambient occlusion darkens only the ambient light in null3D and with the GTAO node. GTAOPass on WebGLRenderer darkens the whole image, so that path looks a little darker where parts meet.',
+			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
+			'The hall powers up in a wave from its middle. The spot lights, lenses, cones of haze, floor lines, warning lamps and status screens follow one shared function in both engines.',
+			'The status screens under the spot lights show one texture drawn in code, as an emissive map in both engines.',
+			'Each spot light shows a cone of haze: one vertex-colored mesh drawn with additive blending in both engines. Three pooled point lights flash where the arms grip and release; three.js shades them in every pixel, and null3D clusters them.',
 		],
-		effects: PLAIN_EFFECTS,
-		fasterThree: 'webgl',
+		effects: LENS_EFFECTS,
 	},
 	{
 		name: 'night-town',
@@ -185,8 +192,10 @@ export const COMPARISONS: readonly Comparison[] = [
 			"null3D lists the point and spot lights near each part of the view in clusters, on WebGPU and WebGL2. three.js's WebGPURenderer does the same for point lights with its ClusteredLighting add-on, and shades every spot light in every pixel. three.js's WebGLRenderer shades every light in every pixel, in one shader, which holds only so many lights.",
 			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
 			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
+			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
+			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. Both engines draw it in the facade shade, from the same window boxes and the same room depth.",
+			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines and modes. Their lights are emissive strips, so they add no lights to the count.',
 		],
 		effects: NIGHT_EFFECTS,
-		fasterThree: 'webgpu',
 	},
 ];

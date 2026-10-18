@@ -58,6 +58,8 @@ struct Surface {
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
   transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
   thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
+  diffuseTransmission: f32,      // (0.2) share of the diffuse light that passes to the other side; WGSL that names it builds the shaders that light the back
+  diffuseTransmissionColor: vec3f,  // (0.2) linear tint of that light; the base color does not tint it
   clearcoat: f32,          // (0.2) clear coat, 0 to 1; WGSL that names a layer field builds the layered shaders
   clearcoatRoughness: f32, // (0.2) the coat's roughness
   clearcoatNormal: vec3f,  // (0.2) the coat's normal, world space; starts as the mesh's normal
@@ -328,6 +330,8 @@ fn surface(input: SurfaceInput) -> Surface {
 
 - The engine lights `s.reflection.rgb` as the light from the mirror direction, in place of that share of the environment's reflection, so Fresnel and metalness weigh it. A tilted normal times a small factor as `reflection_uv`'s offset makes water ripple.
 - Roughness does not blur it. Docs: `api/render`, `shaders/surface-functions`, and the water recipe in `guides/custom-passes`.
+
+Grass and leaves lit from behind (0.2): give the custom material `diffuseTransmission` at creation and `doubleSided: true`, and set `s.diffuseTransmission` and `s.diffuseTransmissionColor` in the surface function, such as more at the blade's tip and the base color brightened. Shadows fall on that light. Docs: `api/materials` (Light through thin surfaces), `shaders/surface-functions`.
 
 Water that shows its bed (0.2): give the custom material `transmission: 1`, `thickness` (the water's depth), `ior: 1.33` and an `attenuationColor`, and set `s.transmission = 1.0` with a rippled `s.normal` in the surface function. The ripples bend the bed that shows through. Only opaque objects show through. Docs: `api/materials` (Transmission), `shaders/surface-functions`.
 

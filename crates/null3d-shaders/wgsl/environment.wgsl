@@ -26,6 +26,7 @@
 
 #import null3d::fullscreen::{triangle}
 #import null3d::atmosphere::{SkySettings, second_sun, sky_light, sky_whole}
+#import null3d::cubemap::{face_direction, frame_bitangent, frame_tangent, radical_inverse}
 
 struct Step {
     /// The texels across a side of each face at the level that the draw fills.
@@ -63,31 +64,6 @@ fn vs_main(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     return triangle(vertex);
 }
 
-/// The direction through a face at the face coordinates `sc` and `tc`, each from -1 to 1, in the
-/// cube map table that every GPU path shares. The direction is not unit length.
-fn face_direction(face: u32, sc: f32, tc: f32) -> vec3f {
-    switch face {
-        case 0u: {
-            return vec3f(1.0, -tc, -sc);
-        }
-        case 1u: {
-            return vec3f(-1.0, -tc, sc);
-        }
-        case 2u: {
-            return vec3f(sc, 1.0, tc);
-        }
-        case 3u: {
-            return vec3f(sc, -1.0, -tc);
-        }
-        case 4u: {
-            return vec3f(sc, -tc, 1.0);
-        }
-        default: {
-            return vec3f(-sc, -tc, -1.0);
-        }
-    }
-}
-
 /// The face of the texel under the fragment, from 0 to 5, and the texel's column and row on it.
 /// Rows count from the first row of the target on both paths, as the copy into the face stores
 /// them.
@@ -107,19 +83,6 @@ fn texel_direction(position: vec2f) -> vec3f {
     let at = face_texel(position);
     let center = (2.0 * at.texel + 1.0) / f32(params.size) - 1.0;
     return normalize(face_direction(at.face, center.x, center.y));
-}
-
-/// Two unit vectors that make a right-handed frame with the unit vector `n` (Duff et al., 2017).
-fn frame_tangent(n: vec3f) -> vec3f {
-    let sign = select(-1.0, 1.0, n.z >= 0.0);
-    let a = -1.0 / (sign + n.z);
-    return vec3f(1.0 + sign * n.x * n.x * a, sign * n.x * n.y * a, -sign * n.x);
-}
-
-fn frame_bitangent(n: vec3f) -> vec3f {
-    let sign = select(-1.0, 1.0, n.z >= 0.0);
-    let a = -1.0 / (sign + n.z);
-    return vec3f(n.x * n.y * a, sign + n.y * n.y * a, -n.y);
 }
 
 /// 2 to the power `e`, exact for the exponents of normal floats.
@@ -509,16 +472,6 @@ fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
 fn fs_half(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let d = texel_direction(position.xy);
     return pack(textureSampleLevel(source, source_sampler, d, params.value).rgb);
-}
-
-/// Van der Corput's radical inverse in base 2.
-fn radical_inverse(i: u32) -> f32 {
-    var bits = (i << 16u) | (i >> 16u);
-    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xaaaaaaaau) >> 1u);
-    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xccccccccu) >> 2u);
-    bits = ((bits & 0x0f0f0f0fu) << 4u) | ((bits & 0xf0f0f0f0u) >> 4u);
-    bits = ((bits & 0x00ff00ffu) << 8u) | ((bits & 0xff00ff00u) >> 8u);
-    return f32(bits) * (1.0 / 4294967296.0);
 }
 
 /// The source's light filtered by the GGX distribution of a perceptual roughness, with the view

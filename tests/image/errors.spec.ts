@@ -10,6 +10,9 @@ import { pageResult } from '../lib/page-result.ts';
 
 const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
+/** The file of fixes, on the dev server and in a production build. */
+const FIXES_FILE = /\/errors\/fixes\.ts$|\/fixes-[\w-]{8}\.js$/;
+
 interface Raised {
 	code: string;
 	message: string;
@@ -24,7 +27,10 @@ interface ErrorsResult {
 	notASketch: string;
 	missingSketch: string;
 	failedStarts: Raised[];
+	/** The errors that the sketch caught at once, before the fixes' text arrived. */
 	inSketch: Raised[];
+	/** The same errors once the fixes' text has arrived. */
+	patched: Raised[];
 	/** The errors of queries with input that is not finite in 32 bits, then two hits. */
 	queries: { errors: Raised[]; tiny: number; huge: boolean };
 	/** A start beside a running engine: an error, or a note that it started. */
@@ -46,9 +52,13 @@ for (const mode of ENGINE_MODES) {
 	test(`errors keep their code and full message, and the engine starts again, ${mode.name}`, async ({
 		page,
 	}) => {
+		const requests: string[] = [];
+		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
 		await page.goto(`errors.html?gpu=webgpu&${mode.query}`);
 		const result = await pageResult<ErrorsResult>(page, 60_000);
 		expect(result.error).toBeUndefined();
+		// The fixes' text is a file of its own, which the first error loads.
+		expect(requests.filter((path) => FIXES_FILE.test(path)).length).toBeGreaterThan(0);
 		expect(result.mode).toMatchObject({ build: mode.build, latency: mode.latency });
 		expect(result.failedStarts).toHaveLength(4);
 		expect(result.failedStarts.slice(0, 3)).toEqual([
@@ -66,7 +76,29 @@ for (const mode of ENGINE_MODES) {
 		const suffix = `. ${ERROR_FIXES.E1410} See ${DOCS}E1410.md`;
 		const { message } = notLoaded;
 		expect(message.startsWith(prefix) && message.endsWith(suffix), message).toBe(true);
-		expect(result.inSketch.slice(0, 5)).toEqual([
+		// The thread that runs the sketch loads the fixes' text at its first error. The errors that
+		// the sketch catches at once hold their code and detail, and the text then completes each
+		// message. The page's own threads had already loaded the text, so their messages are whole.
+		const bodies = [
+			['E1204', 'setBackground() got the color "blue-ish".'],
+			['E1108', 'setActiveCount() got 11, above the limit of 10.'],
+			[
+				'E1206',
+				'geometry.fromArrays() got the index 3 at indices[2], past the last of 3 vertices.',
+			],
+			['E1206', 'geometry.fromArrays() got NaN at uvs[4].'],
+			['E1108', 'the sketch asked for row 11 of 10.'],
+			['E1502', ''],
+		];
+		expect(result.inSketch).toHaveLength(bodies.length);
+		for (const [index, [code, detail]] of bodies.entries()) {
+			const error = result.inSketch[index] as Raised;
+			expect(error).toMatchObject({ code, name: 'EngineError', engineError: true });
+			expect(error.message.startsWith(`${code}: ${detail}`), error.message).toBe(true);
+			expect(error.message.endsWith(`See ${DOCS}${code}.md`), error.message).toBe(true);
+		}
+		// Once the text has arrived, each error reports the message the engine always gave.
+		expect(result.patched.slice(0, 5)).toEqual([
 			BAD_COLOR,
 			engineError('E1108', 'setActiveCount() got 11, above the limit of 10.'),
 			engineError(
@@ -77,7 +109,7 @@ for (const mode of ENGINE_MODES) {
 			engineError('E1108', 'the sketch asked for row 11 of 10.'),
 		]);
 		// The core's render graph words the error, and it names the pass and the texture.
-		const graph = result.inSketch[5] as Raised;
+		const graph = result.patched[5] as Raised;
 		expect(graph).toMatchObject({ code: 'E1502', name: 'EngineError', engineError: true });
 		expect(graph.message).toContain('"broken"');
 		expect(graph.message).toContain('"nothing"');

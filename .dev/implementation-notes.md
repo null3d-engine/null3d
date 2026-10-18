@@ -70,10 +70,11 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - The page starts that import as soon as it knows the mode, while the core downloads, because it needs the runner right after the core. In `bun run bench:startup --switches threads=off`, the first frame came at a median of 4,131 ms over 14 runs. With the runner in the page's file, it came at 4,131 ms too. A start after the core's download gave 4,135 ms.
 - In single-threaded mode the page imports the sketch module while the core downloads too. The module's top-level code runs when the module arrives. Hold mode imports it after the sketch runner has seeded the thread's random numbers, so that code draws the same numbers on every run.
 - Keep `loadSketch` in `sketch/define-sketch.ts`, where the page imports it. That import keeps `defineSketch` in the page's file, which the sketch worker finds in the browser's cache. In a file of its own, `defineSketch` costs the sketch worker one more request before the sketch runs. On Slow 4G, that request adds a round trip of 562 ms.
-- Only the page imports the error fixes (`errors/fixes.ts`). It sets them in `createEngine` and sends them to each worker in its handoff, and `startWorkerCore` sets them in the worker before the core starts. A worker module that imports the fixes adds their text to its file.
+- Each thread loads the error fixes (`errors/fixes.ts`) with a dynamic import at its first error, so no file of the start holds their text. Until the file arrives an error holds its code and detail, and the fix then completes its message. A failed start waits for the file before it rejects, through `errorFixesReady`. A worker's first synchronous errors reach its sketch before the file arrives; later errors carry the fix at once. A value import of the fixes in a module of the start puts their text back into that module's file.
 - `errors/codes.ts` holds each code's docs text for the docs generator and the tests. Runtime code must not import it: a value import bundles every code's docs text into the engine's files.
 - `quality/preset-docs.ts` holds the preset table's docs text in the same way. The compiler asks for an entry there for each setting in `quality/presets.ts`, and runtime code must not import it.
-- The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it, as it does the error fixes. The sketch worker's file then holds no copy of the list.
+- The page loads the frame figures (`page/frame-stats.ts`) with a dynamic import at the first `measure()`, and in hold mode when it publishes the held figures. `threadRoles`, the one piece of that module that the start reads, lives in `shared/metrics.ts`. Other modules import only types from the frame figures. A measurement's window opens when `measure()` is called, before the import, so work that the caller starts right after the call is counted even when the import is cold. A page called `measure()` and then asked its sketch to add an object; the import delayed the window, the sketch built the object's pipelines first, and the measurement counted none of them.
+- The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it. The sketch worker's file then holds no copy of the list.
 - The input ring's record format is plain constants, not enums. The bundler writes a constant into the code as a number, while a TypeScript enum ships as an object that holds each member's name. A `const enum` ships the same object.
 - In Rust that the WebAssembly files hold, write `max` and `min`, not `clamp`, when a bound is not a constant. Its check that the bounds are in order panics with a message that prints them. That pulls in the code that formats floats. In the raycasts of sprites, points and lines ([#382](https://github.com/null3d-engine/null3d/pull/382)), `f64::clamp` added about 17 KB before Brotli. A `twiggy diff` of two builds with function names showed it.
 - Since 12 October 2026 a page builds only its GPU path's text. Each module packs WGSL and GLSL in tables of their own, and gives each source field a getter that builds the text the first time something reads it. `ShaderTemplates` sends the thread that draws the builds of the page's path only. The other path's text then stays in the module's tables, as JSON text that the page never parses. In Battle at 1,000 units on WebGPU, on 13 October 2026, heap snapshots found 34.1 MiB of strings in the render worker before and 8.8 MiB after. Its whole heap fell from 36.2 to 10.5 MiB. The sketch worker's strings fell from 15.7 to 10.0 MiB.
@@ -124,6 +125,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - The final pass filters by hand: four `textureLoad` reads, each tone mapped, then blended. A sampler would blend HDR color first, and a small share of a very bright texel turns its neighbors almost white. A WebGL2 program also cannot read one texture both with `textureLoad` and through a sampler.
 - The 8-bit path resolves straight into the canvas only while the lowest scale is 1. Hold mode keeps that rule, so its images show the passes that play draws. Every path builds the final pass's pipeline with its first frame, so a change of range draws at once.
 - WebGPU draws a corner into a target's first rows. The WebGL2 backend flips the viewport, and GL counts rows from the bottom, so it draws the corner into the last rows. An effect step that reads another target must place the corner on each path. Bloom's step blocks carry the corner's origin, and the final pass's bloom build adds it on WebGL2. Before that, bloom at a scale of 0.5 on WebGL2 read outside the corners, and 89% of the pixels differed from WebGPU's.
+- A full-screen step reads the texel under its own fragment at `position.xy` on both paths, since WebGL2 counts the fragment's rows and the target's rows from the bottom alike. Only a place on the image, which counts from the top, turns around on WebGL2 (`size.w - position.y`). The motion debug view once turned its own texel around too, and showed each object's motion at the mirrored row. Its WebGL2 cases in the motion vectors spec catch this.
 - Bloom's levels have a fixed number of texels on the canvas's shorter side (`Size::ShortSide`), which the render scale leaves whole. Only its first step reads the scene's corner, so a new scale uploads its blocks again and makes no texture. The governor's step draws every level into a corner of its target, which the blocks place on each path too.
 - Below a scale of 1, a fragment's position covers only the drawn corner. A scene shader that turns the position into a place on the view, such as a light grid tile, divides it by the render size. The target's size is wrong there. The frame graph knows the render size after its `prepare`.
 
@@ -208,8 +210,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
   - The split-sum table fills the 16 columns after each row's texels in the material table's texture. That texture needs 16 rows, so the WebGL2 builder keeps room for 8 materials or more.
 
   New per-pixel inputs of the standard material take a texture array layer, an atlas part or a place in a shared texture. The [technique review](technique-review-2026-10.md#webgl2-texture-units) gives the rules. A new map slot takes a shared unit. The unit test fails when a stage passes 12.
-- WebGPU counts a pipeline's resources per shader stage over every entry of its groups' layouts, whether or not the shader reads them. The frame group gives the fragment stage 8 textures and the maps' group 8 more, so a standard material with maps reads all 16 of WebGPU's default. The decal templates bind the scene's depth as well, so they bind a frame group of their own (`layout::DECAL_FRAME`), which leaves out the light probe grids' texture and the copy of the opaque color. No decal build reads either one, and a decal with maps reads 15 textures. The probe grid's binding had put textured decals at 17, and their pipelines failed on WebGPU while the WebGL2 path drew them. A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's sampled textures, samplers and buffers per stage over its layouts. It covers every template with the layout bits that its shader lists in the manifest, custom materials and effects, and the compute pipelines, and it fails above WebGPU's default limits.
-- A parallax material reads the displacement map in the fragment stage as well as the vertex stage, so its maps' group holds one sampled texture more than any other material's, and the frame group's eight would take that stage past the default count of 16. The builds of parallax therefore bind a frame group of their own (`layout::FRAME_PARALLAX`), without the copy of the opaque color: the draw list never pairs `PARALLAX` with `TRANSMISSION`, so no such build reads it.
+- WebGPU counts a pipeline's resources per shader stage over every entry of its groups' layouts, whether or not the shader reads them. The frame group gives the fragment stage 8 textures and the maps' group 8 more, so a standard material with maps reads all 16 of WebGPU's default. The decal templates bind the scene's depth as well, so they bind a frame group of their own (`layout::DECAL_FRAME`), which leaves out the light probe grids' texture. No decal build reads that grid. A decal with maps reads exactly 16 textures per stage, WebGPU's default, so the next texture a decal wants needs a layout change. It keeps the copy of the opaque color, because the reflections' lit code reads that copy in every lit build. The probe grid's binding had put textured decals at 17, and their pipelines failed on WebGPU while the WebGL2 path drew them. A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's sampled textures, samplers and buffers per stage over its layouts. It covers every template with the layout bits that its shader lists in the manifest, custom materials and effects, and the compute pipelines, and it fails above WebGPU's default limits.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
 
 ## Cube, 3D and high dynamic range textures
@@ -1091,13 +1092,20 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 21,164 builds on 17 October 2026: 14,994 GLSL builds and 6,170
-WGSL ones. The GLSL figure rose by four when the picking template took the MORPH bit on WebGL2, so a
-morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
+The manifest's 116 variants make 30,650 builds on 18 October 2026: 21,961 GLSL builds and 8,689
+WGSL ones, the translucency landing's figure plus the still view's accumulate build on each
+target, and the motion pass's template, which adds 50 GLSL and 17 WGSL builds (M2-EX25). The translucency bit of M2-EX36 joins the lit, standard-material, probe grid and custom
+material templates, and its two subsurface templates add one more pair, so the count rose from
+14,994 and 6,170. The reflections' two full-screen passes, the pyramid's reduce and the trace, add
+two more on each target. The count includes the probe grid's translucency builds, which the engine
+draws when a translucent mesh stands in a scene with a probe grid. Each figure then rose by one when
+the reflection probes' template joined the manifest (D-149): it holds one variant for each target
+and no free bits, because its three pipelines differ by entry point rather than by def. A build
+counts once for each target that its variant writes, so a variant that writes
 both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
 files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
 builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping
-is the dearest bit by a wide margin. It is listed by 45 of the 115 variants, and it accounts for
+is the dearest bit by a wide margin. It is listed by 45 of the 116 variants, and it accounts for
 about half of all builds. Skin, alpha masking, received shadows, half precision and vertex colour
 each cut 46 to 50 per cent of the large variants. The rare lit features cost less: area lights and
 coat-sheen about 8,600 builds each, and weighted transparency 2,600.
@@ -1120,7 +1128,18 @@ A build costs twice. The shader build compiles every one of them, and a page dow
 of its own GPU path. A permutation bit on a lit template multiplies the count: area lights and
 coat-sheen each added about 8,600 builds by October 2026. The count grew four times in two days
 with nothing to hold it. The cold build then grew past the CI job's time limit
-([Branches and parallel work](pull-requests.md)).
+([Branches and parallel work](pull-requests.md)). The CI build job measured the growth on 18
+October 2026: 6.5 minutes for 14,997 builds (run 39097238563) and 13.5 minutes for 21,909 (run
+39099279063), on the same runner class. The split of the shared tables, which
+[D-190](decisions/D-190-hold-relief-until-the-split.md) holds the relief materials for, is the
+change that brings it back down.
+
+On 19 October 2026 the relief materials of M2-J4 joined the manifest: bump, displacement and
+parallax add three bits to the standard material's maps templates, which makes their builds 3.33
+times as many ([D-190](decisions/D-190-hold-relief-until-the-split.md)). The shader build's split
+of the shared paragraph tables landed first, so the extra builds stay out of every page's start.
+The manifest then made 53,762 GLSL builds and 19,227 WGSL builds, and `BUILD_BUDGET` records those
+figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
@@ -1154,3 +1173,10 @@ A build that emitted only the feature sets a page asks for would not shrink the 
 close it. The test suite compiles every variant of every generated module, so all 140 GLSL feature sets
 are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
 every page's build whatever the page draws. Grouping those copies only defers the download.
+
+## One core and one checkout
+
+- A page stops with E1402 when its engine core was built from other Rust sources than the checkout holds. The generated shader modules and the cores have separate caches. After a commit that changes Rust, run `bun run build` before any page test. The error names the missing function or the stamp.
+- A run that spans a change of the checkout has mixed results. Even a small commit can stop a page that loads after it. Start a gate run when the tree is still, name the commit in the run's record, and run one showcase scene at a time so a stop costs one scene.
+- Bind group layout ids are unique for each WebGPU renderer. The constants live in `bind_layout` in `crates/null3d-gpu/src/drawlist.rs`, and the generated TypeScript constants follow them. On 18 October 2026 the motion-vector pass took the subsurface blur's id 43, and every WebGPU page failed at the render worker's start with E1405 until `MOTION_FRAME` moved to 47. A unit test that checks the ids are unique would catch the next collision before a run.
+- Run one device runner at a time. Two runners on one checkout write the same run folder, and the results mix.

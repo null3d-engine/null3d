@@ -1451,6 +1451,12 @@ impl TextureStore {
         (slot.group != NO_GROUP).then(|| self.ids.first_group + slot.group)
     }
 
+    /// True when `texture` is a live 3D texture, whether its texels are on the GPU yet or not.
+    pub fn is_volume(&self, texture: Handle) -> bool {
+        self.slot(texture)
+            .is_ok_and(|slot| self.arrays[slot.array as usize].key.kind == Kind::Volume)
+    }
+
     /// The GPU id of a 3D texture and its size in texels along each axis, once its texels are on
     /// the GPU.
     pub fn ready_volume(&self, texture: Handle) -> Option<(u32, [u32; 3])> {
@@ -1587,6 +1593,19 @@ impl TextureStore {
     pub fn sync(&mut self, images_arrived: u32, frames_taken: u32) {
         self.arrived = images_arrived;
         self.frames_taken = frames_taken;
+    }
+
+    /// Takes the next image id for a generator whose code the thread that draws runs on textures
+    /// that the store does not hold, such as the reflection probes' maps. The caller sends the
+    /// generator under that id, in the order of the ids, as it sends images.
+    pub fn take_image_id(&mut self) -> u32 {
+        self.last_image = next_frame(self.last_image);
+        self.last_image
+    }
+
+    /// True once the thread that draws holds the image or generator of id `id`.
+    pub fn has_arrived(&self, id: u32) -> bool {
+        id != 0 && !frame_after(id, self.arrived)
     }
 
     /// The last image id handed out, or 0 before the first.

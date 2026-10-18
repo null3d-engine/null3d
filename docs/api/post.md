@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
+summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, custom tone curves, and still views."
 ---
 
 # Post-processing API
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects, custom tone curves and still views. The API is experimental, so it can still change between versions.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion and depth of field do.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion, screen-space reflections and depth of field do.
 
 ## Tone mapping and exposure
 
@@ -173,6 +173,51 @@ export default defineSketch(({ post, quality }) => {
 - It turns the depth prepass on while it draws. On a WebGL2 device without float render targets it stays off.
 - A setting that a call leaves out keeps its value, also while it is off. `post.set({ ao: {} })` turns it on with the values it had.
 - `post.set` allocates nothing, so a sketch can change its settings every frame. Turning it on or off adds or removes passes, which takes a few frames.
+
+## Screen-space reflections
+
+Screen-space reflections make shiny opaque surfaces reflect what the screen shows: wet streets, puddles, polished floors and metal. They are off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post, quality }) => {
+  quality.set({ ssrScale: 0.5 });
+  post.set({ ssr: { maxDistance: 50 } });
+  scene.createDirectionalLight({ direction: [-1, -2, -1] });
+  scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 2, depth: 1 }),
+    material: materials.standard({ color: '#e05030' }),
+    position: [0, 1, 0],
+  });
+  const street = scene.createMesh({
+    mesh: geometry.plane({ width: 40, height: 40 }),
+    material: materials.standard({ color: '#202326', roughness: 0.1 }),
+  });
+  street.setRotationEuler(-Math.PI / 2, 0, 0);
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `ssr` | Its settings to turn them on, or `false` to turn them off. | Off |
+| `ssr.intensity` | How much of the environment's reflection the screen's reflection replaces where a ray hits: a number from 0 to 1. | 1 |
+| `ssr.maxDistance` | How far a reflected ray travels, in world units: above 0. Reflections fade out over the last fifth. | 100 |
+| `ssr.thickness` | How far behind a surface on the screen a ray may pass and still hit it, in world units: a number from 0 up. | 0.5 |
+| `ssr.maxRoughness` | The roughest surface that shows them: a number from 0 to 1. Rougher surfaces keep the environment's reflection. | 0.5 |
+
+- Each surface's reflection takes the place of the environment's reflection where its ray hits something on the screen. The material's Fresnel term, metalness and specular values weigh it, as they weigh the environment. So a dark plastic street reflects little straight down and much at a low angle, as wet asphalt does.
+- Rough surfaces blur their reflections. They fade into the environment's reflection from 70% of `maxRoughness`.
+- Where a ray leaves the screen or hits nothing, as near the screen's edges, the reflection fades into the environment's light, with no hard edge. Set an environment, such as the sky's, so those parts look right.
+- The reflections read the frame before's colors. A fast object's reflection lags it by one frame, and blended objects and particles do not show in them.
+- A planar reflection pass's reflection ([Render passes](render.md#reflection-passes)) wins on its plane. Blended surfaces and surfaces that let light through keep the environment's reflection.
+- They draw where the quality setting `ssrScale` is above 0: half the render size on High and Ultra, and a quarter on Medium. On Low, the preset of phones, the scale is 0, and shiny surfaces keep the environment's light. `ssrSteps` sets how far each ray can search.
+- They turn the depth prepass on while they draw, and share ambient occlusion's grid. On a WebGL2 device without float render targets they stay off, and development builds warn once.
+- On the 8-bit path, in compatibility mode with MSAA, they read display color, so they look a little grayer there.
+- A setting that a call leaves out keeps its value, also while they are off. `post.set({ ssr: {} })` turns them on with the values they had.
+- `post.set` allocates nothing. Turning them on or off adds or removes passes, which takes a few frames, and their shaders download the first time.
+
 
 ## Depth of field
 
@@ -350,6 +395,10 @@ post.set({ toneMapping: reinhard });
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
 
+## Still views
+
+A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines and automatic exposure keep a view drawing every frame, as [the post-processing chain](../concepts/post-processing.md#still-camera-accumulation) explains. `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
+
 ## Errors
 
 | Code | Cause |
@@ -364,7 +413,7 @@ post.set({ toneMapping: reinhard });
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines and custom effects work, and what they cost.
+- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines, custom effects and still views work, and what they cost.
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.

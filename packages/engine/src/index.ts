@@ -130,6 +130,7 @@ export type {
 	ParticleMotion,
 	ParticleValues,
 } from './scene/particles';
+export type { PickHit } from './scene/picks';
 export type {
 	ObjectEventHandler,
 	ObjectEventType,
@@ -145,11 +146,13 @@ export type {
 	OutlineSettings,
 	Post,
 	PostSettings,
+	SsrSettings,
 	ToneCurve,
 	ToneMapping,
 	VignetteSettings,
 } from './scene/post';
 export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
+export type { ReflectionProbe, ReflectionProbeOptions } from './scene/probes';
 export type {
 	OverlapHit,
 	QueryOptions,

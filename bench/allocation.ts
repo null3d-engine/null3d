@@ -47,7 +47,9 @@
 // boxes levels of detail, so each frame picks a level for every row, and fades rows between two.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
+// turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
+// S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
+// adds two hemisphere lights to S1,
 // one of them tilted, and changes their intensities every frame. `--area-lights` adds eight
 // rectangle lights, two with images, and four tube lights to S1, which circle the swarm and change
 // their intensities every frame. `--setters` calls, every frame, each setter that a sketch may
@@ -61,9 +63,16 @@
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--particles` adds two particle systems to S1, whose emitters write
 // births every frame, one of them soft, so the frame copies the opaque depth for it.
+// `--translucency` makes S1's boxes let light through to their other side, which lights their
+// backs, and `--subsurface` adds 64 spheres to S1 whose light spreads under their surface, which the
+// skin pass draws again and the subsurface blur's steps spread.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
+// frame. `--reflection-probes` places two reflection probes over S1 that capture again in turns in
+// every frame, so each frame draws six capture views and runs a probe's filter.
+// `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
+// depth pyramid, trace it and copy the opaque colors in every frame.
+// `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
 // materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
 // puffs rise in every frame, which the camera's weighted layer draws. `--decals` puts a ground
 // with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
@@ -134,6 +143,10 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --reflection-probes --gpu webgl2
+//   bun run bench:allocation --translucency --gpu webgl2
+//   bun run bench:allocation --subsurface --gpu webgl2
+//   bun run bench:allocation --ssr --gpu webgl2
 //   bun run bench:allocation --weighted --gpu webgl2
 //   bun run bench:allocation --decals --gpu webgl2
 //   bun run bench:allocation --particles --gpu webgl2
@@ -341,6 +354,30 @@ export const SETTER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, num
 };
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with
+ * `--reflection-probes`: the encoders of the six capture views' culling passes, render passes and
+ * the passes that copy their images upright, at bloom's allowance per pass.
+ */
+const PROBES_REPLAY_BUDGET = 6 * 3 * 64;
+
+/**
+ * The bytes per frame that a reflection probe's filter may allocate on WebGPU with
+ * `--reflection-probes`: the encoder of each of its render passes, at bloom's allowance per pass. A
+ * filter of probes 256 texels across draws 6 passes that copy the views' images, 42 that make the
+ * chain's levels and 7 that fill the probe's levels.
+ */
+const PROBE_FILTER_BUDGET = 55 * 64;
+
+/** The budgets that `--reflection-probes` adds to a frame's places. */
+const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': {
+		'replay webgpu/backend.ts': PROBES_REPLAY_BUDGET,
+		'draw webgpu/probes.ts': PROBE_FILTER_BUDGET,
+	},
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -374,11 +411,38 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
  */
 export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
-	'render-worker': { '(IDLE)': 512, '(JS)': 256, 'giveUpStalled gpu/completion.ts': 256 },
+	'render-worker': {
+		'(IDLE)': 512,
+		'(JS)': 256,
+		'giveUpStalled gpu/completion.ts': 256,
+		// The frame's own work is paid at each call of the render worker, which the browser makes at
+		// the display's rate, while the check counts the frames that S1 steps. A slower runner
+		// therefore steps fewer frames for the same calls: a healthy CI run read 110.7 bytes per
+		// frame at 430a851c9, a local run in CI's mode 157.7 to 173.6 (most 190.5), and one slow
+		// runner 444.4, which failed the real-GPU budget of 192. The Mac's gate keeps that 192.
+		'drawFrame render/webgpu-renderers.ts': 512,
+	},
 };
 
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
+
+/**
+ * The budget of `place` in `worker` for a run: the tables' figure, SwiftShader's own where it has
+ * one, plus what the run's switches and scene add. A run on SwiftShader judges a place by the
+ * SwiftShader figure when the table names one.
+ */
+export function placeBudget(
+	worker: string,
+	place: string,
+	options: { swiftShader: boolean; extra?: number },
+): number {
+	const table = {
+		...BUDGETS[worker as (typeof WORKERS)[number]],
+		...(options.swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
+	};
+	return (table[place] ?? OTHER_BUDGET) + (options.extra ?? 0);
+}
 
 /** The place of the WebGPU replay, which makes the browser's objects of each pass. */
 const REPLAY = 'replay webgpu/backend.ts';
@@ -411,6 +475,22 @@ const CONTACT_PASSES = 5;
  */
 const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
 	'render-worker': { 'generateMipmaps webgpu/backend.ts': 11 * 32 },
+};
+
+/**
+ * What `--ssr` adds to the WebGPU replay each frame, beyond the passes that `PAGE_SWITCHES` counts:
+ * the encoders of the ten render passes that screen-space reflections add (the depth prepass, which
+ * draws apart from the opaque pass, the depth copy, the six levels of the depth pyramid, the trace
+ * and the copy of the opaque colors). On the Mac each allocated about 64 bytes, twice
+ * `PASS_REPLAY_BYTES`, so the table adds the other half and keeps one pass's room above the ten, as
+ * bloom's does. The reflections share the copy's mip levels with `--transmission`, at the same
+ * allowance.
+ */
+const SSR_BUDGETS: WorkerBudgets = {
+	'render-worker': {
+		[REPLAY]: 10 * 32 + 64,
+		'generateMipmaps webgpu/backend.ts': 11 * 32,
+	},
 };
 
 /**
@@ -454,6 +534,8 @@ interface PageSwitch {
  * - `--reflection`: the reflection's culling pass, its render pass and the pass that copies its
  *   image upright;
  * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
+ * - `--ssr`: the depth prepass, the depth copy, the six levels of the depth pyramid, the trace and
+ *   the copy of the opaque colors, with the passes of the copy's mip levels;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
  * - `--passes`: the full-screen pass and the effect's pass;
@@ -476,6 +558,11 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--row-values', query: '&rowValues' },
 	{ flag: '--levels', query: '&levels' },
 	{ flag: '--environment', query: '&environment' },
+	{
+		flag: '--reflection-probes',
+		query: '&reflectionProbes=always',
+		budgets: PROBE_BUDGETS,
+	},
 	{ flag: '--hemisphere', query: '&hemisphere', budgets: SETTER_BUDGETS },
 	{ flag: '--area-lights', query: '&areaLights' },
 	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },
@@ -494,6 +581,16 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 		query: '&transmission',
 		passes: 1,
 		budgets: TRANSMISSION_MIPS_BUDGETS,
+	},
+	{ flag: '--translucency', query: '&translucency' },
+	// The skin pass, the culling pass that follows it on the GPU-driven path, and the blur's two
+	// steps.
+	{ flag: '--subsurface', query: '&subsurface', passes: 4 },
+	{
+		flag: '--ssr',
+		query: '&ssr',
+		passes: 10,
+		budgets: SSR_BUDGETS,
 	},
 	{ flag: '--coat-sheen', query: '&coatSheen' },
 	{ flag: '--weighted', query: '&weighted', budgets: WEIGHTED_BUDGETS },
@@ -517,7 +614,8 @@ const INERTIAL_CROWD = 64;
 
 /**
  * What S4, S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
- * - S4's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each;
+ * - S4's and S5's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each.
+ *   S5's sun casts them too, at the preset that the Mac picks;
  * - S5's camera path, which the browser runs beside 500 knights' moves without inlining the
  *   camera's setters, so it boxes up to all seven numbers that it passes to them: 46 to 84 bytes
  *   per frame on the Mac;
@@ -538,7 +636,11 @@ const SCENE_BUDGETS: Partial<Record<(typeof ALLOCATION_SCENES)[number], WorkerBu
 	},
 	s5: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 48 },
-		'render-worker': { 'write webgpu/staging.ts': 8 * 64, 'giveUpStalled gpu/completion.ts': 12 },
+		'render-worker': {
+			'replay webgpu/backend.ts': CONTACT_PASSES * PASS_REPLAY_BYTES,
+			'write webgpu/staging.ts': 8 * 64,
+			'giveUpStalled gpu/completion.ts': 12,
+		},
 	},
 	s6: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 16 },
@@ -809,10 +911,6 @@ async function main(): Promise<void> {
 		const over: string[] = [];
 		const unsampled: string[] = [];
 		for (const [worker, workerSamples] of samples) {
-			const budgets = {
-				...BUDGETS[worker as (typeof WORKERS)[number]],
-				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
-			};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
@@ -826,7 +924,7 @@ async function main(): Promise<void> {
 						0,
 					) +
 					(sceneBudgets[name] ?? 0);
-				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
+				const budget = placeBudget(worker, name, { swiftShader, extra });
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
 					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,

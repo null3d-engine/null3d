@@ -45,6 +45,7 @@ export interface CoreGlue extends CoreErrors {
 		indexInstances: boolean,
 		largeWorld: boolean,
 		gpuOcclusion: boolean,
+		directDraws: boolean,
 		shadowDepthBits: number,
 	): number;
 	/**
@@ -161,6 +162,13 @@ export interface CoreGlue extends CoreErrors {
 	occludedEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
+	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
+	frameRests(): boolean;
+	/**
+	 * Says whether a still view may accumulate its frames and rest. The image tests and hold mode
+	 * turn the accumulation off, so a captured frame is the frame the sketch drew once.
+	 */
+	setStillEnabled(enabled: boolean): void;
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
@@ -265,6 +273,21 @@ export interface CoreGlue extends CoreErrors {
 	 * `QUERY_BOX`); returns their count, or `QUERY_FAILED`.
 	 */
 	overlap(kind: number, layers: number): number;
+	/**
+	 * Asks the next recorded frame to answer which object draws at a point of the canvas: `x` and
+	 * `y` in CSS pixels, `ring` the read of the pick ring, and `slot` the control slot that the
+	 * read raises. Returns 0 when the frame will draw the pick, and another number when a pick
+	 * already waits.
+	 */
+	requestPick(x: number, y: number, ring: number, slot: number): number;
+	/** The address in engine memory of the pick ring's results, four words for each read. */
+	pickResultAddress(): number;
+	/** True when GPU picking finds every source that the scene draws. */
+	pickCoversScene(): number;
+	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
+	pickTargetId(key: number): number;
+	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
+	pickTargetRow(key: number): number;
 	/**
 	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
 	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
@@ -432,6 +455,42 @@ export interface CoreGlue extends CoreErrors {
 	 * values, which TypeScript writes first.
 	 */
 	addSkyMap(texture: number, stages: number): number;
+	/**
+	 * Sets reflection probe `slot`, adding it when the slot is empty: its box from the low corner to
+	 * the high one, the point it captures from, its blend and intensity, its flags
+	 * (`REFLECTION_PROBE_*`), the layers its captures draw and its priority. The first probe adds
+	 * the six capture views, and fails when the view list has no room for them.
+	 */
+	setReflectionProbe(
+		slot: number,
+		lowX: number,
+		lowY: number,
+		lowZ: number,
+		highX: number,
+		highY: number,
+		highZ: number,
+		captureX: number,
+		captureY: number,
+		captureZ: number,
+		blend: number,
+		intensity: number,
+		flags: number,
+		layers: number,
+		priority: number,
+	): number;
+	/** Removes reflection probe `slot`. The last probe takes the capture views with it. */
+	removeReflectionProbe(slot: number): number;
+	/** Makes reflection probe `slot` capture the scene again, in a frame soon. */
+	captureReflectionProbe(slot: number): number;
+	/** Sets the texels across each reflection probe map's largest level, 128, 256 or 512. */
+	setProbeSize(size: number): number;
+	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
+	probesWaiting(): number;
+	/**
+	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
+	 * filters, once.
+	 */
+	probeGenerator(): number;
 	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
@@ -615,8 +674,22 @@ export interface CoreGlue extends CoreErrors {
 	setContactSteps(steps: number): number;
 	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
 	setDof(on: boolean): number;
+	/** Turns screen-space reflections on with the post-processing values' settings, or off. */
+	setSsr(on: boolean): number;
+	/**
+	 * 1 when the frame recorded last draws with what the frame before it drew, as screen-space
+	 * reflections read the frame before's color, else 0.
+	 */
+	readsLastFrame(): number;
+	/**
+	 * The size of screen-space reflections' grid in thousandths of the render size, and the most
+	 * steps of their march, from the next frame on: a size of 0 draws none.
+	 */
+	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
+	setSubsurfaceTaps(taps: number): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -717,6 +790,16 @@ export interface CoreGlue extends CoreErrors {
 	 * code, from the next frame on.
 	 */
 	setCanvasOutput(sceneColor: number, antialias: number): number;
+	/**
+	 * Says whether the device draws the motion target with one sample, and with MSAA's samples, as
+	 * the page's device check found.
+	 */
+	allowMotion(oneSample: boolean, multisampled: boolean): number;
+	/**
+	 * 1 when the frame's passes read the motion since the frame before, as the motion debug view
+	 * does, so a held frame needs the frame before it drawn first, else 0.
+	 */
+	holdsFrameBefore(): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
 	/**
@@ -950,6 +1033,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'raycast',
 	'raycastBatch',
 	'overlap',
+	'requestPick',
+	'pickResultAddress',
+	'pickCoversScene',
+	'pickTargetId',
+	'pickTargetRow',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
@@ -975,6 +1063,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setCubeImages',
 	'generateTexture',
 	'addSkyMap',
+	'setReflectionProbe',
+	'removeReflectionProbe',
+	'captureReflectionProbe',
+	'setProbeSize',
+	'probesWaiting',
+	'probeGenerator',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
@@ -1016,9 +1110,15 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'allowMotion',
+	'holdsFrameBefore',
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'setSubsurfaceTaps',
+	'setSsr',
+	'readsLastFrame',
+	'setSsrQuality',
 	'setAutoExposure',
 	'setExposureMeter',
 	'createParticles',

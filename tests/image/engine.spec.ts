@@ -266,6 +266,14 @@ for (const mode of ENGINE_MODES)
 /** The text as a regular expression that matches it alone. */
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** The address of a part's module on the dev server, and of its file with a hash in a build. */
+function partPatterns(modules: readonly string[]): RegExp[] {
+	return [...new Set(modules)].map((module) => {
+		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
+		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
+	});
+}
+
 /**
  * The address of each file that loads only when a sketch first uses its feature, on the dev server
  * and in a production build, which names a file after its module and adds a hash. The size report
@@ -273,14 +281,11 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * them.
  */
 const FIRST_USE_PATTERNS: readonly RegExp[] = [
-	...[
-		...new Set(
-			LATER_PARTS.filter(({ afterFirstFrame }) => !afterFirstFrame).map(({ module }) => module),
+	...partPatterns(
+		LATER_PARTS.filter(({ afterFirstFrame, onFirstCall }) => !afterFirstFrame && !onFirstCall).map(
+			({ module }) => module,
 		),
-	].map((module) => {
-		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
-		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
-	}),
+	),
 	...FIRST_USE_FILES.map((file) => {
 		const dot = file.lastIndexOf('.');
 		return new RegExp(`/${escaped(file.slice(0, dot))}(-[\\w-]{8})?${escaped(file.slice(dot))}$`);
@@ -297,10 +302,19 @@ function isFirstUseShaderFile(path: string): boolean {
 	return stem !== undefined && isFirstUseShaderPart(`${stem}.js`);
 }
 
+/** The address of the parts that load at the first call that reads them, not with a feature. */
+const FIRST_CALL_PATTERNS: readonly RegExp[] = partPatterns(
+	LATER_PARTS.filter(({ onFirstCall }) => onFirstCall).map(({ module }) => module),
+);
+
+/** The address of the frame figures that `measure()` reads. */
+const FRAME_FIGURES = partPatterns(['page/frame-stats.ts']);
+
 // A page that uses no feature that loads on first use downloads none of their files, on either GPU
 // path and in every thread mode: neither their code nor their shader builds. Nor does it download
 // the renderers of the GPU path that it does not draw with. The engine test page uses no such
-// feature, and the startup benchmark times it.
+// feature, and the startup benchmark times it. Its measurement then reads the frame figures, which
+// come in a file of their own.
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES)
 		test(`a page that uses no feature that loads on first use downloads none of their files, ${mode.name} on ${gpu}`, async ({
@@ -323,6 +337,26 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const other = gpu === 'webgpu' ? 'webgl2' : 'webgpu';
 			expect(requests.some((path) => renderers(gpu).test(path))).toBe(true);
 			expect(requests.filter((path) => renderers(other).test(path))).toEqual([]);
+			// The measurement reads the frame figures, so their file arrives.
+			expect(requests.some((path) => FRAME_FIGURES.some((file) => file.test(path)))).toBe(true);
+		});
+
+// The frame figures behind measure() and the fixes of the errors' messages are large and read
+// rarely, so each loads at the first call that reads it. A page that neither measures nor throws
+// downloads neither file: ?nomeasure skips the engine test page's measurement.
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	for (const mode of ENGINE_MODES)
+		test(`a page that measures nothing and throws nothing downloads neither file, ${mode.name} on ${gpu}`, async ({
+			page,
+		}) => {
+			const requests: string[] = [];
+			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
+			await page.goto(`engine.html?gpu=${gpu}&seconds=1&nomeasure&${mode.query}`);
+			const result = await pageResult<{ error?: string }>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			expect(
+				requests.filter((path) => FIRST_CALL_PATTERNS.some((file) => file.test(path))),
+			).toEqual([]);
 		});
 
 /**
@@ -335,9 +369,18 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	particles: 'tests/pages/sketches/particles-sketch.ts',
 	background: 'tests/pages/sketches/texture-background-sketch.ts',
 	transmission: 'tests/pages/sketches/transmission-sketch.ts',
+	// Both suns cast shadows for their feature's picture, and their scenes let the sun draw contact
+	// shadows, which load ambient occlusion's shader file on first use. The switch turns those off,
+	// so the page downloads its own feature's file alone.
+	translucency: 'tests/pages/sketches/translucency-sketch.ts?no-contact',
+	subsurface: 'tests/pages/sketches/subsurface-sketch.ts?no-contact',
 	coat_sheen: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv',
 	weighted: 'tests/pages/sketches/weighted-sketch.ts',
 	decals: 'tests/pages/sketches/decal-first-use-sketch.ts',
+	// The motion pass draws only while a pass reads the motion, and the debug view reads it, so
+	// the motion vectors sketch asks for that view.
+	motion: 'tests/pages/sketches/motion-vectors-sketch.ts?case=slide',
+	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
 };
 
 /** Page switches that a feature needs besides its sketch: the test switches that turn it on. */
@@ -388,13 +431,6 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			test.skip(
 				feature === 'decals' && gpu === 'webgpu',
 				'a decal material with a map exceeds the WebGPU per-stage sampled-texture limit (E1305)',
-			);
-			// The sketch has no case for a probe grid, because no page lights with one yet: the
-			// probes work adds the first such page (M2-R38), and this test then covers it like every
-			// other feature. Until then the case would draw nothing and download nothing.
-			test.skip(
-				feature === 'probe_grid',
-				'no page lights with a probe grid yet: the probes work adds the first one',
 			);
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));

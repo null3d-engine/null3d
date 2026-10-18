@@ -7,6 +7,8 @@ import {
 	MAP_SLOT_COAT,
 	MAP_SLOT_COAT_NORMAL,
 	MAP_SLOT_COAT_ROUGHNESS,
+	MAP_SLOT_DIFFUSE_TRANSMISSION,
+	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
@@ -30,6 +32,8 @@ import {
 	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_SUBSURFACE,
+	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
@@ -41,6 +45,8 @@ import {
 	MATERIAL_PARAM_DECAL_EDGE_FADE,
 	MATERIAL_PARAM_DECAL_FADE_END,
 	MATERIAL_PARAM_DECAL_FADE_START,
+	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
+	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -55,6 +61,8 @@ import {
 	MATERIAL_PARAM_SHEEN_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
+	MATERIAL_PARAM_SUBSURFACE_COLOR,
+	MATERIAL_PARAM_SUBSURFACE_RADIUS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
@@ -68,6 +76,7 @@ import {
 } from '../generated/core';
 import {
 	PERMUTATION_COAT_SHEEN,
+	PERMUTATION_TRANSLUCENCY,
 	SIZE_MATERIAL_BYTES,
 	TEMPLATE_CUSTOM_FIRST,
 	VERTEX_COLOR,
@@ -106,6 +115,10 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_REFLECTANCE, 1],
 	[MATERIAL_PARAM_SPECULAR_COLOR, 3],
 	[MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
+	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR, 3],
+	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION, 1],
+	[MATERIAL_PARAM_SUBSURFACE_COLOR, 3],
+	[MATERIAL_PARAM_SUBSURFACE_RADIUS, 1],
 	[MATERIAL_PARAM_CLEARCOAT, 1],
 	[MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
 	[MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, 2],
@@ -550,6 +563,104 @@ describe('Material.set', () => {
 		]);
 	});
 
+	test('lets light through to the other side when created with diffuseTransmission', () => {
+		const { table, features, maps, materials } = fakeCore();
+		const leaf = materials.standard({
+			diffuseTransmission: 0.5,
+			diffuseTransmissionColor: [0.25, 0.5, 0],
+			diffuseTransmissionMap: texture(5),
+			diffuseTransmissionColorMap: texture(6, 1),
+		});
+		materials.standard({ diffuseTransmission: 0 });
+		materials.standard();
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_DIFFUSE_TRANSMISSION]).toBe(0.5);
+		expect(
+			row().slice(
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR + 3,
+			),
+		).toEqual([0.25, 0.5, 0]);
+		// Given at all, even as 0, it fixes the feature, so set changes it later.
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_TRANSLUCENCY)).toEqual([
+			MATERIAL_FEATURE_TRANSLUCENCY,
+			MATERIAL_FEATURE_TRANSLUCENCY,
+			0,
+		]);
+		// Its maps take the specular maps' slots, which read the same channels.
+		expect(maps).toEqual([
+			[1, MAP_SLOT_DIFFUSE_TRANSMISSION, 5, 0],
+			[1, MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR, 6, 1],
+		]);
+		expect([MAP_SLOT_DIFFUSE_TRANSMISSION, MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR]).toEqual([
+			MAP_SLOT_SPECULAR_INTENSITY,
+			MAP_SLOT_SPECULAR_COLOR,
+		]);
+		leaf.set({ diffuseTransmission: 1, diffuseTransmissionColor: '#ffffff' });
+		expect(row()[MATERIAL_PARAM_DIFFUSE_TRANSMISSION]).toBe(1);
+		expect(
+			row().slice(
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR + 3,
+			),
+		).toEqual([1, 1, 1]);
+		expect(thrown(() => leaf.set({ diffuseTransmission: 1.5 })).code).toBe('E1108');
+	});
+
+	test('spreads light under the surface when created with subsurfaceRadius', () => {
+		const { table, features, materials } = fakeCore();
+		const skin = materials.standard({ subsurfaceRadius: 0.012, subsurfaceColor: [1, 0.4, 0.25] });
+		materials.standard({ subsurfaceRadius: 0 });
+		materials.standard();
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_SUBSURFACE_RADIUS]).toBe(0.012);
+		const color = () =>
+			row().slice(MATERIAL_PARAM_SUBSURFACE_COLOR, MATERIAL_PARAM_SUBSURFACE_COLOR + 3);
+		expect(color()).toEqual([1, 0.4, 0.25]);
+		// Given at all, even as 0, it fixes the feature, so set changes it later.
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_SUBSURFACE)).toEqual([
+			MATERIAL_FEATURE_SUBSURFACE,
+			MATERIAL_FEATURE_SUBSURFACE,
+			0,
+		]);
+		skin.set({ subsurfaceRadius: 0.03, subsurfaceColor: '#ffffff' });
+		expect(row()[MATERIAL_PARAM_SUBSURFACE_RADIUS]).toBe(0.03);
+		expect(color()).toEqual([1, 1, 1]);
+		expect(thrown(() => skin.set({ subsurfaceRadius: -1 })).code).toBe('E1108');
+	});
+
+	test('refuses maps that would share a slot with the diffuse transmission maps', () => {
+		const { table, materials } = fakeCore();
+		const shiny = thrown(() =>
+			materials.standard({ diffuseTransmission: 1, specularColorMap: texture(5) }),
+		);
+		expect(shiny.message).toStartWith(
+			'E1217: materials.standard() got specularColorMap with diffuseTransmission;',
+		);
+		const opaque = thrown(() => materials.standard({ diffuseTransmissionMap: texture(5) }));
+		expect(opaque.message).toStartWith(
+			'E1217: materials.standard() got diffuseTransmissionMap without diffuseTransmission;',
+		);
+		expect(table).toEqual([]);
+	});
+
+	test('refuses diffuse transmission beside layers and the weighted blending', () => {
+		const { table, materials } = fakeCore();
+		const velvet = thrown(() =>
+			materials.standard({ diffuseTransmission: 0.5, sheenColor: '#ff7a8f' }),
+		);
+		expect(velvet.message).toStartWith(
+			'E1217: materials.standard() got diffuseTransmission with a clear coat or a sheen;',
+		);
+		const smoke = thrown(() =>
+			materials.standard({ diffuseTransmission: 0.5, alphaMode: 'blend', blending: 'weighted' }),
+		);
+		expect(smoke.message).toStartWith(
+			"E1217: materials.standard() got diffuseTransmission with the 'weighted' blending;",
+		);
+		expect(table).toEqual([]);
+	});
+
 	test('refuses an index of refraction below 1 and a specular intensity above 1', () => {
 		const { table, materials } = fakeCore();
 		const glass = materials.standard();
@@ -893,6 +1004,33 @@ describe('materials.shader', () => {
 		);
 		expect(covered.message).toStartWith('E1217: materials.shader() got alphaToCoverage;');
 		expect(shadings).toEqual([]);
+	});
+
+	test('lets light through to the other side only where its WGSL names the diffuse transmission', () => {
+		const { features, materials } = fakeCore();
+		const plain = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), diffuseTransmission: 0.5 }),
+		);
+		expect(plain.message).toStartWith(
+			"E1217: materials.shader() got diffuseTransmission, but its WGSL never names the surface's diffuseTransmission",
+		);
+		const leaf = {
+			...compiledMaterial(),
+			variants: { translucent: { permutation: PERMUTATION_TRANSLUCENCY, wgsl: null, glsl: null } },
+		};
+		materials.shader({ wgsl: leaf, diffuseTransmission: 0.5 });
+		expect(features).toEqual([MATERIAL_FEATURE_TRANSLUCENCY]);
+	});
+
+	test('refuses a scatter radius, which custom materials do not blur', () => {
+		const { features, materials } = fakeCore();
+		const skin = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), subsurfaceRadius: 0.01 }),
+		);
+		expect(skin.message).toStartWith(
+			'E1217: materials.shader() got subsurfaceRadius; custom materials draw no subsurface blur.',
+		);
+		expect(features).toEqual([]);
 	});
 
 	test('passes a full shader the vertex attributes it reads, without vertex colors', () => {

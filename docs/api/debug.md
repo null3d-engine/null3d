@@ -87,7 +87,7 @@ flowchart LR
 
 ```ts
 export default defineSketch(({ debug, input }) => {
-  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe', 'shadows'] as const;
+  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe', 'shadows', 'motion'] as const;
   let shown = 0;
   return {
     onUpdate() {
@@ -108,9 +108,11 @@ export default defineSketch(({ debug, input }) => {
 | `'overdraw'` | Light that each surface adds to the pixels it covers, with no depth test. Bright pixels are covered many times, so they cost the most shading. The [8-bit path](../concepts/color-management.md#the-8-bit-path) adds the light after the sRGB encoding, so layers brighten faster there |
 | `'wireframe'` | The edges of each triangle as lines one pixel wide, in the material's color |
 | `'shadows'` | How much of the main directional light's shadow falls on each surface, as a gray: black in full shadow, white in full light. The gray is the factor that lit shading multiplies the sun's light by. A surface that faces away from the sun is black, as no sunlight reaches it. A surface that receives no shadows, or whose material takes no light, is white |
+| `'motion'` | How far each pixel's surface moved on the screen since the last frame, the camera's move included, as a color. The hue gives the direction: red to the right, yellow-green downward, cyan to the left and violet upward. The brightness gives the length, full at 16 pixels. A still pixel is black. Moving objects, instance batch rows, skinned and morphed meshes and the vertex offsets of custom materials all show their motion. See-through surfaces show the motion of what lies behind them |
 
-- A debug view clears to black and hides the background texture. It uses no tone mapping and no exposure, so its colors reach the canvas as the table gives them.
-- The views ignore what a material changes: maps, vertex colors, alpha, blending, depth options and custom shaders, vertex offsets included. A mesh keeps its place and the faces it culls.
+- A debug view clears to black and hides the background texture. It uses no tone mapping and no exposure, so its colors reach the canvas as the table gives them. The motion view colors every pixel, the background too, and a background that the camera's turn moves shows that motion.
+- The motion view shows the engine's motion vectors, which [the render graph](../concepts/render-graph.md#motion-vectors) explains. While it shows, the engine keeps the last frame's transforms and skinning results on the GPU. In other frames it keeps nothing and draws no motion pass. In [hold mode](../guides/testing.md#hold-mode) the engine draws the frame before the held one too, so the held frame shows one step of motion.
+- The shading views ignore what a material changes: maps, vertex colors, alpha, blending, depth options and custom shaders, vertex offsets included. A mesh keeps its place and the faces it culls.
 - The first frame of a view builds its GPU pipelines, so objects can be missing from a few frames after a change.
 - The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
 - Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know fails with [E1213](../errors/E1213.md).

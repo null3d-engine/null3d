@@ -216,6 +216,8 @@ export class Presenter {
 	private callbackHz = 0;
 	/** True when this thread drew a frame since the last callback started. */
 	private drew = false;
+	/** True while a still view rests: the thread takes frames without drawing them. */
+	private rested = false;
 	/** The page's callbacks in a row, up to the last one, that drew a frame. */
 	private busyCallbacks = 0;
 	/** The page's callbacks in a row, up to the last one, that drew nothing. */
@@ -403,6 +405,14 @@ export class Presenter {
 	 */
 	draw(frame: number, timestamp: number): void {
 		if (this.stale(frame)) return;
+		// A still view that has accumulated enough frames submits no draw work: the callers take the
+		// frame anyway, so the sketch keeps stepping and can see the change that ends the rest, and
+		// the canvas keeps the converged image.
+		if (Atomics.load(this.slots, Slot.FrameRest0 + (frame & 1)) !== 0) {
+			this.drew = false;
+			this.rested = true;
+			return;
+		}
 		const start = performance.now();
 		this.drew = true;
 		this.record.begin(frame);
@@ -412,7 +422,9 @@ export class Presenter {
 		this.presented?.();
 		const lastPresented = this.lastPresented[0] as number;
 		if (lastPresented < 0) this.markFirstFrame(performance.now() - start);
-		else this.record.interval(timestamp - lastPresented);
+		// The first frame after a rest records no interval: the time the view rested is no frame's.
+		else if (!this.rested) this.record.interval(timestamp - lastPresented);
+		this.rested = false;
 		this.lastPresented[0] = timestamp;
 		this.record.commit(performance.now() - start);
 	}
@@ -431,7 +443,8 @@ export class Presenter {
 /**
  * Hold mode's loop, which runs no frame loop. When first asked, it draws the frame that the sketch
  * thread published, in the first animation frame callback after its pipelines are built, and it
- * draws nothing after.
+ * draws nothing after. Where the sketch thread recorded the held frame twice, for a feature that
+ * draws with what the frame before drew, it draws each frame from the first held one in turn.
  */
 export class HoldLoop implements RenderLoop {
 	private readonly presenter: Presenter;
@@ -449,10 +462,13 @@ export class HoldLoop implements RenderLoop {
 
 	drawHeld(): Promise<void> {
 		this.drawn ??= new Promise((resolve, reject) => {
+			let drawn = 0;
 			const attempt = (timestamp: number) => {
-				const frame = Atomics.load(this.slots, Slot.FramesPublished);
+				const published = Atomics.load(this.slots, Slot.FramesPublished);
+				const from = Atomics.load(this.slots, Slot.HeldFrom);
+				const frame = drawn > 0 ? drawn + 1 : from > 0 && from <= published ? from : published;
 				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
-				else if (frame === 0) reject(new Error('the sketch thread published no held frame'));
+				else if (published === 0) reject(new Error('the sketch thread published no held frame'));
 				else
 					try {
 						if (!this.presenter.ready(frame)) {
@@ -462,7 +478,9 @@ export class HoldLoop implements RenderLoop {
 						this.presenter.applyResize();
 						Atomics.store(this.slots, Slot.FramesTaken, frame);
 						this.presenter.draw(frame, timestamp);
-						resolve();
+						drawn = frame;
+						if (frame < published) requestAnimationFrame(attempt);
+						else resolve();
 					} catch (error) {
 						reject(error);
 					}

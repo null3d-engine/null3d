@@ -22,6 +22,7 @@ const MAKERS = new Set([
 	'addFullscreenPass',
 	'createClip',
 	'createClipLater',
+	'setReflectionProbe',
 	'setMaterialDisplacement',
 ]);
 

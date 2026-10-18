@@ -11,8 +11,12 @@ import { createEngine, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
-/** How long the measurement runs, long enough to hold the whole switch. */
-const MEASURE_SECONDS = 1.5;
+/**
+ * How long the measurement runs, long enough to hold the whole switch. A software GPU on a slow
+ * runner needs several seconds to apply a preset and build its pipelines, and the frames that the
+ * build stalls must fit in the window for its count to be recorded.
+ */
+const MEASURE_SECONDS = 8;
 
 /** The share of the pixels that differ from the frame's first pixel, the background. */
 function covered({ pixels }: { pixels: Uint8Array }): number {
@@ -42,6 +46,10 @@ run('preset-change', async () => {
 			resolve(data);
 		});
 	});
+	// A measurement's window opens at the call, so its first use holds the few frames that the frame
+	// figures' download takes. A short measurement downloads them first, which keeps them out of the
+	// window that holds the switch.
+	await engine.measure(0.01);
 	const measuring = engine.measure(MEASURE_SECONDS);
 	const swap = params.has('swap');
 	if (swap) engine.postToSketch('swap');
@@ -58,6 +66,7 @@ run('preset-change', async () => {
 		sketch,
 		skippedDraws: measured.skippedDraws,
 		pipelines: measured.pipelines,
+		lostRecords: measured.lostRecords,
 		frames: measured.frames,
 		coveredBefore: covered(before),
 		coveredAfter: covered(after),

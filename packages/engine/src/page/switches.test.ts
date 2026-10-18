@@ -26,6 +26,7 @@ describe('parseSwitches', () => {
 			occlusionBuffer: undefined,
 			skinning: 'vertex',
 			indexInstances: false,
+			direct: 'auto',
 			shadowDepthBits: 16,
 			textureCache: true,
 			fps: undefined,
@@ -36,6 +37,7 @@ describe('parseSwitches', () => {
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
+			still: true,
 			bench: false,
 			stats: undefined,
 			glTiming: undefined,
@@ -60,6 +62,9 @@ describe('parseSwitches', () => {
 	it('reads instances by index on core WebGPU with ?instances=index, and copies them otherwise', () => {
 		expect(parseSwitches('?instances=index').indexInstances).toBe(true);
 		expect(parseSwitches('?instances=copy').indexInstances).toBe(false);
+		expect(parseSwitches('?direct=on').direct).toBe('on');
+		expect(parseSwitches('?direct=off').direct).toBe('off');
+		expect(parseSwitches('').direct).toBe('auto');
 	});
 
 	it('keeps shadow cascades in 16-bit depth unless ?shadowdepth=32 asks for 32-bit floats', () => {

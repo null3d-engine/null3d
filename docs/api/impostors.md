@@ -8,7 +8,9 @@ summary: "createImpostors: far objects as camera-facing cards that show the stor
 
 # Impostors
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, blending the three nearest views, an `assets impostor` command, and a demo. Coding agents must not use these yet.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, blending the three nearest views, and an `assets impostor` command. Coding agents must not use these yet.
+
+The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards of a code-made atlas stand far out. Press L there to draw the far band as meshes instead, and compare.
 
 ```mermaid
 flowchart LR
@@ -63,14 +65,19 @@ export default defineSketch(async ({ scene, assets }) => {
   const eye: [number, number, number] = [0, 0, 0];
   return {
     onUpdate() {
-      camera.getWorldPosition(eye);
+      // The camera has no parent here, so its own position is its world position.
+      camera.getPosition(eye);
       trees.update(eye);
     },
   };
 });
 ```
 
-`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position in the world. Keep one array for the position, as above, so the frame loop allocates nothing. A card shows one view: three-way blending is a later step.
+`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position in the world. Keep one array for the position, as above, so the frame loop allocates nothing.
+
+A camera with no parent reports its own position at once with `getPosition`. `camera.getWorldPosition` reports the world matrix of the frame that last ran. A sketch's first update therefore reads the world's origin, and every card shows the view from there. Use `getWorldPosition` from the second frame on, or `getPosition` while the camera has no parent.
+
+A card shows one view: three-way blending is a later step.
 
 The cards are a static sprite batch. `update` marks only the cards whose view changed, so a still camera uploads nothing. When the eye has not moved since the last call, `update` returns at once. After you change cards' positions, sizes or colors through `trees.sprites`, call `trees.markDirty(start, count)` for those cards. The batch then uploads them, and the next `update` picks every view again.
 

@@ -10,7 +10,8 @@
 // memory option of createEngine, and reports the maximum of each shared memory that the engine
 // asked the browser for. With ?downloads, it reports when the page asked for each file and when the
 // file arrived, from the browser's resource timing. ?sketch=busy runs a scene whose instance
-// batch gives the job workers work in every frame.
+// batch gives the job workers work in every frame. ?nomeasure skips the measurement, so the page
+// reads none of the frame figures.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
 import { measureUntil } from './lib/measure';
@@ -104,7 +105,7 @@ run('engine', async () => {
 		memory: memoryOption === undefined ? undefined : { maximumMiB: memoryOption },
 	});
 	await engine.firstFrame;
-	const stats = await engine.measure(seconds);
+	const stats = params.has('nomeasure') ? undefined : await engine.measure(seconds);
 	const pause = params.has('pause') ? await pauseAndCount(engine) : undefined;
 	const messages: string[] = [];
 	const count = await new Promise<unknown>((resolve) => {

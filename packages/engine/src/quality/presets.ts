@@ -186,6 +186,35 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 16, 22, 43, 71],
 	},
+	// The taps of each step of the subsurface blur, which spreads skin's light under its surface:
+	// across, then down, each over a line of taps around the pixel. High and Ultra blur; Low and
+	// Medium, where phones, tablets, WebGL2 and compatibility mode draw, are 0, which draws no skin
+	// pass and no blur even where materials have a scatter radius. The taps live in a uniform
+	// block, so a change makes no GPU object; a change to or from 0 adds or removes the blur's
+	// passes (D-153).
+	subsurfaceSamples: {
+		presets: [0, 0, 17, 25],
+		changes: 'live',
+		values: [0, 11, 17, 25],
+	},
+	// The size of screen-space reflections' grid, as a share of the render size each way: 0 on Low,
+	// which phones run, where reflective surfaces keep the environment's light. A share above 0 draws
+	// a corner of the same targets, so it changes during play with no new GPU object; a change to or
+	// from 0 adds or removes the reflections' passes. The reflections share ambient occlusion's grid,
+	// at the larger of the two scales (D-134).
+	ssrScale: {
+		presets: [0, 0.25, 0.5, 0.5],
+		changes: 'live',
+		values: [0, 0.25, 0.5],
+	},
+	// The most steps of each reflected ray's march through the depth pyramid. A step crosses a cell
+	// of the pyramid, which grows as the ray finds open space, so rays that travel far need more
+	// steps. They live in a uniform block, so a change makes no GPU object (D-134).
+	ssrSteps: {
+		presets: [16, 24, 48, 64],
+		changes: 'live',
+		values: [16, 24, 32, 48, 64],
+	},
 	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
 	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
 	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
@@ -214,6 +243,16 @@ export const QUALITY_SETTINGS = {
 		presets: [0.25, 0.5, 0.5, 1],
 		changes: 'live',
 		values: [0.25, 0.5, 1],
+	},
+	// The texels across the largest level of each reflection probe's map, an octahedral map of the
+	// whole sphere. A probe captures the scene through six views of half that size, and costs its
+	// pixels only while it captures. 256 keeps a polished floor's reflection sharp on a desktop's
+	// screen. Low's 128 takes a quarter of the memory, for phones' small screens. A change makes
+	// the maps again and captures every probe again (D-149).
+	probeSize: {
+		presets: [128, 256, 256, 256],
+		changes: 'live',
+		values: [128, 256, 512],
 	},
 	// The most area lights that one frame shades: the ones that give the camera the most light when
 	// more are in view, and a light that crosses the cap fades over a few frames. An area light costs
@@ -487,6 +526,29 @@ export interface QualitySettings {
 	 */
 	dofSamples: 0 | 16 | 22 | 43 | 71;
 	/**
+	/**
+	 * The taps of each step of the subsurface blur, which spreads the light under the surface of
+	 * materials with a `subsurfaceRadius`, such as skin: 11, 17 or 25, or 0, which draws no blur.
+	 * More taps spread a wide blur more smoothly and cost more. High takes 17 and Ultra 25; Low and
+	 * Medium take 0. The blur needs HDR color: a value above 0 that the page or the sketch gives
+	 * moves compatibility mode from its 8-bit path to HDR color, as bloom does. It changes during
+	 * play.
+	 */
+	subsurfaceSamples: 0 | 11 | 17 | 25;
+	/**
+	 * The size of screen-space reflections' grid, as a share of the render size each way: 0.5,
+	 * 0.25, or 0, which draws no screen-space reflections even when `post.set` turns them on. A
+	 * smaller share costs less, with blockier edges where reflections start and stop. It changes
+	 * during play: 0.5 and 0.25 make no GPU object, and a change to or from 0 adds or removes the
+	 * reflections' passes.
+	 */
+	ssrScale: 0 | 0.25 | 0.5;
+	/**
+	 * The most steps of each reflected ray's march: 16, 24, 32, 48 or 64. More steps let rays reach
+	 * farther objects and cost more. It changes during play.
+	 */
+	ssrSteps: 16 | 24 | 32 | 48 | 64;
+	/**
 	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
 	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
 	 * 16 x 16 cells of the image, on every GPU path. WebGL2 always takes the downsample. The
@@ -507,6 +569,12 @@ export interface QualitySettings {
 	 * the reflections' textures again.
 	 */
 	reflectionScale: 0.25 | 0.5 | 1;
+	/**
+	 * The texels across the largest level of each reflection probe's map: 128, 256 or 512. A larger
+	 * map gives sharper reflections on polished surfaces, and takes four times the memory for each
+	 * step. It changes during play, which makes the maps again and captures every probe again.
+	 */
+	probeSize: 128 | 256 | 512;
 	/**
 	 * The most rectangle and tube lights that one frame shades, a whole number from 0 to 64. When
 	 * more are in view, the ones that give the camera the most light shade: the brightest and
@@ -545,10 +613,11 @@ export interface QualitySettings {
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
 	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
-	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the steps of contact
-	 * shadows, how often far characters' poses update, and the volumetric fog's slices while it
-	 * draws. It raises them again, in the reverse order, once frames have time
-	 * to spare. `quality.governor` reports its steps. False keeps the render scale at
+	 * bloom's size while bloom is on, ambient occlusion's scale while it draws, the scale of
+	 * screen-space reflections while they draw, the steps of contact shadows, how often far
+	 * characters' poses update, and the volumetric fog's slices while it draws. It raises them
+	 * again, in the reverse order, once frames have time to spare. `quality.governor`
+	 * reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
 	 */

@@ -435,13 +435,19 @@ impl JointTexture {
                 self.rows,
                 1,
                 format::RGBA32_FLOAT,
-                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST | texture_usage::COPY_SRC,
                 1,
                 1,
                 view::D2,
             ],
         )?;
         Ok(true)
+    }
+
+    /// The texture's rows, 0 before it exists. The motion pass's copies of the last frame's joints
+    /// take the same size.
+    pub(crate) fn rows(&self) -> u32 {
+        self.rows
     }
 
     /// Uploads the joints in use, from the matrix buffer of the animation table's last step,

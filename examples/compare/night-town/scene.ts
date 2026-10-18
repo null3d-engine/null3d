@@ -95,6 +95,9 @@ export const OBJECTS_PER_BLOCK =
 /** The town's own objects: the street, the moon and the ambient light. */
 export const TOWN_OBJECTS = 3;
 
+/** The flying cars' batches: the body, the nose strip and the tail strips. */
+const FLYER_OBJECTS = 3;
+
 /** The kinds of mesh, each one batch per material in the instanced mode, and the lights. */
 const INSTANCED_KINDS = 40;
 
@@ -104,8 +107,9 @@ const INSTANCED_KINDS = 40;
  */
 export function nightObjects(lights: number, mode: CompareMode = 'scene-graph'): number {
 	const blocks = nightBlocks(lights);
-	if (mode === 'instanced') return INSTANCED_KINDS + blocks * LIGHTS_PER_BLOCK + TOWN_OBJECTS;
-	return blocks * OBJECTS_PER_BLOCK + TOWN_OBJECTS;
+	if (mode === 'instanced')
+		return INSTANCED_KINDS + blocks * LIGHTS_PER_BLOCK + TOWN_OBJECTS + FLYER_OBJECTS;
+	return blocks * OBJECTS_PER_BLOCK + TOWN_OBJECTS + FLYER_OBJECTS;
 }
 
 /** Writes block b's center on the ground, x and z, into out at `offset`. */
@@ -479,6 +483,45 @@ export const TAIL_LIGHT = [0, 0.75, -CAR.length / 2 - 0.25] as const;
 /** Where the exhaust leaves, from the car's center. */
 const TAILPIPE = [0.5, 0.32, -CAR.length / 2 - 0.05] as const;
 
+/**
+ * The flying cars: a lane above each street that crosses the middle of the town, at two heights,
+ * with four cars a lane. Each car crosses the town and returns to its lane's start, so the traffic
+ * always shows without following the block count.
+ */
+export const FLYERS_PER_LANE = 4;
+export const FLYER_LANES = [
+	{ axis: 'x', at: -BLOCK_PITCH / 2, height: 23, direction: 1 },
+	{ axis: 'x', at: BLOCK_PITCH / 2, height: 29, direction: -1 },
+	{ axis: 'z', at: BLOCK_PITCH / 2, height: 26, direction: 1 },
+	{ axis: 'z', at: -BLOCK_PITCH / 2, height: 20, direction: -1 },
+] as const;
+export const FLYER_COUNT = FLYERS_PER_LANE * FLYER_LANES.length;
+/** How far a lane runs before its cars wrap: the town's width, with room to leave and return. */
+export const FLYER_STRETCH = 240;
+/** The nose light's place in a flying car's frame, where its halo shows. */
+export const FLYER_HEAD = [0, 0.02, 2.5] as const;
+
+/**
+ * Writes flying car i's place and turn at simulation time `seconds` into out: x, y, z and yaw
+ * about +Y. A lane runs along +X or +Z, and its cars cross the town and wrap at the far end.
+ */
+export function flyerPose(seconds: number, i: number, out: OutArray): void {
+	const lane = FLYER_LANES[i % FLYER_LANES.length] as (typeof FLYER_LANES)[number];
+	const speed = 14 + ((i * 7) % 6);
+	const wrapped = (((i * 61.3 + seconds * speed) % FLYER_STRETCH) + FLYER_STRETCH) % FLYER_STRETCH;
+	const along = (wrapped - FLYER_STRETCH / 2) * lane.direction;
+	out[1] = lane.height;
+	if (lane.axis === 'x') {
+		out[0] = along;
+		out[2] = lane.at;
+		out[3] = lane.direction > 0 ? Math.PI / 2 : -Math.PI / 2;
+	} else {
+		out[0] = lane.at;
+		out[2] = along;
+		out[3] = lane.direction > 0 ? 0 : Math.PI;
+	}
+}
+
 export type NightMesh =
 	| 'ground'
 	| 'slab'
@@ -490,6 +533,9 @@ export type NightMesh =
 	| 'carCabin'
 	| 'headlamps'
 	| 'tailLamps'
+	| 'flyerBody'
+	| 'flyerHead'
+	| 'flyerTail'
 	| 'skyDome'
 	| `facade${number}`
 	| `trim${number}`
@@ -704,6 +750,21 @@ export function nightMeshes(
 		tailLamps: mergeMeshes([
 			boxAt(0.42, 0.11, 0.05, -0.62, 0.78, -length / 2 - 0.01),
 			boxAt(0.42, 0.11, 0.05, 0.62, 0.78, -length / 2 - 0.01),
+		]),
+		// A flying car: a wide hull with two pods and a canopy, a lit strip across its nose and two
+		// tail strips. It faces +Z, as the cars do.
+		flyerBody: mergeMeshes([
+			boxAt(2.2, 0.46, 4.6, 0, 0, 0),
+			boxAt(1.5, 0.12, 3.2, 0, 0.29, -0.1),
+			boxAt(1.14, 0.3, 1.9, 0, 0.5, -0.5),
+			boxAt(0.66, 0.3, 4.1, -1.24, -0.02, 0.1),
+			boxAt(0.66, 0.3, 4.1, 1.24, -0.02, 0.1),
+			boxAt(1.9, 0.22, 0.5, 0, -0.12, 2.25),
+		]),
+		flyerHead: boxAt(1.5, 0.1, 0.06, 0, 0.02, 2.5),
+		flyerTail: mergeMeshes([
+			boxAt(0.45, 0.09, 0.05, -0.75, 0.02, -2.31),
+			boxAt(0.45, 0.09, 0.05, 0.75, 0.02, -2.31),
 		]),
 		skyDome: skyDomeMesh(NIGHT_LOOK.dome.radius),
 	};
@@ -1015,6 +1076,7 @@ const EXHAUST_LIFE = 1.4;
 
 const pose = new Float64Array(3);
 const spot = new Float64Array(3);
+const flyerAt = new Float64Array(4);
 const lotScratch = new Int32Array(2);
 
 /** Adds one round sprite with no turn, from the first frame of its layer's atlas. */
@@ -1117,8 +1179,8 @@ export function writeExhaust(town: NightTown, seconds: number, rows: SpriteRows)
 }
 
 /**
- * Writes the glows of the shown blocks: a soft halo in the haze around every lamp, sign, headlamp
- * and tail lamp, in its light's color. A sign's glow flickers with its tubes.
+ * Writes the glows of the shown blocks: a soft halo in the haze around every lamp, sign, headlamp,
+ * tail lamp and flying car, in its light's color. A sign's glow flickers with its tubes.
  */
 export function writeGlows(town: NightTown, seconds: number, rows: SpriteRows): number {
 	const { glow } = NIGHT_LOOK;
@@ -1188,6 +1250,28 @@ export function writeGlows(town: NightTown, seconds: number, rows: SpriteRows): 
 			);
 		}
 	}
+	// The flying cars show by their lights, a warm one at the nose and a red one at the tail.
+	const [fx, fy, fz] = FLYER_HEAD;
+	for (let i = 0; i < FLYER_COUNT; i++) {
+		flyerPose(seconds, i, flyerAt);
+		const x = flyerAt[0] as number;
+		const y = flyerAt[1] as number;
+		const z = flyerAt[2] as number;
+		const c = Math.cos(flyerAt[3] as number);
+		const s = Math.sin(flyerAt[3] as number);
+		sprite(
+			rows,
+			x + c * fx + s * fz,
+			y + fy,
+			z - s * fx + c * fz,
+			glow.flyerSize,
+			glow.flyer,
+			glow.flyer * 0.92,
+			glow.flyer * 0.8,
+			1,
+		);
+		sprite(rows, x - s * 2.3, y + 0.02, z - c * 2.3, glow.flyerSize * 0.75, glow.flyer, 0, 0, 1);
+	}
 	return rows.count;
 }
 
@@ -1237,7 +1321,7 @@ export function nightSpriteLayers(capacity: number): Record<NightSprite, SpriteL
 			fog: true,
 		},
 		glows: {
-			capacity: capacity * GLOWS_PER_BLOCK,
+			capacity: capacity * GLOWS_PER_BLOCK + FLYER_COUNT * 2,
 			blending: 'additive',
 			atlas: glowAtlas(),
 			fog: false,
@@ -1341,6 +1425,19 @@ function windowBox(kind: FacadeKind, ground: boolean): readonly [number, number,
 		? [0.5 - half, 0.5 + half, 0.08, 0.94]
 		: [0.5 - half, 0.5 + half, 0.22, 0.84];
 }
+
+/** Each facade kind's windows on an upper floor, as the shaders draw the room behind them: u0, u1, v0, v1. */
+export const FACADE_WINDOW: Readonly<
+	Record<FacadeKind, readonly [number, number, number, number]>
+> = {
+	brick: windowBox('brick', false),
+	plaster: windowBox('plaster', false),
+	concrete: windowBox('concrete', false),
+	glass: windowBox('glass', false),
+};
+
+/** How far the room behind a window reaches back from its glass, in meters. */
+export const ROOM_DEPTH = 2.4;
 
 /** The distance from a place to the nearest of some lines across one axis. */
 function nearLine(at: number, lines: readonly number[]): number {
@@ -1741,6 +1838,8 @@ export const NIGHT_LOOK = {
 		headSize: 1.4,
 		tail: 0.35,
 		tailSize: 0.9,
+		flyer: 0.65,
+		flyerSize: 2.8,
 	},
 	/**
 	 * The street's wetness: the puddles' share, how dark wet asphalt turns, and how much of the
@@ -1769,6 +1868,8 @@ export const NIGHT_LOOK = {
 		gamma: [1, 1, 1],
 		gain: [1.05, 1.0, 0.95],
 	} satisfies GradeLook,
+	/** A lens grade: fringes at the edges, an anamorphic streak on the brightest light, and grain. */
+	lens: { shift: 5, streak: 0.3, grain: 0.035 },
 } as const;
 
 // The camera: a minute's loop that starts high over the town, sinks into a street at the height
@@ -1823,7 +1924,12 @@ export function nightTriangles(
 	meshes: Record<NightMesh, MeshData>,
 ): number {
 	const blocks = Math.min(town.capacity, nightBlocks(lights));
-	let total = triangleCount(meshes.ground);
+	let total =
+		triangleCount(meshes.ground) +
+		FLYER_COUNT *
+			(triangleCount(meshes.flyerBody) +
+				triangleCount(meshes.flyerHead) +
+				triangleCount(meshes.flyerTail));
 	for (let b = 0; b < blocks; b++) {
 		total +=
 			triangleCount(meshes.slab) +

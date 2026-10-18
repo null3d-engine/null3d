@@ -1,8 +1,8 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb), and to 176 KB the same day with a reclaim, in [The fifth raise](#the-fifth-raise-18-october-2026-the-start-to-176-kb-with-a-reclaim). Date: 2026-09-30.
 
-Summary: The engine's JavaScript that a page downloads at its start may take 165 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
+Summary: The engine's JavaScript that a page downloads at its start may take 176 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
 
 ## Question
 
@@ -574,6 +574,71 @@ Main's own build was over the budget. The pipelined WebGL2 start measured 162.2 
 
 The owner raised the start's Brotli budget from 160 KB to 165 KB, which leaves 2.8 KB of headroom, and chose that figure over trimming the start at once. The owner recorded the trim as a later task: "we can trim later on". The same day's earlier ruling returned the gzip and uncompressed figures to 448 KB and 3,328 KB, which the raise of 14 October had changed with no written words.
 
+### The fourth raise, 18 October 2026: the start to 166 KB
+
+The screen-space reflections of M2-EX22 add about 1.6 KB of real start code. Their settings, their share of the governor's steps and the names of their core calls all load with every page. Main's own start measured 167,351 bytes after Brotli, 163.4 KB. The branch's pipelined WebGL2 start came to 169,010 bytes. That is 50 bytes over the old line of 165 KB, 168,960 bytes.
+
+The owner raised the start's Brotli budget from 165 KB to 166 KB in writing on 18 October 2026. The owner ruled out a trim of the reflections' code. The gzip and uncompressed figures are unchanged at 448 KB and 3,328 KB. `START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
+
+### The fifth raise, 18 October 2026: the start to 176 KB, with a reclaim
+
+The rest of M2's start code arrived after the fourth raise: the still view, the surfaces that let
+light through, the skin scatter, and the draw probe back in its worker's script, where every page
+downloads it. The pull request's pipelined WebGL2 start measured 170,517 bytes after Brotli,
+169,984 bytes being the 166 KB line, so 533 bytes over. The probe's return to the worker adds about
+1.1 KB, and the reflection probes still to land add about 1.4 KB in every lit build.
+
+The owner raised the start's Brotli budget to 176 KB, 180,224 bytes, in writing on 18 October 2026,
+with about 4 KB of headroom for the features still to land. The gzip and uncompressed figures are
+unchanged at 448 KB and 3,328 KB. The owner also asked for the reclaim that this record has named
+since 4 October: the frame figures behind `measure()` (about 1.2 KB after Brotli) and the error-fix
+table (about 1.7 KB) load on their first use, so the raise is a ceiling for the end of M2 rather
+than a new resting size. The reclaim is a task of its own, and the start should come back under the
+166 KB line once it lands.
+
+`START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
+
+### The probe's measurement in each start, 18 October 2026
+
+The size report undercounted every start that probes the drawing path. The probe worker's
+`draw-path-probe.ts` loads on demand from the probe worker, and every device with WebGPU probes
+that path whichever path the page draws with. The report listed the file among those that load
+after the start, so no start counted its 1,134 bytes after Brotli.
+
+`DOWNLOADS` in `tools/lib/size-report.ts` now names the part in every start. The report's start
+figures rise by that figure, and the later-parts section no longer lists the file.
+
+### The reclaim, 18 October 2026: the start to 161.8 KB
+
+The reclaim that this record has named since 4 October landed on 18 October 2026. Two blocks of
+code left the start. Every page downloaded them, but few pages read them:
+
+- The frame figures behind `engine.measure` load at the first measurement, in a file of their own.
+  `threadRoles`, the one piece of that module that the start reads, moved to `shared/metrics.ts`,
+  which every page already loads.
+- The table of error fixes loads in each thread at its first error. Until it arrives the error
+  carries its code and detail. The fix then completes the message, so the error reports the whole
+  message once the file arrives. A failed start waits for the file before it rejects, so its error
+  reports the whole message at once.
+
+The page no longer hands the table to its workers: each thread loads it where it raises its first
+error. The sketch worker's first synchronous errors reach the sketch before the text arrives, so
+their messages gain the fix shortly after. The sketch worker loads the text once, and later errors
+carry it at once.
+
+The split moved three small modules that many files share into files of their own, which every
+page loads: the message helper, the GPU constants and the control block. Together they take
+913 bytes after Brotli and three requests. The page asks for all three while it loads, so they do
+not add a round trip in turn.
+
+The pipelined WebGL2 start fell from 171,526 bytes to 165,632 bytes after Brotli, under the 166 KB
+line of 169,984 bytes that the owner named by 4,352 bytes. The budget stays at 176 KB as the
+ceiling for the end of M2. The new files measure 1,755 bytes for the frame figures and 5,453 bytes
+for the fixes after Brotli, and the sketch worker's copy of the fixes 5,454 bytes.
+
+The two figures count the probe worker's direct-path file in both builds, as [the section
+above](#the-probes-measurement-in-each-start-18-october-2026) records.
+
 ### The first-use files raised, 15 October 2026: 48 KB to 49 KB
 
 The screen-space reflections work was over budget on two of its device modules rather than on the
@@ -590,6 +655,24 @@ worth 900 programs.
 
 `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the new figure. The gzip and
 uncompressed figures for a first-use file are unchanged at 320 KB and 1,536 KB.
+
+### The combination tables raised, 18 October 2026: 64 KB to 96 KB raw
+
+The M2-EX36 branch's translucency builds grew the four generated combination tables, the lists of
+module addresses for the builds that need several features. Each table gains one set of address
+lines for each pair of bits that the builds form, so the translucency bit's many pairs took the
+largest table from under 64 KB to 84,635 bytes uncompressed after Brotli, past [`LATER_BUDGET`]'s
+raw figure. Their compressed figures stayed small: 6.7 to 7.2 KB after Brotli against 16 KB.
+
+The owner's ruling of 18 October 2026 gave the combination tables a raw limit of their own, 96 KB,
+matched by the `-combos` part of the file name, and left every compressed limit as it was. A
+compressed figure is what a page downloads; the raw one guards the hosts that send files as they
+are, and the table is a list of short addresses that compresses far better than code. Splitting
+each table into more files would have needed a change to the shader build and to the loader, which
+the owner judged not worth it.
+
+`COMBOS_BUDGET` in `tools/lib/size-report.ts` holds the figure. The size check names the four grown
+files, and their `Size-Growth:` trailers give the reason on this branch.
 
 ### The trend, and the task that tracks it
 

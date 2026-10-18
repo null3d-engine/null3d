@@ -336,3 +336,9 @@ The figures, before and after, on the Mac's Chrome 155 with WebGPU at High, on 1
 - The draws fell by 97%, and the CPU time by about 40% on the 4,000-unit pages. The sketch worker no longer lays out a bucket for each unit.
 - The GPU's frame time did not change. It varied from 9.7 to 17.1 ms from page to page in both builds. Its largest render pass took 6.8 to 9.6 ms in both. The frame's compute work fell from 1.4 to 1.6 ms to 0.1 ms, as the vertex shaders now skin Battle's custom materials. So on the Mac, the draw count was not what bound Battle's GPU time. Its largest pass is, and the next step is to find what that pass spends its time on.
 - On the 4,000-unit pages, null3D now draws about 89 frames a second in both modes, against about 60 before. There the busiest CPU thread had set the rate. The rate rose at 1,000 units too, though the GPU's frame time did not fall. Apple's GPUs work on two frames at once, so a frame time from GPU timestamps does not bound the rate ([Frames in flight](../implementation-notes.md#frames-in-flight)).
+
+## Addendum, 18 October 2026: three.js's renderer follows the GPU path
+
+The owner's bar for M2-R34 compares the engines on the same GPU path. So a WebGPU query must put three.js on WebGPURenderer, and a WebGL2 query on WebGLRenderer. The comparisons now choose the renderer this way. `?renderer=webgl` still puts the WebGPU path on WebGLRenderer, to compare the two three.js renderers.
+
+This replaces decision 9. On 10 October 2026 WebGLRenderer used a quarter of WebGPURenderer's CPU time per frame on Factory in Chrome on the Mac. That made it the fair default for a headline about each engine's fastest build. It stopped being fair once the question became whether null3D's WebGPU path beats three.js's WebGPU path. A WebGLRenderer figure answers another question. [D-174](D-174-apple-gpu-direct-draws.md) holds the new figures.

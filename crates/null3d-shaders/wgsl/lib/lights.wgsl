@@ -13,6 +13,9 @@
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{light_shadow}
 #endif
+#ifdef TRANSLUCENCY
+#import null3d::translucency::{gather_back_light, lit_side}
+#endif
 #ifdef COAT_SHEEN
 #import null3d::coat_sheen::{layered_light}
 #endif
@@ -158,7 +161,9 @@ fn cluster_lights(relative: vec3f) -> vec2u {
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
 /// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
 /// direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
-/// COAT_SHEEN builds each light lights the surface's clear coat and sheen too (null3d::coat_sheen).
+/// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
+/// from the side that it falls on (null3d::translucency). COAT_SHEEN builds each light lights the
+/// surface's clear coat and sheen too (null3d::coat_sheen).
 fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
@@ -210,7 +215,12 @@ fn clustered_light(
         let tile = light.penumbra.w;
         if tile > 0.5 && strength > 0.0 {
             let seen = relative + frame.shadow_origin.xyz;
+#ifdef TRANSLUCENCY
+            let side = lit_side(normal, to_light);
+            strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
+#else
             strength *= light_shadow(u32(tile) - 1u, seen, normal, to_light, gap);
+#endif
         }
 #endif
         var incoming = light.color_decay.rgb * strength;
@@ -219,6 +229,9 @@ fn clustered_light(
         incoming *= layered_light(normal, to_view, to_light, incoming);
 #endif
         let reflected = direct_light(m, normal, to_view, to_light, incoming, compensation);
+#ifdef TRANSLUCENCY
+        gather_back_light(normal, to_light, incoming);
+#endif
         sum.diffuse += reflected.diffuse;
         sum.specular += reflected.specular;
     }

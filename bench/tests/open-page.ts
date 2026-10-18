@@ -10,8 +10,11 @@ export interface PageReport {
 	error?: string;
 }
 
-/** How long a page may take to publish its result. */
-const RESULT_TIMEOUT_MS = 90_000;
+/**
+ * How long a page may take to publish its result. A software GPU on a loaded CI runner needs longer:
+ * the page builds its pipelines before it can run its benchmark.
+ */
+const RESULT_TIMEOUT_MS = process.env.CI ? 180_000 : 90_000;
 
 /** Opens a page and returns the result that it publishes, with every error that it logs. */
 export async function openPage<T extends PageReport>(

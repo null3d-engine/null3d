@@ -1247,8 +1247,8 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// main module, through `timer_mark`; the features module, through the first-use features that the
 /// device entries keep; a device module and a combined loader table, through the largest entry's
 /// many builds of several features; a shared-paragraph table, through the twenty or more feature
-/// sets those builds make; and a whole-shader first-use module, through `pick`.
-const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "pick", "timer_mark"];
+/// sets those builds make; and a whole-shader first-use module, through `environment`.
+const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "environment", "pick", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
 /// cargo-nextest runs each test in a process of its own, so a test cannot share another test's

@@ -19,6 +19,15 @@ declare global {
 const trail: string[] = [];
 window.__null3dProgress = trail;
 
+// Test pages draw every frame, as the sketch drew it: a view that holds still would otherwise blend
+// its frames and then rest, which changes the images, frame counts and timings that the tests read.
+// A page that tests the still-camera accumulation asks for it with ?still-camera=on.
+const switches = new URLSearchParams(location.search);
+if (!switches.has('still-camera')) {
+	switches.set('still-camera', 'off');
+	history.replaceState(history.state, '', `${location.pathname}?${switches}${location.hash}`);
+}
+
 /**
  * Tells the runner page when this page expects to end, in seconds since it started, as its own
  * measurements show. The runner page waits that long when it is beyond the page's time limit, up to
