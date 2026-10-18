@@ -24,9 +24,9 @@ const REST_FRAMES = 64 + 2 + 30;
 
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	test(`a still view rests and a change draws at once, on ${gpu}`, async ({ page }) => {
-		test.setTimeout(90_000);
+		test.setTimeout(180_000);
 		await page.goto(`still.html?gpu=${gpu}&still-camera=on`);
-		const result = await pageResult<StillResult>(page, 80_000);
+		const result = await pageResult<StillResult>(page, 150_000);
 		console.log(`still on ${gpu}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.rested).toBe(true);

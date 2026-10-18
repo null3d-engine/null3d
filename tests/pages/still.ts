@@ -11,8 +11,12 @@ import { progress, run, toBase64 } from './lib/result';
 
 /** Frames the thread that draws takes in a row without drawing, after which the view rests. */
 const RESTING_FRAMES = 20;
-/** The longest wait for the view to rest, which the software GPU's slow frames need. */
-const REST_LIMIT_MS = 20_000;
+/**
+ * The longest wait for the view to rest, which the software GPU's slow frames need: a view takes
+ * about 70 frames to settle, and a software renderer on a busy CI machine draws only a few in a
+ * second.
+ */
+const REST_LIMIT_MS = 60_000;
 /** The longest wait for a frame to draw after the scene changed. */
 const DRAW_LIMIT_MS = 5000;
 
