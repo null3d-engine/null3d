@@ -998,6 +998,7 @@ impl CpuCulledRenderer {
         if scatters {
             let targets = self.with_draw_index(self.graph.skin_targets());
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
+            // The scattering layout draws the skin pass alone, which the motion pass does not read.
             self.scattering.rebuild(
                 settings,
                 pipelines,
@@ -1008,6 +1009,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                None,
                 &mut self.key_counts,
             )?;
         } else {
