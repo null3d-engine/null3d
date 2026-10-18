@@ -3,12 +3,12 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion and screen-space reflections at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas."
+summary: "HDR scene color, ambient occlusion and screen-space reflections at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas; still views that blend and then rest the GPU."
 ---
 
 # The post-processing chain
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves. A still view blends and then rests the GPU.
 
 ```mermaid
 flowchart LR

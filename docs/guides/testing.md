@@ -151,6 +151,7 @@ The engine reads these switches from the page's address in development builds, o
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
+| `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
