@@ -369,8 +369,11 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	particles: 'tests/pages/sketches/particles-sketch.ts',
 	background: 'tests/pages/sketches/texture-background-sketch.ts',
 	transmission: 'tests/pages/sketches/transmission-sketch.ts',
-	translucency: 'tests/pages/sketches/translucency-sketch.ts',
-	subsurface: 'tests/pages/sketches/subsurface-sketch.ts',
+	// Both suns cast shadows for their feature's picture, and their scenes let the sun draw contact
+	// shadows, which load ambient occlusion's shader file on first use. The switch turns those off,
+	// so the page downloads its own feature's file alone.
+	translucency: 'tests/pages/sketches/translucency-sketch.ts?no-contact',
+	subsurface: 'tests/pages/sketches/subsurface-sketch.ts?no-contact',
 	coat_sheen: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv',
 	weighted: 'tests/pages/sketches/weighted-sketch.ts',
 	decals: 'tests/pages/sketches/decal-first-use-sketch.ts',
