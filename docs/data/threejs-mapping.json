@@ -1474,7 +1474,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "baseMesh.setLevels([{ mesh, distance }]) on the base mesh, then draw the base mesh; or levels from `bunx @null3d/cli assets optimize --lod`, which assets.loadGltf reads",
-      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error on the screen. A distance converts to an error at a 50 degree field of view on a screen 1,080 pixels high. Dithered bands replace hysteresis. Shadows draw a coarser level. getCurrentLevel and autoUpdate have no match.",
+      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error on the screen. A distance converts to an error at a 50 degree field of view on a screen 1,080 pixels high. Dithered bands replace hysteresis. Shadows draw a coarser level. getCurrentLevel and autoUpdate have no match. Far copies can also draw as impostor cards or as one merged mesh per far cell, from @null3d/impostors.",
       "docs": "concepts/lod",
       "detect": "new\\s+(THREE\\.)?LOD\\s*\\(|\\.addLevel\\s*\\("
     },
@@ -1694,7 +1694,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
-      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA has no equivalent. TAARenderPass and SSAARenderPass need no pass on a still camera, and sampleLevel has no counterpart: a view that holds still blends jittered frames into a sharper picture by itself and then stops drawing (concepts/post-processing). TAA of a moving view comes after 1.0.",
+      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA has no equivalent. TAARenderPass and SSAARenderPass need no pass on a still camera, and sampleLevel has no counterpart: a view that holds still blends jittered frames into a sharper picture by itself and then stops drawing (concepts/post-processing). TAA of a moving view comes after 1.0. The engine records each object's motion vectors, which the motion debug view reads.",
       "docs": "concepts/quality-presets",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
     },

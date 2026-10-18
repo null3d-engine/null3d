@@ -473,7 +473,7 @@ const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
 // Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.
 
-// (0.2, not built yet): joint overrides for procedural aiming
+// Joint overrides (0.2): anim.setJointRotation(joint, q, weight) until anim.clearJoint(joint).
 // (1.0): scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
 
