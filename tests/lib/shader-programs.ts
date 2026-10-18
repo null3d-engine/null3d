@@ -27,6 +27,11 @@ const GLSL_MODULE = /^shaders-.*glsl.*\.(js|ts)$/;
 const BUILD_KEY = /^\t+([a-z][a-z0-9_]*): \{$/;
 /** A shader's key, one level above its builds, which names the shader that a build belongs to. */
 const SHADER_KEY = /^\t([a-z][a-z0-9_]*): \{$/;
+/**
+ * The export line of a module that holds one shader's builds alone: it names the shader, and its
+ * builds follow without a shader key above them.
+ */
+const SHADER_EXPORT = /^export const SHADERS = \{ ([a-z][a-z0-9_]*): /m;
 const PERMUTATION = /^\t+permutation: /;
 /** One GLSL program's vertex stage, as the shader build writes it: one line for each program. */
 const VERTEX_STAGE = /^\t+vertex: \{$/;
@@ -41,7 +46,8 @@ const MAIN_MODULE_PROGRAMS = glslProgramsOf(SHADERS);
 function programsOfModule(text: string): Map<string, number> {
 	const lines = text.split('\n');
 	const programs = new Map<string, number>();
-	let shader = '';
+	// A module of one shader's builds names it in an export line that comes after the builds.
+	let shader = SHADER_EXPORT.exec(text)?.[1] ?? '';
 	let build = '';
 	for (let at = 0; at < lines.length; at++) {
 		const line = lines[at] ?? '';
@@ -49,7 +55,8 @@ function programsOfModule(text: string): Map<string, number> {
 		if (key && PERMUTATION.test(lines[at + 1] ?? '')) {
 			build = `${shader}.${key[1] ?? ''}`;
 			if (!programs.has(build)) programs.set(build, 0);
-		} else if (SHADER_KEY.test(line)) shader = SHADER_KEY.exec(line)?.[1] ?? shader;
+		} else if (SHADER_EXPORT.test(line)) shader = SHADER_EXPORT.exec(line)?.[1] ?? shader;
+		else if (SHADER_KEY.test(line)) shader = SHADER_KEY.exec(line)?.[1] ?? shader;
 		else if (VERTEX_STAGE.test(line)) programs.set(build, (programs.get(build) ?? 0) + 1);
 	}
 	return programs;
