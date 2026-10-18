@@ -107,7 +107,8 @@ export interface WebGPUReport {
 	/**
 	 * True when the start-up probe measured the device drawing a bucket faster with direct draws
 	 * than with the engine's indirect draws, so the engine draws directly. The probe runs on a
-	 * worker's device and never reads a browser or GPU name. False on WebGL2.
+	 * worker's device. It reads no browser or GPU name, except to never choose the direct path on a
+	 * software renderer (D-174). False on WebGL2.
 	 */
 	directDraws: boolean;
 	/**
