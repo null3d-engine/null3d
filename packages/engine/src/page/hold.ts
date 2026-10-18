@@ -28,6 +28,11 @@ export interface HeldFrame {
 	frame: number;
 	/** The GPU path that drew the frame. */
 	tier: Tier;
+	/**
+	 * True when the engine drew the frame with the direct-draw path, which culls buckets on the CPU
+	 * and draws each one directly. False otherwise, as on WebGL2, which always draws directly.
+	 */
+	directDraws: boolean;
 	/** The frame's width in pixels. */
 	width: number;
 	/** The frame's height in pixels. */

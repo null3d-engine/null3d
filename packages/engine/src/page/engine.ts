@@ -433,8 +433,8 @@ export interface EngineCapabilities {
 	depth: DepthMode;
 	/**
 	 * True when the start-up probe measured direct draws to be clearly faster than the engine's
-	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. False on
-	 * WebGL2, which always draws directly.
+	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. A software
+	 * renderer never takes the path (D-174). False on WebGL2, which always draws directly.
 	 */
 	directDraws: boolean;
 }
@@ -2259,6 +2259,7 @@ async function startEngine(
 			time: hold,
 			frame: Atomics.load(slots, Slot.FramesTaken),
 			tier,
+			directDraws: device.directDraws,
 			...held,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 		});
