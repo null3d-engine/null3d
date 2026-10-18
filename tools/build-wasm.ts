@@ -789,7 +789,13 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
 	const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
-	const build = spawnSync('bunx', args, { cwd: root, encoding: 'utf8' });
+	// The report names every file that the build writes, so a build with many first-use shader
+	// files prints more than a capture of a megabyte holds; a smaller buffer kills the build.
+	const build = spawnSync('bunx', args, {
+		cwd: root,
+		encoding: 'utf8',
+		maxBuffer: 64 * 1024 * 1024,
+	});
 	if (build.status !== 0)
 		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
 	const assets = join(root, JS_BUILD_DIR, 'assets');
