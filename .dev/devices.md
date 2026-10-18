@@ -157,6 +157,7 @@ The runner watches each browser's results while a run goes on. Three guards keep
 - Then each scene's null3D pages and its twins on WebGPU and WebGL take turns, 5 runs each. The summary compares their CPU time per frame on the busiest thread. `--runs` changes the count.
 - The summary gives each sustained run a row of its own in the trace table. The row gives the seconds that held the target and the lowest rate. It also gives the lowest render scale and the quality steps.
 - `--scenes` picks scenes, and `--seconds` changes the warm-up and measured seconds of the sustained runs.
+- On the Mac, the same plan runs in Chrome: `bun tests/real-browsers.ts --plan showcase 'Google Chrome'`. Run one scene at a time with `--scenes s4`, `--scenes s5` or `--scenes s6` when the checkout may change, so a stopped run costs one scene.
 - On the S24+, which has WebGL2 only, the plan takes about 1 hour 10 minutes: 3 sustained runs, their rests, and 30 comparison runs. On the iPad, with both GPU paths, it takes about 2 hours 15 minutes. A cloud session ends after 2 hours, so split the plan there with `--shard 1/2` and `--shard 2/2`.
 
 ## Startup times

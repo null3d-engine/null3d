@@ -1164,3 +1164,10 @@ A build that emitted only the feature sets a page asks for would not shrink the 
 close it. The test suite compiles every variant of every generated module, so all 140 GLSL feature sets
 are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
 every page's build whatever the page draws. Grouping those copies only defers the download.
+
+## One core and one checkout
+
+- A page stops with E1402 when its engine core was built from other Rust sources than the checkout holds. The generated shader modules and the cores have separate caches. After a commit that changes Rust, run `bun run build` before any page test. The error names the missing function or the stamp.
+- A run that spans a change of the checkout has mixed results. Even a small commit can stop a page that loads after it. Start a gate run when the tree is still, name the commit in the run's record, and run one showcase scene at a time so a stop costs one scene.
+- Bind group layout ids are unique for each WebGPU renderer. The constants live in `bind_layout` in `crates/null3d-gpu/src/drawlist.rs`, and the generated TypeScript constants follow them. On 18 October 2026 the motion-vector pass took the subsurface blur's id 43, and every WebGPU page failed at the render worker's start with E1405 until `MOTION_FRAME` moved to 47. A unit test that checks the ids are unique would catch the next collision before a run.
+- Run one device runner at a time. Two runners on one checkout write the same run folder, and the results mix.
