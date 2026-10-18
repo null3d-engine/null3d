@@ -255,7 +255,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ## assets
 
-`assets optimize` makes glTF models smaller and faster to load and draw. It merges equal meshes, materials and textures into one copy. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model.
+`assets optimize` makes glTF models smaller and faster to load and draw. It merges equal meshes, materials and textures into one copy. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model, which ends with the shader features and permutation bits the model needs. The report also gives the pipeline keys they make and each preset whose texture memory budget the model's textures pass. The shader list goes into the model too, so the engine downloads those shader files as it loads the model.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size 1024
@@ -275,7 +275,7 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
 
-A mesh's glTF extras change two steps for that mesh alone. `"occluder": false` gives it no blocker. `"occluder": true` makes it block with its own triangles when no blocker fits. `"quantizePositions": false` keeps its positions as 32-bit floats. Use it for a mesh that spreads small parts over a large space, such as a city's buildings merged by material. Integer steps would move their corners by centimetres.
+A mesh's glTF extras change two steps for that mesh alone. `"occluder": false` gives it no blocker. `"occluder": true` makes it block with its own triangles when no blocker fits. `"quantizePositions": false` keeps its positions as 32-bit floats. Use it for a mesh that spreads small parts over a large space, such as a city's buildings merged by material. Integer steps would move their corners by centimeters.
 
 It exits with 1 when a model fails, after it writes the others. [The asset pipeline](../guides/assets-pipeline.md) says what each step does, and how the Vite plugin runs the same steps when a module imports a model with `?optimized`.
 

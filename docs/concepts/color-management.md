@@ -60,7 +60,7 @@ A strong light can make a surface many times brighter than white. The scene keep
 - `rgba16float` on WebGPU. Where the device can draw into `rg11b10ufloat` and the canvas is opaque, the scene color takes that format instead, which needs half the memory.
 - `RGBA16F` on WebGL2, where the device can draw float targets in the anti-aliasing mode.
 
-The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It darkens the edges with the vignette, when the sketch sets one, and applies the tone mapping to the exposed color. It then encodes the result as sRGB. Last, after any color grading table, it adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
+The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It darkens the edges with the vignette, when the sketch sets one, and applies the tone mapping to the exposed color. It then encodes the result as sRGB. Last, after any color grading table, it adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it. Below the whole canvas's render scale it runs in two steps, while the render scale can drop. The first step does the FXAA, the tone curve and the sRGB encode at the render size. The second scales the image up ([The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale)).
 
 ### The 8-bit path
 
@@ -76,23 +76,28 @@ Set both from the sketch with [`post.set`](../api/post.md):
 
 ```ts
 export default defineSketch(({ post }) => {
-  post.set({ toneMapping: 'agx', exposure: 1.5 });
+  post.set({ toneMapping: 'neutral', exposure: 1.5 });
   return {};
 });
 ```
 
 | `toneMapping` | three.js equivalent | Look |
 | --- | --- | --- |
-| `'aces'` (the default) | `ACESFilmicToneMapping` | Strong contrast. Bright saturated colors change hue on their way to white: red turns orange, then yellow. |
+| `'agx-punchy'` (the default) | None | AgX with Filament's punchy look: more contrast and more color, with AgX's hues. |
 | `'agx'` | `AgXToneMapping` | Softer contrast. Bright colors fade toward white and keep their hue. |
+| `'aces'` | `ACESFilmicToneMapping` | Strong contrast. Bright saturated colors change hue on their way to white: red turns orange, then yellow, and blue turns purple. |
 | `'neutral'` | `NeutralToneMapping` | Base colors keep their values until they near white. Khronos made it for product images. |
 | `'none'` | `LinearToneMapping` | The exposed color, clipped at white. A bright color loses detail once a channel reaches white. |
 
+Punchy AgX suits most scenes: bright lights and colors keep their hue, and the picture keeps its contrast. Plain AgX looks flatter. For a product view, where a material's color must show as its maker gave it, use `'neutral'`, as model-viewer does.
+
 The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it. The engine uses three.js's formulas for each curve, so a scene looks the same in both engines with the same settings.
+
+Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. The scene still draws at the exposure that `exposure` and `ev100` set. A meter on the GPU then reads each frame, and the final pass multiplies the HDR color by the adapted exposure before the tone mapping. [The post-processing chain](post-processing.md#automatic-exposure) explains the meter.
 
 ## The background
 
-The background color is part of the scene. Exposure and tone mapping change it as they change the objects, as in three.js's WebGPURenderer. ACES, for example, makes dark colors darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.
+The background color is part of the scene. Exposure and tone mapping change it as they change the objects, as in three.js's WebGPURenderer. The curves, for example, make dark colors a little darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.
 
 A [background texture](../api/scene.md#the-camera-and-the-background) draws into the scene color too, so exposure and tone mapping change it in the same way. three.js's WebGLRenderer draws an sRGB background texture without them. To show the texture's own colors, use `toneMapping: 'none'` at an exposure of 1.
 
@@ -114,7 +119,7 @@ const engine = await createEngine({
 - Three numbers are linear, as `Color.setRGB` reads them.
 - A color map with `texture.colorSpace = SRGBColorSpace` is a texture with an sRGB format in null3D.
 - A data map with `NoColorSpace` or `LinearSRGBColorSpace` is a texture with a linear format.
-- The tone mapping curves use three.js's formulas. The defaults differ: three.js uses no tone mapping, and null3D uses ACES. A port of a scene without tone mapping sets `toneMapping: 'none'`.
+- The tone mapping curves use three.js's formulas. The defaults differ: three.js uses no tone mapping, and null3D uses punchy AgX, which three.js lacks. A port of a scene with `AgXToneMapping` sets `toneMapping: 'agx'`. A port of a scene without tone mapping sets `toneMapping: 'none'`.
 - three.js's `NoToneMapping` ignores the exposure. null3D's `'none'` applies it, as `LinearToneMapping` does, and an exposure of 1 gives the same image.
 - three.js's WebGLRenderer draws a `scene.background` color without tone mapping. null3D tone maps the background, as three.js's WebGPURenderer does.
 - null3D always dithers its output, and three.js only dithers materials that ask for it. The difference is at most one step of an 8-bit color.

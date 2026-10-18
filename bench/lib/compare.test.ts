@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	ALL_COMPARISON_SWITCHES,
 	allowedMs,
 	type Build,
 	type BuildRun,
@@ -28,6 +29,7 @@ import {
 	roundNoise,
 	roundOrder,
 	runQualities,
+	SCENE_COMPARISON_SWITCHES,
 	selectRuns,
 	shardPages,
 } from './compare';
@@ -450,7 +452,12 @@ describe('the expected-change trailer', () => {
 describe('the verdict', () => {
 	test('passes when no page is slower than the rule allows', () => {
 		const runs = page([2, 2, 2], [1.9, 2, 2.05]);
-		expect(judge(compare(runs))).toEqual({ pass: true, failures: [], measurementChanges: [] });
+		expect(judge(compare(runs))).toEqual({
+			pass: true,
+			failures: [],
+			unjudged: [],
+			measurementChanges: [],
+		});
 	});
 
 	test('fails on a slower page that no trailer names, and says which', () => {
@@ -480,28 +487,39 @@ describe('the verdict', () => {
 			failures: [
 				's1 null3d-webgpu: the new build kept 0 runs of 3 and the baseline 3 runs of 3, so 0 rounds have a run of each, and a comparison needs 2',
 			],
+			unjudged: [],
 			measurementChanges: [],
 		});
 		expect(judge(compare(failBuild(page([1, 1, 1], [1, 1, 1]), 'baseline'))).pass).toBe(true);
 	});
 
-	test('reports and passes every page when the measurement changed', () => {
+	test('reports and passes every slower page when the measurement changed', () => {
 		const changes = ['the benchmark pages changed: bench/pages/lib/options.ts'];
 		const verdict = judge(compare(page([2, 2, 2], [2.5, 2.5, 2.5])), changes);
 		expect(verdict.pass).toBe(true);
-		expect(verdict.failures).toHaveLength(2);
+		expect(verdict.failures).toEqual([]);
+		expect(verdict.unjudged).toHaveLength(2);
 		expect(verdict.measurementChanges).toEqual(changes);
+	});
+
+	test('fails a page that the new build kept too few runs of, when the measurement changed too', () => {
+		const changes = ['the benchmark pages changed: bench/pages/lib/options.ts'];
+		const runs = failBuild(failBuild(page([1, 1, 1], [1, 1, 1]), 'new'), 'baseline');
+		const verdict = judge(compare(runs), changes);
+		expect(verdict.pass).toBe(false);
+		expect(verdict.failures).toHaveLength(1);
+		expect(verdict.failures[0]).toStartWith('s1 null3d-webgpu: the new build kept 0 runs of 3');
 	});
 });
 
 describe('a change to the measurement', () => {
 	test('names the changed page sources, and counts those past the first few', () => {
-		expect(measurementChanges([], COMPARISON_SWITCHES)).toEqual([]);
-		expect(measurementChanges(['bench/scenes/spec.ts'], COMPARISON_SWITCHES)).toEqual([
+		expect(measurementChanges([], ALL_COMPARISON_SWITCHES)).toEqual([]);
+		expect(measurementChanges(['bench/scenes/spec.ts'], ALL_COMPARISON_SWITCHES)).toEqual([
 			'the benchmark pages changed: bench/scenes/spec.ts',
 		]);
 		const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => `bench/pages/${name}.ts`);
-		expect(measurementChanges(files, COMPARISON_SWITCHES)).toEqual([
+		expect(measurementChanges(files, ALL_COMPARISON_SWITCHES)).toEqual([
 			'the benchmark pages changed: bench/pages/a.ts, bench/pages/b.ts, bench/pages/c.ts, bench/pages/d.ts, bench/pages/e.ts and 2 more files',
 		]);
 	});
@@ -525,13 +543,21 @@ describe('a change to the measurement', () => {
 describe('the switches of a comparison', () => {
 	test('fix the preset and turn the governor off on every page', () => {
 		expect(COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off']);
-		expect(comparisonSwitches('')).toEqual(['preset=high', 'governor=off']);
-		expect(comparisonSwitches('shadows=3')).toEqual(['preset=high', 'governor=off']);
+		expect(comparisonSwitches('s2', '')).toEqual(['preset=high', 'governor=off']);
+		expect(comparisonSwitches('s2', 'shadows=3')).toEqual(['preset=high', 'governor=off']);
+	});
+
+	test('add the switches that one scene needs, so both builds draw its work alike', () => {
+		// S5's page otherwise gives a far character a longer pose interval, so its crowd does less
+		// work than the twin's mixers.
+		expect(SCENE_COMPARISON_SWITCHES).toEqual({ s5: ['anim=every'] });
+		expect(comparisonSwitches('s5', '')).toEqual(['preset=high', 'governor=off', 'anim=every']);
+		expect(ALL_COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off', 'anim=every']);
 	});
 
 	test('leave out a switch that the command sets itself', () => {
-		expect(comparisonSwitches('preset=low&shadows=3')).toEqual(['governor=off']);
-		expect(comparisonSwitches('governor=off')).toEqual(['preset=high']);
+		expect(comparisonSwitches('s2', 'preset=low&shadows=3')).toEqual(['governor=off']);
+		expect(comparisonSwitches('s5', 'governor=off&anim=every')).toEqual(['preset=high']);
 	});
 });
 
@@ -687,7 +713,7 @@ describe('the report', () => {
 			trailers: { changes: [], problems: [] },
 		}).join('\n');
 		expect(text).toContain(
-			"**Measurement changed**: the run reports every page and judges none, because the two builds measure in different ways. Main's next run compares with this commit.\n- the comparison's switches changed from none to `x=1`",
+			"**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.\n- the comparison's switches changed from none to `x=1`",
 		);
 		expect(text).toContain(
 			'Not judged: 2 problems.\n- s1 null3d-webgpu, busiest thread: +25.0% slower, noise 0.0% (medians 2.000 ms and 2.500 ms)',
@@ -757,6 +783,7 @@ describe('shards of a comparison', () => {
 				's2 null3d-webgpu, busiest thread: +100.0% slower, noise 0.0% (medians 1.000 ms and 2.000 ms)',
 				's2 null3d-webgpu, own work: +100.0% slower, noise 0.0% (medians 1.000 ms and 2.000 ms)',
 			],
+			unjudged: [],
 			measurementChanges: [],
 		});
 		expect(report.slice(3)).toEqual(alone.report.slice(3));

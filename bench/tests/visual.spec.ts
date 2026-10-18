@@ -22,12 +22,12 @@ const extraSwitches =
 /** How long a visual page may take: twelve starts of a scene, which take longest for S4 in CI. */
 const VISUAL_TIMEOUT_MS = 240_000;
 
-for (const { scene, shadows } of SHADOW_SCENES)
+for (const { scene, shadows, n } of SHADOW_SCENES)
 	for (const gpu of ['webgpu', 'webgl2'] as const)
 		test(`${scene}'s shadows stay still and keep their edges on ${gpu}`, async ({ page }) => {
 			test.setTimeout(VISUAL_TIMEOUT_MS + 30_000);
 			const { errors } = watchConsole(page);
-			const path = visualPagePath(scene, gpu, { shadows, images: true });
+			const path = visualPagePath(scene, gpu, { n, shadows, images: true });
 			const switches = extraSwitches ? `&${extraSwitches}` : '';
 			await page.goto(`http://localhost:${HTTP_PORT}${path}${switches}`);
 			const result = await pageResult<VisualResult>(page, VISUAL_TIMEOUT_MS);

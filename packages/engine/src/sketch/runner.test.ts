@@ -4,6 +4,7 @@ import * as C from '../generated/core';
 import { FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { presetSettings } from '../quality/presets';
+import { callValueArguments } from '../scene/fake-call-values';
 import type { Material, MeshGeometry } from '../scene/resources';
 import {
 	controlViews,
@@ -94,6 +95,8 @@ function fakeGlue(
 		sceneArrays: block,
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
+		// The first block holds no field, so the call values take its start.
+		callValues: () => 0,
 		cellsRefused,
 		meshMemoryBytes: () => MESH_BYTES,
 		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
@@ -110,7 +113,8 @@ function fakeGlue(
 		get: (_, name: string) =>
 			kept[name as keyof CoreGlue] ??
 			((...args: number[]) => {
-				if (KEPT_ARGUMENTS.has(name)) calls.push([name, ...args]);
+				if (KEPT_ARGUMENTS.has(name))
+					calls.push([name, ...args, ...callValueArguments(name, memory, 0)]);
 				if (FRAME_STEPS.has(name)) log.push(name);
 				if (grows && FRAME_STEPS.has(name)) memory.grow(1);
 				if (name === 'setTextureOption') log.push(textureOption(args[0] ?? -1, args[1] ?? -1));
@@ -260,7 +264,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
-				skinning: C.SKINNING_LEAN,
+				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
@@ -277,7 +281,9 @@ async function start(
 			},
 			sendImage: () => {},
 			sendShader: () => {},
+			sendBuilds: () => {},
 			sendPreload: () => {},
+			onAskBuilds: () => {},
 			pageUrl: 'http://localhost/',
 			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
@@ -353,13 +359,29 @@ describe('SketchRunner', () => {
 		const quiet = await start(() => ({}), undefined, { jobs: light });
 		for (let frame = 0; frame < 200; frame++) quiet.runner.step(frame * 16);
 		expect(light.asked).toEqual([]);
-		// A window with too little work stops the timing for 270 frames, then it times again.
+		// A window with too little work stops the timing for 4.5 s of sketch time, then it times again.
 		expect(light.timing).toEqual([false]);
-		for (let frame = 200; frame < 301; frame++) quiet.runner.step(frame * 16);
+		for (let frame = 200; frame < 311; frame++) quiet.runner.step(frame * 16);
+		expect(light.timing).toEqual([false]);
+		quiet.runner.step(311 * 16);
 		expect(light.timing).toEqual([false, true]);
 		light.handedMs = 0.3;
-		for (let frame = 301; frame < 331; frame++) quiet.runner.step(frame * 16);
+		for (let frame = 312; frame < 342; frame++) quiet.runner.step(frame * 16);
 		expect(light.asked).toEqual([2]);
+	});
+
+	it('times its parallel loops again after the same sketch time at a slow frame rate', async () => {
+		// About 9 frames a second, as CI's software GPU draws some pages. The first window has too
+		// little work, as a page's first frames before its heavy work starts.
+		const slow = { most: 2, handedMs: 0.1, asked: [] as number[], timing: [] as boolean[] };
+		const { runner } = await start(() => ({}), undefined, { jobs: slow });
+		for (let frame = 0; frame < 70; frame++) runner.step(frame * 111);
+		expect(slow.timing).toEqual([false]);
+		runner.step(70 * 111);
+		expect(slow.timing).toEqual([false, true]);
+		slow.handedMs = 5;
+		for (let frame = 71; frame < 101; frame++) runner.step(frame * 111);
+		expect(slow.asked).toEqual([2]);
 	});
 
 	it('updates no transforms a second time for a sketch without a late update', async () => {
@@ -659,6 +681,7 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, medium.uploadBytesPerFrame),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, medium.maxAnisotropy),
 			textureOption(C.TEXTURE_OPTION_MEMORY_BUDGET_KIB, medium.textureMemoryMiB * 1024),
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 0),
 			'setup',
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 2048),
 		]);
@@ -673,6 +696,21 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
 			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
+	});
+
+	it('keeps the texture copies when the page keeps them, and frees them otherwise', async () => {
+		const kept = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, keepCopies: true },
+		});
+		expect(kept.log.filter((line) => line.startsWith('setTextureOption'))).toContain(
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 1),
+		);
+		const freed = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, keepCopies: false },
+		});
+		expect(freed.log.filter((line) => line.startsWith('setTextureOption'))).toContain(
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 0),
+		);
 	});
 
 	it('records no setup frame into the list of a frame that the thread that draws still replays', async () => {

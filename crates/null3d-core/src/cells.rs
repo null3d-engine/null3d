@@ -358,14 +358,22 @@ impl CellTable {
     pub fn write_offsets(&self, camera: &CellPosition, out: &mut [[f32; 4]]) -> usize {
         let end = self.end as usize;
         for (index, offset) in out[..end].iter_mut().enumerate() {
-            *offset = if index == ORIGIN_CELL as usize || self.counts[index] > 0 {
-                let [x, y, z] = camera.offset_to(self.coords[index]);
-                [x, y, z, 0.0]
-            } else {
-                [0.0; 4]
-            };
+            *offset = self.offset_of(index as u32, camera);
         }
         end
+    }
+
+    /// The offset from `camera` to the center of the cell at `index`, as `(x, y, z, 0)`: added to
+    /// a position relative to that center, it gives the position relative to `camera`. An index
+    /// that holds no cell, and one at or past [`CellTable::end`], gets zeros, as
+    /// [`CellTable::write_offsets`] gives them. A reader of one cell's offset takes it from here,
+    /// where writing the whole table for it would cost every cell there is.
+    pub fn offset_of(&self, index: u32, camera: &CellPosition) -> [f32; 4] {
+        if index >= self.end || (index != ORIGIN_CELL && self.counts[index as usize] == 0) {
+            return [0.0; 4];
+        }
+        let [x, y, z] = camera.offset_to(self.coords[index as usize]);
+        [x, y, z, 0.0]
     }
 }
 
@@ -563,5 +571,36 @@ mod tests {
         assert_eq!(out[0], [-1.0, -2.0, -3.0, 0.0]);
         assert_eq!(out[a as usize], [0.0; 4]);
         assert_eq!(out[b as usize], [-1.0, -2.0, -1027.0, 0.0]);
+        // One cell's offset is the one that the whole table writes, and zeros past its end.
+        for index in 0..3 {
+            assert_eq!(table.offset_of(index, &camera), out[index as usize]);
+        }
+        assert_eq!(table.offset_of(MAX_CELLS - 1, &camera), [0.0; 4]);
+    }
+
+    #[test]
+    fn one_cells_offset_agrees_with_the_table_it_writes() {
+        let mut table = CellTable::new();
+        let a = table.acquire([2, 0, 0]).unwrap();
+        let b = table.acquire([0, 0, -1]).unwrap();
+        table.release(a);
+        let camera = CellPosition {
+            cell: [0, 0, 0],
+            local: [1.0, 2.0, 3.0],
+        };
+        let mut out = [[9.0; 4]; MAX_CELLS as usize];
+        let end = table.write_offsets(&camera, &mut out);
+        // Every index the table writes: the origin, a cell in use, and a freed one.
+        for (index, written) in out.iter().enumerate().take(end) {
+            assert_eq!(
+                table.offset_of(index as u32, &camera),
+                *written,
+                "cell {index}"
+            );
+        }
+        // Past the highest cell in use, and one that was never handed out, the reader gets zeros.
+        assert_eq!(table.offset_of(end as u32, &camera), [0.0; 4]);
+        assert_eq!(table.offset_of(MAX_CELLS - 1, &camera), [0.0; 4]);
+        assert_eq!(out[b as usize], table.offset_of(b, &camera));
     }
 }

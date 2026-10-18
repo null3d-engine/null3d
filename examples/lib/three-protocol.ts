@@ -58,8 +58,19 @@ export type ToThree =
 	| { type: 'stop' };
 
 export type FromThree =
-	| { type: 'started'; renderer: string; version: string; gpuTimer: boolean }
+	| {
+			type: 'started';
+			renderer: string;
+			version: string;
+			gpuTimer: boolean;
+			/** The most of the count that three.js can draw on this device, and why, or null. */
+			limit: { count: number; reason: string } | null;
+	  }
 	| { type: 'failed'; message: string }
+	/** The first frame that drew anything, after three.js has built the shaders that it needs. */
+	| { type: 'drawn' }
+	/** Why three.js draws nothing, such as a shader program that failed to link. */
+	| { type: 'failure'; message: string }
 	| {
 			type: 'measured';
 			id: number;
@@ -68,6 +79,7 @@ export type FromThree =
 			/** The scene's own code and the render calls, the two parts of `cpuMs`. */
 			codeMs: number | null;
 			renderMs: number | null;
+			/** Frames measured, or 0 when no frame drew anything. */
 			frames: number;
 	  }
 	/** The frame rate, a few times a second, which the panel's header shows. */

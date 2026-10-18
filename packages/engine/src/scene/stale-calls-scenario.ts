@@ -6,6 +6,8 @@
 
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { MemoryViews } from '../shared/memory-views';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -120,7 +122,7 @@ function fakeCore() {
 		},
 		createBatch: () => {
 			batchGeneration++;
-			new Float32Array(memory.buffer, AT.batch, 64).fill(0);
+			new MemoryViews(memory).view(Float32Array, AT.batch, 64).fill(0);
 			batch = (batchGeneration << SLOT_BITS) | 1;
 			return batch;
 		},
@@ -135,14 +137,12 @@ function fakeCore() {
 		lastErrorCode: () => failure,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	/** Gives the next object the slot of `handle`, with the next generation. */
 	const reuseSlot = (handle: number) => {
 		reused = (((handle >>> SLOT_BITS) + 1) << SLOT_BITS) | (handle & SLOT_MASK);
 	};
-	const position = (handle: number) => [
-		...new Float32Array(memory.buffer, AT.positions + (handle & SLOT_MASK) * 12, 3),
-	];
+	const position = (handle: number) => [...core.f32(AT.positions + (handle & SLOT_MASK) * 12, 3)];
 	return { core, rows, reuseSlot, position };
 }
 

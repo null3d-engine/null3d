@@ -30,6 +30,12 @@
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
 //
+// Skinned objects whose vertex shaders skin them share a bucket by mesh and material, as a crowd
+// of one model draws in one instanced draw per part. Their bucket's first joint is
+// PER_SOURCE_JOINT, and each copy takes the first joint of its own object's skin from the skin
+// firsts texture, at the object's source, laid out as the index textures are. The texture keeps
+// the culling group within the eight storage buffers that every device allows a shader stage.
+//
 // A bucket of a mesh with levels of detail links to the bucket of its next coarser level, and each
 // level's bucket holds the level's error, in the units of the base mesh. An instance's entry names
 // its base level's bucket. The thread walks the links while the next level's error, times the
@@ -117,10 +123,10 @@ struct CullParams {
 
 /// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer and
 /// its indirect draws, one per part of the mesh, from `first_draw` on. Its instances are culled
-/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A skinned
-/// object's bucket names the first joint of its skin, which the vertex shaders that skin read
-/// beside the material. A bucket with `indices` 1 writes each survivor's index instead, one entry
-/// each, from entry `base` on.
+/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A bucket of
+/// skinned objects names the first joint of their skin, which the vertex shaders that skin read
+/// beside the material, or PER_SOURCE_JOINT, which sends each copy to its own. A bucket with
+/// `indices` 1 writes each survivor's index instead, one entry each, from entry `base` on.
 struct Bucket {
     base: u32,
     material: u32,
@@ -157,8 +163,16 @@ struct Bucket {
 /// cell x's offset for the view whose row is y.
 @group(0) @binding(9) var cell_offsets: texture_2d<f32>;
 
+/// The first joint of each source that a bucket of skinned objects shares: texel x of row y holds
+/// source y << INDEX_ROW_SHIFT | x's.
+@group(0) @binding(10) var skin_firsts: texture_2d<u32>;
+
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
+/// A bucket's first joint that sends each copy to its source's own in `skin_firsts`.
+const PER_SOURCE_JOINT: u32 = 0xffffffffu;
+/// Sources per row of the skin firsts texture are 1 << INDEX_ROW_SHIFT.
+const INDEX_ROW_SHIFT: u32 = 11u;
 /// 32-bit words of one indexed indirect draw: index count, instance count, first index, base
 /// vertex, first instance.
 const INDIRECT_WORDS: u32 = 5u;
@@ -287,11 +301,16 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
         visible[bucket.base + slot] = vec4u(s.index, bitcast<u32>(fade), 0u, 0u);
         return;
     }
+    var first_joint = bucket.first_joint;
+    if first_joint == PER_SOURCE_JOINT {
+        let row = (1u << INDEX_ROW_SHIFT) - 1u;
+        first_joint = textureLoad(skin_firsts, vec2u(s.index & row, s.index >> INDEX_ROW_SHIFT), 0).x;
+    }
     let dst = (bucket.base + slot) * 4u;
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, s.index, bitcast<u32>(fade));
+    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, bitcast<u32>(fade));
 }
 
 #ifndef OCCLUSION

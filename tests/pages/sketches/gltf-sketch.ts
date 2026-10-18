@@ -4,7 +4,7 @@
 // prefab's bounds or the scene's frame. Each engine draws without tone mapping, so the parity test
 // compares the colors themselves. ?mark posts 'instantiate' to the page right before the sketch
 // creates the copy, and ?pause=<ms> waits that long after the file loads, as a model's texture
-// decode would.
+// decode would. A scene with the environment loads the HDR file's environment first.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -12,12 +12,14 @@ import {
 	MODEL_SCENES,
 	MODELS_BACKGROUND,
 	MODELS_FOV,
+	MODELS_HDR,
 	type ModelName,
 	type ModelScene,
 	modelCamera,
 	modelUrl,
 	SUN,
 } from '../../../bench/scenes/gltf-models';
+import { sampleEnvironment } from '../../../tools/lib/sample-url';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -32,6 +34,8 @@ export default defineSketch(async ({ scene, assets, post, page }) => {
 		scene.createDirectionalLight(SUN);
 		scene.createAmbientLight(AMBIENT);
 	}
+	if (model.environment)
+		scene.setEnvironment(await assets.loadEnvironment(sampleEnvironment(MODELS_HDR)));
 	const prefab = await assets.loadGltf(modelUrl(model));
 	const pause = Number(params.get('pause') ?? 0);
 	if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));

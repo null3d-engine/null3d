@@ -8,6 +8,7 @@
 // sampled; open, the worker sends its figures four times a second and the page samples its memory.
 
 import {
+	MainThreadWindow,
 	PageMemorySampler,
 	pageHeapBytes,
 	type StatsFigures,
@@ -33,6 +34,8 @@ export class ThreeStatsMeter {
 	private readonly panel: StatsPanel;
 	/** three.js shares no memory between threads, so the page's figure needs no correction. */
 	private readonly pageMemory = new PageMemorySampler(() => 0);
+	/** The page thread's long tasks and input delay, in windows between the panel's figures. */
+	private readonly mainThread = new MainThreadWindow();
 	private heading = 'three.js';
 	private gpuTimer = false;
 
@@ -84,7 +87,7 @@ export class ThreeStatsMeter {
 				jsHeapBytes: pageHeapBytes(),
 				page: this.pageMemory.page,
 			},
-			mainThread: null,
+			mainThread: this.mainThread.take(),
 		};
 		this.panel.update(figures, {
 			refreshHz: this.setup.refreshHz,
@@ -101,6 +104,7 @@ export class ThreeStatsMeter {
 
 	remove(): void {
 		if (!this.panel.collapsed) this.sample(false);
+		this.mainThread.stop();
 		this.panel.remove();
 	}
 

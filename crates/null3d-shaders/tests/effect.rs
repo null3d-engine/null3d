@@ -145,12 +145,44 @@ fn wgsl_without_an_effect_or_a_curve_or_with_both_is_refused() {
 }
 
 #[test]
-fn effects_take_no_textures_and_curves_no_uniforms() {
+fn an_effect_samples_its_textures_draws_alone_and_keeps_room_for_their_layers() {
+    let built = compile(
+        "struct Uniforms { strength: f32 }
+
+var glow: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let step = 1.0 / effectInputSize();
+    let halo = textureSampleLevel(glow, glowSampler, effectPassUv(input.uv + step), 0.0);
+    return input.color + halo * uniforms.strength;
+}
+",
+    )
+    .expect("the effect builds");
+    let textures: Vec<(&str, u32)> = built
+        .textures
+        .iter()
+        .map(|t| (t.name.as_str(), t.offset))
+        .collect();
+    assert_eq!(textures, [("glow", 31)]);
+    assert!(
+        !built.joins,
+        "an effect with textures draws in a pass of its own"
+    );
+    assert!(built.pieces.group.is_empty() && built.pieces.fold.is_empty());
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().unwrap().source;
+    assert!(wgsl.contains("texture_2d_array<f32>"), "{wgsl}");
+    assert!(wgsl.contains("load_custom_texture_layers"), "{wgsl}");
+    assert!(built.variants["webgl2"].glsl.is_some());
+}
+
+#[test]
+fn curves_take_no_textures_or_uniforms_and_a_full_row_of_uniforms_leaves_no_room() {
     let texture = only_problem(
         "var noise: texture_2d<f32>;
 
-fn effect(input: EffectInput) -> vec4f {
-    return input.color;
+fn toneCurve(color: vec3f) -> vec3f {
+    return color;
 }
 ",
     );
@@ -173,6 +205,18 @@ fn toneCurve(color: vec3f) -> vec3f {
         "{}",
         uniforms.message
     );
+    let full = compile(
+        "struct Uniforms { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f, f: vec4f, g: vec4f, h: vec4f }
+
+var noise: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    return input.color * uniforms.a + textureSampleLevel(noise, noiseSampler, input.uv, 0.0);
+}
+",
+    )
+    .expect_err("the uniforms leave no float for the texture's layer");
+    assert!(!full.problems.is_empty(), "{full}");
 }
 
 #[test]

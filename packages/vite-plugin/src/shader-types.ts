@@ -102,11 +102,12 @@ export interface CompiledUniform<
 	readonly offset: number;
 }
 
-/** A texture of a custom material, and where the engine writes its layer. */
+/** A texture of a custom material or effect, and where the engine writes its layer. */
 export interface CompiledTexture<Name extends string = string> {
 	/** The variable's name, which the `textures` option takes. */
 	readonly name: Name;
-	/** The float of the material's row of custom values that holds the texture's layer. */
+	/** The float of the material's row of custom values, or of the effect's uniforms, that holds
+	 * the texture's layer. */
 	readonly offset: number;
 }
 
@@ -132,8 +133,23 @@ export interface CompiledMaterial<
 	}[keyof Uniforms & string][];
 	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
-	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
+	/**
+	 * The standard material's variants with the WGSL's functions, or a full shader's, by name. A
+	 * module's value holds none: its builds load on first use, through `builds`.
+	 */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * Imports one set of the material's builds, which load on first use: those of a GPU path
+	 * (`'wgsl'` or `'glsl'`) whose skinning bit and the bits that a device fixes are those of
+	 * `set`. The engine imports its device's set when it first uses the material, and another set
+	 * when a pipeline needs one. A page never downloads the sets of other devices.
+	 */
+	readonly builds?: (
+		target: 'wgsl' | 'glsl',
+		set: number,
+	) => Promise<Readonly<Record<string, ShaderVariant>>>;
+	/** In a module's value, every permutation bit of the material's builds, joined. */
+	readonly permutations?: number;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
 	readonly locations: readonly number[];
 	/** The optional vertex attributes that those locations read, as the engine's format bits. */
@@ -183,14 +199,15 @@ export interface EffectPieces {
 }
 
 /**
- * A custom effect from a project's modules, which `post.addEffect` draws with: WGSL that declares
- * `fn effect(input: EffectInput) -> vec4f`, built into every variant of the engine's effect
- * template. `Uniforms` gives each uniform's type by name, as the declaration that the plugin writes
- * beside a `.wgsl` file does, so that `post.addEffect` and `post.setEffectUniform` check the names
- * and values of the uniforms.
+ * A custom effect from a project's modules, which `post.addEffect` and a full-screen pass of
+ * `render.addPass` draw with: WGSL that declares `fn effect(input: EffectInput) -> vec4f`, built
+ * into every variant of the engine's effect template. `Uniforms` gives each uniform's type by
+ * name, and `Textures` the names of its textures, as the declaration that the plugin writes beside
+ * a `.wgsl` file does, so that the calls check the names and values of the uniforms and textures.
  */
 export interface CompiledEffect<
 	Uniforms extends Readonly<Record<string, UniformType>> = Readonly<Record<string, UniformType>>,
+	Textures extends string = string,
 > {
 	/** Marks the WGSL of a custom effect. */
 	readonly kind: 'effect';
@@ -200,12 +217,14 @@ export interface CompiledEffect<
 	}[keyof Uniforms & string][];
 	/** True when the effect reads the scene's depth. */
 	readonly depth: boolean;
-	/** True when the effect reads its input image at its own pixel alone, so it joins the effect
-	 * before it. */
+	/** True when the effect reads its input image at its own pixel alone and declares no
+	 * textures, so it joins the effect before it. */
 	readonly joins: boolean;
+	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
+	readonly textures: readonly CompiledTexture<Textures>[];
 	/** The effect template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
-	/** The pieces that the engine joins into its hosts. */
+	/** The pieces that the engine joins into its hosts: none for an effect with textures. */
 	readonly pieces: EffectPieces;
 }
 

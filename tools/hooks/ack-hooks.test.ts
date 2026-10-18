@@ -12,9 +12,11 @@ import {
 } from './check-docs-ack';
 import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
+import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
+import { knownTaskIds, TASK_ID_SHAPE, TASK_RULE_SINCE, taskProblem } from './check-task';
 import { keptCommits } from './check-trailers';
 import { checkAck, findAckValue, findAckValues } from './commit-ack';
 
@@ -375,5 +377,92 @@ describe('the GPU check of a pull request', () => {
 	it('fails a trailer that records no check', () => {
 		const change = commit('b2', 'fix(engine): a shader\n\nGPU-Checked: done', [shader]);
 		expect(gpuCheckProblem([change])).toContain('GPU-Checked value "done" records no check');
+	});
+});
+
+describe('macReferencesProblem', () => {
+	const swift = (tier: string, name: string) =>
+		`tests/image/references/chromium-swiftshader/${tier}/${name}.png`;
+	const mac = (tier: string, name: string) =>
+		`tests/image/references/chrome-real-gpu/${tier}/${name}.png`;
+	const change = (files: string[], message = 'fix(engine): soften the shadow edges') => ({
+		sha: 'b2c3d4e5f6',
+		message,
+		files,
+	});
+
+	it('needs nothing when both sets change alike, or no SwiftShader reference changes', () => {
+		expect(macReferencesProblem([change([swift('webgpu', 's4'), mac('webgpu', 's4')])])).toBeNull();
+		expect(
+			macReferencesProblem([change([swift('webgl2', 's4')]), change([mac('webgl2', 's4')])]),
+		).toBeNull();
+		expect(macReferencesProblem([change([mac('compat', 'points')])])).toBeNull();
+	});
+
+	it("matches each SwiftShader reference with the same tier's real-GPU reference", () => {
+		expect(
+			unmatchedSwiftShaderReferences([
+				change([swift('webgpu', 's4'), mac('webgl2', 's4'), swift('compat', 's4')]),
+			]),
+		).toEqual([swift('compat', 's4'), swift('webgpu', 's4')]);
+	});
+
+	it('fails a SwiftShader-only change without a reason, and names what it left', () => {
+		const problem = macReferencesProblem([
+			change(['webgpu', 'webgl2', 'compat', 'compat'].map((tier, k) => swift(tier, `s${k}`))),
+		]);
+		expect(problem).toContain('(compat/s2.png, compat/s3.png, webgl2/s1.png and 1 more)');
+		expect(problem).toContain('Mac-References:');
+	});
+
+	it('takes a reason on any commit, and refuses a bare one', () => {
+		const left = change([swift('webgpu', 's4')]);
+		const reason =
+			'Mac-References: bun run test:images -g s4 passes on the Mac GPU with the old references';
+		expect(macReferencesProblem([change([], `test: note\n\n${reason}`), left])).toBeNull();
+		expect(
+			macReferencesProblem([change([swift('webgpu', 's4')], 'fix: a\n\nMac-References: yes')]),
+		).toContain('Mac-References value "yes" gives no reason');
+	});
+});
+
+describe('taskProblem', () => {
+	const known = new Set(['M2-J4', 'M2-F10', 'M3-A1']);
+	const msg = (task: string) => `feat(engine): add bump maps\n\nTask: ${task}\n`;
+
+	it('accepts a listed task ID, several IDs, none, and no footer', () => {
+		for (const task of ['M2-J4', 'M2-J4, M3-A1', 'none'])
+			expect(taskProblem(msg(task), known)).toBeNull();
+		expect(taskProblem('fix(engine): mend a bound\n', known)).toBeNull();
+	});
+
+	it('refuses free text and says to write an ID or none', () => {
+		for (const task of ['main CI repair', 'build artifact cache', 'none (Factory follow-up)', 'CI'])
+			expect(taskProblem(msg(task), known)).toContain('is not a task ID');
+	});
+
+	it('refuses an ID that is not in the list', () => {
+		expect(taskProblem(msg('M2-J99'), known)).toContain('not in tools/hooks/task-ids.txt');
+		expect(taskProblem(msg('M2-J4, M2-Q1'), known)).toContain('M2-Q1');
+	});
+
+	it('exempts merges and commits authored before the rule', () => {
+		expect(taskProblem('Merge branch x\n\nTask: main CI repair\n', known)).toBeNull();
+		const before = new Date(Date.parse(TASK_RULE_SINCE) - 60_000).toISOString();
+		expect(taskProblem(msg('main CI repair'), known, before)).toBeNull();
+		const after = new Date(Date.parse(TASK_RULE_SINCE) + 60_000).toISOString();
+		expect(taskProblem(msg('main CI repair'), known, after)).not.toBeNull();
+	});
+
+	it('reads the list beside the hook, where each line is a task ID', () => {
+		const ids = knownTaskIds();
+		expect(ids.has('M2-J4')).toBe(true);
+		expect([...ids].every((id) => TASK_ID_SHAPE.test(id))).toBe(true);
+	});
+
+	it('keeps the accepted process labels in the list', () => {
+		const ids = knownTaskIds();
+		expect(ids.has('M2-process')).toBe(true);
+		expect(ids.has('M3-plan')).toBe(true);
 	});
 });

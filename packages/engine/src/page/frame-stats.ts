@@ -14,6 +14,7 @@ import {
 	Role,
 	UNTIMED,
 } from '../shared/metrics';
+import { measureWithEveryThread } from '../shared/page-measurement';
 import {
 	countPerSecond,
 	type Percentiles,
@@ -58,6 +59,13 @@ export interface GpuPassStats {
 export interface FrameSummary {
 	/** Frames that the sketch computed and the renderer drew within the measurement. */
 	frames: number;
+	/**
+	 * Frames per second whose scene update ran to its end. A frame whose sketch update threw still
+	 * presents, so `presentedFps` hides it, and this figure falls to 0 when every update fails.
+	 */
+	updatedFps: number;
+	/** Frames of the measurement whose scene update did not run to its end. */
+	updateErrors: number;
 	/** CPU time per frame of the busiest thread, the time that limits the frame rate. */
 	cpuMs: Percentiles;
 	/** CPU time per frame summed over every thread. */
@@ -339,8 +347,22 @@ export function summarizeFrames(
 	const gpu = ring(Role.Gpu).busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
+	// A frame whose update failed still presented, so the ramp must not count its interval. The
+	// sketch thread's record marks each failed frame; the frames it never recorded count as failed.
+	const failed = new Set<number>();
+	sketch.frames.forEach((frame, i) => {
+		if ((sketch.counters[Counter.UpdateErrors]?.[i] ?? 0) !== 0) failed.add(frame);
+	});
+	const updated: number[] = [];
+	for (const frame of frames) {
+		if (failed.has(frame)) continue;
+		const ms = render.intervals[drawn.get(frame) as number] as number;
+		if (ms > 0) updated.push(ms);
+	}
 	return {
 		frames: frames.length,
+		updatedFps: ratePerSecond(updated) ?? 0,
+		updateErrors: frames.filter((frame) => failed.has(frame)).length,
 		cpuMs: percentiles(slowest),
 		cpuMsAllThreads: percentiles(total),
 		threads: threadStats,
@@ -449,10 +471,9 @@ const HEAP_SAMPLE_GAP_MS = 5000;
 /**
  * Samples the JavaScript heap of the page and its workers, where the browser offers a measurement
  * that covers workers (Chrome, on a cross-origin isolated page). Chrome answers when every worker
- * has run the measurement as a task, or after a minute. Job workers never return to their event
- * loop while the engine runs, so each sample takes about a minute and leaves them out. They run no
- * JavaScript after they start, so their heap stays the same size. A shorter run reports the page's
- * own heap, where the browser offers that.
+ * has run the measurement as a task, or after a minute. Each sample goes through
+ * `measureWithEveryThread`, so idle job workers run it between frame jobs. A run too short for a
+ * sample reports the page's own heap, where the browser offers that.
  */
 export class HeapSampler {
 	private readonly samples: MemoryStats['jsHeapSamples'] = [];
@@ -471,7 +492,7 @@ export class HeapSampler {
 		const started = performance.now();
 		const sample = async () => {
 			while (this.running) {
-				const result = await measure.call(performance);
+				const result = await measureWithEveryThread(() => measure.call(performance));
 				if (!this.running) return;
 				this.last = result;
 				this.samples.push({ atSeconds: (performance.now() - started) / 1000, bytes: result.bytes });

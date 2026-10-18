@@ -28,6 +28,7 @@ import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
+import type { ReadSink } from '../readback';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
@@ -66,9 +67,13 @@ const COPY_PROGRAM = 'mipmap copy';
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
 const DEPTH_ATTACHMENT = 0x8d00;
-const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 const DISCARD_COLOR = [COLOR_ATTACHMENT0];
 const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
+/** The second color attachment, which only the weighted layer's pass draws into. */
+const COLOR_ATTACHMENT1 = 0x8ce1;
+/** The draw buffers of a framebuffer with two color targets. */
+const TWO_DRAW_BUFFERS = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
+const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -96,6 +101,33 @@ export interface CanvasTarget {
 interface GlBuffer {
 	buffer: WebGLBuffer;
 	size: number;
+	/** Counts the writes into the buffer, each of which leaves its texture copies out of date. */
+	writes: number;
+	/** Texture copies of ranges of the buffer (see `copyOfBlock`). */
+	copies: BlockCopy[] | null;
+}
+
+/** A texture that holds a uniform buffer range, one `RGBA32UI` texel per 16 bytes, in one row. */
+interface BlockCopy {
+	texture: WebGLTexture;
+	/** The range's start in the buffer. */
+	offset: number;
+	width: number;
+	/** The buffer's write count when the texture last took the range's bytes. */
+	writes: number;
+}
+
+/** A `ReadBuffer` whose bytes wait for the GPU to run the commands before it. */
+interface PendingRead {
+	/** The buffer's id in the draw list. */
+	buffer: number;
+	offset: number;
+	size: number;
+	/** Where the bytes land in engine memory, and the control slot that then rises. */
+	destination: number;
+	slot: number;
+	/** The fence that signals once the GPU has run the commands before the read. */
+	fence: WebGLSync | null;
 }
 
 /** How GL stores a texture format, and how texels of it upload. */
@@ -158,6 +190,13 @@ interface GlTexture {
 	soloFramebuffer: WebGLFramebuffer | null;
 	/** The framebuffer of the one-sample copy of a multisampled depth target that shaders read. */
 	copyFramebuffer: WebGLFramebuffer | null;
+	/**
+	 * The framebuffer of passes that draw into this color target and a second one, as the weighted
+	 * layer's pass draws into its two sums, with the second target and the depth target.
+	 */
+	pairFramebuffer: WebGLFramebuffer | null;
+	pairSecond: GlTexture | null;
+	pairDepth: GlTexture | null;
 }
 
 interface BindEntry {
@@ -189,6 +228,8 @@ function glAttribute(
 	format: GPUVertexFormat,
 ): [number, number, boolean] {
 	switch (format) {
+		case 'uint32':
+			return [1, gl.UNSIGNED_INT, false];
 		case 'float32x2':
 			return [2, gl.FLOAT, false];
 		case 'float32x3':
@@ -293,6 +334,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
 	add(G.FORMAT_R32_FLOAT, gl.R32F, gl.RED, gl.FLOAT, color);
 	add(G.FORMAT_RGBA32_UINT, gl.RGBA32UI, gl.RGBA_INTEGER, gl.UNSIGNED_INT, color);
+	add(G.FORMAT_R16_FLOAT, gl.R16F, gl.RED, gl.HALF_FLOAT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
 	add(G.FORMAT_DEPTH24_PLUS, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, depth);
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
@@ -355,6 +397,9 @@ function glTexture(
 		framebufferDepth: null,
 		soloFramebuffer: null,
 		copyFramebuffer: null,
+		pairFramebuffer: null,
+		pairSecond: null,
+		pairDepth: null,
 	};
 }
 
@@ -421,6 +466,17 @@ export class WebGL2Backend {
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
+	/**
+	 * Where the bytes of `ReadBuffer` commands land, which the frame replay sets. Without it, as
+	 * when a test replays a list outside a running engine, a read still runs, and copies nowhere.
+	 */
+	readSink: ReadSink | undefined;
+	/** The reads whose fences have not signalled yet, in the order of their commands. */
+	private readonly pendingReads: PendingRead[] = [];
+	/** Finished reads, which later reads use again, so a read in every frame allocates nothing. */
+	private readonly freeReads: PendingRead[] = [];
+	/** The bytes that a read copies out of its buffer, before they go into engine memory. */
+	private readBytes = new Uint8Array(0);
 	/** The ring of pixel unpack buffers that texture rewrites go through, and their sizes in bytes. */
 	private readonly unpackBuffers: (WebGLBuffer | null)[] = new Array(UNPACK_RING).fill(null);
 	private readonly unpackSizes = new Array<number>(UNPACK_RING).fill(0);
@@ -491,7 +547,7 @@ export class WebGL2Backend {
 	 * borrowed changed since the program's units were set.
 	 */
 	private unitsChanged = true;
-	private readonly blockBuffers: (WebGLBuffer | null | undefined)[] = [];
+	private readonly blockBuffers: (GlBuffer | null | undefined)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
 	/** The faces that GL culls: `BACK` or `FRONT`, or 0 while culling is off. */
@@ -529,6 +585,8 @@ export class WebGL2Backend {
 	private passResolve = G.NO_TARGET;
 	/** The pass's depth target, whose one-sample copy the pass's end updates when it has one. */
 	private passDepth: GlTexture | null = null;
+	/** The pass's color target, or null for the canvas and for a depth-only pass. */
+	private passColor: GlTexture | null = null;
 	private passFlags = 0;
 	private passToCanvas = false;
 
@@ -707,8 +765,8 @@ export class WebGL2Backend {
 	/**
 	 * True when a render pipeline template can create a program of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
-	 * file has arrived.
+	 * defines at its first use, once the set of its builds that holds the build has arrived too. A
+	 * group's or a fold's shader is joined then too, once its host's file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		let defined = this.templates[template];
@@ -720,18 +778,19 @@ export class WebGL2Backend {
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
+		if (!this.images.buildsReady(template, build, 'glsl')) return false;
 		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
 	}
 
 	/**
-	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
-	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
-	 * background where the browser can, and the first frame waits for them. Skinning's and morph
-	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
-	 * `scene.warmUp()` builds those, as for any material.
+	 * Starts to compile the programs of the builds of `module`, a module that the page or the sketch
+	 * preloaded, whose builds need `features`, so that the features' first objects draw at once.
+	 * They compile in the background where the browser can, and the first frame waits for them.
+	 * Skinning's and morph targets' builds vary in every material bit, and a scene's materials draw
+	 * with a few of them, so `scene.warmUp()` builds those, as for any material.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		if (WARM_UP_FEATURES.has(feature)) return;
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		if (features.some((feature) => WARM_UP_FEATURES.has(feature))) return;
 		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
 		for (const [name, builds] of Object.entries(module)) {
 			const variants = held?.[name];
@@ -860,11 +919,14 @@ export class WebGL2Backend {
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
 				case G.OP_WRITE_BUFFER: {
-					const buffer = this.need(this.buffers, words[a] as number, 'buffer').buffer;
+					const record = this.need(this.buffers, words[a] as number, 'buffer');
 					const offset = words[a + 1] as number;
 					const source = words[a + 2] as number;
 					const bytes = words[a + 3] as number;
-					gl.bindBuffer(gl.COPY_WRITE_BUFFER, buffer);
+					record.writes++;
+					// Units that read a texture copy of the buffer copy it again before they draw.
+					if (record.copies) this.unitsChanged = true;
+					gl.bindBuffer(gl.COPY_WRITE_BUFFER, record.buffer);
 					this.writeBytes(gl.COPY_WRITE_BUFFER, offset, source, bytes);
 					this.counts.uploadBytes += bytes;
 					break;
@@ -905,6 +967,13 @@ export class WebGL2Backend {
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
+				// A capture replays a frame that the loop replayed already, whose reads would land twice.
+				case G.OP_COPY_TEXTURE_TO_BUFFER:
+					if (!this.canvasTarget) this.copyTextureToBuffer(words, a);
+					break;
+				case G.OP_READ_BUFFER:
+					if (!this.canvasTarget) this.readBuffer(words, a);
+					break;
 				case G.OP_CREATE_SAMPLER:
 					this.counts.objects++;
 					this.createSampler(words, floats, a);
@@ -939,7 +1008,7 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_BEGIN_RENDER_PASS:
-					this.beginPass(words, floats, a);
+					this.beginPass(words, floats, a, length);
 					break;
 				case G.OP_END_RENDER_PASS:
 					this.endPass();
@@ -1025,6 +1094,7 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
+		this.flushReads();
 		this.replayed = true;
 	}
 
@@ -1261,18 +1331,24 @@ export class WebGL2Backend {
 		this.useVertexArray(null);
 		gl.bindBuffer(target, buffer);
 		gl.bufferData(target, size, gl.DYNAMIC_DRAW);
-		this.buffers[id] = { buffer, size };
+		this.buffers[id] = { buffer, size, writes: 0, copies: null };
 		this.gpuMemory.addBuffers(size);
 	}
 
 	private destroyBuffer(id: number): void {
 		const old = this.buffers[id];
 		if (!old) return;
+		if (this.pendingReads.length > 0) this.dropReads(id);
 		this.gl.deleteBuffer(old.buffer);
 		this.gpuMemory.addBuffers(-old.size);
+		if (old.copies)
+			for (const copy of old.copies) {
+				this.gl.deleteTexture(copy.texture);
+				this.gpuMemory.addTextures(-copy.width * 16);
+			}
 		this.buffers[id] = undefined;
 		for (let slot = 0; slot < this.blockBuffers.length; slot++)
-			if (this.blockBuffers[slot] === old.buffer) this.blockBuffers[slot] = null;
+			if (this.blockBuffers[slot] === old) this.blockBuffers[slot] = null;
 	}
 
 	private format(code: number): GlFormat {
@@ -1437,12 +1513,23 @@ export class WebGL2Backend {
 		target.framebuffer = null;
 		target.framebufferDepth = null;
 		target.soloFramebuffer = null;
+		this.forgetPair(target);
 		for (const other of this.textures) {
-			if (other?.framebufferDepth !== target) continue;
+			if (!other) continue;
+			if (other.pairSecond === target || other.pairDepth === target) this.forgetPair(other);
+			if (other.framebufferDepth !== target) continue;
 			gl.deleteFramebuffer(other.framebuffer);
 			other.framebuffer = null;
 			other.framebufferDepth = null;
 		}
+	}
+
+	/** Deletes the framebuffer that draws into `target` and a second color target. */
+	private forgetPair(target: GlTexture): void {
+		if (target.pairFramebuffer) this.gl.deleteFramebuffer(target.pairFramebuffer);
+		target.pairFramebuffer = null;
+		target.pairSecond = null;
+		target.pairDepth = null;
 	}
 
 	/** Writes `bytes` bytes of engine memory from byte `source` into the buffer bound at `target`. */
@@ -1680,9 +1767,12 @@ export class WebGL2Backend {
 		this.beforeGenerator();
 		const target = texture.texture as WebGLTexture;
 		const { width, mips } = texture;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.programHost, target, width, mips, words, floats, a, this.gpuMemory);
-		else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const from = words[a + 3] as number;
+			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			const host = this.programHost;
+			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}
 
@@ -1916,6 +2006,111 @@ export class WebGL2Backend {
 		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
 	}
 
+	/**
+	 * Reads a box of texels of a texture into a buffer with `readPixels`, which GL runs after the
+	 * commands recorded before it. The pack row length spaces the rows by the command's bytes per
+	 * row, as WebGPU's copy does. The rows are the texture's stored rows, from `y` up.
+	 */
+	private copyTextureToBuffer(words: Uint32Array, a: number): void {
+		const gl = this.gl;
+		const source = this.textureOf(words[a] as number);
+		const level = words[a + 1] as number;
+		const layer = words[a + 4] as number;
+		const record = this.need(this.buffers, words[a + 5] as number, 'buffer');
+		const { attachment, format, type, bytes } = source.format;
+		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.copyFramebuffer);
+		this.attachLevel(gl.READ_FRAMEBUFFER, attachment, source, level, layer);
+		gl.readBuffer(attachment);
+		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, record.buffer);
+		gl.pixelStorei(gl.PACK_ROW_LENGTH, (words[a + 7] as number) / bytes);
+		gl.readPixels(
+			words[a + 2] as number,
+			words[a + 3] as number,
+			words[a + 9] as number,
+			words[a + 10] as number,
+			format,
+			type,
+			words[a + 6] as number,
+		);
+		gl.pixelStorei(gl.PACK_ROW_LENGTH, 0);
+		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+		// A framebuffer that is not bound keeps what it holds alive, so the source leaves it.
+		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
+	}
+
+	/**
+	 * Puts a fence after the commands before a `ReadBuffer`, which `flushReads` waits for without
+	 * stalling the GPU.
+	 */
+	private readBuffer(words: Uint32Array, a: number): void {
+		const read = this.freeReads.pop() ?? {
+			buffer: 0,
+			offset: 0,
+			size: 0,
+			destination: 0,
+			slot: 0,
+			fence: null,
+		};
+		read.buffer = words[a] as number;
+		read.offset = words[a + 1] as number;
+		read.size = words[a + 2] as number;
+		read.destination = words[a + 3] as number;
+		read.slot = words[a + 4] as number;
+		read.fence = this.gl.fenceSync(this.gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+		this.pendingReads.push(read);
+	}
+
+	/**
+	 * Finishes the reads whose fences have signalled: the GPU has run the commands before each, so
+	 * its bytes copy into engine memory and its control slot rises by one. A read whose fence has
+	 * not signalled waits for a later frame, so a read never stalls the GPU.
+	 */
+	private flushReads(): void {
+		const reads = this.pendingReads;
+		if (reads.length === 0) return;
+		const gl = this.gl;
+		let kept = 0;
+		for (const read of reads) {
+			const status = read.fence && gl.clientWaitSync(read.fence, 0, 0);
+			if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) {
+				reads[kept++] = read;
+				continue;
+			}
+			const sink = this.readSink;
+			if (sink) {
+				// WebGL may refuse a view on shared memory, so the bytes come out through a copy.
+				if (this.readBytes.length !== read.size) this.readBytes = new Uint8Array(read.size);
+				const record = this.need(this.buffers, read.buffer, 'buffer');
+				gl.bindBuffer(gl.COPY_READ_BUFFER, record.buffer);
+				gl.getBufferSubData(gl.COPY_READ_BUFFER, read.offset, this.readBytes);
+				gl.bindBuffer(gl.COPY_READ_BUFFER, null);
+				sink.bytes.set(this.readBytes, read.destination);
+			}
+			this.releaseRead(read);
+			sink?.done(read.slot);
+		}
+		reads.length = kept;
+	}
+
+	/** Deletes a read's fence and keeps the read for later ones. */
+	private releaseRead(read: PendingRead): void {
+		if (read.fence) this.gl.deleteSync(read.fence);
+		read.fence = null;
+		this.freeReads.push(read);
+	}
+
+	/** Drops the reads of a buffer that is destroyed: their slots never rise. */
+	private dropReads(buffer: number): void {
+		const reads = this.pendingReads;
+		let kept = 0;
+		for (const read of reads) {
+			if (read.buffer === buffer) this.releaseRead(read);
+			else reads[kept++] = read;
+		}
+		reads.length = kept;
+	}
+
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
 		const gl = this.gl;
 		const id = words[a] as number;
@@ -1980,14 +2175,26 @@ export class WebGL2Backend {
 		else this.attachLevel(gl.FRAMEBUFFER, point, target, target.level, target.layer);
 	}
 
-	/** Makes a framebuffer with `first` in it, and `depth` when given. It leaves it bound. */
-	private makeFramebuffer(first: GlTexture, depth: GlTexture | null): WebGLFramebuffer {
+	/**
+	 * Makes a framebuffer with `first` in it, and `depth` when given. A `second` color target goes
+	 * into the second color attachment, and the framebuffer then draws into both. It leaves the
+	 * framebuffer bound.
+	 */
+	private makeFramebuffer(
+		first: GlTexture,
+		depth: GlTexture | null,
+		second: GlTexture | null = null,
+	): WebGLFramebuffer {
 		const gl = this.gl;
 		const framebuffer = gl.createFramebuffer();
 		if (!framebuffer) throw new Error('WebGL2 could not create a framebuffer');
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 		this.attach(first);
 		if (depth) this.attach(depth);
+		if (second) {
+			this.attachLevel(gl.FRAMEBUFFER, COLOR_ATTACHMENT1, second, second.level, second.layer);
+			gl.drawBuffers(TWO_DRAW_BUFFERS);
+		}
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 		if (status !== gl.FRAMEBUFFER_COMPLETE)
 			throw new Error(
@@ -2012,21 +2219,42 @@ export class WebGL2Backend {
 		return color.framebuffer;
 	}
 
+	/**
+	 * The framebuffer of a pass that draws into `color` and `second`, with `depth` when given, as
+	 * the weighted layer's pass draws into its two sums. It is made again when a target changes.
+	 */
+	private pairFramebuffer(
+		color: GlTexture,
+		second: GlTexture,
+		depth: GlTexture | null,
+	): WebGLFramebuffer {
+		if (color.pairFramebuffer && color.pairSecond === second && color.pairDepth === depth)
+			return color.pairFramebuffer;
+		this.forgetPair(color);
+		color.pairFramebuffer = this.makeFramebuffer(color, depth, second);
+		color.pairSecond = second;
+		color.pairDepth = depth;
+		return color.pairFramebuffer;
+	}
+
 	/** The framebuffer with only `target` in it. */
 	private soloFramebuffer(target: GlTexture): WebGLFramebuffer {
 		if (!target.soloFramebuffer) target.soloFramebuffer = this.makeFramebuffer(target, null);
 		return target.soloFramebuffer;
 	}
 
-	private beginPass(words: Uint32Array, floats: Float32Array, a: number): void {
+	private beginPass(words: Uint32Array, floats: Float32Array, a: number, length: number): void {
 		const gl = this.gl;
 		this.skipDraws = false;
 		const color = words[a] as number;
 		const depth = words[a + 2] as number;
+		// The weighted layer's pass names a second color target after the flags.
+		const second = length > 10 ? (words[a + 9] as number) : G.NO_TARGET;
 		const flags = words[a + 8] as number;
 		this.passResolve = words[a + 1] as number;
 		this.passFlags = flags;
 		this.passToCanvas = color === 0;
+		this.passColor = null;
 		const depthTarget = depth === G.NO_TARGET ? null : this.need(this.textures, depth, 'texture');
 		this.passDepth = depthTarget;
 		let framebuffer: WebGLFramebuffer | null;
@@ -2042,7 +2270,11 @@ export class WebGL2Backend {
 			this.passHeight = depthTarget.height;
 		} else {
 			const target = this.need(this.textures, color, 'texture');
-			framebuffer = this.colorFramebuffer(target, depthTarget);
+			this.passColor = target;
+			framebuffer =
+				second === G.NO_TARGET
+					? this.colorFramebuffer(target, depthTarget)
+					: this.pairFramebuffer(target, this.need(this.textures, second, 'texture'), depthTarget);
 			this.passWidth = target.width;
 			this.passHeight = target.height;
 		}
@@ -2102,14 +2334,15 @@ export class WebGL2Backend {
 		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const resolves = this.passResolve !== G.NO_TARGET;
 		const keepsColor = storeColor || resolves;
-		const discard = storeDepth
-			? keepsColor
-				? undefined
-				: DISCARD_COLOR
-			: keepsColor
-				? DISCARD_DEPTH
-				: DISCARD_BOTH;
-		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a color-only
+		// pass, as each fullscreen step of an effect, need not name a depth it never bound: Safari
+		// runs the invalidate on the thread that draws before it draws the pass. The lists are made
+		// once, because this runs for every pass of every frame.
+		const discardColor = this.passColor !== null && !keepsColor;
+		const discardDepth = this.passDepth !== null && !storeDepth;
+		if (discardColor && discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_BOTH);
+		else if (discardColor) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_COLOR);
+		else if (discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_DEPTH);
 		if (resolves) {
 			const into =
 				this.passResolve === 0
@@ -2346,14 +2579,17 @@ export class WebGL2Backend {
 				dynamic++;
 				const size = entry.size || buffer.size - offset;
 				if (
-					this.blockBuffers[slot] !== buffer.buffer ||
+					this.blockBuffers[slot] !== buffer ||
 					this.blockOffsets[slot] !== offset ||
 					this.blockSizes[slot] !== size
 				) {
 					gl.bindBufferRange(gl.UNIFORM_BUFFER, slot, buffer.buffer, offset, size);
-					this.blockBuffers[slot] = buffer.buffer;
+					this.blockBuffers[slot] = buffer;
 					this.blockOffsets[slot] = offset;
 					this.blockSizes[slot] = size;
+					// A program that reads the slot as a texture reads a copy of the range.
+					this.slotTextures[slot] = null;
+					this.unitsChanged = true;
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
 				const texture = this.textureOf(entry.resource);
@@ -2362,6 +2598,9 @@ export class WebGL2Backend {
 					this.slotTargets[slot] = texture.target;
 					this.unitsChanged = true;
 				}
+				// The slot's texture replaces a buffer range that a program read through a copy, so
+				// the range binds again when a bind group next leaves it there.
+				this.blockBuffers[slot] = undefined;
 			} else if (entry.kind === G.RESOURCE_SAMPLER) {
 				const sampler = this.need(this.samplers, entry.resource, 'sampler');
 				if (this.slotSamplers[slot] !== sampler) {
@@ -2405,17 +2644,25 @@ export class WebGL2Backend {
 		if (!vao) throw new Error('WebGL2 could not create a vertex array');
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+		// An attribute of the instance's step moves on once for each instance. Integer formats
+		// reach the shader as integers.
+		const divisor = layout.stepMode === 'instance' ? 1 : 0;
 		for (const attribute of layout.attributes) {
 			const [size, type, normalized] = glAttribute(gl, attribute.format);
-			gl.enableVertexAttribArray(attribute.shaderLocation);
-			gl.vertexAttribPointer(
-				attribute.shaderLocation,
-				size,
-				type,
-				normalized,
-				layout.arrayStride,
-				attribute.offset,
-			);
+			const location = attribute.shaderLocation;
+			gl.enableVertexAttribArray(location);
+			if (attribute.format.startsWith('uint') || attribute.format.startsWith('sint'))
+				gl.vertexAttribIPointer(location, size, type, layout.arrayStride, attribute.offset);
+			else
+				gl.vertexAttribPointer(
+					location,
+					size,
+					type,
+					normalized,
+					layout.arrayStride,
+					attribute.offset,
+				);
+			gl.vertexAttribDivisor(location, divisor);
 		}
 		this.layoutArrays[this.vertexBuffer] = { vao, vertices, layout };
 		return vao;
@@ -2495,11 +2742,64 @@ export class WebGL2Backend {
 			const unit = units[k] as number;
 			const slot = units[k + 1] as number;
 			const sampler = units[k + 2] as number;
-			const texture = this.slotTextures[slot] ?? null;
+			const texture = this.slotTextures[slot];
 			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
+			else if (this.blockBuffers[slot])
+				this.bindTexture(unit, this.gl.TEXTURE_2D, this.copyOfBlock(slot));
 			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
 		this.unitsChanged = false;
+	}
+
+	/**
+	 * The texture copy of the uniform buffer range that a bind group left at a slot, for a shader
+	 * that reads the slot as a texture: one texel of four unsigned integers per 16 bytes, in one
+	 * row. The multi-draw vertex shaders read their draw records so, since some Adreno drivers fail
+	 * to link a program whose vertex shader reads a uniform array at the draw index. The copy runs on
+	 * the GPU, from the buffer, and again only after a write into the buffer.
+	 */
+	private copyOfBlock(slot: number): WebGLTexture {
+		const gl = this.gl;
+		const buffer = this.blockBuffers[slot] as GlBuffer;
+		const offset = this.blockOffsets[slot] as number;
+		const width = (this.blockSizes[slot] as number) >> 4;
+		buffer.copies ??= [];
+		const copies = buffer.copies;
+		let copy: BlockCopy | undefined;
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const known = copies[k] as BlockCopy;
+			if (known.offset === offset && known.width === width) copy = known;
+		}
+		// A copy that no draw has read since the buffer's last write takes the new range, so the
+		// textures stay as many as the ranges that draws read between two writes. Ranges move each
+		// frame with the ring's slots, so the copies are taken over in place, which allocates nothing.
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const stale = copies[k] as BlockCopy;
+			if (stale.writes !== buffer.writes && stale.width === width) {
+				stale.offset = offset;
+				stale.writes = -1;
+				copy = stale;
+			}
+		}
+		if (!copy) {
+			const texture = gl.createTexture();
+			if (!texture) throw new Error('WebGL2 could not create a texture');
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, texture);
+			gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, width, 1);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			this.gpuMemory.addTextures(width * 16);
+			copy = { texture, offset, width, writes: -1 };
+			copies.push(copy);
+		}
+		if (copy.writes !== buffer.writes) {
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, copy.texture);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer.buffer);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, offset);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+			copy.writes = buffer.writes;
+		}
+		return copy.texture;
 	}
 
 	/** Binds a sampler to a texture unit, or none. */

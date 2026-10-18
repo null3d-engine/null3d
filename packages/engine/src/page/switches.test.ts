@@ -24,7 +24,7 @@ describe('parseSwitches', () => {
 			prepass: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
-			skinning: 'lean',
+			skinning: 'vertex',
 			indexInstances: false,
 			shadowDepthBits: 16,
 			textureCache: true,
@@ -50,11 +50,11 @@ describe('parseSwitches', () => {
 			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
 	});
 
-	it('picks how WebGPU skins with ?skinning=, and the lean skinning pass otherwise', () => {
-		for (const mode of ['vertex', 'full', 'skip', 'narrow'] as const)
+	it('picks how WebGPU skins with ?skinning=, and the vertex shaders otherwise', () => {
+		for (const mode of ['vertex', 'compute', 'full', 'skip', 'narrow'] as const)
 			expect(parseSwitches(`?skinning=${mode}`).skinning).toBe(mode);
-		expect(parseSwitches('?skinning=compute').skinning).toBe('lean');
-		expect(parseSwitches('').skinning).toBe('lean');
+		expect(parseSwitches('?skinning=lean').skinning).toBe('vertex');
+		expect(parseSwitches('').skinning).toBe('vertex');
 	});
 
 	it('reads instances by index on core WebGPU with ?instances=index, and copies them otherwise', () => {

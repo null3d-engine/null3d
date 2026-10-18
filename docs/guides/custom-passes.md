@@ -3,12 +3,12 @@ id: guides/custom-passes
 title: Custom passes and render targets
 status: experimental
 since: "0.2"
-summary: "Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks; reflections and a water recipe."
+summary: "Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks; reflections and a water recipe; full-screen passes, a soft outline glow and effects that read textures."
 ---
 
 # Custom passes and render targets
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Custom effects, custom tone curves, and scene and reflection passes that draw into textures with `render.addPass` and `textures.fromPass` are built. Full-screen passes of your own WGSL with `render.addPass` are not built yet, so coding agents must not use them.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -22,7 +22,7 @@ flowchart LR
     final --> canvas["Canvas"]
 ```
 
-A custom effect is a full-screen pass of your own WGSL. It reads the scene's color, and its depth if it asks for it, and writes a new color for each pixel. Effects run after the scene passes, on linear HDR color, before bloom and the tone curve. A custom tone curve takes the place of the built-in curves in the final pass. A scene pass draws the scene from another camera into a texture, which materials show: see [Render to a texture](#render-to-a-texture).
+A custom effect is a full-screen pass of your own WGSL. It reads the scene's color, and its depth if it asks for it, and writes a new color for each pixel. Effects run after the scene passes, on linear HDR color, before bloom and the tone curve. A custom tone curve takes the place of the built-in curves in the final pass. A scene pass draws the scene from another camera into a texture, which materials show: see [Render to a texture](#render-to-a-texture). A full-screen pass runs an effect's WGSL into a texture of its own, which materials, effects and other passes read: see [Full-screen passes](#full-screen-passes).
 
 ## Custom effects
 
@@ -73,6 +73,8 @@ The effect can also call these functions:
 | `effectDepth(uv: vec2f) -> f32` | The scene's depth at `uv`: 1 at the camera's near plane, 0 at its far plane, and 0 where nothing drew. |
 | `effectViewPosition(uv: vec2f) -> vec3f` | The position of the surface at `uv` in view space. Its z is negative in front of the camera, as in three.js. |
 | `effectDistance(uv: vec2f) -> f32` | How far in front of the camera the surface at `uv` lies, in world units. |
+| `effectInputSize() -> vec2f` | The image's size in pixels. In an effect it equals `input.size`; a [full-screen pass](#full-screen-passes) of another size needs it. |
+| `effectPassUv(uv: vec2f) -> vec2f` | The coordinates in a render pass's texture of the image's place `uv`. A pass texture holds its bottom row first, so `v` turns around. |
 
 An effect that calls one of the depth functions reads the scene's depth on every GPU path. An effect that calls none costs no depth read.
 
@@ -88,7 +90,27 @@ Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. The rul
 - TypeScript types the `uniforms` option and `setEffectUniform` from the struct, so a wrong name fails the type check. At run time a wrong name or value throws E1216.
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place, rather than a new array each frame.
 
-Effects take no textures.
+### Textures
+
+An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
+
+```ts
+const vignetteFromImage = /* wgsl */ `
+var mask: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let shade = textureSampleLevel(mask, maskSampler, input.uv, 0.0).r;
+    return vec4f(input.color.rgb * shade, input.color.a);
+}
+`;
+
+post.addEffect({ wgsl: vignetteFromImage, textures: { mask: await assets.loadTexture('/vignette.png') } });
+```
+
+- A texture samples as white until its image is on the GPU. A declared texture that the option leaves out stays white.
+- An image texture's first row is at v = 0, so `input.uv` reads it upside down unless the image was decoded with `imageOrientation: 'flipY'`, as `assets.loadTexture` does. A pass's texture holds its bottom row first too: read it at `effectPassUv(input.uv)`.
+- Each texture takes one of the 32 uniform numbers for its layer, so with textures the uniforms have that much less room. At most 6 textures.
+- An effect with textures draws in a pass of its own: it joins no other effect, and nothing folds it into the final pass.
 
 ### Order
 
@@ -141,10 +163,10 @@ post.addEffect({ wgsl: split, uniforms: { shift: 3 } });
 
 ### Cost
 
-- A full-screen pass reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame.
-- The engine joins effects to save passes. An effect that reads only its own pixel joins the pass of the effect before it: the pass runs both, one after the other, for each pixel. So you need not join such effects into one function yourself.
+- A full-screen pass reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame. One pass at full size costs about 0.05 ms of GPU time on a MacBook Pro, 0.1 ms on an iPad Pro with the A12X, and 0.25 to 0.31 ms on a Pixel 10.
+- The engine joins effects to save passes, while the render scale cannot drop below the whole canvas. An effect that reads only its own pixel joins the pass of the effect before it: the pass runs both, one after the other, for each pixel. So you need not join such effects into one function yourself. While the scale can drop, the engine runs each effect in a pass of its own, at every scale, because the final pass then works in two steps ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
 - An effect that calls `effectPixel` or `effectColor` reads other pixels of the color before it. So it starts a pass of its own. The effects after it can join it. Depth reads do not stop an effect from joining.
-- The last pass of effects folds into the final pass when nothing reads the image between them. That needs bloom and FXAA off, and a render scale of 1. One effect that reads only its own pixel then costs no pass of its own.
+- The last pass of effects folds into the final pass when nothing reads the image between them. That needs bloom and FXAA off, and it needs the render scale to stay at the whole canvas: while the scale can drop below it, nothing folds, also in frames that draw at scale 1. One effect that reads only its own pixel then costs no pass of its own.
 - A joined pass needs a shader that the engine makes from the effects' WGSL. It builds in the background after the effects' own shaders. Until it is built, each effect draws a pass of its own, so no frame waits for it.
 - Some browsers cannot compile WebGL2 shaders in the background, such as Chrome on the Android phones tested. On WebGL2 they join only the effects that are there before the first frame. Effects added or reordered later draw a pass each there. A joined shader would hold up a frame while it compiles. Add your effects before the first frame to get the joined passes on those devices. Development builds tell you once in the console when this happens.
 - Between joined effects the color keeps 32-bit precision instead of the 16 bits of a target. So the image can differ from separate passes in the last bits.
@@ -160,7 +182,7 @@ A debug view, such as `debug.view('normals')`, turns effects off while it draws.
 
 ## Custom tone curves
 
-A custom tone curve replaces the built-in curves (`'aces'`, `'agx'`, `'neutral'` and `'none'`). Its WGSL declares one function, and `post.set` takes it as `toneMapping`:
+A custom tone curve replaces the built-in curves (`'agx-punchy'`, the default, and `'agx'`, `'aces'`, `'neutral'` and `'none'`). Its WGSL declares one function, and `post.set` takes it as `toneMapping`:
 
 ```ts
 // Reinhard's curve, as three.js's ReinhardToneMapping draws it.
@@ -240,7 +262,7 @@ return {
 
 ### What a scene pass draws
 
-A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. In this version it draws no ambient occlusion and no sky background. Its texture clears to `clearColor`, or to the scene's background color.
+A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. It draws the scene's background behind them, the sky included, as a three.js render target shows `scene.background`. With a `clearColor` the texture clears to that color and shows no background, which suits a minimap. A pass draws no ambient occlusion: three.js draws it as a post pass over the canvas, so its render targets have none either.
 
 A point or spot light casts its shadow in a pass when the camera's view gives it a shadow. The engine gives shadows only to the lights that the camera sees. So a light that only the pass sees lights the pass without a shadow. Reflection passes draw these lights the same way. A pass that sees a point or spot light keeps its own list of lights, as the camera's view does. The list takes under 1 MB of memory. A pass that sees none keeps no list.
 
@@ -258,7 +280,7 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 - The pass follows the active camera. The quality preset sets its size: half the render size each way on Medium and High.
 - The surface function puts the pass's color in the surface's `reflection`. The engine's lighting then weighs it with the material's Fresnel, so water reflects little straight down and much at a low angle.
 - `scale: 1` gives a sharp mirror. `every: 2` draws the reflection in every other frame, for a camera that moves slowly.
-- A reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. It draws no ambient occlusion yet.
+- A reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. It draws no ambient occlusion, as three.js's render targets draw none.
 
 ### A water recipe
 
@@ -349,24 +371,102 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 
+## Full-screen passes
+
+A full-screen pass runs an effect's WGSL for each pixel of a texture of its own. Use one for a step that a texture needs before materials or effects read it: a blur at half size, the edges of a mask, a texture that the GPU paints from nothing, or a minimap with a look of its own. [Render graph API](../api/render.md#full-screen-passes) lists its options.
+
+```ts
+const posterize = /* wgsl */ `
+struct Uniforms { levels: f32 }
+
+var map: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let color = textureSampleLevel(map, mapSampler, effectPassUv(input.uv), 0.0).rgb;
+    return vec4f(floor(color * uniforms.levels + 0.5) / uniforms.levels, 1.0);
+}
+`;
+
+const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const comic = render.addPass({
+  kind: 'fullscreen',
+  wgsl: posterize,
+  writes: 'comic',
+  size: [256, 256],
+  uniforms: { levels: 3 },
+  textures: { map: textures.fromPass(map) },
+});
+const screen = materials.unlit({ map: textures.fromPass(comic) });
+```
+
+The engine runs the scene pass, then the full-screen pass, then the camera's passes that show the result.
+
+### What a full-screen pass reads
+
+- `input.uv`, `input.pixel` and `input.size` belong to the pass's own texture: `input.uv` is (0, 0) at the top left of its image, as in an effect.
+- With `input: 'sceneColor'` or `input: 'outlineMask'`, `input.color`, `effectColor` and `effectPixel` read that image, and `effectInputSize()` gives its size. A pass at half size steps one pixel of its input with `1.0 / effectInputSize()`. Without an input, they read transparent black.
+- The depth functions read the scene's depth, as in an effect.
+- Its textures, by the `textures` option. A pass's texture holds its bottom row first, as materials sample it, so read another pass's texture at `effectPassUv(input.uv)`.
+
+### When a full-screen pass runs
+
+A pass that reads only textures runs before the passes that read its texture, within the frame. A pass that reads the scene color, the outline mask or the depth runs after the camera's passes: the scene must be drawn first. An effect that reads its texture still sees the image of the same frame. A material that shows its texture shows the image of the frame before, as a security monitor that shows the screen would.
+
+### A soft outline glow
+
+three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow:
+
+```ts
+const glowFromMask = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    let texel = 1.0 / effectInputSize();
+    var sum = 0.0;
+    for (var y = -3; y <= 3; y++) {
+        for (var x = -3; x <= 3; x++) {
+            sum += effectColor(input.uv + vec2f(f32(x), f32(y)) * 3.0 * texel).r;
+        }
+    }
+    return vec4f(vec3f(2.0, 1.1, 0.3) * sum / 49.0, 1.0);
+}
+`;
+
+const addGlow = /* wgsl */ `
+var glow: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let light = textureSampleLevel(glow, glowSampler, effectPassUv(input.uv), 0.0).rgb;
+    return vec4f(input.color.rgb + light * input.color.a, input.color.a);
+}
+`;
+
+post.set({ outline: { width: 0 } });
+mesh.setOutlined(true);
+const glow = render.addPass({ kind: 'fullscreen', wgsl: glowFromMask, writes: 'glow', scale: 0.5, input: 'outlineMask' });
+post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
+```
+
+- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls.
+- The pass blurs at half size, which shades a quarter of the pixels and blurs further for the same reads.
+- The effect adds the glow before the tone curve and bloom, on HDR color, so a bright glow also blooms.
+
 ## Errors
 
 | Code | Cause |
 | --- | --- |
 | E1215 | WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind, such as a material's. |
-| E1216 | A uniform that the WGSL does not declare, or a value of the wrong kind. |
+| E1216 | A uniform or a texture that the WGSL does not declare, or a value of the wrong kind. |
 | E1213 | A ninth effect. |
 | E1203 | An `order` that is not a number. |
 | E1101 | `setEffectUniform` on an effect that `removeEffect` removed, or a call on a render pass that `render.removePass` removed. |
-| E1220 | Options that `render.addPass` does not take, such as a reflection's plane without a point, or a texture name that another pass writes. |
+| E1220 | Options that `render.addPass` does not take, such as a reflection's plane without a point, a full-screen pass with both a `size` and a `scale`, or a texture name that another pass writes. |
 | E1502 | A name in `reads` that no pass writes. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
-| E1504 | A pass that reads its own texture. |
+| E1504 | A pass that reads its own texture, or passes that read each other's textures. |
 
 ## Related pages
 
 - [Post-processing API](../api/post.md): `post.addEffect`, `post.setEffectUniform`, `post.removeEffect` and `post.set`.
-- [Render graph API](../api/render.md): `render.addPass`, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph`.
+- [Render graph API](../api/render.md): `render.addPass`, `render.setPassUniform`, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph`.
 - [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass whose texture a monitor shows.
 - [The post-processing chain](../concepts/post-processing.md): where effects run, and the built-in effects.
 - [Custom shaders](custom-shaders.md): the WGSL build, uniforms and the shader library.

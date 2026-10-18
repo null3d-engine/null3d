@@ -7,12 +7,15 @@
 // runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
 // WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`
 // runs at that count in place of a ramp, and measures the frames over `?seconds=` (5 by default)
-// and then the whole page's memory. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
+// and then the whole page's memory, which `?memory=off` leaves out, as the browser can take a
+// minute or more to measure it. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
 // most the count reaches, in place of the device class's ramp maximum. `?warmup=` sets the seconds
 // the page runs before a ramp or a measurement starts, so a scene that makes its objects over many
 // frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
 // for 0.4 of each step and measures the rest.
+import { measurePageMemory } from '@null3d/engine/stats';
 import { COMPARISONS } from '../../examples/compare/comparisons';
+import type { SceneSignature } from '../../examples/compare/scene-signature';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
 import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
 import { run, toBase64 } from './lib/result';
@@ -25,22 +28,8 @@ const SHORT_RAMP = { start: 100, factor: 2, max: 400 };
  * per kind of memory, as Chrome reports them. A memory that threads share shows in each of them.
  */
 async function memoryParts(): Promise<Record<string, number> | null> {
-	const measure = (
-		performance as {
-			measureUserAgentSpecificMemory?: () => Promise<{
-				breakdown: {
-					bytes: number;
-					types: string[];
-					attribution: { scope?: string; url?: string }[];
-				}[];
-			}>;
-		}
-	).measureUserAgentSpecificMemory;
-	if (!measure) return null;
 	// Chromium's headless shell throws in place of measuring, and the page then reports no parts.
-	const measured = await Promise.resolve()
-		.then(() => measure.call(performance))
-		.catch(() => null);
+	const measured = await measurePageMemory()?.catch(() => null);
 	if (!measured) return null;
 	const { breakdown } = measured;
 	const parts: Record<string, number> = {};
@@ -48,7 +37,7 @@ async function memoryParts(): Promise<Record<string, number> | null> {
 		const where =
 			attribution.map((a) => `${a.scope ?? '?'} ${a.url?.split('/').pop() ?? ''}`).join('+') ||
 			'unattributed';
-		const key = `${where} [${types.join(',')}]`;
+		const key = `${where} [${(types ?? []).join(',')}]`;
 		parts[key] = (parts[key] ?? 0) + bytes;
 	}
 	return parts;
@@ -104,6 +93,7 @@ run('compare', async () => {
 		label: started.label,
 		tier: started.gpu,
 		build: started.mode,
+		limit: started.limit ?? null,
 		mode: { hold: hold ?? null },
 	};
 	if (started.held) {
@@ -115,23 +105,35 @@ run('compare', async () => {
 		started.collapseStats(true);
 		await new Promise((resolve) => setTimeout(resolve, (warmup ?? 2) * 1000));
 		const frames = await started.measure(Number(params.get('seconds') ?? 5));
-		const memory = await started.measureMemory();
-		const parts = await memoryParts();
+		const skipMemory = params.get('memory') === 'off';
+		const memory = skipMemory ? null : await started.measureMemory();
+		const parts = skipMemory ? null : await memoryParts();
 		await started.destroy();
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
 	}
 	const step = Number(params.get('step') ?? 1);
+	// `?probe=1` asks the sketch for its scene signature at each ramp step, which the ramp's tests
+	// read to check that the scene keeps moving.
+	const probing = params.has('probe');
+	const signatures: Promise<SceneSignature | null>[] = [];
+	const onStep = probing
+		? () => signatures.push(started.sceneSignature?.() ?? Promise.resolve(null))
+		: undefined;
 	const ramp = await rampComparison(
 		started,
 		full
-			? { warmupSeconds: warmup }
+			? { warmupSeconds: warmup, onStep }
 			: {
-					plan: SHORT_RAMP,
+					// A run with a limit below the short ramp's top, such as three.js's light limit on
+					// WebGLRenderer, stops there.
+					plan: { ...SHORT_RAMP, max: Math.min(SHORT_RAMP.max, started.plan.max) },
 					warmupSeconds: warmup ?? 1,
 					stepSeconds: step,
 					settleSeconds: step * 0.4,
+					onStep,
 				},
 	);
 	await started.destroy();
+	if (probing) return { ...report, ramp, signatures: await Promise.all(signatures) };
 	return { ...report, ramp };
 });

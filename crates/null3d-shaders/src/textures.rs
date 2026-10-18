@@ -1,13 +1,14 @@
-//! A custom material's textures: the module-scope `var name: texture_2d<f32>;` declarations in its
-//! WGSL. The engine keeps every texture as a layer of a texture array, so the build turns each
-//! declaration into a texture array in a map slot of the material's bind group, declares the
-//! texture's sampler as `<name>Sampler`, and gives each texture function that reads the texture
-//! the layer that the engine wrote for the material. The WGSL then samples a texture as it would
-//! sample any 2D texture.
+//! The textures of a custom material or a custom effect: the module-scope
+//! `var name: texture_2d<f32>;` declarations in its WGSL. The engine keeps every texture as a layer
+//! of a texture array, so the build turns each declaration into a texture array in a map slot of
+//! a bind group of the maps' layout, declares the texture's sampler as `<name>Sampler`, and gives
+//! each texture function that reads the texture the layer that the engine wrote. The WGSL then
+//! samples a texture as it would sample any 2D texture.
 //!
-//! Each texture's layer sits in the material's row of custom values, from the row's last float
-//! down, so both stages can read it. The layer is -1 until the texture's image is on the GPU, and
-//! a texture function then gives white, as a missing standard map leaves the color as it is.
+//! Each texture's layer sits in the last floats of the values the engine writes for the WGSL,
+//! from the last float down: a material's row of custom values, which both stages read, or an
+//! effect's uniforms. The layer is -1 until the texture's image is on the GPU, and a texture
+//! function then gives white, as a missing standard map leaves the color as it is.
 //!
 //! Declarations and calls keep their lines when the build rewrites them, so problems in the WGSL
 //! still point at its own lines.
@@ -20,8 +21,8 @@ use crate::scan::{Kind, Token, matching};
 use crate::uniforms::ROW_FLOATS;
 use null3d_gpu::drawlist::sizes;
 
-/// The most textures a custom material can declare. They take the first map slots of the
-/// material's bind group, and their layers take the last floats of its row of custom values.
+/// The most textures a custom material or effect can declare. They take the first map slots of
+/// its maps' bind group, and their layers take the last floats of its values.
 pub(crate) const MAX_TEXTURES: usize = 6;
 
 /// The type a texture of a custom material has, as the WGSL declares it.
@@ -75,7 +76,20 @@ const READS: [TextureFunction; 6] = [
 /// Texture functions that read no texel, which take an array texture as they take a 2D one.
 const QUERIES: [&str; 2] = ["textureDimensions", "textureNumLevels"];
 
-/// One texture that a custom material declares.
+/// What declares the textures, which decides where they bind and where their layers come from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TextureOwner {
+    /// A custom material's surface or vertex function: the maps' group is group 1 on WebGPU and
+    /// group 3 on WebGL2, and the layers sit in the material's row of custom values.
+    Material,
+    /// A full shader of `materials.shader`, which takes no textures.
+    FullShader,
+    /// A custom effect, or a full-screen pass of the same WGSL: the maps' group is group 1 on
+    /// both paths, after the effect's own, and the layers sit in its uniform block.
+    Effect,
+}
+
+/// One texture that a custom material or effect declares.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Texture {
     /// The variable's name, which the `textures` option takes.
@@ -84,8 +98,8 @@ pub struct Texture {
     pub offset: u32,
 }
 
-/// The textures of a custom material, its WGSL with the declarations and calls rewritten, and the
-/// WGSL that the build adds after it.
+/// The textures of a custom material or effect, its WGSL with the declarations and calls
+/// rewritten, and the WGSL that the build adds after it.
 #[derive(Debug)]
 pub(crate) struct Textures {
     pub fields: Vec<Texture>,
@@ -185,14 +199,13 @@ fn arguments(tokens: &[Token], open: usize) -> Option<(Vec<std::ops::Range<usize
     Some((list, close))
 }
 
-/// Reads the textures that a custom material's WGSL declares, and rewrites the WGSL so that each
-/// reads its layer of a texture array. `full_shader` is true for WGSL with entry points of its
-/// own, which takes no textures. Problems name places in `source`.
+/// Reads the textures that the WGSL of `owner` declares, and rewrites the WGSL so that each reads
+/// its layer of a texture array. Problems name places in `source`.
 pub(crate) fn read(
     tokens: &[Token],
     source: &str,
     path: &str,
-    full_shader: bool,
+    owner: TextureOwner,
 ) -> Result<Textures, Vec<Problem>> {
     let place = |token: &Token| Some(locate(source, source, token.start));
     let mut problems = Vec::new();
@@ -200,7 +213,7 @@ pub(crate) fn read(
     let mut edits = Vec::new();
     for declaration in resource_declarations(tokens) {
         let name = &tokens[declaration.name];
-        if full_shader {
+        if owner == TextureOwner::FullShader {
             problems.push(Problem::at(
                 path,
                 place(&tokens[declaration.first]),
@@ -213,7 +226,7 @@ pub(crate) fn read(
                 path,
                 place(&tokens[declaration.first]),
                 format!(
-                    "the texture `{}` has attributes. Declare it as `var {}: {TEXTURE_TYPE};`, without `@group` or `@binding`: the engine binds the textures of a custom material.",
+                    "the texture `{}` has attributes. Declare it as `var {}: {TEXTURE_TYPE};`, without `@group` or `@binding`: the engine binds the textures that it declares.",
                     name.text, name.text
                 ),
             ));
@@ -228,7 +241,7 @@ pub(crate) fn read(
                 path,
                 place(name),
                 format!(
-                    "a custom material declares no samplers. The engine declares the sampler of each texture as `<texture>{SAMPLER_SUFFIX}`, with the filter and wrap of the texture's options. Remove `{}`.",
+                    "custom WGSL declares no samplers. The engine declares the sampler of each texture as `<texture>{SAMPLER_SUFFIX}`, with the filter and wrap of the texture's options. Remove `{}`.",
                     name.text
                 ),
             ));
@@ -239,7 +252,7 @@ pub(crate) fn read(
                 path,
                 place(name),
                 format!(
-                    "the texture `{}` has the type `{spelled}`. The textures of a custom material are `{TEXTURE_TYPE}`.",
+                    "the texture `{}` has the type `{spelled}`. The textures of custom WGSL are `{TEXTURE_TYPE}`.",
                     name.text
                 ),
             ));
@@ -250,7 +263,7 @@ pub(crate) fn read(
                 path,
                 place(name),
                 format!(
-                    "the texture `{}` is one too many: a custom material samples {MAX_TEXTURES} textures at most. Pack data textures into the channels of fewer textures.",
+                    "the texture `{}` is one too many: custom WGSL samples {MAX_TEXTURES} textures at most. Pack data textures into the channels of fewer textures.",
                     name.text
                 ),
             ));
@@ -303,7 +316,7 @@ pub(crate) fn read(
                     problems.push(Problem::at(
                         path,
                         place(&tokens[index]),
-                        "`textureSampleBaseClampToEdge` does not read the textures of a custom material. Use `textureSampleLevel` with level 0, and clamp the coordinates yourself.",
+                        "`textureSampleBaseClampToEdge` does not read the textures of custom WGSL. Use `textureSampleLevel` with level 0, and clamp the coordinates yourself.",
                     ));
                 }
             }
@@ -384,7 +397,7 @@ pub(crate) fn read(
                 offset: layer_offset(k),
             })
             .collect(),
-        declarations: declarations(&names),
+        declarations: declarations(&names, owner),
         source: rewritten,
     })
 }
@@ -394,10 +407,12 @@ fn single(range: &std::ops::Range<usize>) -> Option<usize> {
     (range.len() == 1).then_some(range.start)
 }
 
-/// The WGSL that binds the textures in the slots of the material's maps, declares their samplers,
-/// and loads their layers, or nothing for a material without textures. The maps' bind group is
-/// group 1 on WebGPU and group 3 on WebGL2, after the groups of the draw records and data textures.
-fn declarations(names: &[&str]) -> String {
+/// The WGSL that binds the textures in the slots of the maps' group, declares their samplers, and
+/// loads their layers, or nothing without textures. A material's maps are group 1 on WebGPU and
+/// group 3 on WebGL2, after the groups of the draw records and data textures; it loads the layers
+/// of material `id` from its row of custom values. An effect's maps are group 1 on both paths,
+/// after its own group; it loads the layers from its uniform block.
+fn declarations(names: &[&str], owner: TextureOwner) -> String {
     if names.is_empty() {
         return String::new();
     }
@@ -414,9 +429,15 @@ fn declarations(names: &[&str]) -> String {
             .collect::<String>()
     };
     let count = names.len();
+    let effect = owner == TextureOwner::Effect;
+    let (webgl2_group, signature, value) = if effect {
+        (1, "", "effect_value({part}u)")
+    } else {
+        (3, "id: u32", "custom_value(id, {part}u)")
+    };
     let mut code = format!(
-        "\n// The material's textures, as layers of texture arrays in the slots of its maps.\n#ifdef WEBGL2\n{}#else\n{}#endif\n\n// The layer of each texture, or -1 while its image is not on the GPU.\nvar<private> {LAYERS}: array<i32, {count}>;\n\n// The layers of material `id`'s textures, from the end of its row of custom values.\nfn {LOADER}(id: u32) {{\n",
-        bind(3),
+        "\n// The textures, as layers of texture arrays in the slots of the maps' group.\n#ifdef WEBGL2\n{}#else\n{}#endif\n\n// The layer of each texture, or -1 while its image is not on the GPU.\nvar<private> {LAYERS}: array<i32, {count}>;\n\n// The layers of the textures, from the end of the values that the engine writes.\nfn {LOADER}({signature}) {{\n",
+        bind(webgl2_group),
         bind(1)
     );
     let mut loaded = None;
@@ -424,7 +445,8 @@ fn declarations(names: &[&str]) -> String {
         let offset = layer_offset(k);
         let part = offset / 4;
         if loaded != Some(part) {
-            code.push_str(&format!("    let t{part} = custom_value(id, {part}u);\n"));
+            let value = value.replace("{part}", &part.to_string());
+            code.push_str(&format!("    let t{part} = {value};\n"));
             loaded = Some(part);
         }
         let component = &"xyzw"[(offset % 4) as usize..][..1];
@@ -441,7 +463,7 @@ mod tests {
 
     fn rewrite(source: &str) -> Result<Textures, Vec<String>> {
         let tokens = tokenize(source);
-        read(&tokens, source, "m.wgsl", false)
+        read(&tokens, source, "m.wgsl", TextureOwner::Material)
             .map_err(|problems| problems.into_iter().map(|p| p.message).collect())
     }
 
@@ -492,6 +514,20 @@ mod tests {
         assert!(tail.contains("let t7 = custom_value(id, 7u);"));
         assert!(tail.contains("custom_texture_layers[0] = i32(t7.w);"));
         assert!(tail.contains("custom_texture_layers[1] = i32(t7.z);"));
+    }
+
+    #[test]
+    fn an_effect_binds_its_textures_in_group_1_and_loads_their_layers_from_its_block() {
+        let source = "var glow: texture_2d<f32>;\nfn effect(input: EffectInput) -> vec4f {\n    return textureSampleLevel(glow, glowSampler, input.uv, 0.0);\n}\n";
+        let tokens = tokenize(source);
+        let found = read(&tokens, source, "e.wgsl", TextureOwner::Effect).unwrap();
+        let tail = &found.declarations;
+        assert!(!tail.contains("@group(3)"));
+        assert!(tail.contains("@group(1) @binding(0) var glow: texture_2d_array<f32>;"));
+        assert!(tail.contains("@group(1) @binding(8) var glowSampler: sampler;"));
+        assert!(tail.contains("fn load_custom_texture_layers() {"));
+        assert!(tail.contains("let t7 = effect_value(7u);"));
+        assert!(tail.contains("custom_texture_layers[0] = i32(t7.w);"));
     }
 
     #[test]
@@ -557,7 +593,7 @@ mod tests {
     fn a_full_shader_takes_no_textures() {
         let source = "var t: texture_2d<f32>;";
         let tokens = tokenize(source);
-        let problems = read(&tokens, source, "m.wgsl", true).unwrap_err();
+        let problems = read(&tokens, source, "m.wgsl", TextureOwner::FullShader).unwrap_err();
         assert!(
             problems[0]
                 .message

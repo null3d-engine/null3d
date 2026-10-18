@@ -10,7 +10,7 @@
 // module the engine's geometry and materials, and the checks of later calls.
 
 import * as C from '../generated/core';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type {
 	ObjectEventHandler,
 	ObjectEventType,
@@ -19,6 +19,7 @@ import type {
 	PointerTarget,
 } from './pointer-events';
 import type {
+	Blending,
 	Geometry,
 	Material,
 	MaterialFeatures,
@@ -65,7 +66,13 @@ export interface LineValues
  */
 export interface LineOptions
 	extends LineValues,
-		Pick<MaterialFeatures, 'fog' | 'blending' | 'depthWrite' | 'depthTest' | 'depthBias'> {
+		Pick<MaterialFeatures, 'fog' | 'depthWrite' | 'depthTest' | 'depthBias'> {
+	/**
+	 * With the `blend` alpha mode, how the lines meet what lies behind them: `'normal'`,
+	 * `'additive'` or `'multiply'`. Lines do not take the `'weighted'` blending. The default is
+	 * `normal`.
+	 */
+	blending?: Exclude<Blending, 'weighted'>;
 	/**
 	 * The points: 3 numbers each. Their number is the batch's capacity, which never changes, and
 	 * `lines.positions` holds them after the call.
@@ -152,29 +159,20 @@ export function modeCode(mode: LineMode | undefined): number {
 	return MODES[mode ?? 'strip'];
 }
 
-/** True when `values` sets any of `keys`. A loop, so that a call every frame allocates nothing. */
-function hasAny(values: LineValues, keys: readonly (keyof LineValues)[]): boolean {
-	for (let k = 0; k < keys.length; k++)
-		if (values[keys[k] as keyof LineValues] !== undefined) return true;
-	return false;
+/** True when `values` sets any of the standard values that the base material takes. */
+function hasBase(values: LineValues): boolean {
+	return (
+		values.color !== undefined ||
+		values.opacity !== undefined ||
+		values.metalness !== undefined ||
+		values.roughness !== undefined ||
+		values.emissive !== undefined ||
+		values.emissiveIntensity !== undefined
+	);
 }
 
 /** The dash values with their defaults, as three.js's `LineMaterial` has them. */
 const DASH_DEFAULTS = [1, 1, 1, 0] as const;
-/** The dash values in the order that the material's custom values hold them. */
-const DASH_VALUES = ['dashSize', 'gapSize', 'dashScale', 'dashOffset'] as const;
-/**
- * The values that the material's row holds, which a change of the dashes alone leaves alone, so a
- * sketch can move the dashes every frame without converting anything.
- */
-const BASE_VALUES = [
-	'color',
-	'opacity',
-	'metalness',
-	'roughness',
-	'emissive',
-	'emissiveIntensity',
-] as const;
 
 /**
  * A line batch's material: its color and opacity, as a material's `set` takes them, and its dash
@@ -200,23 +198,34 @@ export class LineMaterial {
 
 	/**
 	 * Changes the values that it gets and keeps the others. Every segment of the batch changes with
-	 * them. Converting a new color allocates.
+	 * them. It allocates nothing, so a sketch can change the color or the dashes in every frame.
 	 */
 	set(values: LineValues): void {
 		const call = 'lines.material.set';
 		this.checks.values(values, call);
-		if (hasAny(values, BASE_VALUES)) this.base.set(values);
+		if (hasBase(values)) this.base.set(values);
 		if (this.take(values)) this.write(call);
 	}
 
 	/** @internal Keeps the dash values of `values` that are set, and says whether any is. */
 	take(values: LineValues): boolean {
 		const { dash } = this;
+		const { dashSize, gapSize, dashScale, dashOffset } = values;
 		let given = false;
-		for (let k = 0; k < DASH_VALUES.length; k++) {
-			const value = values[DASH_VALUES[k] as (typeof DASH_VALUES)[number]];
-			if (value === undefined) continue;
-			dash[k] = value;
+		if (dashSize !== undefined) {
+			dash[0] = dashSize;
+			given = true;
+		}
+		if (gapSize !== undefined) {
+			dash[1] = gapSize;
+			given = true;
+		}
+		if (dashScale !== undefined) {
+			dash[2] = dashScale;
+			given = true;
+		}
+		if (dashOffset !== undefined) {
+			dash[3] = dashOffset;
 			given = true;
 		}
 		return given;
@@ -224,17 +233,9 @@ export class LineMaterial {
 
 	/** @internal Writes the dash values into the material's custom values, where the line shaders read them. */
 	write(call: string): void {
-		const { core, dash } = this;
-		const status = core.glue.setMaterialValues(
-			this.id,
-			0,
-			4,
-			dash[0] as number,
-			dash[1] as number,
-			dash[2] as number,
-			dash[3] as number,
-		);
-		core.check(status, call, undefined, true);
+		const { core } = this;
+		core.callValues().set(this.dash);
+		core.check(core.glue.setMaterialValues(this.id, 0, 4), call, undefined, true);
 	}
 }
 
@@ -279,6 +280,9 @@ interface LinePoints {
 	colors: Float32Array;
 }
 
+/** The point arrays of a line batch that dropped its views, until its next read makes them again. */
+const NO_POINTS: LinePoints = { positions: new Float32Array(0), colors: new Float32Array(0) };
+
 /** What a line batch's calls that change points reach in the core: the instance batch's calls. */
 export interface LineBatchRows extends PointerRows {
 	setActiveCount(count: number): void;
@@ -295,7 +299,7 @@ export interface LineBatchRows extends PointerRows {
  *
  * @category api/lines
  */
-export class LineBatch {
+export class LineBatch implements ViewHolder {
 	private generation = -1;
 	private points!: LinePoints;
 	/** @internal The batch's pointer event handlers, from its first `on`. */
@@ -311,7 +315,16 @@ export class LineBatch {
 		readonly material: LineMaterial,
 		private readonly batch: LineBatchRows,
 		private readonly checks: LineChecks,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the point arrays, which the next read makes again. */
+	dropViews(): void {
+		if (this.generation === -1) return;
+		this.generation = -1;
+		this.points = NO_POINTS;
+	}
 
 	/**
 	 * The point arrays, made again after the engine's memory grew. Sketches read points every
@@ -351,7 +364,8 @@ export class LineBatch {
 		const call = 'lines.setWidth';
 		this.checks.width(width, call);
 		const { core } = this;
-		core.check(core.glue.setLineWidth(this.id, width), call, undefined, true);
+		core.callValues()[0] = width;
+		core.check(core.glue.setLineWidth(this.id), call, undefined, true);
 	}
 
 	/** Draws only the segments between the first `count` points. */

@@ -5,10 +5,11 @@
 // comparison with `startComparison` from examples/lib/compare.ts.
 
 import type { DemoGroup } from '../demos';
-import type { CompareMode } from '../lib/compare-scene';
+import type { CompareMode, EffectName } from '../lib/compare-scene';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
 import { BATTLE_HOLD, BATTLE_RAMPS, battleObjects } from './battle/scene';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
+import { NIGHT_HOLD, NIGHT_RAMPS, nightObjects } from './night-town/scene';
 
 /** The group that a page lists the comparisons under. */
 export const COMPARE_GROUP: DemoGroup = 'Compare with three.js';
@@ -28,6 +29,12 @@ export interface Comparison {
 	sketch: URL;
 	/** Starts the three.js half's worker. */
 	startThree(): Worker;
+	/**
+	 * True runs the three.js half on the page's own thread instead of a worker, as three.js's
+	 * official examples run, for a comparison that measures what that costs the page. The page
+	 * loads the half's build from examples/compare/three-builds.ts.
+	 */
+	threeOnPage?: boolean;
 	/** The ramp of each device class. Its maximum is also the most the slider and a run reach. */
 	ramps: Readonly<Record<DeviceClass, RampPlan>>;
 	/** The frame that the image tests hold: its simulation time in seconds and its count. */
@@ -50,11 +57,33 @@ export interface Comparison {
 	modes: Readonly<Record<CompareMode, string>>;
 	/** How each engine draws the scene, for the "about this comparison" panel. */
 	notes: readonly string[];
+	/**
+	 * The comparison whose scene this one draws, whose image references its held frames share. It
+	 * holds no mode of its own, so the image tests draw its scene graph only.
+	 */
+	sameSceneAs?: string;
+	/**
+	 * Devices whose browsers draw the held frame another way, so its image tests keep references of
+	 * each such device, as the guide to image tests (.dev/image-tests.md) says.
+	 */
+	imageDevices?: readonly string[];
+	/** The effects that the scene draws, each a switch on the page. */
+	effects: readonly EffectName[];
+	/**
+	 * three.js's faster renderer on a WebGPU device for this scene, from the measured ramps:
+	 * WebGLRenderer unless the scene needs WebGPURenderer's own features.
+	 */
+	fasterThree: 'webgl' | 'webgpu';
 	/** Why the comparison loads files, when it does: the same files in both engines. */
 	assets?: string;
 	/** three.js's renderer in a mode that only it can draw, on both GPU paths. */
 	threeRenderers?: Partial<Record<CompareMode, 'webgl' | 'webgpu'>>;
 }
+
+/** The effects of a scene with no reflections and no particles. */
+const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', 'grade'];
+/** Night town's effects: every one. */
+const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'reflections', 'particles'];
 
 export const COMPARISONS: readonly Comparison[] = [
 	{
@@ -91,6 +120,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		assets:
 			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
 		threeRenderers: { instanced: 'webgpu' },
+		effects: PLAIN_EFFECTS,
+		fasterThree: 'webgl',
 	},
 	{
 		name: 'factory',
@@ -120,5 +151,42 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Bloom is set once, as UnrealBloomPass's settings. The bloom node takes three times the strength, and null3D's bloom chain takes the mapped settings for the same glow.",
 			'Ambient occlusion darkens only the ambient light in null3D and with the GTAO node. GTAOPass on WebGLRenderer darkens the whole image, so that path looks a little darker where parts meet.',
 		],
+		effects: PLAIN_EFFECTS,
+		fasterThree: 'webgl',
+	},
+	{
+		name: 'night-town',
+		code: 'compare/night-town/',
+		title: 'Night town',
+		summary:
+			'A rainy downtown under the moon: lit windows, neon signs over shops, street lamps and cars with their headlights on, mirrored in wet streets. Each block adds 12 lights.',
+		countUnit: 'lights',
+		sketch: new URL('./night-town/sketch.ts', import.meta.url),
+		startThree: () =>
+			new Worker(new URL('./night-town/three.ts', import.meta.url), {
+				type: 'module',
+				name: 'three.js',
+			}),
+		ramps: NIGHT_RAMPS,
+		hold: NIGHT_HOLD,
+		swiftShaderHoldCount: NIGHT_HOLD.softwareCount,
+		holdTimeoutSeconds: NIGHT_HOLD.timeoutSeconds,
+		// Firefox on Linux filters the facades' textures with its own anisotropic samples.
+		imageDevices: ['linux'],
+		objectsAt: nightObjects,
+		shadowTiles: 0,
+		modes: {
+			'scene-graph':
+				"Scene graph measures a town built the usual way: each building, lamp, sign and car is an object of its own, and each moving car is a tree whose cabin, lamps and lights follow its body. The code moves each car's body, and each engine moves the rest.",
+			instanced:
+				'Instanced measures the most tuned build: each kind of part is one batch of copies for the whole town, and one loop of code places every car and its lights. The lights stay lights in both engines.',
+		},
+		notes: [
+			"null3D lists the point and spot lights near each part of the view in clusters, on WebGPU and WebGL2. three.js's WebGPURenderer does the same for point lights with its ClusteredLighting add-on, and shades every spot light in every pixel. three.js's WebGLRenderer shades every light in every pixel, in one shader, which holds only so many lights.",
+			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
+			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
+		],
+		effects: NIGHT_EFFECTS,
+		fasterThree: 'webgpu',
 	},
 ];

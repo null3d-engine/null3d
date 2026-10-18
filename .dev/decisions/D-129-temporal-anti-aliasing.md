@@ -1,6 +1,6 @@
 # D-129: Temporal anti-aliasing
 
-Status: decided by the owner on 11 October 2026, as the recommendation proposed: no TAA for 1.0. Per-object motion vectors move before 1.0, as task M2-EX25. The prototype is on the branch `proto/m2-ex18-taa`, which has no pull request and does not merge. Date: 2026-10-11. Task: M2-EX18.
+Status: decided by the owner on 11 October 2026, as the recommendation proposed: no TAA for 1.0. Per-object motion vectors move before 1.0, as task M2-EX25. The prototype is on the branch `proto/m2-ex18-taa`, which has no pull request and does not merge. On 15 October 2026 the owner left TAA to M3-A11: if it says no, TAA is dropped (see the addendum). Date: 2026-10-11. Task: M2-EX18.
 
 Summary: The owner ruled: do not ship temporal anti-aliasing (TAA) for 1.0. Keep FXAA on Low and MSAA 4x from Medium up. Per-object motion vectors come before 1.0 (M2-EX25), as the base for a later TAA attempt. A prototype cut the shimmer of the Creek's far grass by 92% against MSAA. But it drew the scene at 0.55 to 0.75 of a 64-sample reference's sharpness. It smeared swaying grass two to three times as much, and it made still thin lines crawl. On the Mac it cost about 0.3 ms in the Creek and 1 to 2 ms in a light scene with WebGPU, and 7.5 ms in the Creek with WebGL2.
 
@@ -216,3 +216,12 @@ The owner ruled on 11 October 2026:
 - No change to the engine, its presets or its docs. `post.set({ taa })` and `post.set({ msaaFxaa })` exist only on the prototype branch.
 - Screen-space reflections, which wait on TAA for a temporal pass, keep their blur by roughness instead.
 - The Creek's grass keeps MSAA with alpha to coverage, and its far-bank shimmer stays. A look task can thin or soften the far grass if the owner finds the shimmer too strong.
+
+## Addendum, 15 October 2026: M3-A11 rules on TAA
+
+The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.md), rulings 15, 16 and 24). M3-A11, the second look at a temporal resolve, decides TAA for 0.1.0. If it says no, TAA is dropped, not left for after 1.0, and the three.js mapping says so. Two techniques hang on the same answer:
+
+- many lights at a fixed cost: prototyped in M3, shipped only with a temporal resolve;
+- a temporal upscaler that keeps MSAA: in M4 with a temporal resolve.
+
+Without a temporal resolve, both are dropped.

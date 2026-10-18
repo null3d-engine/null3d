@@ -7,7 +7,6 @@ enable draw_index;
 
 struct Camera {
     view_projection: mat4x4f,
-    draw_offsets: array<vec4f, 4>,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -36,7 +35,9 @@ fn vs_main(
     world = world * null3d::math::square(row.w) + row.xyz;
 #endif
 #ifdef DRAW_INDEX
-    world += camera.draw_offsets[draw].xyz;
+    // A per-draw table comes from a texture: some drivers fail to link a uniform array read at
+    // the draw index.
+    world += textureLoad(instance_data, vec2u(1u, draw), 0).xyz;
 #endif
     var out: VertexOut;
     out.position = camera.view_projection * vec4f(world, 1.0);

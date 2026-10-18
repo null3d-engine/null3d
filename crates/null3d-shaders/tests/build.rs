@@ -3,9 +3,13 @@
 
 mod common;
 mod precision;
+mod subset;
+
+use std::collections::BTreeMap;
 
 use common::{
-    SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
+    SEE_RULES, SHADER, assert_feature, assert_same, build, build_each_in_shader_compiler,
+    build_wgsl, column_of, only_problem, project, wgsl,
 };
 
 use null3d_shaders::{
@@ -1024,6 +1028,43 @@ fn the_same_problem_in_several_variants_is_listed_once() {
     );
 }
 
+/// The builds of an entry compile together on several threads. Each output must still be the
+/// build of its own variant, and a problem must name the variants in build order.
+#[test]
+fn builds_that_compile_together_keep_their_own_outputs_and_order() {
+    let count = 16;
+    let mut source = String::from("@fragment\nfn fs_main() -> @location(0) vec4f {\n");
+    for k in 0..count {
+        source.push_str(&format!(
+            "#ifdef D{k}\n    let x = {}.5;\n#endif\n",
+            100 + k
+        ));
+    }
+    source.push_str("    return vec4f(x);\n}\n");
+    let names: Vec<String> = (0..count).map(|k| format!("v{k:02}")).collect();
+    let tables: Vec<String> = (0..count)
+        .map(|k| format!("{{ defs = [\"D{k}\"], targets = [\"wgsl\"] }}"))
+        .collect();
+    let variants: Vec<(&str, &str)> = names
+        .iter()
+        .zip(&tables)
+        .map(|(name, table)| (name.as_str(), table.as_str()))
+        .collect();
+    let output = build(&project(&source, &variants, &[])).unwrap();
+    for (k, name) in names.iter().enumerate() {
+        let wgsl = &output.shaders["shader"][name].wgsl.as_ref().unwrap().source;
+        assert!(wgsl.contains(&format!("{}.5", 100 + k)), "{name}:\n{wgsl}");
+    }
+
+    let broken = source.replace(
+        "    return vec4f(x);",
+        "    var c = vec4f(x);\n    c.xy = vec2f(1.0);\n    return c;",
+    );
+    let problem = only_problem(build(&project(&broken, &variants, &[])));
+    let expected: Vec<String> = names.iter().map(|name| format!("shader.{name}")).collect();
+    assert_eq!(problem.variants, expected);
+}
+
 /// The library modules that shaders import.
 const LIBRARY_MODULES: [&str; 8] = [
     "math", "noise", "color", "lighting", "fog", "vertex", "depth", "sdf",
@@ -1133,6 +1174,48 @@ fn each_library_module_builds_every_function_for_webgpu_and_webgl2() {
 }
 
 #[test]
+fn the_library_test_numbers_its_cases_once_each_without_a_gap() {
+    // The page draws each case over the row of its number and compares it with the reference of
+    // the same number, so the numbers must be 0..N-1, each once. Two modules can take one number
+    // without a build noticing, since each variant enables one module, and the reference table's
+    // size check cannot see a repeat either: a case that replaces another leaves the count of
+    // numbers alone.
+    let path = format!("{}/wgsl/test_library.wgsl", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let start = text
+        .find("\nfn run(")
+        .expect("the library test's run function");
+    let run = &text[start..];
+    let run = &run[..run.find("\n        default:").expect("the default case")];
+
+    let mut numbers = Vec::new();
+    for line in run.lines() {
+        let Some(rest) = line.strip_prefix("        case ") else {
+            continue;
+        };
+        let Some((number, tail)) = rest.split_once('u') else {
+            continue;
+        };
+        if !tail.starts_with(": {") {
+            continue;
+        }
+        numbers.push(
+            number
+                .parse::<u32>()
+                .unwrap_or_else(|e| panic!("the case number `{number}`: {e}")),
+        );
+    }
+    let count = numbers.len();
+    assert!(count > 100, "only {count} cases were found in {path}");
+    numbers.sort_unstable();
+    let expected: Vec<u32> = (0..count as u32).collect();
+    assert_eq!(
+        numbers, expected,
+        "each case number must be used exactly once, with no gap"
+    );
+}
+
+#[test]
 fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     let source = "#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    let math = 2.0;\n    return vec4f(math);\n}\n";
     let problem = only_problem(build_wgsl(source));
@@ -1159,33 +1242,185 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     build_wgsl(&named).unwrap();
 }
 
+/// The entries that the second build of the repository test makes, to check that a build is the
+/// same every time. Between them they make one module of every kind that the build writes: the
+/// main module, through `timer_mark`; the features module, through the first-use features that the
+/// device entries keep; a device module and a combined loader table, through the largest entry's
+/// many builds of several features; a shared-paragraph table, through the twenty or more feature
+/// sets those builds make; and a whole-shader first-use module, through `pick`.
+const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "pick", "timer_mark"];
+
 /// The one test that builds every shader of the repository. A full build takes minutes, and
 /// cargo-nextest runs each test in a process of its own, so a test cannot share another test's
-/// build. Every check that reads the whole output runs here, on one build. A second build runs
-/// on another thread at the same time, for the check that the output is the same on every build.
-/// Other tests build only the shaders they read, through the tests' `subset` module.
+/// build. Every check that reads the whole output runs here, on one build of the whole manifest.
+/// The check that the output is the same on every build makes a second build, of the entries in
+/// [`DETERMINISM_ENTRIES`] alone, and compares the two outputs narrowed to the same entries:
+/// building the whole manifest twice doubled the time, and the subset still makes every kind of
+/// module that the build writes. Other tests build only the shaders they read, through the tests'
+/// `subset` module.
+///
+/// With `NULL3D_SHADER_COMPILER` set, the shader compiler builds the repository one entry at a
+/// time, and each entry's result must be the native build's. It cannot build the whole manifest in
+/// one call: a 32-bit WebAssembly module may hold 4 GB at most and refuses a single allocation
+/// above 2 GB, while the repository's builds hold about 1.7 GB and the JSON of their own result is
+/// as large again. Asked for the whole manifest, the module stops on an internal error while the
+/// native build answers that it is fine. A project's manifest, which is the compiler's own work,
+/// stays far below that.
 #[test]
 fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let inputs = Inputs::read(root).unwrap();
-    let (output, again) = std::thread::scope(|scope| {
-        let again = scope.spawn(|| build(&inputs).unwrap());
-        (build(&inputs).unwrap(), again.join().unwrap())
+    let output = null3d_shaders::build(&inputs).unwrap();
+    // The second build runs beside the portability checks, which read only the whole build.
+    let narrow = subset::repository_subset(DETERMINISM_ENTRIES);
+    let (again, failures) = std::thread::scope(|scope| {
+        let again = scope.spawn(|| null3d_shaders::build(&narrow).unwrap());
+        let failures: Vec<String> = [
+            glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
+            glsl_declares_no_structure_value(&output),
+            wgsl_has_only_number_literals_that_safari_reads(&output),
+            standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
+        ]
+        .into_iter()
+        .filter_map(Result::err)
+        .collect();
+        (again.join().unwrap(), failures)
     });
-    let failures: Vec<String> = [
-        same_output(&output, &again),
-        glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
-        wgsl_has_only_number_literals_that_safari_reads(&output),
-        standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
-    ]
-    .into_iter()
-    .filter_map(Result::err)
-    .collect();
+    the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
+    // Rendering every module of a build costs minutes on the larger entries, so each output is
+    // rendered once and both checks read the same modules.
+    let written = typescript(&narrowed(output, &again, DETERMINISM_ENTRIES));
+    let again_written = typescript(&again);
+    let mut failures = failures;
+    failures.extend(
+        [
+            same_modules(&written, &again_written),
+            every_module_kind(&again_written),
+        ]
+        .into_iter()
+        .filter_map(Result::err),
+    );
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
-fn same_output(output: &Output, again: &Output) -> Result<(), String> {
-    if typescript(output) == typescript(again) {
+/// The whole build's entries for the determinism subset, with the subset build's own records of
+/// which entries load by device and by feature. The two outputs then make the same modules when
+/// every entry and the module generation agree, so the modules can be compared whole.
+fn narrowed(mut output: Output, again: &Output, names: &[&str]) -> Output {
+    output
+        .shaders
+        .retain(|name, _| names.contains(&name.as_str()));
+    output
+        .pipelines
+        .retain(|name, _| names.contains(&name.as_str()));
+    output.by_device = again.by_device.clone();
+    output.first_use = again.first_use.clone();
+    output.first_use_shaders = again.first_use_shaders.clone();
+    output
+}
+
+/// Fails unless the build writes a module of every kind: the main module, the features module, a
+/// device module, a shared-paragraph table, a whole-shader first-use module and a combined loader
+/// table. The check keeps the determinism comparison covering each kind when the manifest changes.
+fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
+    let names: Vec<&str> = modules
+        .keys()
+        .map(|path| path.rsplit('/').next().unwrap_or(path))
+        .collect();
+    let has = |prefix: &str, suffix: &str| {
+        names
+            .iter()
+            .any(|name| name.starts_with(prefix) && name.ends_with(suffix))
+    };
+    let kinds = [
+        ("the main module", names.contains(&"shaders.ts")),
+        ("the features module", names.contains(&"shader-features.ts")),
+        ("a device module", has("shaders-", ".js")),
+        ("a shared-paragraph table", has("shader-paragraphs-", ".js")),
+        (
+            "a whole-shader first-use module",
+            names.iter().any(|name| {
+                name.starts_with("shaders-")
+                    && (name.ends_with("-wgsl.ts") || name.ends_with("-glsl.ts"))
+            }),
+        ),
+        (
+            "a combined loader table",
+            names.iter().any(|name| name.ends_with("-combos.ts")),
+        ),
+    ];
+    let missing: Vec<&str> = kinds
+        .into_iter()
+        .filter_map(|(kind, present)| (!present).then_some(kind))
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the determinism entries make no {}",
+            missing.join(", no ")
+        ))
+    }
+}
+
+/// Builds each entry of the manifest alone through the shader compiler when
+/// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of the
+/// whole repository for that entry. Comparing with that build is what keeps the entry built once:
+/// the reference `output` is the build the test's other checks read. An entry that builds nothing
+/// of its own, such as the template of custom materials, has no such build and is skipped.
+fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, output: &Output) {
+    if std::env::var_os("NULL3D_SHADER_COMPILER").is_none() {
+        return;
+    }
+    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
+    let shaders = manifest["shaders"]
+        .as_table()
+        .expect("the manifest's shaders");
+    assert!(!shaders.is_empty(), "the manifest names no shader");
+    let names: Vec<&String> = shaders
+        .keys()
+        .filter(|name| output.shaders.contains_key(*name))
+        .collect();
+    let subsets: Vec<Inputs> = names
+        .iter()
+        .map(|name| subset::repository_subset(&[name.as_str()]))
+        .collect();
+    build_each_in_shader_compiler(&subsets, |index, compiled| {
+        let name = names[index];
+        assert_same(name, &compiled, &one_entry(name, output));
+    });
+}
+
+/// The result that the native build of the whole repository gives for one entry, in the shape of a
+/// response to a build of that entry alone.
+fn one_entry(name: &str, output: &Output) -> serde_json::Value {
+    let entry = |built: serde_json::Value| {
+        let mut one = serde_json::Map::new();
+        one.insert(name.to_owned(), built);
+        serde_json::Value::Object(one)
+    };
+    let mut built = serde_json::Map::new();
+    built.insert(
+        "shaders".to_owned(),
+        entry(serde_json::to_value(&output.shaders[name]).expect("the entry's builds")),
+    );
+    built.insert(
+        "pipelines".to_owned(),
+        entry(serde_json::to_value(&output.pipelines[name]).expect("the entry's pipelines")),
+    );
+    let mut response = serde_json::Map::new();
+    response.insert("ok".to_owned(), serde_json::Value::Bool(true));
+    response.insert("output".to_owned(), serde_json::Value::Object(built));
+    serde_json::Value::Object(response)
+}
+
+/// Compares the modules that two builds write. The builds need not have had the same entries:
+/// [`narrowed`] gives the whole build the second build's shape before the comparison.
+fn same_modules(
+    written: &BTreeMap<String, String>,
+    again: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    if written == again {
         Ok(())
     } else {
         Err("two builds of the same shaders wrote different modules".to_owned())
@@ -1222,6 +1457,236 @@ fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(output: &Output) -> Result<
         ));
     }
     Ok(())
+}
+
+/// Fails when a built GLSL shader declares a structure-typed local, parameter or result. A
+/// uniform block's own declaration is the only place a structure type may name a variable.
+fn glsl_declares_no_structure_value(output: &Output) -> Result<(), String> {
+    let mut breaks = Vec::new();
+    for (shader, variants) in &output.shaders {
+        for (variant, built) in variants {
+            for (pipeline, program) in built.glsl.iter().flatten() {
+                for (source, kind) in [
+                    (&program.vertex.source, "vertex"),
+                    (&program.fragment.source, "fragment"),
+                ] {
+                    for member in structure_variables(source) {
+                        breaks.push(format!(
+                            "{shader}.{variant} ({pipeline}, {kind} shader): {member}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if breaks.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "GLSL that holds a structure in a variable, which the Adreno 619 driver of a Galaxy Tab A9 Plus stores at 16 bits:\n{}",
+            breaks.join("\n")
+        ))
+    }
+}
+
+/// Every line of `source` that declares a structure-typed local, parameter or result.
+fn structure_variables(source: &str) -> Vec<String> {
+    let structs = structure_names(source);
+    let mut found = Vec::new();
+    let mut inside = false;
+    for (number, line) in source.lines().enumerate() {
+        let text = line.trim();
+        if text.starts_with("struct ") && text.ends_with('{') {
+            inside = true;
+            continue;
+        }
+        if inside {
+            if text.starts_with('}') {
+                inside = false;
+            }
+            continue;
+        }
+        // A uniform block may name its structure type; it is the one allowed declaration.
+        if text.contains("uniform ") && text.contains('{') {
+            continue;
+        }
+        if structs.iter().any(|name| declares_structure(text, name)) {
+            found.push(format!("line {}: {text}", number + 1));
+        }
+    }
+    found
+}
+
+/// The names of the structures that `source` declares.
+fn structure_names(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix("struct ")?;
+            let name = rest.split([' ', '{']).next()?;
+            (!name.is_empty()).then(|| name.to_owned())
+        })
+        .collect()
+}
+
+/// True when `line` declares a variable or a function of the structure type `name`.
+fn declares_structure(line: &str, name: &str) -> bool {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '.';
+    let mut from = 0;
+    while let Some(at) = line[from..].find(name) {
+        let at = from + at;
+        from = at + name.len();
+        let whole = line[..at].chars().next_back().is_none_or(|c| !word(c));
+        let next = line[from..].chars().next();
+        let after = line[from..].trim_start();
+        if whole
+            && next.is_some_and(|c| c.is_ascii_whitespace())
+            && after
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// A shader whose helpers take, return and hold structures, take pointers to them, and read
+/// `modf` and `frexp` results, with a private structure that has an initial value.
+const STRUCTURED: &str = r"#import null3d::math
+
+struct Values {
+    color: vec3f,
+    alpha: f32,
+}
+
+struct VertexOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+}
+
+var<private> tint: Values = Values(vec3f(0.25, 0.5, 0.75), 3.0);
+
+fn bright(v: Values) -> Values {
+    var out: Values;
+    out.color = v.color * 2.0;
+    out.alpha = v.alpha;
+    return out;
+}
+
+fn brighten(s: ptr<function, Values>) {
+    (*s).color = (*s).color * 2.0;
+}
+
+fn halve(s: ptr<function, Values>) {
+    brighten(s);
+    (*s).alpha = (*s).alpha * 0.5;
+}
+
+fn fade(s: ptr<private, Values>) {
+    (*s).alpha = (*s).alpha * 0.5;
+}
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VertexOut {
+    var out: VertexOut;
+    out.position = vec4f(position, 1.0);
+    out.uv = position.xy;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4f {
+    var v = bright(Values(vec3f(in.uv, 0.5), 1.0));
+    brighten(&v);
+    halve(&v);
+    fade(&tint);
+    let parts = modf(in.uv.x * 4.0);
+    let split = frexp(in.uv * 8.0);
+    let mixed = vec3f(parts.fract, parts.whole, f32(split.exp.x)) * split.fract.y;
+    return vec4f(v.color * tint.color * tint.alpha + mixed, v.alpha) * null3d::math::square(1.0);
+}
+";
+
+#[test]
+fn glsl_declares_no_structure_variable() {
+    let output = build(&project(
+        STRUCTURED,
+        &[("v", "{ targets = [\"glsl\"] }")],
+        &[],
+    ))
+    .expect("the shader builds");
+    let program = &output.shaders["shader"]["v"].glsl.as_ref().expect("GLSL")["main"];
+    for (source, kind) in [
+        (&program.vertex.source, "vertex"),
+        (&program.fragment.source, "fragment"),
+    ] {
+        let found = structure_variables(source);
+        assert!(
+            found.is_empty(),
+            "the {kind} shader holds a structure:\n{}\n{source}",
+            found.join("\n")
+        );
+    }
+    let fragment = &program.fragment.source;
+    // The private structure's members keep its initial value.
+    for member in ["tint_0_ = vec3(0.25, 0.5, 0.75);", "tint_1_ = 3.0;"] {
+        assert!(
+            fragment.contains(member),
+            "`{member}` is missing:\n{fragment}"
+        );
+    }
+    // The `modf` and `frexp` results are worked out member by member, with no helper.
+    for helper in ["naga_modf", "naga_frexp"] {
+        assert!(
+            !fragment.contains(helper),
+            "`{helper}` is called:\n{fragment}"
+        );
+    }
+}
+
+/// An array of structures stays one value, and a structure inside it is composed in place.
+#[test]
+fn glsl_builds_an_array_of_structures() {
+    let shader = r"struct Values {
+    color: vec3f,
+    alpha: f32,
+}
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> @builtin(position) vec4f {
+    return vec4f(position, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {
+    var list = array<Values, 2>(Values(vec3f(0.25), 0.5), Values(vec3f(0.75), 1.0));
+    list[1] = Values(at.xyz, at.w);
+    let picked = list[u32(at.x) % 2u];
+    return vec4f(picked.color, picked.alpha);
+}
+";
+    let output = build(&project(shader, &[("v", "{ targets = [\"glsl\"] }")], &[]))
+        .expect("the shader builds");
+    assert!(output.shaders["shader"]["v"].glsl.is_some());
+}
+
+#[test]
+fn the_structure_check_finds_a_structure_variable() {
+    let good = "struct S {\n    vec4 a;\n};\nlayout(std140) uniform U { S block; };\nvoid main() {\n    vec4 a = block.a;\n}\n";
+    assert!(
+        structure_variables(good).is_empty(),
+        "{:?}",
+        structure_variables(good)
+    );
+    let bad = "struct S {\n    vec4 a;\n};\nvoid main() {\n    S s = S(vec4(0.0));\n}\n";
+    assert_eq!(
+        structure_variables(bad).len(),
+        1,
+        "{:?}",
+        structure_variables(bad)
+    );
 }
 
 #[test]
@@ -1334,6 +1799,33 @@ fn number_constant(module: &str, name: &str) -> f32 {
 }
 
 #[test]
+fn the_probe_grid_shader_never_divides_by_the_raw_inverse_spacing() {
+    // The renderer sends an inverse spacing of 0 for an axis whose spacing is 0 or less, which is
+    // how it encodes an axis one probe deep. A division by that value gives infinity, and a normal
+    // component of 0 then turns the sample point into NaN, which the clamp hides on some GPUs
+    // only. So the divisor takes 1 in place of the 0, and every other axis divides by its own
+    // inverse spacing exactly.
+    let grid = library_module("probe_grid");
+    for (number, line) in grid.lines().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let Some((_, divisor)) = line.split_once('/') else {
+            continue;
+        };
+        assert!(
+            !divisor.contains("inverse"),
+            "line {} divides by the raw inverse spacing: {line}",
+            number + 1
+        );
+    }
+    assert!(
+        grid.contains("select(vec3f(1.0), inverse, inverse > vec3f(0.0))"),
+        "the divisor must put 1 in place of an inverse spacing of 0"
+    );
+}
+
+#[test]
 fn the_half_builds_keep_roughness_to_the_fourth_power_a_normal_16_bit_float() {
     // GGX takes roughness to the fourth power. Below the smallest normal 16-bit float, 2^-14, a
     // GPU may flush it to zero, and the highlight's peak then divides by zero.
@@ -1368,7 +1860,7 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
         assert_eq!(header, "for (var k = 0u; k < count; k++) {");
     }
     assert!(
-        sun.contains("let count = u32(cascades.forward.w);"),
+        sun.contains("let count = u32(shadows.cascades.forward.w);"),
         "{sun}"
     );
     assert_eq!(number_constant(&shadows, "MAX_CASCADES"), 4.0);

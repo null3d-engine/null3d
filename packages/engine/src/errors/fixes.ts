@@ -47,7 +47,7 @@ export const ERROR_FIXES = {
 	E1216:
 		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give post.setEffectUniform() an effect that post.addEffect() returned.',
 	E1217:
-		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive' or 'multiply'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask' or 'blend', and no alphaToCoverage. A material with transmission takes 'opaque' or 'blend', and a custom one needs WGSL that sets the surface's transmission.",
+		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask' or 'blend', no alphaToCoverage, and no 'weighted' blending. A material with transmission takes 'opaque' or 'blend', not the 'weighted' blending, and a custom one needs WGSL that sets the surface's transmission. A layered material takes no lightMap or specular maps: give clearcoatMap with clearcoatRoughnessMap as one texture, and sheenColorMap with sheenRoughnessMap as one.",
 	E1218:
 		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
@@ -95,7 +95,7 @@ export const ERROR_FIXES = {
 	E1413:
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
 	E1414:
-		'Call engine.capture() while the engine runs, before destroy(). When the message names a GPU failure, wait for the engine to recover from it and call capture() again.',
+		'Call engine.capture() while the engine runs, before destroy(). When the message names a GPU failure, wait for the engine to recover from it and call capture() again. When it says that the worker did not answer, the thread that draws is stuck, often inside a GPU call that never returned: reload the page, or start another engine on another canvas.',
 	E1415:
 		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1416:
@@ -114,8 +114,12 @@ export const ERROR_FIXES = {
 		"Add what the message names to the page's Content-Security-Policy. Its worker-src needs blob: and the origin of the engine's files, and its script-src and connect-src need that origin. For example: worker-src 'self' blob: https://cdn.example.com; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; connect-src 'self' https://cdn.example.com. Or serve the engine's files from the page's own origin.",
 	E1423:
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
+	E1424:
+		'Deploy every file that the build wrote, the material-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.',
 	E1425:
 		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
+	E1431:
+		"Serve the engine's area-light-tables.bin file at the address that the message names. A build with the null3D Vite plugin copies it beside the engine's code: deploy it with the rest of the build. When the engine's files come from another origin, that server must send Access-Control-Allow-Origin, and the page's connect-src must allow the origin.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:

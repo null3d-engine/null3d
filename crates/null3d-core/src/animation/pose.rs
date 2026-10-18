@@ -234,6 +234,68 @@ fn multiply(a: [f32x4; 4], b: [f32x4; 4]) -> [f32x4; 4] {
     ]
 }
 
+/// `x * x * (3 - 2x)`, clamped to 0 and 1: the ease that a dead blend applies to its fade.
+#[inline(always)]
+pub(crate) fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// A quaternion turned by the scaled-axis vector `v * dt`, four lanes at once.
+#[inline(always)]
+fn turn(x: f32x4, y: f32x4, z: f32x4, dt: f32x4) -> [f32x4; 4] {
+    let (vx, vy, vz) = (x * dt, y * dt, z * dt);
+    let half = f32x4::splat(0.5);
+    let angle = (vx * vx + vy * vy + vz * vz).sqrt();
+    // `sin(angle / 2) / angle`, which tends to 0.5 as the angle tends to 0.
+    let small = angle.simd_lt(f32x4::splat(1e-6));
+    let scale = small.select(
+        f32x4::splat(0.5) - angle * angle / f32x4::splat(48.0),
+        (angle * half).sin() / angle.simd_max(f32x4::splat(1e-12)),
+    );
+    let w = (angle * half).cos();
+    [vx * scale, vy * scale, vz * scale, w]
+}
+
+/// Moves `pose` back toward the pose that `ext` extrapolates and `vel` drives, as a dead blend
+/// does: `ext` keeps moving at `vel` for `dt` seconds, and `pose` moves from `ext` toward itself
+/// by `alpha`. Translations and scales follow a straight line, and rotations the shorter arc.
+pub(crate) fn dead_blend(
+    pose: &mut [f32],
+    ext: &mut [f32],
+    vel: &[f32],
+    alpha: f32,
+    dt: f32,
+    lanes: usize,
+) {
+    let a = f32x4::splat(alpha);
+    let h = f32x4::splat(dt);
+    for f in (0..field::ROTATION).chain(field::SCALE..POSE_FIELDS) {
+        for lane in (0..lanes).step_by(4) {
+            let at = f * lanes + lane;
+            let moved = load(ext, at) + load(vel, at) * h;
+            store(ext, at, moved);
+            store(pose, at, moved + (load(pose, at) - moved) * a);
+        }
+    }
+    let r = field::ROTATION * lanes;
+    for lane in (0..lanes).step_by(4) {
+        let at = |k: usize| r + k * lanes + lane;
+        let turned = multiply(
+            turn(load(vel, at(0)), load(vel, at(1)), load(vel, at(2)), h),
+            std::array::from_fn(|k| load(ext, at(k))),
+        );
+        for (k, v) in turned.into_iter().enumerate() {
+            store(ext, at(k), v);
+        }
+        let pose_rot: [f32x4; 4] = std::array::from_fn(|k| load(pose, at(k)));
+        let blended = toward(turned, pose_rot, a);
+        for (k, v) in blended.into_iter().enumerate() {
+            store(pose, at(k), v);
+        }
+    }
+}
+
 /// Sets an additive pose to no change: translations and scales of 0, identity rotations.
 pub(crate) fn clear_additive(add: &mut [f32], lanes: usize) {
     add.fill(0.0);

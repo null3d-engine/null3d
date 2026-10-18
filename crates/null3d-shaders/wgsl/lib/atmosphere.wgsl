@@ -1,24 +1,31 @@
 #define_import_path null3d::atmosphere
 
 // three.js's sky: its `Sky` object (examples/jsm/objects/Sky.js, r186), the Preetham daylight model
-// with a sun disc and drifting clouds. Every constant and formula follows three.js's, in its
-// order, so a port keeps its look. The sky background draws it, and the environment generator
-// draws it into the cube of the sky's environment, so both show the same sky. The renderer's
-// `sky_light` module computes the same light on the CPU for the environment's diffuse light.
+// with a sun disc and drifting clouds. Every formula follows three.js's, in its order, so a port
+// keeps its look. The sky background draws it, and the environment generator draws it into the
+// cube of the sky's environment, so both show the same sky. The renderer's `sky_light` module
+// computes the same light on the CPU for the environment's diffuse light.
+//
+// The scattering coefficients are per million metres, and the optical lengths in millions of
+// metres, where three.js has both in metres. Their products and ratios, which are all the light
+// reads, stay the same. Per metre, most coefficients lie below the smallest normal half-precision
+// float, and some WebGL2 drivers keep the floats of a struct at half precision whatever the shader
+// declares, so a struct of them reads as zero there.
 
 const E: f32 = 2.718281828459045;
 const PI: f32 = 3.141592653589793;
-/// The Rayleigh coefficients of the primaries' wavelengths, after Preetham.
-const TOTAL_RAYLEIGH: vec3f = vec3f(5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5);
-/// pi ((2 pi) / lambda)^(v - 2) K for the primaries.
-const MIE_CONST: vec3f = vec3f(1.8399918514433978e14, 2.7798023919660528e14, 4.0790479543861094e14);
+/// The Rayleigh coefficients of the primaries' wavelengths, after Preetham, per million metres.
+const TOTAL_RAYLEIGH: vec3f = vec3f(5.804542996261093, 13.562911419845635, 30.265902468824876);
+/// The Mie coefficients of the primaries per unit of turbidity, per million metres: three.js's
+/// 0.434 c(T) pi ((2 pi) / lambda)^(v - 2) K, with c(T) = 0.2 T 10^-17, in one constant.
+const MIE_PER_TURBIDITY: vec3f = vec3f(159.71129270528695, 241.28684762265343, 354.06136244071433);
 /// The earth's shadow: pi / 1.95.
 const CUTOFF_ANGLE: f32 = 1.6110731556870734;
 const STEEPNESS: f32 = 1.5;
 const EE: f32 = 1000.0;
-/// The optical lengths at the zenith of molecules and of haze.
-const RAYLEIGH_ZENITH_LENGTH: f32 = 8.4e3;
-const MIE_ZENITH_LENGTH: f32 = 1.25e3;
+/// The optical lengths at the zenith of molecules and of haze, in millions of metres.
+const RAYLEIGH_ZENITH_LENGTH: f32 = 8.4e-3;
+const MIE_ZENITH_LENGTH: f32 = 1.25e-3;
 /// The cosine of the sun's angular diameter, 66 arc seconds.
 const SUN_ANGULAR_DIAMETER_COS: f32 = 0.9999566769464484;
 const THREE_OVER_SIXTEEN_PI: f32 = 0.05968310365946075;
@@ -42,6 +49,7 @@ struct SkySettings {
 /// The values of the whole sky that three.js's vertex shader finds once.
 struct SkyWhole {
     sun_direction: vec3f,
+    /// The Rayleigh and Mie scattering coefficients, per million metres.
     beta_r: vec3f,
     beta_m: vec3f,
     /// The sun's light, how low the sun stands (as three.js's `pow(1 - sunDirection.y, 5)`), and
@@ -69,10 +77,9 @@ fn sun_intensity(zenith_cos: f32) -> f32 {
     return EE * max(0.0, 1.0 - pow(E, -((CUTOFF_ANGLE - acos(c)) / STEEPNESS)));
 }
 
-/// The Mie coefficients of haze of turbidity `t`.
+/// The Mie coefficients of haze of turbidity `t`, per million metres.
 fn total_mie(t: f32) -> vec3f {
-    let c = (0.2 * t) * 10e-18;
-    return 0.434 * c * MIE_CONST;
+    return t * MIE_PER_TURBIDITY;
 }
 
 /// The values of the whole sky of the sun at `sun_position`, with the sky's `scattering`.

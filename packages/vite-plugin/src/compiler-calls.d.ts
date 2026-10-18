@@ -8,7 +8,18 @@ export declare class CompilerCalls {
 	readonly module: WebAssembly.Module;
 	/**
 	 * Runs one export on a request in JSON, and returns the response in JSON. The first call makes
-	 * the instance, and later calls reuse it with the library modules that it composed.
+	 * the instance, and later calls reuse it with the library modules that it composed. A manifest
+	 * build's answer arrives in pieces from the module and this joins them, so the response is one
+	 * JSON text whichever call ran.
 	 */
-	call(name: 'compile' | 'compile_material' | 'compile_effect' | 'build', request: string): string;
+	call(
+		name:
+			| 'compile'
+			| 'compile_material'
+			| 'compile_effect'
+			| 'build'
+			| 'prepare_modules'
+			| 'module',
+		request: string,
+	): string;
 }

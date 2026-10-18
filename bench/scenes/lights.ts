@@ -157,3 +157,89 @@ export const SPOT_LIGHTS: readonly SceneSpotLight[] = [
 		penumbra: 1,
 	},
 ];
+
+/**
+ * A rectangle light: its middle, the point it faces, its size in meters, sRGB color and intensity
+ * in nits, and a null3D range, which three.js's light lacks. The range reaches far past the floor,
+ * so its fade leaves the lit floor's pixels as three.js lights them.
+ */
+export interface SceneRectLight {
+	position: Vec3;
+	target: Vec3;
+	width: number;
+	height: number;
+	color: string;
+	intensity: number;
+	range: number;
+}
+
+/**
+ * Three rectangle lights: a warm panel that faces down over the left of the floor, a tall cool
+ * window that stands at the back and faces the camera, and a long pink strip low over the right,
+ * tilted toward the middle. The shiny shapes show each one's outline. The panel tilts a little
+ * toward the camera, since a light that looks straight down has no side that both engines agree
+ * on.
+ */
+export const RECT_LIGHTS: readonly SceneRectLight[] = [
+	{
+		position: [-4.5, 4, 0],
+		target: [-4.5, 0, 1.5],
+		width: 3,
+		height: 2,
+		color: '#ffd8a0',
+		intensity: 4,
+		range: 60,
+	},
+	{
+		position: [0, 2, -7.5],
+		target: [0, 2, 0],
+		width: 2.5,
+		height: 4,
+		color: '#a0d0ff',
+		intensity: 3,
+		range: 60,
+	},
+	{
+		position: [5, 1.5, 2],
+		target: [0, 0, 1],
+		width: 4,
+		height: 0.4,
+		color: '#ff80c0',
+		intensity: 10,
+		range: 60,
+	},
+];
+
+/** A tube light: its two ends, its radius, sRGB color, intensity in nits and range. */
+export interface SceneTubeLight {
+	from: Vec3;
+	to: Vec3;
+	radius: number;
+	color: string;
+	intensity: number;
+	range: number;
+}
+
+/**
+ * Three tube lights, which three.js lacks: a long white tube across the back, a short upright
+ * green one on the left, and a thick orange one that slants over the right.
+ */
+export const TUBE_LIGHTS: readonly SceneTubeLight[] = [
+	{
+		from: [-6, 1.2, -4],
+		to: [6, 1.2, -4],
+		radius: 0.04,
+		color: '#ffffff',
+		intensity: 30,
+		range: 14,
+	},
+	{
+		from: [-5, 0.3, 3],
+		to: [-5, 2.3, 3],
+		radius: 0.05,
+		color: '#60ff90',
+		intensity: 40,
+		range: 10,
+	},
+	{ from: [3, 0.5, 5], to: [6, 2.5, 1], radius: 0.1, color: '#ffa040', intensity: 15, range: 12 },
+];

@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { TEMPLATE_CUSTOM_FIRST } from '../generated/gpu';
+import {
+	PERMUTATION_RECEIVE_SHADOWS,
+	PERMUTATION_SKIN,
+	PERMUTATION_TONE_MAP,
+	TEMPLATE_CUSTOM_FIRST,
+} from '../generated/gpu';
 import { controlViews, createControlBuffer, Slot } from './control';
 import {
 	type CustomShader,
@@ -264,6 +269,106 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		expect(table.replaced).toEqual([TEMPLATE_CUSTOM_FIRST + 2]);
 		table.clear();
 		expect(table.replaced).toEqual([]);
+	});
+});
+
+describe("custom materials' builds that load on first use", () => {
+	/** A build of a custom material for WebGPU with the permutation bits of `permutation`. */
+	const build = (permutation: number) => ({
+		permutation,
+		wgsl: { source: `// ${permutation}`, pipelines: { main: { vertex: 'vs', fragment: 'fs' } } },
+		glsl: null,
+	});
+	/** A build for WebGL2 whose stages share their text with the other builds. */
+	const glslBuild = (permutation: number) => {
+		const stage = (kind: string) => ({ source: `// ${kind}`, uniformBlocks: [], textures: [] });
+		return {
+			permutation,
+			wgsl: null,
+			glsl: { main: { vertex: stage('vertex'), fragment: stage(`fragment ${permutation}`) } },
+		};
+	};
+	const skinned = PERMUTATION_SKIN | PERMUTATION_RECEIVE_SHADOWS;
+	const template = TEMPLATE_CUSTOM_FIRST;
+	/** A custom material's shader whose builds load on first use. */
+	const later = () => ({ variants: {}, locations: [0, 1, 2], textures: 0, builds: true });
+
+	test('are asked for once per set, by the first pipeline that needs one, and let it build once the set arrives', () => {
+		const table = new ImageTable();
+		const asks: [number, number][] = [];
+		table.askBuilds = (asked, set) => asks.push([asked, set]);
+		table.setShader(template, later());
+		// The sketch sends the device's set without an ask.
+		table.addBuilds(template, PERMUTATION_TONE_MAP, {
+			webgpu_tone_map: build(PERMUTATION_TONE_MAP),
+		});
+		expect(table.buildsReady(template, PERMUTATION_TONE_MAP, 'wgsl')).toBe(true);
+		expect(asks).toEqual([]);
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
+		expect(table.buildsReady(template, skinned | PERMUTATION_RECEIVE_SHADOWS, 'wgsl')).toBe(false);
+		expect(table.buildsReady(template, 0, 'wgsl')).toBe(false);
+		expect(asks).toEqual([
+			[template, PERMUTATION_SKIN],
+			[template, 0],
+		]);
+		table.addBuilds(template, PERMUTATION_SKIN, { webgpu_receive_shadows_skin: build(skinned) });
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(true);
+		expect(table.shaders.get(template)?.variants).toHaveProperty('webgpu_receive_shadows_skin');
+		// A set that arrived without the build lets the backend report the missing build.
+		expect(table.buildsReady(template, PERMUTATION_SKIN, 'wgsl')).toBe(true);
+	});
+
+	test('keep equal text once', () => {
+		const table = new ImageTable();
+		table.setShader(template, later());
+		table.addBuilds(template, 0, { a: glslBuild(0), b: glslBuild(PERMUTATION_RECEIVE_SHADOWS) });
+		const { a, b } = table.shaders.get(template)?.variants ?? {};
+		expect(a?.glsl?.main?.vertex.source).toBe('// vertex');
+		expect(b?.glsl?.main?.vertex.source).toBe(a?.glsl?.main?.vertex.source as string);
+		expect(b?.glsl?.main?.fragment.source).toBe(`// fragment ${PERMUTATION_RECEIVE_SHADOWS}`);
+	});
+
+	test('give way to a newer shader that a hot update brought with its builds', () => {
+		const table = new ImageTable();
+		table.setShader(template, later());
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
+		const newer = { webgpu_receive_shadows_skin: build(skinned) };
+		table.setShader(template, { variants: newer, locations: [], textures: 0 });
+		table.addBuilds(template, PERMUTATION_SKIN, {
+			webgpu_receive_shadows_skin: build(PERMUTATION_SKIN),
+		});
+		expect(table.shaders.get(template)?.variants).toBe(newer);
+		expect(newer.webgpu_receive_shadows_skin.permutation).toBe(skinned);
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(true);
+	});
+
+	test('fail the pipelines that need a set with E1424 when it did not load', () => {
+		const table = new ImageTable();
+		table.setShader(template, later());
+		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
+		table.addBuilds(template, PERMUTATION_SKIN, 'the network failed');
+		expect(() => table.buildsReady(template, skinned, 'wgsl')).toThrow(
+			'E1424: the builds of a custom material did not load: the network failed.',
+		);
+	});
+
+	test('cross the port of the images both ways', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const senders = sendThrough(sketchEnd);
+		const answered: [number, number][] = [];
+		senders.onAskBuilds((asked, set) => answered.push([asked, set]));
+		receiveImages(drawingEnd, table, slots);
+		table.askBuilds(template, PERMUTATION_SKIN);
+		expect(drawingEnd.posted).toEqual([[{ askBuilds: template, set: PERMUTATION_SKIN }, []]]);
+		deliver(sketchEnd, drawingEnd.posted[0]?.[0]);
+		expect(answered).toEqual([[template, PERMUTATION_SKIN]]);
+		deliver(sketchEnd, RECEIVING);
+		table.setShader(template, later());
+		senders.sendBuilds(template, PERMUTATION_SKIN, { webgpu_skin: build(PERMUTATION_SKIN) });
+		deliver(drawingEnd, sketchEnd.posted.at(-1)?.[0]);
+		expect(table.buildsReady(template, PERMUTATION_SKIN, 'wgsl')).toBe(true);
 	});
 });
 

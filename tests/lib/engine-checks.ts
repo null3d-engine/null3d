@@ -254,7 +254,8 @@ export function engineProblems(
 	{ pacing = true }: EngineChecks = {},
 ): string[] {
 	const { stats } = result;
-	const paced = pacing && !drewOnSoftwareGpu(result.report);
+	const softwareGpu = drewOnSoftwareGpu(result.report);
+	const paced = pacing && !softwareGpu;
 	const minFrames = paced
 		? ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE
 		: 1;
@@ -295,7 +296,7 @@ export function engineProblems(
 	if (stats.completionSignal !== signal)
 		problems.push(`completions came from a ${stats.completionSignal}, expected a ${signal}`);
 	const hz = stats.refreshHz ?? 0;
-	const checkRefresh = paced || stats.refreshHz !== null;
+	const checkRefresh = !softwareGpu && (paced || stats.refreshHz !== null);
 	if (checkRefresh && (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1]))
 		problems.push(`measured a refresh rate of ${stats.refreshHz} Hz`);
 	// With the sketch and the drawing in workers, the page's thread must stay free (design

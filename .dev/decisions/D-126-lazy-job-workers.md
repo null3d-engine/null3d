@@ -83,3 +83,11 @@ Measured on 10 October 2026 on the same Mac, Chrome 155, production builds of ma
 
 - After this change, a small scene still takes 15 to 30 MiB more than three.js. Most of it is the two other threads: each has its own isolate, its own copy of the engine's script source, and the render worker its own GPU client. The engine's WebAssembly memory adds about 5 MiB, and the frame figures' shared buffer 1.9 MiB, with room for every job worker that may start. The study's notes list the next steps.
 - `?jobs=` now sets the most job workers, so a sweep of counts measures a count only in a scene whose parallel work starts that many. S1 with 100,000 boxes on WebGPU may start fewer than 16. A sweep switch that starts its count at once would make the sweep exact again.
+
+## Addendum, 2026-10-13: the pause after a light window is a time
+
+The sketch thread left its loops untimed for 270 frames after a window with too little work. That is 4.5 seconds at 60 frames per second, but 30 seconds at 9. A page whose first frames hand out little work, and whose heavy work starts after them, then ran with no job worker for up to 300 frames.
+
+On 12 October 2026, CI's raycast test on WebGPU failed this way in run 38266209211. The page's first frames cast no batch of rays, so the first window fell short. SwiftShader then drew 276 frames in the test's 31 seconds of measurement, so the next window never began, and neither job worker started. In 28 passing CI runs of the same test, 3 took 35.2 to 35.4 seconds, so they caught the workers only at the very end. The others took about 8.5 seconds.
+
+The pause now lasts 4.5 seconds of sketch time (`JOB_PAUSE_SECONDS` in `packages/engine/src/sketch/runner.ts`), the same as before at 60 frames per second. The sketch time comes from the frames' timestamps, so the pause reads no clock and allocates nothing. It does not run while the sketch is paused or the page is hidden. The window stays 30 frames. A unit test checks that at 9 frames per second the timing starts again after about 40 frames.

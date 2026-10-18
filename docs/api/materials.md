@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission, decals, the weighted blending, the clear coat and sheen layers, and the shadow catcher. The API is experimental, so it can still change between versions. `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -38,8 +38,29 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
 | `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
 | `materials.shader(options)` | A standard material whose WGSL changes its look before the engine lights it, or moves its vertices |
+| `materials.shadowCatcher(options)` | Only the shadows that fall on it, as three.js's `ShadowMaterial` |
+| `materials.decal(options)` | A standard material that a box projects onto the surfaces inside it, like three.js's `DecalGeometry` ([Decals](#decals)) |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
+
+## Shadow catchers
+
+`materials.shadowCatcher({ color, opacity })` draws a surface that shows only the shadows that fall on it, as three.js's `ShadowMaterial`. It shows its `color` where the main directional light's shadow falls, and nothing at all where the light reaches it. The shadows of point and spot lights do not show on it. The mesh must receive shadows with `setReceiveShadows(true)`, as three.js's `receiveShadow` must be set.
+
+The default color is black and the default opacity is 1. The material blends, so it draws in the transparent pass after the opaque objects, and the scene's fog leaves it alone. It takes no texture maps. Its shadows are the main directional light's, so a scene needs a directional light that casts shadows.
+
+```ts
+const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
+const ground = scene.createMesh({
+  mesh: geometry.plane({ width: 20, height: 20 }),
+  material: materials.shadowCatcher({ opacity: 0.6 }),
+  position: [0, 0.01, 0],
+  rotation: FLAT,
+});
+ground.setReceiveShadows(true);
+```
+
+Put the catcher a little above the surface it lies on, so its shadows show over that surface. [Shadows](../concepts/shadows.md) explains the light's shadow settings.
 
 ## Standard values
 
@@ -63,9 +84,14 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `thickness` | 0 or more | 0 | The thickness of the volume under a surface that lets light through, in the mesh's own units |
 | `attenuationColor` | A [color](#color) | White | The color that white light takes inside the volume over `attenuationDistance` |
 | `attenuationDistance` | Above 0 | `Infinity` | The distance in world units over which light inside the volume takes `attenuationColor` |
+| `clearcoat` | 0 to 1 | 0 | How much of a thin, shiny coat covers the surface, as on car paint or varnish. See "Clear coat and sheen" |
+| `clearcoatRoughness` | 0 to 1 | 0 | How rough the coat is |
+| `clearcoatNormalScale` | Two numbers | `[1, 1]` | How strongly the coat normal map bends the coat's normals along u and v |
+| `sheenColor` | A [color](#color) | Black | The color of the soft glow of cloth and velvet at grazing angles. Black gives none |
+| `sheenRoughness` | 0 to 1 | 1 | How wide the sheen spreads |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
-The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor` and the four transmission values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
+The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor`, the four transmission values and the five layer values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
 ## Specular reflection and index of refraction
 
@@ -125,6 +151,119 @@ After the camera's view draws its opaque objects, the engine copies their colors
 
 Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option.
 
+## Clear coat and sheen
+
+Two layers can lie over the standard material's surface, as three.js's `MeshPhysicalMaterial` and glTF's `KHR_materials_clearcoat` and `KHR_materials_sheen` extensions draw them:
+
+- A **clear coat** is a thin, clear, shiny film, such as the lacquer of car paint, varnish on wood, or water on a stone. It has highlights and a reflection of its own, at its own roughness. Where it reflects light, it dims what lies under it. So a rough red paint under a smooth coat shows a sharp reflection over a soft color.
+- A **sheen** is the soft glow that cloth, velvet and fuzz take at grazing angles, where the light catches the tips of their fibers. Its color tints the glow. Light that the sheen reflects does not reach the surface under it.
+
+| Value | What it does |
+| --- | --- |
+| `clearcoat` | How much of the coat covers the surface, from none at 0 to all at 1 |
+| `clearcoatRoughness` | How rough the coat is. 0 is a mirror finish |
+| `clearcoatNormalScale` | How strongly `clearcoatNormalMap` bends the coat's normals. Without a coat normal map, the coat lies smooth over the mesh, whatever the `normalMap` does to the surface under it |
+| `sheenColor` | The color of the sheen. Black, the default, gives no sheen |
+| `sheenRoughness` | How wide the sheen spreads, from a narrow rim at 0 to a soft glow across the surface at 1 |
+
+```ts
+// sketch.ts: car paint, a wet stone and red velvet, in an environment's light.
+scene.setEnvironment(await assets.builtinEnvironment('room'));
+const paint = materials.standard({
+  color: '#a3131b', metalness: 0.5, roughness: 0.5,
+  clearcoat: 1, clearcoatRoughness: 0.03,
+});
+const wetStone = materials.standard({
+  color: '#4a4844', roughness: 0.9, clearcoat: 0.8, clearcoatRoughness: 0.05,
+});
+const velvet = materials.standard({
+  color: '#4a0613', roughness: 0.9, sheenColor: '#ff7a8f', sheenRoughness: 0.4,
+});
+```
+
+Give any of the five values, or a layer map, when you create the material, to change the layers later with `set`. The option picks the shader that lights the layers. A material created without them has no layers, and pays nothing for them. A coat of 0 and a black sheen draw exactly as no layers.
+
+### Maps of the layers
+
+| Option | Channels | What it does |
+| --- | --- | --- |
+| `clearcoatMap` | R, linear | Multiplies `clearcoat` |
+| `clearcoatRoughnessMap` | G, linear | Multiplies `clearcoatRoughness` |
+| `clearcoatNormalMap` | RGB, linear | Bends the coat's normals in tangent space, scaled by `clearcoatNormalScale` |
+| `sheenColorMap` | RGB, sRGB | Multiplies `sheenColor` |
+| `sheenRoughnessMap` | A | Multiplies `sheenRoughness` |
+
+The layers' maps take the places of the light map and the specular maps. So a material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap` or `specularColorMap`. Development builds throw E1217 for them, and production builds draw the material without them. Its `specularIntensity` and `specularColor` values still apply. Give `clearcoatMap` and `clearcoatRoughnessMap` as one texture, with the coat in red and its roughness in green, and `sheenColorMap` and `sheenRoughnessMap` as one texture, with the roughness in alpha. glTF packs them this way, and two textures for a pair throw E1217. An sRGB texture keeps its alpha linear, so one sRGB texture holds the sheen's color and roughness.
+
+### How the layers draw
+
+The engine uses the formulas of three.js's `MeshPhysicalMaterial`:
+
+- The coat is a second GGX highlight, which reflects 4% of the light head on and all of it at grazing angles. It reflects the scene's environment at its own roughness, and the occlusion map and ambient occlusion darken that reflection.
+- The sheen is the Charlie highlight of cloth (Estevez and Kulla), lit by each light, and by the ambient light and the environment. How much light the sheen keeps from the surface under it comes from three.js's curve fit of the sheen's reflectance, which needs no lookup table. At grazing angles the fit gives a little less than the exact value, so the surface under a strong sheen shows slightly brighter there than the extension's reference. three.js draws the same.
+- Emitted light lies under the coat too, so a coat dims a glowing surface where it reflects.
+
+### Cost of the layers
+
+The layers' shaders load the first time you create a material with layers. To load them before the first frame instead, list `'coat_sheen'` in `createEngine`'s `preload` option. A layered material costs each of its pixels, per light, one more highlight for the coat and one for the sheen, and one more environment read for the coat. A layer that a material does not use costs almost nothing. Materials without layers draw as before, with no new texture and no change to their shaders.
+## Decals
+
+A decal material projects a standard material onto every opaque surface inside a box, as three.js's `DecalGeometry` places a decal. Use decals for scorch marks, mud, puddles, road paint, moss, cracks and posters. Give the material to a mesh of `geometry.box()`: the object's position, rotation and scale place the box.
+
+```ts
+// sketch.ts: a scorch mark on the ground, and cracks on a wall. The maps come from textures.
+const box = geometry.box();
+const scorch = materials.decal({ map: scorchColors, normalMap: scorchBumps, roughness: 0.95 });
+// Turned so that the box's z axis points up, out of the ground: the decal looks down onto it.
+const down: Quat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+scene.createMesh({ mesh: box, material: scorch, position: [2, 0, 1], rotation: down, scale: [3, 3, 1] });
+// A wall that faces +z takes a box that is not turned.
+const cracks = materials.decal({ map: crackColors, normalMap: crackBumps });
+scene.createMesh({ mesh: box, material: cracks, position: [0, 1.5, -2], scale: [2, 2, 0.5] });
+```
+
+The box's z axis is the decal's direction: it points out of the surfaces that the decal marks. The maps lie across the box's x and y sides, with u along x and v along y, as `DecalGeometry` lays them. The box's z size sets how far into and out of a surface the decal reaches, so a deep box marks a bumpy or curved surface all over.
+
+A decal takes the standard material's values and maps. They light it as they light any surface, at the place where the decal lies:
+
+| Values | What they do |
+| --- | --- |
+| `map`, `color`, `opacity` | The decal's color. The map's alpha times the opacity sets how much of the decal covers the surface |
+| `metalnessRoughnessMap`, `metalness`, `roughness` | How the decal reflects light. A puddle is smooth, and scorch is rough |
+| `normalMap`, `normalScale` | Bumps of the decal, such as the edges of a crack or the grain of moss |
+| `aoMap`, `aoMapIntensity`, `emissive`, `emissiveMap`, `emissiveIntensity` | Occlusion and light of the decal's own, such as glowing paint |
+| `angleFade` | The angles from the decal's direction at which it starts to fade and past which it shows nothing, in radians. The default, 60 and 80 degrees, keeps a decal on the ground from smearing up a wall |
+| `edgeFade` | The share of the box's depth, from 0 to 1, over which the decal fades toward each end along z. The default is 0.2 |
+
+A batch of boxes with one decal material draws in one draw. With `colors: true`, each row's color tints its decal, and the row's alpha fades it, as for bullet holes that fade with time.
+
+### Objects that show no decals
+
+`scene.setDecalLayers(mask)` sets the layers whose objects decals mark. An object that is also on a layer outside the mask shows no decals, so a character on a layer of its own walks through mud and puddles clean.
+
+```ts
+const PEOPLE = 1 << 1;
+scene.setDecalLayers(~PEOPLE);  // decals mark every layer but the people's
+const walker = scene.createMesh({ mesh: body, material: coat, layers: 1 | PEOPLE });
+```
+
+Such objects draw a second time after the decals, over their own pixels. That costs one more draw of them in each frame that shows decals, so keep the layers that decals skip to the objects that need it. The mask is the same for every decal.
+
+### How decals draw
+
+After the camera's view draws its opaque objects, the decals draw in a pass of their own. For each pixel of its box, a decal reads the scene's depth there and finds the surface that the pixel shows. It lights its own material at that surface, with the scene's lights, shadows, ambient occlusion, environment and fog. Then it covers the surface as far as its alpha says.
+
+- Decals mark opaque surfaces only. Blended surfaces and surfaces that let light through draw after the decals.
+- A decal covers the surface below it with its own color. It cannot only darken or smooth the surface and keep the surface's own map. So give a puddle a dark color and a low roughness of its own.
+- Under a decal, the surface's normal comes from the scene's depth. A curved mesh of few triangles shows its flat faces there.
+- Decals of one render order draw in the order you made them. `setRenderOrder` puts one decal over another.
+- Only the camera's view shows decals. [Scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes) show none.
+- A decal casts no shadow. Raycasts and pointer events hit its box, as they hit any mesh. Put decals on a layer of their own, and leave that layer out of the raycast's `layers`.
+
+### Cost of decals
+
+Nothing of it runs, and none of its shaders download, until the first decal material. Then each frame culls the decals on the engine's workers and draws them in one render pass, with one draw for each run of decals that share their maps. Each pixel that a decal covers reads five depths and lights the surface once more. A decal's shaders load on first use. To load them before the first frame instead, list `'decals'` in `createEngine`'s `preload` option.
+
 ## Texture maps
 
 Maps are textures that vary a material across a surface. `assets.loadTexture` and the `textures` calls make them, as [Textures](textures.md) explains. Give color maps the `srgb` color space and data maps the `linear` one.
@@ -155,6 +294,7 @@ const brick = materials.standard({
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
 | `specularIntensityMap` | Standard | A, linear | Its alpha multiplies `specularIntensity` |
 | `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
+| `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap`, `sheenColorMap`, `sheenRoughnessMap` | Standard | See "Maps of the layers" | The maps of the clear coat and the sheen, in place of the light map and the specular maps |
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
 
@@ -176,7 +316,9 @@ On WebGL2, the maps of one material share at most six textures on the GPU. Maps 
 
 `set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff` and `uvTransform`.
 
-`set` checks every value before it changes any, so a call that throws changes nothing. Converting a new color allocates a little, as a light's `setColor` does, so do not change a color in every frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
+`set` is for setup, and for several values at once. It reads each number from the options object that you pass. The browser boxes a read where it cannot keep a field's number unboxed. That happens in an object whose fields hold other kinds of value too, and in one of more than a few shapes. Change the values that a frame changes with `setUniform(name, value)`, which takes the value itself. `material.setUniform('roughness', 0.5 + 0.1 * Math.sin(t))` allocates nothing from a small step of your own, as the other setters do. It takes a number, as `roughness` and `emissiveIntensity` do, or a color, as `color` and `sheenColor` do. Give a color in an array that you change in place. A value that takes more than one number, as `uvTransform`, `normalScale`, `clearcoatNormalScale`, `angleFade`, `ior` and `attenuationDistance` do, goes through `set`. A custom material's `setUniform` changes one of its WGSL uniforms too, by the name in its `struct Uniforms`. `bun run bench:allocation --setters` checks `setUniform` in every frame and `set` at setup.
+
+`set` checks every value before it changes any, so a call that throws changes nothing. It converts a color without allocating, and it reads each number by its name. Keep one options object for each material that changes. To change one object alone, give it another material with `mesh.setMaterial(material)`.
 
 ## Destroying a material
 
@@ -195,12 +337,13 @@ These options are fixed when you create the material. Most of them choose the ma
 | `flatShading` | Standard | false | Lights each triangle with the normal of its face, so the mesh looks faceted |
 | `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'`, `'mask'`, `'hash'` or `'blend'`. See "Alpha modes" |
 | `alphaToCoverage` | Both | true | With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's `alphaToCoverage` does. `false` gives the hard cut edges of three.js's `alphaTest`. See "Alpha to coverage" |
-| `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'` or `'multiply'`. See "Blending" |
+| `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'`, `'multiply'` or `'weighted'`. See "Blending" |
 | `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
+| The layer values and maps | Standard | None | Any of them, even a coat of 0, gives the material a clear coat and a sheen, and `set` can then change their values. See "Clear coat and sheen" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
@@ -264,6 +407,7 @@ const pane = materials.standard({ color: '#a8d8ff', opacity: 0.3, alphaMode: 'bl
 | `'normal'` | Covers what lies behind, as far as the alpha says | Glass, fading objects, smoke |
 | `'additive'` | Adds the surface's light to what lies behind, times the alpha | Glows, fire, sparks, lasers |
 | `'multiply'` | Tints what lies behind by the surface's color, as far as the alpha says | Stains, shadows painted on, tinted film |
+| `'weighted'` | Covers what lies behind as `'normal'` does, but blends with the other weighted surfaces in any order | Smoke, dust, clouds of particles, many panes of glass that cross |
 
 The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. Textures loaded with `premultipliedAlpha: true` blend correctly too.
 
@@ -274,6 +418,29 @@ The engine blends in linear color, before the tone mapping, as three.js's `WebGP
 const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.1, alphaMode: 'blend' });
 const glow = materials.unlit({ color: '#ffb040', alphaMode: 'blend', blending: 'additive', depthWrite: false });
 ```
+
+### Weighted blending
+
+Blended objects draw farthest first, and the sort orders whole objects, or the rows of a batch. Surfaces that cross, a large surface around a small one, and puffs of smoke inside each other have no right order. The sort then puts some of them in the wrong order, and they pop as the camera moves. Additive and multiply blending give the same result in any order, so only normal blending needs the sort.
+
+`blending: 'weighted'` blends such surfaces without a sort. The engine uses weighted blended order-independent transparency (McGuire and Bavoil, 2013), as three.js's `OITPassNode` does. Each weighted surface adds its color and its coverage into two targets, in any order, and near surfaces weigh more than far ones. A full-screen step then blends the average color over the scene, as far as the surfaces cover it.
+
+```ts
+// sketch.ts: smoke puffs that cross each other, and panes of glass that cross, without popping.
+const smoke = materials.unlit({ color: '#9a9590', opacity: 0.35, alphaMode: 'blend', blending: 'weighted', depthWrite: false });
+const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.1, alphaMode: 'blend', blending: 'weighted', doubleSided: true });
+```
+
+- The result is an average. Where a dark and a bright surface overlap at a similar depth, both show. The nearest surface shows most. Where an exact order exists, a sorted blend shows it.
+- Weighted surfaces draw as one layer after the camera's other blended surfaces and its surfaces that let light through. They show where nothing nearer wrote depth.
+- A weighted surface writes no depth, and both faces of a double-sided one draw in one draw.
+- The layer draws at one sample per pixel, so MSAA does not smooth the edges of weighted surfaces. Soft surfaces, such as smoke, look the same. FXAA smooths the edges as it smooths the rest.
+- Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), draw weighted surfaces farthest first, as `'normal'` ones. So do WebGL2 devices that cannot draw into 16-bit float targets, and frames before the layer's shaders have loaded.
+- Materials with `transmission`, custom materials and lines do not take the `weighted` blending. They throw E1217.
+
+### Cost of weighted blending
+
+The layer costs nothing until the first weighted surface draws, and its shaders download only then. Each frame then draws the camera's weighted surfaces into two targets of the render size, 10 bytes per pixel together. A full-screen step blends them over the scene. With MSAA, the layer first copies one sample of each pixel's depth. The camera's other blended objects and the weighted layer draw in separate render passes. To load the layer's shaders before the first frame, list `'weighted'` in `createEngine`'s `preload` option.
 
 ## Depth bias
 
@@ -343,6 +510,8 @@ const leaves = materials.shader({ wgsl: masked, alphaMode: 'mask', textures: { m
 
 A texture samples as white until its image is on the GPU. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
 
+A surface function can set a clear coat and a sheen too, such as a coat where a stone is wet. The WGSL sets the surface's `clearcoat`, `clearcoatRoughness`, `clearcoatNormal`, `sheenColor` or `sheenRoughness`. Only WGSL that names one of them has the shaders that light the layers. The layer options of such a material give `defaultSurface` its values, and WGSL that never names them throws E1217 when you give it a layer option. [Layers](../shaders/surface-functions.md#clear-coat-and-sheen) on the Surface functions page shows the WGSL.
+
 ### Values per row of a batch
 
 The WGSL reads values of each draw through `frame`, `camera` and `object` ([Built-in values](../shaders/builtins.md)). On the rows of an instance batch made with `values: true`, `object.values` holds the row's four numbers from the batch's `values` array. So one material can sway each blade of grass in its own phase, and tint each one:
@@ -374,7 +543,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness` and `edgeFade` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The two angles of `angleFade` go from 0 to π, the first no larger than the second. The numbers of `normalScale`, `clearcoatNormalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217. So does the `weighted` blending on a custom material or a material with `transmission`. A depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

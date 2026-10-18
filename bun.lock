@@ -13,7 +13,6 @@
         "@types/bun": "^1.3.0",
         "binaryen": "132.0.0",
         "gltfpack": "1.3.0",
-        "husky": "^9.1.7",
         "typescript": "~6.0.3",
         "vite": "8.3.1",
       },
@@ -24,6 +23,9 @@
         "@null3d/cli": "workspace:*",
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
+        "@null3d/impostors": "workspace:*",
+        "@null3d/particles": "workspace:*",
+        "@null3d/terrain": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
         "@types/three": "0.186.0",
@@ -41,6 +43,8 @@
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
         "@null3d/geometry": "workspace:*",
+        "@null3d/particles": "workspace:*",
+        "@null3d/terrain": "workspace:*",
         "@types/three": "0.186.0",
         "@webgpu/types": "0.1.74",
         "three": "0.186.1",
@@ -102,6 +106,41 @@
         "@null3d/engine": "workspace:*",
       },
     },
+    "packages/impostors": {
+      "name": "@null3d/impostors",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+      },
+    },
+    "packages/particles": {
+      "name": "@null3d/particles",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+      },
+    },
+    "packages/terrain": {
+      "name": "@null3d/terrain",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
+      },
+    },
     "packages/vite-plugin": {
       "name": "@null3d/vite-plugin",
       "version": "0.0.0",
@@ -126,6 +165,9 @@
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
         "@null3d/geometry": "workspace:*",
+        "@null3d/impostors": "workspace:*",
+        "@null3d/particles": "workspace:*",
+        "@null3d/terrain": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
         "@types/three": "0.186.0",
@@ -134,6 +176,9 @@
         "vite": "8.3.1",
       },
     },
+  },
+  "patchedDependencies": {
+    "three@0.186.1": "patches/three@0.186.1.patch",
   },
   "packages": {
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
@@ -215,6 +260,12 @@
     "@null3d/examples": ["@null3d/examples@workspace:examples"],
 
     "@null3d/geometry": ["@null3d/geometry@workspace:packages/geometry"],
+
+    "@null3d/impostors": ["@null3d/impostors@workspace:packages/impostors"],
+
+    "@null3d/particles": ["@null3d/particles@workspace:packages/particles"],
+
+    "@null3d/terrain": ["@null3d/terrain@workspace:packages/terrain"],
 
     "@null3d/tests": ["@null3d/tests@workspace:tests"],
 
@@ -337,8 +388,6 @@
     "global-directory": ["global-directory@5.0.0", "", { "dependencies": { "ini": "6.0.0" } }, "sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w=="],
 
     "gltfpack": ["gltfpack@1.3.0", "", { "bin": { "gltfpack": "cli.js" } }, "sha512-YGt2vPUa3OZuGh4IqbKdorwPyr9PcKKVRHtxOcfrHz3c83EFA6WOJVQMzRej6gPbCWcVnrZ8RDKduxaGclW/xQ=="],
-
-    "husky": ["husky@9.1.7", "", { "bin": { "husky": "bin.js" } }, "sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA=="],
 
     "import-fresh": ["import-fresh@3.3.1", "", { "dependencies": { "parent-module": "^1.0.0", "resolve-from": "^4.0.0" } }, "sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ=="],
 

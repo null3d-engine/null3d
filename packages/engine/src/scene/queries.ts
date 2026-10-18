@@ -1,10 +1,13 @@
 // Raycasts and overlap queries. A query writes its input into engine memory, makes one call into
 // the core, and reads the hit records that the core writes back into the caller's own objects
-// and arrays. A raycast's input also holds three.js's thresholds and the camera that sprites,
-// points and lines face: the active camera as it stands, or for a pointer event the camera of the
-// frame on screen at the event. The views on engine memory are made again only when the memory or
-// the hit array grows, and new hit objects only when the caller's array is too short, so a query
-// allocates nothing in steady state.
+// and arrays. A query before the runner's first frame, as a bake in a sketch's setup, first
+// applies the queued changes and updates the transforms and batches, so it sees what the setup
+// has built; after that the runner's frame loop keeps the world current. A raycast's input also
+// holds three.js's thresholds and the camera that sprites, points and lines face: the active
+// camera as it stands, or for a pointer event the camera of the frame on screen at the event.
+// The views on engine memory are made again only when the memory or the hit array grows, and new
+// hit objects only when the caller's array is too short, so a query allocates nothing in steady
+// state.
 
 import { checkLayers, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -12,7 +15,7 @@ import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import type { Ray } from './frame-cameras';
 import type { LineBatch } from './lines';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import {
 	EVENT_DISTANCE,
 	EVENT_NORMAL,
@@ -251,8 +254,11 @@ function newHit(): RaycastHit {
 	};
 }
 
+/** A view of no numbers, which the queries keep in place of views that they dropped. */
+const NO_NUMBERS = new Float64Array(0);
+
 /** The scene's queries: see the module comment. */
-export class SceneQueries {
+export class SceneQueries implements ViewHolder {
 	private generation = -1;
 	private input!: Float64Array;
 	private hits!: Float64Array;
@@ -265,7 +271,19 @@ export class SceneQueries {
 	constructor(
 		private readonly core: CoreMemory,
 		private readonly targets: QueryTargets,
-	) {}
+		/** Brings the scene's world up to date before a query outside the frame loop. */
+		private readonly settleWorld: () => void,
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the views, which the next query makes again. */
+	dropViews(): void {
+		this.generation = -1;
+		this.input = NO_NUMBERS;
+		this.hits = NO_NUMBERS;
+		this.rays = NO_NUMBERS;
+	}
 
 	/** Makes the views on engine memory again after the memory or the hit array grew. */
 	private views(): void {
@@ -296,6 +314,7 @@ export class SceneQueries {
 	 * of the last pointer event's ray with `fromEvent`, or else the active camera.
 	 */
 	private writeOptions(options: RaycastOptions | undefined, fromEvent = false): void {
+		this.settleWorld();
 		this.views();
 		const input = this.input;
 		input[C.QUERY_INPUT_LIMIT] = options?.maxDistance ?? Infinity;
@@ -478,6 +497,7 @@ export class SceneQueries {
 		checkPoint('overlapSphere', CENTER, center, F32_MAX);
 		checkNotBelowZero('overlapSphere', 'radius', radius, F32_MAX);
 		checkOptions('overlapSphere', options);
+		this.settleWorld();
 		this.views();
 		const input = this.input;
 		for (let k = 0; k < 3; k++) input[k] = center[k] as number;
@@ -500,6 +520,7 @@ export class SceneQueries {
 					`overlapBox() got a lowest corner above the highest on ${AXES[k]}: ${min[k]} > ${max[k]}.`,
 				);
 		checkOptions('overlapBox', options);
+		this.settleWorld();
 		this.views();
 		const input = this.input;
 		for (let k = 0; k < 3; k++) {

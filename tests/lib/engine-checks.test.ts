@@ -76,4 +76,17 @@ describe('the frame-rate checks of the engine page', () => {
 		expect(paceProblems(slowResult(SWIFTSHADER, 100))).toEqual([]);
 		expect(paceProblems(slowResult(MAC_GPU, 16))).toEqual(['measured a refresh rate of null Hz']);
 	});
+
+	it('leaves out a slow measured refresh rate only on a software GPU', () => {
+		for (const pacing of [true, false]) {
+			for (const renderer of [SWIFTSHADER, MAC_GPU]) {
+				const result = slowResult(renderer, 100);
+				result.stats.refreshHz = 12;
+				const problems = engineProblems(result, ENGINE_MODES[0], 'webgl2', { pacing });
+				expect(problems.filter((problem) => problem.includes('refresh rate'))).toEqual(
+					renderer === SWIFTSHADER ? [] : ['measured a refresh rate of 12 Hz'],
+				);
+			}
+		}
+	});
 });

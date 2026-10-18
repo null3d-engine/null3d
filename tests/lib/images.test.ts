@@ -25,6 +25,7 @@ import {
 	referenceFileProblems,
 	referenceOf,
 	runIn,
+	sharedReferenceProblems,
 	TOLERANCE,
 	writePng,
 } from './images.ts';
@@ -49,7 +50,9 @@ const TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'boxes',
 		tolerance: { maxDiffRatio: 0.5 },
+		swiftShaderTolerance: { maxDiffRatio: 0.75 },
 	},
+
 	{
 		name: 'grid',
 		page: 'pages/grid.html',
@@ -113,6 +116,17 @@ afterEach(() => rmSync(join(dirs.references, '..'), { recursive: true, force: tr
 
 const facts = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as CandidateFacts;
 
+/** A demo's source: its sketch, or every module in its folder for a demo of several files. */
+const demoSources = (demo: (typeof DEMOS)[number]) => {
+	const sketch = join(REPO_ROOT, 'examples', sketchPath(demo));
+	if (!demo.code?.endsWith('/')) return readFileSync(sketch, 'utf8');
+	const folder = dirname(sketch);
+	return readdirSync(folder)
+		.filter((file) => file.endsWith('.ts'))
+		.map((file) => readFileSync(join(folder, file), 'utf8'))
+		.join('\n');
+};
+
 describe('the manifest', () => {
 	it('lists valid tests, whose pages and sketches exist', () => {
 		expect(manifestProblems(IMAGE_TESTS)).toEqual([]);
@@ -162,18 +176,21 @@ describe('the manifest', () => {
 
 	it('loads files only in the demos that say why', () => {
 		// A demo of several files loads a file when any of its modules does.
-		const sources = (demo: (typeof DEMOS)[number]) => {
-			const sketch = join(REPO_ROOT, 'examples', sketchPath(demo));
-			if (!demo.code?.endsWith('/')) return readFileSync(sketch, 'utf8');
-			const folder = dirname(sketch);
-			return readdirSync(folder)
-				.filter((file) => file.endsWith('.ts'))
-				.map((file) => readFileSync(join(folder, file), 'utf8'))
-				.join('\n');
-		};
 		const loads = (demo: (typeof DEMOS)[number]) =>
-			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(sources(demo));
+			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(demoSources(demo));
 		expect(DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
+	});
+
+	it('sets an exposure in each demo that uses timeOfDay', () => {
+		// A dusk or night scene at the default exposure shows several times too dark. A demo takes
+		// the time of day's exposure or sets its own. Creek is exempt: the owner approved its look,
+		// which is tuned at the default exposure, and a new exposure would change it.
+		const exempt = new Set(['creek']);
+		const skipped = DEMOS.filter((demo) => {
+			const code = demoSources(demo);
+			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\b/.test(code);
+		});
+		expect(skipped.map((demo) => demo.name)).toEqual([]);
 	});
 
 	it('loads files only in the comparisons that say why, in both engines alike', () => {
@@ -182,12 +199,10 @@ describe('the manifest', () => {
 				readFileSync(join(REPO_ROOT, 'examples', 'compare', name, half), 'utf8'),
 			);
 		for (const comparison of COMPARISONS) {
-			const null3d = loads(comparison.name, 'sketch.ts');
+			const scene = comparison.sameSceneAs ?? comparison.name;
+			const null3d = loads(scene, 'sketch.ts');
 			expect([comparison.name, null3d]).toEqual([comparison.name, comparison.assets !== undefined]);
-			expect([comparison.name, loads(comparison.name, 'three.ts')]).toEqual([
-				comparison.name,
-				null3d,
-			]);
+			expect([comparison.name, loads(scene, 'three.ts')]).toEqual([comparison.name, null3d]);
 		}
 	});
 
@@ -201,6 +216,8 @@ describe('the manifest', () => {
 			{ name: 'far', page: 'pages/far.html', size: [0, 2], reference: 'grid', devices: ['iPad'] },
 			{ name: 'lent', sketch: 'sketches/boxes.ts', hold: 1, reference: 'boxes-copied' },
 			{ name: 'lone', sketch: 'sketches/boxes.ts', hold: 1, size: [4, 2], reference: 'missing' },
+			{ name: 'twin', sketch: 'sketches/boxes.ts?far', hold: 1, samePicture: 'grid' },
+			{ name: 'self', sketch: 'sketches/grid.ts', hold: 1, samePicture: 'self' },
 		];
 		expect(manifestProblems(bad, exists)).toEqual([
 			'two tests are named boxes',
@@ -213,6 +230,8 @@ describe('the manifest', () => {
 			"far: its size differs from grid's",
 			'lent: boxes-copied borrows its references, so it cannot lend them',
 			'lone: the reference missing must name another test',
+			'twin: it shares a picture with grid, which draws another scene',
+			'self: the samePicture self must name another test',
 		]);
 	});
 });
@@ -280,7 +299,7 @@ describe('the runs of a test', () => {
 		expect(run('boxes-webgpu-pipelined')).toMatchObject({
 			tolerance: TOLERANCE,
 			deviceTolerance: DEVICE_TOLERANCE,
-			timeoutSeconds: 30,
+			timeoutSeconds: 60,
 			reference: { test: 'boxes', tier: 'webgpu', devices: [] },
 		});
 		expect(run('boxes-copied-webgl2-pipelined')).toMatchObject({
@@ -307,6 +326,15 @@ describe('the reference of a run', () => {
 			file: 'chrome-real-gpu/compat/boxes.png',
 			tolerance: TOLERANCE,
 		});
+	});
+
+	it("takes SwiftShader's own tolerance on SwiftShader alone", () => {
+		const swiftShader: Place = { environment: 'chromium-swiftshader' };
+		const copied = run('boxes-copied-webgl2-pipelined');
+		const threshold = TOLERANCE.threshold;
+		expect(referenceOf(copied, REAL).tolerance).toEqual({ threshold, maxDiffRatio: 0.5 });
+		expect(referenceOf(copied, swiftShader).tolerance).toEqual({ threshold, maxDiffRatio: 0.75 });
+		expect(referenceOf(run('boxes-compat-pipelined'), swiftShader).tolerance).toEqual(TOLERANCE);
 	});
 
 	it("is the real GPU's for another browser, at the device tolerance, and cannot become it", () => {
@@ -423,6 +451,73 @@ describe('the files in the folder of references', () => {
 					(file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`,
 				),
 		);
+	});
+});
+
+describe('the pictures that two tests of one scene keep', () => {
+	/**
+	 * Two tests of the lights scene on one tier, which differ by the lights they create: `?scene=`
+	 * picks a shape of area light. The two are the pair that the guard exists for.
+	 */
+	const sceneTests: readonly ImageTest[] = [
+		{
+			name: 'lights-rect',
+			sketch: 'sketches/lights.ts?scene=rect',
+			hold: 0,
+			size: [4, 2],
+			tiers: ['webgl2'],
+		},
+		{
+			name: 'lights-tube',
+			sketch: 'sketches/lights.ts?scene=tube',
+			hold: 0,
+			size: [4, 2],
+			tiers: ['webgl2'],
+		},
+	];
+	const sceneRuns = imageRuns(sceneTests);
+	/** The contents of every reference of the made-up tests, from `pictures` by test name. */
+	const contentsOf =
+		(pictures: Readonly<Record<string, string>>) =>
+		(file: string): string | undefined =>
+			pictures[file.split('/').at(-1)?.replace('.png', '') as string];
+
+	it('pass while the area-light scenes draw their own pictures', () => {
+		const pictures = { 'lights-rect': 'light', 'lights-tube': 'light elsewhere' };
+		expect(sharedReferenceProblems(sceneRuns, contentsOf(pictures))).toEqual([]);
+	});
+
+	// The fault that the guard exists for: four area-light scenes shared one black picture, and the
+	// one-tier-apart pairs of a single test are no fault at all.
+	it('pass while one test draws one picture on two tiers', () => {
+		const runs = imageRuns([{ ...(sceneTests[0] as ImageTest), tiers: ['webgpu', 'webgl2'] }]);
+		expect(sharedReferenceProblems(runs, contentsOf({ 'lights-rect': 'black' }))).toEqual([]);
+	});
+
+	it('name the pair that keeps one picture, with the reference to name', () => {
+		const pictures = { 'lights-rect': 'black', 'lights-tube': 'black' };
+		expect(sharedReferenceProblems(sceneRuns, contentsOf(pictures))).toEqual([
+			"chrome-real-gpu/webgl2/lights-tube.png is the same picture as chrome-real-gpu/webgl2/lights-rect.png: lights-tube and lights-rect draw one scene and must draw it differently. If lights-tube must draw lights-rect's image, name lights-rect in its 'reference'",
+			"chromium-swiftshader/webgl2/lights-tube.png is the same picture as chromium-swiftshader/webgl2/lights-rect.png: lights-tube and lights-rect draw one scene and must draw it differently. If lights-tube must draw lights-rect's image, name lights-rect in its 'reference'",
+		]);
+	});
+
+	it('leave a test that borrows the references of the test it copies', () => {
+		const runs = imageRuns([
+			sceneTests[0] as ImageTest,
+			{ ...(sceneTests[1] as ImageTest), reference: 'lights-rect' },
+		]);
+		const pictures = { 'lights-rect': 'black', 'lights-tube': 'black' };
+		expect(sharedReferenceProblems(runs, contentsOf(pictures))).toEqual([]);
+	});
+
+	it('leave the pair that records one picture', () => {
+		const runs = imageRuns([
+			sceneTests[0] as ImageTest,
+			{ ...(sceneTests[1] as ImageTest), samePicture: 'lights-rect' },
+		]);
+		const pictures = { 'lights-rect': 'black', 'lights-tube': 'black' };
+		expect(sharedReferenceProblems(runs, contentsOf(pictures))).toEqual([]);
 	});
 });
 

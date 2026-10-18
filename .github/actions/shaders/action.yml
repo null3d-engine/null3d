@@ -1,0 +1,93 @@
+name: Build with the shader caches
+description: >-
+  Runs a command that builds the shader modules, with the two shared shader caches of
+  tools/lib/shader-modules.ts kept in the Actions cache: the built module sets, by the hash of
+  their inputs, and the per-entry cache, under the compiler's stamp. The Actions key holds the same
+  stamp and input hash that the tools read their caches by, from `bun tools/shaders.ts
+  --cache-keys`. A run whose inputs match restores the whole module set and compiles nothing. A run
+  with the same compiler restores that stamp's entries, and compiles only the entries whose own
+  key no longer matches. A new compiler restores nothing. The tools check every entry's key
+  themselves, so a restored entry is never used for other inputs. Only the current stamp's entries
+  and the current module set are saved, so the cache does not grow with old ones. A failed or
+  cancelled build still saves the entries it finished, under a key of its own for the run and the
+  job, since each entry is written whole. The cache saves only when the workflow's SAVE_CACHES is true.
+  Each run records in its job summary how long the command took, how many entries the shader build
+  compiled and reused, and how many entries and modules the caches hold, so the build's growth shows
+  from run to run.
+
+inputs:
+  run:
+    description: The command that builds the shader modules.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - id: keys
+      shell: bash
+      run: |
+        bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
+        echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@v4
+      id: restore
+      with:
+        path: |
+          ${{ steps.keys.outputs.modules-dir }}
+          ${{ steps.keys.outputs.entries-dir }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}
+        restore-keys: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
+    - id: build
+      shell: bash
+      # The command may be several lines; the group keeps their output for the record below.
+      run: |
+        {
+        ${{ inputs.run }}
+        } 2>&1 | tee "$RUNNER_TEMP/shader-build.log"
+    - name: Record the shader build
+      if: always() && steps.keys.outcome == 'success'
+      shell: bash
+      env:
+        STARTED: ${{ steps.keys.outputs.started }}
+        OUTCOME: ${{ steps.build.outcome }}
+        RESTORED: ${{ steps.restore.outputs.cache-matched-key }}
+        ENTRIES: ${{ steps.keys.outputs.entries-dir }}/${{ steps.keys.outputs.stamp }}
+        MODULES: ${{ steps.keys.outputs.modules-dir }}/${{ steps.keys.outputs.inputs }}
+      run: |
+        count() { find "$1" -maxdepth 1 -type f 2>/dev/null | wc -l; }
+        size() { du -sh "$1" 2>/dev/null | cut -f1; }
+        # A restored module set makes the build a no-op, so the log holds no summary line: the
+        # record names that case, and a line that is missing for any other reason is reported
+        # rather than failing the job, whose outcome the build step already decided.
+        if grep -q 'came from the shared cache' "$RUNNER_TEMP/shader-build.log"; then
+          stats="the shared cache held the whole module set, so the build compiled nothing"
+        else
+          stats=$(grep -ho 'compiled [0-9]* entries and reused [0-9]*' "$RUNNER_TEMP/shader-build.log" | tail -1 || true)
+        fi
+        {
+          echo "### Shader build"
+          echo "- Outcome: $OUTCOME, after $(( ($(date +%s) - STARTED) / 60 )) min"
+          echo "- Restored from: ${RESTORED:-nothing}"
+          echo "- Shader build: ${stats:-no summary line, so it did not finish}"
+          echo "- Entry cache: $(count "$ENTRIES") entries, $(size "$ENTRIES")"
+          echo "- Module set: $(count "$MODULES") modules, $(size "$MODULES")"
+        } | tee -a "$GITHUB_STEP_SUMMARY"
+    - name: Keep only this build's module set and compiler stamp
+      if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        MODULES: ${{ steps.keys.outputs.modules-dir }}
+        ENTRIES: ${{ steps.keys.outputs.entries-dir }}
+        INPUTS: ${{ steps.keys.outputs.inputs }}
+        STAMP: ${{ steps.keys.outputs.stamp }}
+      run: |
+        mkdir -p "$MODULES" "$ENTRIES"
+        find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$INPUTS" -exec rm -rf {} +
+        find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$STAMP" -exec rm -rf {} +
+        du -sh "$MODULES" "$ENTRIES"
+    - uses: actions/cache/save@v4
+      if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ${{ steps.keys.outputs.modules-dir }}
+          ${{ steps.keys.outputs.entries-dir }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) || '' }}

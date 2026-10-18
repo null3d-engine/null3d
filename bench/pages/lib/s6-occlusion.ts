@@ -12,13 +12,26 @@
 // with it on. The two frames with culling off differ only by the device's noise; a frame with
 // culling on that differs from them by more than that shows that the culling hid something that
 // shows. The PNG files of the first such stops go into the result, so people can see what went
-// missing. Objects that show late in motion come from the visual check's popping figure, which the
-// result carries as `lateInMotion` once the page runs it.
+// missing.
+//
+// The check in motion then visits `?flights=` points along the route (24 by default). At each, the
+// frames with culling off at both ends of a jump are the references, and their noise is the most
+// that two captures at one end differ. Then, with culling on, the camera jumps between the two ends
+// in every frame, so each frame shows the view one jump from the frame before, and the page
+// captures a few such frames. A culling that used an earlier frame's camera would hide what came
+// into view, so a capture that differs from the nearer end's reference by more than the noise shows
+// an object late. Both checks count a pixel as different by the image tests' rule, so the shading's
+// own small changes do not count. The figure counts those captures.
 import type { Engine, FrameSummary } from '@null3d/engine';
 import {
+	flightShares,
 	hiddenAtRest,
+	hidesWhatShows,
+	JUMP_SHARE,
+	lateFrames,
 	medianFigures,
 	type OcclusionFigures,
+	type OcclusionFlight,
 	type OcclusionStop,
 	type OcclusionTurnsResult,
 	roundSides,
@@ -33,8 +46,16 @@ import type { QualityLog } from './trace';
 
 /** Seconds that each side flies before it measures, after the camera moves to the round's start. */
 const SETTLE_SECONDS = 1;
-/** Wrongly hidden stops whose frames go into the result: enough to see the fault, few to send. */
+/**
+ * Wrongly hidden stops, and points in motion, whose frames go into the result: enough to see the
+ * fault, few to send.
+ */
 const HIDDEN_IMAGES = 2;
+/**
+ * Frames that the check in motion captures at each point. The camera's end changes in every frame,
+ * and a capture takes the next frame the engine draws, so the captures cover both ends.
+ */
+const MOTION_CAPTURES = 4;
 
 /** Runs the turns on an engine that draws S6, and resolves with their result. */
 export async function occlusionTurns(
@@ -45,6 +66,7 @@ export async function occlusionTurns(
 	const rounds = Number(params.get('rounds') ?? '4');
 	const seconds = Number(params.get('seconds') ?? '10');
 	const stopCount = Number(params.get('stops') ?? '24');
+	const flightCount = Number(params.get('flights') ?? '24');
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	/** Sends the sketch a change, and resolves once a frame has it. */
@@ -58,7 +80,8 @@ export async function occlusionTurns(
 			engine.postToSketch(type, data);
 		});
 	const cull = (on: boolean) => change(S6_MESSAGES.occlusion, on);
-	const drive = (share: number, still: boolean) => change(S6_MESSAGES.drive, { share, still });
+	const drive = (share: number, still: boolean, toward?: number) =>
+		change(S6_MESSAGES.drive, { share, still, toward });
 	// A measurement that holds no finished frame, as on a slow device, measures again for twice as long.
 	const measure = async (): Promise<FrameSummary> => {
 		for (let s = seconds; ; s *= 2) {
@@ -88,13 +111,45 @@ export async function occlusionTurns(
 		const on = await engine.captureFrame();
 		const stop = {
 			share,
-			noise: visiblyDifferingPixels(off.pixels, again.pixels, off.width, off.height),
-			differing: visiblyDifferingPixels(off.pixels, on.pixels, off.width, off.height),
+			noise: visiblyDiffering(off, again),
+			differing: visiblyDiffering(off, on),
 		};
 		stops.push(stop);
 		if (hiddenAtRest(stop) && Object.keys(images).length < 2 * HIDDEN_IMAGES) {
 			images[`stop-${k}-off`] = await png(off);
 			images[`stop-${k}-on`] = await png(on);
+		}
+	}
+
+	const flights: OcclusionFlight[] = [];
+	let shownFlights = 0;
+	for (const [k, share] of flightShares(flightCount).entries()) {
+		const toward = share + JUMP_SHARE;
+		await cull(false);
+		const ends: Capture[] = [];
+		let noise = 0;
+		for (const end of [share, toward]) {
+			await drive(end, true);
+			const first = await engine.captureFrame();
+			const again = await engine.captureFrame();
+			noise = Math.max(noise, visiblyDiffering(first, again));
+			ends.push(first);
+		}
+		await cull(true);
+		await drive(share, true, toward);
+		const differing: number[] = [];
+		let shown: { off: Capture; on: Capture } | undefined;
+		for (let c = 0; c < MOTION_CAPTURES; c++) {
+			const on = await engine.captureFrame();
+			const [off, pixels] = nearest(ends, on);
+			differing.push(pixels);
+			if (hidesWhatShows(noise, pixels)) shown ??= { off, on };
+		}
+		const jump = visiblyDiffering(ends[0] as Capture, ends[1] as Capture);
+		flights.push({ share, toward, noise, jump, differing });
+		if (shown && shownFlights++ < HIDDEN_IMAGES) {
+			images[`flight-${k}-off`] = await png(shown.off);
+			images[`flight-${k}-on`] = await png(shown.on);
 		}
 	}
 
@@ -111,9 +166,28 @@ export async function occlusionTurns(
 		off: medianFigures(sides.off),
 		on: medianFigures(sides.on),
 		stops,
+		flights,
+		lateInMotion: flights.reduce((sum, flight) => sum + lateFrames(flight), 0),
 		...(Object.keys(images).length > 0 && { images }),
 		failures,
 	};
+}
+
+/** A frame that `engine.captureFrame` read back. */
+type Capture = Awaited<ReturnType<Engine['captureFrame']>>;
+
+/** The pixels where two captures of the same size differ by the image tests' rule. */
+const visiblyDiffering = (a: Capture, b: Capture): number =>
+	visiblyDifferingPixels(a.pixels, b.pixels, a.width, a.height);
+
+/** The reference nearest a frame, and the pixels where the two differ by more than shading does. */
+function nearest(references: readonly Capture[], frame: Capture): [Capture, number] {
+	let best: [Capture, number] = [frame, Number.POSITIVE_INFINITY];
+	for (const reference of references) {
+		const pixels = visiblyDiffering(reference, frame);
+		if (pixels < best[1]) best = [reference, pixels];
+	}
+	return best;
 }
 
 /** A captured frame as a PNG file in base64. */

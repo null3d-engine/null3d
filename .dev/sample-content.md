@@ -19,7 +19,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 
 | Content | For |
 | --- | --- |
-| 28 Khronos glTF sample models (`sources/khronos/`): skins, clips, morph targets, materials, and a model for each glTF extension that the loader reads | The loader's image tests and parity (M2-A2, M2-L4), skinning and clips from files (M2-C7), morph targets (M2-C5), quantized vertices (M2-A1), meshopt (M2-A3) and Draco (M2-A6) |
+| 35 Khronos glTF sample models (`sources/khronos/`): skins, clips, morph targets, materials, and a model for each glTF extension that the loader reads | The loader's image tests and parity (M2-A2, M2-L4), skinning and clips from files (M2-C7), morph targets (M2-C5), quantized vertices (M2-A1), meshopt (M2-A3), Draco (M2-A6), and clear coats and sheens (M2-EX30: ClearCoatTest, ClearCoatCarPaint, ClearcoatWicker, SheenChair, SheenCloth, SheenTestGrid and ToyCar, added on 11 October 2026) |
 | The KayKit Knight (`sources/characters/kaykit-knight/`): 7,024 vertices, 41 joints, 76 clips | The crowd scene, S5 (M2-L2). The asset tool's simplifier can bring it near S5's 2,500 vertices |
 | Four Kenney city kits (`sources/city/kenney-*/`), with one building in FBX and OBJ form | The city scene, S6 (M2-L3), and the convert command (M2-B3) |
 | 40 ambientCG texture sets at 1024 x 1024 (`sources/materials/ambientcg/`) | S6's materials and a real KTX2 load (M2-B1) |
@@ -40,7 +40,9 @@ No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `t
 
 ## The city of S6
 
-The city layout holds rows of objects, not models. S6 needs model files, so `bench/lib/city-files.ts` builds two from the layout. The kit file holds each part of the Kenney models that the layout uses. The tower file holds one mesh per material with every box in that material, and the layout's 200 materials. The files go into the shared cache, in `city/<key>` beside the commits' folders. The key is the layout's SHA-256 and the module's own source, so a change to either builds them again. Their images stay in the commit's folder, and the files name them by relative paths. Only the packed images of occlusion, roughness and metalness are new files.
+The city layout holds rows of objects, not models. S6 needs model files, so `bench/lib/city-files.ts` builds two from the layout. The kit file holds each part of the Kenney models that the layout uses. The tower file holds one mesh per material with every box in that material, and the layout's 200 materials. The files go into the shared cache, in `city/<key>` beside the commits' folders. The key is the layout's SHA-256, the pinned commit and the module's own source, so a change to any of them builds them again. Their images stay in the commit's folder, and the files name them by relative paths. Only the packed images of occlusion, roughness and metalness are new files.
+
+The key must hold the pinned commit, because the files name images in that commit's folder. Until 12 October 2026 it held only the layout and the module. #520 moved the pin and kept the layout. On main, the benchmark job's next run built the city files for its baseline, under the old pin, and its new build took the same folder. The Actions cache then kept those files for the new pin, without the old pin's folder. The next benchmark run that restored them failed before its first page, because the files named images that the machine did not have. A computer that keeps every pin's folder, as a developer's does, never shows the fault. A unit test in `bench/lib/city-files.test.ts` checks that two pins with one layout get two folders.
 
 A page imports them as `/s6-city/kit.gltf?optimized` and `/s6-city/towers.gltf?optimized`. The `cityServer` plugin of the module resolves each import to the built file, and the null3D plugin optimizes it as any model. The benchmark pages' build and the dev server both use it. The first build takes about 27 seconds, and the optimization about 100 more on the owner's Mac. `bun bench/lib/city-files.ts` does both ahead of time. In CI, the `city` job runs it once per run through `.github/actions/city`, after the samples action, and keeps both results in the Actions cache. Its key covers the pinned sample content, the module and the asset tool. The job hands both results to the jobs that load S6 as artifacts. A build without the cache took 6.2 minutes on GitHub's Linux machines ([D-106](decisions/D-106-s6-city.md#ci)). [Benchmarks](benchmarks.md#the-city) describes S6.
 
@@ -82,7 +84,7 @@ The trees file takes 1,793 KB with its levels of detail, the plants file 443 KB,
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 186 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 207 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -100,7 +102,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 186 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 207 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.

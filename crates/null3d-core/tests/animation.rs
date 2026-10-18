@@ -11,8 +11,9 @@ mod three;
 use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
     AnimationError, Animations, BakedKeys, Blend, Channel, Clip, DEFAULT_RATE, EVENT_WORDS,
-    Interpolation, MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, POSE_FIELDS,
-    Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, joints, resample,
+    Interpolation, MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, NO_SOURCE,
+    POSE_FIELDS, Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, joints,
+    resample,
 };
 use null3d_core::error::{CoreError, Resource};
 use null3d_core::jobs::JobSystem;
@@ -494,6 +495,59 @@ fn a_clip_weight_below_one_blends_with_the_rest_pose() {
     };
     assert!(difference(none, rest) < 1e-6);
     assert!(difference(full, rest) > 0.1);
+}
+
+#[test]
+fn a_table_that_grows_poses_as_one_made_large_enough() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(8);
+    let pose = |animations: &mut Animations, grow: bool| {
+        let id = animations.add_skeleton(skeleton.clone()).unwrap();
+        let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+        let mut added = Vec::new();
+        for i in 0..9u32 {
+            if grow && let Some((instances, joints)) = animations.growth_for(id, 1 << 20) {
+                let old = animations.try_grow(instances, joints).unwrap();
+                assert_eq!(old[0].len(), old[1].len());
+            }
+            let instance = animations.add_instance(id).unwrap();
+            animations.set_sample(instance, 0, clip, i as f32 * 0.1, 1.0);
+            added.push(instance);
+            animations.update(&jobs, 1.0 / 60.0);
+        }
+        animations.remove_instance(added[3]).unwrap();
+        animations.add_instance(id).unwrap();
+        animations.update(&jobs, 1.0 / 60.0);
+        animations.matrices()[..animations.joints() as usize * MATRIX_FLOATS].to_vec()
+    };
+    let mut small = Animations::new(&jobs, 2, 12).unwrap();
+    let grown = pose(&mut small, true);
+    assert_eq!(small.instance_capacity(), 16);
+    assert_eq!(small.joint_capacity(), 96);
+    let mut large = Animations::new(&jobs, 16, 96).unwrap();
+    assert_eq!(grown, pose(&mut large, false));
+    assert!(grown.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn growth_stops_at_the_most_joints_and_never_shrinks() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, _) = character(8);
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    assert_eq!(
+        animations.growth_for(id, 64),
+        None,
+        "the first instance fits"
+    );
+    animations.add_instance(id).unwrap();
+    assert_eq!(animations.growth_for(id, 64), Some((2, 16)));
+    assert_eq!(animations.growth_for(id, 12), None, "past the most joints");
+    animations.try_grow(1, 4).unwrap();
+    assert_eq!(
+        (animations.instance_capacity(), animations.joint_capacity()),
+        (1, 8)
+    );
 }
 
 #[test]
@@ -1893,6 +1947,52 @@ fn a_pose_step_changes_only_when_the_instances_matrices_do() {
     assert_eq!(animations.pose_step(99), None);
 }
 
+#[test]
+fn a_slow_instance_poses_on_its_interval_alone() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(4);
+    let mut animations = Animations::new(&jobs, 2, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+    let slow = animations.add_instance(id).unwrap();
+    let every = animations.add_instance(id).unwrap();
+    animations.play(slow, clip, Play::default()).unwrap();
+    animations.play(every, clip, Play::default()).unwrap();
+    let intervals = animations.update_intervals_mut();
+    assert_eq!(
+        [intervals[slow as usize], intervals[every as usize]],
+        [1, 1]
+    );
+    intervals[slow as usize] = 4;
+
+    let dt = 1.0 / 60.0;
+    // Every update poses the instance that has no interval, and the first poses the slow one too.
+    animations.update(&jobs, dt);
+    let posed = animations.pose_step(slow);
+    assert_eq!(posed, animations.pose_step(every));
+
+    // The three updates in between leave the slow instance in its pose, and its matrices carry
+    // over unchanged, so the skinning pass skips the held pose too.
+    let held = animations.instance_matrices(slow).to_vec();
+    for _ in 0..3 {
+        animations.update(&jobs, dt);
+        assert_eq!(animations.pose_step(slow), posed);
+        assert_eq!(animations.instance_matrices(slow), held.as_slice());
+    }
+
+    // The next update poses it again. Its clips covered the frames in between, so its pose matches
+    // the instance that poses in every one of them.
+    animations.update(&jobs, dt);
+    assert_ne!(animations.pose_step(slow), posed);
+    let slow_pose = animations.instance_matrices(slow).to_vec();
+    let largest = slow_pose
+        .iter()
+        .zip(animations.instance_matrices(every))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(largest < 1e-4, "the slow pose differs by {largest}");
+}
+
 /// Writes a rotation override into slot `slot` of instance `instance`'s block.
 fn override_joint(
     animations: &mut Animations,
@@ -1956,11 +2056,19 @@ fn joint_overrides_turn_only_their_joints_and_those_below() {
 /// A chain of four joints, each 1 above its parent along +Y, with the inverse bind matrices of
 /// that rest pose.
 fn upright_chain() -> Skeleton {
-    let parents = [NO_PARENT, 0, 1, 2];
-    let rest = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(4);
-    let mut rest = rest;
+    upright_chain_of(4)
+}
+
+/// A chain of `joints` joints, each 1 above its parent along +Y, with the inverse bind matrices of
+/// that rest pose. A skeleton's lanes are its joint count rounded up to a multiple of four, so a
+/// chain wider than four joints needs more than four joints.
+fn upright_chain_of(joints: usize) -> Skeleton {
+    let parents: Vec<u32> = std::iter::once(NO_PARENT)
+        .chain(0..joints as u32 - 1)
+        .collect();
+    let mut rest = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(joints);
     rest[1] = 0.0;
-    let binds: Vec<f32> = (0..4)
+    let binds: Vec<f32> = (0..joints)
         .flat_map(|j| {
             let mut m = null3d_core::math::IDENTITY;
             m[7] = -(j as f32);
@@ -2040,4 +2148,614 @@ fn a_look_at_aims_from_the_objects_place_in_the_world() {
             &identity.iter().map(|&v| f64::from(v)).collect::<Vec<_>>()
         ) < 1e-6
     );
+}
+
+/// A skeleton of one joint at the origin, whose bind matrix is the identity, so a frame step's
+/// skinning matrix holds the joint's local pose.
+fn single_joint() -> Skeleton {
+    Skeleton::new(
+        &[NO_PARENT],
+        &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+    )
+    .unwrap()
+}
+
+/// Two joints that both hang from the root, with the identity bind matrix, so neither one's pose
+/// moves the other's skinning matrix: a joint's matrix holds its own local pose.
+fn two_roots() -> Skeleton {
+    let rest = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(2);
+    let binds = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0].repeat(2);
+    Skeleton::new(&[NO_PARENT, NO_PARENT], &rest, &binds).unwrap()
+}
+
+/// A one-second clip of one joint whose translation moves along x at `speed` per second from
+/// `start`, so a sample is exactly `start + speed * t`.
+fn sliding(skeleton: &Skeleton, start: f32, speed: f32) -> Clip {
+    moving(skeleton, &[0], start, speed)
+}
+
+/// A one-second clip of the named joints, each moving along x at `speed` per second from `start`,
+/// so a sample of a joint is exactly `start + speed * t`.
+fn moving(skeleton: &Skeleton, joints: &[u32], start: f32, speed: f32) -> Clip {
+    let times = [0.0, 1.0];
+    let values: Vec<f32> = vec![start, 0.0, 0.0, start + speed, 0.0, 0.0];
+    let tracks: Vec<SourceTrack> = joints
+        .iter()
+        .map(|&joint| SourceTrack {
+            joint,
+            channel: Channel::Translation,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values: &values,
+        })
+        .collect();
+    resample(skeleton, &tracks, DEFAULT_RATE).unwrap()
+}
+
+/// The joint's local x translation from the last frame step.
+fn x_of(animations: &Animations, instance: u32) -> f32 {
+    x_of_joint(animations, instance, 0)
+}
+
+/// The local x translation of joint `joint` of an instance, from the last frame step.
+fn x_of_joint(animations: &Animations, instance: u32, joint: usize) -> f32 {
+    animations.instance_matrices(instance)[joint * MATRIX_FLOATS + 3]
+}
+
+/// A play that switches its layer with an inertial transition over `fade` seconds.
+fn inertial(fade: f32) -> Play {
+    Play {
+        fade,
+        inertial: true,
+        ..Play::default()
+    }
+}
+
+/// The number of sample slots that a live play fills.
+fn playing_slots(animations: &Animations, instance: u32) -> usize {
+    let first = instance as usize * MAX_BLEND;
+    (first..first + MAX_BLEND)
+        .filter(|&s| animations.slots().source[s] != NO_SOURCE)
+        .count()
+}
+
+/// `x * x * (3 - 2x)`, clamped: the ease of Holden's dead blending, which the core follows.
+fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// An inertial switch extrapolates the outgoing pose at its own velocity and eases it into the
+/// new clip, and samples only the new clip while it runs. The figures are Holden's dead blending
+/// (`deadblending.c`, MIT): `ext` moves at the source velocity each step and the output is
+/// `lerp(ext, input, smoothstep(t / blendtime))`.
+#[test]
+fn an_inertial_switch_follows_the_dead_blending_reference() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let source = x_of(&animations, instance);
+    assert!((source - 10.0 * dt).abs() < 1e-4, "{source}");
+
+    let fade = 0.5;
+    animations.play(instance, run, inertial(fade)).unwrap();
+    assert_eq!(
+        playing_slots(&animations, instance),
+        1,
+        "only the run plays"
+    );
+
+    // `source` moves at 1 unit a second, and the run at 2 from 10; the reference follows.
+    for k in 1..=32 {
+        animations.update(&jobs, dt);
+        let t = k as f32 * dt;
+        let extrapolated = source + 1.0 * t;
+        let input = 10.0 + 2.0 * t;
+        let expected = if t < fade {
+            extrapolated + (input - extrapolated) * smoothstep(t / fade)
+        } else {
+            input
+        };
+        let got = x_of(&animations, instance);
+        assert!(
+            (got - expected).abs() < 2e-3,
+            "step {k}: got {got}, expected {expected}"
+        );
+    }
+}
+
+/// An inertial switch keeps the pose continuous at the switch: its first step's pose is the
+/// outgoing pose carried on at its own speed, not a jump to the new clip.
+#[test]
+fn an_inertial_switch_starts_from_the_outgoing_pose() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let source = x_of(&animations, instance);
+    animations.play(instance, run, inertial(1.0)).unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of(&animations, instance);
+    // One step of the outgoing pose at its speed, with only the 1/60 s share of the fade's ease
+    // pulling it toward the new clip.
+    let extrapolated = source + dt;
+    let input = 10.0 + 2.0 * dt;
+    let expected = extrapolated + (input - extrapolated) * smoothstep(dt);
+    assert!((got - expected).abs() < 2e-3, "{got} against {expected}");
+    // It is still near the outgoing pose, not already at the new clip.
+    assert!(got < 0.5, "{got}");
+    // A cross-fade instead samples both clips: its first step sits between them.
+    let blend_got = {
+        let mut other = Animations::new(&jobs, 1, 1).unwrap();
+        let other_id = other.add_skeleton(single_joint()).unwrap();
+        let a = other
+            .add_clip(other_id, sliding(&single_joint(), 0.0, 1.0))
+            .unwrap();
+        let b = other
+            .add_clip(other_id, sliding(&single_joint(), 10.0, 2.0))
+            .unwrap();
+        let other_instance = other.add_instance(other_id).unwrap();
+        other.play(other_instance, a, Play::default()).unwrap();
+        for _ in 0..10 {
+            other.update(&jobs, dt);
+        }
+        other.play(other_instance, b, faded(1.0)).unwrap();
+        assert_eq!(
+            playing_slots(&other, other_instance),
+            2,
+            "a blend samples both"
+        );
+        other.update(&jobs, dt);
+        x_of(&other, other_instance)
+    };
+    assert!(
+        blend_got > got + 0.1,
+        "the blend mixes in the new clip at once: {blend_got} against {got}"
+    );
+}
+
+/// An inertial switch without a fade, with a weight, or on a layer that plays nothing stays a
+/// plain switch: no dead blend runs, and the layer keeps its slot count.
+#[test]
+fn an_inertial_switch_falls_back_when_it_cannot_run() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    // No clip plays yet: nothing to extrapolate.
+    animations.play(instance, walk, inertial(0.5)).unwrap();
+    assert_eq!(playing_slots(&animations, instance), 1);
+    animations.update(&jobs, 1.0 / 60.0);
+    // A fade of 0 switches at once, and a weight joins the layer instead of switching it.
+    animations
+        .play(
+            instance,
+            run,
+            Play {
+                inertial: true,
+                ..Play::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(playing_slots(&animations, instance), 1);
+    animations
+        .play(
+            instance,
+            walk,
+            Play {
+                fade: 0.5,
+                weight: Some(0.5),
+                join: true,
+                inertial: true,
+                ..Play::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(playing_slots(&animations, instance), 2);
+}
+
+/// A slow instance spends the time of each frame it skipped, so the frame that poses it again
+/// covers exactly the frames in between, whatever their lengths. Multiplying the last frame by the
+/// gap instead charges a hitch once for every frame of the interval, and the clip drifts.
+#[test]
+fn a_slow_instance_spends_each_frame_it_skipped() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(4);
+    let mut animations = Animations::new(&jobs, 2, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+    let slow = animations.add_instance(id).unwrap();
+    let every = animations.add_instance(id).unwrap();
+    animations.play(slow, clip, Play::default()).unwrap();
+    animations.play(every, clip, Play::default()).unwrap();
+    animations.update_intervals_mut()[slow as usize] = 4;
+
+    // Three even frames, one that took ten times as long, then the frame that poses it again.
+    let dt = 1.0 / 60.0;
+    for time in [dt, dt, dt, 10.0 * dt, dt] {
+        animations.update(&jobs, time);
+    }
+    let slow_pose = animations.instance_matrices(slow).to_vec();
+    let largest = slow_pose
+        .iter()
+        .zip(animations.instance_matrices(every))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(largest < 1e-4, "the slow pose differs by {largest}");
+}
+
+/// A dead blend belongs to the instance that started it: the instance that takes a removed one's id
+/// plays its own clips, without the blend the other left running.
+#[test]
+fn a_reused_id_starts_without_the_blend_it_inherited() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    // A fade far longer than the instance lives, so its blend is still running when it goes.
+    animations.play(instance, run, inertial(30.0)).unwrap();
+    animations.update(&jobs, dt);
+    assert!(x_of(&animations, instance) < 1.0, "the blend still runs");
+
+    animations.remove_instance(instance).unwrap();
+    let again = animations.add_instance(id).unwrap();
+    assert_eq!(again, instance, "the id comes back");
+    animations.play(again, run, Play::default()).unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of(&animations, again);
+    let expected = 10.0 + 2.0 * dt;
+    assert!((got - expected).abs() < 1e-3, "{got} against {expected}");
+}
+
+/// A skeleton with more joints than any before moves the dead blends' buffers, so the poses they
+/// held are gone: every blend ends there, rather than decaying a layer toward a pose of nothing.
+#[test]
+fn a_wider_skeleton_ends_the_dead_blends() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    // A fade long enough to run across the wider skeleton.
+    animations.play(instance, run, inertial(4.0)).unwrap();
+    assert_eq!(
+        playing_slots(&animations, instance),
+        1,
+        "only the run plays"
+    );
+    animations.update(&jobs, dt);
+    assert!(x_of(&animations, instance) < 1.0, "the blend still runs");
+
+    // A skeleton of more lanes than the one before moves the dead blend's buffers, and the pose it
+    // held is gone, so the blend ends: the layer plays its new clip alone.
+    animations.add_skeleton(upright_chain_of(8)).unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of(&animations, instance);
+    let expected = 10.0 + 2.0 * (2.0 * dt);
+    assert!((got - expected).abs() < 1e-3, "{got} against {expected}");
+}
+
+/// The outgoing pose carries on at the speed its clip plays, not at the rate the clip's own content
+/// moves: a clip at speed 2 leaves a pose that keeps moving twice as fast.
+#[test]
+fn an_inertial_switch_extrapolates_at_the_clips_speed() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations
+        .play(
+            instance,
+            walk,
+            Play {
+                speed: 2.0,
+                ..Play::default()
+            },
+        )
+        .unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let source = x_of(&animations, instance);
+    assert!((source - 2.0 * 10.0 * dt).abs() < 1e-4, "{source}");
+
+    animations.play(instance, run, inertial(1.0)).unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of(&animations, instance);
+    let extrapolated = source + 2.0 * dt;
+    let input = 10.0 + 2.0 * dt;
+    let expected = extrapolated + (input - extrapolated) * smoothstep(dt);
+    assert!((got - expected).abs() < 2e-3, "{got} against {expected}");
+}
+
+/// A dead blend ends on its own however the instance's time runs: with a negative time scale its
+/// fade still completes, so the layer shows its clip instead of the pose it left for ever.
+#[test]
+fn a_dead_blend_ends_with_a_negative_time_scale() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    // The clip holds its first frame while the time runs backward, so its pose is its start.
+    animations
+        .play(
+            instance,
+            run,
+            Play {
+                looping: false,
+                ..inertial(0.1)
+            },
+        )
+        .unwrap();
+    animations.time_scales_mut()[instance as usize] = -1.0;
+    for _ in 0..20 {
+        animations.update(&jobs, dt);
+    }
+    let got = x_of(&animations, instance);
+    assert!((got - 10.0).abs() < 1e-3, "{got}");
+}
+
+/// A second inertial switch during a fade carries on from the pose on screen, so a crowd that
+/// changes its mind mid-transition does not jump back to the clips the first switch left behind.
+#[test]
+fn a_second_inertial_switch_carries_on_from_the_pose_on_screen() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    animations.play(instance, run, inertial(1.0)).unwrap();
+    for _ in 0..20 {
+        animations.update(&jobs, dt);
+    }
+    let on_screen = x_of(&animations, instance);
+    assert!(
+        on_screen > 1.0 && on_screen < 10.0,
+        "the first fade is between the clips: {on_screen}"
+    );
+
+    animations.play(instance, walk, inertial(1.0)).unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of(&animations, instance);
+    assert!(
+        (got - on_screen).abs() < 0.05,
+        "the second switch jumps from {on_screen} to {got}"
+    );
+}
+
+/// A joint that only the outgoing clip of a layer above the first animated keeps the pose the
+/// blend decays from while the fade runs, and the pose below covers it once the fade ends.
+#[test]
+fn a_layer_above_zero_keeps_what_only_the_outgoing_clip_animated() {
+    let jobs = JobSystem::new(0);
+    let skeleton = two_roots();
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    // The outgoing clip moves both joints; the new one moves joint 0 alone.
+    let both = animations
+        .add_clip(id, moving(&skeleton, &[0, 1], 0.0, 1.0))
+        .unwrap();
+    let one = animations
+        .add_clip(id, moving(&skeleton, &[0], 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    let on_layer_one = |play: Play| Play { layer: 1, ..play };
+    animations
+        .play(instance, both, on_layer_one(Play::default()))
+        .unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let before = x_of_joint(&animations, instance, 1);
+    assert!(before > 0.1, "the outgoing clip moves joint 1: {before}");
+
+    animations
+        .play(instance, one, on_layer_one(inertial(2.0)))
+        .unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of_joint(&animations, instance, 1);
+    assert!(
+        got >= before,
+        "joint 1 snaps from {before} to {got} at the switch"
+    );
+
+    // Past the fade the layer holds nothing on joint 1, so the pose below shows: the rest pose,
+    // whose x is 0.
+    for _ in 0..200 {
+        animations.update(&jobs, dt);
+    }
+    let after = x_of_joint(&animations, instance, 1);
+    assert!(after.abs() < 1e-3, "joint 1 settles at {after}");
+    assert!(
+        x_of_joint(&animations, instance, 0) > 9.0,
+        "the new clip poses joint 0"
+    );
+}
+
+/// A second inertial switch on a layer above the first carries on with the channels the blend
+/// before it decayed toward, so a joint that only the older clips animated keeps fading.
+#[test]
+fn a_second_switch_on_a_high_layer_keeps_the_channels_the_first_one_carried() {
+    let jobs = JobSystem::new(0);
+    let skeleton = two_roots();
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let both = animations
+        .add_clip(id, moving(&skeleton, &[0, 1], 0.0, 1.0))
+        .unwrap();
+    let one = animations
+        .add_clip(id, moving(&skeleton, &[0], 10.0, 2.0))
+        .unwrap();
+    let other = animations
+        .add_clip(id, moving(&skeleton, &[0], 20.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    let on_layer_one = |play: Play| Play { layer: 1, ..play };
+    animations
+        .play(instance, both, on_layer_one(Play::default()))
+        .unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    // The first switch leaves joint 1 to the blend alone.
+    animations
+        .play(instance, one, on_layer_one(inertial(2.0)))
+        .unwrap();
+    for _ in 0..30 {
+        animations.update(&jobs, dt);
+    }
+    let before = x_of_joint(&animations, instance, 1);
+    assert!(
+        before > 0.1,
+        "the first blend still shows joint 1: {before}"
+    );
+
+    // The second switch replaces the layer's clips again, and joint 1 carries on fading.
+    animations
+        .play(instance, other, on_layer_one(inertial(2.0)))
+        .unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of_joint(&animations, instance, 1);
+    assert!(got >= before * 0.9, "joint 1 snaps from {before} to {got}");
+}
+
+/// A crowd that runs more dead blends at once than the pool starts with grows the pool, and every
+/// blend keeps the pose it decays from.
+#[test]
+fn more_dead_blends_than_the_pool_holds_grow_it() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 24, 24).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let dt = 1.0 / 60.0;
+    let instances: Vec<u32> = (0..24)
+        .map(|_| {
+            let instance = animations.add_instance(id).unwrap();
+            animations.play(instance, walk, Play::default()).unwrap();
+            instance
+        })
+        .collect();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    for &instance in &instances {
+        animations.play(instance, run, inertial(2.0)).unwrap();
+    }
+    // Half a second into a two-second fade, so every instance still decays from its old pose.
+    for _ in 0..30 {
+        animations.update(&jobs, dt);
+    }
+    for &instance in &instances {
+        let x = x_of(&animations, instance);
+        assert!(x > 0.0 && x < 8.0, "instance {instance} is at {x}");
+    }
+    // Past the fade every layer plays its new clip alone, whose x is between 10 and 12.
+    for _ in 0..200 {
+        animations.update(&jobs, dt);
+    }
+    let settled: Vec<f32> = instances
+        .iter()
+        .map(|&instance| x_of(&animations, instance))
+        .collect();
+    for (instance, &x) in instances.iter().zip(&settled) {
+        assert!((10.0..12.0).contains(&x), "instance {instance} is at {x}");
+    }
+    let low = settled.iter().copied().fold(f32::MAX, f32::min);
+    let high = settled.iter().copied().fold(f32::MIN, f32::max);
+    assert!(high - low < 1e-3, "the crowd drifts from {low} to {high}");
 }

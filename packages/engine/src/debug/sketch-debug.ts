@@ -34,6 +34,7 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		seconds: 0,
 		presentedFps: 0,
 		completedFps: 0,
+		updateErrors: 0,
 		cpuMs: 0,
 		threads: [],
 		gpuMs: null,

@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are textures, per-instance data, custom post effects and tone curves, and scene and reflection passes (0.2). A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Do not ship code that uses a part until its docs page says it is built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are textures, per-instance data, custom post effects and tone curves, and custom passes: scene, reflection and full-screen passes (0.2). A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Do not ship code that uses a part until its docs page says it is built.
 
 ## Contents
 
@@ -58,6 +58,11 @@ struct Surface {
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
   transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
   thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
+  clearcoat: f32,          // (0.2) clear coat, 0 to 1; WGSL that names a layer field builds the layered shaders
+  clearcoatRoughness: f32, // (0.2) the coat's roughness
+  clearcoatNormal: vec3f,  // (0.2) the coat's normal, world space; starts as the mesh's normal
+  sheenColor: vec3f,       // (0.2) cloth and velvet glow, linear RGB; black gives none
+  sheenRoughness: f32,     // (0.2) how wide the sheen spreads
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -271,7 +276,8 @@ post.removeEffect(vignette);
   - `time`: the sketch time in seconds.
 - Other pixels: `effectColor(uv)` reads with a linear filter, and `effectPixel(vec2i)` reads one pixel exactly. Both clamp to the image's edge.
 - Depth: `effectDepth(uv)` (1 near, 0 far, 0 where nothing drew), `effectViewPosition(uv)` (z negative in front) and `effectDistance(uv)` (world units along the view). Calling one makes the effect read depth, on all three GPU paths.
-- Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects take no textures.
+- Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct.
+- Textures: `var name: texture_2d<f32>;` with the `textures` option, sampled as `textureSampleLevel(name, nameSampler, uv, 0.0)`. Each takes one uniform number, at most 6. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. An effect with textures draws in a pass of its own.
 - Library imports work: `#import null3d::noise::{random2}`. Do not declare `uniforms`, or names that start with `effect`.
 - `order` sets the run order, lowest first; ties run in the order added. At most 8 effects; a ninth throws E1213.
 - A full-screen pass reads and writes 8 bytes per pixel. An effect that reads only its own pixel joins the pass of the effect before it. With bloom and FXAA off, the last pass folds into the final pass. An effect that calls `effectPixel` or `effectColor` starts a pass of its own, so put neighbor reads first in a chain. Add effects before the first frame. On WebGL2 in Chrome on Android, which cannot compile shaders in the background, effects added later draw a pass each.
@@ -304,7 +310,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
-- Full-screen passes of your own WGSL are (0.2, not built yet). Until then, write full-screen WGSL as a custom effect (section 6). Docs: `api/render`, `guides/custom-passes`.
+- A full-screen pass (0.2) runs an effect's WGSL (`fn effect`) over a texture of its own: `render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, input, textures, uniforms })`. `input.uv`, `pixel` and `size` are the pass's own. `input: 'sceneColor'` or `'outlineMask'` gives `input.color`, `effectColor` and `effectPixel` an image. `effectInputSize()` gives that image's size. `render.setPassUniform` changes a uniform. Use a pass for blur steps, mask edges and GPU-painted textures that materials or effects read. Docs: `api/render`, `guides/custom-passes`.
 
 A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
 
@@ -327,7 +333,7 @@ Water that shows its bed (0.2): give the custom material `transmission: 1`, `thi
 
 ## 8. Portable WGSL rules
 
-These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4 or 9, and warns on rule 10, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
+These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4, 9 or 11, and warns on rule 10, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
@@ -339,6 +345,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 8. No storage buffers or storage textures in vertex shaders: per-instance data arrives as vertex attributes.
 9. Do not copy an array out of a uniform buffer: no `let` or by-value argument of an array, or of a struct that holds one. Some phone GPUs leave the copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`.
 10. Do not call `atomicCompareExchangeWeak`. Safari 27.0 cannot compile it, so the shader fails on Apple devices with that version. The build warns but still builds it. To claim a slot, store into a free slot with `atomicStore`, call `workgroupBarrier()`, then read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also work everywhere.
+11. Do not name anything `gl`, or with a name that starts with `gl_`. GLSL ES reserves names that start with `gl_`, and the WebGL2 build turns the second of two names `gl` in one shader into `gl_1`. The build rejects such a shader and names it.
 
 ## 9. Imports from the shader library
 
@@ -351,7 +358,7 @@ The build resolves imports before translating, and adds only the functions the s
 
 - `null3d::math`: constants such as `PI`, `modulo` with GLSL's sign rule, `remap` and rotations.
 - `null3d::noise`: integer hashes, `random`, and value, Perlin, simplex, Worley and fractal noise. Each noise has a 2D and a 3D form, such as `simplex2` and `fbm3(p, octaves)`. The hashes give the same bits on every GPU, so a pattern looks the same everywhere.
-- `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx` and `tone_map_neutral`.
+- `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx`, `tone_map_agx_punchy` and `tone_map_neutral`.
 - `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
 - `null3d::fog`: the curves `fog_linear` and `fog_exp2`, with three.js's formulas, and `fog_exponential`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
 - `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
@@ -363,6 +370,7 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 ## 10. Debugging shaders
 
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
+- The plugin caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build compiles only what changed. Set `NULL3D_NO_CACHE=1` to ignore the cache. (`getting-started/install`, "Builds")
 - A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene, in development builds. A debug view ignores custom shaders.

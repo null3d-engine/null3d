@@ -7,8 +7,8 @@ use crate::caps::{
     TEXTURE_3D_SIZE,
 };
 use crate::drawlist::{
-    Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
-    state_flags, texture_usage, upload_flags, vertex, view,
+    Command, NO_TARGET, Op, address, buffer_usage, compare, decode, filter, format, groups,
+    permutation, resource_kind, state_flags, template, texture_usage, upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -40,6 +40,14 @@ pub enum MockError {
     Invalid {
         op: Op,
         rule: &'static str,
+    },
+    /// A draw binds a group whose layout its pipeline does not bind at that index. WebGPU refuses
+    /// the draw when it validates the pipeline's layout against the groups that draw with it.
+    WrongGroup {
+        op: Op,
+        template: u32,
+        index: u32,
+        layout: u32,
     },
     /// A write or an upload after a command that used the resource in the same submit. WebGPU
     /// would apply the write before that command, and WebGL2 after it.
@@ -80,17 +88,39 @@ struct View {
 struct Pass {
     width: u32,
     height: u32,
-    targets: [Option<u32>; 3],
+    targets: [Option<u32>; 4],
     formats: Formats,
 }
 
-/// The color format, the depth format (`NONE` for none) and the sample count of a render pass's
-/// targets, which a pipeline or a bundle that draws in it must share.
+/// The color format, the depth format (`NONE` for none), the sample count and the second color
+/// format (`NONE` for none) of a render pass's targets, which a pipeline or a bundle that draws in
+/// it must share. Only the weighted layer's pipelines draw into a second color target, of
+/// `format::R16_FLOAT` (`template::draws_two_targets`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Formats {
     color: u32,
     depth: u32,
     samples: u32,
+    second: u32,
+}
+
+/// The bind group indices whose bound group the mock checks. WebGPU allows a pipeline four groups,
+/// and the WebGL2 path binds a decal's scene depth at a fifth.
+const BOUND_SLOTS: usize = 8;
+
+/// A render pipeline: the template its groups come from, and the formats it draws into.
+#[derive(Clone, Copy, Debug)]
+struct RenderPipeline {
+    /// The template the pipeline was made from.
+    template: u32,
+    formats: Formats,
+}
+
+/// A bind group: the layout it was made with, and the buffers and textures it binds.
+#[derive(Clone, Debug)]
+struct BindGroup {
+    layout: u32,
+    resources: Vec<Resource>,
 }
 
 /// A render target of a pass: the texture it draws into, and what the pass checks it against.
@@ -142,6 +172,13 @@ impl Location {
     }
 }
 
+/// A buffer, as its creation described it.
+#[derive(Clone, Copy, Debug)]
+struct Buffer {
+    size: u32,
+    usage: u32,
+}
+
 /// The formats that `UploadImage` writes on both paths.
 const IMAGE_FORMATS: [u32; 4] = [
     format::RGBA8_UNORM,
@@ -150,11 +187,27 @@ const IMAGE_FORMATS: [u32; 4] = [
     format::RGBA32_FLOAT,
 ];
 
+/// The formats that `CopyTextureToBuffer` copies as the same bytes on both paths: WebGL2 reads
+/// them with `readPixels`, whose required format and type give WebGPU's texel layout for these.
+const READBACK_FORMATS: [u32; 2] = [format::RGBA8_UNORM, format::RGBA32_UINT];
+
+/// WebGPU's alignment of a texture-to-buffer copy's bytes per row, which the draw list also asks of
+/// its buffer offset.
+const COPY_ROW_ALIGNMENT: u32 = 256;
+
+/// True when `length` bytes from `offset` fit in `size`, without the overflow of a `u32` sum.
+fn fits(offset: u32, length: u32, size: u32) -> bool {
+    u64::from(offset) + u64::from(length) <= u64::from(size)
+}
+
 #[derive(Default)]
 pub struct MockBackend {
     /// What the device offers beyond the portable budget.
     caps: Capabilities,
-    buffers: HashMap<u32, u32>,
+    buffers: HashMap<u32, Buffer>,
+    /// The buffers whose `ReadBuffer` has not finished: no command may use them until the thread
+    /// that draws raises the read's slot, which [`MockBackend::finish_reads`] stands for.
+    reading: HashSet<u32>,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, View>,
     /// How many times each texture id was made or released, so a view can tell that its texture
@@ -165,11 +218,12 @@ pub struct MockBackend {
     images: HashMap<u32, (u32, u32)>,
     /// The ids of the texture generators a test provided, which share the images' ids.
     generators: HashSet<u32>,
-    /// Each render pipeline, with the formats it draws into.
-    render_pipelines: HashMap<u32, Formats>,
-    compute_pipelines: HashSet<u32>,
-    /// The buffers and textures of each bind group.
-    bind_groups: HashMap<u32, Vec<Resource>>,
+    /// Each render pipeline, with the groups of its template and the formats it draws into.
+    render_pipelines: HashMap<u32, RenderPipeline>,
+    /// Each compute pipeline, with the template that sets its groups.
+    compute_pipelines: HashMap<u32, u32>,
+    /// The buffers and textures of each bind group, and the layout it was made with.
+    bind_groups: HashMap<u32, BindGroup>,
     /// The buffers and textures that each bundle's commands use, and the formats it draws into.
     bundles: HashMap<u32, (Vec<BundleUse>, Formats)>,
     /// The formats of the bundle being recorded.
@@ -182,6 +236,13 @@ pub struct MockBackend {
     recording: Option<(u32, Vec<BundleUse>)>,
     canvas: Option<(u32, u32)>,
     pipeline_set: bool,
+    /// The pipeline that the last `SetPipeline` or `SetComputePipeline` bound, or 0 for none: the
+    /// pipeline whose groups a draw is checked against. A pass and a bundle each set their own.
+    current_pipeline: u32,
+    /// True while the pipeline that draws is a compute pipeline.
+    pipeline_is_compute: bool,
+    /// The layout of the group bound at each index, or 0 where none is bound.
+    bound: [u32; BOUND_SLOTS],
     vertex_buffer_set: bool,
     index_buffer_set: bool,
     /// The resources that commands used since the last submit.
@@ -232,6 +293,11 @@ impl MockBackend {
     /// generator once its code has loaded.
     pub fn provide_generator(&mut self, id: u32) {
         self.generators.insert(id);
+    }
+
+    /// Finishes every read in flight, as the thread that draws does when it raises their slots.
+    pub fn finish_reads(&mut self) {
+        self.reading.clear();
     }
 
     pub fn replay(&mut self, words: &[u32]) -> Result<(), MockError> {
@@ -301,6 +367,18 @@ impl MockBackend {
         Err(MockError::WriteAfterUse { op, what, id })
     }
 
+    /// A buffer by id. A buffer whose read is in flight fails: WebGPU is mapping it, and a write
+    /// or a copy would change the bytes that the read delivers.
+    fn buffer(&self, op: Op, id: u32) -> Result<Buffer, MockError> {
+        let buffer = *self.buffers.get(&id).ok_or(missing(op, "buffer", id))?;
+        check(
+            !self.reading.contains(&id),
+            op,
+            "a buffer waits until its read's slot rises before another command uses it",
+        )?;
+        Ok(buffer)
+    }
+
     fn texture(&self, op: Op, id: u32) -> Result<Texture, MockError> {
         if self.views.contains_key(&id) {
             return Err(invalid(
@@ -333,10 +411,13 @@ impl MockBackend {
             && width > 0
             && height > 0
             && layers > 0
-            && at.x + width <= level_size(texture.width, at.level)
-            && at.y + height <= level_size(texture.height, at.level)
-            && at.layer + layers
-                <= view::level_layers(texture.binding_view, texture.layers, at.level);
+            && fits(at.x, width, level_size(texture.width, at.level))
+            && fits(at.y, height, level_size(texture.height, at.level))
+            && fits(
+                at.layer,
+                layers,
+                view::level_layers(texture.binding_view, texture.layers, at.level),
+            );
         if !fits {
             return Err(MockError::OutOfRange { op, id: at.texture });
         }
@@ -713,6 +794,55 @@ impl MockBackend {
         Ok(())
     }
 
+    /// Checks a copy of a box of texels into a buffer that a read then maps, against WebGPU's
+    /// rules for the copy and the read, and the formats that WebGL2's `readPixels` copies alike.
+    fn copy_texture_to_buffer(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        check(o.len() == 11, op, "a texture-to-buffer copy takes 11 words")?;
+        let source = Location::read(&o[0..5]);
+        let (id, offset, bytes_per_row, rows_per_image, width, height) =
+            (o[5], o[6], o[7], o[8], o[9], o[10]);
+        let from = self.texel_box(op, source, width, height, 1)?;
+        check(
+            from.usage & texture_usage::COPY_SRC != 0,
+            op,
+            "a copy reads a texture with COPY_SRC usage",
+        )?;
+        check(
+            READBACK_FORMATS.contains(&from.format),
+            op,
+            "a copy into a buffer reads an RGBA8_UNORM or RGBA32_UINT texture, which both paths copy as the same bytes",
+        )?;
+        let buffer = self.buffer(op, id)?;
+        check(
+            buffer.usage & buffer_usage::COPY_DST != 0,
+            op,
+            "a copy writes a buffer with COPY_DST usage",
+        )?;
+        for aligned in [offset, bytes_per_row] {
+            if aligned % COPY_ROW_ALIGNMENT != 0 {
+                return Err(MockError::Unaligned {
+                    op,
+                    offset: aligned,
+                });
+            }
+        }
+        let row = u64::from(width) * u64::from(format::block_bytes(from.format));
+        check(
+            u64::from(bytes_per_row) >= row && rows_per_image >= height,
+            op,
+            "a copy's rows hold its width, and its rows per image its height",
+        )?;
+        // WebGPU's rule: every row but the last takes the bytes per row, and the last its texels.
+        let end = u64::from(offset) + u64::from(bytes_per_row) * u64::from(height - 1) + row;
+        if end > u64::from(buffer.size) {
+            return Err(MockError::OutOfRange { op, id });
+        }
+        self.use_resource(Resource::Texture(source.texture));
+        self.use_resource(Resource::Buffer(id));
+        Ok(())
+    }
+
     /// Makes the mip levels of one layer, in render passes on WebGPU and blits on WebGL2: the
     /// texture must be an array that both paths can draw into and filter.
     fn generate_mipmaps(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
@@ -796,7 +926,9 @@ impl MockBackend {
 
     fn create_bind_group(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let mut resources = Vec::new();
-        for entry in o[3..].chunks(5) {
+        // Only the group's own entries: the operands may hold a spare word or more after them.
+        let count = o[2] as usize;
+        for entry in o[3..3 + 5 * count].chunks(5) {
             let id = entry[2];
             match entry[1] {
                 resource_kind::BUFFER => {
@@ -818,7 +950,61 @@ impl MockBackend {
                 _ => return Err(invalid(op, "unknown resource kind")),
             }
         }
-        self.bind_groups.insert(o[0], resources);
+        self.bind_groups.insert(
+            o[0],
+            BindGroup {
+                layout: o[1],
+                resources,
+            },
+        );
+        Ok(())
+    }
+
+    /// Forgets the pipeline and the groups that a pass or a bundle sets for its own draws. WebGPU
+    /// clears them when a pass or a bundle begins, and after it replays bundles.
+    fn reset_draw_state(&mut self) {
+        self.pipeline_set = false;
+        self.current_pipeline = 0;
+        self.pipeline_is_compute = false;
+        self.bound = [0; BOUND_SLOTS];
+        self.vertex_buffer_set = false;
+        self.index_buffer_set = false;
+    }
+
+    /// Fails when a group bound at a draw is not one that the pipeline's template binds at its
+    /// index. WebGPU checks every bound group against the pipeline's layout when it draws, so a
+    /// frame that binds another layout draws nothing on a device while this backend accepts it.
+    /// A template whose page decides its layouts is not judged.
+    fn check_bound_groups(&self, op: Op) -> Result<(), MockError> {
+        let template = match self.pipeline_is_compute {
+            true => self.compute_pipelines.get(&self.current_pipeline).copied(),
+            false => self
+                .render_pipelines
+                .get(&self.current_pipeline)
+                .map(|pipeline| pipeline.template),
+        };
+        let Some(template) = template else {
+            return Ok(());
+        };
+        let Some(groups) = groups::of(template) else {
+            return Ok(());
+        };
+        for (index, &layout) in self.bound.iter().enumerate() {
+            if layout == 0 {
+                continue;
+            }
+            if !groups
+                .get(index)
+                .is_some_and(|allowed| allowed.contains(&layout))
+            {
+                return Err(MockError::WrongGroup {
+                    op,
+                    template,
+                    index: index as u32,
+                    layout,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -832,6 +1018,23 @@ impl MockBackend {
             }
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
+        let second = match o.get(9) {
+            Some(&id) => Some(self.target(op, id)?),
+            None => None,
+        };
+        if let Some(second) = second {
+            let Some(color) = color else {
+                return Err(invalid(op, "a second color target needs a first"));
+            };
+            check(
+                !format::is_depth(second.format)
+                    && second.samples == 1
+                    && color.samples == 1
+                    && (second.width, second.height) == (color.width, color.height),
+                op,
+                "a second color target has a color format, one sample and the first target's size",
+            )?;
+        }
         check(
             color.is_some() || depth.is_some(),
             op,
@@ -885,7 +1088,7 @@ impl MockBackend {
                 "the color and depth targets have one size",
             )?;
         }
-        let targets = [color, resolve, depth].map(|target| target.and_then(|t| t.texture));
+        let targets = [color, resolve, depth, second].map(|target| target.and_then(|t| t.texture));
         for texture in targets.into_iter().flatten() {
             self.use_resource(Resource::Texture(texture));
         }
@@ -898,37 +1101,46 @@ impl MockBackend {
                 color: color.map_or(format::NONE, |t| t.format),
                 depth: depth.map_or(format::NONE, |t| t.format),
                 samples: size.samples,
+                second: second.map_or(format::NONE, |t| t.format),
             },
         });
-        self.pipeline_set = false;
-        self.vertex_buffer_set = false;
-        self.index_buffer_set = false;
+        self.reset_draw_state();
         Ok(())
     }
 
     fn execute(&mut self, Command { op, operands: o }: Command<'_>) -> Result<(), MockError> {
         match op {
             Op::CreateBuffer => {
-                self.buffers.insert(o[0], o[1]);
+                let usage = o[2];
+                check(
+                    usage & buffer_usage::MAP_READ == 0
+                        || usage & !(buffer_usage::MAP_READ | buffer_usage::COPY_DST) == 0,
+                    op,
+                    "a buffer with MAP_READ usage has no other usage than COPY_DST",
+                )?;
+                self.buffers.insert(o[0], Buffer { size: o[1], usage });
+                self.reading.remove(&o[0]);
             }
             Op::WriteBuffer => {
-                let size = *self.buffers.get(&o[0]).ok_or(missing(op, "buffer", o[0]))?;
-                if o[1] + o[3] > size {
+                let size = self.buffer(op, o[0])?.size;
+                if !fits(o[1], o[3], size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
                 self.write(op, Resource::Buffer(o[0]))?;
             }
             Op::ClearBuffer => {
                 self.outside_passes(op)?;
-                let size = *self.buffers.get(&o[0]).ok_or(missing(op, "buffer", o[0]))?;
-                if o[1] + o[2] > size {
+                let size = self.buffer(op, o[0])?.size;
+                if !fits(o[1], o[2], size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
                 self.use_resource(Resource::Buffer(o[0]));
             }
             Op::WriteTexture => self.write_texture(op, o)?,
             Op::DestroyBuffer => {
+                // Destroying a buffer drops its read, whose slot then never rises.
                 self.buffers.remove(&o[0]);
+                self.reading.remove(&o[0]);
             }
             Op::CreateTexture => self.create_texture(op, o)?,
             Op::CreateTextureView => self.create_view(op, o)?,
@@ -947,13 +1159,40 @@ impl MockBackend {
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
                 self.texture(op, o[0])?;
-                check(o.len() == 19, op, "a sky map's stage takes 19 words")?;
+                check(o.len() == 20, op, "a sky map's stage takes 20 words")?;
+                if o[3] != 0 {
+                    self.texture(op, o[3])?;
+                }
             }
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
                 self.render_pipelines.remove(&o[0]);
             }
             Op::CopyTextureToTexture => self.copy_texture(op, o)?,
+            Op::CopyTextureToBuffer => self.copy_texture_to_buffer(op, o)?,
+            Op::ReadBuffer => {
+                self.outside_passes(op)?;
+                check(o.len() == 5, op, "a buffer read takes 5 words")?;
+                let buffer = self.buffer(op, o[0])?;
+                check(
+                    buffer.usage & buffer_usage::MAP_READ != 0,
+                    op,
+                    "a read maps a buffer with MAP_READ usage",
+                )?;
+                if o[1] % 8 != 0 {
+                    return Err(MockError::Unaligned { op, offset: o[1] });
+                }
+                check(
+                    o[2] > 0 && o[2] % 4 == 0,
+                    op,
+                    "a read's size is a multiple of 4 bytes, and not 0",
+                )?;
+                if !fits(o[1], o[2], buffer.size) {
+                    return Err(MockError::OutOfRange { op, id: o[0] });
+                }
+                self.use_resource(Resource::Buffer(o[0]));
+                self.reading.insert(o[0]);
+            }
             Op::CreateSampler => self.create_sampler(op, o)?,
             Op::ResizeCanvas => {
                 self.outside_passes(op)?;
@@ -1012,15 +1251,23 @@ impl MockBackend {
                 )?;
                 self.render_pipelines.insert(
                     o[0],
-                    Formats {
-                        color: o[3],
-                        depth: o[4],
-                        samples: o[5],
+                    RenderPipeline {
+                        template: o[1],
+                        formats: Formats {
+                            color: o[3],
+                            depth: o[4],
+                            samples: o[5],
+                            second: if template::draws_two_targets(o[1], o[2]) {
+                                format::R16_FLOAT
+                            } else {
+                                format::NONE
+                            },
+                        },
                     },
                 );
             }
             Op::CreateComputePipeline => {
-                self.compute_pipelines.insert(o[0]);
+                self.compute_pipelines.insert(o[0], o[1]);
             }
             Op::CreateBindGroup => self.create_bind_group(op, o)?,
             Op::BeginRenderPass => self.begin_render_pass(op, o)?,
@@ -1031,10 +1278,9 @@ impl MockBackend {
                     color: o[1],
                     depth: o[2],
                     samples: o[3],
+                    second: format::NONE,
                 });
-                self.pipeline_set = false;
-                self.vertex_buffer_set = false;
-                self.index_buffer_set = false;
+                self.reset_draw_state();
             }
             Op::EndBundle => {
                 let (id, uses) = self.recording.take().ok_or(MockError::Outside {
@@ -1051,7 +1297,7 @@ impl MockBackend {
                         needs: "a render pass or bundle",
                     });
                 }
-                let formats = *self.render_pipelines.get(&o[0]).ok_or(missing(
+                let pipeline = *self.render_pipelines.get(&o[0]).ok_or(missing(
                     op,
                     "render pipeline",
                     o[0],
@@ -1061,11 +1307,13 @@ impl MockBackend {
                     None => self.pass.expect("in a render pass").formats,
                 };
                 check(
-                    formats == drawn,
+                    pipeline.formats == drawn,
                     op,
                     "a pipeline draws into the formats and sample count of its pass or bundle",
                 )?;
                 self.pipeline_set = true;
+                self.current_pipeline = o[0];
+                self.pipeline_is_compute = false;
             }
             Op::SetBindGroup => {
                 if !self.in_draw_scope() && !self.in_compute_pass {
@@ -1074,7 +1322,7 @@ impl MockBackend {
                         needs: "a render pass, bundle or compute pass",
                     });
                 }
-                let resources =
+                let group =
                     self.bind_groups
                         .get(&o[1])
                         .cloned()
@@ -1085,10 +1333,13 @@ impl MockBackend {
                 {
                     return Err(MockError::Unaligned { op, offset });
                 }
+                if let Some(slot) = self.bound.get_mut(o[0] as usize) {
+                    *slot = group.layout;
+                }
                 match &mut self.recording {
                     Some((_, uses)) => uses.push(BundleUse::Group(o[1])),
                     None => {
-                        for resource in resources {
+                        for resource in group.resources {
                             self.read_resource(op, resource)?;
                         }
                     }
@@ -1115,6 +1366,7 @@ impl MockBackend {
             }
             Op::SetScissor => self.in_pass_rectangle(op, o)?,
             Op::Draw | Op::DrawIndexed | Op::DrawIndexedIndirect | Op::MultiDrawIndexed => {
+                self.check_bound_groups(op)?;
                 if !self.in_draw_scope() {
                     return Err(MockError::Outside {
                         op,
@@ -1177,7 +1429,7 @@ impl MockBackend {
                                 let resources = self
                                     .bind_groups
                                     .get(&group)
-                                    .cloned()
+                                    .map(|group| group.resources.clone())
                                     .ok_or(missing(op, "bind group", group))?;
                                 for resource in resources {
                                     self.read_resource(op, resource)?;
@@ -1186,11 +1438,9 @@ impl MockBackend {
                         }
                     }
                 }
-                // WebGPU clears the pass's pipeline and buffers after it replays bundles, so a
-                // draw after them sets its own.
-                self.pipeline_set = false;
-                self.vertex_buffer_set = false;
-                self.index_buffer_set = false;
+                // WebGPU clears the pass's pipeline, its groups and its buffers after it replays
+                // bundles, so a draw after them sets its own.
+                self.reset_draw_state();
             }
             Op::EndRenderPass => {
                 if self.pass.take().is_none() {
@@ -1203,6 +1453,7 @@ impl MockBackend {
             Op::BeginComputePass => {
                 self.outside_passes(op)?;
                 self.in_compute_pass = true;
+                self.reset_draw_state();
             }
             Op::SetComputePipeline => {
                 if !self.in_compute_pass {
@@ -1212,11 +1463,13 @@ impl MockBackend {
                     });
                 }
                 Self::require(
-                    self.compute_pipelines.contains(&o[0]),
+                    self.compute_pipelines.contains_key(&o[0]),
                     op,
                     "compute pipeline",
                     o[0],
                 )?;
+                self.current_pipeline = o[0];
+                self.pipeline_is_compute = true;
             }
             Op::Dispatch => {
                 if !self.in_compute_pass {
@@ -1225,6 +1478,7 @@ impl MockBackend {
                         needs: "a compute pass",
                     });
                 }
+                self.check_bound_groups(op)?;
                 check(
                     o[..3].iter().all(|&n| n <= MAX_WORKGROUPS_PER_DIMENSION),
                     op,
@@ -1244,8 +1498,8 @@ impl MockBackend {
             Op::CopyBufferToBuffer => {
                 self.outside_passes(op)?;
                 for (id, offset) in [(o[0], o[1]), (o[2], o[3])] {
-                    let size = *self.buffers.get(&id).ok_or(missing(op, "buffer", id))?;
-                    if offset + o[4] > size {
+                    let size = self.buffer(op, id)?.size;
+                    if !fits(offset, o[4], size) {
                         return Err(MockError::OutOfRange { op, id });
                     }
                     if offset % 4 != 0 {
@@ -1718,6 +1972,9 @@ mod tests {
     /// Textures, views and samplers for every texture command, before any of them is used.
     fn texture_setup(list: &mut DrawList) {
         use texture_usage::{COPY_DST, COPY_SRC, RENDER_ATTACHMENT, TEXTURE_BINDING};
+        // The pipelines take a template of the custom materials' range: a page decides a custom
+        // template's layouts, so the mock judges nothing about the groups they draw with.
+        let t = template::CUSTOM_FIRST;
         let sampled = TEXTURE_BINDING | COPY_DST;
         texture(
             list,
@@ -1796,17 +2053,17 @@ mod tests {
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[2, 20, 0, format::NONE, format::DEPTH32_FLOAT, 1, 0, 0, 0, 0],
+            &[2, t, 0, format::NONE, format::DEPTH32_FLOAT, 1, 0, 0, 0, 0],
         )
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[3, 20, 0, format::RGBA8_UNORM, format::NONE, 1, 0, 0, 0, 0],
+            &[3, t, 0, format::RGBA8_UNORM, format::NONE, 1, 0, 0, 0, 0],
         )
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[4, 20, 0, format::CANVAS, format::NONE, 1, 0, 0, 0, 0],
+            &[4, t, 0, format::CANVAS, format::NONE, 1, 0, 0, 0, 0],
         )
         .unwrap();
     }
@@ -2046,6 +2303,151 @@ mod tests {
             l.push(Op::SetScissor, &[0, 0, 1, 1]).unwrap();
         });
         assert!(matches!(in_bundle, Err(MockError::Outside { .. })));
+    }
+
+    /// A pick's readback: an id target, a buffer that two reads share, and one read of a box of
+    /// 3 x 2 texels, each command checked against `commands` in place of the copy and the read.
+    fn readback(commands: &[(Op, &[u32])]) -> Result<MockBackend, MockError> {
+        const IDS: u32 = 1;
+        let mut list = DrawList::with_capacity(256);
+        let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::COPY_SRC;
+        texture(
+            &mut list,
+            IDS,
+            [8, 8, 1, 1],
+            format::RGBA32_UINT,
+            usage,
+            view::D2,
+        );
+        texture(
+            &mut list,
+            2,
+            [8, 8, 1, 1],
+            format::RGBA16_FLOAT,
+            usage,
+            view::D2,
+        );
+        let read = buffer_usage::MAP_READ | buffer_usage::COPY_DST;
+        list.push(Op::CreateBuffer, &[3, 1024, read]).unwrap();
+        for (op, operands) in commands {
+            list.push(*op, operands).unwrap();
+        }
+        let mut mock = MockBackend::default();
+        mock.replay(list.words()).map(|()| mock)
+    }
+
+    #[test]
+    fn readbacks_follow_webgpus_rules_and_wait_for_their_slot() {
+        // Three rows of 3 texels from (2, 4), 256 bytes apart, then a read of the box's bytes.
+        let copy: &[u32] = &[1, 0, 2, 4, 0, 3, 0, 256, 2, 3, 2];
+        let read: &[u32] = &[3, 0, 256 + 48, 0x1000, 37];
+        let mut mock = readback(&[
+            (Op::CopyTextureToBuffer, copy),
+            (Op::ReadBuffer, read),
+            (Op::Submit, &[]),
+        ])
+        .unwrap();
+        let mut again = DrawList::with_capacity(64);
+        again.push(Op::CopyTextureToBuffer, copy).unwrap();
+        assert!(
+            matches!(mock.replay(again.words()), Err(MockError::Invalid { .. })),
+            "a buffer waits for its read's slot"
+        );
+        mock.finish_reads();
+        mock.replay(again.words()).unwrap();
+
+        let fails = |commands: &[(Op, &[u32])], message: &str| {
+            let result = readback(commands);
+            assert!(result.is_err(), "{message}");
+            result.err().unwrap()
+        };
+        let unaligned = |error| matches!(error, MockError::Unaligned { .. });
+        assert!(unaligned(fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 16, 256, 1, 1, 1]
+            )],
+            "a copy's buffer offset is a multiple of 256",
+        )));
+        assert!(unaligned(fails(
+            &[(Op::CopyTextureToBuffer, &[1, 0, 0, 0, 0, 3, 0, 48, 1, 3, 1])],
+            "a copy's bytes per row are a multiple of 256",
+        )));
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[2, 0, 0, 0, 0, 3, 0, 256, 1, 1, 1],
+            )],
+            "a half-float texture copies as other bytes on WebGL2",
+        );
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 768, 256, 2, 1, 2],
+            )],
+            "the copy's last row ends past the buffer",
+        );
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 0, 256, 1, 1, 2],
+            )],
+            "the rows per image hold the height",
+        );
+        fails(
+            &[(
+                Op::CopyTextureToBuffer,
+                &[1, 0, 0, 0, 0, 3, 0, 256, 1, u32::MAX, 1],
+            )],
+            "a width that overflows a sum does not fit",
+        );
+        assert!(unaligned(fails(
+            &[(Op::ReadBuffer, &[3, 4, 16, 0x1000, 37])],
+            "a read's offset is a multiple of 8",
+        )));
+        fails(
+            &[(Op::ReadBuffer, &[3, 0, 6, 0x1000, 37])],
+            "a read's size is a multiple of 4",
+        );
+        fails(
+            &[(Op::ReadBuffer, &[3, 8, u32::MAX - 3, 0x1000, 37])],
+            "a range that overflows a sum does not fit",
+        );
+        fails(
+            &[(Op::ReadBuffer, &[3, 0, 16, 0x1000])],
+            "a read names its control slot",
+        );
+        fails(
+            &[
+                (Op::CreateBuffer, &[4, 256, buffer_usage::COPY_DST]),
+                (Op::ReadBuffer, &[4, 0, 16, 0x1000, 37]),
+            ],
+            "a read maps a buffer with MAP_READ usage",
+        );
+        fails(
+            &[(
+                Op::CreateBuffer,
+                &[4, 256, buffer_usage::MAP_READ | buffer_usage::STORAGE],
+            )],
+            "a mapped buffer has no other usage than COPY_DST",
+        );
+        fails(
+            &[
+                (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+                (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+            ],
+            "a buffer takes one read at a time",
+        );
+        readback(&[
+            (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+            (Op::DestroyBuffer, &[3]),
+            (
+                Op::CreateBuffer,
+                &[3, 256, buffer_usage::MAP_READ | buffer_usage::COPY_DST],
+            ),
+            (Op::ReadBuffer, &[3, 0, 16, 0x1000, 37]),
+        ])
+        .expect("destroying a buffer drops its read");
     }
 
     #[test]
@@ -2353,6 +2755,90 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// Binds one group of `layout` at `index` and draws the pipeline `template` under `id`.
+    fn draw_with_one_group(
+        template: u32,
+        id: u32,
+        index: u32,
+        layout: u32,
+    ) -> Result<(), MockError> {
+        let mut list = DrawList::with_capacity(64);
+        list.push(Op::ResizeCanvas, &[256, 256]).unwrap();
+        list.push(
+            Op::CreateRenderPipeline,
+            &[id, template, 0, format::CANVAS, format::NONE, 1, 0, 0, 0, 0],
+        )
+        .unwrap();
+        list.push(Op::CreateBindGroup, &[1, layout, 0]).unwrap();
+        list.push(
+            Op::BeginRenderPass,
+            &[
+                0,
+                NO_TARGET,
+                NO_TARGET,
+                0,
+                0,
+                0,
+                0,
+                0,
+                pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR,
+            ],
+        )
+        .unwrap();
+        list.push(Op::SetPipeline, &[id]).unwrap();
+        list.push(Op::SetBindGroup, &[index, 1, 0]).unwrap();
+        list.push(Op::Draw, &[3, 1, 0, 0]).unwrap();
+        list.push(Op::EndRenderPass, &[]).unwrap();
+        MockBackend::default().replay(list.words())
+    }
+
+    #[test]
+    fn a_group_that_the_pipeline_does_not_bind_at_its_index_is_rejected() {
+        // The final pass reads the scene color through its own group, and its bloom build reads
+        // bloom's levels through another. A draw that binds one where the other belongs draws
+        // nothing on a device: WebGPU refuses the group's layout against the pipeline's.
+        assert_eq!(
+            draw_with_one_group(template::FINAL, 1, 0, layout::FINAL),
+            Ok(())
+        );
+        assert_eq!(
+            draw_with_one_group(template::FINAL, 1, 0, layout::FINAL_BLOOM),
+            Err(MockError::WrongGroup {
+                op: Op::Draw,
+                template: template::FINAL,
+                index: 0,
+                layout: layout::FINAL_BLOOM,
+            })
+        );
+        // The same for a group bound at an index the template has no group at.
+        assert_eq!(
+            draw_with_one_group(template::BLOOM, 1, 1, layout::BLOOM),
+            Err(MockError::WrongGroup {
+                op: Op::Draw,
+                template: template::BLOOM,
+                index: 1,
+                layout: layout::BLOOM,
+            })
+        );
+        // A custom material's template takes the layouts its page decides, so the mock judges none.
+        assert_eq!(
+            draw_with_one_group(template::CUSTOM_FIRST, 1, 3, layout::MATERIAL_MAPS),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn every_engine_template_names_the_groups_the_mock_judges() {
+        for &(name, id) in template::NAMES
+            .iter()
+            .filter(|(_, id)| *id < template::CUSTOM_FIRST)
+        {
+            let groups = groups::of(id).unwrap_or_else(|| panic!("{name} has no groups"));
+            assert!(!groups.is_empty(), "{name} binds no group");
+        }
+        assert!(groups::of(template::CUSTOM_FIRST).is_none());
     }
 
     #[test]

@@ -8,7 +8,8 @@
 // image without a reference, or one that differs from its reference, becomes a candidate under
 // test-results/images/, with its diff. Only the review step (tests/review-images.ts) turns a
 // candidate into a reference.
-import { copyFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -66,9 +67,13 @@ export const DEVICE_TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.005
 
 /**
  * The GPU tiers of each device that lacks some, by the device's name in its runners' names. A device
- * draws only these tiers, so it keeps references only on them. The Galaxy S24+ has no WebGPU.
+ * draws only these tiers, so it keeps references only on them. The Galaxy S24+ has no WebGPU, and
+ * neither has Firefox on CI's Linux machines.
  */
-const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = { 'sm-s926b': ['webgl2'] };
+const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = {
+	'sm-s926b': ['webgl2'],
+	linux: ['webgl2'],
+};
 
 /**
  * Devices whose GPU draws as another device's does, so they compare with that device's references
@@ -86,8 +91,12 @@ export const drawsTier = (device: string, tier: Tier) =>
 /** The size of a sketch test's image, unless its entry gives another. */
 export const SKETCH_SIZE = [320, 180] as const;
 
-/** How long a page may take to publish its image, unless its entry gives another time. */
-const TIMEOUT_SECONDS = 30;
+/**
+ * How long a page may take to publish its image, unless its entry gives another time. CI's software
+ * GPU compiles a custom shader's pipelines for WebGPU on its CPU: a page that took 18.5 seconds on a
+ * passing run gave no result within 30 on a slower runner on 17 October 2026.
+ */
+const TIMEOUT_SECONDS = 60;
 
 /** The page that draws each sketch test. */
 export const IMAGE_PAGE = '/tests/pages/image.html';
@@ -105,17 +114,29 @@ interface ImageTestSettings {
 	 * with another switch. The other test alone makes those references.
 	 */
 	reference?: string;
+	/**
+	 * Another test of the same scene whose reference is the same picture as this test's. The check
+	 * that two tests of one scene draw differently passes over the pair: a copy of a test that
+	 * draws its image and keeps its own references says so here. A test that must draw another
+	 * test's image borrows them with `reference` instead.
+	 */
+	samePicture?: string;
 	/** True when every tier must draw the image of the first tier listed, which alone has references. */
 	sameOnEveryTier?: boolean;
 	/** Values that fields of the page's result must have, besides the image. */
 	expect?: Readonly<Record<string, unknown>>;
 	/** How far the image may stray from the references of the place that drew it. */
 	tolerance?: Partial<Tolerance>;
+	/**
+	 * How far an image drawn on SwiftShader may stray from SwiftShader's references, on top of
+	 * `tolerance`, for a scene that the software GPU rounds differently on different machines.
+	 */
+	swiftShaderTolerance?: Partial<Tolerance>;
 	/** How far an image from another browser or device may stray from the real-GPU references. */
 	deviceTolerance?: Partial<Tolerance>;
 	/** Devices whose GPU draws the test differently, which keep their own references, such as 'ipad'. */
 	devices?: readonly string[];
-	/** How long a page may take to publish its image, in seconds; 30 unless the entry gives another. */
+	/** How long a page may take to publish its image, in seconds; 60 unless the entry gives another. */
 	timeoutSeconds?: number;
 	/**
 	 * Page switches that only the runs on SwiftShader add, after the others: a lighter load for a
@@ -165,6 +186,8 @@ export interface ImageRun {
 	mode?: EngineMode;
 	/** The page with its switches, from the server's root. */
 	path: string;
+	/** The scene that the test draws: its page or sketch module, without the query. */
+	scene: string;
 	timeoutSeconds: number;
 	size: readonly [number, number];
 	/** The sketch time the engine must hold at. */
@@ -172,7 +195,11 @@ export interface ImageRun {
 	expect: Readonly<Record<string, unknown>>;
 	/** Whose references the run compares with: the test and the tier that make them. */
 	reference: { test: string; tier: Tier; devices: readonly string[] };
+	/** Another test of the same scene whose reference is the same picture as this run's. */
+	samePicture?: string;
 	tolerance: Tolerance;
+	/** The tolerance against SwiftShader's references, where it differs from `tolerance`. */
+	swiftShaderTolerance?: Tolerance;
 	deviceTolerance: Tolerance;
 	/** The run of the test's first mode on the same tier, whose pixels every other mode must match. */
 	sameAs?: string;
@@ -184,6 +211,13 @@ export interface ImageRun {
 export const tiersOf = (test: ImageTest): readonly Tier[] => test.tiers ?? TIERS;
 
 const sizeOf = (test: ImageTest) => test.size ?? SKETCH_SIZE;
+
+/**
+ * The scene that a test draws: a page test's page, or a sketch test's sketch module without the
+ * query that picks its scene. Tests of one scene differ only by their switches.
+ */
+export const sceneFileOf = (test: ImageTest): string =>
+	('sketch' in test ? test.sketch : test.page).split('?')[0] as string;
 
 /** A test's thread modes: pipelined for a sketch unless it lists others, and none for a bare page. */
 function modesOf(test: ImageTest): readonly (EngineMode | undefined)[] {
@@ -237,6 +271,7 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 				tier,
 				...(mode && { mode }),
 				path: pathOf(test, tier, mode),
+				scene: sceneFileOf(test),
 				timeoutSeconds: test.timeoutSeconds ?? TIMEOUT_SECONDS,
 				size: sizeOf(test),
 				...(test.hold !== undefined && { hold: test.hold }),
@@ -247,6 +282,10 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 					devices: owner.devices ?? [],
 				},
 				tolerance: { ...TOLERANCE, ...test.tolerance },
+				...(test.samePicture && { samePicture: test.samePicture }),
+				...(test.swiftShaderTolerance && {
+					swiftShaderTolerance: { ...TOLERANCE, ...test.tolerance, ...test.swiftShaderTolerance },
+				}),
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
 				...(test.swiftShaderSwitches && { swiftShaderSwitches: test.swiftShaderSwitches }),
@@ -325,6 +364,18 @@ export function manifestProblems(
 		for (const tier of drawn.filter((tier) => !tiersOf(owner).includes(tier)))
 			problems.push(`${test.name}: ${owner.name} has no references on ${tier}`);
 	}
+	for (const test of tests) {
+		if (test.samePicture === undefined) continue;
+		const other = byName.get(test.samePicture);
+		if (!other || other === test) {
+			problems.push(`${test.name}: the samePicture ${test.samePicture} must name another test`);
+			continue;
+		}
+		if (sceneFileOf(other) !== sceneFileOf(test))
+			problems.push(
+				`${test.name}: it shares a picture with ${other.name}, which draws another scene`,
+			);
+	}
 	return problems;
 }
 
@@ -357,7 +408,11 @@ export function referenceOf(run: ImageRun, place: Place): Reference {
 	const set =
 		'environment' in place ? place.environment : own ? referenceDevice(place.device) : REAL_GPU;
 	const file = `${set}/${run.reference.tier}/${run.reference.test}.png`;
-	const reference = { file, tolerance: own ? run.tolerance : run.deviceTolerance };
+	const ownTolerance =
+		('environment' in place && place.environment === 'chromium-swiftshader'
+			? run.swiftShaderTolerance
+			: undefined) ?? run.tolerance;
+	const reference = { file, tolerance: own ? ownTolerance : run.deviceTolerance };
 	if (!own && 'device' in place)
 		return {
 			...reference,
@@ -400,6 +455,11 @@ function makeCommand(run: ImageRun, place: Place): string {
 	return `${ci}bun run test:images -g "${test} on ${tier}", then ${accept}`;
 }
 
+/** Each reference that a run needs, with the place that drew it. */
+function* neededReferences(run: ImageRun): Generator<{ place: Place; file: string }> {
+	for (const place of placesNeeding(run)) yield { place, file: referenceOf(run, place).file };
+}
+
 /**
  * What is wrong with the files in the folder of references, without a browser: each reference that
  * a run needs in some place and that `files` lacks, with the commands that make it, and each file
@@ -411,10 +471,8 @@ export function referenceFileProblems(
 ): string[] {
 	const needed = new Map<string, string>();
 	for (const run of runs)
-		for (const place of placesNeeding(run)) {
-			const { file } = referenceOf(run, place);
+		for (const { place, file } of neededReferences(run))
 			if (!needed.has(file)) needed.set(file, makeCommand(run, place));
-		}
 	const present = new Set(files);
 	const missing = [...needed]
 		.filter(([file]) => !present.has(file))
@@ -423,6 +481,67 @@ export function referenceFileProblems(
 		.filter((file) => !needed.has(file))
 		.map((file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`);
 	return [...missing.sort(), ...unused.sort()];
+}
+
+/**
+ * What is wrong with the references of tests that draw one scene: no two of the scene's tests may
+ * keep the same picture. Tests of a scene differ by the switches that turn its features on, so a
+ * picture that two of them share is a picture of neither feature: the bench's four area-light
+ * scenes once shared one black image, and every one of them passed. A test whose picture must match
+ * another's says so with `reference`, and then owns no reference of its own, which the check leaves
+ * alone; so does a pair that records one picture with `samePicture`, and so do the tiers of one
+ * test.
+ *
+ * `digest` gives the contents of a reference file, or undefined while it is missing, which
+ * `referenceFileProblems` reports.
+ */
+export function sharedReferenceProblems(
+	runs: readonly ImageRun[],
+	digest: (file: string) => string | undefined,
+): string[] {
+	const scenes = new Map<string, ImageRun[]>();
+	for (const run of runs) {
+		// A run that borrows another test's references owns none, so it takes no part.
+		if (run.reference.test !== run.test) continue;
+		const found = scenes.get(run.scene);
+		if (found) found.push(run);
+		else scenes.set(run.scene, [run]);
+	}
+	const problems: string[] = [];
+	for (const scene of [...scenes.keys()].sort()) {
+		// A reference is compared with the other tests' references of the place that drew it: the
+		// same folder of the same set holds the images one environment's GPU drew.
+		const first = new Map<string, { run: ImageRun; file: string }>();
+		for (const run of scenes.get(scene) as ImageRun[])
+			for (const { file } of neededReferences(run)) {
+				const contents = digest(file);
+				if (contents === undefined) continue;
+				const key = `${file.slice(0, file.lastIndexOf('/'))}\n${contents}`;
+				const seen = first.get(key);
+				if (seen === undefined) {
+					first.set(key, { run, file });
+					continue;
+				}
+				// One test's own tiers, and a pair whose note records one picture, are no fault.
+				if (seen.run.test === run.test) continue;
+				if (run.samePicture === seen.run.test || seen.run.samePicture === run.test) continue;
+				problems.push(
+					`${file} is the same picture as ${seen.file}: ${run.test} and ${seen.run.test} draw one scene and must draw it differently. If ${run.test} must draw ${seen.run.test}'s image, name ${seen.run.test} in its 'reference'`,
+				);
+			}
+	}
+	// The runs of one test on many tiers and modes report one pair once.
+	return [...new Set(problems)].sort();
+}
+
+/** A reference file's contents, as a digest, or undefined while the file is missing. */
+export function referenceDigest(file: string): string | undefined {
+	try {
+		const bytes = readFileSync(join(HARNESS_DIRS.references, file));
+		return createHash('sha256').update(bytes).digest('hex');
+	} catch {
+		return undefined;
+	}
 }
 
 /** The folders of references and of candidates. */

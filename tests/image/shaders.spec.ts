@@ -3,9 +3,8 @@
 // variants make more parts. A last test fakes Safari's Metal fault in one link, which the page
 // links again.
 import { expect, test } from '@playwright/test';
-import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { pageResultWhileProgressing } from '../lib/page-result.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { glslProgramCount } from '../lib/shader-programs.ts';
 
 interface ShaderResult {
 	ok: boolean;
@@ -30,8 +29,12 @@ const realGpu = !process.env.CI;
  */
 const PROGRAMS_PER_PART = 150;
 
-/** Enough parts that none holds more than that many programs. */
-const PARTS = Math.ceil(glslProgramsOf(await everyShader()).length / PROGRAMS_PER_PART);
+/**
+ * Enough parts that each holds about that many programs. A part checks every so many device
+ * modules, and a build that several modules hold counts in each part that downloads one of them, so
+ * a part may hold somewhat more.
+ */
+const PARTS = Math.ceil(glslProgramCount() / PROGRAMS_PER_PART);
 
 /**
  * A part fails when its page notes no new step for this long. The page notes a step after each

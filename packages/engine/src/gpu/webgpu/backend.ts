@@ -11,6 +11,8 @@ import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
+import type { ReadSink } from '../readback';
+import { BufferReads } from './buffer-reads';
 import type { CulledCounts } from './culled-counts';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
@@ -49,6 +51,7 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
+TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
@@ -159,6 +162,11 @@ export class WebGPUBackend {
 	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
 	 */
 	private readonly parkedCompute: Uint32Array[] = [];
+	/**
+	 * True when the vertex shaders skin skinned meshes, so a preload of skinning prepares the
+	 * shaders of its SKIN builds.
+	 */
+	skinsInVertexShaders = false;
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
@@ -215,6 +223,9 @@ export class WebGPUBackend {
 	private copyBuffer: GPUBuffer | undefined;
 	/** Copy buffers that a larger one replaced, which commands not yet submitted may still read. */
 	private readonly retiredCopyBuffers: GPUBuffer[] = [];
+	/** Where the bytes of `ReadBuffer` commands land, which the frame replay sets. */
+	readSink: ReadSink | undefined;
+	private readonly reads = new BufferReads();
 
 	/**
 	 * `shaders` are the WGSL builds that the device loaded (`loadWgslShaders`). `routes` chooses
@@ -365,7 +376,9 @@ export class WebGPUBackend {
 		if (bound)
 			this.bindingViews[id] = texture.createView({
 				dimension,
-				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+				// A texture that a compute step writes keeps STORAGE_BINDING too, so a bind group can
+				// bind it as a storage texture: the exposure's texel is one such.
+				usage: G.TEXTURE_USAGE_TEXTURE_BINDING | (usage & G.TEXTURE_USAGE_STORAGE_BINDING),
 			});
 		// A view of a transient texture must keep all of the texture's usage.
 		if (usage & G.TEXTURE_USAGE_RENDER_ATTACHMENT && layers === 1 && mips === 1)
@@ -522,9 +535,12 @@ export class WebGPUBackend {
 		const id = words[a + 1] as number;
 		const code = this.images.generatorCodeFor<CubeGenerator>(id);
 		this.generators = code;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.device, this.commandEncoder(), texture, words, floats, a, this.gpuMemory);
-		else code.run(this.device, texture, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const panorama = words[a + 3] as number;
+			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
+			const encoder = this.commandEncoder();
+			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
+		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -672,8 +688,8 @@ export class WebGPUBackend {
 	/**
 	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
-	 * file has arrived.
+	 * defines at its first use, once the set of its builds that holds the build has arrived too. A
+	 * group's or a fold's shader is joined then too, once its host's file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		if (!this.pipelines.has(template)) {
@@ -682,29 +698,32 @@ export class WebGPUBackend {
 				return false;
 			this.pipelines.defineCustom(template, shader);
 		}
+		if (!this.images.buildsReady(template, permutation, 'wgsl')) return false;
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
 	/**
-	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
-	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * Prepares the shaders of `module`, a module that the page or the sketch preloaded, whose builds
+	 * need `features`: it creates each build's shader module, which the features' pipelines then
+	 * share, and builds the compute pipelines of skinning and occlusion culling, whose layouts are
+	 * fixed, from the module of that one feature. A render
 	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
-	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
-	 * shader serve only the `?skinning=vertex` switch, and are left out.
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's file holds the SKIN
+	 * builds, which skin in the vertex shader, and the skinning pass, which morphs and skins what
+	 * they cannot. It builds the pass's pipelines in every mode, and prepares the SKIN builds only
+	 * while the vertex shaders skin.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		const compute = PRECOMPILED[feature];
-		if (compute) {
-			for (const [template, bits] of compute)
-				this.device
-					.createComputePipelineAsync(this.pipelines.compute(template, bits))
-					.catch(() => undefined);
-			return;
-		}
-		for (const [name, builds] of Object.entries(module))
-			for (const build of Object.values(builds))
-				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		const [feature, ...others] = features;
+		const compute = feature !== undefined && others.length === 0 ? PRECOMPILED[feature] : undefined;
+		if (!compute || (feature === 'skinning' && this.skinsInVertexShaders))
+			for (const [name, builds] of Object.entries(module))
+				for (const build of Object.values(builds))
+					if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+		for (const [template, bits] of compute ?? [])
+			this.device
+				.createComputePipelineAsync(this.pipelines.compute(template, bits))
+				.catch(() => undefined);
 	}
 
 	/**
@@ -984,6 +1003,29 @@ export class WebGPUBackend {
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
+				// A capture replays a frame that the loop replayed already, whose reads would land twice.
+				case G.OP_COPY_TEXTURE_TO_BUFFER: {
+					if (this.canvasTarget) break;
+					const copy = this.copy;
+					const source = this.need(this.textures, words[a] as number, 'texture');
+					const buffer = this.need(this.buffers, words[a + 5] as number, 'buffer');
+					copy.setSource(source, words, a);
+					this.commandEncoder().copyTextureToBuffer(
+						copy.source,
+						{
+							buffer,
+							offset: words[a + 6] as number,
+							bytesPerRow: words[a + 7] as number,
+							rowsPerImage: words[a + 8] as number,
+						},
+						{
+							width: words[a + 9] as number,
+							height: words[a + 10] as number,
+							depthOrArrayLayers: 1,
+						},
+					);
+					break;
+				}
 				case G.OP_CREATE_SAMPLER:
 					this.counts.objects++;
 					this.createSampler(words, floats, a);
@@ -1049,6 +1091,8 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
+					// The weighted layer's pass names a second color target after the flags.
+					setup.setSecondColor(length > 10 ? this.targetView(words[a + 9] as number) : undefined);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
@@ -1147,6 +1191,16 @@ export class WebGPUBackend {
 						words[a + 4] as number,
 					);
 					break;
+				case G.OP_READ_BUFFER:
+					if (this.canvasTarget) break;
+					this.reads.add(
+						this.need(this.buffers, words[a] as number, 'buffer'),
+						words[a + 1] as number,
+						words[a + 2] as number,
+						words[a + 3] as number,
+						words[a + 4] as number,
+					);
+					break;
 				case G.OP_SUBMIT:
 					this.submit();
 					break;
@@ -1156,6 +1210,7 @@ export class WebGPUBackend {
 			i += length;
 		}
 		this.submit();
+		this.reads.start(this.readSink);
 		this.staging.endFrame();
 	}
 
@@ -1282,6 +1337,7 @@ export class WebGPUBackend {
 	private releaseBuffer(id: number): void {
 		const buffer = this.buffers[id];
 		if (!buffer) return;
+		this.reads.drop(buffer);
 		this.destroyBuffer(buffer);
 		this.buffers[id] = undefined;
 	}

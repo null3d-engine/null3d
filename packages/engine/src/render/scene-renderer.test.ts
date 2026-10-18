@@ -34,6 +34,7 @@ function fakeBackend() {
 		resetCounts() {},
 		gpuMemory: new GpuMemory(),
 		joins: new JoinedBuilds(new Map()),
+		readSink: undefined,
 	};
 }
 

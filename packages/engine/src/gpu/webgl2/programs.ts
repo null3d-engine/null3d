@@ -18,17 +18,26 @@ import {
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
+	TEMPLATE_DECAL,
+	TEMPLATE_DECAL_MAPS,
 	TEMPLATE_DOF_BLUR,
 	TEMPLATE_DOF_COMPOSITE,
 	TEMPLATE_DOF_FILTER,
 	TEMPLATE_DOF_SETUP,
+	TEMPLATE_EXPOSURE_ADAPT,
+	TEMPLATE_EXPOSURE_LUMINANCE,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
+	TEMPLATE_FOG_APPLY,
+	TEMPLATE_FOG_BLOCK,
+	TEMPLATE_FOG_LIGHT,
+	TEMPLATE_FOG_SUM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -37,12 +46,22 @@ import {
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_PARTICLE,
+	TEMPLATE_PARTICLE_DEPTH,
+	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PROBE_GRID,
+	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_SSR_REDUCE,
+	TEMPLATE_SSR_TRACE,
 	TEMPLATE_TRANSMISSION_COPY,
+	TEMPLATE_WEIGHTED_COMPOSITE,
+	TEMPLATE_WEIGHTED_DEPTH,
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
@@ -55,6 +74,7 @@ import {
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
+import { PARTICLE_RECORDS } from '../particle-records';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
@@ -72,14 +92,16 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
  * the place where a bind group leaves a texture, and each binding of a group takes its group's
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
- * first, with sixteen. Group 1 has three slots, group 2 ten (the instance textures, then the two
- * textures that skinned meshes read, the two that morphed meshes read, and the two textures of the
- * row values of instance batches) and group 3 the last sixteen: the eight map textures, then their samplers, of which the standard material's shared
- * map units take the first six of each. Slots are no texture units: each program
- * numbers the textures it reads from unit 0, so the groups' bindings never run out of units. The
- * groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
+ * first, with sixteen. Group 1 has six slots (the backgrounds' groups, of which the physical sky's
+ * holds the most: its values, three tables and two samplers), group 2 ten (the instance textures,
+ * then the two textures that skinned meshes read, the two that morphed meshes read, and the two
+ * textures of the row values of instance batches) and group 3 the last sixteen: the eight map
+ * textures, then their samplers, of which the standard material's shared map units take the first
+ * six of each. Group 4 holds the scene depth that decals read. Slots are no texture units: each
+ * program numbers the textures it reads from unit 0, so the groups' bindings never run out of
+ * units. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 16, 19, 29);
+const GROUP_BASES = Uint8Array.of(0, 16, 22, 32, 48);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -133,10 +155,11 @@ const PREPASS_FRAGMENT: GlslStage = {
 
 /**
  * The permutation of the build that a pipeline of a template draws with: a mesh template's prepass
- * takes the vertex shader of its build without the `PREPASS` bit.
+ * takes the vertex shader of its build without the `PREPASS` bit. The word's top bit makes
+ * JavaScript's `&` negative, so the result turns back to unsigned.
  */
 export function buildPermutation(template: GlslTemplate, permutation: number): number {
-	return template.meshPrepass ? permutation & ~PERMUTATION_PREPASS : permutation;
+	return template.meshPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 }
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
@@ -217,6 +240,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 		meshPrepass: true,
 	});
 	templates[TEMPLATE_INSTANCED_LIT] = mesh(shaders.lit);
+	templates[TEMPLATE_PROBE_GRID] = mesh(shaders.probe_grid);
+	templates[TEMPLATE_PROBE_GRID_MAPS] = mesh(shaders.probe_grid_maps);
 	templates[TEMPLATE_INSTANCED_UNLIT] = mesh(shaders.unlit);
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);
@@ -232,11 +257,26 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
 	templates[TEMPLATE_SPRITE_MAP] = mesh(shaders.sprite_map);
+	// Particles read their system's records, one for each instance.
+	templates[TEMPLATE_PARTICLE] = {
+		shader: shaders.particle,
+		pipeline: 'main',
+		vertices: PARTICLE_RECORDS,
+	};
+	templates[TEMPLATE_PARTICLE_MAP] = {
+		shader: shaders.particle_map,
+		pipeline: 'main',
+		vertices: PARTICLE_RECORDS,
+	};
+	// The soft particles' depth copy reads the one-sample copy of the depth that the backend keeps.
+	templates[TEMPLATE_PARTICLE_DEPTH] = { shader: shaders.particle_depth, pipeline: 'main' };
 	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
 	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_ATMOSPHERE] = { shader: shaders.sky_physical, pipeline: 'main' };
+	templates[TEMPLATE_SKY_TABLE] = { shader: shaders.sky_tables, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
 	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };
@@ -247,7 +287,24 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_BLUR] = { shader: shaders.dof, pipeline: 'gather' };
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
+	// The volumetric fog's steps: the light step reads the camera's frame group as the background
+	// does, and the apply step the same one-sample copy of the depth.
+	templates[TEMPLATE_FOG_LIGHT] = { shader: shaders.fog_light, pipeline: 'light' };
+	templates[TEMPLATE_FOG_BLOCK] = { shader: shaders.fog_volume, pipeline: 'block' };
+	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
+	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
+	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
+	// The weighted layer's depth copy reads the same one-sample copy of the depth.
+	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
+	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
+	// Decals draw in a pass of their own, never in the depth prepass.
+	templates[TEMPLATE_DECAL] = { shader: shaders.decal, pipeline: 'main' };
+	templates[TEMPLATE_DECAL_MAPS] = { shader: shaders.decal_maps, pipeline: 'main' };
+	// The automatic exposure meters with its downsample on WebGL2, which has no compute shaders.
+	templates[TEMPLATE_EXPOSURE_LUMINANCE] = { shader: shaders.exposure, pipeline: 'downsample' };
+	templates[TEMPLATE_EXPOSURE_ADAPT] = { shader: shaders.exposure, pipeline: 'adapt' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

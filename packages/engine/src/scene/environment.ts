@@ -12,7 +12,7 @@ import {
 	ENVIRONMENT_VALUE_ROTATION,
 	ENVIRONMENT_VALUE_SH,
 } from '../generated/core';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { Texture } from './textures';
 
 /**
@@ -94,7 +94,7 @@ export interface EnvironmentOptions {
 const CALL = 'setEnvironment';
 
 /** @internal The scene's environment as the core holds it. */
-export class SceneEnvironment {
+export class SceneEnvironment implements ViewHolder {
 	/** The core's block of the environment's values. */
 	private values: Float32Array | undefined;
 	/** The memory's generation that `values` was made in. */
@@ -102,7 +102,14 @@ export class SceneEnvironment {
 	/** The environment whose coefficients the block holds. */
 	private coefficientsOf: Environment | null = null;
 
-	constructor(private readonly core: CoreMemory) {}
+	constructor(private readonly core: CoreMemory) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
+	}
 
 	/**
 	 * Lights the scene with `environment`, or with none for null, from the next frame on. Throws

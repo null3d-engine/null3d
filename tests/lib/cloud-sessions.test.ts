@@ -8,10 +8,14 @@ import {
 } from './browserstack.ts';
 import { type CloudDevice, cloudDevice } from './browserstack-devices.ts';
 import {
+	ALLOW_XPATH,
 	type CloudAccount,
 	CloudSessions,
 	deviceText,
 	FRAME_SCRIPT,
+	NATIVE_CONTEXT,
+	NETWORK_PROMPT_XPATH,
+	PROMPT_HOLD,
 	STATUS_SCRIPT,
 	UNANSWERED_POLLS,
 	VISIBILITY_SCRIPT,
@@ -32,7 +36,9 @@ interface Received {
  * A fake WebDriver server: it opens sessions, records each command, answers scripts with the
  * status line it holds, and answers `invalid session id` for a session it was told to drop. Its
  * page draws, or after each load and each switch to its window takes the next state of `drawing`
- * while they last. It reports the page `visible`, or each state of `visibility` in turn.
+ * while they last. It reports the page `visible`, or each state of `visibility` in turn. Its device
+ * shows Chrome's local network prompt when `prompt` says so, until a tap on Allow, and it refuses
+ * scripts while commands go to the device's own screen.
  */
 function fakeHub(
 	options: {
@@ -40,8 +46,12 @@ function fakeHub(
 		failNavigate?: boolean;
 		drawing?: boolean[];
 		visibility?: string[];
+		prompt?: boolean;
+		noAllow?: boolean;
 	} = {},
 ) {
+	let context = 'CHROMIUM';
+	let prompt = options.prompt === true;
 	const received: Received[] = [];
 	const live = new Set<string>();
 	let count = 0;
@@ -89,7 +99,26 @@ function fakeHub(
 				change();
 				return answer(null);
 			}
+			if (command === 'context') {
+				if (request.method === 'GET') return answer(context);
+				context = (JSON.parse(text) as { name: string }).name;
+				return answer(null);
+			}
+			if (command === 'elements') {
+				const { value } = JSON.parse(text) as { value: string };
+				const shown =
+					context === NATIVE_CONTEXT &&
+					prompt &&
+					(value === NETWORK_PROMPT_XPATH || (value === ALLOW_XPATH && !options.noAllow));
+				return answer(shown ? [{ 'element-6066-11e4-a52e-4f735466cecf': `${value.length}` }] : []);
+			}
+			if (command === 'element') {
+				prompt = false;
+				return answer(null);
+			}
 			if (command === 'execute') {
+				if (context !== 'CHROMIUM')
+					return answer({ error: 'unknown error', message: 'no page in this context' }, 500);
 				const body = JSON.parse(text) as { script?: string };
 				if (body.script === VISIBILITY_SCRIPT)
 					return answer(options.visibility?.shift() ?? 'visible');
@@ -191,7 +220,7 @@ describe('CloudSessions', () => {
 		expect(hub.received.filter((r) => r.method === 'DELETE')).toHaveLength(1);
 	});
 
-	it('sends no certificate command to Chrome on Android, whose capability accepts the certificate', async () => {
+	it('sends no certificate command to Chrome on Android, whose capability accepts the certificate, and looks for its prompt', async () => {
 		hub = fakeHub();
 		const lines: string[] = [];
 		const sessions = sessionsOn(hub, lines);
@@ -199,6 +228,10 @@ describe('CloudSessions', () => {
 		expect(hub.received.map((r) => r.path)).toEqual([
 			'/session',
 			'/session/session-1/url',
+			'/session/session-1/context',
+			'/session/session-1/context',
+			'/session/session-1/elements',
+			'/session/session-1/context',
 			'/session/session-1/execute/sync',
 			'/session/session-1/execute/sync',
 		]);
@@ -263,6 +296,46 @@ describe('CloudSessions', () => {
 		const polls = hub.received.filter((r) => r.body?.script === STATUS_SCRIPT);
 		expect(polls).toHaveLength(2);
 		expect(lines.filter((line) => line.includes('47 left'))).toHaveLength(1);
+		await sessions.closeAll();
+	});
+
+	it("taps Allow on Chrome's local network prompt on Android, then reads the page again, and says so", async () => {
+		hub = fakeHub({ prompt: true });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		await sessions.open('bspixel10-chrome', PAGE);
+		hub.setStatus('bspixel10-chrome: 3 passed, 0 failed, 47 left; now shaders');
+		await sessions.poll('bspixel10-chrome');
+		const taps = hub.received.filter((r) => r.path.endsWith('/click'));
+		expect(taps).toHaveLength(1);
+		expect(lines.filter((line) => line.includes('the driver tapped Allow'))).toHaveLength(1);
+		expect(lines.some((line) => line.includes('47 left'))).toBe(true);
+		expect(sessions.summary()).toEqual([
+			"bspixel10-chrome: https://automate.example/sessions/session-1 (Chrome's local network prompt held its pages once until the driver allowed it)",
+		]);
+		await sessions.closeAll();
+	});
+
+	it("names Chrome's local network prompt as the cause once, when it shows no Allow button", async () => {
+		hub = fakeHub({ prompt: true, noAllow: true });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		await sessions.open('bspixel10-chrome', PAGE);
+		await sessions.poll('bspixel10-chrome');
+		expect(lines.filter((line) => line === `bspixel10-chrome: ${PROMPT_HOLD}`)).toHaveLength(1);
+		expect(sessions.heldBy('bspixel10-chrome')).toBe(PROMPT_HOLD);
+		expect(sessions.summary()).toEqual([
+			`bspixel10-chrome: https://automate.example/sessions/session-1 (${PROMPT_HOLD})`,
+		]);
+		await sessions.closeAll();
+	});
+
+	it("never reads the device's own screen on iOS", async () => {
+		hub = fakeHub({ prompt: true });
+		const sessions = sessionsOn(hub, []);
+		await sessions.open('bsiphone17-safari', PAGE);
+		await sessions.poll('bsiphone17-safari');
+		expect(hub.received.some((r) => r.path.endsWith('/context'))).toBe(false);
 		await sessions.closeAll();
 	});
 

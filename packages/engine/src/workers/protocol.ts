@@ -172,6 +172,11 @@ export type WorkerReply =
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
 	/**
+	 * An error that the sketch's own code threw in a frame, once for each distinct message. The
+	 * engine keeps drawing; the page reports it through `onSketchError`.
+	 */
+	| { type: 'sketch-error'; message: string }
+	/**
 	 * The quality preset and settings after a change, for the settings that the page applies, with
 	 * the preset check's result once it has run.
 	 */
@@ -195,6 +200,11 @@ export type SketchWorkerMessage =
 	| { type: 'post'; name: string; data: unknown }
 	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */
 	| { type: 'wgsl'; updates: readonly WgslUpdate[] }
+	/**
+	 * The job workers that started, by index, which the on-demand loader sends its tasks to. A
+	 * worker whose script or its core did not load is absent, and takes no task.
+	 */
+	| { type: 'job-workers'; running: readonly number[] }
 	/** Ends the sketch worker's waits, where the threads wake each other with messages. */
 	| typeof WAKE;
 

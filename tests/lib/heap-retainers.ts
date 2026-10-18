@@ -4,7 +4,7 @@
 import type { CDPSession } from '@playwright/test';
 
 /** The parts of a V8 heap snapshot that the search reads. */
-interface HeapSnapshot {
+export interface HeapSnapshot {
 	snapshot: {
 		meta: {
 			node_fields: string[];

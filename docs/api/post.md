@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambient occlusion, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
+summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
 ---
 
 # Post-processing API
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion and depth of field do.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion, screen-space reflections and depth of field do.
 
 ## Tone mapping and exposure
 
@@ -25,11 +25,12 @@ export default defineSketch(({ post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `toneMapping` | `'aces'`, `'agx'`, `'neutral'`, `'none'`, or a custom tone curve's WGSL | `'aces'` |
+| `toneMapping` | `'agx-punchy'`, `'agx'`, `'neutral'`, `'aces'`, `'none'`, or a custom tone curve's WGSL | `'agx-punchy'` |
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
 | `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
-- The curves use three.js's formulas: `'aces'` for `ACESFilmicToneMapping`, `'agx'` for `AgXToneMapping` and `'neutral'` for `NeutralToneMapping`.
+- The curves use three.js's formulas: `'agx'` for `AgXToneMapping`, `'neutral'` for `NeutralToneMapping` and `'aces'` for `ACESFilmicToneMapping`. `'agx-punchy'` is AgX with Filament's punchy look, which adds contrast and color. three.js has no such curve.
+- `'aces'` serves ports of three.js scenes that set `ACESFilmicToneMapping`. It shifts the hues of bright colors, so new scenes use AgX.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
 - A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one.
@@ -67,6 +68,49 @@ export default defineSketch(({ post, time }) => {
   };
 });
 ```
+
+## Automatic exposure
+
+Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. Walk from a sunny street into a dark hall, and the hall starts dark, then brightens over a few seconds. It is off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post }) => {
+  // A dim room: the eye adapts up to 6 stops to see it, and stays a little dark, as eyes do.
+  post.set({ autoExposure: { minEv: -6, compensation: -0.5 } });
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 1.6, 4], target: [0, 1, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 0.05 });
+  scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
+    material: materials.standard({ color: '#c8643c' }),
+    position: [0, 0.5, 0],
+  });
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `autoExposure` | Its settings to turn it on, or `false` to turn it off. | Off |
+| `autoExposure.metering` | `'percentile'` leaves out the darkest and brightest parts of the image, and `'mean'` averages all of it. | `'percentile'` |
+| `autoExposure.percentiles` | For `'percentile'`, the shares of the image, from the darkest, that the average starts and ends at: two numbers from 0 to 1, the lower first. `[0.5, 0.5]` takes the median. | `[0.1, 0.9]` |
+| `autoExposure.centerWeight` | How much more the center of the image counts than its edges, from 0, the same, to 1. | 0.5 |
+| `autoExposure.speedUp` | How fast the eye adapts while the scene grows brighter, in stops per second: 0 or more. | 3 |
+| `autoExposure.speedDown` | How fast the eye adapts while the scene grows darker, in stops per second: 0 or more. | 1 |
+| `autoExposure.minEv` | The darkest scene that the eye adapts to, in stops from the camera's exposure, from -20 to 20. A darker scene shows darker. | -4 |
+| `autoExposure.maxEv` | The brightest scene that the eye adapts to, in stops from the camera's exposure, from -20 to 20 and no lower than `minEv`. A brighter scene shows brighter. | 4 |
+| `autoExposure.compensation` | Stops added to the adapted exposure, from -20 to 20: 1 shows the picture twice as bright. | 0 |
+
+- The engine meters each frame on the GPU, in the same frame. The meter finds the scene's average brightness on a log scale, and the eye moves toward the exposure that shows it as middle gray.
+- The scene draws at the camera's exposure, the `exposure` and `ev100` settings, and the eye adapts from there. A brightness of 0 stops is a scene that the camera's exposure shows as middle gray. With `ev100: 15`, `minEv: -8` lets the eye adapt down to a scene of about EV100 7.
+- Within one stop of its target, the eye slows down, so it settles smoothly. Eyes adapt to the dark more slowly than to the light, so `speedDown` is lower by default.
+- The first frame that meters takes its target at once, so a scene starts adapted. Hold mode draws one frame, so its image is the adapted image, the same in every run.
+- The final pass multiplies the scene's color, bloom's glow and folded effects by the adapted exposure, before FXAA, the vignette and the tone curve. Custom effects and depth of field see the camera's exposure. Bloom's `threshold` keeps its meaning in the scene's units.
+- The quality setting `exposureMeter` picks the meter. `'histogram'` bins a grid of samples in compute shaders on WebGPU, on Medium and above. `'downsample'` averages 16 x 16 cells of the image, on Low and on WebGL2. Both take the same settings.
+- It needs HDR color, as bloom does. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA. On a device with no HDR target it stays off, and development builds warn once.
+- A setting that a call leaves out keeps its value, also while it is off. `post.set({ autoExposure: {} })` turns it on with the values it had.
+- `post.set` allocates nothing, and a meter costs nothing while it is off. Its shaders download the first time it turns on.
 
 ## Bloom
 
@@ -130,6 +174,51 @@ export default defineSketch(({ post, quality }) => {
 - A setting that a call leaves out keeps its value, also while it is off. `post.set({ ao: {} })` turns it on with the values it had.
 - `post.set` allocates nothing, so a sketch can change its settings every frame. Turning it on or off adds or removes passes, which takes a few frames.
 
+## Screen-space reflections
+
+Screen-space reflections make shiny opaque surfaces reflect what the screen shows: wet streets, puddles, polished floors and metal. They are off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post, quality }) => {
+  quality.set({ ssrScale: 0.5 });
+  post.set({ ssr: { maxDistance: 50 } });
+  scene.createDirectionalLight({ direction: [-1, -2, -1] });
+  scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 2, depth: 1 }),
+    material: materials.standard({ color: '#e05030' }),
+    position: [0, 1, 0],
+  });
+  const street = scene.createMesh({
+    mesh: geometry.plane({ width: 40, height: 40 }),
+    material: materials.standard({ color: '#202326', roughness: 0.1 }),
+  });
+  street.setRotationEuler(-Math.PI / 2, 0, 0);
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `ssr` | Its settings to turn them on, or `false` to turn them off. | Off |
+| `ssr.intensity` | How much of the environment's reflection the screen's reflection replaces where a ray hits: a number from 0 to 1. | 1 |
+| `ssr.maxDistance` | How far a reflected ray travels, in world units: above 0. Reflections fade out over the last fifth. | 100 |
+| `ssr.thickness` | How far behind a surface on the screen a ray may pass and still hit it, in world units: a number from 0 up. | 0.5 |
+| `ssr.maxRoughness` | The roughest surface that shows them: a number from 0 to 1. Rougher surfaces keep the environment's reflection. | 0.5 |
+
+- Each surface's reflection takes the place of the environment's reflection where its ray hits something on the screen. The material's Fresnel term, metalness and specular values weigh it, as they weigh the environment. So a dark plastic street reflects little straight down and much at a low angle, as wet asphalt does.
+- Rough surfaces blur their reflections. They fade into the environment's reflection from 70% of `maxRoughness`.
+- Where a ray leaves the screen or hits nothing, as near the screen's edges, the reflection fades into the environment's light, with no hard edge. Set an environment, such as the sky's, so those parts look right.
+- The reflections read the frame before's colors. A fast object's reflection lags it by one frame, and blended objects and particles do not show in them.
+- A planar reflection pass's reflection ([Render passes](render.md#reflection-passes)) wins on its plane. Blended surfaces and surfaces that let light through keep the environment's reflection.
+- They draw where the quality setting `ssrScale` is above 0: half the render size on High and Ultra, and a quarter on Medium. On Low, the preset of phones, the scale is 0, and shiny surfaces keep the environment's light. `ssrSteps` sets how far each ray can search.
+- They turn the depth prepass on while they draw, and share ambient occlusion's grid. On a WebGL2 device without float render targets they stay off, and development builds warn once.
+- On the 8-bit path, in compatibility mode with MSAA, they read display color, so they look a little grayer there.
+- A setting that a call leaves out keeps its value, also while they are off. `post.set({ ssr: {} })` turns them on with the values they had.
+- `post.set` allocates nothing. Turning them on or off adds or removes passes, which takes a few frames, and their shaders download the first time.
+
+
 ## Depth of field
 
 Depth of field blurs what lies in front of and behind the focus distance, as a camera lens does. It is off by default. The camera's focal length frames the shot, and the aperture and the focus set the blur:
@@ -159,11 +248,11 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 | `dof.focusDistance` | The distance from the camera, along its view, that is sharp, in world units: above 0. | 10 |
 | `dof.focusPoint` | A point in the world to focus on in every frame, as a camera's autofocus does, or `false` to focus at `focusDistance`. | `false` |
 | `dof.aperture` | The aperture as an f-number, above 0. A lower number opens the lens and blurs more. | 2.8 |
-| `dof.focalLength` | The lens's focal length in millimetres, above 0, or `'camera'` for the active camera's. | `'camera'` |
+| `dof.focalLength` | The lens's focal length in millimeters, above 0, or `'camera'` for the active camera's. | `'camera'` |
 | `dof.maxBlur` | The largest blur radius, as a share of the image's height, from 0 to 0.1. | 0.02 |
 | `dof.blades` | The aperture's blades: 0 for round out-of-focus highlights, or a whole number from 3 to 12 for polygons. | 0 |
 
-- The lens is a photographer's: a focal length on a full-frame sensor, 24 mm tall, and an f-number. World units count as metres, as in glTF. An aperture of 1.4 blurs twice as much as 2.8. At the same aperture, an 85 mm lens blurs far more than a 24 mm one.
+- The lens is a photographer's: a focal length on a full-frame sensor, 24 mm tall, and an f-number. World units count as meters, as in glTF. An aperture of 1.4 blurs twice as much as 2.8. At the same aperture, an 85 mm lens blurs far more than a 24 mm one.
 - `'camera'` takes the focal length of the active camera's field of view, which `camera.setFocalLength` sets. So the blur always matches the framing. An orthographic camera takes 50 mm.
 - With `focusPoint`, the engine finds the point's distance along the camera's view in each frame, so the focus follows a moving camera. To follow a moving object, pass its position again each frame, from an array that the sketch changes in place. Setting `focusDistance` stops the focus on the point.
 - The blur is the circle of confusion of a thin lens. It is 0 at the focus. Behind the focus it grows toward a limit, and in front of it, it grows without limit. `maxBlur` caps it.
@@ -209,6 +298,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 - The outline covers the mesh's whole shape. It ignores the holes that an alpha cutoff cuts, and the vertices that a custom material moves.
 - A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
 - Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
+- A full-screen pass reads the outline's mask with `input: 'outlineMask'`, for a soft glow such as `OutlinePass` draws ([Custom passes](../guides/custom-passes.md#a-soft-outline-glow)). `width: 0` draws the mask without the line.
 
 [The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
 
@@ -252,12 +342,12 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 | `vignette.falloff` | How fast the light falls from the center: the power of the falloff curve, above 0. Higher values darken more of the picture. | 2 |
 | `vignette.roundness` | The shape, from 0 to 1: 0 follows the canvas's shape, an ellipse on a wide canvas, and 1 is a circle. | 0 |
 
-- The vignette multiplies each pixel's light before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners darken as dark corners do.
+- The vignette multiplies each pixel's light before the tone mapping. [The post-processing chain](../concepts/post-processing.md#color-grading-and-the-vignette) gives the rule, the engines it follows and the difference from three.js's `VignetteShader`.
 - At a distance `d` from the center, in canvas widths and heights times `size`, the light is multiplied by `1 - intensity × (1 - (1 - d²)^falloff)`, and never by less than 0.
-- three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`, and the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
+- A port of three.js's `VignetteShader` sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the vignette multiplies the linear value of each pixel's display color. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
 
 The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 
@@ -284,6 +374,7 @@ post.removeEffect(effect);
 | --- | --- | --- |
 | `wgsl` | WGSL that the null3D Vite plugin compiled, which declares `fn effect(input: EffectInput) -> vec4f` | Required |
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
+| `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: a texture from a file or data, or a render pass's texture from `textures.fromPass` | None: white |
 | `order` | A number. Effects run from the lowest order to the highest. | 0 |
 
 A custom tone curve takes the place of the built-in curves:
@@ -298,8 +389,9 @@ fn toneCurve(color: vec3f) -> vec3f {
 post.set({ toneMapping: reinhard });
 ```
 
-- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes ([Custom passes](../guides/custom-passes.md#cost)).
+- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes, while the render scale cannot drop below the whole canvas. While it can, each effect draws in a pass of its own, at every scale ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place.
+- An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
 
@@ -307,7 +399,7 @@ post.set({ toneMapping: reinhard });
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, outline or vignette value other than settings or `false`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline or vignette value other than settings or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -321,7 +413,7 @@ post.set({ toneMapping: reinhard });
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.
-- [Quality presets](../concepts/quality-presets.md): `aoScale` and `dofSamples` on each preset.
+- [Quality presets](../concepts/quality-presets.md): `aoScale`, `dofSamples` and `exposureMeter` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.
 - [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene. It makes its warm and cool tables from lift, gamma and gain in code.

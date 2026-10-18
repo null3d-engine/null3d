@@ -32,8 +32,8 @@ export type AntialiasMode = QualitySettings['antialias'];
 
 /** The core's code of each skinning mode that ?skinning= picks. */
 const SKINNING_CODES: Record<SkinningSwitch, number> = {
-	lean: C.SKINNING_LEAN,
 	vertex: C.SKINNING_VERTEX,
+	compute: C.SKINNING_LEAN,
 	full: C.SKINNING_FULL,
 	skip: C.SKINNING_SKIP_ONLY,
 	narrow: C.SKINNING_NARROW_ONLY,
@@ -135,8 +135,8 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
-	 * The core's code of WebGPU's skinning mode: the skinning pass, with or without its savings, or
-	 * the vertex shader of each pass.
+	 * The core's code of WebGPU's skinning mode: the vertex shader of each pass, or the skinning
+	 * pass, with or without its savings.
 	 */
 	skinning: number;
 	/** The bits per texel of the shadow cascades' depth: 16, or 32 for floats. */
@@ -235,6 +235,18 @@ export type DeviceOptions = Pick<
 	/** True to cull each camera view in two phases against a depth pyramid. */
 	gpuOcclusion: boolean;
 };
+
+/**
+ * Whether the engine keeps its copy of each texture's texels after their upload, from the
+ * `keepTextureCopies` option and the device's own answer: the option wins when it names one,
+ * otherwise a phone and a tablet keep the copies and a desktop frees them (D-164). The page
+ * reports this value and hands the core the same one, so a page in plain JavaScript that passes a
+ * truthy value other than `true` is told what the engine really does with it.
+ */
+export function keepTextureCopiesOption(value: unknown, onDevice: boolean): boolean {
+	if (value === undefined || value === null) return onDevice;
+	return value === true;
+}
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
 export const DEPTH_WITHOUT_CLIP_CONTROL: DepthMode = 'reversed-gl';
@@ -405,7 +417,8 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			storageBindingBytes: storageBindingBytes(report.webgpu.limits),
 			capabilities:
 				compression((feature) => report.webgpu.features.includes(feature), options.compression) |
-				(report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0),
+				(report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0) |
+				C.CAPABILITY_FLOAT16_TARGETS,
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
@@ -422,6 +435,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities:
 			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
+			(gl.floatRenderTargets?.rgba16f.complete === true ? C.CAPABILITY_FLOAT16_TARGETS : 0) |
 			compression((_, extension) => gl.extensions[extension] === true, options.compression),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:

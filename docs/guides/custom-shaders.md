@@ -142,6 +142,8 @@ The plugin compiles two kinds of WGSL:
 
 WGSL that is neither stops the build with an error that says how to fix it.
 
+The plugin compiles each shader once and caches the result, so a later build compiles only what changed. [Install null3D](../getting-started/install.md#builds) says where the cache lives and how to ignore it.
+
 A shader can import the engine's library modules, such as `#import null3d::math`. The plugin resolves each import. [Shader library and imports](../shaders/library.md) lists the modules.
 
 Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one GLSL ES 3.00 program for each render pipeline, and it sets the shader def `WEBGL2`:
@@ -155,6 +157,19 @@ Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one G
 ```
 
 Both builds follow the [WGSL rules for portable shaders](../shaders/wgsl-rules.md). The rules page says what the build rejects, and what you must test on each path yourself.
+
+### Where a custom material's builds go
+
+A custom material has many builds: one for each variant of the standard material, on each GPU path. A device draws with a few of them. So the plugin does not put the builds in your module:
+
+- It puts them in small files of their own, one for each GPU path, each kind of device, and the builds that skin meshes. These are 4 files for WebGPU and 8 for WebGL2, named `material-*.js`. The files of a module hold the builds of all its custom materials, from one `.wgsl` file or from the tagged literals of one script. The text that the builds share is in each file once.
+- The material's value in your module holds only its uniforms, its textures, its vertex inputs and a function that imports a file.
+- When the sketch first uses the material, it downloads its device's file. The first frame waits for that file and for the material's pipelines, as it waits for any pipeline. A device downloads another file only when it needs one: the builds that skin, for the material's first skinned mesh, or the builds without tone mapping, when bloom or depth of field turns on.
+- In `vite build`, the files go into the assets folder with the build's other files. On the dev server, the plugin serves them from memory.
+
+For example, the battle comparison's sketch has 5 custom materials, and its module takes 5 KB. With every build in it, the module would take 1,504 KB, or 41 KB with Brotli compression. A device downloads a file of 235 to 346 KB, or 18 to 21 KB with Brotli, and one more for its skinned meshes. The thread that draws keeps 3 to 4 MB of shader text. Every build of the device's GPU path would take 7 MB on WebGPU and 27 MB on WebGL2.
+
+Deploy every file that the build writes. When a file that a device needs does not download, the engine stops drawing with [E1424](../errors/E1424.md).
 
 You can use arrays in every form that WGSL allows. A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. Your WGSL does not change, and the WebGPU build keeps it as you wrote it.
 
@@ -175,7 +190,7 @@ src/sketch.ts:14:23: expected `;`, found "2.0"
 On the dev server, the plugin sends a shader that you change to the running page. The page does not reload, so the sketch keeps its state, its camera and its time:
 
 1. You save a `.wgsl` file, or a script file in which only the WGSL of tagged literals changed.
-2. The plugin compiles the new WGSL and sends it to each page of the dev server.
+2. The plugin compiles the new WGSL and sends it to each page of the dev server, with its builds.
 3. The engine builds the new shader's pipelines in the background. The old shader draws until they are ready, so no frame loses an object.
 
 On a desktop computer, an edit shows within about a second. Most of that time is the compile, which builds every variant of a custom material for both GPU paths.

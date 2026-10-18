@@ -1,13 +1,38 @@
 // Reads the result that a test or benchmark page publishes on its window when it finishes. The
 // command-line tool's page module reads other values that a page publishes, and the result of the
 // engine's hold mode.
-import { errors, type Page } from '@playwright/test';
+import { type ConsoleMessage, errors, type Page } from '@playwright/test';
 import { windowValue } from '../../packages/cli/src/page.js';
 import type { ItemResult } from './runs.ts';
 
 /** Waits until the page publishes its result, and returns it. Throws when the time runs out. */
 export function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
 	return windowValue<T>(page, '__null3dResult', timeoutMs);
+}
+
+/**
+ * Collects what goes wrong in a page from now on: a crash, uncaught errors, errors that the page or
+ * its workers write to the console, and files that fail to load. A page that publishes no result in
+ * time gives no cause of its own, so these explain it.
+ */
+export function watchPageProblems(page: Page): string[] {
+	const problems: string[] = [];
+	const onConsole = (message: ConsoleMessage) => {
+		if (message.type() === 'error') problems.push(`console: ${message.text()}`);
+	};
+	page.on('crash', () => problems.push('the page crashed'));
+	page.on('pageerror', (error) => problems.push(`uncaught: ${error.message}`));
+	page.on('console', onConsole);
+	page.on('worker', (worker) => worker.on('console', onConsole));
+	page.on('requestfailed', (request) =>
+		problems.push(
+			`failed to load ${request.url()}: ${request.failure()?.errorText ?? 'no answer'}`,
+		),
+	);
+	page.on('response', (response) => {
+		if (response.status() >= 400) problems.push(`HTTP ${response.status()} for ${response.url()}`);
+	});
+	return problems;
 }
 
 /** The steps that the page has noted in its trail so far. */

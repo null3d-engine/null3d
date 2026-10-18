@@ -58,6 +58,12 @@ export interface FrameStats {
 	 * the display shows fewer than the presented rate suggests.
 	 */
 	readonly completedFps: number;
+	/**
+	 * Frames of the window whose scene update did not run to its end: the sketch's own code, or a
+	 * core call in a frame, threw. The frames still present, so the rates hide it; the stats overlay
+	 * shows this figure as a warning line while it is nonzero.
+	 */
+	readonly updateErrors: number;
 	/** Mean CPU time per frame of the busiest thread, in milliseconds. */
 	readonly cpuMs: number;
 	/** CPU time per frame of each engine thread. */
@@ -161,11 +167,14 @@ const FIGURES = [
 	'meshBytes',
 	'gpuTextureBytes',
 	'gpuBufferBytes',
+	'updateErrors',
 ] as const;
 const FRAMES = 0;
 const SECONDS = 1;
 const PRESENTED_FPS = 2;
 const COMPLETED_FPS = 3;
+/** The count of failed updates, after the memory figures, which start at `MEMORY`. */
+const UPDATE_ERRORS = FIGURES.length - 1;
 const CPU_MS = 4;
 const DRAW_CALLS = 5;
 const TRIANGLES = 6;
@@ -287,11 +296,14 @@ export class FrameStatsWindow {
 
 	/** Takes in the new records, and publishes a window when one has ended. True when it did. */
 	update(): boolean {
-		for (const sums of this.rings) sums?.add();
+		const { rings } = this;
+		// Loops by index, not by adding up the array's values: a loop over the values makes an
+		// iterator object, and this runs in every frame.
+		for (let k = 0; k < rings.length; k++) rings[k]?.add();
 		this.gpu.add();
 		const render = this.render.sums;
 		if ((render[SUM_INTERVAL_MS] as number) < STATS_WINDOW_MS) return false;
-		const { values, rings } = this;
+		const { values } = this;
 		values[FRAMES] = render[SUM_RECORDS] as number;
 		values[SECONDS] = (render[SUM_INTERVAL_MS] as number) / 1000;
 		values[PRESENTED_FPS] = rate(render);
@@ -309,11 +321,15 @@ export class FrameStatsWindow {
 			this.gpu.clear();
 		}
 		let busiest = 0;
-		for (let k = 0; k < this.roles.length; k++) {
+		let updateErrors = 0;
+		const { roles } = this;
+		for (let k = 0; k < roles.length; k++) {
 			const at = THREADS + k * THREAD_VALUES;
 			values.fill(0, at, at + THREAD_VALUES);
-			for (const role of this.roles[k] as readonly number[]) {
-				const sums = (rings[role] as RingSums).sums;
+			const threadRoles = roles[k] as readonly number[];
+			for (let r = 0; r < threadRoles.length; r++) {
+				const sums = (rings[threadRoles[r] as number] as RingSums).sums;
+				updateErrors += sums[SUM_COUNTERS + Counter.UpdateErrors] as number;
 				values[at] = (values[at] as number) + mean(sums, SUM_BUSY_MS);
 				for (let p = 0; p < PHASE_NAMES.length; p++)
 					values[at + 1 + p] = (values[at + 1 + p] as number) + mean(sums, SUM_PHASES + p);
@@ -321,8 +337,9 @@ export class FrameStatsWindow {
 			busiest = Math.max(busiest, values[at] as number);
 		}
 		values[CPU_MS] = busiest;
+		values[UPDATE_ERRORS] = updateErrors;
 		this.published.preset = this.sources.preset();
-		for (const sums of rings) sums?.clear();
+		for (let k = 0; k < rings.length; k++) rings[k]?.clear();
 		return true;
 	}
 }

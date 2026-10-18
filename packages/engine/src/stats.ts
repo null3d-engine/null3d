@@ -6,6 +6,7 @@
 export {
 	MainThreadWindow,
 	type MemoryMeasurement,
+	measurePageMemory,
 	type PageMemory,
 	PageMemorySampler,
 	pageHeapBytes,

@@ -24,6 +24,8 @@
 /// What the engine writes for each effect: the sizes, the clock, the camera, and the effect's
 /// uniforms as the build packed them. Two spare vectors make a block 256 bytes long, the distance
 /// between blocks in the buffer.
+
+#import null3d::fullscreen::{triangle}
 struct EffectBlock {
     /// xy: the drawn corner in pixels, the render size. zw: the targets' size in texels.
     size: vec4f,
@@ -107,6 +109,19 @@ fn effectPixel(pixel: vec2i) -> vec4f {
     return textureLoad(effect_source, effect_texel(pixel), 0);
 }
 
+/// The place in a render pass's texture that holds the image's place `uv`, from 0 at the top
+/// left to 1 at the bottom right. A pass's texture keeps the image's bottom row first, as materials
+/// sample it, so `v` turns around.
+fn effectPassUv(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
+/// The input image's size in pixels: the render size. An effect's own pixels have this size too;
+/// a full-screen pass's may differ.
+fn effectInputSize() -> vec2f {
+    return effect_blocks.blocks[0].size.xy;
+}
+
 /// The color at `uv` on the image, from 0 at the top left to 1 at the bottom right, read with a
 /// linear filter. Places outside the image read its edge.
 fn effectColor(uv: vec2f) -> vec4f {
@@ -152,10 +167,7 @@ fn effect_chain(input: EffectInput) -> vec4f {
 
 @vertex
 fn effect_vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 @fragment

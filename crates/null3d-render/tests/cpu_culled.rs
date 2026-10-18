@@ -144,7 +144,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         // The side view's target and the texture it resolves into, and the white texel that
         // its texture shows until the target exists, come on top of the camera's textures.
-        assert_eq!(count(&commands, Op::CreateTexture), 23 + 3 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 25 + 3 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -326,8 +326,10 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // cube of the environment, the ring of three light data textures, the blank textures
         // that stand in for ambient occlusion and for the copy that surfaces which let light
         // through sample, and the row values textures of the resident rows and of the ring of
-        // streamed ones, one texel row each while no batch has row values.
-        assert_eq!(count(&commands, Op::CreateTexture), 23);
+        // streamed ones, one texel row each while no batch has row values, the light tables of
+        // area lights, and the blank 3D texture that the frame groups bind while the scene has no
+        // light probe grid.
+        assert_eq!(count(&commands, Op::CreateTexture), 25);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
@@ -1059,6 +1061,8 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
         bias: 0.5,
         normal_bias: 1.0,
         distance: 300.0,
+        auto: false,
+        contact: 0.0,
         layers: DEFAULT_LAYERS,
     };
     let [mut on, mut off] = [true, false].map(|cell_culling| {

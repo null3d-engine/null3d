@@ -109,3 +109,15 @@ export const JoinFailed = 31;
  * reads the engine memory that the list points at.
  */
 export const ReplayDelayMs = 32;
+/**
+ * In hold mode, the first frame that the thread that draws draws, up to the frame published. The
+ * sketch thread records the held frame twice when a feature draws with what the frame before it
+ * drew, as screen-space reflections read the frame before's color, so the held frame has one.
+ */
+export const HeldFrom = 35;
+/**
+ * The address in engine memory of the job system's yield word, or 0 before the sketch thread has
+ * created the job system. While the browser measures the page's memory, the page adds one to it,
+ * so idle job workers let their threads run the measurement instead of blocking.
+ */
+export const JobsYieldAddress = 36;

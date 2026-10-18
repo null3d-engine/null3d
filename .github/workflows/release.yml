@@ -1,9 +1,14 @@
 name: Release
 
-# Started by hand: opens a pull request that sets the next version everywhere and adds its section
-# to CHANGELOG.md. Merging that pull request runs release-publish.yml, which tags the version,
-# publishes the GitHub Release and publishes the npm packages. Releases never go straight to main,
-# and the pull request's own CI gates the merge (AGENTS.md, "Releases").
+# Started by hand from main. One workflow makes the whole release: it checks the commit, writes the
+# next version everywhere and the release's section of CHANGELOG.md, lands that on main, tags a
+# commit that holds the generated files, publishes the GitHub Release with each skill's zip file,
+# and publishes the npm packages (.dev/releases.md). It opens no pull request and needs no GitHub
+# App: its own `contents: write` permission lets the default token push.
+#
+# The release holds the commit it starts from: the tag's commit is that commit plus the version
+# numbers, the changelog section and the generated files. A commit that reaches main after the
+# release starts is not in the release, so the next release's notes list it.
 
 on:
   workflow_dispatch:
@@ -13,98 +18,262 @@ on:
         type: choice
         options: [auto, patch, minor, major]
         default: auto
+      commit:
+        description: The main commit to release, whose full CI run passed. Empty releases main's newest commit.
+        type: string
+        default: ""
 
 permissions:
-  contents: write # push the release branch
-  pull-requests: write # open the release pull request
-  actions: read # read the CI result for main's HEAD
+  contents: write # land the version commit on main, and push the tag
+  actions: read # read the CI result of the released commit
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 env:
-  BUN_VERSION: "1.3.14"
+  BUN_VERSION: "1.4.3"
 
 jobs:
-  prepare:
+  release:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # This job builds the shader modules and writes every generated file, then compresses the
+    # 684 MiB set with Brotli at quality 11, which takes about a quarter of an hour alone. A publish
+    # cut off halfway is worse than a slow one.
+    timeout-minutes: 90
     if: github.ref == 'refs/heads/main'
     env:
-      # Git hooks are for local commits; the release commit carries its own trailers.
+      # Git hooks are for local commits; each commit here carries its own trailers.
       HUSKY: "0"
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      shader-sha256: ${{ steps.shader-artifact.outputs.sha256 }}
     steps:
-      # A pull request opened with the default GITHUB_TOKEN starts no workflows, so its CI would
-      # never run. A GitHub App token opens it instead. The app needs Contents and Pull requests
-      # write access, and the repository needs the RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY secrets.
-      - name: Mint app token
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 0
           fetch-tags: true
-          token: ${{ steps.app-token.outputs.token }}
 
-      # A full CI run of main's HEAD must have passed: main's own run after the merge, or a run
-      # started by hand. The newest of them counts. Both run every job (D-99).
-      - name: Verify CI passed for HEAD
+      - name: Verify the commit is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$(git rev-parse HEAD) is not on main."
+            exit 1
+          fi
+
+      # A full CI run of the commit must have passed: main's own run after the push, or a run
+      # started by hand. A push to main cancels main's own run but not one started by hand, so
+      # start one on the commit to release, which no later push cancels:
+      #   gh workflow run ci.yml --ref main
+      # A cancelled run proves nothing either way, so it is skipped and the newest other run
+      # decides. A newer failing run still stops the release.
+      - name: Verify CI passed for the commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sha="$(git rev-parse HEAD)"
-          conclusion="$(gh run list --workflow=ci.yml --commit="$sha" --json event,conclusion \
-            --jq 'map(select(.event == "push" or .event == "workflow_dispatch")) | first | .conclusion // "no run"')"
-          echo "The newest full CI run of $sha: ${conclusion}"
+          runs="$(gh run list --workflow=ci.yml --commit="$sha" --limit 30 \
+            --json event,conclusion,createdAt,url \
+            --jq 'sort_by(.createdAt) | reverse | map(select(.event == "push" or .event == "workflow_dispatch"))')"
+          echo "Every full CI run of ${sha}:"
+          echo "$runs" | jq -r '.[] | "  \(.conclusion) \(.event) \(.url)"'
+          conclusion="$(echo "$runs" | jq -r '[.[] | select(.conclusion != "cancelled")] | first | .conclusion // "no run"')"
+          echo "The newest run that was not cancelled concluded '${conclusion}'."
           if [ "$conclusion" != "success" ]; then
-            echo "::error::The newest full CI run of $sha concluded '${conclusion}', not success. Start one with: gh workflow run ci.yml --ref main"
+            echo "::error::No full CI run of ${sha} passed. Start one with gh workflow run ci.yml --ref main, then release the commit it ran on."
             exit 1
           fi
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
       - run: bun install --frozen-lockfile
+      # The engine page's API reference names the shader features, which the shader modules hold.
+      - run: bun run shaders
 
-      - name: Set the version and write the changelog
+      - name: Write the next version and the release notes
         id: release
         env:
           RELEASE_TYPE: ${{ inputs.release-type }}
         run: bun run release --release-type "$RELEASE_TYPE" --apply
 
-      - name: Push the release branch and open the pull request
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          VERSION: ${{ steps.release.outputs.version }}
-          NOTES: ${{ steps.release.outputs.changelog }}
+      # The engine's package does not ship the built shader modules. It carries this release's
+      # archive name and hash instead, and the Vite plugin downloads the archive or builds the set
+      # locally. The file holds the shader modules at its root.
+      - name: Write the release's shader set
+        id: shader-artifact
         run: |
-          branch="release/${VERSION}"
+          set -euo pipefail
+          VERSION="${{ steps.release.outputs.version }}"
+          archive="$RUNNER_TEMP/${VERSION}-shaders.tar.br"
+          sha="$(bun tools/shader-artifact.ts create --tag "$VERSION" --out "$archive")"
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+          bun tools/shader-artifact.ts write \
+            --tag "$VERSION" --repo "$GITHUB_REPOSITORY" --archive "$archive"
 
-          # A release branch is generated and disposable. To add work to a release, merge it to
-          # main and run this workflow again, which replaces any open release pull request.
-          stale="$(gh pr list --state open --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("release/")) | .number')"
-          for pr in $stale; do
-            echo "Closing the older release pull request #${pr}"
-            gh pr close "$pr" --delete-branch || true
-          done
-          git push origin --delete "$branch" 2>/dev/null || true
-
+      - name: Land the version on main
+        id: land
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="$(git rev-parse HEAD)"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git add -A
-          git commit -m "chore(release): ${VERSION}" -m "$(printf '%s\n%s' \
+          trailers="$(printf '%s\n%s' \
             'Docs-Checked: release commit; it changes only version numbers and CHANGELOG.md' \
             'Skills-Checked: release commit; no skill shows the version number')"
-          git push -u origin "$branch"
+          # The release writes version numbers into files that git keeps, and the first release
+          # creates CHANGELOG.md. Any other new file would be one that git does not keep.
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::main already holds ${VERSION}; nothing to land."
+            echo "released=${base}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          added="$(git diff --cached --name-only --diff-filter=A | grep -v '^CHANGELOG\.md$' || true)"
+          if [ -n "$added" ]; then
+            echo "::error::the release would add files that git does not keep:"
+            echo "$added" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "The release commit changes:"
+          git diff --cached --name-only | sed 's/^/  /'
+          files="$(git diff --cached --name-only)"
+          git commit -q -m "chore(release): ${VERSION}" -m "$trailers"
+          released="$(git rev-parse HEAD)"
+          echo "released=${released}" >> "$GITHUB_OUTPUT"
 
-          gh label create release --color 0e8a16 --description "Release pull request" --force || true
-          body="$(printf 'Release **%s**.\n\nReview the changelog below and edit `CHANGELOG.md` on this branch if a line needs it. Merging tags the release, publishes the GitHub Release and publishes the npm packages.\n\n---\n\n%s' "$VERSION" "$NOTES")"
-          gh pr create --base main --head "$branch" --title "chore(release): ${VERSION}" \
-            --label release --body "$body"
+          # Landings may continue while a release runs. The release itself holds the commit it
+          # started from, but the version numbers and the changelog section belong on the commit
+          # main holds now, so main stays a straight line and its changelog holds every release.
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$base" ]; then
+            echo "main moved to $(git rev-parse --short origin/main) during the release; the version lands there."
+            git checkout -q -B release-version origin/main
+            # shellcheck disable=SC2086
+            git checkout -q "$released" -- $files
+            git commit -q -m "chore(release): ${VERSION}" -m "$trailers"
+          fi
+          git push origin HEAD:main
+
+      - name: Tag the release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          RELEASED: ${{ steps.land.outputs.released }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet "refs/tags/${VERSION}"; then
+            echo "::error::Tag ${VERSION} already exists."
+            exit 1
+          fi
+          # The tagged commit holds every generated file, which main does not keep (D-105), and it
+          # sits on the released commit. Only the tag points to it, so the next release's notes
+          # start after the released commit whatever main gained meanwhile.
+          git checkout -q "$RELEASED"
+          bun tools/generate.ts --stage
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "chore(release): ${VERSION} with its generated files"
+          git tag -a "$VERSION" -m "Release ${VERSION}"
+          git push origin "refs/tags/${VERSION}"
+
+      # The Claude Code plugin, `bunx skills add` and the docs on GitHub read a release from its
+      # tag, so the GitHub Release names it and carries each skill's zip file.
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bun run release --notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          gh release create "$VERSION" --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+
+      # claude.ai and the Claude desktop app take a skill as a zip file with the skill's folder at
+      # its root and exactly one SKILL.md. The shader archive sits beside them.
+      - name: Attach each skill and the shader set to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          cd .claude/skills
+          for dir in */; do
+            name="${dir%/}"
+            zip -qr "$RUNNER_TEMP/${name}.zip" "$name"
+            count="$(unzip -Z1 "$RUNNER_TEMP/${name}.zip" | grep -c 'SKILL.md$' || true)"
+            if [ "$count" != 1 ]; then
+              echo "::error::${name}.zip holds ${count} SKILL.md files, not one."
+              exit 1
+            fi
+          done
+          gh release upload "$VERSION" "$RUNNER_TEMP"/*.zip \
+            "$RUNNER_TEMP/${VERSION}-shaders.tar.br"
+
+  # npm trusted publishing: npm checks the workflow's OIDC identity against the trusted publisher
+  # set on each package at npmjs.com, so no token is stored. A package's first version cannot be
+  # published this way, so a maintainer publishes it once by hand. NPM_TOKEN and NODE_AUTH_TOKEN
+  # stay unset: npm skips OIDC when either is set, even to an empty string.
+  publish-npm:
+    runs-on: ubuntu-latest
+    # The WebAssembly build takes several minutes on a machine with no Rust cache.
+    timeout-minutes: 30
+    needs: release
+    permissions:
+      contents: read
+      id-token: write # the OIDC token that npm trusted publishing and provenance need
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release.outputs.version }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - run: bun install --frozen-lockfile
+      # Git keeps neither the WebAssembly files nor the shader modules. This builds the shader
+      # modules, the engine's two WebAssembly files, the Vite plugin's shader compiler and the
+      # command-line tool's asset formats.
+      - name: Build the WebAssembly files and the shader modules
+        run: bun tools/build-wasm.ts --pages-only
+      # The release job measured the archive's hash. This job never rebuilds the archive, so the
+      # bytes of the asset and the record in the package cannot disagree.
+      - name: Write the engine's shader artifact record
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          SHA256: ${{ needs.release.outputs.shader-sha256 }}
+        run: |
+          bun tools/shader-artifact.ts write \
+            --tag "$VERSION" --repo "$GITHUB_REPOSITORY" --sha256 "$SHA256"
+      # Bun packs each package: its prepack script builds the JavaScript and declarations, and Bun
+      # writes the real version in place of each workspace: version, which npm cannot install. The
+      # check fails unless each tarball holds every file it needs.
+      - name: Pack and check every public package
+        run: bun tools/pack-packages.ts --out "$RUNNER_TEMP/npm"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g npm@latest
+
+      # npm publishes each tarball that Bun packed; the publishConfig inside it asks for public
+      # access and provenance. A version npm already has is skipped, so running the job again
+      # after a partial failure publishes only what is missing.
+      - name: Publish every public package
+        run: |
+          for tarball in "$RUNNER_TEMP"/npm/*.tgz; do
+            spec="$(tar -xOzf "$tarball" package/package.json | node -p \
+              "const p = JSON.parse(require('fs').readFileSync(0, 'utf8')); p.name + '@' + p.version")"
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "Skipping ${spec}: already on npm"
+              continue
+            fi
+            echo "Publishing ${spec}"
+            npm publish "$tarball" --access public
+          done

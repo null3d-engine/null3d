@@ -67,6 +67,7 @@ export const SETTING_DOCS: {
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
 	followMovingCasters: { label: 'Far cascades follow moving casters', print: yesNo },
+	farAnimationInterval: { label: 'Far-animation updates', print: everyNth },
 	shadowCascadeBlend: {
 		label: 'Blend between shadow cascades',
 		print: (value) => `${Math.round(Number(value) * 100)}% of each cascade`,
@@ -80,9 +81,28 @@ export const SETTING_DOCS: {
 		print: (value) =>
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
+	contactShadowSteps: {
+		label: 'Contact shadows',
+		print: (value) => (Number(value) > 0 ? `${value} steps at half resolution` : 'off'),
+	},
 	dofSamples: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
+	},
+	ssrScale: {
+		label: 'Screen-space reflections',
+		print: (value) =>
+			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
+	},
+	ssrSteps: { label: 'Screen-space reflection steps per ray' },
+	exposureMeter: {
+		label: "Automatic exposure's meter",
+		print: (value) =>
+			value === 'histogram' ? 'histogram on WebGPU, else 16 x 16 cells' : '16 x 16 cells',
+	},
+	fogSlices: {
+		label: 'Volumetric fog',
+		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),
 	},
 	reflectionScale: {
 		label: 'Reflection passes',
@@ -91,17 +111,23 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	areaLights: { label: 'Area lights per frame' },
 	lodThreshold: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
 	lodFade: { label: 'Level of detail fades', print: yesNo },
+	physicalSky: {
+		label: 'Physical sky',
+		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
 	morphTargets: { label: 'Morph targets per object on WebGL2' },
 	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
+	softParticles: { label: 'Soft particles', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',

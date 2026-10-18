@@ -1261,6 +1261,7 @@ fn kept_usage(graph: Decls<'_>, resource: u16, target: Target) -> (u32, bool) {
             }
         }
     }
+    let sampled = sampled || target.shown;
     (usage_of(target, drawn, sampled, storage), sampled)
 }
 

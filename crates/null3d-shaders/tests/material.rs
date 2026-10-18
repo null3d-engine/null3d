@@ -105,10 +105,7 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
         "webgpu_vertex_color_alpha_mask_receive_shadows",
         "webgpu_vertex_color_receive_shadows",
     ];
-    let skinned = plain
-        .iter()
-        .filter(|name| name.starts_with("webgl2"))
-        .map(|name| format!("{name}_skin"));
+    let skinned = plain.iter().map(|name| format!("{name}_skin"));
     // Rows with row values never skin, so the builds that read them have no twin that skins.
     let rows = plain.iter().map(|name| format!("{name}_row_values"));
     let mut expected: Vec<String> = plain
@@ -150,7 +147,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 128, "{problem}");
+    assert_eq!(problem.variants.len(), 144, "{problem}");
 }
 
 #[test]
@@ -288,10 +285,29 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values, and on WebGL2
-    // one that skins. Then the shadow caster's builds: with and without the caster offset and row
-    // values, on WebGL2 with and without the draw index and skins.
-    assert_eq!(built.variants.len(), 128 + 4 + 12);
+    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values and one that
+    // skins. Then the shadow caster's builds: with and without the caster offset, each plain, with
+    // row values or skinned, and on WebGL2 with and without the draw index. Then the pick builds,
+    // each plain, with row values or skinned, and on WebGL2 with and without the draw index.
+    assert_eq!(built.variants.len(), 144 + 6 + 12 + 3 + 6);
+    // A pick build moves each vertex by the offset, finds the instance's ids and writes them.
+    let pick = &built.variants["webgpu_pick_pick"]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source;
+    assert!(pick.contains("fn vertexOffset("), "{pick}");
+    assert!(pick.contains("object_ranges"), "{pick}");
+    assert!(pick.contains("-> @location(0) vec4<u32>"), "{pick}");
+    let pick = &built.variants["webgl2_pick_draw_index_pick"]
+        .glsl
+        .as_ref()
+        .expect("GLSL")["main"];
+    assert!(
+        pick.fragment.source.contains("uvec4"),
+        "{}",
+        pick.fragment.source
+    );
     let caster = &built.variants["webgpu_shadow_caster_offset_row_values_caster"]
         .wgsl
         .as_ref()
@@ -605,6 +621,17 @@ fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
         assert_eq!(maps(&program.fragment), 2, "{name}");
         assert!(program.fragment.source.contains("sampler2DArray"));
     }
+    // WebGPU's skinned builds read the joint texture from the group after the maps'.
+    let skin = &built.variants["webgpu_skin"]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source;
+    assert!(skin.contains("@group(1) @binding(0)\nvar detail"), "{skin}");
+    assert!(
+        skin.contains("@group(2) @binding(0)\nvar joint_matrices"),
+        "{skin}"
+    );
 }
 
 #[test]
