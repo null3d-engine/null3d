@@ -1,8 +1,8 @@
 # D-174: The Apple GPU gap, the measured start-up probe and the direct-draw path
 
-Status: built and measured on the Mac. The owner chose the direct-draw path on 2026-10-14. The probe and the path are implemented, and their figures are below. The probe runs have shown the clamp is a fixed cost for each draw in each pass. So the draws the engine makes across its passes set the path's ceiling. Battle's own figures are below.
+Status: built and measured on the Mac. The owner chose the direct-draw path on 2026-10-14. The probe and the path are implemented, and their figures are below. The probe runs have shown the clamp is a fixed cost for each draw in each pass. So the draws the engine makes across its passes set the path's ceiling. Battle's own figures are below. The same-path run on the cloud iPhone 17 holds the bar on WebGL2 and misses it on WebGPU.
 
-Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The cost is a fixed amount for each draw in each pass it lands in. It does not grow with the instances per draw. On the Mac in Safari, 1,024 draws cost 27.0 ms of indirect time in three passes against 9.8 ms in one. That is about 8.5 us for each draw in each pass. Battle draws 324.6 times a frame, so the clamp may hold about 2.8 ms of its 12.68 ms on the Mac. On the iPhone 17 it may hold about 0.8 ms of its 23.2 ms. Battle now beats three.js on the iPhone 17; Factory does not, and Factory's cost is not the draw call.
+Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The cost is a fixed amount for each draw in each pass it lands in. It does not grow with the instances per draw. On the Mac in Safari, 1,024 draws cost 27.0 ms of indirect time in three passes against 9.8 ms in one. That is about 8.5 us for each draw in each pass. Battle draws 324.6 times a frame, so the clamp may hold about 2.8 ms of its 12.68 ms on the Mac. On the iPhone 17 it may hold about 0.8 ms of its 23.2 ms. On the cloud iPhone 17 the bar holds on WebGL2 and misses on WebGPU, where three.js's WebGPURenderer holds more frames. Factory's cost is not the draw call.
 
 The path is built. On the Mac in Safari on 2026-10-18 the probe chose it, and Battle's GPU time fell from 15.55 ms to 7.79 ms, which took the frame from 51.2 to 59.9 fps; three.js held 44.1. Factory did not move, as this record expected: it draws 49 to 115 times, so the clamp is not its cost. Chrome kept the indirect path, and there null3D beat three.js on both Battle backends while Factory tied at the display's 120 frames.
 
@@ -137,6 +137,8 @@ Safari chose the direct path and Chrome kept the indirect one, as their probes m
 
 Safari with the same pages forced to the indirect path, `?direct=off`: Battle 51.2 fps and 15.55 ms of GPU time at 1040x848, Factory 59.8 fps and 5.03 ms at 1040x848. So the direct path halved Battle's GPU time and took the frame from 51.2 to 59.9 fps. Factory did not move, and its GPU time stayed within the noise either way. The loads were 6.4 to 8.9, recorded beside each figure.
 
+The three.js WebGPU columns of that table came from WebGLRenderer, which was the comparison's default until 2026-10-18 ([D-121](D-121-comparison-tier.md#addendum-18-october-2026-threejss-renderer-follows-the-gpu-path)). The same-path Mac figures are not measured. The phone run below measures them on a cloud device.
+
 So the bar holds on the Mac: null3D beats three.js on Battle and Factory on both backends in Safari, where every run drew 1040 by 848. In Chrome null3D beats three.js on both Battle backends at four times the pixels, and Factory reaches the display's 120 frames like three.js. Factory's remaining gap on the iPhone 17 is pass and pixel work that no draw path removes.
 
 ## The two paths draw one frame
@@ -156,10 +158,36 @@ On 2026-10-18 the same comparison pages ran on a cloud iPhone 17 in Safari 26.5,
 | Battle, WebGPU | 26.1 fps, 29.10 ms GPU | 26.4 fps, 27.84 ms | 1.26 ms |
 | Factory, WebGPU | 22.3 fps, 35.03 ms | 22.4 fps, 34.27 ms | 0.76 ms |
 
-The clamp holds about a millisecond of Battle's frame there, which matches this record's estimate of 0.8 ms. Against three.js on the same device, Battle was 26.1 fps against 46.9 on WebGPU, and Battle won on WebGL2 at 48.3 against 32.0. Factory lost on WebGPU at 23.6 against 59.4, and tied on WebGL2 at 60.0 against 59.5. The page reported three.js drawing through its WebGL renderer even for the WebGPU query, so those three.js WebGPU figures compare a WebGL renderer against null3D's WebGPU one.
+The clamp holds about a millisecond of Battle's frame there, which matches this record's estimate of 0.8 ms.
+
+## The same-path run
+
+The comparison pages now put three.js on the renderer of the GPU path, as [D-121](D-121-comparison-tier.md#addendum-18-october-2026-threejss-renderer-follows-the-gpu-path) records. On 2026-10-18 the pages ran again on the cloud iPhone 17 in Safari 26.5, every page at 603 by 1009. Each page warmed for 15 seconds, then measured 8 seconds with the page's own measure. Every three.js page reported the renderer that its GPU path names.
+
+| Page | null3D | three.js |
+| --- | --- | --- |
+| Battle, WebGPU | 26.0 fps, 29.09 ms GPU, 295 draws, direct | 31.5 fps, WebGPURenderer |
+| Battle, WebGL2 | 49.7 fps, 217 draws | 33.8 fps, WebGLRenderer |
+| Factory, WebGPU | 24.0 fps, 31.91 ms GPU, 115 draws, direct | 41.1 fps, WebGPURenderer |
+| Factory, WebGL2 | 60.0 fps, 115 draws | 59.2 fps, WebGLRenderer |
+
+With `?renderer=webgl` on the WebGPU query, three.js drew Battle at 34.1 fps and Factory at 59.4, on WebGLRenderer. Those are the figures that the earlier WebGPU column measured.
+
+So the bar holds on the iPhone 17's WebGL2 path, where null3D wins Battle and ties Factory at the screen's rate. It misses on its WebGPU path in this run. three.js holds 31.5 frames on Battle to null3D's 26.0, and 41.1 on Factory to null3D's 24.0. Battle's WebGPU result moves between sessions: on 2026-10-14 null3D held 32 frames and three.js 31 on WebGPURenderer. Factory's does not.
+
+The cloud Galaxy S25 in Chrome 152 ran the four bar pages. Every page drew at a canvas backing size of 540 by 907 (360 by 604 CSS pixels). Its screen runs at 30 Hz, so the cap is 30 frames. Every null3D page held the cap.
+
+| Page | null3D | three.js |
+| --- | --- | --- |
+| Battle, WebGPU | 30.0 fps, 25.34 ms GPU, 294 draws | 25.5 fps, WebGPURenderer |
+| Battle, WebGL2 | 30.0 fps, 221 draws | 28.0 fps, WebGLRenderer |
+| Factory, WebGPU | 30.0 fps, 19.07 ms GPU, 115 draws | 29.1 fps, WebGPURenderer |
+| Factory, WebGL2 | 30.0 fps, 115 draws | 30.0 fps, WebGLRenderer |
+
+On the S25 the bar holds for both scenes and both paths, as far as a 30 frame cap can show. three.js misses the cap on Battle on both renderers, and on Factory on WebGPURenderer. The cap bounds every win above 30 frames, so Factory's WebGL2 result is a tie.
 
 So the direct path helps the phone as far as the clamp reaches, and the phone's gap is other work: pass and pixel cost, as Factory's figures have shown since the first device run.
 
 ## What this changes
 
-The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the comparisons above run on the Mac, and a cloud iPhone 17 ran the same pages.
+The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the Mac comparisons above ran on the Mac, and the same pages ran on a cloud iPhone 17 and Galaxy S25.

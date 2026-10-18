@@ -69,11 +69,6 @@ export interface Comparison {
 	imageDevices?: readonly string[];
 	/** The effects that the scene draws, each a switch on the page. */
 	effects: readonly EffectName[];
-	/**
-	 * three.js's faster renderer on a WebGPU device for this scene, from the measured ramps:
-	 * WebGLRenderer unless the scene needs WebGPURenderer's own features.
-	 */
-	fasterThree: 'webgl' | 'webgpu';
 	/** Why the comparison loads files, when it does: the same files in both engines. */
 	assets?: string;
 	/** three.js's renderer in a mode that only it can draw, on both GPU paths. */
@@ -121,7 +116,6 @@ export const COMPARISONS: readonly Comparison[] = [
 			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
 		threeRenderers: { instanced: 'webgpu' },
 		effects: PLAIN_EFFECTS,
-		fasterThree: 'webgl',
 	},
 	{
 		name: 'factory',
@@ -152,7 +146,6 @@ export const COMPARISONS: readonly Comparison[] = [
 			'Ambient occlusion darkens only the ambient light in null3D and with the GTAO node. GTAOPass on WebGLRenderer darkens the whole image, so that path looks a little darker where parts meet.',
 		],
 		effects: PLAIN_EFFECTS,
-		fasterThree: 'webgl',
 	},
 	{
 		name: 'night-town',
@@ -187,6 +180,5 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
 		],
 		effects: NIGHT_EFFECTS,
-		fasterThree: 'webgpu',
 	},
 ];
