@@ -116,6 +116,8 @@ On 18 October 2026 the same checks ran again, after this branch merged main's ne
 
 **Image tests.** Five tests cover the blur: `subsurface`, `subsurface-off`, `subsurface-maps`, `subsurface-scale-50` and `demo-subsurface`. Their references were made on 18 October 2026, in both sets, with the checks above passing first.
 
+**The skin view's frame group on WebGL2.** The reflection probes' lists hold one slot for each camera view. The skin view has no slot of its own, so its frame group reads the camera's list, as it reads the camera's light textures. A group that used the skin view's own index bound a range past the end of the list buffer, and the driver then refused every draw of the skin pass (19 October 2026). `tests/subsurface.rs` of the render crate checks that every buffer range that a WebGL2 frame's bind groups make lies inside its buffer.
+
 **First use.** The builds of the blur are the `subsurface` set of the shader manifest: the skin pass's standard material with and without maps, and the blur's two steps. A page downloads them with its first material that gives `subsurfaceRadius`. Their files take 14,075 to 33,549 bytes after Brotli, under the 49 KB limit for a first-use shader file.
 
 **Allocation.** `bun run bench:allocation --subsurface` and `--translucency` on the Mac's GPU on 18 October 2026, both paths: every run passes. With the blur on S1's 64 scattered spheres, the sketch worker allocated 215.4 bytes per frame on WebGPU and the render worker 564.4; on WebGL2 they allocated 208.6 and 176.2. With S1's boxes letting half their light through, they allocated 224.7 and 487.7 on WebGPU, and 220.4 and 166.1 on WebGL2. The figures for the blur differ from part A's because the two switches add different objects.

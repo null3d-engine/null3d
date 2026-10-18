@@ -356,6 +356,13 @@ impl Opaque {
             sizes::OBJECT_RANGE_BYTES,
         ];
         let group = ids::frame_group(view);
+        // The lists hold a slot for each camera view. The skin pass has none of its own: it reads
+        // the camera's list, as it reads the camera's light textures.
+        let listed = if view.is_camera() {
+            view.index()
+        } else {
+            ViewId::CAMERA.index()
+        } as u32;
         let Some(LitTextures {
             shadow_map: map,
             atlas,
@@ -418,7 +425,7 @@ impl Opaque {
                 crate::probes::LIST_BINDING_WEBGL2,
                 resource_kind::BUFFER,
                 ids::PROBE_LISTS,
-                view.index() as u32 * crate::probes::LIST_STRIDE,
+                listed * crate::probes::LIST_STRIDE,
                 crate::probes::LIST_BYTES,
             ]);
             words[73..]
