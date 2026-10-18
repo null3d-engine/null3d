@@ -5,7 +5,7 @@
 // scene, and runs its filter with the generators' code, which this module sends with the first
 // probe.
 
-import { checkLayers, checkLive, DEV, type Destroyable } from '../errors/checks';
+import { checkLayers, checkLive, DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
@@ -72,7 +72,11 @@ const OPTIONS = [
  *
  * @category api/scene
  */
-export class ReflectionProbe implements Destroyable {
+// The class carries the internal members that the expiry check reads. It does not name the
+// interface, because the packed typings leave internal members out, and a named interface would
+// then promise members the typings do not declare. The check still enforces their shape at each
+// call site.
+export class ReflectionProbe {
 	/** @internal The frame in which the probe was destroyed, or -1 while it lives. */
 	destroyedFrame = -1;
 
