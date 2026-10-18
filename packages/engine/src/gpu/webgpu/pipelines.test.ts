@@ -224,7 +224,7 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(found).toEqual([]);
 	});
 
-	it('give a decal with maps a frame group without the probe grid and the opaque color copy', () => {
+	it('give a decal with maps a frame group without the probe grid', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
 		const layout = layoutOf(renderDescriptor(pipelines, G.TEMPLATE_DECAL_MAPS, 0));
 		const groups = [...layout.bindGroupLayouts] as unknown as GPUBindGroupLayoutDescriptor[];
@@ -232,9 +232,10 @@ describe('the WebGPU pipeline layouts', () => {
 		const bindings = [...(frame?.entries ?? [])].map((entry) => entry.binding);
 		expect(frame?.label).toBe('decal frame');
 		expect(bindings).not.toContain(10);
-		expect(bindings).not.toContain(15);
+		// The reflections' lit code reads the copy of the opaque color in every lit build.
+		expect(bindings).toContain(15);
 		const entries = groups.flatMap((group) => [...group.entries]);
-		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(15);
+		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
 	});
 });
 

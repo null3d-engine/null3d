@@ -46,6 +46,11 @@
 // The `subsurface` switch adds 64 spheres whose material spreads its light under the surface, and
 // gives the subsurface blur taps, for the allocation sample and the cost of the skin pass and the
 // blur's steps.
+// The `ssr` switch puts a polished floor under the swarm and turns screen-space reflections on, for
+// the allocation sample and the cost of their steps, the copy of the opaque colors that they read,
+// and the floor's shading: the camera orbits, so the reflections move every frame. `ssr=half` and
+// `ssr=quarter` give their grid that share of the render size, `ssr=off` keeps the floor with the
+// reflections off, and the switch alone takes the preset's.
 // The `coatSheen` switch gives the swarm's boxes a clear coat and a sheen, for the allocation sample
 // and the cost of their shading: `coatSheen=coat` and `coatSheen=sheen` give one of them, and the switch
 // alone both.
@@ -139,6 +144,8 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const ssr = switches.get('ssr');
+	if (ssr !== null) createPolishedFloor(context, ssr);
 	const weighted = switches.get('weighted');
 	const moveSmoke =
 		weighted === null ? undefined : await createSmoke(context, weighted === 'sorted');
@@ -721,6 +728,27 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
 }
 
+/** The reflections' grid as a share of the render size, by the `ssr` switch's value. */
+const SSR_SCALES = { half: 0.5, quarter: 0.25, off: 0 } as const;
+
+/**
+ * Adds the `ssr` switch's polished floor under the swarm, and turns screen-space reflections on,
+ * which reflect the swarm in it.
+ */
+function createPolishedFloor(
+	{ scene, geometry, materials, post, quality }: SketchContext,
+	size: string,
+) {
+	const scale = SSR_SCALES[size as keyof typeof SSR_SCALES];
+	if (scale !== undefined) quality.set({ ssrScale: scale });
+	post.set({ ssr: { maxDistance: 400, thickness: 2 } });
+	const floor = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({ color: '#1a1d21', roughness: 0.08, metalness: 0.3 }),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	floor.setRotationEuler(-Math.PI / 2, 0, 0);
+}
 /** The puffs of the `weighted` switch's smoke, and how long each one rises, in seconds. */
 const SMOKE_PUFFS = 2000;
 const SMOKE_LIFE = 8;

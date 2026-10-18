@@ -716,9 +716,10 @@ pub mod layout {
     /// linear sampler.
     pub const BLOOM: u32 = 9;
     /// Group 0 of the final pass that adds bloom: [`FINAL`]'s first two bindings, then bloom's
-    /// uniform block, the texture of each of bloom's levels and their linear sampler, then
-    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, its outline mask at
-    /// binding 11, and the texel of the automatic exposure at binding 12.
+    /// uniform block at binding 2, the base level of bloom's chain at binding 3 and that level's
+    /// linear sampler at binding 8, then [`FINAL`]'s color grading table and its sampler at
+    /// bindings 9 and 10, its outline mask at binding 11, and the texel of the automatic exposure
+    /// at binding 12.
     pub const FINAL_BLOOM: u32 = 10;
     /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
     /// instance's skinning matrices, which vertex shaders read.
@@ -739,8 +740,9 @@ pub mod layout {
     /// [`AO_DEPTH`] for a multisampled depth target, of which the step reads sample 0. Only
     /// WebGPU has it: WebGL2 reads a copy of one sample that the backend keeps.
     pub const AO_DEPTH_MS: u32 = 17;
-    /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
-    /// textures that the step reads with `textureLoad`.
+    /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the three
+    /// textures that the step reads with `textureLoad`. The third is the target of screen-space
+    /// reflections' trace, which only the denoise reads, while they draw.
     pub const AO: u32 = 18;
     /// The background's group: its uniform block, then a cube texture and its filtering sampler.
     /// It is group 1 of the cube and sky backgrounds, and group 2 of the texture background,
@@ -776,6 +778,12 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// Group 0 of a level of screen-space reflections' depth pyramid: the level's uniform block,
+    /// then the level below it, which the step reads with `textureLoad`.
+    pub const SSR_REDUCE: u32 = 30;
+    /// Group 0 of screen-space reflections' trace: its uniform block, then ambient occlusion's depth
+    /// copy and the pyramid's six levels above it, which it reads with `textureLoad`.
+    pub const SSR_TRACE: u32 = 31;
     /// The weighted layer's blend: the weighted color sum and the coverage, both read with
     /// `textureLoad` as unfilterable floats.
     pub const WEIGHTED_COMPOSITE: u32 = 41;
@@ -1504,11 +1512,12 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the light probe grid's four vectors, the hemisphere lights' three
-    /// vectors, the view's offset for shadow lookups, the camera's view and projection matrices,
-    /// which custom materials read, the physical sky's aerial perspective's six vectors, and the
-    /// vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 880;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read,
+    /// screen-space reflections' matrix into the frame before's view and their two vectors, the
+    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
+    /// fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 976;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1757,6 +1766,12 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// One level of screen-space reflections' depth pyramid: one triangle over the level's drawn
+    /// corner, each texel the nearest depth of the 2 x 2 texels of the level below it.
+    pub const SSR_REDUCE: u32 = 49;
+    /// Screen-space reflections' trace: one triangle over the grid of the screen texture, which
+    /// marches each texel's mirror ray through the depth pyramid and writes the ray's length.
+    pub const SSR_TRACE: u32 = 50;
     /// The skin pass's build of the standard material, from the lit template's file: it writes the
     /// diffuse light that scatters under the surface, with the view distance and the material's
     /// scatter distances, for the subsurface blur. It binds as [`INSTANCED_LIT`] does.
@@ -1849,7 +1864,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 69] = [
+    pub const NAMES: [(&str, u32); 71] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -1893,6 +1908,8 @@ pub mod template {
         ("DOF_COMPOSITE", DOF_COMPOSITE),
         ("DOF_COMPOSITE_MS", DOF_COMPOSITE_MS),
         ("TRANSMISSION_COPY", TRANSMISSION_COPY),
+        ("SSR_REDUCE", SSR_REDUCE),
+        ("SSR_TRACE", SSR_TRACE),
         ("WEIGHTED_COMPOSITE", WEIGHTED_COMPOSITE),
         ("WEIGHTED_DEPTH", WEIGHTED_DEPTH),
         ("DECAL", DECAL),
@@ -2051,6 +2068,8 @@ pub mod groups {
         (template::DOF_COMPOSITE, own!(layout::DOF_COMPOSITE)),
         (template::DOF_COMPOSITE_MS, own!(layout::DOF_COMPOSITE_MS)),
         (template::TRANSMISSION_COPY, own!(layout::VIEW_COPY)),
+        (template::SSR_REDUCE, own!(layout::SSR_REDUCE)),
+        (template::SSR_TRACE, own!(layout::SSR_TRACE)),
         (template::PARTICLE, PARTICLE_MESH),
         (template::PARTICLE_MAP, PARTICLE_MESH),
         (template::PARTICLE_DEPTH, own!(layout::VIEW_COPY)),
@@ -2381,6 +2400,8 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("SSR_REDUCE", layout::SSR_REDUCE),
+                ("SSR_TRACE", layout::SSR_TRACE),
                 ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
                 ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),

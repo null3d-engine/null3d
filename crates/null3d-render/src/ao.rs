@@ -153,10 +153,21 @@ pub(crate) fn frame_values(
     scale: RenderScale,
     ao_scale: f32,
 ) -> [f32; 4] {
-    let render = Size::Full.viewport(canvas, scale);
-    let drawn = corner(canvas, scale, ao_scale);
+    let [height, across, down] = grid_values(canvas, scale, ao_scale);
     [
         ao.map_or(0.0, |ao| ao.intensity.max(f32::MIN_POSITIVE)),
+        height,
+        across,
+        down,
+    ]
+}
+
+/// The frame uniform's values of the screen texture's grid, at `grid_scale` of the render size:
+/// the scene target's height, and the grid's texels per scene pixel across and down.
+pub(crate) fn grid_values(canvas: (u32, u32), scale: RenderScale, grid_scale: f32) -> [f32; 3] {
+    let render = Size::Full.viewport(canvas, scale);
+    let drawn = corner(canvas, scale, grid_scale);
+    [
         canvas.1.max(1) as f32,
         drawn.0 as f32 / render.0.max(1) as f32,
         drawn.1 as f32 / render.1.max(1) as f32,
@@ -172,9 +183,10 @@ pub(crate) struct AoIds {
     pub(crate) first_group: u32,
 }
 
-/// The texture that each step reads at binding 1, and at binding 2. The horizon step reads only
-/// the first, and binds it at both.
-pub(crate) type StepSources = [[u32; 2]; STEPS];
+/// The texture that each step reads at binding 1, at binding 2 and at binding 3. The horizon step
+/// reads only the first, and binds it at each. The denoise reads the third, the target of
+/// screen-space reflections' trace, only while they draw, and binds the first in its place else.
+pub(crate) type StepSources = [[u32; 3]; STEPS];
 
 /// The pipeline of a step: one triangle into its target.
 const fn pipeline(step: usize, multisampled: bool) -> PipelineKey {
@@ -220,7 +232,7 @@ impl AoPass {
             created: false,
             staged: Block::default(),
             uploaded: None,
-            bound: [[0; 2]; STEPS],
+            bound: [[0; 3]; STEPS],
         }
     }
 
@@ -245,7 +257,8 @@ impl AoPass {
     /// each step to its `sources` when its group is new or the frame made the plan's textures
     /// again. `ao` is ambient occlusion's settings while it draws, `contact` the contact
     /// shadows' while they draw, `projection` the camera's projection matrix and `inverse` its
-    /// inverse.
+    /// inverse. The denoise copies screen-space reflections' ray lengths from the third source
+    /// while `reflections`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
@@ -258,6 +271,7 @@ impl AoPass {
         scale: RenderScale,
         ao_scale: f32,
         sources: &StepSources,
+        reflections: bool,
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
@@ -272,7 +286,15 @@ impl AoPass {
             )?;
             self.created = true;
         }
-        self.staged = block(ao, contact, projection, inverse, canvas, scale, ao_scale);
+        self.staged = block(
+            ao,
+            contact,
+            (projection, inverse),
+            canvas,
+            scale,
+            ao_scale,
+            reflections,
+        );
         if self.uploaded != Some(self.staged) {
             let (at, bytes) = arena.push(bytes_of(&self.staged))?;
             list.push(Op::WriteBuffer, &[ids.buffer, 0, at, bytes])?;
@@ -296,11 +318,19 @@ impl AoPass {
                 words[8..].copy_from_slice(&[1, resource_kind::TEXTURE, textures[0], 0, 0]);
                 list.push(Op::CreateBindGroup, &words)?;
             } else {
-                let mut words = [0; 18];
-                words[..3].copy_from_slice(&[group, bind_layout::AO, 3]);
+                let mut words = [0; 23];
+                words[..3].copy_from_slice(&[group, bind_layout::AO, 4]);
                 words[3..8].copy_from_slice(&buffer);
-                words[8..13].copy_from_slice(&[1, resource_kind::TEXTURE, textures[0], 0, 0]);
-                words[13..].copy_from_slice(&[2, resource_kind::TEXTURE, textures[1], 0, 0]);
+                for (binding, &texture) in textures.iter().enumerate() {
+                    let at = 8 + 5 * binding;
+                    words[at..at + 5].copy_from_slice(&[
+                        binding as u32 + 1,
+                        resource_kind::TEXTURE,
+                        texture,
+                        0,
+                        0,
+                    ]);
+                }
                 list.push(Op::CreateBindGroup, &words)?;
             }
             self.bound[step] = textures;
@@ -336,7 +366,7 @@ impl AoPass {
     pub(crate) fn reset_gpu(&mut self) {
         self.created = false;
         self.uploaded = None;
-        self.bound = [[0; 2]; STEPS];
+        self.bound = [[0; 3]; STEPS];
     }
 }
 
@@ -389,11 +419,11 @@ pub(crate) fn upload_blank(
 fn block(
     ao: Option<Ao>,
     contact: Option<Contact>,
-    projection: Mat4,
-    inverse: Mat4,
+    (projection, inverse): (Mat4, Mat4),
     canvas: (u32, u32),
     scale: RenderScale,
     ao_scale: f32,
+    reflections: bool,
 ) -> Block {
     let render = Size::Full.viewport(canvas, scale);
     let drawn = corner(canvas, scale, ao_scale);
@@ -430,7 +460,12 @@ fn block(
             ao.distance_exponent,
             ao.distance_falloff,
         ],
-        shape: [ao.scale, slices as f32, steps as f32, 0.0],
+        shape: [
+            ao.scale,
+            slices as f32,
+            steps as f32,
+            f32::from(u8::from(reflections)),
+        ],
         // The disk's radius in texels of the steps, from three.js's in pixels of the scene.
         denoise: [
             luma,
@@ -490,7 +525,7 @@ mod tests {
         pass.request_pipelines(&mut pipelines);
         let mut list = DrawList::with_capacity(4096);
         let mut arena = UploadArena::default();
-        let sources = [[7, 7], [8, 8], [8, 9]];
+        let sources = [[7, 7, 7], [8, 8, 8], [8, 9, 8]];
         let lens = (Mat4::default(), Mat4::default());
         let mut frame = |pass: &mut AoPass, list: &mut DrawList, scale, ao_scale| {
             list.clear();
@@ -505,6 +540,7 @@ mod tests {
                 scale,
                 ao_scale,
                 &sources,
+                false,
                 false,
             )
             .unwrap();

@@ -48,7 +48,8 @@ struct Settings {
     extents: vec4f,
     /// three.js's radius, thickness, distance exponent and distance falloff.
     horizon: vec4f,
-    /// three.js's scale, the slices around the view, the steps along each slice, and a spare.
+    /// three.js's scale, the slices around the view, the steps along each slice, and 1 while the
+    /// denoise copies screen-space reflections' ray lengths, else 0.
     shape: vec4f,
     /// The denoise's luma, depth and normal phi, and its radius in texels of the steps.
     denoise: vec4f,
@@ -62,7 +63,8 @@ struct Settings {
 }
 
 // Binding 1 is the scene's depth target in the depth step, and the steps' copy of the depth in the
-// others. Binding 2 is the horizon step's target, which only the denoise reads.
+// others. Binding 2 is the horizon step's target, which only the denoise reads, and binding 3 the
+// target of screen-space reflections' trace, which only the denoise reads, and only while they draw.
 @group(0) @binding(0) var<uniform> settings: Settings;
 #ifdef MULTISAMPLED
 @group(0) @binding(1) var source: texture_multisampled_2d<f32>;
@@ -70,6 +72,7 @@ struct Settings {
 @group(0) @binding(1) var source: texture_2d<f32>;
 #endif
 @group(0) @binding(2) var horizons: texture_2d<f32>;
+@group(0) @binding(3) var reflections: texture_2d<f32>;
 
 const PI: f32 = 3.141592653589793;
 /// The taps of the denoise's disk, and its rings: three.js's defaults.
@@ -250,6 +253,15 @@ fn horizon_at(texel: vec2i) -> vec4f {
     return textureLoad(horizons, vec2i(inside.x, turned(inside.y, settings.extents.w)), 0);
 }
 
+/// The reflected ray's length that screen-space reflections' trace wrote at a texel, or 0 while
+/// they draw nothing.
+fn reflection_at(texel: vec2i) -> f32 {
+    if settings.shape.w < 0.5 {
+        return 0.0;
+    }
+    return textureLoad(reflections, vec2i(texel.x, turned(texel.y, settings.extents.w)), 0).z;
+}
+
 /// Interleaved gradient noise (Jimenez 2014) at a texel: a value from 0 to 1 that changes from each
 /// texel to the next with little low-frequency pattern.
 fn gradient_noise(texel: vec2i) -> f32 {
@@ -398,5 +410,5 @@ fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = corner_texel(position);
     let depth = depth_at(texel);
     let values = blurred(texel, depth);
-    return vec4f(values.x, depth, 0.0, values.y);
+    return vec4f(values.x, depth, reflection_at(texel), values.y);
 }

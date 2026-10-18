@@ -98,15 +98,16 @@ pub(super) fn bind_frame(
 }
 
 /// Records the creation of the decal pass's frame group: the camera's frame group without the
-/// light probe grids' texture and the copy of the opaque color, which no decal build reads, so
-/// that a decal with maps stays within WebGPU's default count of sampled textures per stage.
+/// light probe grids' texture, which no decal build reads, so that a decal with maps stays within
+/// WebGPU's default count of sampled textures per stage. It carries the copy of the opaque color,
+/// which the reflections' lit code reads in every lit build, decals included.
 pub(super) fn bind_decal_frame(
     list: &mut DrawList,
     inputs: &FrameInputs,
 ) -> Result<(), RecordError> {
     let (group, layout) = (ids::DECAL_FRAME_GROUP, bind_layout::DECAL_FRAME);
     push_frame_group(list, group, layout, ViewId::CAMERA, inputs, |binding| {
-        binding != probe_grid::MAP_BINDING && binding != transmission::BINDING
+        binding != probe_grid::MAP_BINDING
     })
 }
 

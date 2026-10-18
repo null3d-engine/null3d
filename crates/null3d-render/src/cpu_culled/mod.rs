@@ -139,6 +139,7 @@ use crate::probe_grid;
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
+use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
@@ -205,8 +206,10 @@ mod ids {
     pub const PHYSICAL_SKY: u32 = SUBSURFACE + 1;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
+    /// The uniform buffer of screen-space reflections' steps.
+    pub const SSR: u32 = FULLSCREEN + 1;
     /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
-    pub const FOG_VOLUME: u32 = FULLSCREEN + 1;
+    pub const FOG_VOLUME: u32 = SSR + 1;
     /// The uniform buffer of the automatic exposure's meter.
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
@@ -364,8 +367,10 @@ mod ids {
     pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
     /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
-    /// The bind group of the scene depth that the decal pass reads, after the full-screen passes'.
-    pub const DECAL_DEPTH_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of screen-space reflections, after the full-screen passes'.
+    pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of the scene depth that the decal pass reads, after screen-space reflections'.
+    pub const DECAL_DEPTH_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
     /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
     pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
     /// The bind groups of the automatic exposure's meter, after the fog's.
@@ -641,6 +646,10 @@ impl CpuCulledRenderer {
                         subsurface: SubsurfaceIds {
                             buffer: ids::SUBSURFACE,
                             first_group: ids::SUBSURFACE_GROUPS,
+                        },
+                        ssr: SsrIds {
+                            buffer: ids::SSR,
+                            first_group: ids::SSR_GROUPS,
                         },
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
@@ -1637,6 +1646,8 @@ impl CpuCulledRenderer {
         let copied = f32::from(u8::from(self.graph.transmission_copied()));
         if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
             frame.uniform.camera_world[3] = copied;
+            let eye = frame.camera.absolute();
+            self.graph.write_screen_values(&mut frame.uniform, eye);
         }
         if let Some(frame) = self.skin_culling.frame_mut(ViewId::SUBSURFACE) {
             frame.uniform.environment = uniform;
@@ -2126,6 +2137,8 @@ impl FrameBuilder for CpuCulledRenderer {
             settings.camera_projection(canvas),
             settings.screen_scale(),
         );
+        self.graph
+            .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
@@ -2391,6 +2404,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
+    }
+
+    fn reads_last_frame(&self) -> bool {
+        self.graph.ssr_draws()
     }
 
     fn graph_message(&self, error: GraphError) -> String {

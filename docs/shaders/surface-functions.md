@@ -173,7 +173,7 @@ const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detai
 - A vertex offset samples textures too, with `textureSampleLevel` or `textureLoad`, as WGSL allows in a vertex shader. A height map then moves each vertex.
 - Each texture's sampler takes the `wrap` and `filter` options of the texture. The `colorSpace` option says whether sampling turns sRGB colors into linear ones, as for the maps of a standard material.
 - Until a texture's image is on the GPU, sampling it gives white: `vec4f(1.0)`. So does a texture that the WGSL declares and the `textures` option does not give. Multiply by a texture, and the material draws with its own values until the image arrives.
-- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms.
+- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms. On WebGL2 the engine's lighting takes 7 of a fragment shader's 16 texture units. A lit material with all 6 textures thus leaves 3 units free.
 - The textures are fixed when the material is created. Make a second material for another set of textures.
 - A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. Data textures of `rgba16float` sample with filtering too.
 - In TypeScript, the `textures` option takes only the names that the WGSL declares. A wrong name fails the type check.

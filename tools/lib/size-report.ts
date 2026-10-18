@@ -561,8 +561,12 @@ export function downloadSizes(
  * Each column's budget is the owner's, and decision record D-14 holds its figures and approvals.
  * The gzip and raw budgets stop a start that grows on a gzip host, or on a host that sends files as
  * they are. The start's shader file fills most of each column.
+ *
+ * The owner raised the Brotli figure from 165 KB to 166 KB on 18 October 2026, for the screen-space
+ * reflections: their code adds about 1.6 KB of real start code, and the branch sat 50 bytes over
+ * the old line. The owner chose the raise over trimming.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 165 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 166 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };

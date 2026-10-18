@@ -302,6 +302,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'wet-street',
+		group: 'Light, materials and effects',
+		sketch: new URL('./wet-street/sketch.ts', import.meta.url),
+		code: 'wet-street/',
+		title: 'Screen-space reflections',
+		scene: 'Wet street at night',
+		summary:
+			'A street after the rain, whose puddles mirror the lit windows, the neon shop signs, the street lamps and a passing taxi, while the dry asphalt between them stays matte. Dark window panes, wet curbs and chrome bollards shine too.',
+		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'auto-exposure',
 		group: 'Light, materials and effects',
 		sketch: new URL('./auto-exposure/sketch.ts', import.meta.url),
@@ -515,7 +527,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Levels of detail',
 		scene: 'Mixed forest',
 		summary:
-			'40,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards.',
+			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards.',
 		hold: 2,
 		timeoutSeconds: 300,
 	},

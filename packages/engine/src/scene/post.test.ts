@@ -25,6 +25,7 @@ function post(
 	luts: number[][];
 	vignettes: [boolean, ...number[]][];
 	outlines: number[][];
+	ssrs: [boolean, ...number[]][];
 	reads: () => number;
 } {
 	const calls: [number, number][] = [];
@@ -34,6 +35,7 @@ function post(
 	const vignettes: [boolean, ...number[]][] = [];
 	const outlines: number[][] = [];
 	const dofs: [boolean, ...number[]][] = [];
+	const ssrs: [boolean, ...number[]][] = [];
 	const exposures: [boolean, ...number[]][] = [];
 	const needs: string[] = [];
 	const block = Float32Array.of(
@@ -44,6 +46,7 @@ function post(
 		...[2, 0],
 		...[10, 2.8, 0, 0.02, 0, 0, 0, 0, 0],
 		...[1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
+		...[1, 100, 0.5, 0.5],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -114,6 +117,10 @@ function post(
 				outlines.push([on ? 1 : 0, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
 				return 0;
 			},
+			setSsr(on: boolean) {
+				ssrs.push([on, ...[0, 1, 2, 3].map((k) => at(C.POST_VALUE_SSR_INTENSITY + k))]);
+				return 0;
+			},
 		},
 		check: (result: number) => result,
 		holdViews: () => {},
@@ -130,6 +137,7 @@ function post(
 		luts,
 		vignettes,
 		outlines,
+		ssrs,
 		reads: () => views,
 	};
 }
@@ -359,6 +367,56 @@ describe('post.set', () => {
 		expect(String(warnings[0])).toContain('depth of field');
 		expect(needs).toEqual([]);
 		expect(dofs.map(([on]) => on)).toEqual([true, true]);
+	});
+
+	it('turns screen-space reflections on with their defaults and the values given, keeps them while off, and loads their shaders only when on', () => {
+		const { post: output, ssrs, needs } = post();
+		output.set({ ssr: false });
+		expect(needs).toEqual([]);
+		output.set({ ssr: {} });
+		output.set({ ssr: { maxDistance: 30, thickness: 0.6, intensity: 0.5 } });
+		output.set({ ssr: false });
+		output.set({ ssr: { maxRoughness: 0.8 } });
+		// The values pass through 32-bit floats.
+		const thickness = Math.fround(0.6);
+		expect(ssrs).toEqual([
+			[false, 1, 100, 0.5, 0.5],
+			[true, 1, 100, 0.5, 0.5],
+			[true, 0.5, 30, thickness, 0.5],
+			[false, 0.5, 30, thickness, 0.5],
+			[true, 0.5, 30, thickness, Math.fround(0.8)],
+		]);
+		expect(needs).toContain('ao');
+		expect(needs).toContain('transmission');
+		expect(output.ssrOn).toBe(true);
+	});
+
+	it('refuses screen-space reflection settings it does not know and values out of range', () => {
+		const { post: output } = post();
+		const bad = (settings: unknown) => () => output.set(settings as PostSettings);
+		expect(bad({ ssr: { blur: 1 } })).toThrow('E1213');
+		expect(bad({ ssr: { maxDistance: 0 } })).toThrow('E1213');
+		expect(bad({ ssr: { intensity: 2 } })).toThrow('E1213');
+		expect(bad({ ssr: { maxRoughness: -0.1 } })).toThrow('E1213');
+		expect(bad({ ssr: { thickness: Number.NaN } })).toThrow('E1203');
+	});
+
+	it('warns once where the device has no float targets, and keeps screen-space reflections off', () => {
+		const { post: output, ssrs, needs } = post(true, false);
+		const warnings: unknown[] = [];
+		const warn = console.warn;
+		console.warn = (message: unknown) => warnings.push(message);
+		try {
+			output.set({ ssr: {} });
+			output.set({ ssr: { intensity: 0.5 } });
+		} finally {
+			console.warn = warn;
+		}
+		expect(warnings).toHaveLength(1);
+		expect(String(warnings[0])).toContain('float render targets');
+		expect(ssrs.map(([on]) => on)).toEqual([false, false]);
+		expect(needs).toEqual([]);
+		expect(output.ssrOn).toBe(false);
 	});
 
 	it('warns once where the device has no float targets, and keeps ambient occlusion off', () => {

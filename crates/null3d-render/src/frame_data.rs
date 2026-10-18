@@ -70,6 +70,16 @@ pub struct FrameUniform {
     /// The projection matrix, with reversed depth, which custom materials read as
     /// `camera.projection`. Zero in the views of lights.
     pub projection: Mat4,
+    /// Takes a position relative to this frame's camera into the clip space of the camera's view
+    /// in the frame before, whose color screen-space reflections read (see [`crate::ssr`]).
+    pub reflection_reprojection: Mat4,
+    /// Screen-space reflections' strength, 0 when the view draws none, the most roughness that
+    /// reflects, the most distance of a ray, and the share of the screen over which they fade
+    /// toward its edges.
+    pub reflection: [f32; 4],
+    /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
+    /// spans at a distance of one unit in its view, along y, and a spare.
+    pub reflection_corner: [f32; 4],
     /// The physical sky's air between the camera and each surface: see
     /// [`crate::physical_sky::AerialUniform`].
     pub aerial: AerialUniform,

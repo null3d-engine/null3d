@@ -66,7 +66,9 @@
 // skin pass draws again and the subsurface blur's steps spread.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
+// frame. `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
+// depth pyramid, trace it and copy the opaque colors in every frame.
+// `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
 // materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
 // puffs rise in every frame, which the camera's weighted layer draws. `--decals` puts a ground
 // with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
@@ -139,6 +141,7 @@
 //   bun run bench:allocation --transmission --gpu webgl2
 //   bun run bench:allocation --translucency --gpu webgl2
 //   bun run bench:allocation --subsurface --gpu webgl2
+//   bun run bench:allocation --ssr --gpu webgl2
 //   bun run bench:allocation --weighted --gpu webgl2
 //   bun run bench:allocation --decals --gpu webgl2
 //   bun run bench:allocation --particles --gpu webgl2
@@ -419,6 +422,22 @@ const TRANSMISSION_MIPS_BUDGETS: WorkerBudgets = {
 };
 
 /**
+ * What `--ssr` adds to the WebGPU replay each frame, beyond the passes that `PAGE_SWITCHES` counts:
+ * the encoders of the ten render passes that screen-space reflections add (the depth prepass, which
+ * draws apart from the opaque pass, the depth copy, the six levels of the depth pyramid, the trace
+ * and the copy of the opaque colors). On the Mac each allocated about 64 bytes, twice
+ * `PASS_REPLAY_BYTES`, so the table adds the other half and keeps one pass's room above the ten, as
+ * bloom's does. The reflections share the copy's mip levels with `--transmission`, at the same
+ * allowance.
+ */
+const SSR_BUDGETS: WorkerBudgets = {
+	'render-worker': {
+		[REPLAY]: 10 * 32 + 64,
+		'generateMipmaps webgpu/backend.ts': 11 * 32,
+	},
+};
+
+/**
  * What `--weighted` writes through the staging ring each frame: the blended rows' weights, which the
  * page uploads as its rows move. Measured on the Mac on 15 October 2026: the write took 123.5 bytes
  * per frame against the 96 that a page without the switch takes, up to 124.1.
@@ -459,6 +478,8 @@ interface PageSwitch {
  * - `--reflection`: the reflection's culling pass, its render pass and the pass that copies its
  *   image upright;
  * - `--transmission`: the pass that copies the opaque color, with the passes of its mip levels;
+ * - `--ssr`: the depth prepass, the depth copy, the six levels of the depth pyramid, the trace and
+ *   the copy of the opaque colors, with the passes of the copy's mip levels;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
  * - `--passes`: the full-screen pass and the effect's pass;
@@ -504,6 +525,12 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	// The skin pass, the culling pass that follows it on the GPU-driven path, and the blur's two
 	// steps.
 	{ flag: '--subsurface', query: '&subsurface', passes: 4 },
+	{
+		flag: '--ssr',
+		query: '&ssr',
+		passes: 10,
+		budgets: SSR_BUDGETS,
+	},
 	{ flag: '--coat-sheen', query: '&coatSheen' },
 	{ flag: '--weighted', query: '&weighted', budgets: WEIGHTED_BUDGETS },
 	{ flag: '--decals', query: '&decals', passes: 1 },

@@ -57,6 +57,8 @@ import {
 	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_SSR_REDUCE,
+	TEMPLATE_SSR_TRACE,
 	TEMPLATE_SUBSURFACE,
 	TEMPLATE_SUBSURFACE_BLUR,
 	TEMPLATE_SUBSURFACE_COMPOSITE,
@@ -301,6 +303,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// The subsurface blur's down step reads the same one-sample copy of the depth.
 	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
 	templates[TEMPLATE_SUBSURFACE_COMPOSITE] = { shader: shaders.subsurface_blur, pipeline: 'down' };
+	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
+	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
 	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
 	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };

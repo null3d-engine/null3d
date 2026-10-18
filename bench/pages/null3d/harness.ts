@@ -80,6 +80,7 @@ export interface Null3dPageOptions {
  * - `transmission` puts clear water under S1's swarm that lets light through.
  * - `translucency` makes S1's boxes let light through to their other side.
  * - `subsurface` adds spheres whose light spreads under their surface and gives the blur its taps.
+ * - `ssr` puts a polished floor under S1's swarm with screen-space reflections on.
  * - `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them with `coatSheen=coat` or
  *   `coatSheen=sheen`.
  * - `weighted` puts a column of smoke of the weighted blending over S1, and `weighted=sorted` the
@@ -129,6 +130,7 @@ const SKETCH_SWITCHES = [
 	'transmission',
 	'translucency',
 	'subsurface',
+	'ssr',
 	'coatSheen',
 	'weighted',
 	'particles',
