@@ -53,17 +53,20 @@ run('preset-change', async () => {
 	const sketch = swap ? undefined : await answered;
 	const mode = { ...engine.mode };
 	let measured = await measuring;
-	if (!swap && measured.pipelines === 0) {
-		// A slow machine applies the preset after the window closed, so the pipeline it built was
-		// counted nowhere. The switch has happened by now: measure again, and take that window's
-		// pipelines and skipped draws, which are what the check about them needs.
-		const settled = await engine.measure(MEASURE_SECONDS);
-		measured = {
-			...measured,
-			frames: measured.frames + settled.frames,
-			pipelines: settled.pipelines,
-			skippedDraws: settled.skippedDraws,
-		};
+	if (!swap) {
+		// A slow machine applies the preset and draws its new pipeline after the first window
+		// closed, so measure again until that pipeline is counted, and add each window's figures.
+		// The cap keeps a real fault failing instead of measuring for ever.
+		const deadline = performance.now() + 30_000;
+		while (measured.pipelines === 0 && performance.now() < deadline) {
+			const more = await engine.measure(MEASURE_SECONDS);
+			measured = {
+				...measured,
+				frames: measured.frames + more.frames,
+				pipelines: measured.pipelines + more.pipelines,
+				skippedDraws: measured.skippedDraws + more.skippedDraws,
+			};
+		}
 	}
 	const after = await engine.captureFrame();
 	await engine.destroy();
