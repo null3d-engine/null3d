@@ -12,7 +12,7 @@ summary: "Declared reads and writes; automatic order; transient memory; validati
 
 ```mermaid
 flowchart LR
-    objects[("objects")] --> culling["Culling<br/>WebGPU only"] --> visible[("visible instances")]
+    objects[("objects")] --> culling["Culling<br/>GPU-driven path only"] --> visible[("visible instances")]
     visible --> opaque
     visible -.-> prepass
     subgraph scene["One render pass"]
@@ -62,7 +62,7 @@ With the depth prepass on, each view draws the depth of its opaque objects first
 
 With GPU occlusion culling on, each camera view's culling pass keeps the objects that showed in its last frame. The occluders' pass draws their depth into a target of its own, and the depth pyramid pass reads it. The late culling pass tests every object in view against the pyramid, and writes the visible instances again. The occluders' pass must read them before that write. The graph runs a pass that reads a resource "so far" after the writers declared before it, and before the writers declared after it. The opaque pass then draws what the late culling pass kept. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the method.
 
-A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. WebGPU draws an image's top row first, and materials sample the bottom row at v = 0, as three.js's render targets hold it. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already.
+A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. On a device that draws directly, the job workers list them on WebGPU too. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. WebGPU draws an image's top row first, and materials sample the bottom row at v = 0, as three.js's render targets hold it. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already.
 
 A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy. A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes, so the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it.
 
