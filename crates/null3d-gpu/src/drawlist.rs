@@ -2157,8 +2157,16 @@ pub mod groups {
         (template::PROBE_GRID, MESH),
         (template::PROBE_GRID_MAPS, MESH),
         (
+            // A WebGL2 build reads the draw table at group 1 and the instances at 2, as every
+            // mesh template does, then its maps at 3. A WebGPU build has no draw table and binds
+            // its maps at group 1, after the frame group.
             template::MOTION,
-            &[&[layout::MOTION_FRAME], &[layout::TEXTURES]],
+            &[
+                &[layout::MOTION_FRAME],
+                &[layout::DRAWS, layout::TEXTURES],
+                &[layout::INSTANCES],
+                &[layout::TEXTURES],
+            ],
         ),
         (
             template::MOTION_VIEW,

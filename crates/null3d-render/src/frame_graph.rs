@@ -5284,11 +5284,12 @@ mod tests {
         },
         // The reflections' own bands, clear of the view copies' groups, which take 32 ids from 60.
         motion: MotionIds {
-            buffer: 21,
+            buffer: 22,
             group: 125,
             sampler: 18,
             blank: 911,
         },
+        // The reflections' own bands, clear of the view copies' groups, which take 32 ids from 60.
         ssr: SsrIds {
             buffer: 21,
             first_group: 220,
