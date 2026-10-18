@@ -76,3 +76,31 @@ Options D, A and the capture and blend above. The quality setting `probeSize` se
 - Code: `crates/null3d-render/src/probes.rs` (probes, their scheduling, the filter command, the capture views' cameras and each view's list), `view.rs` (capture views), `frame.rs`, both frame builders (the array, the lists, the split-sum table's move on WebGPU), `dfg.rs`, `textures.rs` (image ids for generators without a texture), `crates/null3d-gpu` (`Op::ProbeFilter`), the core's calls, `lib/probes.wgsl`, `lib/cubemap.wgsl`, `lib/tables.wgsl`, `lit.wgsl`, `probe.wgsl`, and the backends' `probes.ts`.
 - Docs: `api/scene`, `concepts/lighting`, the quality preset table, the error page E1430, and the three.js mapping's `cube-camera` entry.
 - Skills: the develop skill's quick reference and lighting notes, and the port skill's mapping notes.
+=======
+
+## Addendum, 2026-10-14: binding 3 is now shared with the area lights
+
+The area lights (D-145, M2-EX28) landed with their tables texture at frame-group binding 3, which
+this record gives the probes' maps. The owner ruled on 14 October 2026 that the two share one texture
+array at binding 3, the probes' maps first and the light tables' layers between them and the lights'
+images, so binding 10 stays for the light probe grid (D-146). [D-146](D-146-light-probe-grid.md)
+records the choice and the copy on a regrow. The probes' maps, the blend, the capture and the API are
+unchanged.
+
+## Addendum, 2026-10-18: the probe sampling stays in every lit build
+
+The probes' sampling moved into the light probe grid's first-use templates on 15 October, to bring
+the start under its then budget: the standard lit builds stopped carrying it, and the engine drew
+lit meshes through the probe templates while a scene set a probe. That move is **reverted** (the
+commit `1181a0532` and its test fix `72878e4ec`), because it changed what WebGL2 draws.
+
+The evidence, measured on 18 October with the picture tests for the probes and their demo: at the
+commit before the move, `probe-rough` matches its reference on WebGPU, compatibility and WebGL2. At
+the move's own commit, WebGPU and compatibility still match, while `probe-rough` differs by 5.240%
+on WebGL2: the floor's reflection loses its roughness blur. The same five WebGL2 pictures differ at
+every later commit of the branch, and the merges do not change them (the pictures are identical
+byte for byte before and after). The cause inside those builds is not found; a later session should
+compare the two templates' WebGL2 output rather than assume the pictures are stale.
+
+The cost of the revert is the start size: the probes' sampling sits in every lit build again. The
+owner raised the start budget to 165 KB after the move was written, which covers it.
