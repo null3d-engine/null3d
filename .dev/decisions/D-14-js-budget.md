@@ -618,7 +618,8 @@ carry it at once.
 
 The split moved three small modules that many files share into files of their own, which every
 page loads: the message helper, the GPU constants and the control block. Together they take
-913 bytes after Brotli, against the 5,894 bytes that the reclaim saved.
+913 bytes after Brotli and three requests. The page asks for all three while it loads, so they do
+not add a round trip in turn.
 
 The pipelined WebGL2 start fell from 171,526 bytes to 165,632 bytes after Brotli, under the 166 KB
 line of 169,984 bytes that the owner named by 4,352 bytes. The budget stays at 176 KB as the

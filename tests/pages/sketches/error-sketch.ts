@@ -6,8 +6,8 @@
 // it imports. The core's render graph rejects the last: a scene pass that reads a texture no pass
 // writes. In a production build, the sketch's bundle holds its own copy of the engine's error
 // code, apart from the copy in the engine's worker code. A thread's first error loads the text of
-// the fixes, so the sketch posts the caught errors once at once, and again after that text has had
-// time to arrive: the second post shows the messages that the errors end with.
+// the fixes, so the sketch reports the caught errors at once, and again after that text has had
+// time to arrive: the second report shows the messages that the errors end with.
 // When the page asks for queries, the sketch makes raycasts and overlap queries whose input is not
 // finite in 32 bits, which must throw in every build. Then two rays must still find the box ahead
 // of them: one with a direction too small to square in 64 bits, and one with a direction too large.
