@@ -343,6 +343,18 @@ pub trait FrameBuilder {
     /// Records the frame's draw list into the list of its parity. Returns true when the frame
     /// rebuilt the draw tables.
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError>;
+    /// The target and row that a pick's source key names, or `None` for no hit or a key that
+    /// names nothing. A scene object gives its slot and `u32::MAX` for no row, and a batch row
+    /// gives the batch's id as the core's handles give it, and the row.
+    fn pick_target(&self, _key: u32) -> Option<(u32, u32)> {
+        None
+    }
+    /// True when GPU picking finds every source that the scene draws: every drawn pair has a pick
+    /// build, and no blended, transmissive, sprite, point or line source draws. Else a pick
+    /// answers the scene with a raycast, which tests triangles and ignores masks.
+    fn pick_covers_scene(&self) -> bool {
+        false
+    }
     /// The entries of the index list that the frame draws, where the builder culls on the CPU: one
     /// per visible object or instance row, or per visible cluster of static rows. `None` where the
     /// GPU culls, as the CPU never learns the count there.
@@ -898,6 +910,9 @@ pub struct SceneSettings {
     bloom_chain: ChainFrame,
     /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
     morph_cap: u32,
+    /// The pick that the next recorded frame draws, until that frame copies its ids back into
+    /// engine memory.
+    pick: Option<crate::pick::PickRequest>,
     /// Ambient occlusion's settings while the sketch turns it on.
     ao: Option<Ao>,
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
@@ -1110,7 +1125,28 @@ impl SceneSettings {
             levels: Levels::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
+            pick: None,
         }
+    }
+
+    /// The pick that the next recorded frame draws, if one waits.
+    pub fn pick(&self) -> Option<crate::pick::PickRequest> {
+        self.pick
+    }
+
+    /// Makes the next recorded frame draw a pick.
+    pub fn set_pick(&mut self, request: crate::pick::PickRequest) {
+        self.pick = Some(request);
+    }
+
+    /// Takes the pick that a frame recorded, once its read is on that frame's list.
+    pub fn take_pick(&mut self) -> Option<crate::pick::PickRequest> {
+        self.pick.take()
+    }
+
+    /// True while a pick waits for a frame.
+    pub fn picking(&self) -> bool {
+        self.pick.is_some()
     }
 
     /// The area lights' tables and the lights' images.
@@ -1890,6 +1926,11 @@ impl SceneSettings {
     /// resolve into the canvas. Frames at a lower scale while this is off draw the whole canvas.
     pub fn set_render_scaling(&mut self, scaling: bool) {
         self.render_scaling = scaling;
+    }
+
+    /// The device pixels per CSS pixel that the canvas draws with.
+    pub fn pixel_ratio(&self) -> f32 {
+        self.pixel_ratio
     }
 
     /// Sets the device pixels per CSS pixel that the canvas draws with. A ratio that is not a

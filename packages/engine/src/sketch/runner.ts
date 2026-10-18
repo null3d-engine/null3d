@@ -195,6 +195,7 @@ export async function runPipelined(
 	fault: (error: unknown) => void,
 ): Promise<void> {
 	const { slots } = controlViews(control);
+	sketch.context.scene.attachPickControl(slots);
 	try {
 		while (Atomics.load(slots, Slot.Running) !== 0) {
 			const paused = Atomics.load(slots, Slot.Paused);
@@ -708,6 +709,7 @@ export class SketchRunner {
 		} catch (error) {
 			console.error(error);
 		}
+		this.context.scene.stopPicks();
 		this.core.stop();
 		stopHelperWorkers();
 		this.restoreRandom?.();
@@ -1335,6 +1337,8 @@ export class SketchRunner {
 			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		this.growJobs(glue, asked);
+		// A pick whose read landed answers now, before the next frame's update.
+		this.context.scene.pollPicks(this.sketch.control.slots);
 		return frame;
 	}
 }

@@ -176,6 +176,11 @@ pub(super) struct Bucket {
     /// True for a fade bucket, whose slice holds each instance as a pair: its entry, then its
     /// fade value's bits.
     pub(super) pairs: bool,
+    /// The id of the pipeline that draws its objects into GPU picking's id target, or 0 while
+    /// picking is off or its pair has no pick build.
+    pub(super) pick: u32,
+    /// True when that pipeline binds the material's maps, as a custom material's pick build does.
+    pub(super) pick_maps: bool,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -689,6 +694,8 @@ impl Layout {
         prepass: Prepass,
         skinning: &Skinning,
         key_counts: &mut KeyCounts,
+        pick_targets: PassTargets,
+        picking: bool,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -912,6 +919,17 @@ impl Layout {
                 } else {
                     group
                 };
+            // GPU picking draws this bucket with its own template, or with a custom material's
+            // pick builds, which repeat the vertex offset. A pair without one has no pick build.
+            let (pick, pick_maps) = match (picking, drawn) {
+                (true, Drawn::Scene) => {
+                    match crate::pick::key_of(pipeline, settings.sways(material), false) {
+                        Some((key, maps)) => (pipelines.id(key.in_pass(pick_targets)), maps),
+                        None => (0, false),
+                    }
+                }
+                _ => (0, false),
+            };
             // The mask's second pipeline binds as the depth template does.
             let (pipeline, prepass, prepass_own) = match drawn {
                 Drawn::Outlined => {
@@ -953,6 +971,8 @@ impl Layout {
                 moves,
                 levels: links,
                 pairs: is_fade_key(&key),
+                pick,
+                pick_maps,
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -1518,6 +1538,8 @@ mod tests {
                 Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
+                targets,
+                false,
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;

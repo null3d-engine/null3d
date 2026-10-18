@@ -130,6 +130,7 @@ export type {
 	ParticleMotion,
 	ParticleValues,
 } from './scene/particles';
+export type { PickHit } from './scene/picks';
 export type {
 	ObjectEventHandler,
 	ObjectEventType,

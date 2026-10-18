@@ -111,6 +111,12 @@ pub(super) struct Draw {
     /// True for a draw of a fade bucket, whose entries come in pairs, so it draws half as many
     /// instances as its bucket lists words.
     pub(super) pairs: bool,
+    /// The id of the pipeline that draws it into GPU picking's id target, or 0 while picking is
+    /// off or its pair has no pick build.
+    pub(super) pick: u32,
+    /// The bind group of the material's maps that the pick pipeline reads, or 0 for the pick
+    /// template, which reads none.
+    pub(super) pick_textures: u32,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
@@ -276,6 +282,8 @@ impl Layout {
         prepass: Prepass,
         motion: Option<PassTargets>,
         key_counts: &mut KeyCounts,
+        pick_targets: PassTargets,
+        picking: bool,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -484,6 +492,20 @@ impl Layout {
                 pipeline.permutation & (permutation::SKIN | permutation::MORPH) != 0
                     || key.permutation & permutation::MOTION != 0
             });
+            // GPU picking draws this key's parts with the pick template, or with a custom
+            // material's pick builds, which repeat its vertex offset.
+            let (pick, pick_textures) = match (picking, drawn) {
+                (true, Drawn::Scene) => {
+                    match crate::pick::key_of(pipeline, settings.sways(material), true) {
+                        Some((key, maps)) => (
+                            pipelines.id(key.in_pass(pick_targets)),
+                            if maps { textures } else { 0 },
+                        ),
+                        None => (0, 0),
+                    }
+                }
+                _ => (0, 0),
+            };
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
@@ -517,6 +539,8 @@ impl Layout {
                         index_count: part.index_count,
                         first_index: part.first_index,
                         pairs,
+                        pick,
+                        pick_textures,
                     };
                     self.draws.push(draw);
                     if let Some(second) = second {
@@ -634,6 +658,7 @@ pub(super) fn run_end(draws: &[Draw], start: usize) -> usize {
                 || d.textures != first.textures
                 || d.motion != first.motion
                 || d.motion_textures != first.motion_textures
+                || d.pick != first.pick
                 || d.page != first.page
         })
         .map_or(draws.len(), |n| start + n)

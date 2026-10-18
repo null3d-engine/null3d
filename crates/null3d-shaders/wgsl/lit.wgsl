@@ -136,7 +136,7 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
+#import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #ifdef CUSTOM
@@ -147,6 +147,30 @@ enable draw_index;
 #endif
 #ifdef OBJECT_IDS
 #import null3d::mesh::{object_ids}
+#endif
+#ifdef PICK
+/// The key of an instance's source, which GPU picking writes: its slot for an object of the
+/// scene, or its row of the data texture that the object ranges name, marked for a streamed row.
+fn pick_key(found: Instance) -> u32 {
+#ifdef WEBGL2
+    // The bit above every resident row marks a row of the streamed data texture.
+    return found.source | select(0u, 1u << 31u, found.streamed);
+#else
+    return found.source;
+#endif
+}
+
+/// The color that GPU picking's id target holds for a source key: its four bytes, each as the
+/// fraction an 8-bit target stores.
+fn pick_color(key: u32) -> vec4f {
+    let bytes = vec4u(
+        (key >> 24u) & 0xffu,
+        (key >> 16u) & 0xffu,
+        (key >> 8u) & 0xffu,
+        key & 0xffu,
+    );
+    return vec4f(bytes) / 255.0;
+}
 #endif
 #ifdef OBJECT_MATRICES
 #import null3d::vertex::{affine_matrix, affine_normal_matrix}
@@ -588,6 +612,10 @@ struct VertexOut {
 #ifdef OBJECT_IDS
     /// The instance's index in its batch, then the object's id.
     @location(12) @interpolate(flat, either) ids: vec2u,
+#endif
+#ifdef PICK
+    /// The key of the instance's source, which the pick pass writes into its id target.
+    @location(13) @interpolate(flat, either) key: u32,
 #endif
 }
 #endif
@@ -1100,6 +1128,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef OBJECT_IDS
     out.ids = ids;
 #endif
+#ifdef PICK
+    out.key = pick_key(found);
+#endif
 #ifdef TRANSMISSION
     out.scale = axis_scales(found);
 #else ifdef TRANSLUCENCY
@@ -1526,8 +1557,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef CASTER
     return vec4f(0.0);
 #else ifdef PICK
-    // Red: the object's or the batch's id. Green: the instance's row within its batch.
-    return vec4u(in.ids.y, in.ids.x, 0u, 0u);
+    return pick_color(in.key);
 #else
     material_row = material_of(in.material);
 #ifdef TRANSMISSION
