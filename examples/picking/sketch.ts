@@ -1,12 +1,12 @@
 // Picking with labels: six polished pieces stand on pedestals on a turning plinth in a dark gallery,
-// each with an HTML label that follows it. Three spotlights light them, and the pieces reflect the
-// built-in room environment. The pointer lights up the piece under it, and a click selects that
-// piece: an outline marks it, its label says so, and a dot marks the point that the click's ray
-// hit. object.on finds the piece under the pointer with no raycast in the sketch. ui.trackLabel
-// tracks each label, and the examples page binds an element to it when the sketch posts the label's
-// text. The plinth and the pieces turn by the sketch's time, so a held frame is the same each run.
+// each with a label that follows it. Three spotlights light them, and the pieces reflect the room
+// environment. The pointer lights the piece under it, and a click selects it: an outline marks it,
+// its label says so, and a dot marks the point the ray hit. A plan on the wall marks each click.
+// object.on finds the piece with no raycast, and ui.trackLabel follows the labels. The plinth and
+// the pieces turn by the sketch's time, so a held frame is the same each run.
 import { defineSketch, mat4, math, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { createScreen } from './screen';
 
 /** The ring's radius, in meters, and the height of the plinth's top. */
 const RING = 2.2;
@@ -136,6 +136,7 @@ export default defineSketch(async (ctx) => {
 		});
 	}
 	select(items[0]);
+	createScreen(ctx);
 
 	return {
 		onUpdate(dt) {

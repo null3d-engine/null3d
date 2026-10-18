@@ -470,10 +470,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'picking',
 		group: 'Motion and interaction',
 		sketch: new URL('./picking/sketch.ts', import.meta.url),
+		code: 'picking/',
 		title: 'Picking and labels',
 		scene: 'Gallery plinth',
 		summary:
-			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit.',
+			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A plan on the wall beside them marks each click where it lands.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
