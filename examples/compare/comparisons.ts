@@ -80,9 +80,9 @@ const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', '
 /** A scene with the lens grade on its light. */
 const LENS_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens'];
 /**
- * Night town's effects: every one it draws. The reflection probes' switch joins after `lens` when
- * M2-EX32 lands: the page then shows one more switch, and each half reads `effects.probes` where
- * it builds the town.
+ * Night town's effects: every one it draws. The comparison leaves out box-projected reflection
+ * probes, which three.js has no form of: the town shows the engine's reflection pass instead, as
+ * the three.js half draws a Reflector, and the reflection-probes example demonstrates the probes.
  */
 const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens', 'reflections', 'particles'];
 
