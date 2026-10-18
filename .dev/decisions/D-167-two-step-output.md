@@ -210,3 +210,95 @@ RCAS, and today's path. No branch holds any of the four, and no page draws them 
 cost. So the comparison cannot run on the iPad, the Mac or the cloud phones until someone builds
 that page. The split still ships on the Mac's GPU check alone, and GSR 1 and `sharpen` wait for
 the page and its run.
+
+## Addendum, 18 October 2026: prototype P1 measured on the Mac
+
+Status: measured on the Mac; the iPad and the cloud phones remain. Task: M2-F10.
+
+Prototype P1 now has a page. The probe is one file of raw WebGL2, in the
+`bench/probes/f10-upscalers/` folder. It runs from any static server and needs no engine build.
+The runner beside it serves the page and opens it in the Mac's installed Chrome on the real GPU.
+The runner writes the figures to a JSON file beside the page.
+
+### What the page draws
+
+The page draws one scene at the canvas size. That image is the reference. It draws the same scene
+at render scale 0.5 into 16-bit float color. Step 1 runs the output transform and FXAA at the
+render size into an 8-bit target, which is the shape that ships. Each candidate then draws that
+target at the canvas size:
+
+- Today's one pass reads high dynamic range color with the four-tap loop and runs the output
+  transform on every tap.
+- A bilinear upscale draws today's second step.
+- A nearest upscale is the baseline at scale 0.5.
+- GSR 1 comes from Qualcomm's BSD-3-Clause GLSL. The port uses explicit texel fetches, because
+  WebGL2 exposes GLSL ES 3.00 and has no `textureGather`.
+- FSR 1's EASU runs, then RCAS from the MIT header. RCAS keeps its denoise step, and its sharpness
+  is 0.2 stops.
+
+Every image gets the engine's dither at its canvas pixel, so the dither cancels in the comparison.
+The reference runs the same output transform, FXAA and dither, which the shipped final pass draws at
+scale 1.
+
+### How the page measures
+
+Each candidate's whole output sequence runs inside one GPU timer query. Each round writes a
+different target of a pair. The render pass then ends and its tiles leave tile memory, as a frame's
+target switch does. A tight loop of one draw stays in tile memory and reads far too cheap. Every
+candidate takes a turn in every round, and the order rotates. A drift of the GPU clock or of the
+machine's load then reaches all of them alike. One query is in flight at a time.
+
+The comparison reads every canvas pixel. It gives mean absolute error, peak signal to noise ratio
+and structural similarity over 8 by 8 luma windows. It also gives the mean luma gradient against
+the reference. Pixel error penalizes a sharpened edge that lands in the right place, so SSIM is the
+closer judge of how the image looks.
+
+### Image figures
+
+The run used Chrome 155 on ANGLE Metal, Apple M5 Max. The canvas column names the whole canvas.
+The mip column names the scene texture's bias at the low render size. A bias of 0 is today's
+behavior. A bias of -1 samples one level sharper.
+
+| Canvas | Mip bias | Today SSIM / MAE | Bilinear | Nearest | GSR 1 | EASU + RCAS |
+| --- | ---: | --- | --- | --- | --- | --- |
+| 1920x1080 | 0 | 0.9532 / 1.486 | 0.9529 / 1.596 | 0.9529 / 1.579 | 0.9552 / 1.477 | 0.9562 / 1.671 |
+| 1920x1080 | -1 | 0.9655 / 1.197 | 0.9650 / 1.319 | 0.9576 / 1.492 | 0.9586 / 1.336 | 0.9485 / 1.844 |
+| 1280x720 | 0 | 0.9529 / 1.779 | 0.9524 / 1.916 | 0.9523 / 1.854 | 0.9559 / 1.740 | 0.9556 / 1.909 |
+| 1280x720 | -1 | 0.9629 / 1.496 | 0.9623 / 1.646 | 0.9552 / 1.775 | 0.9580 / 1.598 | 0.9441 / 2.144 |
+
+At mip bias 0, GSR 1 is closer to the scale-1 image than today's path by both measures, at both
+canvas sizes. A negative bias improves today's and bilinear's images, but the sharpeners overshoot
+more, so GSR 1 then scores below today's path. The engine applies no mip bias today, so the bias-0
+rows describe the present behavior. EASU with RCAS recovers the most detail and has the highest
+SSIM at bias 0. Its sequence costs 0.563 ms at 1920x1080, against today's 0.184 ms.
+
+### Output cost
+
+Every figure below is the GPU time of a candidate's whole output sequence, in milliseconds. Step 1
+is common to every two-step candidate. The Mac figures show the shape of the cost. They do not
+decide the S25 rule.
+
+| Canvas | Mip bias | Today | Bilinear | Nearest | GSR 1 | EASU + RCAS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1920x1080 | 0 | 0.184 | 0.066 | 0.075 | 0.137 | 0.563 |
+| 1920x1080 | -1 | 0.184 | 0.065 | 0.073 | 0.160 | 0.507 |
+| 1280x720 | 0 | 0.164 | 0.074 | 0.080 | 0.140 | 0.424 |
+| 1280x720 | -1 | 0.132 | 0.062 | 0.067 | 0.133 | 0.406 |
+
+Step 1 alone costs 0.030 to 0.031 ms at 1920x1080 and 0.026 to 0.031 ms at 1280x720. Every
+two-step candidate pays it once.
+
+At 1920x1080 with no mip bias, GSR 1's whole output sequence costs 0.137 ms against today's
+0.184 ms. GSR 1 is 0.047 ms faster, which is well inside the 0.2 ms band. At 1280x720 it is
+0.024 ms faster. EASU with RCAS costs about 3 times today's pass. The image table above holds that
+cost against the closeness of each image.
+
+The rule names the Galaxy S25 with WebGL2 forced. The Mac figures show that the band is not tight
+with the engine's present sampling. The phone run decides the rule.
+
+### What remains
+
+The page runs unchanged on the iPad, the cloud S25, Pixel 9 and Pixel 11. It needs a static HTTPS
+host for the iPad and a tunnel URL for the phone runner. No engine build is needed. The S25 run
+decides the 0.2 ms band. The nearest baseline and the mip bias are in the image table above. A
+`gsrSharp` switch shows the softer GSR 1 variant at 1.0.
