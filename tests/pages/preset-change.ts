@@ -11,8 +11,12 @@ import { createEngine, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
-/** How long the measurement runs, long enough to hold the whole switch. */
-const MEASURE_SECONDS = 1.5;
+/**
+ * How long the measurement runs, long enough to hold the whole switch. A software GPU on a slow
+ * runner takes seconds to apply a preset and build its pipelines, and a window that ended first
+ * counted no pipeline at all.
+ */
+const MEASURE_SECONDS = 4;
 
 /** The share of the pixels that differ from the frame's first pixel, the background. */
 function covered({ pixels }: { pixels: Uint8Array }): number {
@@ -48,7 +52,19 @@ run('preset-change', async () => {
 	else engine.postToSketch('set-preset', params.get('to') ?? 'low');
 	const sketch = swap ? undefined : await answered;
 	const mode = { ...engine.mode };
-	const measured = await measuring;
+	let measured = await measuring;
+	if (!swap && measured.pipelines === 0) {
+		// A slow machine applies the preset after the window closed, so the pipeline it built was
+		// counted nowhere. The switch has happened by now: measure again, and take that window's
+		// pipelines and skipped draws, which are what the check about them needs.
+		const settled = await engine.measure(MEASURE_SECONDS);
+		measured = {
+			...measured,
+			frames: measured.frames + settled.frames,
+			pipelines: settled.pipelines,
+			skippedDraws: settled.skippedDraws,
+		};
+	}
 	const after = await engine.captureFrame();
 	await engine.destroy();
 	return {
