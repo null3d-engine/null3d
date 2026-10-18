@@ -3,12 +3,12 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, fog, sky; warmUp."
+summary: "Creating objects; models and copies; find; background, environment, fog, sky; the light probe grid; warmUp."
 ---
 
 # Scene
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, the light probe grid, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 

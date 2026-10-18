@@ -3,12 +3,12 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; sky and environment backgrounds; the sky's light and time of day."
+summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; light probe grids; sky and environment backgrounds; the sky's light and time of day."
 ---
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, rectangle and tube lights, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, and rectangle and tube lights. It also adds the light probe grid, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR

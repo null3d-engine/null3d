@@ -101,7 +101,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision, directDraws }
 ```
 
 The `features` field lists the WebGPU adapter's optional features. On WebGL2 it lists the extensions that the engine asks for and the browser has. The `limits` field gives the WebGPU adapter's limits, and is empty on WebGL2. The engine acts on these tests:
@@ -112,6 +112,8 @@ The `features` field lists the WebGPU adapter's optional features. On WebGL2 it 
 - GPU timer queries on WebGPU (`timestamp-query`)
 - rendering into 16-bit and 32-bit float textures, and into the packed `R11F_G11F_B10F` format, on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 - transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
+
+The engine also measures whether direct draws are clearly faster than its indirect draws. That is not a capability flag. `engine.capabilities.directDraws` reports the choice, and it is false on WebGL2, which always draws directly.
 
 Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
