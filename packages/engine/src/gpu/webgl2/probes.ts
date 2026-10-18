@@ -164,6 +164,9 @@ export function probeFilter(shader: ShaderVariant<Pipeline>): ProbeFilter {
 		pairs.set(key, pair);
 		return pair;
 	};
+	/** The first layer of the shared array that holds a probe's map: the light tables' layers
+	 * (crate::light_tables) come first, so the probes follow them. */
+	const PROBE_LAYER_BASE = 3;
 	const run: ProbeFilter['run'] = (host, probes, chain, layer, faces, memory) => {
 		const { gl } = host;
 		const { programs, sampler, unit } = keep(host);
@@ -183,7 +186,7 @@ export function probeFilter(shader: ShaderVariant<Pipeline>): ProbeFilter {
 		gl.generateMipmap(chain.target);
 		gl.useProgram(programs.prefilter);
 		for (let level = 0; level < probes.mips; level++)
-			draw(gl, binding, pair, probes, layer, level, pair.steps.prefilter(level));
+			draw(gl, binding, pair, probes, PROBE_LAYER_BASE + layer, level, pair.steps.prefilter(level));
 		gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		gl.bindTexture(chain.target, null);
