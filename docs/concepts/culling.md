@@ -3,7 +3,7 @@ id: concepts/culling
 title: Culling
 status: experimental
 since: "0.1"
-summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and occlusion culling behind marked occluders on both paths."
+summary: "Frustum culling on the GPU on WebGPU, or on the job workers there when the device draws directly, and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and occlusion culling behind marked occluders on both paths."
 ---
 
 # Culling
@@ -17,7 +17,7 @@ flowchart LR
         offsets["The offset from the camera<br/>to each cell, in 64-bit floats"]
         boxes["Each cell's box around<br/>its still objects"]
     end
-    subgraph test["GPU on WebGPU, job workers on WebGL2"]
+    subgraph test["GPU on WebGPU, job workers on WebGL2<br/>and on a device that draws directly"]
         skip["Skip the still objects<br/>of cells out of view"]
         cull["Frustum test of each object<br/>left, relative to the camera"]
     end
@@ -34,6 +34,8 @@ Culling finds the objects and instance rows in the camera's view, so the GPU dra
 ## How each path culls
 
 On WebGPU the GPU culls the scene itself. A compute pass runs one GPU thread per object or instance row. Each thread adds its cell's offset to its bounding sphere and tests the sphere. An object in view joins its group: the objects that share a mesh and a material. The prerecorded draws read how many each group holds. The CPU's cost per frame stays almost flat as the scene grows. When the scene spreads over several grid cells, the pass runs only over the objects of the cells in view and over the moving objects.
+
+On a device whose start-up measurement found direct draws clearly faster, the job workers cull on the CPU instead. They use the WebGL2 culling on the WebGPU layout's own buckets, and each bucket draws with its known count. `engine.capabilities.directDraws` says which path the device took ([Performance guide](../guides/performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)).
 
 On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each. They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group. Each group lies inside one grid cell. The job workers skip the objects and groups of the cells out of view.
 

@@ -31,6 +31,8 @@ E1203: setPosition() got NaN for x on an object (slot 2). Check the value comput
 
 The error also holds the code in `error.code` and the page's address in `error.docs`. [Error codes](../errors/index.md) lists every code with its cause and fix.
 
+The first error in a thread can show its fix a moment later, while the engine downloads the text that holds the fixes. A start's error waits for that text, so it arrives complete.
+
 ## Where problems appear
 
 | When | What happens |
