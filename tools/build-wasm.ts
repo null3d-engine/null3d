@@ -1043,7 +1043,7 @@ async function main(): Promise<void> {
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET);
 	console.log(
-		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
+		`\nthe engine's JavaScript that loads after the start, on a feature's first use, at the first call that reads it, or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
 	);
 	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));

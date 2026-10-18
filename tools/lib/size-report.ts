@@ -64,6 +64,12 @@ export interface EnginePart {
 	loadedBy?: string;
 	/** True for a part that every page may load after its first frame, with no feature to ask for it. */
 	afterFirstFrame?: boolean;
+	/**
+	 * True for a part that loads at the first call that reads it, not with a feature's first use: the
+	 * frame figures behind `measure()` and the fixes of the errors' messages. A page that makes
+	 * neither call downloads neither part.
+	 */
+	onFirstCall?: boolean;
 }
 
 /**
@@ -100,7 +106,9 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 
 /**
  * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
- * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
+ * starts the core's download, and every thread mode loads it. The probe worker's measurement of
+ * the direct drawing path loads in a file of its own when the probe runs, so a device with WebGPU
+ * downloads it whichever path the page draws with, and each start counts it. The renderer loads on demand on the
  * page and in the sketch worker, so a page downloads it only for the thread that draws. Each GPU
  * path's renderers load on demand in the thread that draws, so a page downloads one path's only
  * (`drawingParts`). The sketch runner and the scene API load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
@@ -119,6 +127,9 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
+ * The measurement's own frame figures load on the page at the first `measure()`, and the fixes of
+ * the errors' messages load in each thread at its first error, so a page that measures and throws
+ * nothing downloads neither.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
  * Each GPU path's table of the shader files of builds that need several features that load on
@@ -134,6 +145,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
 	{ name: 'page.js', module: 'page/engine.ts' },
+	{
+		name: 'page-message.js',
+		module: 'errors/message.ts',
+		loadedBy: 'page.js',
+	},
+	{ name: 'page-gpu.js', module: 'generated/gpu.ts', loadedBy: 'page.js' },
+	{ name: 'page-control.js', module: 'shared/control.ts', loadedBy: 'page.js' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
@@ -175,6 +193,24 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'page-stats-overlay.js', module: 'debug/overlay.ts', loadedBy: 'page.js' },
 	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
+	{
+		name: 'page-frame-figures.js',
+		module: 'page/frame-stats.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-error-fixes.js',
+		module: 'errors/fixes.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-error-fixes.js',
+		module: 'errors/fixes.ts',
+		loadedBy: 'sketch-worker.js',
+		onFirstCall: true,
+	},
 	{ name: 'page-label-loop.js', module: 'page/label-loop.ts', loadedBy: 'page.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
@@ -441,7 +477,19 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 	GPU_PATHS.map((path) => ({
 		mode: `${mode}, ${path.name}`,
 		shaders: path.shaders,
-		parts: [...parts, `${drawing}-${path.part}.js`, `${drawing}-gpu-shared.js`],
+		parts: [
+			...parts,
+			// Small modules that many files share, which the bundler puts in files of their own that
+			// every page loads.
+			'page-message.js',
+			'page-gpu.js',
+			'page-control.js',
+			// The probe worker measures the direct path on every device with WebGPU, whichever path
+			// the page draws with, and the measurement loads in a file of its own.
+			'draw-path-probe.js',
+			`${drawing}-${path.part}.js`,
+			`${drawing}-gpu-shared.js`,
+		],
 	})),
 );
 

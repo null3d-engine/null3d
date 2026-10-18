@@ -598,6 +598,38 @@ than a new resting size. The reclaim is a task of its own, and the start should 
 
 `START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
 
+### The reclaim, 18 October 2026: the start to 161.8 KB
+
+The reclaim that this record has named since 4 October landed on 18 October 2026. Two blocks of
+code left the start. Every page downloaded them, but few pages read them:
+
+- The frame figures behind `engine.measure` load at the first measurement, in a file of their own.
+  `threadRoles`, the one piece of that module that the start reads, moved to `shared/metrics.ts`,
+  which every page already loads.
+- The table of error fixes loads in each thread at its first error. Until it arrives the error
+  carries its code and detail. The fix then completes the message, so the error reports the whole
+  message once the file arrives. A failed start waits for the file before it rejects, so its error
+  reports the whole message at once.
+
+The page no longer hands the table to its workers: each thread loads it where it raises its first
+error. The sketch worker's first synchronous errors reach the sketch before the text arrives, so
+their messages gain the fix shortly after. The sketch worker loads the text once, and later errors
+carry it at once.
+
+The split moved three small modules that many files share into files of their own, which every
+page loads: the message helper, the GPU constants and the control block. Together they take
+913 bytes after Brotli, against the 5,894 bytes that the reclaim saved.
+
+The pipelined WebGL2 start fell from 171,526 bytes to 165,632 bytes after Brotli, under the 166 KB
+line of 169,984 bytes that the owner named by 4,352 bytes. The budget stays at 176 KB as the
+ceiling for the end of M2. The new files measure 1,755 bytes for the frame figures and 5,453 bytes
+for the fixes after Brotli, and the sketch worker's copy of the fixes 5,454 bytes.
+
+The reclaim also moved the probe worker's measurement of the direct drawing path into the start
+that the report counts. Every device with WebGPU loads it when the probe runs, whichever path the
+page draws with, so the earlier report undercounted each start by its 1,134 bytes. The two figures
+above count it in both builds.
+
 ### The first-use files raised, 15 October 2026: 48 KB to 49 KB
 
 The screen-space reflections work was over budget on two of its device modules rather than on the

@@ -5,7 +5,9 @@
 // coordinate that is not a number. The sketch makes the fifth error with the EngineError class that
 // it imports. The core's render graph rejects the last: a scene pass that reads a texture no pass
 // writes. In a production build, the sketch's bundle holds its own copy of the engine's error
-// code, apart from the copy in the engine's worker code.
+// code, apart from the copy in the engine's worker code. A thread's first error loads the text of
+// the fixes, so the sketch posts the caught errors once at once, and again after that text has had
+// time to arrive: the second post shows the messages that the errors end with.
 // When the page asks for queries, the sketch makes raycasts and overlap queries whose input is not
 // finite in 32 bits, which must throw in every build. Then two rays must still find the box ahead
 // of them: one with a direction too small to square in 64 bits, and one with a direction too large.
@@ -17,12 +19,19 @@ const ROWS = 10;
 /** A triangle whose normals the engine computes. */
 const TRIANGLE = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], computeNormals: true };
 
+/** The errors that the sketch caught, which a later read reports with the fixes that arrived. */
+const caught: unknown[] = [];
+
+/** How long the sketch waits before it reports the caught errors again. */
+const FIX_WAIT_MS = 250;
+
 /** The error that a call throws, as the page can receive it. */
 function raised(call: () => void): ErrorFields {
 	try {
 		call();
 		return noError('the call did not throw');
 	} catch (e) {
+		caught.push(e);
 		return errorFields(e);
 	}
 }
@@ -60,6 +69,7 @@ export default defineSketch(({ scene, materials, geometry, page, render }) => {
 			return;
 		}
 		if (name !== 'raise') return;
+		caught.length = 0;
 		page.post('raised', [
 			raised(() => scene.setBackground('blue-ish')),
 			raised(() => batch.setActiveCount(ROWS + 1)),
@@ -79,6 +89,7 @@ export default defineSketch(({ scene, materials, geometry, page, render }) => {
 				}),
 			),
 		]);
+		setTimeout(() => page.post('patched', caught.map(errorFields)), FIX_WAIT_MS);
 	});
 	return {};
 });
