@@ -716,6 +716,7 @@ impl SceneStorage {
             &mut self.tracked,
             &mut self.late,
             &mut self.changed,
+            &mut self.rows_changed,
             &mut self.dead_pending,
         ] {
             bits.grow(rows as u32);
@@ -771,6 +772,7 @@ impl SceneStorage {
             &mut self.tracked,
             &mut self.late,
             &mut self.changed,
+            &mut self.rows_changed,
             &mut self.dead_pending,
         ] {
             bits.try_reserve(rows as u32)?;
@@ -2314,6 +2316,29 @@ mod tests {
         scene.begin_frame(6);
         scene.update_transforms(&jobs);
         assert!(scene.rows_changed().get(slot), "a moved dynamic object");
+    }
+
+    #[test]
+    fn growing_the_scene_marks_the_new_rows_as_changed() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(2);
+        scene.begin_frame(1);
+        scene.update_transforms(&jobs);
+        // More objects than the first capacity, which grows every array and the bitsets with it.
+        scene.try_grow(16).unwrap();
+        let mut commands = Vec::new();
+        let mut handles = Vec::new();
+        for k in 0..8 {
+            let (h, c) = object(&mut scene, [k as f32, 0.0, 0.0], Handle::NONE, MOVING);
+            handles.push(h);
+            commands.push(c);
+        }
+        scene.apply_commands(&commands, 2).unwrap();
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        for h in handles {
+            assert!(scene.rows_changed().get(scene.resolve(h).unwrap()));
+        }
     }
 
     #[test]
