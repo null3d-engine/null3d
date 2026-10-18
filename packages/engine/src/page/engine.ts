@@ -2174,14 +2174,16 @@ async function startEngine(
 				applyPause();
 			},
 			async measure(seconds) {
-				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
-					await loadFrameStats();
+				// The window opens now, before the frame figures load on their first use: a page that
+				// measures and then starts some work must count that work, whatever the load takes.
 				const reader = new MetricsReader(metrics);
-				const heap = new HeapSampler();
 				const mainThread = new MainThreadWatch();
 				reader.begin();
-				heap.start();
 				const started = performance.now();
+				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
+					await loadFrameStats();
+				const heap = new HeapSampler();
+				heap.start();
 				const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
 				await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 				clearInterval(drain);
