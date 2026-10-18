@@ -1092,9 +1092,9 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 30,581 builds on 18 October 2026: 21,910 GLSL builds and 8,671
+The manifest's 115 variants make 30,648 builds on 18 October 2026: 21,960 GLSL builds and 8,688
 WGSL ones, the translucency landing's figure plus the still view's accumulate build on each
-target. The translucency bit of M2-EX36 joins the lit, standard-material, probe grid and custom
+target, and the motion pass's template, which adds 50 GLSL and 17 WGSL builds (M2-EX25). The translucency bit of M2-EX36 joins the lit, standard-material, probe grid and custom
 material templates, and its two subsurface templates add one more pair, so the count rose from
 14,994 and 6,170. The reflections' two full-screen passes, the pyramid's reduce and the trace, add
 two more on each target. The count includes the probe grid's translucency builds, which the engine

@@ -28,9 +28,9 @@
 // row from the one that its draw names.
 
 /// The motion pass's values of the frame: the last frame's view-projection matrix for positions
-/// relative to this frame's camera, the last frame's clock, as `frame.clock` holds this one's: its
-/// time, its step and its number's bits, and on WebGL2 the texel row of the last frame's morph
-/// weights in the texture of its joints.
+/// relative to this frame's camera, then the last frame's clock in the shape that the frame
+/// block's clock has: its time, its step and its number's bits. On WebGL2 it ends with the texel
+/// row of the last frame's morph weights in the texture of its joints.
 struct MotionBlock {
     last_view_proj: mat4x4f,
     last_clock: vec4f,
