@@ -300,13 +300,14 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
         .source;
     assert!(pick.contains("fn vertexOffset("), "{pick}");
     assert!(pick.contains("object_ranges"), "{pick}");
-    assert!(pick.contains("-> @location(0) vec4<u32>"), "{pick}");
+    assert!(pick.contains("-> @location(0) vec4<f32>"), "{pick}");
     let pick = &built.variants["webgl2_pick_draw_index_pick"]
         .glsl
         .as_ref()
         .expect("GLSL")["main"];
+    // The id target stores the key's four bytes as a colour, so the fragment writes fractions.
     assert!(
-        pick.fragment.source.contains("uvec4"),
+        pick.fragment.source.contains("255"),
         "{}",
         pick.fragment.source
     );
@@ -477,7 +478,10 @@ fn inputs_that_cost_something_build_only_into_materials_that_read_them() {
             assert!(wgsl.source.contains("object_ranges"), "{name}");
             // Compatibility mode passes 15 values between the stages, and 14 into a fragment
             // shader that reads whether its face is the front one.
-            assert!(highest_location(&wgsl.source) <= 12, "{name}");
+            // A pick build adds the key at the next location: its fragment reads the key and the
+            // mask alone, so it passes fewer values than a shading build with the same defs.
+            let limit = if name.contains("_pick") { 13 } else { 12 };
+            assert!(highest_location(&wgsl.source) <= limit, "{name}");
         }
         for program in variant.glsl.iter().flat_map(|programs| programs.values()) {
             // The table is the vertex stage's uniform block at binding 8 of the frame's group.

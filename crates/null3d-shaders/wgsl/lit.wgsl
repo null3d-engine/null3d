@@ -139,9 +139,6 @@ enable draw_index;
 #import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
-#ifdef CUSTOM
-#import null3d::mesh::{Instance}
-#endif
 #ifndef DECAL
 #import null3d::probes::{has_probes, probe_light}
 #endif
