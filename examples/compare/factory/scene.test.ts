@@ -108,8 +108,8 @@ describe('Factory layout and counts', () => {
 		expect(factoryCells(10_000)).toBe(1_000);
 		expect(factoryCells(10_001)).toBe(1_001);
 		expect(factoryCells(0)).toBe(1);
-		expect(factoryObjects(10_000)).toBe(1_000 * 15 + 13);
-		expect(factoryObjects(10_000, 'instanced')).toBe(12 + 13);
+		expect(factoryObjects(10_000)).toBe(1_000 * 15 + 31);
+		expect(factoryObjects(10_000, 'instanced')).toBe(12 + 31);
 	});
 
 	test('the ramps top out between 20,000 and 50,000 moving parts', () => {
@@ -127,7 +127,12 @@ describe('Factory layout and counts', () => {
 		expect(two - one).toBeGreaterThan(0);
 		expect(one - (two - one)).toBe(
 			triangleCount(meshes.floor) +
-				6 * (triangleCount(meshes.housing) + triangleCount(meshes.lens)),
+				6 *
+					(triangleCount(meshes.housing) +
+						triangleCount(meshes.lens) +
+						triangleCount(meshes.panel) +
+						triangleCount(meshes.panelFrame) +
+						triangleCount(meshes.cone)),
 		);
 	});
 
@@ -380,7 +385,7 @@ describe('surfaces, grade and effects', () => {
 
 	test('effects read and write as address text', () => {
 		expect(effectsToText(effectsFromText(null))).toBe(
-			'shadows,fog,bloom,ao,grade,reflections,particles',
+			'shadows,fog,bloom,ao,grade,lens,decals,reflections,particles',
 		);
 		expect(effectsFromText('fog,bloom')).toEqual({
 			shadows: false,
@@ -388,6 +393,8 @@ describe('surfaces, grade and effects', () => {
 			bloom: true,
 			ao: false,
 			grade: false,
+			lens: false,
+			decals: false,
 			reflections: false,
 			particles: false,
 		});
