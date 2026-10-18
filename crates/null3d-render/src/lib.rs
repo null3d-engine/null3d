@@ -102,6 +102,7 @@ pub mod parallel_record;
 pub mod particles;
 pub mod physical_sky;
 pub mod physical_sky_light;
+pub mod pick;
 pub mod pipelines;
 pub mod probe_grid;
 pub mod probe_shading;

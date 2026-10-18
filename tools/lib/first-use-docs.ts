@@ -23,6 +23,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	fog_volume:
 		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
 	sprites: 'with the first sprite batch',
+	picking: 'with the first `scene.pick()` call, which waits for the shaders',
 	particles: 'with the first particle system (`@null3d/particles`)',
 	lines: 'with the first line batch',
 	decals: 'with the first mesh of a decal material (`materials.decal`)',

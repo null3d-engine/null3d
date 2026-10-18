@@ -78,6 +78,7 @@ import { type LightProbeGridOptions, SceneLightProbeGrid } from './light-probes'
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { ParticleBuffer, ParticleBufferOptions } from './particles';
+import { type PickHit, ScenePicks } from './picks';
 import {
 	type ObjectEventHandler,
 	type ObjectEventType,
@@ -90,6 +91,7 @@ import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './p
 import {
 	type OverlapHit,
 	type QueryOptions,
+	type QueryTargets,
 	type RaycastBatchHits,
 	type RaycastHit,
 	type RaycastOptions,
@@ -2766,6 +2768,11 @@ export class Scene implements ViewHolder {
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** GPU picking's queries, made on the first pick. */
+	private scenePicks: ScenePicks | undefined;
+	/** The ray and hit that a pick's raycast reuses. */
+	private pickRay: Ray | undefined;
+	private pickHit: RaycastHit | undefined;
 	/** The command batches that the world took before the runner's first frame, or -1. */
 	private settledCommands = -1;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
@@ -2840,7 +2847,7 @@ export class Scene implements ViewHolder {
 	/** @internal Pointer events on objects, made on the first call. */
 	get pointerEvents(): PointerEvents {
 		this.objectEvents ??= new PointerEvents(
-			{ pick: (frame, numbers, ray) => this.pick(frame, numbers, ray) },
+			{ pick: (frame, numbers, ray) => this.pickForEvent(frame, numbers, ray) },
 			this.pointerInput,
 		);
 		return this.objectEvents;
@@ -2850,7 +2857,7 @@ export class Scene implements ViewHolder {
 	 * Casts the ray of a pointer event from the camera of engine frame `frame`, or from the active
 	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
 	 */
-	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
+	private pickForEvent(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
 		const camera = this.activeCamera;
 		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
 		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
@@ -4165,24 +4172,101 @@ export class Scene implements ViewHolder {
 
 	/** Makes the raycasts and overlap queries. */
 	private makeQueries(): SceneQueries {
-		this.sceneQueries = new SceneQueries(
-			this.core,
-			{
-				objectAt: (slot) => this.objectSlots[slot],
-				batchAt: (id) => {
-					const batch = this.batchSlots[id & SLOT_MASK];
-					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
-				},
-				writeCamera: (input) => {
-					const camera = this.activeCamera;
-					const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
-					this.frameCameras.queryCamera(live, input);
-				},
-				writeRayCamera: (input) => this.frameCameras.rayCamera(input),
-			},
-			() => this.settleWorld(),
-		);
+		this.sceneQueries = new SceneQueries(this.core, this.queryTargets(), () => this.settleWorld());
 		return this.sceneQueries;
+	}
+
+	/**
+	 * The objects and batches that queries and picks name by their ids, and the cameras that their
+	 * rays read.
+	 */
+	private queryTargets(): QueryTargets {
+		return {
+			objectAt: (slot) => this.objectSlots[slot],
+			batchAt: (id) => {
+				const batch = this.batchSlots[id & SLOT_MASK];
+				return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+			},
+			writeCamera: (input) => {
+				const camera = this.activeCamera;
+				const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+				this.frameCameras.queryCamera(live, input);
+			},
+			writeRayCamera: (input) => this.frameCameras.rayCamera(input),
+		};
+	}
+
+	/** GPU picking's queries, made on the first pick. */
+	private get picks(): ScenePicks {
+		if (!this.scenePicks) {
+			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y) =>
+				this.pickByRay(x, y),
+			);
+		}
+		return this.scenePicks;
+	}
+
+	/**
+	 * Finds the object that the camera draws at a point of the canvas, or `null` where it draws
+	 * nothing there. `x` and `y` are CSS pixels from the canvas's top-left corner, as
+	 * `camera.screenToRay` takes them, and the point is tested at the pixel that the camera draws,
+	 * not at a projected triangle: a cut-out material's holes and a surface thinner than a pixel
+	 * answer as the image shows them.
+	 *
+	 * The answer arrives one or more frames later, through a promise, and a pick in every frame
+	 * waits in a queue of its own. The frame that records the pick draws it, so the camera of that
+	 * frame answers, and a camera that moves between the click and the frame can differ from the
+	 * frame that the click saw. A scene with a source that the id target cannot hold, such as a
+	 * custom material without a vertex offset, a blended surface or a sprite, answers with a
+	 * raycast instead, which tests triangles and so ignores alpha masks.
+	 */
+	pick(x: number, y: number): Promise<PickHit | null> {
+		if (DEV) {
+			if (!Number.isFinite(x)) throw new EngineError('E1203', `pick() got ${x} for x.`);
+			if (!Number.isFinite(y)) throw new EngineError('E1203', `pick() got ${y} for y.`);
+		}
+		return this.picks.pick(x, y);
+	}
+
+	/** @internal Answers each pick whose read landed, at the end of a frame. */
+	pollPicks(slots: Int32Array): void {
+		this.scenePicks?.poll(slots);
+	}
+
+	/** @internal Gives the picks the engine's control block, when the frame loop starts. */
+	attachPickControl(slots: Int32Array): void {
+		this.picks.attach(slots);
+	}
+
+	/** @internal Fails the picks that wait, when the engine stops. */
+	stopPicks(): void {
+		this.scenePicks?.stop();
+	}
+
+	/** Casts a ray through a point of the canvas, for a pick that the GPU pass cannot draw. */
+	private pickByRay(x: number, y: number): PickHit | null {
+		const camera = this.activeCamera;
+		if (!camera || camera.destroyedFrame !== -1) return null;
+		// The ray and hit are made once, when the first pick needs them.
+		if (!this.pickRay) this.pickRay = { origin: [0, 0, 0], direction: [0, 0, 0] };
+		if (!this.pickHit) {
+			this.pickHit = {
+				object: null,
+				instance: -1,
+				point: [0, 0, 0],
+				normal: [0, 0, 0],
+				distance: 0,
+				triangle: -1,
+			};
+		}
+		const ray = this.pickRay;
+		const hit = this.pickHit;
+		camera.screenToRay(x, y, ray);
+		const layers = camera.layers;
+		if (!this.raycast(ray.origin, ray.direction, { layers }, hit) || hit.object === null) {
+			return null;
+		}
+		return { object: hit.object, instance: hit.instance };
 	}
 
 	/**

@@ -297,8 +297,12 @@ mod ids {
     /// that it never destroys the final pass's.
     pub const STILL_BLANK_LUT: u32 = EXPOSURE_STORED + 1;
     pub const STILL_BLANK_OUTLINE: u32 = STILL_BLANK_LUT + 1;
+    /// The buffers of GPU picking's reads, one for each read that may wait for the GPU.
+    pub const PICK_BUFFERS: u32 = STILL_BLANK_OUTLINE + 1;
+    /// The bind group of GPU picking's resolve pass.
+    pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = STILL_BLANK_OUTLINE + 1;
+    pub const TARGETS: u32 = PICK_GROUP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -485,6 +489,9 @@ pub struct CpuCulledRenderer {
     scattering: Layout,
     /// True when the layouts were built while the subsurface blur has taps.
     layouts_scattered: bool,
+    /// True when the scene's layout was built while a pick waits, so its draws hold the pick
+    /// pipelines.
+    layouts_picked: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
@@ -556,6 +563,8 @@ pub struct CpuCulledRenderer {
     bound_environment: u32,
     /// The 3D texture that the frame groups bind: the grid's, or the blank one.
     bound_probe_grid: u32,
+    /// GPU picking's GPU objects, while a page picks.
+    pick: crate::pick::PickState,
 }
 
 impl CpuCulledRenderer {
@@ -697,6 +706,7 @@ impl CpuCulledRenderer {
             layouts_outlined: false,
             scattering: Layout::new(Drawn::Subsurface),
             layouts_scattered: false,
+            layouts_picked: false,
             layout_prepass: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
@@ -754,6 +764,7 @@ impl CpuCulledRenderer {
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
+            pick: crate::pick::PickState::default(),
         }
     }
 
@@ -852,6 +863,73 @@ impl CpuCulledRenderer {
         self.tiles.shape().map_or(0, |s| s.layers as usize)
     }
 
+    /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
+    /// of every draw are built. A frame that gives false records no read, so the request stays.
+    fn pick_ready(&self, input: &FrameInput<'_>, picking: bool) -> bool {
+        if !picking {
+            return false;
+        }
+        let pipeline = self.pick.resolve.map(|(id, _)| id);
+        pipeline.is_some_and(|id| self.pipelines.built(id, input.pipelines_built))
+            && self.layout.draws.iter().all(|draw| {
+                draw.pick == 0 || self.pipelines.built(draw.pick, input.pipelines_built)
+            })
+    }
+
+    /// Prepares the frame's pick while it draws one: it creates the ring's read buffers and the
+    /// bind group that the resolve pass reads the id target through, and says which pixel the
+    /// frame copies back.
+    fn begin_pick(
+        &mut self,
+        list: &mut DrawList,
+        input: &FrameInput<'_>,
+        drawing: bool,
+    ) -> Result<Option<crate::pick::PickFrame>, RecordError> {
+        let Some(request) = self.settings.pick().filter(|_| drawing) else {
+            return Ok(None);
+        };
+        let Some(texture) = self.graph.pick_sample_texture() else {
+            return Ok(None);
+        };
+        if !self.pick.buffers_made {
+            for ring in 0..crate::pick::RING as u32 {
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        ids::PICK_BUFFERS + ring,
+                        crate::pick::READ_BYTES,
+                        buffer_usage::MAP_READ | buffer_usage::COPY_DST,
+                    ],
+                )?;
+            }
+            self.pick.buffers_made = true;
+        }
+        if self.pick.group == 0 || self.pick.bound != texture {
+            let group = ids::PICK_GROUP;
+            let words = [
+                group,
+                bind_layout::VIEW_COPY,
+                1,
+                0,
+                resource_kind::TEXTURE,
+                texture,
+                0,
+                0,
+            ];
+            list.push(Op::CreateBindGroup, &words)?;
+            self.pick.group = group;
+            self.pick.bound = texture;
+        }
+        let size = self.graph.render_size();
+        let pixel = crate::pick::pixel_of(
+            &request,
+            self.settings.pixel_ratio(),
+            input.render_scale,
+            size,
+        );
+        Ok(Some((request, pixel)))
+    }
+
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas. While
     /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
@@ -863,6 +941,7 @@ impl CpuCulledRenderer {
         shadows: CasterPasses,
         outlines: bool,
         scatters: bool,
+        picking: bool,
     ) -> Result<(), RecordError> {
         self.settings
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -883,6 +962,7 @@ impl CpuCulledRenderer {
         let targets = self.with_draw_index(self.graph.scene_targets());
         self.layout_prepass = self.graph.depth_prepass();
         let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
+        let pick_targets = self.with_draw_index(self.graph.pick_targets());
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings,
@@ -895,6 +975,8 @@ impl CpuCulledRenderer {
             shadows,
             prepass,
             &mut self.key_counts,
+            pick_targets,
+            picking,
         )?;
         // The casters' layout holds buckets only while a light casts shadows.
         if shadows.any() {
@@ -910,6 +992,8 @@ impl CpuCulledRenderer {
                 shadows,
                 Prepass::Off,
                 &mut self.key_counts,
+                pick_targets,
+                false,
             )?;
         } else {
             self.casters.clear();
@@ -929,6 +1013,8 @@ impl CpuCulledRenderer {
                 shadows,
                 Prepass::Off,
                 &mut self.key_counts,
+                pick_targets,
+                false,
             )?;
         } else {
             self.outlined.clear();
@@ -953,6 +1039,7 @@ impl CpuCulledRenderer {
             self.scattering.clear();
         }
         self.layouts_scattered = scatters;
+        self.layouts_picked = picking;
         let room = self.layout.room;
         let out_of_memory = |_: TryReserveError| RecordError::OutOfMemory {
             bytes: room.rows.saturating_mul(8),
@@ -1458,6 +1545,10 @@ impl CpuCulledRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A pick that waits declares the pick's passes for this frame. The request stays until a
+        // frame records its read.
+        let picking = self.settings.picking();
+        self.graph.set_picking(picking);
         if self.culling.culled_frame() != input.frame {
             self.cull(input)?;
         }
@@ -1524,6 +1615,13 @@ impl CpuCulledRenderer {
         );
         self.physical_sky
             .request_pipeline(&mut self.pipelines, self.settings.physical_sky().is_some());
+        // A pick's resolve pass draws one triangle over the render size, after the id pass.
+        if picking {
+            let id = self
+                .pipelines
+                .id(crate::pick::resolve_key(crate::pick::FORMAT));
+            self.pick.resolve = Some((id, crate::pick::FORMAT));
+        }
         let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -1540,7 +1638,13 @@ impl CpuCulledRenderer {
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
+        // The pick's passes are switched on before the graph compiles this frame: a change that
+        // follows the compile would leave them out of the plan, and the frame would copy a stale
+        // target. A frame whose pick pipelines still build keeps the passes off.
+        let pick_drawing = self.pick_ready(input, picking);
+        self.graph.set_picking_draws(pick_drawing);
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        let pick_frame = self.begin_pick(list, input, pick_drawing)?;
         let graph = &self.graph;
         self.settings
             .set_view_targets(|view| graph.view_target(view), graph.textures_made());
@@ -1882,8 +1986,12 @@ impl CpuCulledRenderer {
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
             Role::Shadow(view) => cascade_culling.frame(view).is_none(),
+            Role::Pick | Role::PickResolve => pick_frame.is_none(),
             _ => false,
         };
+        let pick_pipeline = self.pick.resolve.map_or(0, |(id, _)| id);
+        let pick_group = self.pick.group;
+        let pick_pixel = pick_frame.map(|(_, pixel)| pixel);
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -2023,6 +2131,31 @@ impl CpuCulledRenderer {
                         particles,
                     )
                 }
+                Role::Pick if culling.frame(ViewId::CAMERA).is_some() => {
+                    // One pixel is all the frame reads, so the pass shades no other.
+                    if let Some((x, y)) = pick_pixel {
+                        list.push(Op::SetScissor, &[x, y, 1, 1])?;
+                    }
+                    let view = ViewId::CAMERA;
+                    let starts = culling.culled(frame, view).bucket_starts();
+                    let hidden = hidden_in(view);
+                    opaque.record(
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        layout,
+                        meshes,
+                        Shading::Pick,
+                        &hidden,
+                    )
+                }
+                Role::PickResolve => {
+                    list.push(Op::SetPipeline, &[pick_pipeline])?;
+                    list.push(Op::SetBindGroup, &[0, pick_group, 0])?;
+                    list.push(Op::Draw, &[3, 1, 0, 0])?;
+                    Ok(())
+                }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
                     let group =
@@ -2038,6 +2171,21 @@ impl CpuCulledRenderer {
                 _ => Ok(()),
             },
         )?;
+        if let Some((request, pixel)) = pick_frame
+            && let Some(texture) = self.graph.pick_result_texture()
+        {
+            let buffer = ids::PICK_BUFFERS + request.ring;
+            crate::pick::record_readback(
+                list,
+                &request,
+                pixel,
+                input.canvas,
+                texture,
+                buffer,
+                true,
+            )?;
+            self.settings.take_pick();
+        }
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
         Ok(rebuilt)
@@ -2200,6 +2348,9 @@ impl FrameBuilder for CpuCulledRenderer {
         self.graph
             .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        // A pick that waits declares the pick's passes, and builds the layout again with their
+        // pipelines, so the frame draws them with the camera's culling.
+        let picking = settings.picking();
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -2228,9 +2379,10 @@ impl FrameBuilder for CpuCulledRenderer {
             || scatters != self.layouts_scattered
             || prepass_changed
             || self.redraws_wanted() != self.redraws_built
+            || picking != self.layouts_picked
             || skinned_appear
         {
-            self.rebuild_layout(input, shadows, outlines, scatters)?;
+            self.rebuild_layout(input, shadows, outlines, scatters, picking)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -2396,6 +2548,29 @@ impl FrameBuilder for CpuCulledRenderer {
         self.tiles.shape().is_some()
     }
 
+    fn pick_covers_scene(&self) -> bool {
+        self.layout.draws.iter().all(|draw| draw.pick != 0) && self.sorted.is_empty()
+    }
+
+    fn pick_target(&self, key: u32) -> Option<(u32, u32)> {
+        if key == 0 {
+            return None;
+        }
+        // A streamed row carries a bit above the resident keys, which no resident key reaches.
+        let streamed = key & (1 << 31) != 0;
+        let row = key & !(1 << 31);
+        let layout = &self.layout;
+        if !streamed && row < layout.scene_rows {
+            return Some((row, u32::MAX));
+        }
+        let slot = layout
+            .batches
+            .iter()
+            .rev()
+            .find(|slot| slot.dynamic == streamed && slot.base <= row)?;
+        Some((slot.id.raw(), row - slot.base))
+    }
+
     fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves) {
         self.meshes.moved(moves);
         if let Some(first) = moves.morph_texels {
@@ -2439,6 +2614,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.outline_draws.forget_gpu();
         self.skin_culling.forget_gpu();
         self.skin_draws.forget_gpu();
+        self.pick.reset_gpu();
         self.tiles.forget_gpu();
         self.cascades_held = false;
         self.lines.forget_gpu();

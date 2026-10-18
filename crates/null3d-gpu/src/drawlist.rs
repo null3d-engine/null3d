@@ -1864,6 +1864,10 @@ pub mod template {
     /// no depth, so it never matches, and picking follows the mask. Binds as the frame's group
     /// does, and reads the table of object ranges for each instance's id.
     pub const PICK: u32 = 70;
+    /// GPU picking's resolve: one triangle over the render size that copies the id target, which
+    /// the device resolved into one sample per pixel, into a target that a copy reads. It binds
+    /// the resolved target at group 0, of [`super::layout::VIEW_COPY`].
+    pub const PICK_RESOLVE: u32 = 73;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1871,7 +1875,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 72] = [
+    pub const NAMES: [(&str, u32); 73] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -1943,6 +1947,7 @@ pub mod template {
         ("SUBSURFACE_BLUR", SUBSURFACE_BLUR),
         ("SUBSURFACE_COMPOSITE", SUBSURFACE_COMPOSITE),
         ("SUBSURFACE_COMPOSITE_MS", SUBSURFACE_COMPOSITE_MS),
+        ("PICK_RESOLVE", PICK_RESOLVE),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2107,6 +2112,7 @@ pub mod groups {
         ),
         (template::FOG_BLOCK, own!(layout::BLOOM)),
         (template::PICK, MESH),
+        (template::PICK_RESOLVE, own!(layout::VIEW_COPY)),
         (template::PROBE_GRID, MESH),
         (template::PROBE_GRID_MAPS, MESH),
     ];
