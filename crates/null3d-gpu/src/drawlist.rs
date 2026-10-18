@@ -1096,7 +1096,7 @@ pub mod permutation {
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
     /// instances by index.
-    pub const APART: [(u32, u32); 53] = [
+    pub const APART: [(u32, u32); 54] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1119,6 +1119,7 @@ pub mod permutation {
         (BUMP, INSTANCE_INDEX),
         (BUMP, VERTEX_TANGENT),
         (PARALLAX, TRANSMISSION),
+        (PARALLAX, TRANSLUCENCY),
         (TRANSLUCENCY, TRANSMISSION),
         (TRANSLUCENCY, CASTER),
         (TRANSLUCENCY, INSTANCE_INDEX),

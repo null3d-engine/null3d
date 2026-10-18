@@ -1492,8 +1492,10 @@ export class Pipelines {
 		const motion = template !== TEMPLATE_MOTION && (permutation & PERMUTATION_MOTION) !== 0;
 		// Parallax reads the displacement map in the fragment stage too, through a layout of its own.
 		const parallax = (permutation & PERMUTATION_PARALLAX) !== 0;
+		// Six flags fill the low bits: five of them need 32 values, and parallax, the sixth, needs
+		// the next 32, so a template starts every 64 keys and never shares one with its neighbour.
 		const key =
-			template * 32 +
+			template * 64 +
 			(skins ? 1 : 0) +
 			(byIndex ? 2 : 0) +
 			(multisampled ? 4 : 0) +

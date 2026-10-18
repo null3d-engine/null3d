@@ -2155,10 +2155,15 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			'E1217',
 			`${call}() got parallax without a displacementMap; parallax reads the displacement map's heights.`,
 		);
-	if (options.parallax && (alphaMode === 'blend' || transmission !== undefined))
+	if (
+		options.parallax &&
+		(alphaMode === 'blend' ||
+			transmission !== undefined ||
+			options.diffuseTransmission !== undefined)
+	)
 		throw new EngineError(
 			'E1217',
-			`${call}() got parallax with ${transmission !== undefined ? 'transmission' : "the alpha mode 'blend'"}; parallax takes an opaque or masked surface. Leave parallax out to keep the displacement alone.`,
+			`${call}() got parallax with ${transmission !== undefined ? 'transmission' : options.diffuseTransmission !== undefined ? 'diffuseTransmission' : "the alpha mode 'blend'"}; parallax takes an opaque or masked surface. Leave parallax out to keep the displacement alone.`,
 		);
 	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
 		throw new EngineError(

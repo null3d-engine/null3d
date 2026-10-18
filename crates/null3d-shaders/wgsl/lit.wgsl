@@ -137,7 +137,9 @@ enable draw_index;
 #import null3d::ibl::{reflected_direction}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
+#ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
+#endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -1637,6 +1639,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     // The screen texture's values, then what the screen showed along the mirror direction, with a
     // planar reflection over it: the planar reflection's share wins on its plane.
     let screen = screen_read(pixel.xyz, blended);
+    // A parallax build reads no screen reflection: the copy it samples is one texture more than
+    // WebGPU's default count of sampled textures in a fragment shader allows beside the parallax
+    // map. Such a surface reflects the environment, the probes and a planar reflection alone.
+#ifdef PARALLAX
+    let mirrored = vec4f(0.0);
+#else
     let mirrored = screen_reflection(
         screen.hit,
         input.relativePosition,
@@ -1644,6 +1652,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.viewDirection,
         pbr.roughness,
     );
+#endif
 #ifdef CUSTOM
     let planar = saturate(s.reflection.a);
     let screen_share = mirrored.a * (1.0 - planar);
