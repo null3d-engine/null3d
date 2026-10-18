@@ -387,10 +387,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'security-camera',
 		group: 'Light, materials and effects',
 		sketch: new URL('./security-camera/sketch.ts', import.meta.url),
+		code: 'security-camera/',
 		title: 'Render to texture',
 		scene: 'Security camera',
 		summary:
-			'At nightfall, a camera on a pole sweeps a wet yard behind a wall under a floodlight. A scene pass draws its view into a texture, and a monitor on the near side of the wall shows the robot that patrols there, as a night camera with scan lines.',
+			'At nightfall, a camera on a pole sweeps a wet yard behind a wall under a floodlight. A scene pass draws the camera view into a texture, and a monitor on the near side of the wall shows the robot that patrols there, as a night camera with scan lines and, up close, LCD stripes and dead cells.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
