@@ -1,8 +1,8 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), and raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb), and to 176 KB the same day with a reclaim, in [The fifth raise](#the-fifth-raise-18-october-2026-the-start-to-176-kb-with-a-reclaim). Date: 2026-09-30.
 
-Summary: The engine's JavaScript that a page downloads at its start may take 166 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
+Summary: The engine's JavaScript that a page downloads at its start may take 176 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
 
 ## Question
 
@@ -579,6 +579,24 @@ The owner raised the start's Brotli budget from 160 KB to 165 KB, which leaves 2
 The screen-space reflections of M2-EX22 add about 1.6 KB of real start code. Their settings, their share of the governor's steps and the names of their core calls all load with every page. Main's own start measured 167,351 bytes after Brotli, 163.4 KB. The branch's pipelined WebGL2 start came to 169,010 bytes. That is 50 bytes over the old line of 165 KB, 168,960 bytes.
 
 The owner raised the start's Brotli budget from 165 KB to 166 KB in writing on 18 October 2026. The owner ruled out a trim of the reflections' code. The gzip and uncompressed figures are unchanged at 448 KB and 3,328 KB. `START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
+
+### The fifth raise, 18 October 2026: the start to 176 KB, with a reclaim
+
+The rest of M2's start code arrived after the fourth raise: the still view, the surfaces that let
+light through, the skin scatter, and the draw probe back in its worker's script, where every page
+downloads it. The pull request's pipelined WebGL2 start measured 170,517 bytes after Brotli,
+169,984 bytes being the 166 KB line, so 533 bytes over. The probe's return to the worker adds about
+1.1 KB, and the reflection probes still to land add about 1.4 KB in every lit build.
+
+The owner raised the start's Brotli budget to 176 KB, 180,224 bytes, in writing on 18 October 2026,
+with about 4 KB of headroom for the features still to land. The gzip and uncompressed figures are
+unchanged at 448 KB and 3,328 KB. The owner also asked for the reclaim that this record has named
+since 4 October: the frame figures behind `measure()` (about 1.2 KB after Brotli) and the error-fix
+table (about 1.7 KB) load on their first use, so the raise is a ceiling for the end of M2 rather
+than a new resting size. The reclaim is a task of its own, and the start should come back under the
+166 KB line once it lands.
+
+`START_BUDGET` in `tools/lib/size-report.ts` holds the new figure, with the reason beside it.
 
 ### The first-use files raised, 15 October 2026: 48 KB to 49 KB
 
