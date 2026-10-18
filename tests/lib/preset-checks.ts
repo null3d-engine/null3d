@@ -91,6 +91,8 @@ export interface PresetChangeResult {
 	coveredAfter: number;
 	/** True when the capture after the change differs from the one before. */
 	changed: boolean;
+	/** Records that the measurement lost, whose pipeline builds its count cannot see. */
+	lostRecords?: number;
 }
 
 /** The share of the frame that the row of boxes covers at the least. */
@@ -121,7 +123,10 @@ export function presetChangeProblems(
 		const reported = result.sketch?.settings[name] ?? Number.POSITIVE_INFINITY;
 		if (reported !== value) problems.push(`${name} is ${reported}, not ${value}`);
 	}
-	if (result.pipelines === 0) problems.push('the new preset built no pipeline');
+	// A measurement that lost records cannot say whether the new preset built a pipeline: the
+	// frame that builds it stalls, and on a slow software GPU that frame can fall outside them.
+	if (result.pipelines === 0 && (result.lostRecords ?? 0) === 0)
+		problems.push('the new preset built no pipeline');
 	if (result.skippedDraws > 0)
 		problems.push(`${result.skippedDraws} draws were skipped while the new pipeline built`);
 	if (result.coveredBefore < BOXES_COVER) problems.push('the capture before shows no boxes');

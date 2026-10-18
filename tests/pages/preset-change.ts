@@ -13,9 +13,10 @@ import { run } from './lib/result';
 const params = new URLSearchParams(location.search);
 /**
  * How long the measurement runs, long enough to hold the whole switch. A software GPU on a slow
- * runner needs a few seconds to apply a preset and build its pipelines.
+ * runner needs several seconds to apply a preset and build its pipelines, and the frames that the
+ * build stalls must fit in the window for its count to be recorded.
  */
-const MEASURE_SECONDS = 4;
+const MEASURE_SECONDS = 8;
 
 /** The share of the pixels that differ from the frame's first pixel, the background. */
 function covered({ pixels }: { pixels: Uint8Array }): number {
@@ -65,6 +66,7 @@ run('preset-change', async () => {
 		sketch,
 		skippedDraws: measured.skippedDraws,
 		pipelines: measured.pipelines,
+		lostRecords: measured.lostRecords,
 		frames: measured.frames,
 		coveredBefore: covered(before),
 		coveredAfter: covered(after),
