@@ -46,9 +46,9 @@ run('preset-change', async () => {
 			resolve(data);
 		});
 	});
-	// The frame figures load on the measurement's first use, and the first measurement waits for
-	// them. A switch posted during that wait built its pipeline before the window counted
-	// anything, so a short measurement loads them first and the window that matters starts at once.
+	// A measurement's window opens at the call, so its first use holds the few frames that the frame
+	// figures' download takes. A short measurement downloads them first, which keeps them out of the
+	// window that holds the switch.
 	await engine.measure(0.01);
 	const measuring = engine.measure(MEASURE_SECONDS);
 	const swap = params.has('swap');
