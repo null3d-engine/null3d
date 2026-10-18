@@ -4299,6 +4299,11 @@ export class Scene implements ViewHolder {
 		const ray = this.pickRay;
 		const hit = this.pickHit;
 		camera.screenToRay(x, y, ray);
+		// A camera that has not drawn cannot project the point, so the frame it would have answered
+		// showed nothing there.
+		if (!Number.isFinite(ray.direction[0])) return null;
+		if (!Number.isFinite(ray.direction[1])) return null;
+		if (!Number.isFinite(ray.direction[2])) return null;
 		const layers = camera.layers;
 		if (!this.raycast(ray.origin, ray.direction, { layers }, hit) || hit.object === null) {
 			return null;

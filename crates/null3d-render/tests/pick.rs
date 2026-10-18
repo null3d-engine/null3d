@@ -5,7 +5,7 @@ mod common;
 
 use common::World;
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::{Op, format, pass_flags, template};
+use null3d_gpu::drawlist::{Op, format, pass_flags, template, texture_usage};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
@@ -84,6 +84,13 @@ fn check_pick<B: FrameBuilder>(mut world: World<B>, rows_from_bottom: bool) {
         "the resolve pipeline is created"
     );
 
+    // WebGPU forbids a copy from a multisampled texture: the copy reads the one-sample target.
+    for words in operands(&commands, Op::CreateTexture) {
+        assert!(
+            words[6] <= 1 || words[5] & texture_usage::COPY_SRC == 0,
+            "a multisampled texture is never a copy source: {words:?}"
+        );
+    }
     // The id target takes the scene's samples, and the resolved target has one. Both are the id
     // format, and the resolved one is a texture that a copy reads.
     let made = textures(&commands);

@@ -91,7 +91,15 @@ export class ScenePicks implements ViewHolder {
 	pick(x: number, y: number): Promise<PickHit | null> {
 		if (this.stopped)
 			return Promise.reject(new EngineError('E1420', 'pick() ran after the engine stopped.'));
-		if (!this.slots) return Promise.resolve(this.byRay(x, y));
+		if (!this.slots) {
+			// A pick always answers through the promise, even when the ray path throws before the
+			// first frame.
+			try {
+				return Promise.resolve(this.byRay(x, y));
+			} catch (error) {
+				return Promise.reject(error);
+			}
+		}
 		return new Promise((resolve, reject) => {
 			this.queue.push({ x, y, resolve, reject });
 			this.send();
