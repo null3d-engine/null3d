@@ -148,6 +148,7 @@ const SKETCH_SWITCHES = [
 	'decals',
 	'setters',
 	'calls',
+	'probes',
 	'timeOfDay',
 	'frames',
 ] as const;
