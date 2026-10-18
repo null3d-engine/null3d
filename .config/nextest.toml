@@ -24,7 +24,7 @@ priority = 50
 # takes about four minutes on a fast machine, and longer under the load of the other tests. It gets
 # its own timeout so a slow machine does not stop it as if it had hung.
 [[profile.default.overrides]]
-filter = 'binary_id(null3d-shaders-wasm) & test(=prepare_modules_lists_every_module_and_module_renders_one)'
+filter = 'binary_id(null3d-shaders-wasm) & test(=tests::prepare_modules_lists_every_module_and_module_renders_one)'
 slow-timeout = { period = "120s", terminate-after = 30 }
 
 # The custom material and effect tests build their templates' variants, which take seconds each.
@@ -38,6 +38,10 @@ priority = 40
 # A test that runs past its time limit is stopped and reported as failed, so a hung test cannot use
 # the job's whole time and leave every other result unreported.
 [profile.ci]
+# A profile does not take the default profile's overrides unless it inherits them: without this
+# line, the per-test timeouts that the overrides set, such as the slow shader-module test's, are
+# lost to the profile's own slow-timeout.
+inherits = "default"
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 15 }
 default-filter = 'not (binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule))'
