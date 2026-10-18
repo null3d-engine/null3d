@@ -133,3 +133,11 @@ export const FrameRest1 = 34;
  * image tests: a still view then draws every frame as it moves.
  */
 export const StillOff = 35;
+/**
+ * Each read of GPU picking's ring: the thread that draws adds one once the read's bytes are in
+ * engine memory. The sketch takes a read's answer when its slot is not 0.
+ */
+export const PickRead0 = 37;
+export const PickRead1 = 38;
+export const PickRead2 = 39;
+export const PickRead3 = 40;

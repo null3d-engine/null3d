@@ -162,3 +162,11 @@ WGSL cannot join the picking shader: the manifest allows one custom-material tem
 templates hold it. Picking finds such a mesh on the CPU, through the ray tests this record describes,
 and the picking shader's own comment says so. A manifest test refuses a picking variant that moves
 fewer bits than the shading templates of the same target do.
+
+### Addendum, 18 October 2026: GPU picking shipped
+
+`scene.pick(x, y)` now answers which object a pixel shows, as [D-166](D-166-gpu-picking.md)
+records. The pass draws the camera's opaque objects into an id target after the opaque pass. WebGPU
+tests the depth for equality. WebGL2 tests for a nearer depth with a small bias. A multisampled id
+target cannot be copied, so a resolve pass copies the resolved ids into one sample per pixel first.
+A scene with a source that has no pick build answers with the ray tests this record describes.

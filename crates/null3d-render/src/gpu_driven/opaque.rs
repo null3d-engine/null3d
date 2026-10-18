@@ -257,12 +257,14 @@ pub(super) fn record_bundle(
         counts: None,
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
+        Bundle::Opaque | Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        }
+        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false)?;
-            draws.record(list, |b| b.prepass, |_| false)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
     }
     list.push(Op::EndBundle, &[])?;
@@ -303,15 +305,47 @@ pub(super) fn record_direct(
         counts: Some(counts),
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
+        Bundle::Opaque | Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        }
+        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false)?;
-            draws.record(list, |b| b.prepass, |_| false)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
     }
     Ok(())
+}
+
+/// Records a view's pick pass: the draws of every bucket that has a pick build, each with the
+/// pipeline that finds its pixels in the scene's depth, from the view's compacted instances.
+/// `counts` holds each bucket's instance count on the direct-draw path, and `None` reads the
+/// view's indirect draws. A bucket whose pick build binds the material's maps binds them, as a
+/// custom material's pick build does; the pick template reads none.
+pub(super) fn record_pick(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    counts: Option<&[u32]>,
+    hidden: &dyn Fn(u32) -> bool,
+) -> Result<(), RecordError> {
+    let draws = Draws {
+        view,
+        layout,
+        meshes,
+        frame_group: ids::frame_group(view),
+        first_draw: 0,
+        hidden,
+        counts,
+    };
+    draws.record(
+        list,
+        |bucket| bucket.pick,
+        |_| false,
+        |bucket| if bucket.pick_maps { bucket.group } else { 0 },
+    )
 }
 
 /// What a bundle's buckets draw from: the view, its layout and the mesh pages' buffers, the
@@ -338,6 +372,7 @@ impl Draws<'_> {
         list: &mut DrawList,
         pipeline_of: impl Fn(&Bucket) -> u32,
         own_of: impl Fn(&Bucket) -> bool,
+        maps_of: impl Fn(&Bucket) -> u32,
     ) -> Result<(), RecordError> {
         let Self {
             view,
@@ -367,7 +402,7 @@ impl Draws<'_> {
                 list.push(Op::SetPipeline, &[id])?;
                 pipeline = Some(id);
             }
-            let maps = if own { bucket.group } else { 0 };
+            let maps = if own { maps_of(bucket) } else { 0 };
             let (stride, index) = if bucket.indexed {
                 (sizes::INDEX_STRIDE, ids::index_group(view))
             } else {

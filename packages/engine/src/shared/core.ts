@@ -274,6 +274,21 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	overlap(kind: number, layers: number): number;
 	/**
+	 * Asks the next recorded frame to answer which object draws at a point of the canvas: `x` and
+	 * `y` in CSS pixels, `ring` the read of the pick ring, and `slot` the control slot that the
+	 * read raises. Returns 0 when the frame will draw the pick, and another number when a pick
+	 * already waits.
+	 */
+	requestPick(x: number, y: number, ring: number, slot: number): number;
+	/** The address in engine memory of the pick ring's results, four words for each read. */
+	pickResultAddress(): number;
+	/** True when GPU picking finds every source that the scene draws. */
+	pickCoversScene(): number;
+	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
+	pickTargetId(key: number): number;
+	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
+	pickTargetRow(key: number): number;
+	/**
 	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
 	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
 	 */
@@ -965,6 +980,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'raycast',
 	'raycastBatch',
 	'overlap',
+	'requestPick',
+	'pickResultAddress',
+	'pickCoversScene',
+	'pickTargetId',
+	'pickTargetRow',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',

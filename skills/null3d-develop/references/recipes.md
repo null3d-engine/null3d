@@ -221,6 +221,18 @@ if (input.wasPressed('Mouse0')) {
 
 The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
+For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera draws, such as a thin wire or a leaf with a cut-out mask. It answers one or more frames later:
+
+```ts
+if (input.wasPressed('Mouse0')) {
+  void scene.pick(input.pointer.x, input.pointer.y).then((hit) => {
+    if (hit?.object === target) { /* the click landed on the target's pixels */ }
+  });
+}
+```
+
+A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+
 ## 7. HTML labels above objects (0.2)
 
 ```ts

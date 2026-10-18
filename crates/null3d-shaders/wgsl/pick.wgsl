@@ -1,31 +1,28 @@
 // GPU picking: each object of the camera's view drawn with the camera's view-projection, writing
-// the object's id and the row of its batch where the scene's depth leaves it. A pick pass runs
-// after the opaque pass and draws into a small id target, its scissor around the pointer, with the
-// scene's depth as its depth target and an EQUAL test that writes no depth. So a pixel takes the id
+// the source key of the object or of the instance's row where the scene's depth leaves it. A pick
+// pass runs after the opaque pass and draws into an id target the size of the render size, with
+// the scene's depth as its depth target and a test that writes no depth. So a pixel takes the key
 // of the object that owns the depth there, and a fragment that a material's mask discarded (which
 // wrote no depth) never matches: masked objects pick by their mask, not by their whole geometry.
 //
 // null3d::mesh finds each instance exactly as the templates that shade do, so the position matches
-// the scene's depth to the last bit, which the EQUAL test needs. The instance's id comes from the
-// table of object ranges (`object_ids`): the object's slot for a scene object, the batch's id for a
-// row of an instance batch. The fragment writes the object's id in red and the row in green, so a
-// 32-bit id and its row read back in one texel.
+// the scene's depth to the last bit, which the test needs. The fragment writes the source key as
+// four bytes, which an 8-bit target stores as the bytes themselves. The sketch turns the key into
+// an object or a batch and a row.
 //
 // On WebGL2, exact equality across two programs is not certain. In Chrome on the Mac (ANGLE on
 // Metal), the depth template's prepass build and the shading programs gave positions a rounding
-// step apart, though every program marks its position invariant (decision record D-43). So before
-// a frame emits the pick pass, a page that reads back its own picks must show that this template
-// matches the scene's depth on WebGL2 there. Where it does not, the pass needs a test with a small
-// bias toward the camera, as the outline mask's (decision record D-36), and the mask's alpha test
-// in this template.
+// step apart, though every program marks its position invariant (decision record D-43). The
+// WebGL2 pipeline therefore tests for a nearer depth with a small bias toward the camera, as the
+// outline mask's does (decision record D-36), so the surface that wrote the depth passes.
 //
 // The SKIN builds skin each vertex with the joint texture, as WebGL2 and the other engine templates
 // do, so a skinned character picks where it draws. The MORPH builds, which only WebGL2 has, add the
 // morph targets' deltas before that, as its shading templates do, so a morphed mesh picks where it
-// draws too. A mesh drawn with a custom material that moves its vertices has no build here, so the
-// pass leaves it to a pick on the CPU. A full shader of a sketch's own places its vertices as it
-// likes, so the pass leaves its objects out.
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, object_ids, relative_position}
+// draws too. A mesh drawn with a material that moves its vertices in its own WGSL has no build
+// here: the material's own template has pick builds when it moves vertices only by its vertex
+// offset, and otherwise the scene query answers it with a raycast.
+#import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, relative_position}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_point}
@@ -47,10 +44,34 @@ struct VertexIn {
 #endif
 }
 
-/// The vertex's clip position and the instance's id and row, which the fragment writes.
+/// The key of an instance's source: its slot for an object of the scene, or its row of the data
+/// texture that the object ranges name, marked for a streamed row. The sketch turns the key back
+/// into an object and a row.
+fn pick_key(found: Instance) -> u32 {
+#ifdef WEBGL2
+    // The bit above every resident row marks a row of the streamed data texture.
+    return found.source | select(0u, 1u << 31u, found.streamed);
+#else
+    return found.source;
+#endif
+}
+
+/// The color that the id target holds for a source key: its four bytes, each as the fraction an
+/// 8-bit target stores. The four bytes read back as the key itself.
+fn pick_color(key: u32) -> vec4f {
+    let bytes = vec4u(
+        (key >> 24u) & 0xffu,
+        (key >> 16u) & 0xffu,
+        (key >> 8u) & 0xffu,
+        key & 0xffu,
+    );
+    return vec4f(bytes) / 255.0;
+}
+
+/// The vertex's clip position and the source key, which the fragment writes.
 struct VertexOut {
     @invariant @builtin(position) position: vec4f,
-    @location(0) @interpolate(flat, either) ids: vec2u,
+    @location(0) @interpolate(flat, either) key: u32,
 }
 
 @vertex
@@ -74,13 +95,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
     var out: VertexOut;
     out.position = clip_of(found, relative_position(found, position));
-    out.ids = object_ids(found);
+    out.key = pick_key(found);
     return out;
 }
 
 @fragment
-fn fs(in: VertexOut) -> @location(0) vec4u {
-    // Red: the object's or the batch's id. Green: the instance's row within its batch, 0 for an
-    // object of the scene.
-    return vec4u(in.ids.y, in.ids.x, 0u, 0u);
+fn fs(in: VertexOut) -> @location(0) vec4f {
+    return pick_color(in.key);
 }

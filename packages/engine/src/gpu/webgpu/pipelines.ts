@@ -119,6 +119,8 @@ import {
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_DEPTH_MS,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PICK,
+	TEMPLATE_PICK_RESOLVE,
 	TEMPLATE_PROBE_GRID,
 	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
@@ -911,6 +913,7 @@ export class Pipelines {
 				[0, 1, 2, 3],
 				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
+			[TEMPLATE_PICK, 'pick', shaders.pick, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],
@@ -952,6 +955,15 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
+		// GPU picking's resolve: one triangle over the render size that copies the id target that
+		// the device resolved, at group 0 of a view copy's layout.
+		this.defineTemplate(TEMPLATE_PICK_RESOLVE, {
+			label: 'pick resolve',
+			shader: shaders.pick_resolve,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_FINAL, {
 			label: 'final',
 			shader: shaders.final,
