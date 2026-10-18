@@ -6,6 +6,7 @@
 // it, and the pointer steers the taxi.
 import { defineSketch, math, timeOfDay } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { enableReflections } from '../lib/ssr';
 import { FAR, LANE, NEAR, ROAD, street } from './street';
 
 /** Texels along each side of the puddle map. */
@@ -17,11 +18,8 @@ const SPEED = 5;
 const START = 68;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, quality, time } = ctx;
-	// Phones start with the reflections off: this demo turns them on at a quarter of the size.
-	const reflect = () => quality.settings.ssrScale === 0 && quality.set({ ssrScale: 0.25 });
-	reflect();
-	quality.onChange(reflect);
+	const { scene, assets, geometry, materials, textures, post, time } = ctx;
+	enableReflections(ctx);
 	post.set({
 		ssr: { maxDistance: 120, thickness: 1.5 },
 		bloom: { intensity: 0.25, threshold: 1 },

@@ -7,6 +7,7 @@
 // pink lamp, and the bloom, the shading and the reflections in the puddles follow.
 import { defineSketch, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { enableReflections } from '../lib/ssr';
 import { COOL, grade, WARM } from './grades';
 
 /** Seconds that each color grading table shows. */
@@ -43,9 +44,7 @@ export default defineSketch(async (ctx) => {
 	// Ambient occlusion draws on every preset, at half the canvas's resolution. Phones start with
 	// the reflections off, so the demo turns them on at a quarter of the size.
 	quality.set({ aoScale: 0.5 });
-	const reflect = () => quality.settings.ssrScale === 0 && quality.set({ ssrScale: 0.25 });
-	reflect();
-	quality.onChange(reflect);
+	enableReflections(ctx);
 	post.set({
 		bloom: { intensity: 0.3, threshold: 1 },
 		ao: { radius: 0.6, intensity: 1 },
