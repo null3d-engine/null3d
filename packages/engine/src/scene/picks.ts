@@ -120,6 +120,8 @@ export class ScenePicks implements ViewHolder {
 	/** @internal Fails the picks that wait, when the engine stops. */
 	stop(): void {
 		this.stopped = true;
+		// A stop with no pick waiting raises no error, which would load the fixes' text for nothing.
+		if (!this.inFlight && this.queue.length === 0) return;
 		const error = new EngineError('E1420', 'pick() waited when the engine stopped.');
 		this.inFlight?.reject(error);
 		for (const job of this.queue) job.reject(error);
