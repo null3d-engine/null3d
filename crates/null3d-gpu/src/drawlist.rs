@@ -1867,12 +1867,12 @@ pub mod template {
     /// GPU picking's resolve: one triangle over the render size that copies the id target, which
     /// the device resolved into one sample per pixel, into a target that a copy reads. It binds
     /// the resolved target at group 0, of [`super::layout::VIEW_COPY`].
-    pub const PICK_RESOLVE: u32 = 73;
+    pub const PICK_RESOLVE: u32 = 75;
     /// GPU picking with a masked standard material: the pick template that binds the material's map
     /// slots, so the mask cuts the same pixels that the shading cuts.
-    pub const PICK_MAPS: u32 = 74;
+    pub const PICK_MAPS: u32 = 76;
     /// GPU picking with a masked unlit map: the pick template that binds its single base color map.
-    pub const PICK_TEXTURE_MAPS: u32 = 75;
+    pub const PICK_TEXTURE_MAPS: u32 = 77;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
