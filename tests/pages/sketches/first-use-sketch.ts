@@ -160,6 +160,10 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 		batch.markDirty();
 	},
 	lod_fade: fadingLevels,
+	// A pick draws the scene into the pass's id target, whose builds load with the first call.
+	picking: ({ scene }) => {
+		void scene.pick(0, 0).catch(() => {});
+	},
 	// The page's ?occlusion=on switch runs GPU occlusion culling, which a marked occluder starts.
 	occlusion: ({ scene, geometry, materials }) => {
 		scene.createMesh({
