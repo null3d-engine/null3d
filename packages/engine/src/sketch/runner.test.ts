@@ -1,8 +1,9 @@
 import { describe, expect, it, spyOn } from 'bun:test';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
-import { FORMAT_RGBA16_FLOAT } from '../generated/gpu';
+import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
+import type { CoreDevice } from '../page/limits';
 import { presetSettings } from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
 import type { Material, MeshGeometry } from '../scene/resources';
@@ -67,6 +68,7 @@ const KEPT_ARGUMENTS = new Set([
 	'setRenderScaling',
 	'setShadowQuality',
 	'setLightDefault',
+	'setCanvasOutput',
 ]);
 
 /** How the log shows a change of one of the core's texture settings. */
@@ -196,7 +198,8 @@ const MEDIUM: QualityStart = {
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
  * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
  * cells. `control` gives the page's control block, which the test can write. `maxTargetFps` is the
- * highest target that the page allows. The log also shows the settings that the page got.
+ * highest target that the page allows. `device` replaces fields of the stand-in device. The log
+ * also shows the settings that the page got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -211,6 +214,7 @@ async function start(
 		control = controlViews(createControlBuffer(shared)),
 		maxTargetFps = 60,
 		jobs = { most: 0, handedMs: 0, asked: [] },
+		device,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -225,6 +229,7 @@ async function start(
 		 * of job workers that the runner asks for go.
 		 */
 		jobs?: { most: number; handedMs: number; asked: number[]; timing?: boolean[] };
+		device?: Partial<CoreDevice>;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -274,6 +279,7 @@ async function start(
 				directDraws: false,
 				textureCache: true,
 				occlusionBuffer: 0,
+				...device,
 			},
 			capabilities: CAPABILITIES,
 			quality,
@@ -549,6 +555,37 @@ describe('SketchRunner', () => {
 		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3, true, 0.1]]);
 		runner.step(0);
 		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1, false, 0.2]);
+	});
+
+	it('moves an 8-bit device to HDR color for the subsurface blur only once the page or the sketch gives it taps', async () => {
+		const eightBit = { sceneColor: FORMAT_CANVAS, antialias: C.ANTIALIAS_MSAA };
+		const high: QualityStart = { ...MEDIUM, preset: 'high', settings: presetSettings('high') };
+		const moves = (calls: unknown[][]) => calls.filter((call) => call[0] === 'setCanvasOutput');
+		const preset = await start(() => ({}), undefined, { quality: high, device: eightBit });
+		preset.runner.step(0);
+		expect(preset.context.quality.settings.subsurfaceSamples).toBeGreaterThan(0);
+		expect(moves(preset.calls)).toEqual([]);
+		const chosen = await start(() => ({}), undefined, { device: eightBit });
+		chosen.runner.step(0);
+		chosen.context.quality.set({ subsurfaceSamples: 0 });
+		chosen.runner.step(1000 / 60);
+		expect(moves(chosen.calls)).toEqual([]);
+		chosen.context.quality.set({ subsurfaceSamples: 11 });
+		chosen.runner.step(2000 / 60);
+		chosen.runner.step(3000 / 60);
+		expect(moves(chosen.calls)).toEqual([
+			['setCanvasOutput', FORMAT_RGBA16_FLOAT, C.ANTIALIAS_MSAA],
+		]);
+		const page = await start(() => ({}), undefined, {
+			quality: {
+				...MEDIUM,
+				settings: { ...MEDIUM.settings, subsurfaceSamples: 17 },
+				options: { subsurfaceSamples: 17 },
+			},
+			device: eightBit,
+		});
+		page.runner.step(0);
+		expect(moves(page.calls)).toHaveLength(1);
 	});
 
 	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {

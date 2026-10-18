@@ -80,6 +80,7 @@ use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
 use null3d_render::sky_maps::MapSky;
 use null3d_render::ssr::Ssr;
+use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
@@ -3382,6 +3383,25 @@ pub fn set_dof_taps(taps: u32) -> u32 {
                 .unwrap_or(dof::TAP_COUNTS[dof::TAP_COUNTS.len() - 1]),
         };
         e.renderer.settings_mut().set_dof_taps(taps);
+        0
+    })
+}
+
+/// Sets the taps of each step of the subsurface blur, which the quality settings set, from the
+/// next frame on: one of 11, 17 or 25, or 0, which draws no blur and no skin pass. Other counts
+/// take the next count up, at most 25.
+#[wasm_bindgen(js_name = setSubsurfaceTaps)]
+pub fn set_subsurface_taps(taps: u32) -> u32 {
+    with_engine(|e| {
+        let counts = subsurface::TAP_COUNTS;
+        let taps = match taps {
+            0 => 0,
+            _ => counts
+                .into_iter()
+                .find(|&count| count >= taps)
+                .unwrap_or(counts[counts.len() - 1]),
+        };
+        e.renderer.settings_mut().set_subsurface_taps(taps);
         0
     })
 }

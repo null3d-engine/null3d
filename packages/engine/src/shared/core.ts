@@ -632,6 +632,8 @@ export interface CoreGlue extends CoreErrors {
 	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
+	setSubsurfaceTaps(taps: number): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -1031,6 +1033,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'setSubsurfaceTaps',
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',

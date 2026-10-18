@@ -137,37 +137,61 @@
 # instance batches with row values: each row's color multiplies the vertex color, and custom
 # materials read each row's values. It builds without skins, morph targets, alpha to coverage, the
 # alpha hash, transmission and index-read instances, which batches with row values never draw
-# with, and loads on first use. LOD_FADE draws a level of detail inside the band where it hands
-# over to the next: each instance's fade value and a 4 × 4 ordered dither keep the pixels of its
-# side of the band, after the mask's own test by its cutoff or by coverage. It builds without
-# skins, morph targets, the alpha hash, transmission and index-read instances, and loads on first
-# use. Custom materials build none of its builds: their levels switch at once. WEIGHTED draws a
-# surface of the weighted blending into the camera's weighted layer (null3d::weighted), in any order
-# with the other weighted surfaces. It builds without a mask, light through the surface, index-read
-# instances, a fading level of detail, a prepass or a caster, and loads on first use with the layer's
-# own steps. Custom materials build without the bit (decision record D-150). COAT_SHEEN lights a
-# clear coat and a sheen above the base (null3d::coat_sheen); it builds without index-read instances
-# and loads on first use. Custom materials build it only where their WGSL names a layer's value of
-# the surface.
+# with, and loads on first use. TRANSLUCENCY lets light through a thin surface to its other side,
+# as glTF's diffuse transmission does (null3d::translucency); it builds without transmission and
+# index-read instances, and loads on first use. Custom materials build it only where their WGSL
+# names the surface's diffuse transmission or its color. LOD_FADE draws a level of detail inside
+# the band where it hands over to the next: each instance's fade value and a 4 × 4 ordered dither
+# keep the pixels of its side of the band, after the mask's own test by its cutoff or by coverage.
+# It builds without skins, morph targets, the alpha hash, transmission and index-read instances,
+# and loads on first use. Custom materials build none of its builds: their levels switch at once.
+# WEIGHTED draws a surface of the weighted blending into the camera's weighted layer
+# (null3d::weighted), in any order with the other weighted surfaces. It builds without a mask, light
+# through the surface, index-read instances, a fading level of detail, a prepass or a caster, and
+# loads on first use with the layer's own steps. Custom materials build without the bit (decision
+# record D-150). COAT_SHEEN lights a clear coat and a sheen above the base (null3d::coat_sheen); it
+# builds without index-read instances and loads on first use. Custom materials build it only where
+# their WGSL names a layer's value of the surface.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
-# occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the COAT_SHEEN
-# builds the light and specular maps' slots hold the coat, coat normal and sheen maps instead.
+# occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the
+# TRANSLUCENCY builds the specular maps' slots hold the diffuse transmission maps instead, and in
+# the COAT_SHEEN builds the light and specular maps' slots hold the coat, coat normal and sheen maps.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
-# RECEIVE_SHADOWS, TRANSMISSION and COAT_SHEEN act as for the standard material.
+# RECEIVE_SHADOWS, TRANSMISSION, TRANSLUCENCY and COAT_SHEEN act as for the standard material.
 [shaders.standard_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
+
+# The skin pass's builds of the standard material, with and without maps, from the same file: the
+# SUBSURFACE def writes the diffuse light that scatters, with the material's scatter distances and
+# the view distance, into the skin pass's target, for the subsurface blur (subsurface.wgsl). They
+# keep the bits that place, color and mask a pair's surface, its shadows and the light through it.
+# The skin pass has one sample, so alpha to coverage and the alpha hash test a plain mask, and it
+# runs on the HDR path alone, so no build tone maps. They load on first use with the blur.
+[shaders.subsurface]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["SUBSURFACE"], permutations = ["VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "SUBSURFACE"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "TRANSLUCENCY"], targets = ["glsl"] }
+
+[shaders.subsurface_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS", "SUBSURFACE"], permutations = ["VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS", "SUBSURFACE"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "TRANSLUCENCY"], targets = ["glsl"] }
 
 # Decals, from the same file with DECAL: a standard material projected onto the surfaces inside
 # each object's box, in a pass of their own after the camera's opaque pass. Each pixel reads the
@@ -202,15 +226,15 @@ shaders = ["decal", "decal_maps"]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["PROBE_GRID"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+variants.webgpu = { defs = ["PROBE_GRID"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "TRANSLUCENCY", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "TRANSLUCENCY", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
 
 [shaders.probe_grid_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["PROBE_GRID", "MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+variants.webgpu = { defs = ["PROBE_GRID", "MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "TRANSLUCENCY", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "TRANSLUCENCY", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
 
 # A page downloads the grid templates when the sketch first sets a light probe grid.
 [first_use.probe_grid]
@@ -509,6 +533,32 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.dof]
 shaders = ["dof", "dof_ms"]
 
+# The subsurface blur's steps (see subsurface.wgsl): `across` blurs the skin pass's light along the
+# rows, and `down` blurs that along the columns and adds the change to a copy of the scene color,
+# where the skin is the surface in front. The WebGL2 variant reads a copy of one depth sample that
+# its backend keeps.
+[shaders.subsurface_blur]
+file = "subsurface.wgsl"
+by_device = true
+pipelines.across = { vertex = "vs", fragment = "across" }
+pipelines.down = { vertex = "vs", fragment = "down" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The down step from a multisampled depth target: it reads sample 0. Only WebGPU reads multisampled
+# textures.
+[shaders.subsurface_blur_ms]
+file = "subsurface.wgsl"
+by_device = true
+pipelines.down = { vertex = "vs", fragment = "down" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the skin pass's builds and the blur's steps with its first material that has a
+# scatter radius, while the quality setting gives the blur taps. The frames draw without the blur
+# until the steps' pipelines are built.
+[first_use.subsurface]
+shaders = ["subsurface", "subsurface_maps", "subsurface_blur", "subsurface_blur_ms"]
+
 # The automatic exposure's downsample path (see exposure.wgsl): `downsample` draws 16 x 16 cells of
 # mean log luminance with their center weights, and `adapt` meters them into one texel of the
 # exposure. Devices without the compute histogram and the Low preset meter with it.
@@ -640,6 +690,12 @@ bits = ["WEIGHTED"]
 # always build the area lights' code, so they have no AREA_LIGHTS builds.
 [first_use.area_lights]
 bits = ["AREA_LIGHTS"]
+
+# A page downloads the builds that let light through a thin surface with its first material that
+# does. Its builds with skinning, morph targets, alpha to coverage, the alpha hash or row values go
+# into files of their own, so the files of those features do not grow.
+[first_use.translucency]
+bits = ["TRANSLUCENCY"]
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays

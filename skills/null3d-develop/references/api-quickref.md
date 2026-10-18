@@ -318,8 +318,10 @@ const paint = materials.standard({
   ior: 1.5, specularIntensity: 1, specularColor: '#ffffff',  // (0.2) non-metal reflection, as three.js's physical material
   transmission: 0, thickness: 0,              // (0.2) glass and clear water: give transmission at creation to let light through; bends by ior, blurs by roughness
   attenuationColor: '#ffffff', attenuationDistance: Infinity,  // (0.2) the volume's color over that distance
+  diffuseTransmission: 0, diffuseTransmissionColor: '#ffffff',  // (0.2) leaves, petals, ears: light behind shows on the front; give it at creation; the base color does not tint it
+  subsurfaceRadius: 0, subsurfaceColor: '#ffffff',  // (0.2) skin 0.012 and [1, 0.4, 0.25], wax, jade: light spreads under the surface; give it at creation; blurs on High and Ultra only
   clearcoat: 0, clearcoatRoughness: 0,        // (0.2) car paint, varnish: give a layer option at creation to have the layers
-  sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps with layers
+  sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps and no diffuseTransmission with layers
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'hash' (0.2) draws the share the alpha sets; 'blend' shows through

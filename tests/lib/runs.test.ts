@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
-import { type ShaderSet, variantInShaderSet } from '../pages/lib/shader-list.ts';
+import { inShaderSet, type ShaderSet, variantInShaderSet } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -71,7 +71,12 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
-import { glslProgramCount, glslProgramCountOf, glslProgramsByVariant } from './shader-programs.ts';
+import {
+	glslProgramCount,
+	glslProgramCountOf,
+	glslProgramsByName,
+	glslProgramsByVariant,
+} from './shader-programs.ts';
 import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
@@ -1058,26 +1063,43 @@ describe('the checks plan', () => {
 		const all = glslProgramCount();
 		expect(all).toBeGreaterThan(100);
 		const inSet = (set: ShaderSet) => glslProgramCountOf(set);
-		const [base, coat, sample] = [inSet('base'), inSet('coat'), inSet('coat-sample')];
-		// The base and coat sets split every program, and the sample is some of the coat's.
-		expect(base + coat).toBe(all);
+		const [base, firstUse, coat, sample, firstUseSample] = [
+			inSet('base'),
+			inSet('first-use'),
+			inSet('coat'),
+			inSet('coat-sample'),
+			inSet('first-use-sample'),
+		];
+		// The base, first-use and coat sets split every program; each sample is some of its set's.
+		expect(base + firstUse + coat).toBe(all);
 		expect(sample).toBeGreaterThan(0);
 		expect(sample).toBeLessThanOrEqual(400);
-		// The sample pairs the coat with shadows, row values and half precision, alone and together.
+		expect(firstUseSample).toBeGreaterThan(0);
+		expect(firstUseSample).toBeLessThanOrEqual(400);
+		// The coat sample pairs the coat with shadows, row values and half precision, alone and together.
 		const sampledBuilds = [...glslProgramsByVariant()].filter(
 			([build, programs]) => programs > 0 && variantInShaderSet(build, 'coat-sample'),
 		);
-		const pairs = (bits: string[]) =>
-			sampledBuilds.some(([name]) => bits.every((bit) => name.includes(`_${bit}_`)));
+		const pairs = (builds: [string, number][], bits: string[]) =>
+			builds.some(([name]) =>
+				bits.every((bit) => `_${name.replaceAll('.', '_')}_`.includes(`_${bit}_`)),
+			);
 		for (const bit of ['receive_shadows', 'row_values', 'half', 'alpha_mask', 'vertex_tangent'])
-			expect(pairs([bit]), bit).toBe(true);
-		expect(pairs(['receive_shadows', 'row_values', 'half'])).toBe(true);
+			expect(pairs(sampledBuilds, [bit]), bit).toBe(true);
+		expect(pairs(sampledBuilds, ['receive_shadows', 'row_values', 'half'])).toBe(true);
+		// The first-use sample pairs the translucency builds with the same bits.
+		const sampledFirstUse = [...glslProgramsByName()].filter(
+			([name, programs]) => programs > 0 && inShaderSet(name, 'first-use-sample'),
+		);
+		for (const bit of ['translucency', 'receive_shadows', 'row_values', 'half'])
+			expect(pairs(sampledFirstUse, [bit]), bit).toBe(true);
+		expect(pairs(sampledFirstUse, ['translucency', 'receive_shadows', 'half'])).toBe(true);
 		const partsOf = (plan: PlanItem<Check>[], set: string) =>
 			plan.filter((item) => item.check.kind === 'shaders' && item.path.endsWith(`set=${set}`));
 		const sampled = checksPlan({ shaders: 'sampled' });
 		for (const [plan, sets] of [
-			[items, { base, coat }],
-			[sampled, { base, 'coat-sample': sample }],
+			[items, { base, 'first-use': firstUse, coat }],
+			[sampled, { base, 'first-use-sample': firstUseSample, 'coat-sample': sample }],
 		] as const) {
 			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
 				Object.values(sets).reduce((sum, programs) => sum + Math.ceil(programs / 400), 0),

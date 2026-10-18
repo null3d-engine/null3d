@@ -28,12 +28,25 @@ enable draw_index;
 // Custom materials' surfaces have the transmission and the thickness in every build, and the
 // builds that let light through only where their WGSL sets the surface's transmission.
 //
+// The TRANSLUCENCY builds let light through a thin surface, as glTF's diffuse transmission does
+// (null3d::translucency): the light that reaches the surface's back shows on its front through the
+// material's transmission color, and the front keeps the rest of its diffuse light. In such
+// materials the specular maps' slots hold the diffuse transmission maps, which read the same
+// channels. Custom materials' surfaces have the diffuse transmission and its color in every build,
+// and the builds that let light through a thin surface only where their WGSL names them.
+//
 // The COAT_SHEEN builds light a clear coat and a sheen above the base, as three.js's
 // MeshPhysicalMaterial does (null3d::coat_sheen). In them the map slots of the light map and the
 // specular maps hold the coat map, the coat normal map and the sheen map, since a layered material
 // has neither, and the row's flags say which channels of the coat and sheen maps apply. Custom
 // materials' surfaces have the layers' values in every build, and the COAT_SHEEN builds only where
 // their WGSL names them.
+//
+// The SUBSURFACE builds, of the templates of the skin pass, light the surface as the others do and
+// write only the diffuse light that scatters under it, after the fog, as the camera's opaque pass
+// added it to the scene color, with the material's scatter distances and the view distance
+// (null3d::subsurface). The subsurface blur then spreads that light over the skin around each
+// pixel. Emitted light and the specular layer stay sharp.
 //
 // The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
 // color multiplies the vertex color, so it tints the base color and the alpha as three.js's
@@ -142,6 +155,11 @@ enable draw_index;
 #else ifdef DECAL
 #import null3d::mesh::{world_direction}
 #endif
+#ifdef TRANSMISSION
+#import null3d::mesh::{axis_scales}
+#else ifdef TRANSLUCENCY
+#import null3d::mesh::{axis_scales}
+#endif
 #ifdef DECAL
 #import null3d::mesh::{decal_values}
 #endif
@@ -153,6 +171,17 @@ enable draw_index;
 #import null3d::fog::{fog_factor}
 #import null3d::tonemap::{encode, tone_map, vignette}
 #endif
+#endif
+#ifdef TRANSLUCENCY
+#import null3d::globals::{MaterialTransmission}
+#import null3d::lighting::{multiscattering}
+#import null3d::mesh::{material_translucency, material_transmission}
+#import null3d::translucency::{gather_back_light, lit_side, transmitted_diffuse}
+#endif
+#ifdef SUBSURFACE
+#import null3d::fog::{fog_factor}
+#import null3d::mesh::{NO_FOG, material_subsurface}
+#import null3d::subsurface::{skin_texel}
 #endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -210,6 +239,29 @@ var<private> transmission_row: MaterialTransmission;
 var<private> diffuse_light: vec3f;
 
 /// The object's scale along each of its axes.
+var<private> object_scale: vec3f;
+#else ifdef SUBSURFACE
+/// The diffuse light that `light_surface` gathers, which the skin pass writes.
+var<private> diffuse_light: vec3f;
+#endif
+
+#ifdef SUBSURFACE
+/// The material's scatter distances, which the fragment shader reads once.
+var<private> subsurface_row: vec4f;
+#endif
+
+#ifdef TRANSLUCENCY
+/// The diffuse transmission's color and share, and the volume's values, of the material that lets
+/// light through a thin surface, which the fragment shader reads once.
+var<private> translucency_row: vec4f;
+var<private> volume_row: MaterialTransmission;
+
+/// The ambient, hemisphere and environment light that reaches the surface's back, after
+/// occlusion, which `light_surface` gathers.
+var<private> back_indirect: vec3f;
+
+/// The object's scale along each of its axes, which turns the volume's thickness into world
+/// units.
 var<private> object_scale: vec3f;
 #endif
 
@@ -491,6 +543,8 @@ struct VertexOut {
     /// The object's scale along each of its axes, which turns the volume's thickness into world
     /// units.
     @location(9) @interpolate(flat, either) scale: vec3f,
+#else ifdef TRANSLUCENCY
+    @location(9) @interpolate(flat, either) scale: vec3f,
 #endif
 #ifdef ROW_VALUES
     /// The color of the instance's row.
@@ -614,11 +668,22 @@ struct Surface {
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
     /// The thickness of the volume under the surface, in the mesh's own units, which bends the
-    /// light that passes through: 0 for a thin wall.
+    /// light that passes through: 0 for a thin wall. Over it, the volume's color tints the light
+    /// that passes through a thin surface.
     thickness: f32,
+    /// How much of the surface's diffuse light passes through it to its other side, from 0 to 1,
+    /// so the light behind it shows on its front, where the material lets light through a thin
+    /// surface.
+    diffuseTransmission: f32,
+    /// The linear color that tints the light that passes through to the other side.
+    diffuseTransmissionColor: vec3f,
 #else ifdef TRANSMISSION
     transmission: f32,
     thickness: f32,
+#else ifdef TRANSLUCENCY
+    thickness: f32,
+    diffuseTransmission: f32,
+    diffuseTransmissionColor: vec3f,
 #endif
 #ifdef CUSTOM
     /// How much of a clear coat covers the surface, from 0 (none) to 1, where the material has
@@ -696,12 +761,23 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
         s.irradiance = texel.rgb * m.strengths.y;
     }
+    // A material that lets light through a thin surface keeps its diffuse transmission maps in
+    // the specular maps' slots, which read the same channels.
     if map_ready(m.more_maps.z) {
-        specular_texel.a = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second)).a;
+        let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
+#ifdef TRANSLUCENCY
+        s.diffuseTransmission *= texel.a;
+#else
+        specular_texel.a = texel.a;
+#endif
     }
     if map_ready(m.more_maps.w) {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+#ifdef TRANSLUCENCY
+        s.diffuseTransmissionColor *= texel.rgb;
+#else
         specular_texel = vec4f(texel.rgb, specular_texel.a);
+#endif
     }
 #endif
     if map_ready(m.maps.z) {
@@ -766,9 +842,21 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
     s.thickness = transmission_row.values.y;
+#else ifdef TRANSLUCENCY
+    s.thickness = volume_row.values.y;
 #else ifdef CUSTOM
     s.transmission = 0.0;
     s.thickness = 0.0;
+#endif
+#ifdef TRANSLUCENCY
+#ifdef CUSTOM
+    s.transmission = 0.0;
+#endif
+    s.diffuseTransmission = translucency_row.w;
+    s.diffuseTransmissionColor = translucency_row.rgb;
+#else ifdef CUSTOM
+    s.diffuseTransmission = 0.0;
+    s.diffuseTransmissionColor = vec3f(1.0);
 #endif
 #ifdef COAT_SHEEN
     s.clearcoat = coat_sheen_row.coat.x;
@@ -920,11 +1008,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.ids = ids;
 #endif
 #ifdef TRANSMISSION
-    out.scale = vec3f(
-        length(world_direction(found, vec3f(1.0, 0.0, 0.0))),
-        length(world_direction(found, vec3f(0.0, 1.0, 0.0))),
-        length(world_direction(found, vec3f(0.0, 0.0, 1.0))),
-    );
+    out.scale = axis_scales(found);
+#else ifdef TRANSLUCENCY
+    out.scale = axis_scales(found);
 #endif
     return out;
 }
@@ -943,7 +1029,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
 /// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
-/// the environment's reflection, with or without an environment.
+/// the environment's reflection, with or without an environment. In the TRANSLUCENCY builds the
+/// lights also gather the light that reaches the surface's back, and the ambient, hemisphere and
+/// environment light from behind goes to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -960,6 +1048,15 @@ fn light_surface(
     let to_sun = -engine_frame.sun_direction.xyz;
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
+#ifdef TRANSLUCENCY
+    // The sun lights a surface that lets light through on either side, so the lookup always
+    // runs, from the side that the sun falls on. Contact shadows march from the side the camera
+    // sees, so only a surface that faces the sun takes them: from the back, the march would find
+    // the surface itself in its way.
+    let seen = relative + engine_frame.shadow_origin.xyz;
+    let facing = dot(normal, to_sun) > 0.0;
+    sun_color *= sun_shadow(seen, lit_side(normal, to_sun), to_sun) * select(1.0, contact, facing);
+#else
     // A surface that faces away from the sun gets none of its light whatever the shadow map
     // holds, so it skips the lookup and the filter's reads. A coat that faces the sun still
     // takes its shadow. Contact shadows add the short shadows that the map's texels are too
@@ -973,11 +1070,16 @@ fn light_surface(
         sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun) * contact;
     }
 #endif
+#endif
 #ifdef COAT_SHEEN
     // The layers gather their light first, and the sheen keeps part of it from the base.
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
     let sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef TRANSLUCENCY
+    gather_back_light(normal, to_sun, sun_color);
+    back_indirect = ambient_light(-normal) * occlusion;
+#endif
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
     let n_dot_v = saturate(dot(normal, to_view));
     let surrounding_light = ambient_light(normal) + extra;
@@ -990,6 +1092,8 @@ fn light_surface(
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     var indirect = ambient * occlusion;
 #ifdef TRANSMISSION
+    diffuse_light = sun.diffuse + clustered.diffuse + indirect;
+#else ifdef SUBSURFACE
     diffuse_light = sun.diffuse + clustered.diffuse + indirect;
 #endif
     let env = engine_frame.environment;
@@ -1011,6 +1115,9 @@ fn light_surface(
         }
 #endif
         var image = indirect_specular(m, radiance, irradiance, dfg);
+#ifdef TRANSLUCENCY
+        back_indirect += environment_irradiance(env, -normal) * strength * occlusion;
+#endif
 #ifdef COAT_SHEEN
         // The sheen takes its share of the environment's light, and the coat reflects it at its
         // own normal and roughness.
@@ -1024,6 +1131,8 @@ fn light_surface(
         let specular = image.specular * (specular_occlusion(n_dot_v, occlusion, m.roughness) * fading);
         indirect += image.diffuse * occlusion + specular;
 #ifdef TRANSMISSION
+        diffuse_light += image.diffuse * occlusion;
+#else ifdef SUBSURFACE
         diffuse_light += image.diffuse * occlusion;
 #endif
     }
@@ -1083,7 +1192,15 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     specular *= specular_texel;
 #endif
     let plain = pbr_material(s.baseColor, s.metalness, s.roughness, kernel);
+#ifdef TRANSLUCENCY
+    // The diffuse transmission's share of the diffuse light passes through to the other side, and
+    // the front keeps the rest.
+    let through_share = saturate(s.diffuseTransmission);
+    var pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
+    pbr.diffuse *= 1.0 - through_share;
+#else
     let pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
+#endif
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
 #ifdef COAT_SHEEN
@@ -1161,6 +1278,21 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let emitted = s.emissive * engine_frame.output.exposure;
     let outgoing = reflected + (through - diffuse_light) * share + emitted;
 #endif
+#else ifdef TRANSLUCENCY
+    // The light from behind passes the specular layer's share of the light from all directions as
+    // the diffuse light does, and only the part that is not metal lets it through.
+    let scattered = multiscattering(pbr.specular, pbr.specular_grazing, dfg);
+    let energy = 1.0 - scattered.single - scattered.multi;
+    let distance = s.thickness * (object_scale.x + object_scale.y + object_scale.z) / 3.0;
+    let through = transmitted_diffuse(
+        back_indirect,
+        s.diffuseTransmissionColor * (1.0 - pbr.metalness),
+        through_share,
+        energy,
+        distance,
+        volume_row.attenuation,
+    );
+    let outgoing = reflected + through + s.emissive * engine_frame.output.exposure;
 #else
     let outgoing = reflected + s.emissive * engine_frame.output.exposure;
 #endif
@@ -1190,6 +1322,23 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         discard;
     }
 #endif
+#ifdef SUBSURFACE
+    // The scene color holds this light as the fog left it, and the blur takes its share of it.
+#ifdef TRANSLUCENCY
+    let under = diffuse_light + through;
+#else
+    let under = diffuse_light;
+#endif
+    let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
+    let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
+    // The distance along the view: the clip's w for a perspective camera, and from the depth of
+    // reversed depth's orthographic range for an orthographic one.
+    let clip = engine_frame.view_proj * vec4f(input.relativePosition, 1.0);
+    let range = engine_frame.camera_range;
+    let orthographic = range.y - clip.z * (range.y - range.x);
+    let along = select(orthographic, clip.w, engine_frame.camera_position.w > 0.0);
+    return skin_texel(under * (1.0 - fog), subsurface_row.rgb * subsurface_row.w, along);
+#else
 #ifdef TRANSMISSION
 #ifdef TONE_MAP
     // The copy holds display color, darkened by the vignette already, so the light from behind
@@ -1219,6 +1368,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     return fragment_color(material_row, finished.rgb, s.alpha);
 #endif
+#endif
 }
 
 #ifndef DECAL
@@ -1242,6 +1392,13 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
     object_scale = in.scale;
+#else ifdef TRANSLUCENCY
+    translucency_row = material_translucency(in.material);
+    volume_row = material_transmission(in.material);
+    object_scale = in.scale;
+#endif
+#ifdef SUBSURFACE
+    subsurface_row = material_subsurface(in.material);
 #endif
 #ifdef COAT_SHEEN
     coat_sheen_row = material_coat_sheen(in.material);

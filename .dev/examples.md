@@ -446,7 +446,7 @@ Each feature gets a decision record of its own when it is built.
 | Weighted blended transparency | Smoke and fire, and glass: `blending: 'weighted'` | M2-EX33 | D-142, [D-150](decisions/D-150-weighted-blended-transparency.md) |
 | Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
-| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
+| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' ears and hands against the light: `diffuseTransmission` on standard and custom materials. Skin, wax and marble: `subsurfaceRadius` and `subsurfaceColor` on standard materials, a screen-space blur on High and Ultra | M2-EX36 ([D-153](decisions/D-153-subsurface-and-translucency.md)) | D-142 |
 
 The particles demo uses the particles add-on. The showcase and comparison scenes still draw their particles with sprites behind a small interface of their own. Their look pass moves them to the add-on. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
@@ -648,3 +648,16 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026. E
 | post-effects | 120 fps, GPU 4.5 to 5.5 ms | 120 fps, GPU 11.7 to 13.5 ms |
 
 On WebGL2, the two demos with depth of field read 10 to 13.5 ms of GPU time, more than one frame at 120 Hz. The overlay still counted 120 fps. Other helpers loaded the Mac during the run, so the WebGL2 timer may count time that the GPU spent on their work. A phone or tablet check at Medium settles it. Depth of field draws nothing on Low.
+
+## The translucency demo (M2-EX36, 12 October 2026)
+
+The translucency demo shows light through thin surfaces ([D-153](decisions/D-153-subsurface-and-translucency.md)): a garden at golden hour with the low sun behind broad leaves and coral tulips, and a paper lantern that glows from the lamp inside it. The leaves, the ground and the plants' places are made in code in `examples/translucency/plants.ts`, so the sketch stays under 150 lines.
+
+The look came from five rounds of screenshots on the Mac, and these points decided it:
+
+- Light through a leaf shows only where the camera sees the side away from the light. The first camera looked down on leaves that faced up, so the sun lit their tops and few leaves glowed. The camera now stands low, under the arching leaves, and looks toward the sun.
+- The sun stands to one side of the view. In the middle of the view, its glare and bloom washed out the frame. The demo takes 17:21 of `timeOfDay`, a little higher than its golden hour preset, since a sun 5 degrees up sent too little light through the leaves' undersides.
+- The exposure, the fog and the bloom are lower than the other golden hour demos'. At their values, the haze turned the leaves pale and the sky white.
+- One leaf texture serves three slots: its color as the base color map, its alpha as the diffuse transmission map, which lets less light through the veins, and so the veins show dark against the sun.
+- The lantern's lamp has an intensity of 0.4. Inside a sphere of 0.2 m, a brighter lamp turned the paper white.
+- The tulips' petals lean out at most 0.6 radians, so they open as cups. With the leaves' lean, up to 1.05 radians, they lay flat like umbrellas.

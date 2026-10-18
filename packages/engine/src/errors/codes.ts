@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},

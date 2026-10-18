@@ -6,8 +6,10 @@
 //! a mesh and a material, as the views of cameras draw them. The casters' layout holds the scene
 //! objects that cast shadows, grouped by mesh alone, as the shadow cascades draw their depth. The
 //! outlined layout holds the scene objects that the sketch outlines, grouped by mesh alone, as the
-//! outline view draws them into the outline mask, each bucket twice. Every layout places each
-//! source at the same row of the same data texture, so the others read the matrices that the
+//! outline view draws them into the outline mask, each bucket twice. The subsurface layout holds
+//! the scene objects whose material has a scatter radius, with the skin pass's builds of their
+//! pipelines, as the subsurface view draws them into the skin pass's target. Every layout places
+//! each source at the same row of the same data texture, so the others read the matrices that the
 //! scene's layout uploads.
 
 use std::collections::TryReserveError;
@@ -36,6 +38,7 @@ use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
+use crate::subsurface::skin_key;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -57,6 +60,9 @@ pub(super) enum Drawn {
     /// The scene objects that the sketch outlines, as the outline view draws them into the outline
     /// mask.
     Outlined,
+    /// The scene objects whose material has a scatter radius, as the subsurface view draws them
+    /// into the skin pass's target.
+    Subsurface,
 }
 
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
@@ -341,7 +347,7 @@ impl Layout {
                     let (every, _) = mask_keys(skin(pipeline, skinned));
                     return Some((every, 0, page, mesh, CASTER_MATERIAL, group));
                 }
-                Drawn::Scene => {}
+                Drawn::Scene | Drawn::Subsurface => {}
             }
             // Blended pairs, and pairs that let light through, draw in the transparent pass, which
             // sorts them on the job workers.
@@ -355,14 +361,12 @@ impl Layout {
             };
             let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
-            Some((
-                skin(pipeline, skinned),
-                textures,
-                page,
-                mesh,
-                material,
-                group,
-            ))
+            // The skin pass draws the pair with its own builds, which bind the same maps.
+            let pipeline = match drawn {
+                Drawn::Subsurface => skin_key(skin(pipeline, skinned))?,
+                _ => skin(pipeline, skinned),
+            };
+            Some((pipeline, textures, page, mesh, material, group))
         };
         let group_of = |batch: &InstanceBatch| {
             if batch.is_dynamic() {
@@ -377,6 +381,7 @@ impl Layout {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
+                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
             };
             if left_out {
                 return None;
@@ -409,7 +414,7 @@ impl Layout {
                     let (mesh, material) = (batch.mesh(), batch.material());
                     key_of(pipeline, mesh, material, group_of(batch), bits, None)
                 }
-                Drawn::Outlined => None,
+                Drawn::Outlined | Drawn::Subsurface => None,
             }
         };
         collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
@@ -556,10 +561,12 @@ impl Layout {
         };
         self.sorted_records_at = self.draws_slot_bytes;
         // A cascade lists at most the scene's rows and the rows of the batches that cast, and the
-        // outline view the scene's rows, as batches take no outlines.
+        // outline and subsurface views the scene's rows, as batches take neither.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
-            Drawn::Casters | Drawn::Outlined => self.scene_rows.saturating_add(batch_rows),
+            Drawn::Casters | Drawn::Outlined | Drawn::Subsurface => {
+                self.scene_rows.saturating_add(batch_rows)
+            }
         };
         self.room = CullRoom {
             rows: listed.saturating_add(fading_words),

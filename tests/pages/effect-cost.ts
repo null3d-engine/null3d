@@ -1,5 +1,5 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact shadows, with
+// ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact shadows, with
 // ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone or
 // ?effect=vignette names it. The effects effect adds ?count= custom effects, 4 by default, to
 // bloom's scene. ?effect=area measures ?count= area lights over the light scenes' floor, 4 by
@@ -9,7 +9,9 @@
 // or a color with ?base=none, with the sun still, or moving in every frame with ?moving. With
 // dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is otherwise the
 // preset's. With fog, the volumetric fog, ?slices= sets the quality setting fogSlices, and
-// ?night draws its night scene of street lamps in place of the low sun. The tone effect is
+// ?night draws its night scene of street lamps in place of the low sun. Subsurface draws the
+// subsurface test's two panels, one of skin, and its ?taps= sets the quality setting
+// subsurfaceSamples. The tone effect is
 // punchy AgX against plain AgX, in bloom's scene with bloom off. The vignette effect draws lit
 // boxes over a background color: with ?fill=covered a wall of them covers the view, else the
 // background covers most of it. ?background=none leaves out its background color.
@@ -46,6 +48,7 @@ const SKETCHES = {
 	ao: './sketches/ao-sketch.ts',
 	tone: './sketches/bloom-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
+	subsurface: './sketches/subsurface-sketch.ts',
 	exposure: './sketches/exposure-sketch.ts',
 	contact: './sketches/contact-shadows-sketch.ts',
 	fog: './sketches/fog-volume-sketch.ts',
@@ -162,7 +165,8 @@ run('effect-cost', async () => {
 		hdr: engine.capabilities.hdr,
 		scale,
 		bloomSize: size === null ? null : Number(size),
-		dofSamples: taps === null ? null : Number(taps),
+		dofSamples: effect === 'dof' && taps !== null ? Number(taps) : null,
+		subsurfaceSamples: effect === 'subsurface' && taps !== null ? Number(taps) : null,
 		exposureMeter: meter,
 		fogSlices: slices === null ? null : Number(slices),
 		night,

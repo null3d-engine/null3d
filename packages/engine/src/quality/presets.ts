@@ -186,6 +186,17 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 16, 22, 43, 71],
 	},
+	// The taps of each step of the subsurface blur, which spreads skin's light under its surface:
+	// across, then down, each over a line of taps around the pixel. High and Ultra blur; Low and
+	// Medium, where phones, tablets, WebGL2 and compatibility mode draw, are 0, which draws no skin
+	// pass and no blur even where materials have a scatter radius. The taps live in a uniform
+	// block, so a change makes no GPU object; a change to or from 0 adds or removes the blur's
+	// passes (D-153).
+	subsurfaceSamples: {
+		presets: [0, 0, 17, 25],
+		changes: 'live',
+		values: [0, 11, 17, 25],
+	},
 	// The size of screen-space reflections' grid, as a share of the render size each way: 0 on Low,
 	// which phones run, where reflective surfaces keep the environment's light. A share above 0 draws
 	// a corner of the same targets, so it changes during play with no new GPU object; a change to or
@@ -496,6 +507,16 @@ export interface QualitySettings {
 	 * changes during play.
 	 */
 	dofSamples: 0 | 16 | 22 | 43 | 71;
+	/**
+	/**
+	 * The taps of each step of the subsurface blur, which spreads the light under the surface of
+	 * materials with a `subsurfaceRadius`, such as skin: 11, 17 or 25, or 0, which draws no blur.
+	 * More taps spread a wide blur more smoothly and cost more. High takes 17 and Ultra 25; Low and
+	 * Medium take 0. The blur needs HDR color: a value above 0 that the page or the sketch gives
+	 * moves compatibility mode from its 8-bit path to HDR color, as bloom does. It changes during
+	 * play.
+	 */
+	subsurfaceSamples: 0 | 11 | 17 | 25;
 	/**
 	 * The size of screen-space reflections' grid, as a share of the render size each way: 0.5,
 	 * 0.25, or 0, which draws no screen-space reflections even when `post.set` turns them on. A

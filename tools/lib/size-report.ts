@@ -571,6 +571,16 @@ export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotl
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 
+/**
+ * The budget for a generated combination table, whose name holds `-combos`: the list of module
+ * addresses for the builds that need several features. The table gains a line set with every
+ * combination that a feature's bits can form, so its uncompressed size grows with the engine's
+ * features while its compressed figure, which is what a page downloads, stays small. The owner
+ * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
+ * past 64 KB; the compressed figures stay at [`LATER_BUDGET`]'s.
+ */
+export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+
 /** A column's name as a problem names it. */
 const COLUMN_NAMES: Readonly<Record<Column, string>> = {
 	raw: 'uncompressed',
@@ -619,7 +629,11 @@ export function budgetProblems(
 		),
 		...later.flatMap(({ name }) => {
 			const size = sizes.get(name);
-			return size ? overBudget(`js/${name}, which loads after the start,`, size, LATER_BUDGET) : [];
+			if (!size) return [];
+			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
+			// own; its compressed figure, which a page downloads, stays within the shared one.
+			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
+			return overBudget(`js/${name}, which loads after the start,`, size, budget);
 		}),
 		...[...sizes].flatMap(([name, size]) =>
 			isFirstUseShaderPart(name)

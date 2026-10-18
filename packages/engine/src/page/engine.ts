@@ -348,10 +348,11 @@ export interface EngineOptions {
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
 	 * until its shaders are built, `'transmission'` with the first material that lets light
-	 * through, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'`
-	 * with the first material of the `weighted` blending, and `'occlusion'` with the first object that
-	 * `setOccluder(true)`
-	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * through, `'translucency'` with the first material that lets light through to its other side,
+	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
+	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
+	 * the first material of the `weighted` blending, and `'occlusion'` with the first object that
+	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
@@ -402,7 +403,8 @@ export interface EngineCapabilities {
 	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
 	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
 	 * averages the samples after the tone mapping. It reports the path that the engine started on:
-	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on.
+	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on,
+	 * and so does a `subsurfaceSamples` setting above 0 that the page or the sketch gives.
 	 */
 	hdr: boolean;
 	/**

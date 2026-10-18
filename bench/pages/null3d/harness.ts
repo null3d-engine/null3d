@@ -78,6 +78,8 @@ export interface Null3dPageOptions {
  * - `extraBox` adds a small box to S1.
  * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into.
  * - `transmission` puts clear water under S1's swarm that lets light through.
+ * - `translucency` makes S1's boxes let light through to their other side.
+ * - `subsurface` adds spheres whose light spreads under their surface and gives the blur its taps.
  * - `ssr` puts a polished floor under S1's swarm with screen-space reflections on.
  * - `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them with `coatSheen=coat` or
  *   `coatSheen=sheen`.
@@ -126,6 +128,8 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
+	'translucency',
+	'subsurface',
 	'ssr',
 	'coatSheen',
 	'weighted',

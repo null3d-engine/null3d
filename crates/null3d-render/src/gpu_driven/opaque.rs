@@ -20,6 +20,10 @@
 //! The outline view's bundle draws the outlined layout's buckets into the outline mask, twice: once
 //! to mark every part of each object, then again to mark the parts that nothing hides. It binds
 //! the outline view's frame uniform through a group of the depth template's layout too.
+//!
+//! The subsurface view's bundle draws the subsurface layout's buckets into the skin pass's target,
+//! with the skin pass's pipelines. They shade with the camera's lights, so the bundle binds the
+//! camera view's frame group, and its own compacted instances and indirect draws.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -193,12 +197,15 @@ pub(super) enum Bundle {
     /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
     /// tiles, whose depth format may differ from the cascades'.
     Tile,
+    /// The subsurface view's objects into the skin pass's target, each bucket with its skin pass
+    /// pipeline and its material's maps, lit through the camera view's frame group.
+    Subsurface,
 }
 
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline | Self::Tile => ids::bundle(view),
+            Self::Opaque | Self::Outline | Self::Tile | Self::Subsurface => ids::bundle(view),
             Self::Prepass => ids::prepass_bundle(view),
         }
     }
@@ -221,10 +228,14 @@ pub(super) fn record_bundle(
     first_draw: u32,
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
-    let frame_group = if kind == Bundle::Prepass {
-        ids::prepass_group(view)
-    } else {
-        ids::frame_group(view)
+    let frame_group = match kind {
+        Bundle::Prepass => ids::prepass_group(view),
+        Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
+        _ => ids::frame_group(view),
+    };
+    let shading_group = match kind {
+        Bundle::Subsurface => frame_group,
+        _ => ids::frame_group(view),
     };
     list.push(
         Op::BeginBundle,
@@ -240,12 +251,13 @@ pub(super) fn record_bundle(
         layout,
         meshes,
         frame_group,
+        shading_group,
         first_draw,
         hidden,
         counts: None,
     };
     match kind {
-        Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
+        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
         Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
         Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
         Bundle::Outline => {
@@ -271,22 +283,27 @@ pub(super) fn record_direct(
     counts: &[u32],
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
-    let frame_group = if kind == Bundle::Prepass {
-        ids::prepass_group(view)
-    } else {
-        ids::frame_group(view)
+    let frame_group = match kind {
+        Bundle::Prepass => ids::prepass_group(view),
+        Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
+        _ => ids::frame_group(view),
+    };
+    let shading_group = match kind {
+        Bundle::Subsurface => frame_group,
+        _ => ids::frame_group(view),
     };
     let draws = Draws {
         view,
         layout,
         meshes,
         frame_group,
+        shading_group,
         first_draw: 0,
         hidden,
         counts: Some(counts),
     };
     match kind {
-        Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
+        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
         Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
         Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
         Bundle::Outline => {
@@ -298,13 +315,14 @@ pub(super) fn record_direct(
 }
 
 /// What a bundle's buckets draw from: the view, its layout and the mesh pages' buffers, the
-/// group that the depth and mask templates read, the first of the view's indirect draws, and,
-/// on the direct-draw path, each bucket's instance count.
+/// group that the depth and mask templates read, the group that shading reads, the first of the
+/// view's indirect draws, and, on the direct-draw path, each bucket's instance count.
 struct Draws<'a> {
     view: ViewId,
     layout: &'a Layout,
     meshes: &'a MeshBuffers,
     frame_group: u32,
+    shading_group: u32,
     first_draw: u32,
     hidden: &'a dyn Fn(u32) -> bool,
     counts: Option<&'a [u32]>,
@@ -326,6 +344,7 @@ impl Draws<'_> {
             layout,
             meshes,
             frame_group,
+            shading_group,
             first_draw,
             hidden,
             counts,
@@ -339,11 +358,7 @@ impl Draws<'_> {
                 continue;
             }
             let own = own_of(bucket);
-            let group = if own {
-                ids::frame_group(view)
-            } else {
-                frame_group
-            };
+            let group = if own { shading_group } else { frame_group };
             if bound != Some(group) {
                 list.push(Op::SetBindGroup, &[0, group, 0])?;
                 bound = Some(group);
