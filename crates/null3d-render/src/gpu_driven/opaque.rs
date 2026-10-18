@@ -336,6 +336,7 @@ pub(super) fn record_pick(
         layout,
         meshes,
         frame_group: ids::frame_group(view),
+        shading_group: ids::frame_group(view),
         first_draw: 0,
         hidden,
         counts,
@@ -343,7 +344,9 @@ pub(super) fn record_pick(
     draws.record(
         list,
         |bucket| bucket.pick,
-        |_| false,
+        // A pick build reads the frame group, and a masked one reads the material's maps too, as
+        // the shading of the same draw does.
+        |_| true,
         |bucket| if bucket.pick_maps { bucket.group } else { 0 },
     )
 }

@@ -13,6 +13,7 @@ interface PickPage {
 	mode: { build: string; jobWorkers: number };
 	picks: {
 		answers: { name: string; expect: string | null; got: string | null }[];
+		rays: { name: string; got: string | null }[];
 		raysCard: string | null;
 	};
 	failures: string[];
@@ -41,7 +42,7 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 		test.setTimeout(120_000);
 		const result = await open(page, tier);
 		expect(result.failures).toEqual([]);
-		expect(result.picks.answers).toEqual(EXPECTED);
+		expect(result.picks.answers, JSON.stringify(result.picks)).toEqual(EXPECTED);
 		// The ray tests the card's triangles, so it finds the card through the hole that the mask
 		// cuts: the ray and the pick answer differently, as they should.
 		expect(result.picks.raysCard).toBe('card');

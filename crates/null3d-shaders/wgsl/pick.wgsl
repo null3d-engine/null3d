@@ -24,6 +24,13 @@
 // offset, and otherwise the scene query answers it with a raycast.
 #import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, relative_position}
 #import null3d::vertex::{mesh_position}
+#ifdef ALPHA_MASK
+#import null3d::mesh::{material_of}
+#endif
+#ifdef MAP
+#import null3d::mesh::{map_layer, map_ready}
+#import null3d::vertex::{mesh_second_uv, mesh_uv}
+#endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_point}
 #endif
@@ -31,10 +38,44 @@
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
 
-/// The vertex attributes that the template reads. The mask's and the material's values are not
-/// needed: the scene's depth already holds where each object draws.
+#ifdef MAP
+// The map's bind group comes after the frame's group, and on WebGL2 after the groups of the draw
+// records and the data textures. A standard material's group holds each map slot beside its
+// sampler, as its shading reads them; an unlit map's group holds the base color map alone.
+#ifdef MATERIAL_MAPS
+#ifdef WEBGL2
+@group(3) @binding(0) var base_map: texture_2d_array<f32>;
+@group(3) @binding(8) var base_sampler: sampler;
+#else
+@group(1) @binding(0) var base_map: texture_2d_array<f32>;
+@group(1) @binding(8) var base_sampler: sampler;
+#endif
+#else
+#ifdef WEBGL2
+@group(3) @binding(0) var base_map: texture_2d_array<f32>;
+@group(3) @binding(1) var base_sampler: sampler;
+#else
+@group(1) @binding(0) var base_map: texture_2d_array<f32>;
+@group(1) @binding(1) var base_sampler: sampler;
+#endif
+#endif
+
+/// The bit of a material's flags for a base color map on the second texture coordinates.
+const SECOND_UV: u32 = 256u;
+#endif
+
+/// The vertex attributes that the template reads: the position, and, for a masked material, what
+/// its mask test needs.
 struct VertexIn {
     @location(0) position: vec3f,
+#ifdef MAP
+    @location(2) uv0: vec2f,
+    /// The second texture coordinates, or the first on a mesh without a second set.
+    @location(3) uv1: vec2f,
+#endif
+#ifdef VERTEX_COLOR
+    @location(5) vertex_color: vec4f,
+#endif
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
@@ -68,22 +109,33 @@ fn pick_color(key: u32) -> vec4f {
     return vec4f(bytes) / 255.0;
 }
 
-/// The vertex's clip position and the source key, which the fragment writes.
+/// The vertex's clip position, the source key that the fragment writes, and, for a masked
+/// material, the values that its mask test needs.
 struct VertexOut {
     @invariant @builtin(position) position: vec4f,
     @location(0) @interpolate(flat, either) key: u32,
+#ifdef ALPHA_MASK
+    @location(1) @interpolate(flat, either) material: u32,
+#endif
+#ifdef MAP
+    /// The first texture coordinates, then the second.
+    @location(2) uv: vec4f,
+#endif
+#ifdef VERTEX_COLOR
+    @location(3) vertex_alpha: f32,
+#endif
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
 #ifdef MORPH
-    // Only the position matters here, so the normal and the tangent enter as zero.
-    let rest = morph_vertex(
-        found,
-        v.morph,
-        Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0)),
-    );
+    // Only the position and the color matter here, so the normal and the tangent enter as zero.
+    var source = Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
     let rest_position = rest.position;
 #else
     let rest_position = mesh_position(v.position);
@@ -96,10 +148,43 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     var out: VertexOut;
     out.position = clip_of(found, relative_position(found, position));
     out.key = pick_key(found);
+#ifdef ALPHA_MASK
+    out.material = found.material;
+#endif
+#ifdef MAP
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
+#endif
+#ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_alpha = rest.color.a;
+#else
+    out.vertex_alpha = v.vertex_color.a;
+#endif
+#endif
     return out;
 }
 
+/// Writes the source key, and keeps no fragment that the material's mask cuts: a masked surface
+/// picks by its mask, as it draws. The map is sampled whether it is ready or not, as sampling
+/// needs the same control flow in every invocation, and a map that is not ready counts as opaque.
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
+#ifdef ALPHA_MASK
+    let m = material_of(in.material);
+    var alpha = m.color.a;
+#ifdef VERTEX_COLOR
+    alpha *= in.vertex_alpha;
+#endif
+#ifdef MAP
+    let second = (u32(m.strengths.z) & SECOND_UV) != 0u;
+    let raw = vec3f(select(in.uv.xy, in.uv.zw, second), 1.0);
+    let uv = vec2f(dot(m.uv_u.xyz, raw), dot(m.uv_v.xyz, raw));
+    let texel = textureSample(base_map, base_sampler, uv, map_layer(m.maps.x));
+    alpha *= select(1.0, texel.a, map_ready(m.maps.x));
+#endif
+    if alpha < m.emissive.w {
+        discard;
+    }
+#endif
     return pick_color(in.key);
 }

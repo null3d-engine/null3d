@@ -865,8 +865,8 @@ impl CpuCulledRenderer {
 
     /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
     /// of every draw are built. A frame that gives false records no read, so the request stays.
-    fn pick_ready(&self, input: &FrameInput<'_>, picking: bool) -> bool {
-        if !picking {
+    fn pick_ready(&self, input: &FrameInput<'_>, requested: bool) -> bool {
+        if !requested {
             return false;
         }
         let pipeline = self.pick.resolve.map(|(id, _)| id);
@@ -1034,6 +1034,8 @@ impl CpuCulledRenderer {
                 shadows,
                 Prepass::Off,
                 &mut self.key_counts,
+                self.graph.pick_targets(),
+                false,
             )?;
         } else {
             self.scattering.clear();
@@ -1546,8 +1548,10 @@ impl CpuCulledRenderer {
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
         // A pick that waits declares the pick's passes for this frame. The request stays until a
-        // frame records its read.
-        let picking = self.settings.picking();
+        // frame records its read, and the passes stay declared for a few frames after it, while
+        // its copy may still wait.
+        let requested = self.settings.picking();
+        let picking = requested || self.pick.keep > 0;
         self.graph.set_picking(picking);
         if self.culling.culled_frame() != input.frame {
             self.cull(input)?;
@@ -1641,10 +1645,17 @@ impl CpuCulledRenderer {
         // The pick's passes are switched on before the graph compiles this frame: a change that
         // follows the compile would leave them out of the plan, and the frame would copy a stale
         // target. A frame whose pick pipelines still build keeps the passes off.
-        let pick_drawing = self.pick_ready(input, picking);
+        let pick_drawing = self.pick_ready(input, requested);
         self.graph.set_picking_draws(pick_drawing);
         self.graph.prepare(list, input.canvas, input.render_scale)?;
         let pick_frame = self.begin_pick(list, input, pick_drawing)?;
+        self.pick.keep = if pick_frame.is_some() {
+            crate::pick::KEEP_FRAMES
+        } else if requested {
+            self.pick.keep
+        } else {
+            self.pick.keep.saturating_sub(1)
+        };
         let graph = &self.graph;
         self.settings
             .set_view_targets(|view| graph.view_target(view), graph.textures_made());
@@ -2349,8 +2360,10 @@ impl FrameBuilder for CpuCulledRenderer {
             .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         // A pick that waits declares the pick's passes, and builds the layout again with their
-        // pipelines, so the frame draws them with the camera's culling.
-        let picking = settings.picking();
+        // pipelines, so the frame draws them with the camera's culling. The passes stay declared
+        // for a few frames after a read, while its copy may still wait.
+        let requested = settings.picking();
+        let picking = requested || self.pick.keep > 0;
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
