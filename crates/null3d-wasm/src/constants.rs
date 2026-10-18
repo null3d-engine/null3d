@@ -152,6 +152,14 @@ pub mod map_slot {
     }
 }
 
+/// The flags of a reflection probe, which `setReflectionProbe` takes.
+pub mod probe_flag {
+    /// The probe projects its reflections onto its box.
+    pub const BOX_PROJECTION: u32 = 1;
+    /// The probe captures again in turns, as long as it exists.
+    pub const ALWAYS: u32 = 2;
+}
+
 /// The flags of an effect that `setEffect` takes, and of a full-screen pass that `addPass` takes.
 pub mod effect_flag {
     /// The effect or the pass reads the scene's depth.
@@ -1132,6 +1140,17 @@ pub fn typescript() -> String {
         (
             "SCENE_PASS",
             &[("MAX", null3d_render::view::MAX_VIEWS as u32 - 1)],
+        ),
+        // Reflection probes: the most a scene has, the views that their captures take while it has
+        // one, and the flags of `setReflectionProbe`.
+        (
+            "REFLECTION_PROBE",
+            &[
+                ("MAX", null3d_render::probes::MAX_PROBES as u32),
+                ("VIEWS", 6),
+                ("BOX_PROJECTION", probe_flag::BOX_PROJECTION),
+                ("ALWAYS", probe_flag::ALWAYS),
+            ],
         ),
         (
             "POST_VALUE",

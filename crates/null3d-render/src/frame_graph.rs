@@ -988,6 +988,10 @@ pub(crate) struct FrameGraph {
     particle_depth_declared: bool,
     /// The textures that the copy reads and draws into, found once for each compile of the graph.
     particle_depth_target: CompileCache<(u32, u32)>,
+    /// The words of the frame's reflection probe filter, which runs after the capture views'
+    /// passes and before the camera's first render pass, or `None` in a frame that captures no
+    /// probe (see [`crate::probes`]).
+    probe_filter: Option<[u32; 10]>,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
@@ -1178,6 +1182,7 @@ impl FrameGraph {
             particle_depth_built: false,
             particle_depth_declared: false,
             particle_depth_target: CompileCache::default(),
+            probe_filter: None,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -4390,6 +4395,11 @@ impl FrameGraph {
         self.first_texture + LAYER_VIEWS + first_view + layer
     }
 
+    /// Sets the frame's reflection probe filter, which [`Self::record`] records.
+    pub(crate) fn set_probe_filter(&mut self, filter: Option<[u32; 10]>) {
+        self.probe_filter = filter;
+    }
+
     /// Records the plan's render and compute passes, then `finish`'s commands after them, such as
     /// copies, then submits them all. The graph records the final pass, and `record` the commands
     /// of each other declared pass. Each render pass clears its color targets to `clear`, except
@@ -4429,6 +4439,9 @@ impl FrameGraph {
             .graph
             .plan()
             .expect("the graph compiled before the frame records");
+        // The camera's passes read the capture views' targets, so the plan orders every capture
+        // pass before them, and the probe's filter runs between.
+        let mut filter = self.probe_filter;
         for step in plan.steps() {
             match step.kind {
                 StepKind::Compute => {
@@ -4451,6 +4464,15 @@ impl FrameGraph {
                         skips(role) || !self.draws(role)
                     }) {
                         continue;
+                    }
+                    let camera = passes.iter().any(|&pass| {
+                        matches!(
+                            self.roles[pass.index()],
+                            Role::Prepass(ViewId::CAMERA) | Role::Opaque(ViewId::CAMERA)
+                        )
+                    });
+                    if camera && let Some(words) = filter.take() {
+                        list.push(Op::ProbeFilter, &words)?;
                     }
                     // A step of passes that a still view's frame swaps for others is left out of the
                     // still comparison whole: its render pass's load operations may differ too.

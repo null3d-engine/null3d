@@ -100,6 +100,8 @@ export interface Null3dPageOptions {
  * - `terrain` puts the terrain add-on's ground under S1, whose blocks follow the camera every frame.
  * - `impostors` puts a field of the impostors add-on's cards around S1, which pick their views from
  *   the camera every frame.
+ * - `reflectionProbes` places two reflection probes over S1, and `reflectionProbes=always`
+ *   captures them again every frame.
  * - `setters` calls each per-frame setter in S1, colors included.
  * - `frames` makes S1 count the frames it steps, which the page publishes for the allocation check.
  */
@@ -135,6 +137,7 @@ const SKETCH_SWITCHES = [
 	'weighted',
 	'particles',
 	'passes',
+	'reflectionProbes',
 	'still',
 	'anim',
 	'inertial',

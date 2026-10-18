@@ -830,6 +830,19 @@ pipelines.sky = { vertex = "vs_main", fragment = "fs_sky" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
+# Reflection probes' maps (D-149): `gather` copies a capture view's image into its face of the
+# probe's chain, `half` makes the chain's smaller levels on WebGPU, and `prefilter` fills one level
+# of the probe's octahedral map, filtered for its roughness as the environment's maps are. It
+# loads on first use, with the environment's generator code, which runs each probe's filter.
+[shaders.probe]
+file = "probe.wgsl"
+first_use = true
+pipelines.gather = { vertex = "vs_main", fragment = "fs_gather" }
+pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
+pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # A texture behind every object, drawn in the camera's opaque pass as one triangle over the whole
 # view at the far plane. Its TONE_MAP builds tone map and encode their color themselves, for the
 # 8-bit path.

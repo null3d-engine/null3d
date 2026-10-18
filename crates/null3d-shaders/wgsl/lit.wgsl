@@ -126,6 +126,7 @@ enable draw_index;
 #ifdef PROBE_GRID
 #import null3d::probe_grid::{has_probe_grid, probe_grid_irradiance}
 #endif
+#import null3d::ibl::{reflected_direction}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #import null3d::ssr::{screen_reflection}
@@ -140,6 +141,9 @@ enable draw_index;
 #import null3d::mesh::{relative_position, world_normal}
 #ifdef CUSTOM
 #import null3d::mesh::{Instance}
+#endif
+#ifndef DECAL
+#import null3d::probes::{has_probes, probe_light}
 #endif
 #ifdef OBJECT_IDS
 #import null3d::mesh::{object_ids}
@@ -1105,11 +1109,58 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 }
 #endif
 
+/// The light around a surface, from the scene's reflection probes and its environment, times the
+/// material's factor of it: the light that it reflects along its view's reflection, and its
+/// irradiance. Probes light the surfaces inside their boxes, and the environment the share that
+/// they leave (null3d::probes).
+struct Surrounding {
+    radiance: vec3f,
+    irradiance: vec3f,
+}
+
+fn probe_surrounding(
+    relative: vec3f,
+    normal: vec3f,
+    to_view: vec3f,
+    roughness: f32,
+) -> Surrounding {
+    let env = engine_frame.environment;
+    var radiance = vec3f(0.0);
+    var irradiance = vec3f(0.0);
+    if has_environment(env) {
+        radiance = environment_radiance(env, to_view, normal, roughness);
+        irradiance = environment_irradiance(env, normal);
+    }
+    // A decal modulates the surface under it, which reflects the probes already, so the decal
+    // build reads none: that keeps its fragment stage within WebGL2's texture units.
+#ifndef DECAL
+    if has_probes() {
+        let reflected = reflected_direction(to_view, normal, roughness);
+        let local = probe_light(relative, reflected, normal, roughness);
+        radiance = local.radiance + radiance * (1.0 - local.weight);
+        irradiance = local.irradiance + irradiance * (1.0 - local.weight);
+    }
+#endif
+    let strength = material_row.uv_u.w;
+    return Surrounding(radiance * strength, irradiance * strength);
+}
+
+/// True when a surface has light around it to read: the environment's, the probes', or both. A
+/// decal reads no probes, since it modulates the surface under it, which reflects them already.
+fn has_surrounding() -> bool {
+#ifdef DECAL
+    return has_environment(engine_frame.environment);
+#else
+    return has_environment(engine_frame.environment) || has_probes();
+#endif
+}
+
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
-/// hemisphere lights, `extra` irradiance such as a light map's, and the environment's light times
-/// the material's factor of it. The environment's light adds to the ambient and hemisphere lights,
-/// as three.js adds it, and neither its intensity nor the material's factor scales them.
+/// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
+/// reflection probes and the environment, times the material's factor of it. That light adds to
+/// the ambient and hemisphere lights, as three.js adds the environment's, and neither its
+/// intensity nor the material's factor scales them.
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
 /// light also fades where the shading `normal` reflects the view below the mesh's own
@@ -1118,9 +1169,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
 /// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
-/// the environment's reflection, with or without an environment. In the TRANSLUCENCY builds the
-/// lights also gather the light that reaches the surface's back, and the ambient, hemisphere and
-/// environment light from behind goes to `back_indirect`.
+/// the reflection probes' and the environment's reflection, with or without either. In the
+/// TRANSLUCENCY builds the lights also gather the light that reaches the surface's back, and the
+/// ambient, hemisphere and environment light from behind goes to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -1188,14 +1239,14 @@ fn light_surface(
     let env = engine_frame.environment;
     let mirrored = saturate(reflection.a);
 #ifdef PROBE_GRID
-    if has_environment(env) || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
+    if has_surrounding() || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
 #else
-    if has_environment(env) || mirrored > 0.0 {
+    if has_surrounding() || mirrored > 0.0 {
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
-        var irradiance = environment_irradiance(env, normal) * strength;
-        let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
-        let radiance = mix(surrounding, reflection.rgb, mirrored);
+        let around = probe_surrounding(relative, normal, to_view, m.roughness);
+        var irradiance = around.irradiance;
+        let radiance = mix(around.radiance, reflection.rgb, mirrored);
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
 #ifdef PROBE_GRID
         if has_probe_grid(engine_frame.probe_grid) {

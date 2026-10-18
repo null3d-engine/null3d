@@ -452,6 +452,14 @@ const DOCS = {
 		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
 		since: '0.2',
 	},
+	E1430: {
+		title: 'Too many reflection probes',
+		cause:
+			"scene.createReflectionProbe() would make a 17th reflection probe, and a scene has at most 16. Or the scene's first probe needs 6 views of the scene for its captures. The scene and its passes share 32 views, and its passes left fewer than 6.",
+		example:
+			'E1430: scene.createReflectionProbe() would make reflection probe 17; a scene has at most 16.',
+		since: '0.2',
+	},
 	E1431: {
 		title: "Area lights' tables missing",
 		cause:

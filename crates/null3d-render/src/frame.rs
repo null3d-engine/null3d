@@ -65,6 +65,7 @@ use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::probe_grid::{ProbeGrid, ProbeGridUniform};
 use crate::probe_shading::ProbeShading;
+use crate::probes::{ProbeError, ProbeList, ProbeSettings, Probes};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
@@ -940,6 +941,12 @@ pub struct SceneSettings {
     probe_shading: ProbeShading,
     /// The environment maps of the scene's sky.
     sky_maps: SkyMaps,
+    /// The scene's reflection probes.
+    probes: Probes,
+    /// The six capture views of reflection probes, by face, while the scene has a probe.
+    probe_views: Option<[ViewId; 6]>,
+    /// The frame whose probe capture the views were set up for.
+    probe_frame: Option<u32>,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
@@ -1080,6 +1087,9 @@ impl SceneSettings {
             probe_grid: None,
             probe_shading: ProbeShading::default(),
             sky_maps: SkyMaps::default(),
+            probes: Probes::default(),
+            probe_views: None,
+            probe_frame: None,
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
             effect_joins: EffectJoins::default(),
@@ -1711,6 +1721,70 @@ impl SceneSettings {
 
     pub fn sky_maps_mut(&mut self) -> &mut SkyMaps {
         &mut self.sky_maps
+    }
+
+    /// The scene's reflection probes.
+    pub fn probes(&self) -> &Probes {
+        &self.probes
+    }
+
+    pub fn probes_mut(&mut self) -> &mut Probes {
+        &mut self.probes
+    }
+
+    /// Sets the reflection probe of `slot`, from 0, adding it when the slot is empty. The first
+    /// probe adds the six capture views, and fails when the view list has no room for them.
+    pub fn set_probe(&mut self, slot: usize, settings: ProbeSettings) -> Result<(), ProbeError> {
+        if slot >= crate::probes::MAX_PROBES {
+            return Err(ProbeError::BadSlot);
+        }
+        if self.probe_views.is_none() {
+            let size = self.probes.face_size();
+            let mut added = [ViewId::CAMERA; 6];
+            for (face, place) in added.iter_mut().enumerate() {
+                match self.add_view(View::probe_face(face as u8, size)) {
+                    Some(view) => *place = view,
+                    None => {
+                        for &view in &added[..face] {
+                            self.remove_view(view);
+                        }
+                        return Err(ProbeError::NoViews);
+                    }
+                }
+            }
+            self.probe_views = Some(added);
+        }
+        self.probes.set(slot, settings)
+    }
+
+    /// Removes the reflection probe of `slot`. The last probe takes the capture views with it.
+    pub fn remove_probe(&mut self, slot: usize) {
+        self.probes.remove(slot);
+        if !self.probes.any()
+            && let Some(views) = self.probe_views.take()
+        {
+            for view in views {
+                self.remove_view(view);
+            }
+        }
+    }
+
+    /// Sets the texels across each probe map's largest level, from the next frame on.
+    pub fn set_probe_size(&mut self, size: u32) {
+        self.probes.set_size(size);
+        let face = self.probes.face_size();
+        for view in self.probe_views.into_iter().flatten() {
+            self.views[view.index()].target_mut().size = Some((face, face));
+        }
+    }
+
+    /// A view's list of reflection probes for its frame `frame`.
+    pub(crate) fn probe_list(&self, view: ViewId, frame: &ViewFrame) -> ProbeList {
+        let capture = self
+            .views
+            .get(view.index())
+            .is_some_and(|view| view.captured_face().is_some());
+        self.probes.list(&frame.camera, &frame.frustum, capture)
     }
 
     /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
@@ -2395,6 +2469,31 @@ impl SceneSettings {
         }
     }
 
+    /// Picks the reflection probe that captures in frame `frame`, and switches the capture views
+    /// on for it, or off. A builder calls it once a frame, before it culls the views: a WebGL2
+    /// builder's job workers cull before the frame records. Later calls in the same frame change
+    /// nothing.
+    pub(crate) fn prepare_probe_capture(&mut self, frame: u32) {
+        let Some(views) = self.probe_views else {
+            return;
+        };
+        if self.probe_frame == Some(frame) {
+            return;
+        }
+        self.probe_frame = Some(frame);
+        let code = self.probes.generator();
+        self.probes
+            .pick_capture(code.is_some_and(|id| self.textures.has_arrived(id)));
+        let capturing = self.probes.capturing();
+        for view in views {
+            let view = &mut self.views[view.index()];
+            view.target_mut().enabled = capturing.is_some();
+            if let Some(probe) = capturing {
+                view.set_layers(probe.layers);
+            }
+        }
+    }
+
     /// True when a view draws the scene's background behind its objects: the camera's view, each
     /// mirror view, whose image shows the sky as a mirror does, and each other view of a scene
     /// that clears to the camera's color, as a three.js render target shows the scene's
@@ -2403,6 +2502,7 @@ impl SceneSettings {
         view == ViewId::CAMERA
             || self.views.get(view.index()).is_some_and(|view| {
                 view.mirrored().is_some()
+                    || view.captured_face().is_some()
                     || (view.fullscreen_pass().is_none() && view.target().clear.is_none())
             })
     }
@@ -2440,7 +2540,8 @@ impl SceneSettings {
     pub(crate) fn mark_shown_views(&mut self) {
         let shown = self.textures.shown_views();
         for (index, view) in self.views.iter_mut().enumerate().skip(1) {
-            view.target_mut().shown = shown & (1 << index) != 0;
+            let capture = view.captured_face().is_some();
+            view.target_mut().shown = capture || shown & (1 << index) != 0;
         }
     }
 
@@ -2463,6 +2564,9 @@ impl SceneSettings {
             self.textures
                 .set_pass_target(index as u32, target_of(view), remade);
         }
+        if let Some(views) = self.probe_views {
+            self.probes.set_faces(views.map(&target_of));
+        }
     }
 
     /// True when a view may draw in the next frame: the camera's view, and any other view that is
@@ -2483,7 +2587,7 @@ impl SceneSettings {
                 .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
             && drawn.target().draws()
-            && (self.textures.shown_views() & bit != 0 || read)
+            && (self.textures.shown_views() & bit != 0 || read || drawn.captured_face().is_some())
     }
 
     /// The views whose targets each view may not show, as a mask of view places, by view: for a
@@ -3052,12 +3156,21 @@ impl SceneSettings {
             _ => (canvas, self.pixel_ratio),
         };
         let aspect = pixels.0 as f32 / pixels.1.max(1) as f32;
-        let camera = match view.mirrored() {
-            Some(mirror) => {
+        let camera = match (view.mirrored(), view.captured_face()) {
+            (Some(mirror), _) => {
                 let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
                 mirror.transform(scene, parity, camera, &lens, aspect)?
             }
-            None => view.transform(scene, parity, aspect)?,
+            (None, Some(face)) => {
+                let probe = self.probes.capturing()?;
+                let (_, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+                let far = match lens {
+                    Lens::Perspective(lens) => lens.far,
+                    Lens::Orthographic(lens) => lens.far,
+                };
+                crate::probes::face_transform(probe.capture, usize::from(face), far)
+            }
+            (None, None) => view.transform(scene, parity, aspect)?,
         };
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
         let (width, height) = (width as f32, height as f32);

@@ -1542,6 +1542,19 @@ impl TextureStore {
         self.frames_taken = frames_taken;
     }
 
+    /// Takes the next image id for a generator whose code the thread that draws runs on textures
+    /// that the store does not hold, such as the reflection probes' maps. The caller sends the
+    /// generator under that id, in the order of the ids, as it sends images.
+    pub fn take_image_id(&mut self) -> u32 {
+        self.last_image = next_frame(self.last_image);
+        self.last_image
+    }
+
+    /// True once the thread that draws holds the image or generator of id `id`.
+    pub fn has_arrived(&self, id: u32) -> bool {
+        id != 0 && !frame_after(id, self.arrived)
+    }
+
     /// The last image id handed out, or 0 before the first.
     pub fn images_sent(&self) -> u32 {
         self.last_image

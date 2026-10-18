@@ -548,10 +548,10 @@
       "category": "Cameras",
       "three": "CubeCamera (dynamic reflections)",
       "status": "changed",
-      "since": "0.3",
-      "target": "A static environment map, or a reflection pass for a flat mirror: render.addPass({ kind: 'reflection', writes, plane }) (0.2)",
-      "notes": "Not built yet. In step 0.3, a reflection probe captures the scene again when the sketch asks, which is what CubeCamera.update does. Until then, use the target.",
-      "docs": "porting/threejs-unsupported",
+      "since": "0.2",
+      "target": "scene.createReflectionProbe({ box: { min, max }, position, refresh: 'always' }); a reflection pass for a flat mirror: render.addPass({ kind: 'reflection', writes, plane })",
+      "notes": "A CubeCamera with a WebGLCubeRenderTarget, filtered by PMREMGenerator and set as a material's envMap, becomes a reflection probe. The probe captures the scene from its position on the GPU and filters it for each roughness. It lights every surface inside its box, not one material, and its box projects the reflections, so walls reflect at their own distance. Give the probe a box around the space that the object moves in. boxProjection: false reads it as three.js reads a cube map, as light from far away. cubeCamera.update() in every frame becomes refresh: 'always'; one update after a change becomes probe.capture(). The near and far of the CubeCamera fall away: captures draw from 5 cm out to the camera's far plane. Leave the reflecting object out of its own probe's captures with layers.",
+      "docs": "api/scene",
       "detect": "\\bCubeCamera\\b"
     },
     {

@@ -290,6 +290,11 @@ export const PASS_SOURCE_OUTLINE_MASK = 2;
 
 export const SCENE_PASS_MAX = 31;
 
+export const REFLECTION_PROBE_MAX = 16;
+export const REFLECTION_PROBE_VIEWS = 6;
+export const REFLECTION_PROBE_BOX_PROJECTION = 1;
+export const REFLECTION_PROBE_ALWAYS = 2;
+
 export const POST_VALUE_EXPOSURE = 0;
 export const POST_VALUE_BLOOM_INTENSITY = 1;
 export const POST_VALUE_BLOOM_THRESHOLD = 2;

@@ -666,6 +666,14 @@ export class Textures {
 	}
 
 	/**
+	 * @internal Sends the generator that runs reflection probes' filters under image id `id`, which
+	 * the engine core gave, so the thread that draws loads the generators' code.
+	 */
+	sendProbeGenerator(id: number): void {
+		this.send(id, 'probes');
+	}
+
+	/**
 	 * @internal Makes a cube texture that `fromGenerator` made for the sky a map of the scene's
 	 * sky, which refreshes in `stages` stages, after `defaults` wrote the sky's defaults into the
 	 * background's block of values where no sky background wrote its own.
