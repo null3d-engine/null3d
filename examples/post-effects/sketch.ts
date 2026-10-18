@@ -7,36 +7,12 @@
 // pink lamp, and the bloom, the shading and the reflections in the puddles follow.
 import { defineSketch, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { LENS_WGSL } from '../lib/lens';
 import { enableReflections } from '../lib/ssr';
 import { COOL, grade, WARM } from './grades';
 
 /** Seconds that each color grading table shows. */
 const STEP = 3;
-
-// The lens grade: a fringe toward the edges, an anamorphic streak on the brightest light, and grain
-// that changes at the film rate rather than the frame rate.
-const lens = /* wgsl */ `
-#import null3d::noise::{random2}
-
-struct Uniforms { shift: f32, streak: f32, grain: f32 }
-
-fn effect(input: EffectInput) -> vec4f {
-    let toward = (input.uv - vec2f(0.5)) * uniforms.shift / input.size;
-    let red = effectColor(input.uv + toward).r;
-    let blue = effectColor(input.uv - toward).b;
-    var color = vec3f(red, input.color.g, blue);
-    var glow = vec3f(0.0);
-    for (var i = 1; i <= 5; i++) {
-        let across = vec2f(f32(i) * 3.0 / input.size.x, 0.0);
-        glow += max(effectColor(input.uv - across).rgb - vec3f(1.0), vec3f(0.0));
-        glow += max(effectColor(input.uv + across).rgb - vec3f(1.0), vec3f(0.0));
-    }
-    color += glow / 10.0 * uniforms.streak * vec3f(0.45, 0.65, 1.0);
-    let seeded = input.pixel + vec2f(floor(input.time * 24.0) * 37.0, 0.0);
-    color *= 1.0 + (random2(seeded) - 0.5) * uniforms.grain;
-    return vec4f(color, input.color.a);
-}
-`;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, time } = ctx;
@@ -53,7 +29,7 @@ export default defineSketch(async (ctx) => {
 		dof: { aperture: 1.4, focusPoint: [-0.3, 0.35, -1.45] },
 		ssr: { maxDistance: 24, thickness: 0.6 },
 	});
-	post.addEffect({ wgsl: lens, uniforms: { shift: 6, streak: 0.25, grain: 0.05 } });
+	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0.25, grain: 0.05 } });
 	scene.setBackground('#05060a');
 	scene.setFog({ color: '#0a0c14', density: 0.03 });
 	const camera = scene.createPerspectiveCamera({ fov: 45 });

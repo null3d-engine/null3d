@@ -310,6 +310,27 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
+### The Battle and Factory upgrades for both comparisons (M2-EX43, 18 October 2026)
+
+Both comparisons took the Rive City study's touches ([D-172](decisions/D-172-rive-city-follow-ups.md)). A comparison draws one description in both engines and holds one frame for each, so every touch draws the same content in both halves. The lens grade and the scorch marks are switches, on in both halves or off in both.
+
+Battle:
+
+- A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the linear light before bloom and tone mapping in both engines. null3D uses its custom effect. three.js uses a shader pass on WebGLRenderer, or a TSL node on WebGPURenderer.
+- Smoke takes the fire's light at its base, so the smoke at a blast or a burning wreck turns warm. Each tracer carries a small bright glint, which the lens grade streaks. Both engines draw these colors from one set of sprite rows.
+- Scorch marks cover the craters and the burnt wrecks. null3D's decal material projects a box onto the terrain, and three.js's `DecalGeometry` projects a mesh onto the same terrain. Both take one map, made in code. The decal's angle fade keeps the mark off vertical surfaces such as legs and walls. three.js projects its marks when the worker builds the scene, which adds a moment to the page's start.
+- The light shafts stay out. null3D's shafts are a volumetric pass through the sun's shadow map. three.js's worker draws no such pass, and cones would approximate a different effect. Flying traffic and rooms behind windows belong to Night town and the instances demo by D-172.
+
+Factory:
+
+- The hall powers up in a wave from its middle. The spot lights, lenses, cones of haze, floor lines, warning lamps and status screens follow one shared function of the simulation time. Both engines read the same function. The held frame at 6 seconds is fully on.
+- Six status screens hang under the spot lights. One texture, drawn in code, shows a parts count, load bars, cell lamps and a warning strip behind the LCD's red, green and blue stripes. Both engines show it as an emissive map.
+- Each spot light draws a cone of haze. One open cone mesh fades from the lens to the floor through its vertex colors. A surface function in null3D and a shader or node material in three.js fade it where its surface turns away from the camera. Both add its light.
+- Three pooled point lights flash where the arms grip and release. Both engines place them and set their intensity from one shared function.
+- The screen-space reflections stay out. Battle's ground is not planar, and the worker has no screen-space path. Factory's floor could mirror the hall. The task does not name it. A second view of thousands of parts would change the draw cost that the published ramps measure.
+
+Against the old pictures the drawn ones differ in 3.8% to 5.8% of their pixels for the Battle tests. They differ in 7.6% to 12.8% of their pixels for the Factory tests, against the limit of 0.1%. The references moved in both sets. The image tests' time limit rose to 600 seconds for both comparisons, because the lens grade and the decals cost the software GPU more.
+
 ### The stats panel of three.js
 
 `examples/lib/stats-three.ts` measures three.js as the engine's overlay measures null3D, and shows the figures in the same panel, `StatsPanel` from `@null3d/engine/stats`. The worker times its frames, splits each into the scene's code and three.js's render calls, and counts draws, triangles and instances through `renderer.info`. The GPU time comes from WebGL2's timer queries or WebGPURenderer's timestamps, where the page starts with the panel open. The page adds its own heap and the whole page's memory with the overlay's calls. three.js reports no GPU bytes, so the card leaves those out and names the counts of geometries and textures in its last line.

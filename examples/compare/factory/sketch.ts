@@ -25,7 +25,9 @@ import {
 	type Material,
 	type Mesh,
 	type MeshGeometry,
+	type PointLight,
 	quat,
+	type SpotLight,
 	type StandardValues,
 	type Texture,
 } from '@null3d/engine';
@@ -39,7 +41,10 @@ import {
 	sampleCameraLoop,
 	surfaceMaps,
 } from '../../lib/compare-scene';
+import { LENS_WGSL } from '../../lib/lens';
 import { SIGNATURE_MESSAGE } from '../scene-signature';
+import { CONE_STRENGTH, CONE_WGSL } from './cone';
+import { panelTexture } from './panels';
 import { type FactoryRows, poseFactoryRows } from './pose';
 import {
 	ARM_PARENT,
@@ -61,13 +66,21 @@ import {
 	factoryCells,
 	factoryMeshes,
 	GRIP_POINT,
+	hallPower,
 	JOINTS,
 	lampIntensity,
+	PANEL_SIZE,
+	PANEL_VARIANTS,
+	PANELS,
+	panelRotation,
 	SPARK_COUNT,
+	SPARK_LIGHT,
+	SPARK_LIGHT_COUNT,
 	SPOT_POSITIONS,
 	STILL_PART,
 	SURFACE_SIZE,
 	setActiveCells,
+	sparkFlashes,
 	sparkPosition,
 	stepFactory,
 	stillPartLocal,
@@ -98,6 +111,11 @@ const STILL_MESHES = [
 	['line', STILL_PART.line],
 	['lamp', STILL_PART.lamp],
 ] as const;
+
+/** The custom value that a cone of haze takes: its light at the power-on wave's level. */
+interface ConeValue {
+	setUniform(name: 'strength', value: number): void;
+}
 
 /** One way of building the cells: it shows a count of cells and poses them each frame. */
 interface Cells {
@@ -141,6 +159,7 @@ export default defineSketch(
 			},
 			ao: effects.ao && { radius: look.ao.radius, intensity: look.ao.intensity },
 		});
+		if (effects.lens) post.addEffect({ wgsl: LENS_WGSL, uniforms: look.lens });
 		if (effects.grade) {
 			const table = gradeTable(look.grade);
 			const data = Float32Array.from(
@@ -156,7 +175,8 @@ export default defineSketch(
 		});
 		scene.createAmbientLight(look.ambient);
 		const { spot } = look;
-		for (const [x, y, z] of SPOT_POSITIONS) {
+		// The lights that the power-on wave raises, kept in place order.
+		const spots: SpotLight[] = SPOT_POSITIONS.map(([x, y, z]) =>
 			scene.createSpotLight({
 				position: [x, y - 0.05, z],
 				target: [x, 0, z],
@@ -168,8 +188,8 @@ export default defineSketch(
 				decay: spot.decay,
 				castShadows: effects.shadows,
 				shadow: { bias: spot.bias, normalBias: spot.normalBias },
-			});
-		}
+			}),
+		);
 
 		// Meshes and surfaces, from the shared description.
 		const data = factoryMeshes(capacity);
@@ -179,6 +199,7 @@ export default defineSketch(
 				normals: mesh.normal,
 				uvs: mesh.uv,
 				indices: mesh.index,
+				...(mesh.color ? { colors: mesh.color } : {}),
 			});
 		const maps = new Map<SurfaceKind, { color: Texture; orm: Texture; normal: Texture }>();
 		const surface = (kind: SurfaceKind) => {
@@ -239,15 +260,96 @@ export default defineSketch(
 			receiveShadows: effects.shadows,
 		});
 
-		// The hall: the floor, and a housing with a glowing lens over each spot light.
-		scene.createMesh({ ...part('floor'), ...shadows('floor') });
-		for (const [x, y, z] of SPOT_POSITIONS) {
-			scene.createMesh({ ...part('housing'), position: [x, y, z] });
-			scene.createMesh({ ...part('lens'), position: [x, y - 0.01, z] });
-		}
-
+		// The hall: the floor, a housing with a glowing lens and a cone of haze over each spot light,
+		// and a status screen under each light.
 		const position = new Float64Array(3);
 		const rotation = new Float64Array(4);
+		scene.createMesh({ ...part('floor'), ...shadows('floor') });
+		const lensMaterials: Material<StandardValues>[] = [];
+		const coneMaterials: Material[] = [];
+		const coneMesh = part('cone').mesh;
+		for (const [x, y, z] of SPOT_POSITIONS) {
+			scene.createMesh({ ...part('housing'), position: [x, y, z] });
+			const lens = materials.standard({
+				color: '#000000',
+				roughness: 1,
+				metalness: 0,
+				emissive: FACTORY_MATERIALS.lens.emissive,
+				emissiveIntensity: 0,
+			});
+			lensMaterials.push(lens);
+			scene.createMesh({ mesh: part('lens').mesh, material: lens, position: [x, y - 0.01, z] });
+			const cone = materials.shader({
+				wgsl: CONE_WGSL,
+				color: '#000000',
+				vertexColors: true,
+				alphaMode: 'blend',
+				blending: 'additive',
+				depthWrite: false,
+				doubleSided: true,
+				uniforms: { strength: 0 },
+			});
+			coneMaterials.push(cone);
+			scene.createMesh({ mesh: coneMesh, material: cone, position: [x, y - 0.05, z] });
+		}
+		// The screens: an emissive texture drawn in code, behind a dark frame. The screen sits just
+		// in front of the frame along the panel's own axis.
+		const panelMaps = Array.from({ length: PANEL_VARIANTS }, (_, variant) => {
+			const texels = panelTexture(variant);
+			return textures.fromData({
+				width: texels.size,
+				height: texels.size,
+				data: texels.data,
+				colorSpace: texels.colorSpace,
+				mipmaps: true,
+				anisotropy: 8,
+			});
+		});
+		const panelMaterials: Material<StandardValues>[] = [];
+		for (const place of PANELS) {
+			const turn = rotation;
+			panelRotation(place, turn);
+			const qx = turn[0] as number;
+			const qy = turn[1] as number;
+			const qz = turn[2] as number;
+			const qw = turn[3] as number;
+			// The panel's +Z, which faces the middle of the hall and tips down.
+			const fx = 2 * (qx * qz + qw * qy);
+			const fy = 2 * (qy * qz - qw * qx);
+			const fz = 1 - 2 * (qx * qx + qy * qy);
+			scene.createMesh({
+				...part('panelFrame'),
+				position: [place.x, place.y, place.z],
+				rotation: [qx, qy, qz, qw],
+			});
+			// A box's texture coordinates run in meters, so the screen's map takes one texel across its
+			// side rather than one for each meter.
+			const screen = materials.standard({
+				color: '#000000',
+				roughness: 1,
+				metalness: 0,
+				emissive: '#ffffff',
+				emissiveMap: panelMaps[place.variant] as Texture,
+				emissiveIntensity: 0,
+				uvTransform: { repeat: [1 / PANEL_SIZE, 1 / PANEL_SIZE] },
+			});
+			panelMaterials.push(screen);
+			scene.createMesh({
+				mesh: part('panel').mesh,
+				material: screen,
+				position: [place.x + fx * 0.05, place.y + fy * 0.05, place.z + fz * 0.05],
+				rotation: [qx, qy, qz, qw],
+			});
+		}
+		const sparkLights: PointLight[] = Array.from({ length: SPARK_LIGHT_COUNT }, () =>
+			scene.createPointLight({
+				color: SPARK_LIGHT.color,
+				intensity: 0,
+				range: SPARK_LIGHT.range,
+				decay: SPARK_LIGHT.decay,
+				position: [0, -10, 0],
+			}),
+		);
 
 		/** The scene-graph mode: a tree of objects per cell, made and destroyed with the count. */
 		const sceneGraph = (): Cells => {
@@ -526,9 +628,10 @@ export default defineSketch(
 		const cameraTarget = new Float64Array(3);
 		const cameraRotation = quat.create();
 		const lamp = part('lamp').material;
+		const line = part('line').material;
 		const belt = part('belt').material;
-		const lampSet = { emissiveIntensity: 0 };
 		const beltSet = { uvTransform: { offset: [0, 0] as [number, number] } };
+		const flashRows = new Float32Array(SPARK_LIGHT_COUNT * 4);
 		let steps = 0;
 
 		const writeSparks = (seconds: number) => {
@@ -550,8 +653,39 @@ export default defineSketch(
 			const seconds = steps * SIM_STEP;
 			cells.pose();
 			writeSparks(seconds);
-			lampSet.emissiveIntensity = lampIntensity(seconds);
-			lamp.set(lampSet);
+			// The hall wakes in a wave from the middle: each light and glowing surface follows the
+			// power at its own place, and the parts of every cell follow the middle's.
+			for (let i = 0; i < SPOT_POSITIONS.length; i++) {
+				const [x, , z] = SPOT_POSITIONS[i] as readonly [number, number, number];
+				const power = hallPower(seconds, x, z);
+				(spots[i] as SpotLight).setIntensity(spot.intensity * power);
+				(lensMaterials[i] as Material<StandardValues>).setUniform('emissiveIntensity', 8 * power);
+				(coneMaterials[i] as unknown as ConeValue).setUniform('strength', CONE_STRENGTH * power);
+			}
+			for (let i = 0; i < PANELS.length; i++) {
+				const place = PANELS[i] as (typeof PANELS)[number];
+				(panelMaterials[i] as Material<StandardValues>).setUniform(
+					'emissiveIntensity',
+					2.2 * hallPower(seconds, place.x, place.z),
+				);
+			}
+			const centre = hallPower(seconds, 0, 0);
+			lamp.setUniform('emissiveIntensity', lampIntensity(seconds) * centre);
+			line.setUniform('emissiveIntensity', 2.5 * centre);
+			const flashes = sparkFlashes(state, flashRows);
+			for (let i = 0; i < SPARK_LIGHT_COUNT; i++) {
+				const light = sparkLights[i] as PointLight;
+				if (i < flashes) {
+					light.setPosition(
+						flashRows[i * 4] as number,
+						flashRows[i * 4 + 1] as number,
+						flashRows[i * 4 + 2] as number,
+					);
+					light.setIntensity(flashRows[i * 4 + 3] as number);
+				} else {
+					light.setIntensity(0);
+				}
+			}
 			beltSet.uvTransform.offset[0] = -beltOffset(seconds);
 			belt.set(beltSet);
 			sampleCameraLoop(FACTORY_CAMERA, seconds, cameraPosition, cameraTarget);

@@ -80,9 +80,11 @@ export interface Comparison {
 	threeRenderers?: Partial<Record<CompareMode, 'webgl' | 'webgpu'>>;
 }
 
-/** The effects of a scene with no reflections and no particles. */
+/** The effects of a scene with no reflections, particles, lens grade or decals. */
 const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', 'grade'];
-/** Night town's effects: every one. */
+/** A scene with the lens grade on its light. */
+const LENS_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens'];
+/** Night town's effects: every one it draws. */
 const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'reflections', 'particles'];
 
 export const COMPARISONS: readonly Comparison[] = [
@@ -102,7 +104,7 @@ export const COMPARISONS: readonly Comparison[] = [
 		ramps: BATTLE_RAMPS,
 		hold: BATTLE_HOLD,
 		swiftShaderHoldCount: 120,
-		holdTimeoutSeconds: 240,
+		holdTimeoutSeconds: 600,
 		objectsAt: battleObjects,
 		shadowTiles: 0,
 		modes: {
@@ -116,11 +118,14 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Each engine draws each effect its own way: null3D's generated sky and its environment light, cascaded sun shadows, height fog, bloom chain, ambient occlusion and grading table; three.js's Sky with its light through PMREMGenerator, the CSM add-on or the CSM shadow node, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
 			'Smoke, fire, sparks and muzzle flashes are sprites: a sprite batch in null3D, which sorts the smoke from back to front, and an instanced quad that faces the camera in three.js, which does not sort it.',
 			"Grass and flags sway, and the wrecks' embers glow, through custom materials: WGSL surface and vertex functions in null3D, GLSL added to MeshStandardMaterial on WebGLRenderer, and node materials on WebGPURenderer.",
+			'Smoke takes the firelight at its base, and each tracer carries a bright glint, in the shared sprite rows that both engines draw.',
+			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
+			'Scorch marks lie over the craters and the burnt wrecks: null3D projects them with its decal material, and three.js with DecalGeometry, over the same terrain and the same maps.',
 		],
 		assets:
 			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
 		threeRenderers: { instanced: 'webgpu' },
-		effects: PLAIN_EFFECTS,
+		effects: [...LENS_EFFECTS, 'decals'],
 		fasterThree: 'webgl',
 	},
 	{
@@ -138,6 +143,7 @@ export const COMPARISONS: readonly Comparison[] = [
 			}),
 		ramps: FACTORY_RAMPS,
 		hold: FACTORY_HOLD,
+		holdTimeoutSeconds: 600,
 		objectsAt: factoryObjects,
 		shadowTiles: SPOT_COUNT,
 		modes: {
@@ -150,8 +156,12 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Each engine draws each effect its own way: null3D's shadow atlas, height fog, bloom chain, ambient occlusion and grading table, and three.js's spot light shadow maps, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
 			"Bloom is set once, as UnrealBloomPass's settings. The bloom node takes three times the strength, and null3D's bloom chain takes the mapped settings for the same glow.",
 			'Ambient occlusion darkens only the ambient light in null3D and with the GTAO node. GTAOPass on WebGLRenderer darkens the whole image, so that path looks a little darker where parts meet.',
+			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
+			'The hall powers up in a wave from its middle. The spot lights, lenses, cones of haze, floor lines, warning lamps and status screens follow one shared function in both engines.',
+			'The status screens under the spot lights show one texture drawn in code, as an emissive map in both engines.',
+			'Each spot light shows a cone of haze: one vertex-colored mesh drawn with additive blending in both engines. Three pooled point lights flash where the arms grip and release; three.js shades them in every pixel, and null3D clusters them.',
 		],
-		effects: PLAIN_EFFECTS,
+		effects: LENS_EFFECTS,
 		fasterThree: 'webgl',
 	},
 	{
