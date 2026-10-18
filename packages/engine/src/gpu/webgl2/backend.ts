@@ -2853,18 +2853,9 @@ export class WebGL2Backend {
 		this.useMeshVertexArray();
 		this.prepareDraw(0);
 		const mode = (this.current as Pipeline).mode;
-		if (count === 1) {
-			// One draw needs no arrays. Its gl_DrawID is 0 either way, so it reads the same record.
-			this.gl.drawElementsInstanced(
-				mode,
-				ints[counts] as number,
-				this.indexType,
-				ints[offsets] as number,
-				ints[instances] as number,
-			);
-			this.countDraw(ints[counts] as number, ints[instances] as number);
-			return;
-		}
+		// Even one draw takes the multi-draw call: a plain draw leaves gl_DrawID undefined, and a
+		// build that reads it for its draw record would read another record's data. The call
+		// defines it as the draw's place, 0 for the first.
 		if (this.drawLists.length < 3 * count) this.drawLists = new Int32Array(3 * count);
 		const lists = this.drawLists;
 		let drawn = 0;
