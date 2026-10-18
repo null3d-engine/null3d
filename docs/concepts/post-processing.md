@@ -347,6 +347,18 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 - The dither comes after every other step, so no later step shrinks it. In the dark corners of a vignette, where bands show first, it keeps its full step.
 - On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table.
 
+## Still-camera accumulation
+
+When nothing in the view changes, the engine sharpens the picture and then stops drawing. Each frame draws the scene with the camera moved by a fraction of a pixel, and blends into a kept 16-bit history. After 63 blended frames, about a second at 60 frames per second, the history holds their average. Its edges and fine detail are smoother than any one frame's. The thread that draws then takes frames without drawing them, so the GPU rests, and the canvas keeps the sharp picture. The first frame that changes draws at once, as a moving view does, and the blending starts again.
+
+The engine finds a still view by comparing each frame's draw commands and uploaded values with those of the frame two frames before. It leaves out only the values that change on their own in every frame: the clock, the sub-pixel offset and the blend's weight. Anything else that changes counts as a change, so the picture never freezes while something moves. The sketch keeps running while the view rests, so `onUpdate` sees input and time as before.
+
+- While the view blends, the final pass skips FXAA: the blended frames smooth the edges instead. With MSAA, each blended frame keeps its 4 samples.
+- Meshes and sprites move by the sub-pixel offset. Lines, points and particles draw without it.
+- Some views never blend. Their picture can change on the GPU alone, or with the clock alone, or the blend would mix what it cannot average. Those views draw every frame as before. Views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials or the physical sky never blend either. Nor does a canvas that keeps its alpha, or the 8-bit color path.
+- The history is one 16-bit target the size of the canvas: 8 bytes per pixel, about 17 MB at 1920 × 1080.
+- Hold mode, and so the image tests, draws without it. The option `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
+
 ## Effects on devices without HDR color
 
 Bloom, depth of field, automatic exposure, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:

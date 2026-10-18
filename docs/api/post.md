@@ -395,6 +395,10 @@ post.set({ toneMapping: reinhard });
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
 
+## Still views
+
+A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines and automatic exposure keep a view drawing every frame, as [the post-processing chain](../concepts/post-processing.md#still-camera-accumulation) explains. `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
+
 ## Errors
 
 | Code | Cause |
@@ -409,7 +413,7 @@ post.set({ toneMapping: reinhard });
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines and custom effects work, and what they cost.
+- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines, custom effects and still views work, and what they cost.
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.

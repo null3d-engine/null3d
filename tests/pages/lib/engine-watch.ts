@@ -47,6 +47,14 @@ const post = (workerProto as Worker).postMessage;
 	post.call(this, message, transfer as StructuredSerializeOptions);
 };
 
+/**
+ * The control block of the engine that the page started last, once it handed the block to a
+ * worker; `undefined` before that, and for an engine that runs on the page's thread alone.
+ */
+export function engineSlots(): Int32Array | undefined {
+	return engine?.slots;
+}
+
 function counters(slots: Int32Array): string {
 	return COUNTERS.map(([name, slot]) => `${name} ${Atomics.load(slots, slot)}`).join(', ');
 }

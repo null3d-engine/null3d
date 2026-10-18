@@ -1158,6 +1158,28 @@ pub fn draw_tables_rebuilt() -> bool {
     rebuilt
 }
 
+/// Says whether a still view may accumulate its frames and rest: the image tests and hold mode turn
+/// the accumulation off, so a captured frame is the frame the sketch drew once.
+#[wasm_bindgen(js_name = setStillEnabled)]
+pub fn set_still_enabled(enabled: bool) {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_still_enabled(enabled);
+        0
+    });
+}
+
+/// True when the last recorded frame's still view has accumulated enough frames that the thread
+/// that draws may take frames without drawing them.
+#[wasm_bindgen(js_name = frameRests)]
+pub fn frame_rests() -> bool {
+    let mut rests = false;
+    with_engine(|e| {
+        rests = e.renderer.still().rests();
+        0
+    });
+    rests
+}
+
 /// Makes the next recorded frame create every GPU object again and upload the whole scene, after
 /// the thread that draws replaced a GPU device the browser took away.
 #[wasm_bindgen(js_name = resetGpu)]

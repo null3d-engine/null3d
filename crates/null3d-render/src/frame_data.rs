@@ -80,6 +80,10 @@ pub struct FrameUniform {
     /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
     /// spans at a distance of one unit in its view, along y, and a spare.
     pub reflection_corner: [f32; 4],
+    /// The sub-pixel jitter of a still view's accumulated sample, in the clip space of `view_proj`,
+    /// which the scene's vertex shaders add to a position's clip position (see [`crate::still`]).
+    /// Zero in the views of lights, in views that draw into targets, and while the view moves.
+    pub jitter: [f32; 4],
     /// The physical sky's air between the camera and each surface: see
     /// [`crate::physical_sky::AerialUniform`].
     pub aerial: AerialUniform,
@@ -92,6 +96,16 @@ pub struct FrameUniform {
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);
 
 impl FrameUniform {
+    /// The byte ranges a frame writes every frame whatever the scene holds: the clock, and the
+    /// jitter of a still view. The still-camera accumulation's comparison ignores them, so a view
+    /// that keeps drawing the same scene reads as unchanged (see [`crate::still`]). The ranges are
+    /// in order and do not overlap.
+    pub fn volatile_ranges() -> [std::ops::Range<usize>; 2] {
+        let clock = std::mem::offset_of!(FrameUniform, clock);
+        let jitter = std::mem::offset_of!(FrameUniform, jitter);
+        [clock..clock + 16, jitter..jitter + 16]
+    }
+
     /// The block as bytes, for an upload.
     pub fn as_bytes(&self) -> &[u8] {
         // SAFETY: the struct is `repr(C)` and made only of 4-byte fields, so it has no padding,

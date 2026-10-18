@@ -162,6 +162,13 @@ export interface CoreGlue extends CoreErrors {
 	occludedEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
+	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
+	frameRests(): boolean;
+	/**
+	 * Says whether a still view may accumulate its frames and rest. The image tests and hold mode
+	 * turn the accumulation off, so a captured frame is the frame the sketch drew once.
+	 */
+	setStillEnabled(enabled: boolean): void;
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;

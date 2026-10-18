@@ -103,6 +103,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
 | `preload` | None | Features whose shaders load before the first frame, such as `['skinning', 'bloom']`, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: [Loading screens](../guides/loading-screens.md). A name that the engine does not know throws [E1421](../errors/E1421.md). |
+| `still` | true | `false` draws every frame of a view that holds still, which otherwise blends its frames into a sharper picture and then stops drawing until something changes: [Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation). The `?still-camera=off` switch turns it off too. |
 | `stats` | false | `true` shows the stats overlay from the first frame, and `{ collapsed: true }` shows it with its card closed: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
 
 ## A transparent canvas

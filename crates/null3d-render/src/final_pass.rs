@@ -351,6 +351,11 @@ impl FinalPass {
         self.bloom_pipeline
     }
 
+    /// The id of the pass's own pipeline, once it asked for it: the build without bloom.
+    pub(crate) fn plain_pipeline(&self) -> Option<u32> {
+        self.pipeline
+    }
+
     /// Asks `pipelines`, once, for the second step's plain pipeline, which scales the first step's
     /// display color up to the canvas, and returns its id.
     pub(crate) fn request_present(&mut self, pipelines: &mut PipelineCache) -> u32 {

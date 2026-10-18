@@ -133,6 +133,7 @@ use null3d_gpu::drawlist::{
     sizes, texture_usage, view,
 };
 
+use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
@@ -147,7 +148,7 @@ use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, UploadArena, bind_frame_group,
+    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -351,8 +352,12 @@ mod ids {
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
     pub const EXPOSURE_STATE: u32 = EXPOSURE_HISTOGRAM + 1;
+    /// The still-camera accumulation's blend's values.
+    pub const ACCUMULATE: u32 = EXPOSURE_STATE + 1;
+    /// The settings of the final pass's still build, which draws a still view's accumulated color.
+    pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = EXPOSURE_STATE + 1;
+    pub const PAGES: u32 = STILL_SETTINGS + 1;
 
     /// The light tables: three.js's table of the split-sum terms of specular light, and the area
     /// lights' tables (see [`crate::light_tables`]).
@@ -405,8 +410,12 @@ mod ids {
     pub const EXPOSURE_CELLS: u32 = SKIN_FIRSTS + 1;
     pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
     pub const EXPOSURE_STORED: u32 = EXPOSURE_TEXEL + 1;
+    /// The blank color grading table and outline mask that the final pass's still build owns, so
+    /// that it never destroys the final pass's.
+    pub const STILL_BLANK_LUT: u32 = EXPOSURE_STORED + 1;
+    pub const STILL_BLANK_OUTLINE: u32 = STILL_BLANK_LUT + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = EXPOSURE_STORED + 1;
+    pub const TARGETS: u32 = STILL_BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -434,8 +443,10 @@ mod ids {
     /// The linear sampler of the first step of the two-step pass's color grading table, which it
     /// owns so that it never destroys the final pass's.
     pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
+    /// The color grading table's sampler that the final pass's still build owns.
+    pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = OUTPUT_LUT_SAMPLER + 1;
+    pub const SAMPLERS: u32 = STILL_LUT_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -518,8 +529,12 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of each step of screen-space reflections, after the full-screen passes'.
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
-    /// The bind group of the scene depth that the decal pass reads, after screen-space reflections'.
-    pub const DECAL_DEPTH_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// The bind group of the still-camera accumulation's blend, after screen-space reflections'.
+    pub const ACCUMULATE_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// The bind group of the final pass's still build.
+    pub const STILL_GROUP: u32 = ACCUMULATE_GROUP + 1;
+    /// The bind group of the scene depth that the decal pass reads, after the still build's.
+    pub const DECAL_DEPTH_GROUP: u32 = STILL_GROUP + 1;
     /// The decal pass's frame group, after its depth's.
     pub const DECAL_FRAME_GROUP: u32 = DECAL_DEPTH_GROUP + 1;
     /// The bind groups of the volumetric fog's steps, after the decal pass's frame group.
@@ -748,6 +763,17 @@ impl GpuDrivenRenderer {
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        accumulate: AccumulateIds {
+                            buffer: ids::ACCUMULATE,
+                            group: ids::ACCUMULATE_GROUP,
+                        },
+                        still_pass: FinalIds {
+                            settings: ids::STILL_SETTINGS,
+                            group: ids::STILL_GROUP,
+                            blank_lut: ids::STILL_BLANK_LUT,
+                            lut_sampler: ids::STILL_LUT_SAMPLER,
+                            blank_outline: ids::STILL_BLANK_OUTLINE,
                         },
                         output_pass: FinalIds {
                             settings: ids::OUTPUT_SETTINGS,
@@ -1208,6 +1234,8 @@ impl GpuDrivenRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_still_enabled(self.settings.still_enabled());
+        self.graph.set_still(self.settings.still());
         self.graph.set_transmission(self.sorted.transmits());
         self.graph.set_weighted(self.sorted.weighs());
         let skipped = self.settings.decal_skipped_layers();
@@ -2301,9 +2329,15 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
+        self.settings.set_still(self.lists.still());
         let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena, result)
+        let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
+        self.lists.restore(input.frame, list, arena, marks, result)
+    }
+
+    fn still(&self) -> crate::still::Still {
+        self.lists.still()
     }
 
     fn casts_tile_shadows(&self) -> bool {

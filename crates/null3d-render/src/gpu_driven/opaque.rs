@@ -31,6 +31,7 @@ use super::layout::{Bucket, Layout};
 use super::skin::DrawGroups;
 use crate::environment;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
+use crate::frame_data::FrameUniform;
 use crate::pipelines::PassTargets;
 use crate::probe_grid;
 use crate::transmission;
@@ -172,7 +173,8 @@ pub(super) fn upload(
     view: ViewId,
     frame: &ViewFrame,
 ) -> Result<(), RecordError> {
-    let (at, bytes) = arena.push(frame.uniform.as_bytes())?;
+    let (at, bytes) =
+        arena.push_masked(frame.uniform.as_bytes(), &FrameUniform::volatile_ranges())?;
     list.push(Op::WriteBuffer, &[ids::frame(view), 0, at, bytes])?;
     Ok(())
 }

@@ -57,6 +57,7 @@
 //!   let light through sample, as three.js's transmission does
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
+pub mod accumulate;
 pub mod ao;
 pub mod area_shading;
 pub mod arrays;
@@ -110,6 +111,7 @@ mod sky_light;
 pub mod sky_maps;
 pub mod sorted;
 pub mod ssr;
+pub mod still;
 pub mod textures;
 mod transmission;
 pub mod view;

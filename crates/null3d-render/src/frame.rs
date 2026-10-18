@@ -273,6 +273,53 @@ impl FrameInput<'_> {
     }
 }
 
+/// True when nothing outside the frame's draw list and upload arena changed: no object transform, no
+/// path through the scene's structure and no instance batch row. An object that a dynamic update
+/// recomputed but that holds its pose did not change. The still-camera accumulation then
+/// compares the list and the arena to decide whether the frame changed at all (see
+/// [`crate::still`]). `enabled` is false where the page turns the accumulation off, such as in hold
+/// mode and the image tests.
+pub(crate) fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
+    enabled
+        && !input.structure_changed
+        && !input.scene.rows_changed().any()
+        && !input.batches.changed()
+}
+
+/// What a frame builder tells [`ParityLists::restore`] of a frame it recorded, for the still-camera
+/// comparison (see [`crate::still`]).
+pub(crate) struct StillMarks<'a> {
+    /// True when nothing outside the list and the arena changed and the frame may accumulate, as
+    /// [`settled`] and the render graph say.
+    pub(crate) settled: bool,
+    /// The list's words that differ between a frame that blends a still view and one that does
+    /// not, in order: the comparison leaves them out.
+    pub(crate) words: &'a [Range<usize>],
+    /// The arena's offset of the blend's weight, in a frame that blends.
+    pub(crate) weight_at: Option<usize>,
+}
+
+impl<'a> StillMarks<'a> {
+    /// What a builder knows of the frame it recorded from `input` with `settings`, `graph` and
+    /// `pipelines`. The frame settles only where the page lets a view accumulate, nothing outside
+    /// the list and the arena changed, the graph lets this frame accumulate, and no pipeline reads
+    /// the frame's clock, which the comparison leaves out.
+    pub(crate) fn of(
+        input: &FrameInput<'_>,
+        settings: &SceneSettings,
+        graph: &'a crate::frame_graph::FrameGraph,
+        pipelines: &crate::pipelines::PipelineCache,
+    ) -> Self {
+        Self {
+            settled: settled(input, settings.still_enabled())
+                && graph.still_eligible()
+                && !pipelines.reads_clock(),
+            words: graph.word_marks(),
+            weight_at: graph.weight_at(),
+        }
+    }
+}
+
 /// Records frames for one GPU path. The engine holds one builder, chosen once for the device.
 pub trait FrameBuilder {
     /// Meshes, materials, the camera and the lights.
@@ -375,6 +422,11 @@ pub trait FrameBuilder {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
+    /// How still the camera's view is: the frames it has accumulated, from 0 while it moves. The
+    /// thread that draws rests once it has accumulated enough (see [`crate::still`]).
+    fn still(&self) -> crate::still::Still {
+        crate::still::Still::default()
+    }
     /// Declares the render graph's passes for the views as they are now, and compiles the graph
     /// outside a frame, so a new pass fails at once when it does not fit. The next frame makes the
     /// plan's textures.
@@ -527,6 +579,10 @@ pub(crate) fn clamp_sampler(
 #[derive(Default)]
 pub(crate) struct UploadArena {
     bytes: Vec<u8>,
+    /// Byte ranges of `bytes` that a frame writes every frame whatever the scene holds, such as the
+    /// clock and the jitter of a still view. The still-camera accumulation's comparison ignores them
+    /// (see [`crate::still`]).
+    volatile: Vec<Range<usize>>,
     /// Bytes that a reserve ahead of a frame replaced, kept until the next reset: the list of the
     /// frame that last used the arena may still point into them.
     kept: Vec<Vec<u8>>,
@@ -538,7 +594,12 @@ impl UploadArena {
     pub(crate) fn reset(&mut self, total: usize) {
         self.kept.clear();
         self.bytes.clear();
+        self.volatile.clear();
         self.bytes.reserve_exact(total);
+        // Each view's uniform carries the frame's volatile ranges, the clock and a still view's
+        // jitter, so the list holds at most two for each view id: reserving them here keeps a
+        // frame from growing the list while it records.
+        self.volatile.reserve_exact(2 * crate::view::MAX_VIEW_IDS);
     }
 
     /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
@@ -562,9 +623,35 @@ impl UploadArena {
     }
 
     /// The bytes that the frame copied so far.
-    #[cfg(test)]
     pub(crate) fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Writes `bytes` over the bytes the frame copied at `at`, which a list's command reads already.
+    pub(crate) fn patch(&mut self, at: usize, bytes: &[u8]) {
+        self.bytes[at..at + bytes.len()].copy_from_slice(bytes);
+    }
+
+    /// The ranges of those bytes that hold values the frame writes every frame whatever the scene
+    /// holds, in order.
+    pub(crate) fn volatile(&self) -> &[Range<usize>] {
+        &self.volatile
+    }
+
+    /// Copies `bytes` into the arena as [`UploadArena::push`] does, and records the ranges at
+    /// `volatile`, which are offsets into `bytes`, as values the frames write every frame whatever
+    /// the scene holds. The still-camera accumulation's comparison skips them.
+    pub(crate) fn push_masked(
+        &mut self,
+        bytes: &[u8],
+        volatile: &[Range<usize>],
+    ) -> Result<(u32, u32), RecordError> {
+        let start = self.bytes.len();
+        let result = self.push(bytes)?;
+        for range in volatile {
+            self.volatile.push(start + range.start..start + range.end);
+        }
+        Ok(result)
     }
 
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
@@ -612,6 +699,12 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
 pub(crate) struct ParityLists {
     lists: [DrawList; 2],
     arenas: [UploadArena; 2],
+    /// The frame each parity recorded last, for the still-camera accumulation's comparison: the
+    /// frame a parity records is compared with the one it recorded two frames ago, which used the
+    /// same list, arena and addresses.
+    snapshots: [crate::still::Snapshot; 2],
+    /// How still the camera's view is: the frames it has accumulated (see [`crate::still`]).
+    still: crate::still::Still,
     /// The error of a frame that failed after it recorded commands.
     halted: Option<RecordError>,
 }
@@ -625,8 +718,15 @@ impl ParityLists {
                 DrawList::with_limit(words, limit),
             ],
             arenas: [UploadArena::default(), UploadArena::default()],
+            snapshots: Default::default(),
+            still: crate::still::Still::default(),
             halted: None,
         }
+    }
+
+    /// How still the camera's view is: the frames it has accumulated, from 0 while it moves.
+    pub(crate) fn still(&self) -> crate::still::Still {
+        self.still
     }
 
     pub(crate) fn list(&self, frame: u32) -> &DrawList {
@@ -651,21 +751,49 @@ impl ParityLists {
     }
 
     /// Puts back the list and the arena that [`ParityLists::take`] took, with the frame's
-    /// `result`, which it returns. A failed frame's list goes back empty.
+    /// `result`, which it returns. A failed frame's list goes back empty. The frame changed nothing
+    /// only when `marks` says it settled and it matches the frame this parity recorded two frames
+    /// ago outside its marked parts: the arena's volatile bytes and the list's marked words. The
+    /// still count then grows, or falls to zero. A frame that changed while it blended a still view
+    /// gets the whole weight, so it shows as it is drawn rather than mixed into the old history.
     pub(crate) fn restore(
         &mut self,
         frame: u32,
         mut list: DrawList,
-        arena: UploadArena,
+        mut arena: UploadArena,
+        marks: StillMarks<'_>,
         result: Result<bool, RecordError>,
     ) -> Result<bool, RecordError> {
+        let parity = (frame & 1) as usize;
+        if result.is_ok() {
+            // A frame that cannot settle compares nothing: a view that the page turned the
+            // accumulation off for, or that a source outside the list changed, keeps no frame to
+            // compare the next one with, and its next frame reads as changed.
+            let same = marks.settled
+                && self.snapshots[parity].unchanged(
+                    list.words(),
+                    marks.words,
+                    arena.bytes(),
+                    arena.volatile(),
+                );
+            if !marks.settled {
+                self.snapshots[parity].forget();
+            }
+            self.still = self.still.after(same);
+            if !same && let Some(at) = marks.weight_at {
+                arena.patch(at, &1.0f32.to_le_bytes());
+            }
+        } else {
+            // A frame that failed compared nothing: the next frame of this parity starts again.
+            self.snapshots[parity].forget();
+            self.still = self.still.after(false);
+        }
         if let Err(error) = result {
             if !list.is_empty() {
                 self.halted = Some(error);
             }
             list.clear();
         }
-        let parity = (frame & 1) as usize;
         self.lists[parity] = list;
         self.arenas[parity] = arena;
         result
@@ -849,6 +977,13 @@ pub struct SceneSettings {
     /// The render scale that the levels of detail pick by: the frame's, which the WebGL2 builder's
     /// culling, which runs at the canvas's full size, would not see otherwise.
     level_scale: RenderScale,
+    /// How still the camera's view is: the frames it has accumulated. The vertex shaders of the
+    /// scene's meshes draw each frame of a still view with the jitter of its sample, so the frames
+    /// average to a sharper image (see [`crate::still`]).
+    still: crate::still::Still,
+    /// True while the page lets a still view accumulate its frames, which the image tests and hold
+    /// mode turn off.
+    still_enabled: bool,
 }
 
 /// How objects and batches pick their meshes' levels of detail.
@@ -915,6 +1050,8 @@ impl SceneSettings {
             bloom: None,
             bloom_chain: ChainFrame::default(),
             morph_cap: u32::MAX,
+            still: crate::still::Still::default(),
+            still_enabled: true,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             contact_steps: 0,
@@ -1707,6 +1844,28 @@ impl SceneSettings {
         self.level_scale = scale;
     }
 
+    /// Says how still the camera's view is: the frames it has accumulated, from 0 while it moves.
+    /// The scene's meshes then draw each frame of a still view with the jitter of its sample.
+    pub fn set_still(&mut self, still: crate::still::Still) {
+        self.still = still;
+    }
+
+    /// How still the camera's view is, as [`SceneSettings::set_still`] set it.
+    pub fn still(&self) -> crate::still::Still {
+        self.still
+    }
+
+    /// True while the page lets a still view accumulate its frames. The image tests and hold mode
+    /// turn it off, so a captured frame is the frame the sketch drew once.
+    pub fn set_still_enabled(&mut self, enabled: bool) {
+        self.still_enabled = enabled;
+    }
+
+    /// True while the page lets a still view accumulate its frames.
+    pub fn still_enabled(&self) -> bool {
+        self.still_enabled
+    }
+
     /// True when the buckets of meshes with levels get fade buckets: some mesh has levels, and the
     /// quality settings let levels fade.
     pub(crate) fn levels_fade(&self) -> bool {
@@ -2489,11 +2648,19 @@ impl SceneSettings {
                 sways(materials, material)
             });
         let moving = &self.moving_casters;
+        // A still view has no moving caster for a far cascade to follow, so every cascade draws in
+        // each frame while nothing outside the list changed: the frames of one parity then hold the
+        // same list, and the view settles. A frame that changed draws the schedule's own cascades.
+        let interval = if settled(input, self.still_enabled()) {
+            1
+        } else {
+            quality.far_interval
+        };
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
             shadow.map_size,
-            quality.far_interval,
+            interval,
             |bounds| {
                 quality.follow_movers
                     && moving.touch(scene, input.batches, parity, shadow.layers, bounds)
@@ -2834,6 +3001,12 @@ impl SceneSettings {
                 ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
             } else {
                 [0.0; 4]
+            },
+            jitter: if own_target || !self.still.accumulating() {
+                [0.0; 4]
+            } else {
+                let [x, y] = crate::still::jitter(self.still.jitter_sample(), (pixels.0, pixels.1));
+                [x, y, 0.0, 0.0]
             },
             vignette: if view_id == ViewId::CAMERA {
                 self.scene_vignette()
