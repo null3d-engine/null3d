@@ -1092,7 +1092,9 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
         world.scene.apply_commands(&commands, world.frame).unwrap();
         world.renderer.settings_mut().set_sun_shadow(Some(sun));
         world.record(true);
-        world
+        // Two worlds whose renderers hold the engine's GPU objects overflow the test thread's
+        // stack, so each lives on the heap.
+        Box::new(world)
     });
     // Each cascade's entries over all its buckets, in order.
     let cascade_entries = |world: &World<CpuCulledRenderer>, cascade: usize| {
