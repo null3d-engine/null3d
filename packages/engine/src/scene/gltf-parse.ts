@@ -56,6 +56,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_ior',
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
+	'KHR_materials_diffuse_transmission',
+	'KHR_materials_volume_scatter',
 	'KHR_materials_clearcoat',
 	'KHR_materials_sheen',
 	'KHR_lights_punctual',
@@ -321,6 +323,14 @@ function transmissionOf(
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
 	if (transmission?.transmissionTexture !== undefined || volume.thicknessTexture !== undefined)
 		notes.push(`${what}'s transmission and thickness textures, which the engine does not draw yet`);
+	return { factor, ...volumeOf(volume, what) };
+}
+
+/**
+ * The volume under a surface, from its KHR_materials_volume extension: a thin wall that absorbs
+ * nothing where the material has none.
+ */
+function volumeOf(volume: Entry, what: string): VolumeData {
 	const color = numbers(volume.attenuationColor, 3, [1, 1, 1], `${what}'s attenuationColor`);
 	if (color.some((c) => c < 0 || c > 1))
 		broken(`${what}'s attenuationColor has a component outside 0 to 1`);
@@ -329,10 +339,80 @@ function transmissionOf(
 	if (!(distance > 0))
 		broken(`${what}'s attenuationDistance is ${distance}, and it takes more than 0`);
 	return {
-		factor,
 		thickness: unit(volume.thicknessFactor ?? 0, `${what}'s thicknessFactor`, Infinity),
 		attenuationColor: [color[0] as number, color[1] as number, color[2] as number],
 		attenuationDistance: distance,
+	};
+}
+
+/**
+ * How a material lets light through to its other side, from its
+ * KHR_materials_diffuse_transmission and KHR_materials_volume extensions, or none without the
+ * extension. KHR_materials_transmission wins where the material lets light through that way too,
+ * and a clear coat or a sheen wins where the material is `layered`; `notes` says so.
+ */
+function diffuseTransmissionOf(
+	extensions: Entry,
+	what: string,
+	transmits: boolean,
+	layered: boolean,
+	notes: string[],
+): DiffuseTransmissionData | undefined {
+	const diffuse = extensions.KHR_materials_diffuse_transmission as Entry | undefined;
+	if (diffuse === undefined) return undefined;
+	if (transmits) {
+		notes.push(`${what}'s diffuse transmission, which its transmission replaces in the engine`);
+		return undefined;
+	}
+	if (layered) {
+		notes.push(
+			`${what}'s diffuse transmission, which the engine does not draw beside a clear coat or a sheen`,
+		);
+		return undefined;
+	}
+	const color = numbers(
+		diffuse.diffuseTransmissionColorFactor,
+		3,
+		[1, 1, 1],
+		`${what}'s diffuseTransmissionColorFactor`,
+	);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s diffuseTransmissionColorFactor has a component outside 0 to 1`);
+	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
+	if (volume.thicknessTexture !== undefined)
+		notes.push(`${what}'s thickness texture, which the engine does not draw yet`);
+	return {
+		factor: unit(diffuse.diffuseTransmissionFactor ?? 0, `${what}'s diffuseTransmissionFactor`),
+		color: [color[0] as number, color[1] as number, color[2] as number],
+		...volumeOf(volume, what),
+	};
+}
+
+/**
+ * How far light spreads under a surface, from its draft KHR_materials_volume_scatter extension and
+ * its KHR_materials_volume extension's attenuation distance, or none where it spreads nowhere: the
+ * extension is missing, its multiscatter color is black, or the volume absorbs nothing, which
+ * would spread the light without end. `notes` says what the engine leaves out.
+ */
+function scatterOf(extensions: Entry, what: string, notes: string[]): ScatterData | undefined {
+	const scatter = extensions.KHR_materials_volume_scatter as Entry | undefined;
+	if (scatter === undefined) return undefined;
+	const color = numbers(scatter.multiscatterColor, 3, [0, 0, 0], `${what}'s multiscatterColor`);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s multiscatterColor has a component outside 0 to 1`);
+	if ((scatter.scatterAnisotropy ?? 0) !== 0)
+		notes.push(`${what}'s scatterAnisotropy, which the engine does not draw`);
+	const { attenuationDistance } = volumeOf((extensions.KHR_materials_volume ?? {}) as Entry, what);
+	const widest = Math.max(...color);
+	if (widest === 0) return undefined;
+	if (!Number.isFinite(attenuationDistance)) {
+		notes.push(`${what}'s volume scatter without an attenuation distance, which spreads no light`);
+		return undefined;
+	}
+	const share = (c: number | undefined) => (c as number) / widest;
+	return {
+		radius: attenuationDistance * widest,
+		color: [share(color[0]), share(color[1]), share(color[2])],
 	};
 }
 
@@ -451,16 +531,43 @@ export interface TextureUse {
 	mipmaps: boolean;
 }
 
-/** How a material lets light through, as KHR_materials_transmission and KHR_materials_volume give it. */
-export interface TransmissionData {
-	/** The transmission factor, above 0. */
-	factor: number;
+/** The volume under a surface, as KHR_materials_volume gives it. */
+export interface VolumeData {
 	/** The volume's thickness factor, in the mesh's own units: 0 for a thin wall. */
 	thickness: number;
 	/** The color that white light takes after the attenuation distance: linear RGB. */
 	attenuationColor: [number, number, number];
 	/** The attenuation distance in world units, or `Infinity` for a volume that absorbs nothing. */
 	attenuationDistance: number;
+}
+
+/** How a material lets light through, as KHR_materials_transmission and KHR_materials_volume give it. */
+export interface TransmissionData extends VolumeData {
+	/** The transmission factor, above 0. */
+	factor: number;
+}
+
+/**
+ * How a material lets light through to its other side, as KHR_materials_diffuse_transmission and
+ * KHR_materials_volume give it.
+ */
+export interface DiffuseTransmissionData extends VolumeData {
+	/** The diffuse transmission factor, from 0 to 1. */
+	factor: number;
+	/** The diffuse transmission color factor: linear RGB. */
+	color: [number, number, number];
+}
+
+/**
+ * How far light spreads under a material's surface, from the draft KHR_materials_volume_scatter
+ * and KHR_materials_volume: each channel's scatter distance is the attenuation distance times the
+ * multiscatter color, as the Khronos sample renderer finds it.
+ */
+export interface ScatterData {
+	/** The largest channel's scatter distance, in world units. */
+	radius: number;
+	/** Each channel's scatter distance as a share of the radius: linear RGB. */
+	color: [number, number, number];
 }
 
 /** A material's layers above its base, as KHR_materials_clearcoat and KHR_materials_sheen give them. */
@@ -512,6 +619,13 @@ export interface MaterialData {
 	 * that lets light through: none for a factor of 0.
 	 */
 	transmission?: TransmissionData;
+	/**
+	 * KHR_materials_diffuse_transmission's values, with KHR_materials_volume's, for a material
+	 * that has the extension and does not let light through by transmission.
+	 */
+	diffuseTransmission?: DiffuseTransmissionData;
+	/** KHR_materials_volume_scatter's spread of light under the surface, where it gives one. */
+	scatter?: ScatterData;
 	/** The clear coat and the sheen, for a material with either extension: none without. */
 	layers?: LayersData;
 	maps: {
@@ -522,6 +636,8 @@ export interface MaterialData {
 		emissiveMap?: number;
 		specularIntensityMap?: number;
 		specularColorMap?: number;
+		diffuseTransmissionMap?: number;
+		diffuseTransmissionColorMap?: number;
 		clearcoatMap?: number;
 		clearcoatRoughnessMap?: number;
 		clearcoatNormalMap?: number;
@@ -1078,10 +1194,12 @@ export function parseGltf(
 		);
 		if (specularColor.some((c) => c < 0))
 			broken(`${what}'s specularColorFactor has a component below 0`);
+		const diffuse = (extensions.KHR_materials_diffuse_transmission ?? {}) as Entry;
 		const coat = extensions.KHR_materials_clearcoat as Entry | undefined;
 		const sheen = extensions.KHR_materials_sheen as Entry | undefined;
 		const layered = coat !== undefined || sheen !== undefined;
-		// A layered material's maps take the slots of the specular maps, which it then goes without.
+		// A layered material's maps take the slots of the specular maps and of the diffuse
+		// transmission maps, which it then goes without.
 		if (layered && (specular.specularTexture ?? specular.specularColorTexture) !== undefined)
 			notes.push(
 				`${what}'s specular textures, which the engine does not draw beside a clear coat or a sheen`,
@@ -1122,6 +1240,20 @@ export function parseGltf(
 				'srgb',
 				`${what}'s sheenRoughnessTexture`,
 			),
+			diffuseTransmissionMap: layered
+				? undefined
+				: useTexture(
+						diffuse.diffuseTransmissionTexture,
+						'linear',
+						`${what}'s diffuseTransmissionTexture`,
+					),
+			diffuseTransmissionColorMap: layered
+				? undefined
+				: useTexture(
+						diffuse.diffuseTransmissionColorTexture,
+						'srgb',
+						`${what}'s diffuseTransmissionColorTexture`,
+					),
 		};
 		const maps: MaterialData['maps'] = {};
 		let transform: Entry | undefined;
@@ -1136,6 +1268,23 @@ export function parseGltf(
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
 		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
+		const diffuseTransmission = diffuseTransmissionOf(
+			extensions,
+			what,
+			transmission !== undefined,
+			layered,
+			notes,
+		);
+		// The diffuse transmission maps take the specular maps' slots, so a material with both keeps
+		// the diffuse transmission maps, which change its look more, and leaves out the others.
+		const translucent = diffuseTransmission !== undefined;
+		for (const key of ['specularIntensityMap', 'specularColorMap'] as const)
+			if (translucent && maps[key] !== undefined) {
+				delete maps[key];
+				notes.push(`${what}'s ${key}, which a material with diffuse transmission does not take`);
+			}
+		for (const key of ['diffuseTransmissionMap', 'diffuseTransmissionColorMap'] as const)
+			if (!translucent) delete maps[key];
 		const data: MaterialData = {
 			name: text(material.name),
 			unlit,
@@ -1166,6 +1315,9 @@ export function parseGltf(
 			maps,
 		};
 		if (transmission) data.transmission = transmission;
+		if (diffuseTransmission) data.diffuseTransmission = diffuseTransmission;
+		const scatter = scatterOf(extensions, what, notes);
+		if (scatter) data.scatter = scatter;
 		if (layered) data.layers = layersOf(coat ?? {}, sheen ?? {}, what);
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);

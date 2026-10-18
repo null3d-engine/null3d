@@ -460,6 +460,14 @@ export class SketchQuality implements Quality {
 	}
 
 	/**
+	 * True when the page's options give the setting, or the sketch chose it itself since the preset
+	 * it last asked for, rather than taking the preset's value.
+	 */
+	chose(name: keyof QualitySettings): boolean {
+		return this.options[name] !== undefined || this.owned.has(name);
+	}
+
+	/**
 	 * The preset check's step to the next lighter preset. The settings that the page's options give,
 	 * and those that the sketch chose itself, keep their values.
 	 */

@@ -89,6 +89,10 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	subsurfaceSamples: {
+		label: 'Subsurface blur of skin',
+		print: (value) => (Number(value) > 0 ? `${value} taps each way` : 'off'),
+	},
 	ssrScale: {
 		label: 'Screen-space reflections',
 		print: (value) =>

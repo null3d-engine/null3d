@@ -71,9 +71,9 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale`, `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap` | Same names | Give a clear coat option at creation, even as 0, to change it later. `clearcoatMap` and `clearcoatRoughnessMap` must be one texture (coat in red, roughness in green) |
 | `sheen`, `sheenColor`, `sheenRoughness`, `sheenColorMap`, `sheenRoughnessMap` | `sheenColor` times `sheen`, and the same other names | No `sheen` option: multiply it into `sheenColor`. three.js's `sheen` defaults to 0, so a material without it has no sheen: leave the sheen options out. The two maps must be one texture (roughness in alpha) |
 
-A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap` or `specularColorMap`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
+A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap`, `specularColorMap` or `diffuseTransmission`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. Iridescence, anisotropy and the transmission and thickness maps come in 1.0. Until then, these workarounds apply:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. Iridescence, anisotropy and the transmission and thickness maps come in 1.0. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |

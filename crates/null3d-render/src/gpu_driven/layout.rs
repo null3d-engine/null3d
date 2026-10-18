@@ -7,8 +7,10 @@
 //! table and the cell order. The casters' layout holds the objects that cast shadows, grouped by
 //! mesh alone, as the shadow cascades draw their depth. The outlined layout holds the objects that
 //! the sketch outlines, grouped by mesh alone, as the outline view draws them into the outline
-//! mask. Each of the two has a bucket table and bucket records of its own, and its culling reads
-//! the scene layout's matrices, layer table and cell order.
+//! mask. The subsurface layout holds the objects whose material has a scatter radius, with the
+//! skin pass's builds of their pipelines and their materials, as the subsurface view draws them
+//! into the skin pass's target. Each of the three has a bucket table and bucket records of its own,
+//! and its culling reads the scene layout's matrices, layer table and cell order.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -37,6 +39,7 @@ use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
+use crate::subsurface::skin_key;
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -65,6 +68,9 @@ pub(super) enum Drawn {
     Casters,
     /// The objects that the sketch outlines, as the outline view draws them into the outline mask.
     Outlined,
+    /// The objects whose material has a scatter radius, as the subsurface view draws them into the
+    /// skin pass's target.
+    Subsurface,
 }
 
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
@@ -451,6 +457,7 @@ impl Layout {
             Drawn::Scene => (ids::INSTANCE_BUCKETS, ids::BUCKETS),
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
             Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
+            Drawn::Subsurface => (ids::SUBSURFACE_BUCKETS, ids::SUBSURFACE_RECORDS),
         }
     }
 
@@ -637,7 +644,8 @@ impl Layout {
     /// `shadows` has a pass on, the scene's receivers draw with pipelines that read the shadow maps,
     /// and the casters' buckets get a pipeline for each pass of `shadows` in place of `targets`.
     /// With a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
-    /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask.
+    /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask, and the
+    /// subsurface layout's the skin pass's pipelines.
     /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
     /// it hides get no bucket, and the layout asks only for their pipelines (see
     /// [`Self::waiting`]). It reuses the layout's tables and scratch space, which grow only with
@@ -704,7 +712,7 @@ impl Layout {
             let depth_key = match drawn {
                 Drawn::Casters => Some(settings.caster_of(pipeline, material)),
                 Drawn::Outlined => Some((mask_keys(pipeline).0, 0)),
-                Drawn::Scene => None,
+                Drawn::Scene | Drawn::Subsurface => None,
             };
             if let Some((key, group)) = depth_key {
                 let material = if key.template == template::SHADOW_DEPTH || drawn == Drawn::Outlined
@@ -727,6 +735,11 @@ impl Layout {
             };
             let pipeline = settings.area_key(pipeline);
             let group = settings.texture_group(material, pipeline);
+            // The skin pass draws the pair with its own builds, which bind the same maps.
+            let pipeline = match drawn {
+                Drawn::Subsurface => skin_key(pipeline)?,
+                _ => pipeline,
+            };
             Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
@@ -736,6 +749,7 @@ impl Layout {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
+                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
             };
             if left_out {
                 return None;
@@ -774,7 +788,7 @@ impl Layout {
                     let pipeline = settings.batch_pipeline_of(batch);
                     key_of(pipeline, batch.mesh(), batch.material(), bounds, bits, None)
                 }
-                Drawn::Outlined => None,
+                Drawn::Outlined | Drawn::Subsurface => None,
             }
         };
 
@@ -817,6 +831,7 @@ impl Layout {
                     }
                     Drawn::Casters => shadows.pipelines(pipelines, pipeline),
                     Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
+                    Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0),
                 };
                 self.waiting
                     .extend([pipeline, second].into_iter().filter(|&id| id != 0));
@@ -870,6 +885,7 @@ impl Layout {
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
                     (pipeline, prepass, own)
                 }
+                Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0, false),
             };
             let base = if by_index { &mut indexed } else { &mut copied };
             self.buckets.push(Bucket {

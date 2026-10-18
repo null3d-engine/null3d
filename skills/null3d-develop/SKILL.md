@@ -167,6 +167,8 @@ Effects:
 | Render to a texture: a minimap, a camera's screen | `render.addPass({ kind: 'scene', camera, writes, size })` and `textures.fromPass(pass)` (0.2) | `api/render`, `guides/custom-passes` |
 | Water, mirrors and polished floors that reflect the scene | `render.addPass({ kind: 'reflection', writes, plane: { point } })`, and a custom material that sets `s.reflection` (0.2) | `api/render`, `shaders/surface-functions`, `guides/custom-passes` |
 | Glass, gems and clear water that show what lies behind them, bent and blurred | `materials.standard({ transmission: 1, thickness, ior, roughness })`, or a custom material that sets `s.transmission` (0.2) | `api/materials`, `shaders/surface-functions` |
+| Leaves and paper lit from behind | `materials.standard({ diffuseTransmission })` (0.2) | `api/materials` |
+| Skin and wax whose light spreads under the surface | `materials.standard({ subsurfaceRadius })` (0.2), on High and Ultra | `api/materials` |
 | Car paint, varnish, wet stone; velvet and cloth | `materials.standard({ clearcoat: 1, clearcoatRoughness })` or `{ sheenColor, sheenRoughness }` (0.2), or a custom material that sets `s.clearcoat` or `s.sheenColor` | `api/materials`, `shaders/surface-functions` |
 | Decals: scorch marks, mud, puddles, road paint, moss, cracks, posters | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, metalnessRoughnessMap, angleFade, edgeFade })`; the box's z axis points out of the surfaces it marks; a batch of boxes for many (0.2) | `api/materials` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2); a physical sky that also hazes distant objects: `scene.setBackground({ atmosphere })` (0.2) | `api/scene` |

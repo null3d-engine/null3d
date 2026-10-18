@@ -143,7 +143,9 @@ struct ProbeGrid {
 /// One material's whole row of the material table, as the core writes it (`materials.rs` in the
 /// renderer crate names each float): the values that every shader reads, which `Material` holds,
 /// then the values of a material that lets light through, which only the builds that let light
-/// through read. Colors are linear.
+/// through read, then the clear coat and sheen of a layered material, then the values of a
+/// material that lets light through a thin surface, then the scatter distances of the subsurface
+/// blur. Colors are linear.
 struct MaterialRow {
     color: vec4f,
     emissive: vec4f,
@@ -164,6 +166,12 @@ struct MaterialRow {
     coat: vec4f,
     /// The sheen's linear color and its roughness.
     sheen: vec4f,
+    /// The linear color that tints the light that passes through a thin surface, and how much of
+    /// the surface's diffuse light passes through it.
+    translucency: vec4f,
+    /// Each channel's share of the scatter radius under the surface, linear, and the radius in
+    /// world units, which only the skin pass's builds read.
+    subsurface: vec4f,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

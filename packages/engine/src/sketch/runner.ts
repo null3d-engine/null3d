@@ -322,7 +322,10 @@ export class SketchRunner {
 	private ssrStepSetting = 0;
 	/** True while screen-space reflections draw: the sketch has them on, and their scale is above 0. */
 	private ssrDrawn = false;
-	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
+	/**
+	 * True once the core draws HDR color for an effect or the subsurface blur, on a device that
+	 * started on the 8-bit path.
+	 */
 	private hdrForEffects = false;
 	/** True while the scene's fog is volumetric, as the governor knows it. */
 	private fogOn = false;
@@ -845,6 +848,7 @@ export class SketchRunner {
 			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
+			glue.setSubsurfaceTaps(settings.subsurfaceSamples) !== 0 ||
 			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
 			glue.setFogSlices(settings.fogSlices) !== 0 ||
 			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
@@ -985,10 +989,11 @@ export class SketchRunner {
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
 	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
-	 * with slices to draw turns on, on a device that started
-	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
-	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
-	 * until they are built, and the frame before stays on screen meanwhile.
+	 * with slices to draw turns on, or the page or the sketch itself gives the subsurface blur taps,
+	 * on a device that started on the 8-bit path only for MSAA, the core moves to HDR color with
+	 * FXAA for the engine's life. A preset's taps alone do not move it. Returns true then: the frame
+	 * has new targets and pipelines, so the thread that draws holds it until they are built, and the
+	 * frame before stays on screen meanwhile.
 	 */
 	private followBloom(): boolean {
 		const on = this.post.bloomOn;
@@ -997,8 +1002,11 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
-		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		if (this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		const { quality } = this;
+		const blur = quality.settings.subsurfaceSamples > 0 && quality.chose('subsurfaceSamples');
+		const fog = this.context.scene.needsHdr && this.fogSetting > 0;
+		if (!this.post.needsHdr && !fog && !blur) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		this.preloads.setUsable('coverage', device.effectsAntialias === ANTIALIAS_MSAA);

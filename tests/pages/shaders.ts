@@ -7,7 +7,8 @@
 // Metal fault are listed apart. The result gives the time the GLSL programs took.
 // With `?part=k&parts=n`, the page downloads and checks only part k of n of the shader builds, so
 // that several pages can share the work. With `?set=`, it checks only one set of them, such as the
-// builds without the coat and sheen bit, or a sample of those with it.
+// builds without the coat and sheen bit, a sample of those with it, the builds of the features that
+// load on first use, or a sample of those.
 import { everyShader } from '@null3d/engine/internal';
 import { run } from './lib/result';
 import { checkGlslPrograms, checkWgslModules, type ShaderFailure } from './lib/shader-checks';

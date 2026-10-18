@@ -717,6 +717,9 @@ const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** Panels and leaf cards that let the light behind them through to the camera's side. */
+const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
+const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
 /** The sketch of decals on a stone yard. */
@@ -2272,6 +2275,82 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Four panels with a low sun behind them let 0, 1/3, 2/3 and all of their diffuse light through
+	// to the camera's side (glTF's diffuse transmission). A box's shadow shows through the last
+	// panel, and an orange lamp lights the second from behind. The translucency spec measures each.
+	// The first use of these shaders compiles slowly on SwiftShader: on the Mac, with six tests at
+	// once, four of eighteen runs passed 30 s, so the tests take 60 s.
+	{
+		name: 'translucency',
+		sketch: TRANSLUCENCY_SKETCH,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// The same panels with a custom material whose surface function sets the diffuse transmission:
+	// they draw as the standard material does, so the references are copies of the first test's.
+	{
+		name: 'translucency-custom',
+		sketch: `${TRANSLUCENCY_SKETCH}?custom`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+		reference: 'translucency',
+	},
+	// The last panel's diffuse transmission map and color map in stripes, a thick red volume that
+	// tints the light through every panel, and masked leaf cards with alpha to coverage, whose cut
+	// outlines cast shadows.
+	{
+		name: 'translucency-maps',
+		sketch: `${TRANSLUCENCY_SKETCH}?maps`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'translucency-volume',
+		sketch: `${TRANSLUCENCY_SKETCH}?volume`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'translucency-leaves',
+		sketch: `${TRANSLUCENCY_SKETCH}?leaves`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// The subsurface blur of skin: two panels of one skin tone in a low sun, plain on the left and
+	// with a scatter radius on the right, crossed by a bar's shadow. The right panel's light spreads
+	// into the shadow, redder, and a box in front of it takes no blur. The sketch gives the blur 17
+	// taps on every tier. The subsurface spec measures each effect.
+	{ name: 'subsurface', sketch: SUBSURFACE_SKETCH, hold: 0, size: [640, 360], timeoutSeconds: 60 },
+	// The same scene without taps: neither panel blurs.
+	{
+		name: 'subsurface-off',
+		sketch: `${SUBSURFACE_SKETCH}?off`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// Both panels with a base color map of fine stripes, which the skin's blur softens: the skin
+	// pass's builds with maps.
+	{
+		name: 'subsurface-maps',
+		sketch: `${SUBSURFACE_SKETCH}?maps`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// Half the render size, which the skin pass and the blur draw into the corner of their targets.
+	{
+		name: 'subsurface-scale-50',
+		sketch: `${SUBSURFACE_SKETCH}?scale=0.5`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
 	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
 	// function sets its coat, in the room's light. The layers spec checks that layers turned off
 	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly.

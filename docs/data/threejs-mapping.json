@@ -874,6 +874,17 @@
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
     },
     {
+      "id": "mat-subsurface",
+      "category": "Materials",
+      "three": "MeshSSSNodeMaterial / SubsurfaceScatteringShader (thicknessColor, thicknessDistortion, thicknessAmbient, thicknessAttenuation, thicknessPower, thicknessScale, thicknessMap)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ diffuseTransmission, diffuseTransmissionColor, diffuseTransmissionMap, doubleSided: true }), with subsurfaceRadius and subsurfaceColor for skin",
+      "notes": "Light from behind a thin surface shows on its front through glTF's diffuse transmission, which glTF's KHR_materials_diffuse_transmission also loads into. Map thicknessColor to diffuseTransmissionColor and thicknessScale to diffuseTransmission, kept from 0 to 1, and a thicknessMap to diffuseTransmissionMap with its value in alpha. three.js's term glows most when the camera looks toward the light, with thicknessDistortion and thicknessPower shaping the glow; null3D's light from behind spreads evenly, as glTF describes, so those two have no option and the glow looks softer head on. thicknessAmbient maps to the ambient and environment light, which shine through by themselves. The front keeps 1 - diffuseTransmission of its diffuse light, where three.js adds the glow on top. A custom material sets s.diffuseTransmission in its surface function. For skin, wax and marble, whose light spreads under the surface, which three.js's term does not draw, add subsurfaceRadius and subsurfaceColor: the subsurface blur spreads the diffuse light on the High and Ultra presets.",
+      "docs": "api/materials",
+      "detect": "\\b(MeshSSSNodeMaterial|SubsurfaceScatteringShader|thicknessColor|thicknessDistortion|thicknessPower)\\b"
+    },
+    {
       "id": "mat-clearcoat",
       "category": "Materials",
       "three": "MeshPhysicalMaterial clearcoat / clearcoatRoughness / clearcoatNormalScale / clearcoatMap / clearcoatRoughnessMap / clearcoatNormalMap",

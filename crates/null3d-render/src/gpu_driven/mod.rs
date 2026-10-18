@@ -103,6 +103,15 @@
 //! into buffers of its own, and its bundle draws them into the outline mask. Outlining an object,
 //! or turning outlines on or off, rebuilds the layouts, as casting shadows does.
 //!
+//! # Subsurface blur
+//!
+//! While the quality setting gives the subsurface blur taps and some material has a scatter radius,
+//! a fourth layout holds the objects with such a material, with the skin pass's pipelines (see
+//! [`crate::subsurface`]). The subsurface view culls it with the camera's frustum and layers into
+//! buffers of its own, and its bundle draws them into the skin pass's target, through the camera
+//! view's frame group. Turning the blur's taps on or off, or creating the first such material,
+//! rebuilds the layouts.
+//!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
 //! that the camera's opaque pass draws after its bundle, or before it while a bucket writes no
 //! depth, is [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and
@@ -167,6 +176,7 @@ use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUnifo
 use crate::skinning::SkinningMode;
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
+use crate::subsurface::SubsurfaceIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
@@ -196,8 +206,9 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
 }
 
 /// Bytes of each source in the builder's tables: its entries in the bucket table, the layer table,
-/// the casters' and the outlined objects' bucket tables, and its place in the cell order.
-const TABLE_BYTES_PER_SOURCE: u32 = 20;
+/// the casters', the outlined objects' and the subsurface objects' bucket tables, and its place in
+/// the cell order.
+const TABLE_BYTES_PER_SOURCE: u32 = 24;
 
 /// Engine memory the builder keeps for each source: its entries in the tables, and room for them
 /// in both frames' upload arenas.
@@ -235,6 +246,7 @@ mod ids {
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
+    use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
     use crate::weighted::WeightedIds;
 
@@ -340,8 +352,14 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = REDRAW_INSTANCES + 1;
+    /// The subsurface objects' bucket table and bucket records, which the subsurface view's
+    /// culling reads.
+    pub const SUBSURFACE_BUCKETS: u32 = OBJECT_RANGES + 1;
+    pub const SUBSURFACE_RECORDS: u32 = SUBSURFACE_BUCKETS + 1;
+    /// The uniform buffer of the subsurface blur's steps.
+    pub const SUBSURFACE: u32 = SUBSURFACE_RECORDS + 1;
     /// The uniform buffer of the physical sky's values.
-    pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
+    pub const PHYSICAL_SKY: u32 = SUBSURFACE + 1;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
     /// The uniform buffer of screen-space reflections' steps.
@@ -515,8 +533,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of the weighted layer's composite and depth copy, after the copy's.
-    pub const WEIGHTED_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each step of the subsurface blur, after the copy's.
+    pub const SUBSURFACE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of the weighted layer's composite and depth copy, after the blur's.
+    pub const WEIGHTED_GROUPS: u32 = SUBSURFACE_GROUPS + SUBSURFACE_STEPS as u32;
     /// Each particle system's bind group, after the weighted layer's.
     pub const PARTICLE_GROUPS: u32 = WEIGHTED_GROUPS + WeightedIds::GROUPS;
     /// Each camera view's group of its depth copy for soft particles, after the systems'.
@@ -640,6 +660,13 @@ pub struct GpuDrivenRenderer {
     layouts_outlined: bool,
     /// True once the outline view's GPU objects exist.
     outline_made: bool,
+    /// The layout of the objects whose material has a scatter radius, which the subsurface view
+    /// draws.
+    scattering: Layout,
+    /// True when the layouts were built while the subsurface blur has taps.
+    layouts_scattered: bool,
+    /// True once the subsurface view's GPU objects exist.
+    subsurface_made: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     /// The views whose depth prepass has its bind group.
@@ -843,6 +870,10 @@ impl GpuDrivenRenderer {
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
                         }),
+                        subsurface: SubsurfaceIds {
+                            buffer: ids::SUBSURFACE,
+                            first_group: ids::SUBSURFACE_GROUPS,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -857,6 +888,9 @@ impl GpuDrivenRenderer {
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
+            scattering: Layout::new(Drawn::Subsurface, config.index_instances),
+            layouts_scattered: false,
+            subsurface_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
@@ -1015,6 +1049,7 @@ impl GpuDrivenRenderer {
         };
         let shadows = passes.any();
         let outlines = self.settings.outline().is_some();
+        let scatters = self.settings.holds_scattering();
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
         let settings = &self.settings;
@@ -1051,6 +1086,7 @@ impl GpuDrivenRenderer {
             || probe_switched
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
+            || scatters != self.layouts_scattered
             || self.graph.depth_prepass() != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
             || skinned_appear;
@@ -1173,15 +1209,37 @@ impl GpuDrivenRenderer {
                 self.outlined.clear();
             }
             self.layouts_outlined = outlines;
+            // The subsurface layout holds buckets only while the blur has taps and some material
+            // has a scatter radius.
+            if scatters {
+                self.scattering.rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    self.graph.skin_targets(),
+                    input.scene,
+                    input.batches,
+                    parity,
+                    limit,
+                    passes,
+                    Prepass::Off,
+                    &self.skinning,
+                    &mut self.key_counts,
+                )?;
+            } else {
+                self.scattering.clear();
+            }
+            self.layouts_scattered = scatters;
             // The cell order holds every object that a view or a cascade culls: blended casters
             // have no bucket in the scene's layout, as the transparent pass draws them, but cast
             // all the same. Blended objects can be outlined too.
             let (layout, casters, outlined) = (&self.layout, &self.casters, &self.outlined);
+            let scattering = &self.scattering;
             self.cells
                 .classify(input.scene, &|slot| {
                     layout.draws(slot)
                         || (shadows && casters.draws(slot))
                         || (outlines && outlined.draws(slot))
+                        || (scatters && scattering.draws(slot))
                 })
                 .map_err(|_| RecordError::OutOfMemory {
                     bytes: (input.scene.capacity() + 1).saturating_mul(16),
@@ -1236,6 +1294,10 @@ impl GpuDrivenRenderer {
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_still_enabled(self.settings.still_enabled());
         self.graph.set_still(self.settings.still());
+        self.graph.set_subsurface(
+            self.settings.subsurface_frame(input.canvas),
+            !self.scattering.buckets.is_empty(),
+        );
         self.graph.set_transmission(self.sorted.transmits());
         self.graph.set_weighted(self.sorted.weighs());
         let skipped = self.settings.decal_skipped_layers();
@@ -1388,6 +1450,14 @@ impl GpuDrivenRenderer {
             self.culling.add_view(list, ViewId::OUTLINE)?;
             self.outline_made = true;
         }
+        // The skin pass draws through the camera view's frame group, so its view needs only its
+        // culling buffers.
+        let skin_drawn = self.graph.subsurface_draws();
+        let new_skin = skin_drawn && !self.subsurface_made;
+        if new_skin {
+            self.culling.add_view(list, ViewId::SUBSURFACE)?;
+            self.subsurface_made = true;
+        }
 
         self.cells.update(input);
         // Each view's values first: the light grids set how much their uploads take.
@@ -1533,6 +1603,9 @@ impl GpuDrivenRenderer {
             if outlines {
                 self.outlined.apply(list, arena, binding_bytes)?;
             }
+            if scatters {
+                self.scattering.apply(list, arena, binding_bytes)?;
+            }
             (shared, casters)
         } else {
             self.layout.update_membership(list, arena, input, parity)?;
@@ -1541,6 +1614,10 @@ impl GpuDrivenRenderer {
             }
             if outlines {
                 self.outlined
+                    .update_membership(list, arena, input, parity)?;
+            }
+            if scatters {
+                self.scattering
                     .update_membership(list, arena, input, parity)?;
             }
             (false, false)
@@ -1628,6 +1705,26 @@ impl GpuDrivenRenderer {
                 opaque::record_bundle(list, view, outlined, meshes, targets, kind, 0, &|_| false)?;
             }
         }
+        if skin_drawn && (upload_everything || buffers_remade || groups_remade || new_skin) {
+            let view = ViewId::SUBSURFACE;
+            let recreated = shared_recreated || upload_everything;
+            self.culling.apply(
+                list,
+                view,
+                &self.scattering,
+                recreated,
+                binding_bytes,
+                false,
+            )?;
+            let targets = self.graph.skin_targets();
+            // The skin pass leaves out what the camera's view leaves out.
+            let hidden_targets = self.settings.hidden_targets(ViewId::CAMERA);
+            let textures = self.settings.textures();
+            let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
+            let (scattering, meshes) = (&self.scattering, &self.meshes);
+            let kind = Bundle::Subsurface;
+            opaque::record_bundle(list, view, scattering, meshes, targets, kind, 0, &hidden)?;
+        }
         let first_cascade_to_apply = if upload_everything || buffers_remade {
             0
         } else {
@@ -1669,6 +1766,9 @@ impl GpuDrivenRenderer {
         }
         if outlines {
             self.outlined.update_skinned(list, arena, input.scene)?;
+        }
+        if scatters {
+            self.scattering.update_skinned(list, arena, input.scene)?;
         }
         self.skinning.begin_frame();
         self.layout
@@ -1773,6 +1873,23 @@ impl GpuDrivenRenderer {
                     &detail,
                 )?;
             }
+        }
+        if let (true, Some(frame)) = (skin_drawn, self.frames[ViewId::CAMERA.index()]) {
+            let view = ViewId::SUBSURFACE;
+            let (layout, scattering, cells) = (&self.layout, &self.scattering, &self.cells);
+            let detail = self.settings.level_view(view, input.canvas);
+            self.culling.upload(
+                list,
+                arena,
+                view,
+                &frame,
+                layout,
+                scattering,
+                input.scene,
+                cells,
+                None,
+                &detail,
+            )?;
         }
         self.cascade_frames = [None; MAX_CASCADES];
         if shadow.is_none() && self.cascades_held && shadows {
@@ -1975,7 +2092,7 @@ impl GpuDrivenRenderer {
         // occlusion culling, into the draws its opaque pass reads.
         let occluding =
             occlusion && self.layout.occluders() > 0 && self.pyramids.built(input.pipelines_built);
-        let outlined = &self.outlined;
+        let (outlined, scattering) = (&self.outlined, &self.scattering);
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
         let skinning = &self.skinning;
@@ -1983,10 +2100,12 @@ impl GpuDrivenRenderer {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
             _ if view == ViewId::OUTLINE => outline_drawn && frames[0].is_some(),
+            _ if view == ViewId::SUBSURFACE => skin_drawn && frames[0].is_some(),
             _ => frames[view.index()].is_some(),
         };
         let layout_of = |view: ViewId| match view {
             ViewId::OUTLINE => outlined,
+            ViewId::SUBSURFACE => scattering,
             view if view.is_camera() => layout,
             _ => casters,
         };
@@ -2069,6 +2188,9 @@ impl GpuDrivenRenderer {
                     } else {
                         opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
                     }
+                }
+                Role::SkinLight if drawn(ViewId::SUBSURFACE) => {
+                    opaque::record(list, ViewId::SUBSURFACE, Bundle::Subsurface)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
@@ -2273,11 +2395,15 @@ impl GpuDrivenRenderer {
         } else {
             0
         };
-        let views = camera_views * (per_view(&self.layout) + pyramids) + per_view(&self.outlined);
+        let views = camera_views * (per_view(&self.layout) + pyramids)
+            + per_view(&self.outlined)
+            + per_view(&self.scattering);
         let tiles = self.settings.tile_settings().tiles as usize;
         let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
-        let tables =
-            self.layout.upload_bound() + self.casters.upload_bound() + self.outlined.upload_bound();
+        let tables = self.layout.upload_bound()
+            + self.casters.upload_bound()
+            + self.outlined.upload_bound()
+            + self.scattering.upload_bound();
         let lights = self.lights.upload_room();
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views)
@@ -2320,6 +2446,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.layout.reserve(sources)?;
         self.casters.reserve(sources)?;
         self.outlined.reserve(sources)?;
+        self.scattering.reserve(sources)?;
         let added = sources.saturating_sub(self.layout.sources);
         let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
         for arena in self.lists.arenas_mut() {
@@ -2374,6 +2501,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.casters.forget_gpu();
         self.outlined.forget_gpu();
         self.outline_made = false;
+        self.scattering.forget_gpu();
+        self.subsurface_made = false;
         self.culling.forget_gpu();
         self.pyramids.forget_gpu();
         self.views_made = 0;

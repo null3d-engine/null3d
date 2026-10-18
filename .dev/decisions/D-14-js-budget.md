@@ -597,6 +597,24 @@ worth 900 programs.
 `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the new figure. The gzip and
 uncompressed figures for a first-use file are unchanged at 320 KB and 1,536 KB.
 
+### The combination tables raised, 18 October 2026: 64 KB to 96 KB raw
+
+The M2-EX36 branch's translucency builds grew the four generated combination tables, the lists of
+module addresses for the builds that need several features. Each table gains one set of address
+lines for each pair of bits that the builds form, so the translucency bit's many pairs took the
+largest table from under 64 KB to 84,635 bytes uncompressed after Brotli, past [`LATER_BUDGET`]'s
+raw figure. Their compressed figures stayed small: 6.7 to 7.2 KB after Brotli against 16 KB.
+
+The owner's ruling of 18 October 2026 gave the combination tables a raw limit of their own, 96 KB,
+matched by the `-combos` part of the file name, and left every compressed limit as it was. A
+compressed figure is what a page downloads; the raw one guards the hosts that send files as they
+are, and the table is a list of short addresses that compresses far better than code. Splitting
+each table into more files would have needed a change to the shader build and to the loader, which
+the owner judged not worth it.
+
+`COMBOS_BUDGET` in `tools/lib/size-report.ts` holds the figure. The size check names the four grown
+files, and their `Size-Growth:` trailers give the reason on this branch.
+
 ### The trend, and the task that tracks it
 
 The start budget rose from 140 KB to 145 KB in the morning and was over again within hours. Hours after the raise to 160 KB, the light probe grid's figures put the pipelined WebGL2 start at 159.6 KB, 99.8% of the new budget ([D-146](D-146-light-probe-grid.md)). Every raise so far went to the GLSL side, and the WebGL2 start module is the binding one. The next landing that adds a mesh-template permutation moves it again.
