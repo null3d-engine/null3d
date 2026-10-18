@@ -68,3 +68,17 @@ export class EngineError extends Error {
 		return true;
 	}
 }
+
+/**
+ * The engine error that a message from another thread names by the code at its start, or
+ * undefined when it names none. A message that holds a whole engine error's text keeps it. A bare
+ * coded message, which code that does not load this module sends, gets its fix and link here.
+ */
+export function errorOfMessage(message: string): EngineError | undefined {
+	const [, code, detail = ''] = /^(E\d{4}): ([\s\S]*)$/.exec(message) ?? [];
+	if (!code || !isErrorCode(code)) return undefined;
+	if (!message.endsWith(`See ${DOCS_BASE}${code}.md`)) return new EngineError(code, detail);
+	const error = new EngineError(code, '');
+	error.message = message;
+	return error;
+}

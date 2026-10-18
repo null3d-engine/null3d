@@ -1,6 +1,8 @@
 //! The WGSL library: the modules in the `lib` folder, the composers that import them, and the
 //! source files each variant uses, prepared for the checks.
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashMap};
 
 use naga::Handle;
@@ -25,10 +27,28 @@ pub(crate) fn is_library_file(file: &str) -> bool {
     file.starts_with(LIBRARY_FOLDER)
 }
 
+/// True when `text` names `name`, as `null3d::math` in `#import null3d::math`. A longer name that
+/// starts with `name`, such as `null3d::math_extra` against `null3d::math`, does not count.
+#[cfg(not(target_arch = "wasm32"))]
+fn names(text: &str, name: &str) -> bool {
+    let mut rest = text;
+    while let Some(at) = rest.find(name) {
+        let after = &rest[at + name.len()..];
+        if !after.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
+            return true;
+        }
+        rest = after;
+    }
+    false
+}
+
 /// One library module.
 pub(crate) struct LibraryModule {
     /// The import path, such as `null3d::math`.
     pub name: String,
+    /// The file relative to the shader folder, such as `lib/math.wgsl`.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub file: String,
     /// The display path of the file.
     pub path: String,
     /// The source text.
@@ -95,6 +115,7 @@ impl Library {
                 LibraryModule {
                     decoration: Composer::decorated_name(Some(&expected), ""),
                     name: expected,
+                    file: file.clone(),
                     path,
                     source: source.clone(),
                     half: half::enables_f16(source),
@@ -143,6 +164,27 @@ impl Library {
     /// The modules, each after the modules it imports.
     pub fn modules(&self) -> &[LibraryModule] {
         &self.modules
+    }
+
+    /// The files of the library modules that `source` imports, directly or through the modules it
+    /// imports, sorted and without duplicates. A module counts when the text names its import
+    /// path, such as `null3d::math`, which every `#import` line does. The scan over-approximates:
+    /// a module the text names but does not use only invalidates more than it must, which keeps
+    /// the cache safe.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn imported_files(&self, source: &str) -> Vec<String> {
+        let mut used: BTreeSet<String> = BTreeSet::new();
+        let mut queue = vec![source];
+        while let Some(text) = queue.pop() {
+            for module in &self.modules {
+                if used.contains(&module.file) || !names(text, &module.name) {
+                    continue;
+                }
+                used.insert(module.file.clone());
+                queue.push(&module.source);
+            }
+        }
+        used.into_iter().collect()
     }
 
     /// The source text of the module at a display path.

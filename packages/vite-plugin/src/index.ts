@@ -22,6 +22,13 @@ import {
 import { CompilerPool } from './compile-pool.ts';
 import { writeWgslDeclaration } from './declarations.ts';
 import {
+	ENGINE_SHADERS_ENV,
+	engineShaderFolder,
+	engineShadersRoot,
+	ensureEngineShaders,
+} from './engine-shaders.ts';
+import { buildEngineShadersLocally } from './engine-shaders-local.ts';
+import {
 	changedLiterals,
 	HOT_CLIENT,
 	HOT_CLIENT_ADDRESS,
@@ -32,6 +39,7 @@ import {
 	WGSL_UPDATE_EVENT,
 	type WgslUpdate,
 } from './hot.ts';
+import { MATERIAL_BUILDS_ADDRESS, MaterialBuilds, ModuleBuilds } from './material-builds.ts';
 import {
 	FILES_LIST,
 	listedFiles,
@@ -41,6 +49,8 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
+import { emitParagraphTables, shaderParagraphsPlugin } from './paragraphs.ts';
+import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -153,6 +163,24 @@ export const CORE_FILES = [
  * a script tag for it.
  */
 export const EARLY_CORE_MODULE = '@null3d/engine/early-core';
+
+/**
+ * The engine's import of one of its generated shader modules, as its own files write it: from a
+ * file at any depth inside the engine, so the path climbs one or more folders to `generated/`.
+ */
+const ENGINE_GENERATED = /^(?:\.\.?\/)+generated\/([A-Za-z0-9_.-]+)$/;
+
+/** The `lib` folder of an engine package, when the importer sits inside it. */
+function engineLibFolder(importer: string): string | undefined {
+	const marker = '/lib/';
+	const at = importer.lastIndexOf(marker);
+	return at < 0 ? undefined : importer.slice(0, at + marker.length);
+}
+
+/** Tells the developer where the engine's shaders come from, and why a first build waits. */
+function reportShaderSource(message: string): void {
+	console.log(message);
+}
 
 /** The chunks that a page's entry chunk imports, directly or through others, with the entry. */
 function staticChunks(
@@ -338,6 +366,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
+	/** True when the shader cache is ignored, by the environment or by Vite's `--force`. */
+	let noShaderCache = shaderCacheOff();
 	/** The third-party notices that a client build writes beside the page; null in other builds. */
 	let notices: string | null = null;
 	/** What each worker build's files hold, by file name, for the list of files for offline play. */
@@ -347,6 +377,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
+	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
+	const shaders = new ShaderCache(() => root, compiler, { disabled: () => noShaderCache });
+	/** Custom materials' builds, which load on first use from modules of their own by device. */
+	const materialBuilds = new MaterialBuilds();
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
@@ -358,6 +392,27 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			timestamp: true,
 		});
 		environment.hot.send({ type: 'custom', event: WGSL_UPDATE_EVENT, data: { updates } });
+	};
+	/**
+	 * Resolves the engine's import of one of its generated shader modules into the set on this
+	 * machine: the release asset's, or the one built here. The engine's built files name the
+	 * modules as the build names them, while the set holds a TypeScript module with its source
+	 * extension, and a module that the package carries itself stays with it.
+	 */
+	const resolveGenerated = async (source: string, importer?: string): Promise<string | null> => {
+		const name = ENGINE_GENERATED.exec(source)?.[1];
+		if (!name || !importer) return null;
+		const lib = engineLibFolder(importer);
+		if (!lib) return null;
+		const folder = await engineShaderFolder(lib, {
+			fetch: (artifact) => ensureEngineShaders(artifact, reportShaderSource),
+			build: () => buildEngineShadersLocally(lib, reportShaderSource),
+		});
+		if (!folder) return null;
+		const built = join(folder, name);
+		if (existsSync(built)) return built;
+		const asSource = join(folder, name.replace(/\.js$/, '.ts'));
+		return existsSync(asSource) ? asSource : null;
 	};
 	return {
 		name: 'null3d',
@@ -382,7 +437,21 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: {
 					format: 'es',
-					plugins: () => [workerFilesPlugin(workerFiles), workerPreloadPlugin()],
+					plugins: () => [
+						workerFilesPlugin(workerFiles),
+						workerPreloadPlugin(),
+						shaderParagraphsPlugin(),
+						{
+							// A worker build keeps these plugins alone, so the engine's generated
+							// modules resolve here as they do on the page.
+							name: 'null3d:engine-generated',
+							enforce: 'pre',
+							resolveId: {
+								filter: { id: ENGINE_GENERATED },
+								handler: (source: string, importer?: string) => resolveGenerated(source, importer),
+							},
+						},
+					],
 				},
 				build: {
 					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit),
@@ -403,6 +472,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				);
 			}
 			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
+			// Vite's `--force` ignores its own caches; it ignores the shader cache too.
+			noShaderCache ||= config.optimizeDeps?.force === true;
 		},
 		buildStart() {
 			emitted.clear();
@@ -425,9 +496,18 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		// early script imports nothing, so it runs as soon as it arrives, and the core's download
 		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: [HOT_CLIENT_ADDRESS, /^@null3d\/engine$/] },
+			filter: {
+				id: [HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS, /^@null3d\/engine$/, ENGINE_GENERATED],
+			},
 			async handler(source, importer) {
 				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
+				if (MATERIAL_BUILDS_ADDRESS.test(source))
+					return source.startsWith('\0') ? source : `\0${source}`;
+				// The engine package carries no built shader modules. Its files import them by a name
+				// that the installed package's release asset holds, so each import resolves into the
+				// cache folder that every project on this machine shares.
+				const generated = await resolveGenerated(source, importer);
+				if (generated) return generated;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
@@ -459,9 +539,20 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		load: {
-			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS] } },
+			filter: {
+				id: {
+					include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS, MATERIAL_BUILDS_ADDRESS],
+				},
+			},
 			async handler(id) {
 				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
+				if (MATERIAL_BUILDS_ADDRESS.test(id))
+					return (
+						materialBuilds.module(id) ??
+						this.error(
+							`null3D has no custom material builds named ${id.slice(1)}. Reload the page so the dev server compiles its WGSL again.`,
+						)
+					);
 				// Another plugin's virtual module whose name ends like a WGSL file.
 				if (id.startsWith('\0')) return;
 				if (OPTIMIZED_MODEL.test(id)) {
@@ -494,7 +585,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					return `export default new URL(import.meta.ROLLUP_FILE_URL_${ref}, import.meta.url).href;\n`;
 				}
 				const path = projectPath(root, id);
-				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), compiler);
+				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), shaders);
 				if ('error' in compiled) return this.error(compiled.error);
 				for (const warning of compiled.warnings) this.warn(warning);
 				const key = keyOf(id, path);
@@ -509,8 +600,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					}
 				}
 				const pack = new ShaderPack();
+				const builds = new ModuleBuilds();
+				const value = builds.value(pack, compiled.shader, key);
 				return {
-					code: `export default ${pack.value(compiled.shader, key)};\n${pack.unpacker()}`,
+					code: `export default ${value};\n${pack.unpacker()}${materialBuilds.finish(id, builds)}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -526,17 +619,19 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				let out: MagicString | undefined;
 				if (SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
 					const path = projectPath(root, file);
-					const tagged = await compileTaggedWgsl(code, file, path, compiler);
+					const tagged = await compileTaggedWgsl(code, file, path, shaders);
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
 					const pack = new ShaderPack();
+					const builds = new ModuleBuilds();
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, pack.value(shader, key));
+						out.overwrite(start, end, builds.value(pack, shader, key));
 					}
-					if (out && !pack.empty) out.append(pack.unpacker());
+					if (out && !pack.empty)
+						out.append(`${pack.unpacker()}${materialBuilds.finish(file, builds)}`);
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
 				}
@@ -571,7 +666,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			if (!modules.some((module) => module.id === file)) return;
 			const path = projectPath(root, file);
 			if (WGSL_FILE.test(file)) {
-				const compiled = await compileWgslFile(path, file, await read(), compiler);
+				const compiled = await compileWgslFile(path, file, await read(), shaders);
 				if ('error' in compiled) {
 					showError(environment, compiled.error);
 					return otherModules(modules, file);
@@ -590,7 +685,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			const changed = changedLiterals(before, code, file);
 			if (!changed) return;
 			const results = await Promise.all(
-				changed.map(({ literal }) => compileLiteral(literal, code, file, path, compiler)),
+				changed.map(({ literal }) => compileLiteral(literal, code, file, path, shaders)),
 			);
 			const updates: WgslUpdate[] = [];
 			for (const [k, result] of results.entries()) {
@@ -614,8 +709,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		generateBundle: {
 			order: 'post',
 			handler(_options, bundle) {
+				const tables = emitParagraphTables.call(this, bundle);
 				if (buildingPages) {
-					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root));
+					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root, tables));
 					this.emitFile({
 						type: 'asset',
 						fileName: FILES_LIST,
@@ -626,6 +722,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		configureServer(server) {
+			// The engine's shader modules sit outside the project, in the machine's cache or in the
+			// folder that names a set, and the page and its workers reach them from there.
+			const allowed = server.config.server.fs.allow;
+			for (const shaders of [engineShadersRoot(), process.env[ENGINE_SHADERS_ENV]])
+				if (shaders && !allowed.includes(shaders)) allowed.push(shaders);
 			server.middlewares.use(isolationMiddleware);
 			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');

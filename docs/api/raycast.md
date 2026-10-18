@@ -20,7 +20,7 @@ flowchart LR
 
 A raycast finds where a ray meets the scene's objects. An overlap query finds the objects inside a sphere or a box. Every query tests the triangles of objects and instance rows, as three.js's `Raycaster` does. Raycasts also hit [sprites, points and lines](#sprites-points-and-lines) where they draw. The engine keeps a tree over the scene's objects and a tree over each mesh's triangles. So a query tests only the few triangles near it.
 
-Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing.
+Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. `bun run bench:allocation --calls` checks it.
 
 ```ts
 import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';
@@ -187,6 +187,7 @@ Overlap queries do not find sprites, points or lines.
 - Each triangle as its material draws it: front faces only, or both faces for a material with `doubleSided: true`. three.js's `Raycaster` reads a material's `side` the same way.
 - Shown objects only. A hidden object is never hit.
 - The positions of the last frame's update. A move, a new object or a destroy in your `onUpdate` counts from the next frame. In `onLateUpdate`, queries see this frame's positions, but rows of instance batches still have the last frame's positions.
+- Before the first frame, a query applies the objects that `setup` has created and their transforms. A bake that `setup` runs therefore sees the scene as `setup` has built it. Moves that `setup` makes after its first query count from the first frame.
 
 A custom material's vertex offset moves vertices on the GPU only, so queries test the mesh's own positions. In the same way, a skinned character is tested in its bind pose, the pose of its mesh before animation, moved by its object's matrix. A ray through its animated arm can miss, and a ray through the place where the arm rests in the bind pose can hit.
 

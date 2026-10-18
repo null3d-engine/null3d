@@ -11,11 +11,22 @@ declare global {
 		__null3dResult?: unknown;
 		/** The page's steps so far, each with its time since the page started. */
 		__null3dProgress?: string[];
+		/** When the page expects to end, in seconds since it started, from its own measurements. */
+		__null3dEndsBy?: number;
 	}
 }
 
 const trail: string[] = [];
 window.__null3dProgress = trail;
+
+/**
+ * Tells the runner page when this page expects to end, in seconds since it started, as its own
+ * measurements show. The runner page waits that long when it is beyond the page's time limit, up to
+ * a cap, so a slow device's page that still works on does not time out.
+ */
+export function expectEnd(seconds: number): void {
+	window.__null3dEndsBy = seconds;
+}
 
 /** Notes a step of the page's work in its trail. */
 export function progress(step: string): void {

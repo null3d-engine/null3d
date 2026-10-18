@@ -83,8 +83,9 @@ export const S6_MESSAGES = {
 	/** A click picked a building: its number. */
 	picked: 's6-picked',
 	/**
-	 * The page's occlusion turns put the camera at a share of the route, `{ share, still }`: held
-	 * there, or driving on from there.
+	 * The page's occlusion turns put the camera at a share of the route, `{ share, still, toward }`:
+	 * held there, or driving on from there. A held camera with `toward`, a second share, jumps
+	 * between the two in turns, one frame at each.
 	 */
 	drive: 's6-drive',
 	/** The page's occlusion turns turn software occlusion culling on or off: true or false. */

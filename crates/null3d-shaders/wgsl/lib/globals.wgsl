@@ -1,5 +1,6 @@
 #define_import_path null3d::globals
 #import null3d::fog::Fog
+#import null3d::sky_scattering::Aerial
 #import null3d::tonemap
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
@@ -46,6 +47,8 @@ struct Frame {
     occlusion: vec4f,
     /// The scene's environment, which null3d::ibl reads.
     environment: EnvironmentLight,
+    /// The scene's light probe grid, which null3d::probe_grid reads (D-146).
+    probe_grid: ProbeGrid,
     /// The light that the hemisphere lights add along each world axis, each in `xyz`. A surface
     /// with unit normal n gets `ambient` plus n.x times the first, n.y times the second and n.z
     /// times the third (see null3d::lighting::ambient_irradiance). All zero without hemisphere
@@ -63,6 +66,21 @@ struct Frame {
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
     /// plane and 0 at the far plane. Zero in the views of lights.
     projection: mat4x4f,
+    /// Takes a position relative to this frame's camera into the clip space of the camera's view in
+    /// the frame before, which screen-space reflections read the color of (see null3d::ssr).
+    reflection_reprojection: mat4x4f,
+    /// Screen-space reflections' strength, 0 when the view draws none, the most roughness that
+    /// reflects, the most distance of a ray, and the share of the screen over which they fade
+    /// toward its edges.
+    reflection: vec4f,
+    /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
+    /// spans at a distance of one unit in its view, along y, and a spare.
+    reflection_corner: vec4f,
+    /// The physical sky's air between the camera and each surface, all zero without one.
+    aerial: Aerial,
+    /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
+    /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
+    vignette: vec4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every
@@ -91,6 +109,23 @@ struct EnvironmentLight {
     params: vec4f,
 }
 
+/// The scene's light probe grid (D-146): a grid of irradiance probes, each holding L1 spherical
+/// harmonics of the light that reaches its point. null3d::probe_grid reads it per pixel. Positions
+/// are in the world. The grid's texture is bound at binding 10 of the frame's group; while the
+/// scene sets none, `origin.w` is 0 and no shader reads it.
+struct ProbeGrid {
+    /// The grid's corner of least x, y and z, and 1 while the scene sets a grid, else 0.
+    origin: vec4f,
+    /// One over the spacing between probes along each axis, 0 for an axis one probe deep, and a
+    /// spare. A shader scales the grid's coordinates by it, and divides by 1 in place of the 0.
+    inverse_spacing: vec4f,
+    /// The probes along each axis, and the depth of one sub-volume along z, `nz + 2`.
+    counts: vec4f,
+    /// The grid's intensity times the frame's exposure, the share of the environment's diffuse
+    /// light that the grid takes over, and two spares.
+    params: vec4f,
+}
+
 /// One material's whole row of the material table, as the core writes it (`materials.rs` in the
 /// renderer crate names each float): the values that every shader reads, which `Material` holds,
 /// then the values of a material that lets light through, which only the builds that let light
@@ -111,12 +146,22 @@ struct MaterialRow {
     /// The color that white light takes after it travels the attenuation distance through the
     /// volume, and that distance, 0 for a volume that absorbs nothing.
     attenuation: vec4f,
+    /// The clear coat, its roughness, and the coat normal map's scale along u and v.
+    coat: vec4f,
+    /// The sheen's linear color and its roughness.
+    sheen: vec4f,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.
 struct MaterialTransmission {
     values: vec4f,
     attenuation: vec4f,
+}
+
+/// The values of a layered material: its row's `coat` and `sheen`.
+struct MaterialCoatSheen {
+    coat: vec4f,
+    sheen: vec4f,
 }
 
 /// The values of one material's row that every shader reads (see `MaterialRow`). Colors are

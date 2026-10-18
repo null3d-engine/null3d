@@ -100,6 +100,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					wantJobs,
 					sendLabelSlot: (id, slot, generation) =>
 						replyToPage({ type: 'label', id, slot, generation }),
+					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
 				},
 				message.hold,
 			);
@@ -151,6 +152,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		}
 	} else if (message.type === 'wake') {
 		wakeWaiters();
+	} else if (message.type === 'job-workers') {
+		// The on-demand loader sends its tasks only to the workers that run.
+		if (jobTaskHost) jobTaskHost.running = message.running;
 	} else if (message.type === 'wgsl') {
 		runner?.updateShaders(message.updates);
 	} else if (message.type === 'post') {

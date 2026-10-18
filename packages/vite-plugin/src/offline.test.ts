@@ -3,10 +3,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
+import { engineShadersRoot } from './engine-shaders.ts';
 import {
 	engineModule,
 	FEATURE_MODULES,
-	featureOf,
+	featuresOf,
 	type ListedFile,
 	listedFiles,
 	offlineFiles,
@@ -20,25 +21,39 @@ function file(fileName: string, fields: Partial<ListedFile> = {}): ListedFile {
 	return { fileName, entry: false, modules: [], imports: [], loads: [], ...fields };
 }
 
-describe('featureOf', () => {
+describe('featuresOf', () => {
 	it("names each shader feature as createEngine's preload does", () => {
-		expect(featureOf('generated/shaders-skinning-glsl-draw-index-tone-map-half')).toBe('skinning');
-		expect(featureOf('generated/shaders-instance-index-wgsl')).toBe('instance_index');
-		expect(featureOf('generated/shaders-sky-wgsl-tone-map')).toBe('sky');
+		expect(featuresOf('generated/shaders-skinning-glsl-draw-index-tone-map-half')).toEqual([
+			'skinning',
+		]);
+		expect(featuresOf('generated/shaders-instance-index-wgsl')).toEqual(['instance_index']);
+		expect(featuresOf('generated/shaders-sky-wgsl-tone-map')).toEqual(['sky']);
+	});
+
+	it('gives the module of the builds that need several shader features to each of them', () => {
+		expect(featuresOf('generated/shaders-hash-and-skinning-wgsl-half')).toEqual([
+			'hash',
+			'skinning',
+		]);
+		expect(featuresOf('generated/shaders-hash-and-instance-index-and-lod-fade-wgsl')).toEqual([
+			'hash',
+			'instance_index',
+			'lod_fade',
+		]);
 	});
 
 	it("puts the start's shader modules and the other engine modules in the start", () => {
-		expect(featureOf('generated/shaders-glsl-draw-index-half')).toBeUndefined();
-		expect(featureOf('generated/shaders-wgsl')).toBeUndefined();
-		expect(featureOf('generated/shaders')).toBeUndefined();
-		expect(featureOf('workers/job-worker')).toBeUndefined();
+		expect(featuresOf('generated/shaders-glsl-draw-index-half')).toEqual([]);
+		expect(featuresOf('generated/shaders-wgsl')).toEqual([]);
+		expect(featuresOf('generated/shaders')).toEqual([]);
+		expect(featuresOf('workers/job-worker')).toEqual([]);
 	});
 
 	it('names the features of the loaders', () => {
-		expect(featureOf('scene/gltf-meshopt')).toBe('gltf');
-		expect(featureOf('vendor/basis/basis_transcoder.wasm')).toBe('ktx2');
-		expect(featureOf('scene/panorama')).toBe('environment');
-		expect(featureOf('generated/shaders-environment-glsl')).toBe('environment');
+		expect(featuresOf('scene/gltf-meshopt')).toEqual(['gltf']);
+		expect(featuresOf('vendor/basis/basis_transcoder.wasm')).toEqual(['ktx2']);
+		expect(featuresOf('scene/panorama')).toEqual(['environment']);
+		expect(featuresOf('generated/shaders-environment-glsl')).toEqual(['environment']);
 	});
 
 	it("names modules that the engine's source holds", () => {
@@ -71,6 +86,17 @@ describe('engineModule', () => {
 		);
 		const source = join(root, 'repo/packages/engine');
 		expect(engineModule(join(source, 'src/scene/ktx2.ts?worker'), packageOf)).toBe('scene/ktx2');
+	});
+
+	it('names the generated shader modules that the set on this machine holds', () => {
+		// A game's build reads the engine's shader modules from the shared set, not the package.
+		const set = join(engineShadersRoot(), 'local/0.0.0-test');
+		expect(engineModule(join(set, 'shaders-sprites-wgsl.ts'), packageOf)).toBe(
+			'generated/shaders-sprites-wgsl',
+		);
+		expect(engineModule(join(set, 'shader-features.ts'), packageOf)).toBe(
+			'generated/shader-features',
+		);
 	});
 
 	it("leaves out other packages' modules, the project's and virtual ones", () => {
@@ -133,6 +159,46 @@ describe('offlineFiles', () => {
 			ktx2: ['assets/basis_transcoder-i9.wasm', 'assets/ktx2-d4.js', 'assets/tasks-h8.js'],
 			skinning: ['assets/shaders-skinning-wgsl-f6.js'],
 		});
+	});
+
+	it('lists the file of the builds that need several features under each of them', () => {
+		const combined = [
+			...build.map((f) =>
+				f.fileName === 'assets/worker-c3.js'
+					? { ...f, text: `${f.text} "./shaders-hash-and-skinning-wgsl-k1.js"` }
+					: f,
+			),
+			file('assets/shaders-hash-and-skinning-wgsl-k1.js', {
+				modules: ['generated/shaders-hash-and-skinning-wgsl'],
+			}),
+		];
+		const list = offlineFiles(combined);
+		expect(list.features.skinning).toEqual([
+			'assets/shaders-hash-and-skinning-wgsl-k1.js',
+			'assets/shaders-skinning-wgsl-f6.js',
+		]);
+		expect(list.features.hash).toEqual(['assets/shaders-hash-and-skinning-wgsl-k1.js']);
+		expect(list.start).not.toContain('assets/shaders-hash-and-skinning-wgsl-k1.js');
+	});
+
+	it('gives a feature the table of shared paragraphs that its modules name, never the start', () => {
+		const table = file('assets/shader-paragraphs-wgsl.js', {
+			text: 'export const SHARED_0 = `uniform vec4 shared;`;',
+		});
+		// The start's device module keeps its own paragraphs, so it names no table.
+		const withTable = [
+			...build.map((f) =>
+				f.fileName === 'assets/shaders-skinning-wgsl-f6.js'
+					? { ...f, loads: [...f.loads, table.fileName] }
+					: f,
+			),
+			table,
+		];
+		const list = offlineFiles(withTable);
+		expect(list.features.skinning).toEqual([table.fileName, 'assets/shaders-skinning-wgsl-f6.js']);
+		expect(list.start).not.toContain(table.fileName);
+		for (const files of Object.values(list.features))
+			if (files !== list.features.skinning) expect(files).not.toContain(table.fileName);
 	});
 
 	it("keeps a feature's file in the start when a start file imports it statically", () => {

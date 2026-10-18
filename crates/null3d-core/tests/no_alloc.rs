@@ -415,6 +415,10 @@ fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
         .map(|j| if j % 5 == 1 { 0.0 } else { 1.0 })
         .collect();
     let mask = animations.add_mask(id, &upper).unwrap();
+    // The pool of dead blends, made before any frame is counted, as a sketch that uses inertial
+    // transitions would have it by its first frame. It holds a few records and doubles as the
+    // crowd's transitions ramp up, which the warm-up of the frame count covers.
+    animations.enable_inertial().unwrap();
     for i in 0..64 {
         let instance = animations.add_instance(id).unwrap();
         if i % 3 == 0 {
@@ -514,6 +518,16 @@ fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame
             0 => animations
                 .play(i, clips[(frame / 40 % 2) as usize], fade)
                 .unwrap(),
+            10 => {
+                let inertial = Play {
+                    fade: 0.4,
+                    inertial: true,
+                    ..Play::default()
+                };
+                animations
+                    .play(i, clips[(frame / 40 % 2) as usize], inertial)
+                    .unwrap();
+            }
             20 => animations.stop(i, Some(clips[1]), 0.1).unwrap(),
             30 if i % 2 == 1 => {
                 let blend = Blend {
@@ -555,17 +569,21 @@ fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame
 }
 
 /// The allocator calls of a run of frames on `jobs`, counted after warm-up frames that build the
-/// hierarchy order and fill both buffers. It checks that the frames culled something too.
+/// hierarchy order, fill both buffers, and let a scene's transitions ramp up. It checks that the
+/// frames culled something too.
 fn frame_allocations(jobs: &JobSystem) -> u64 {
     let mut world = build();
     let (mut animations, clips) = crowd(jobs);
     let mut rng = Rng::new(4);
-    for f in 1..=3 {
+    // The pool of dead-blend records doubles as more transitions run at once, so the warm-up runs
+    // until the crowd's transitions have reached their steady number. A frame after that allocates
+    // nothing, however many of them run.
+    for f in 1..=120 {
         frame(&mut world, jobs, f, &mut rng);
         animate(&mut animations, clips, jobs, f);
     }
     CountingAllocator::arm();
-    for f in 4..=200 {
+    for f in 121..=320 {
         frame(&mut world, jobs, f, &mut rng);
         animate(&mut animations, clips, jobs, f);
     }

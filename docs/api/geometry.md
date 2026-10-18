@@ -197,7 +197,7 @@ The call follows these rules:
 - `values` holds the values of every vertex, in the array type that the mesh was made with. That is a `Float32Array` or a plain array for floats, or the same integer array.
 - `start` and `count` pick the vertices that change, as three.js's `addUpdateRange` does. By default every vertex changes. The next frame uploads only the bytes of those vertices.
 - Values that do not fit the mesh throw [E1206](../errors/E1206.md), and so does a mesh with joints or morph targets.
-- The call allocates nothing, so a call in every frame makes no garbage.
+- The call allocates nothing, so a call in every frame makes no garbage. `bun run bench:allocation --calls` checks it.
 
 Change the normals with the positions when the shape changes, because the engine does not compute them again. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) moves rings over a pool of water this way.
 

@@ -84,7 +84,7 @@ Still to run:
 
 - S6, when it exists: the same commands with `--scenes s6`.
 
-The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`.
+The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`, run `20261005-100625-bench`. Its files are in the [S25's folder](../tested-devices/galaxy-s25-sm-s931b-chrome/20261005-100625-bench.md) and the [iPad's folder](../tested-devices/ipad-10th-generation-safari/20261005-100625-bench.md).
 
 S1 and S1-static are each one instance batch, whose rows cast no shadows (batches cast only with `castShadows`, since M2-R6). So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
 

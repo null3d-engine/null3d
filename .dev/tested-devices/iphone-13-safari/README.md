@@ -1,8 +1,8 @@
 # iPhone 13 in Safari
 
 - Device: iPhone 13 (BrowserStack's device list), Apple A15, 4 GB, 390 x 844 at 3x, 4 cores
-- OS: iOS 17 (BrowserStack's device list)
-- Browser: Safari 17.5. Not supported: below the minimum, Safari 18 ([D-64](../../decisions/D-64-minimum-browsers.md))
+- OS: iOS 18.4.1 (iOS 17, from BrowserStack's device list, in earlier runs)
+- Browser: Safari 18.4 (17.5 in earlier runs, which is below the minimum, Safari 18: [D-64](../../decisions/D-64-minimum-browsers.md))
 - GPU: Apple GPU
 - GPU paths: WebGL2
 - Where: BrowserStack Automate

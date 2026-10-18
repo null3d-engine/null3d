@@ -35,8 +35,8 @@ describe('the smoke plan', () => {
 	const smoke = smokePlan();
 	const ids = smoke.map(({ id }) => id);
 
-	it('keeps pages of the checks plan, in its order', () => {
-		const checks = checksPlan().map(({ id }) => id);
+	it("keeps pages of the checks plan that CI's Safari runs, in its order", () => {
+		const checks = checksPlan({ shaders: 'sampled' }).map(({ id }) => id);
 		expect(ids).toEqual(checks.filter((id) => ids.includes(id)));
 		expect(ids.length).toBeLessThan(checks.length / 5);
 	});
@@ -62,6 +62,7 @@ describe('the smoke plan', () => {
 			'capabilities',
 			'isolation',
 			'shaders-1',
+			'shaders-coat-sample-1',
 			'uploads',
 			'mip-levels',
 			'shader-library-webgpu',
@@ -510,6 +511,44 @@ describe('the GPU pages of the checks plan', () => {
 		expect(notes).toEqual([
 			`1 program linked at the second try after Safari's random Metal fault: ${shader} (${error})`,
 		]);
+	});
+
+	it('passes a part whose every program needs an extension the device lacks, and fails an empty one', () => {
+		notes.length = 0;
+		const names = ['lit.webgl2_draw_index_coat_sheen.main', 'cloth.webgl2_draw_index.main'];
+		const skipped = names.map((name) => `${name}: no WEBGL_multi_draw`);
+		expect(
+			judge(
+				checkOf('shaders-coat-11'),
+				{ ok: true, glslPrograms: 0, multiDraw: false, webgpu: true, skipped },
+				NONE_MISSING,
+				context,
+			),
+		).toEqual([]);
+		expect(notes).toEqual([
+			'the device has no WEBGL_multi_draw, so the page skipped all 2 programs of this part, which read the draw index',
+		]);
+		// A part that held nothing at all is still a fault, and so is one whose programs the device
+		// could compile but the page did not.
+		const empty = { ok: true, glslPrograms: 0, webgpu: true, skipped: [] };
+		expect(
+			judge(checkOf('shaders-coat-11'), { ...empty, multiDraw: false }, NONE_MISSING, context),
+		).toEqual(['no GLSL program was compiled']);
+		expect(
+			judge(checkOf('shaders-coat-11'), { ...empty, multiDraw: true }, NONE_MISSING, context),
+		).toEqual(['no GLSL program was compiled']);
+		// A part that compiled its other programs is not the case above: it keeps no note, and the
+		// count of what it compiled is still what the check reads.
+		notes.length = 0;
+		expect(
+			judge(
+				checkOf('shaders-coat-11'),
+				{ ok: true, glslPrograms: 396, multiDraw: false, webgpu: true, skipped },
+				NONE_MISSING,
+				context,
+			),
+		).toEqual([]);
+		expect(notes).toEqual([]);
 	});
 
 	it("fails the mip levels page only on the engine's way, and notes the ways that work", () => {

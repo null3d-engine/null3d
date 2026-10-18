@@ -20,7 +20,8 @@
 // and resumes the drive.
 //
 // The page's occlusion turns (T-36) move the camera to a share of the route, held there or driving
-// on, and turn software occlusion culling on and off. The sketch answers each once a frame has it.
+// on, or jumping every frame between two shares, and turn software occlusion culling on and off.
+// The sketch answers each once a frame has it.
 import {
 	defineSketch,
 	type Material,
@@ -41,6 +42,7 @@ import {
 	S6_MESSAGES,
 	S6_PICK_RISE,
 	S6_PICKED_LABEL,
+	S6_SHADOW_DISTANCE,
 	S6_SKY,
 	S6_SUN_POSITION,
 	S6_VIEW_LIGHTS,
@@ -71,7 +73,13 @@ export default defineSketch(async (context) => {
 	const reportQuality = watchQuality(context);
 	scene.setBackground(S6_BACKGROUND);
 	const { sun, ambient } = S6_VIEW_LIGHTS;
-	scene.createDirectionalLight({ ...sun, castShadows: true });
+	// The sun's shadow distance is named, so it matches the three.js twin's cascades, which the
+	// benchmark compares this page with, instead of following the automatic distance.
+	scene.createDirectionalLight({
+		...sun,
+		castShadows: true,
+		shadow: { distance: S6_SHADOW_DISTANCE },
+	});
 	scene.createAmbientLight(ambient);
 	const camera = scene.createPerspectiveCamera(S6_CAMERA);
 	scene.setActiveCamera(camera);
@@ -97,8 +105,11 @@ export default defineSketch(async (context) => {
 	for (const light of data.lights) scene.createPointLight(light);
 	const kit = await kitLoad;
 	const kitSeconds = seconds();
-	const moveCamera = followPath(camera, (t, position, target) =>
-		s6Camera(data, t, position, target),
+	// The camera's route time reaches its path in `route`, not as an argument, so no call boxes it
+	// whether the browser inlines the call or not.
+	const route = new Float64Array(1);
+	const moveCamera = followPath(camera, (_t, position, target) =>
+		s6Camera(data, route[0] as number, position, target),
 	);
 	moveCamera(0);
 
@@ -229,13 +240,14 @@ export default defineSketch(async (context) => {
 	}
 
 	let paused = false;
-	let drive = 0;
 	if (demo) debug.stats(true);
 	// The occlusion turns' camera: a move that the next frame makes, the seconds it adds to the
-	// clock's, or a held route time, and whether the next frame answers the page.
-	let move: { share: number; still: boolean } | undefined;
+	// clock's, or a held route time and the one it jumps to in every other frame, and whether the
+	// next frame answers the page.
+	let move: { share: number; still: boolean; toward?: number } | undefined;
 	let offset = 0;
 	let heldAt: number | undefined;
+	let jumpTo: number | undefined;
 	let answer = false;
 	page.onMessage((type, message) => {
 		if (type === S6_MESSAGES.drive) move = message as typeof move;
@@ -248,16 +260,23 @@ export default defineSketch(async (context) => {
 			if (!loaded) stream(CREATED_PER_FRAME);
 			if (demo) {
 				if (input.wasPressed('Space')) paused = !paused;
-				if (!paused) drive += time.dt;
-				moveCamera(drive);
+				if (!paused) route[0] = (route[0] as number) + time.dt;
+				moveCamera(0);
 			} else {
 				if (move) {
 					const at = move.share * s6LoopSeconds(data);
 					heldAt = move.still ? at : undefined;
+					jumpTo =
+						move.still && move.toward !== undefined ? move.toward * s6LoopSeconds(data) : undefined;
 					offset = at - time.now;
 					move = undefined;
 				}
-				moveCamera(heldAt ?? time.now + offset);
+				// Each case writes its own time, so no number passes through a value that may be
+				// undefined, which would box it.
+				if (jumpTo !== undefined && time.frame % 2 === 1) route[0] = jumpTo;
+				else if (heldAt !== undefined) route[0] = heldAt;
+				else route[0] = time.now + offset;
+				moveCamera(0);
 			}
 			reportQuality();
 			if (answer) {

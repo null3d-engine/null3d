@@ -6,6 +6,8 @@
 // The module is the SIMD build of meshoptimizer's own decoder (github.com/zeux/meshoptimizer, MIT
 // licence), from the npm package at the version that the engine pins, kept as a file in
 // packages/engine/vendor/meshopt. This file calls it as meshoptimizer's decoder script does.
+
+import { MemoryViews } from '../shared/memory-views';
 import type { MeshoptDecode } from './gltf-parse';
 
 /** The decoder's exports that the engine calls. */
@@ -46,6 +48,7 @@ export async function meshoptDecoder(module: WebAssembly.Module): Promise<Meshop
 	const instance = await WebAssembly.instantiate(module, {});
 	const exports = instance.exports as unknown as MeshoptExports;
 	exports.__wasm_call_ctors();
+	const views = new MemoryViews(exports.memory);
 	return (target, count, size, source, mode, filter) => {
 		const decode = exports[DECODERS[mode] ?? ''] as DecodeFunction | undefined;
 		const filterOf = exports[FILTERS[filter] ?? ''] as FilterFunction | undefined;
@@ -55,11 +58,10 @@ export async function meshoptDecoder(module: WebAssembly.Module): Promise<Meshop
 		const count4 = (count + 3) & ~3;
 		const out = sbrk(count4 * size);
 		const at = sbrk(source.length);
-		const heap = new Uint8Array(exports.memory.buffer);
-		heap.set(source, at);
+		views.view(Uint8Array, at, source.length).set(source);
 		const result = decode(out, count, size, at, source.length);
 		if (result === 0 && filterOf) filterOf(out, count4, size);
-		target.set(new Uint8Array(exports.memory.buffer).subarray(out, out + count * size));
+		target.set(views.view(Uint8Array, out, count * size));
 		sbrk(out - sbrk(0));
 		if (result !== 0) throw new Error(`Malformed buffer data: ${result}`);
 	};

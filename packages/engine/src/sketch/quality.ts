@@ -40,6 +40,12 @@ export interface QualityStart {
 	 * options give the texture memory. Without it, there is no cap.
 	 */
 	textureCapMiB?: number;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost, at the cost of one more copy of each image in memory. The
+	 * page turns it on for phones and tablets, and a page option can turn it off (D-164).
+	 */
+	keepCopies?: boolean;
 	/** True when the engine checks the preset after its first frame. */
 	check?: boolean;
 }
@@ -67,14 +73,15 @@ export type ApplyQuality = (update: QualityUpdate, changed: readonly QualitySett
 
 /**
  * What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale
- * first, which `quality.renderScale` reports, then the shadow settings and bloom's size here.
+ * first, which `quality.renderScale` reports. Then it lowers the settings here, and last the
+ * volumetric fog's slices, which have no member here.
  *
  * @category api/quality
  */
 export interface QualityGovernor {
 	/**
-	 * The steps past the render scale that the governor has taken: 0 while the shadow settings and
-	 * bloom's size apply as set. Each step lowers the frame's cost after the render scale has reached
+	 * The steps past the render scale that the governor has taken: 0 while every setting applies as
+	 * set. The steps of the levels of detail and of the volumetric fog count too. Each step lowers the frame's cost after the render scale has reached
 	 * `minRenderScale`, so a sketch can lighten its own work too, such as its particles.
 	 */
 	readonly steps: number;
@@ -94,9 +101,27 @@ export interface QualityGovernor {
 	readonly bloomSize: number;
 	/**
 	 * The size of ambient occlusion's targets now: `settings.aoScale`, or half as large after the
-	 * governor's last step while ambient occlusion draws.
+	 * governor's step that follows bloom's while ambient occlusion draws.
 	 */
 	readonly aoScale: number;
+	/**
+	 * The size of screen-space reflections' grid now: `settings.ssrScale`, or a quarter of the
+	 * render size after the governor's step that follows ambient occlusion's while reflections
+	 * draw.
+	 */
+	readonly ssrScale: number;
+	/**
+	 * The steps of each search for the sun's contact shadows now: `settings.contactShadowSteps`, or
+	 * the fewest after the governor's last step.
+	 */
+	readonly contactShadowSteps: number;
+	/**
+	 * The frames between two updates of a far character's pose now. It is
+	 * `settings.farAnimationInterval`, or up to twice as long for each of the governor's last
+	 * steps, at most every 4th frame. Give it to `animator.setUpdateInterval` for the characters
+	 * that the camera sees from far.
+	 */
+	readonly farAnimationInterval: number;
 }
 
 /**
@@ -171,9 +196,10 @@ export interface Quality {
 	readonly renderScale: number;
 	/**
 	 * What the frame-budget governor has lowered below `settings`. When frames take too long, the
-	 * governor lowers the render scale, then the shadow settings, then bloom's size, one step at a
-	 * time. The `onChange` handlers run after each of those steps, but not after a step of the
-	 * render scale. Hold mode has no governor, so it draws with the settings as set.
+	 * governor lowers the render scale, then the levels of detail, the shadow settings, the effects'
+	 * settings and the far characters' updates, one step at a time, in the order that the quality
+	 * presets page lists. The `onChange` handlers run after each of those steps, but not after a
+	 * step of the render scale. Hold mode has no governor, so it draws with the settings as set.
 	 */
 	readonly governor: QualityGovernor;
 	/**
@@ -387,6 +413,15 @@ export class SketchQuality implements Quality {
 			},
 			get aoScale() {
 				return settings.aoScale;
+			},
+			get ssrScale() {
+				return settings.ssrScale;
+			},
+			get contactShadowSteps() {
+				return settings.contactShadowSteps;
+			},
+			get farAnimationInterval() {
+				return settings.farAnimationInterval;
 			},
 		};
 	}

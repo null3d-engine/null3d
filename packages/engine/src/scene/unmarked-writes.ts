@@ -8,6 +8,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import type { ViewHolder } from '../shared/memory-views';
 
 /** The values the check hashes for each object, in the order that the error message names them. */
 const FIELDS = ['position', 'rotation', 'scale', 'bounding sphere'] as const;
@@ -180,6 +181,7 @@ export interface BatchMemory {
 	readonly generation: number;
 	readonly glue: { batchArrays(batch: number, field: number): number };
 	i32(address: number, length: number): Int32Array;
+	holdViews(holder: ViewHolder): void;
 }
 
 /** A static batch that the check watches. */
@@ -222,14 +224,24 @@ interface BatchWatch {
  * skipped `markDirty`. The slices take turns, so a large batch costs a bounded time per frame, and
  * a write to one of its rows is found within a few frames.
  */
-export class UnmarkedRows {
+export class UnmarkedRows implements ViewHolder {
 	private readonly watched: BatchWatch[] = [];
 
 	/** `rowsPerCheck` is the most rows of one batch that a check hashes. */
 	constructor(
 		private readonly core: BatchMemory,
 		private readonly rowsPerCheck = ROWS_PER_CHECK,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the views of every watched batch, which the next check makes again. */
+	dropViews(): void {
+		for (const watch of this.watched) {
+			watch.views.length = 0;
+			watch.generation = -1;
+		}
+	}
 
 	/**
 	 * Watches a static batch whose rows have `fields`. Its rows start dirty, so the first checks

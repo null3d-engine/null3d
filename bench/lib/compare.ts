@@ -9,7 +9,7 @@
 // real GPU, such as a developer's computer, also catches a change that slows only the GPU.
 import type { Shard } from '../../tests/lib/runs.ts';
 import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
-import { REFERENCE_PRESET_SWITCH } from './parity';
+import { type BenchScene, REFERENCE_PRESET_SWITCH } from './parity';
 import { type BenchResult, median, ownWorkMs, summarizeRuns } from './report';
 
 /** The two builds of a comparison. */
@@ -48,14 +48,41 @@ export interface DroppedRun {
  * on a busy machine that check lowers it in some runs and not in others. A named preset turns the
  * check and the crash marker off, and the desktop's preset, High within each GPU path's ceiling,
  * keeps the work that a desktop draws. The governor stays off, because a step during the measured
- * seconds would change what the rest of the run draws. .dev/benchmarks.md gives the measurements.
+ * seconds would change what the rest of the run draws. A scene whose characters would otherwise do
+ * less work than its twin's adds a switch of its own, in `SCENE_COMPARISON_SWITCHES`.
+ * .dev/benchmarks.md gives the measurements.
  */
 export const COMPARISON_SWITCHES: readonly string[] = [REFERENCE_PRESET_SWITCH, 'governor=off'];
 
-/** The comparison's own switches, less those that the command's `switches` set themselves. */
-export function comparisonSwitches(switches: string): string[] {
+/**
+ * The switches that one scene's compared pages need beyond those of every page, so that both builds
+ * draw the same work there. S5's page gives a far character a longer update interval by default, as
+ * `api/animation#crowds` advises an app to do, which samples and blends fewer poses in a frame than
+ * the twin's mixers do. The comparison holds every character at every frame, as the hold pages do,
+ * so both engines animate the whole crowd. Nothing else reads the switch.
+ */
+export const SCENE_COMPARISON_SWITCHES: Partial<Record<BenchScene, readonly string[]>> = {
+	s5: ['anim=every'],
+};
+
+/**
+ * Every switch that a comparison applies, for the record and for the check that a stored baseline
+ * had the same ones.
+ */
+export const ALL_COMPARISON_SWITCHES: readonly string[] = [
+	...COMPARISON_SWITCHES,
+	...new Set(Object.values(SCENE_COMPARISON_SWITCHES).flatMap((entries) => entries ?? [])),
+];
+
+/**
+ * The comparison's own switches for one scene, less those that the command's `switches` set
+ * themselves.
+ */
+export function comparisonSwitches(scene: BenchScene, switches: string): string[] {
 	const named = new Set(switches.split('&').map((entry) => entry.split('=')[0]));
-	return COMPARISON_SWITCHES.filter((entry) => !named.has(entry.split('=')[0]));
+	return [...COMPARISON_SWITCHES, ...(SCENE_COMPARISON_SWITCHES[scene] ?? [])].filter(
+		(entry) => !named.has(entry.split('=')[0]),
+	);
 }
 
 /**
@@ -84,7 +111,7 @@ const switchesText = (switches: readonly string[]) =>
 export function measurementChanges(
 	pageFiles: readonly string[],
 	baselineSwitches: readonly string[],
-	newSwitches: readonly string[] = COMPARISON_SWITCHES,
+	newSwitches: readonly string[] = ALL_COMPARISON_SWITCHES,
 ): string[] {
 	const changes: string[] = [];
 	if (pageFiles.length > 0) {
@@ -572,11 +599,13 @@ export function qualityLines(qualities: readonly RunQuality[]): string[] {
 
 /**
  * Whether the new build passes, and why it fails when it does not. When the measurement changed,
- * the failures are reported and not judged, and the new build passes.
+ * the times' changes are reported and not judged.
  */
 export interface Verdict {
 	pass: boolean;
 	failures: string[];
+	/** The times' changes that would fail, which a change of measurement leaves unjudged. */
+	unjudged: string[];
 	/** Why the two builds measure in different ways, or none. */
 	measurementChanges: string[];
 }
@@ -594,24 +623,29 @@ const newBuildShort = (page: MissingPage) => page.kept.new < MIN_ROUNDS;
  * The new build fails when a page gets slower than its rule allows and no trailer names it, and
  * when it kept too few runs of a page to compare. A page that the baseline's runs keep from its
  * comparison is left out without failing, so a commit that mends a broken page can pass. When the
- * measurement changed, nothing fails: the two builds' times do not measure the engine alone.
+ * measurement changed, no time's change fails, since the two builds' times do not measure the
+ * engine alone. A page of the new build that kept too few runs still fails then: its page is
+ * broken, which no change of measurement explains.
  */
 export function judge(
 	{ comparisons, missing }: BuildComparison,
 	measurementChanges: readonly string[] = [],
 ): Verdict {
-	const failures = [
-		...missing.filter(newBuildShort).map((page) => `${pageName(page)}: ${missingText(page)}`),
-		...comparisons
-			.filter((c) => c.result === 'slower' && c.expected === null)
-			.map(
-				(c) =>
-					`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower, noise ${noiseText(c)} (medians ${ms3(c.baseline.median)} ms and ${ms3(c.new.median)} ms)`,
-			),
-	];
+	const broken = missing
+		.filter(newBuildShort)
+		.map((page) => `${pageName(page)}: ${missingText(page)}`);
+	const slower = comparisons
+		.filter((c) => c.result === 'slower' && c.expected === null)
+		.map(
+			(c) =>
+				`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower, noise ${noiseText(c)} (medians ${ms3(c.baseline.median)} ms and ${ms3(c.new.median)} ms)`,
+		);
+	const changed = measurementChanges.length > 0;
+	const failures = changed ? broken : [...broken, ...slower];
 	return {
-		pass: failures.length === 0 || measurementChanges.length > 0,
+		pass: failures.length === 0,
 		failures,
+		unjudged: changed ? slower : [],
 		measurementChanges: [...measurementChanges],
 	};
 }
@@ -656,13 +690,16 @@ export interface ReportContext {
 const problemsText = (count: number) => (count === 1 ? 'one problem' : `${count} problems`);
 
 /** The verdict's lines of the report. */
-function verdictLines({ pass, failures, measurementChanges }: Verdict): string[] {
+function verdictLines({ pass, failures, unjudged, measurementChanges }: Verdict): string[] {
 	if (measurementChanges.length > 0)
 		return [
-			`**Measurement changed**: the run reports every page and judges none, because the two builds measure in different ways. Main's next run compares with this commit.`,
+			`**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.`,
 			...measurementChanges.map((change) => `- ${change}`),
 			...(failures.length > 0
-				? ['', `Not judged: ${problemsText(failures.length)}.`, ...failures.map((f) => `- ${f}`)]
+				? ['', `**Failed**: ${problemsText(failures.length)}.`, ...failures.map((f) => `- ${f}`)]
+				: []),
+			...(unjudged.length > 0
+				? ['', `Not judged: ${problemsText(unjudged.length)}.`, ...unjudged.map((f) => `- ${f}`)]
 				: []),
 		];
 	return [

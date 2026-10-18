@@ -52,6 +52,10 @@ For WebGL2, the build rejects code that GLSL ES 3.00 cannot express, such as a s
 
 The build also rejects a copy of an array out of a uniform buffer. Such a copy is an array, or a struct that holds one, read whole into a `let` or passed to a function. Some phone GPUs leave such a copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`, or hold the vectors in named fields. The message names the function.
 
+Some phone GPUs store each value in a GLSL struct at half precision on WebGL2. So for WebGL2, the build splits each struct value into its members. This covers struct parameters, results and variables, and `private` struct variables with their initial values. A function can take a pointer to a whole struct variable in the `function` or `private` address space: the build then passes a pointer to each member. The build splits the results of `modf` and `frexp` too. An array of structs stays whole, so keep the values in such an array within half precision's range, from about 6.1e-5 to 65504. When the build cannot split a struct, it fails and names the function.
+
+The build rejects a GLSL name that starts with `gl_` and is not one of GLSL's own, because GLSL ES reserves such names. So do not give anything a name that starts with `gl_`, and do not name anything `gl`: when two names `gl` meet in one shader, the build names the second one `gl_1`. The message names the pipeline and the shader stage.
+
 ## Flat interpolation
 
 Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of a triangle can give the value. `@interpolate(flat)` means `flat, first`: the first vertex of each triangle gives the value. WebGL2 and WebGPU's compatibility mode cannot provide that, so the build rejects `@interpolate(flat)` and `@interpolate(flat, first)`.

@@ -110,8 +110,8 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
-| `?skinning=vertex` | On WebGPU, skin in the vertex shader of each pass instead of once per frame in a compute pass, to compare GPU time (`api/animation`) |
-| `?skinning=full`, `skip`, `narrow` | On WebGPU, turn off the compute pass's savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
+| `?skinning=compute` | On WebGPU, skin every skinned mesh once per frame in the skinning pass, a compute pass, instead of in the vertex shader of each pass, to compare GPU time (`api/animation`) |
+| `?skinning=full`, `skip`, `narrow` | On WebGPU, skin in the skinning pass with fewer of its savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
 | `?target-fps=display`, `?target-fps=90` | (0.2) Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |
@@ -199,6 +199,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages. A DOM-heavy app can run the sketch on the main thread with `sketchThread: 'main'` | `api/page`, `concepts/architecture` |
 | `assets.loadGltf` rejects with E1416, or `loadTexture` with E1412, on a file that users upload | The file is broken, or passes a limit on what one file may decode to. Loaders check each file's limits before they allocate (0.2) | Catch the error and tell the user; check the file in the Khronos glTF Validator; split a model that is too large | `concepts/assets` |
+| Drawing stops with E1424 after a custom material appears | A file of the material's builds (`material-*.js`, which `vite build` writes) did not download, or comes from another build | Deploy every file that `vite build` writes, from one build; let `script-src` allow them | `guides/custom-shaders` |
 | `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 
@@ -230,7 +231,7 @@ Lifetime:
 Failures:
 
 - The page says something useful with JavaScript off, and when the start fails. Point `sketch` at a missing file to force a failure.
-- The page handles `engine.onFailure`. Try it with `engine.simulateGpuLoss()`: the scene comes back on a new device.
+- The page handles `engine.onFailure`. Try it with `engine.simulateGpuLoss()`: the scene comes back on a new device. A texture whose texels the engine freed draws with its color alone, so check your maps too. `keepTextureCopies` keeps a copy on any device, and phones and tablets keep one by default.
 - A batch too large for engine memory fails with E1109 in development, not on the user's phone. Size batches for the rows they use.
 
 Accessibility:

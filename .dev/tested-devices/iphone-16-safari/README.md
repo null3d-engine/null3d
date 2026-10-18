@@ -2,7 +2,7 @@
 
 - Device: iPhone 16 (BrowserStack's device list), 393 x 852 at 3x, 4 cores
 - OS:
-- Browser: Safari 18.6
+- Browser: Safari 18.5 (18.6 in earlier runs)
 - GPU: Apple GPU
 - GPU paths: WebGL2
 - Where: BrowserStack Automate

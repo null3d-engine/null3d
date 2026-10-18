@@ -8,6 +8,7 @@ import {
 	boxVertices,
 	buildKit,
 	buildTowers,
+	cityFolderKey,
 	decompose,
 	jpegSize,
 	kitPartName,
@@ -20,6 +21,20 @@ const layout = JSON.parse(
 	readFileSync(samplePath('sources/city/layout/layout.json'), 'utf8'),
 ) as S6Layout;
 const sample = (path: string) => readFileSync(join(samplesDir(root), path));
+
+describe('cityFolderKey', () => {
+	// The built files name their images inside the pinned commit's folder, so a new pin with the
+	// same layout must not take files that name the old pin's images.
+	test('gives each pinned commit a folder of its own, for the same layout', () => {
+		const source = new TextEncoder().encode('module');
+		expect(cityFolderKey('layout', 'commit-a', source)).not.toBe(
+			cityFolderKey('layout', 'commit-b', source),
+		);
+		expect(cityFolderKey('layout', 'commit-a', source)).toBe(
+			cityFolderKey('layout', 'commit-a', source),
+		);
+	});
+});
 
 describe('boxVertices', () => {
 	const box = boxVertices([10, 2, -4], [6, 9, 3], 3);

@@ -15,9 +15,11 @@
 //!   loads on first use go into device modules of their own there, and each shader that loads on
 //!   a feature's first use as a whole has a module of its own for each target.
 
+mod cache;
 mod composition;
 mod effect;
 mod features;
+mod flatten;
 mod glsl;
 mod half;
 mod library;
@@ -34,9 +36,14 @@ mod textures;
 mod typescript;
 mod uniforms;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::num::NonZeroUsize;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use naga::valid::{Capabilities, ModuleInfo, ValidationFlags, Validator};
 use naga_oil::compose::preprocess::Preprocessor;
@@ -44,23 +51,25 @@ use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue};
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
+pub use cache::{Cache, CacheStats};
 pub use effect::{EffectOutput, EffectPieces, EffectSource, PostTemplates};
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
-pub use manifest::{Pipeline, Target, Variant};
+pub use manifest::{BUILD_BUDGET, BuildCounts, Manifest, Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
 pub use output::{
-    Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
-    Response, VariantOutput, WgslOutput,
+    Binding, FEATURE_JOIN, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock,
+    Output, Response, VariantOutput, WgslOutput,
 };
 pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
 pub use problem::{BuildError, Problem};
 pub use textures::Texture;
+pub use typescript::ModuleSet;
 pub use uniforms::Uniform;
 
 use library::{Composers, Library, View};
-use manifest::{Build, Manifest};
+use manifest::Build;
 
 /// The manifest.
 pub const MANIFEST_PATH: &str = "crates/null3d-shaders/shaders.toml";
@@ -142,6 +151,30 @@ fn shader_path(relative: &str) -> String {
 
 /// Builds every variant in the manifest.
 pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
+    build_with_cache(inputs, &Cache::disabled()).map(|(output, _)| output)
+}
+
+/// Builds every variant in the manifest, reusing each entry's compiled output from `cache` when
+/// the entry and the library modules it imports are unchanged. Returns the output and how many
+/// entries it compiled and how many it reused.
+pub fn build_with_cache(
+    inputs: &Inputs,
+    cache: &Cache,
+) -> Result<(Output, CacheStats), BuildError> {
+    build_with_cache_reporting(inputs, cache, &|_, _| {})
+}
+
+/// How much of a build is done, as the number of variants compiled and the number to compile. The
+/// build calls it from its worker threads after each variant, once per variant, so a caller that
+/// reports progress does its own throttling.
+pub type Progress<'a> = &'a (dyn Fn(usize, usize) + Sync);
+
+/// [`build_with_cache`], reporting each compiled variant to `progress`.
+pub fn build_with_cache_reporting(
+    inputs: &Inputs,
+    cache: &Cache,
+    progress: Progress<'_>,
+) -> Result<(Output, CacheStats), BuildError> {
     let manifest = Manifest::parse(&inputs.manifest).map_err(|messages| {
         messages
             .into_iter()
@@ -154,17 +187,17 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
 
     let mut errors = BuildError::default();
     let mut output = Output::default();
-    for (shader_name, shader) in &manifest.shaders {
-        let label = |variant: &str| format!("{shader_name}.{variant}");
-        let variants = compiler.variants(
-            &shader_path(&shader.file),
-            &inputs.files[&shader.file],
-            &shader.pipelines,
-            &shader.variants,
-            None,
-            &label,
-            &mut errors,
-        );
+    let mut stats = CacheStats::default();
+    let entries = build_entries(
+        compiler,
+        &manifest,
+        inputs,
+        cache,
+        progress,
+        &mut errors,
+        &mut stats,
+    )?;
+    for ((shader_name, shader), variants) in manifest.shaders.iter().zip(entries) {
         if shader.custom_effects {
             continue;
         }
@@ -191,12 +224,244 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             .filter_map(|bit| permutation::bit(bit))
         {
             output.first_use.bits.insert(bit, feature.clone());
-            if first_use.claims_shared_builds {
-                output.first_use.claiming.insert(bit);
+        }
+        for name in &first_use.bits {
+            let Some(bit) = permutation::bit(name) else {
+                continue;
+            };
+            // Only a value that names another feature too needs a per-shader mask: an unshared bit
+            // counts for every template ([`output::shared_bits`], decision record D-156).
+            if output::shared_bits() & bit == 0 {
+                continue;
+            }
+            for (shader_name, shader) in &manifest.shaders {
+                if shader
+                    .variants
+                    .values()
+                    .any(|variant| variant.permutations.contains(name))
+                {
+                    *output
+                        .first_use
+                        .listed
+                        .entry(shader_name.clone())
+                        .or_default() |= bit;
+                }
             }
         }
     }
-    errors.or(output)
+    errors.or(output).map(|output| (output, stats))
+}
+
+/// One build of a manifest entry: the entry's place in the manifest, its variant and the build.
+struct Job<'a> {
+    entry: usize,
+    variant: &'a Variant,
+    build: Build,
+}
+
+/// One build's result: the output it wrote, its warnings, and the library files whose text
+/// decided it, as paths relative to the entry's folder. The cache stores them so that a later run
+/// compiles the entry again when any of them changes.
+struct Built {
+    output: VariantOutput,
+    warnings: Vec<Problem>,
+    /// The shader compiler that a page or a bundler loads keeps no cache, so its builds record no
+    /// files.
+    #[cfg(not(target_arch = "wasm32"))]
+    files: Vec<String>,
+}
+
+/// The variants of every entry, in the manifest's order. An entry comes from the cache when it
+/// holds it; the builds of the other entries compile together, spread over the machine's cores.
+/// Problems go to `errors` in the order that building one entry after another gives. An entry
+/// with a problem returns whatever it built, which the caller discards; it is never stored, so a
+/// later run compiles it again.
+fn build_entries(
+    mut compiler: Compiler,
+    manifest: &Manifest,
+    inputs: &Inputs,
+    cache: &Cache,
+    progress: Progress<'_>,
+    errors: &mut BuildError,
+    stats: &mut CacheStats,
+) -> Result<Vec<BTreeMap<String, VariantOutput>>, BuildError> {
+    let shaders: Vec<_> = manifest.shaders.iter().collect();
+    let mut found = Vec::with_capacity(shaders.len());
+    let mut jobs = Vec::new();
+    for (entry, (shader_name, shader)) in shaders.iter().enumerate() {
+        // The cache is off in the shader compiler, which a page or a bundler loads, so its key and
+        // its manifest table leave no trace there.
+        #[cfg(not(target_arch = "wasm32"))]
+        let cached = {
+            let table = toml::to_string(shader).unwrap_or_default();
+            let source = &inputs.files[&shader.file];
+            let key = cache.key(shader_name, &shader.file, source, &table);
+            cache.load(shader_name, &key, &inputs.files).ok_or(key)
+        };
+        #[cfg(target_arch = "wasm32")]
+        let cached = {
+            let _ = (shader_name, cache);
+            Err::<BTreeMap<String, VariantOutput>, String>(String::new())
+        };
+        match cached {
+            Ok(_) => stats.reused += 1,
+            Err(_) => {
+                stats.compiled += 1;
+                let builds = planned_builds(&shader.variants, None).into_iter();
+                jobs.extend(builds.map(|(variant, build)| Job {
+                    entry,
+                    variant,
+                    build,
+                }));
+            }
+        }
+        found.push(cached);
+    }
+
+    let mut results = compile_jobs(&mut compiler, &shaders, inputs, &jobs, progress)?
+        .into_iter()
+        .zip(&jobs)
+        .peekable();
+    let mut entries = Vec::with_capacity(shaders.len());
+    for (entry, ((shader_name, shader), cached)) in shaders.iter().zip(found).enumerate() {
+        let key = match cached {
+            Ok(variants) => {
+                entries.push(variants);
+                continue;
+            }
+            Err(key) => key,
+        };
+        let mut built = BTreeMap::new();
+        let mut failed = false;
+        // The library files the entry's builds read, which the cache invalidates the entry on.
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut files: BTreeSet<String> = BTreeSet::new();
+        while let Some((result, job)) = results.next_if(|(_, job)| job.entry == entry) {
+            match result {
+                Ok(build) => {
+                    built.insert(job.build.name.clone(), build.output);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    files.extend(build.files);
+                }
+                Err(problems) => {
+                    failed = true;
+                    let label = format!("{shader_name}.{}", job.build.name);
+                    errors.add(problems, Some(&label));
+                }
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if !failed && cache.is_on() {
+            // A build reads the modules its own definitions pull in. The entry's text also names
+            // every module it imports, with the ones behind definitions that no build sets, so the
+            // entry's own imports join them.
+            let source = &inputs.files[&shader.file];
+            files.extend(compiler.library.imported_files(source));
+            let deps: Vec<String> = files.into_iter().collect();
+            cache.store(shader_name, &key, &deps, &inputs.files, &built);
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = (key, failed, shader);
+        entries.push(built);
+    }
+    Ok(entries)
+}
+
+/// Compiles each job's build, with the results in the jobs' order. The builds are independent,
+/// so they spread over the machine's cores, each thread with a compiler of its own. The shader
+/// compiler that a page or a bundler loads is built for WebAssembly, which has no threads there,
+/// so it compiles them one after another.
+fn compile_jobs(
+    compiler: &mut Compiler,
+    shaders: &[(&String, &manifest::Shader)],
+    inputs: &Inputs,
+    jobs: &[Job],
+    progress: Progress<'_>,
+) -> Result<Vec<Result<Built, Vec<Problem>>>, BuildError> {
+    let next = AtomicUsize::new(0);
+    let finished = AtomicUsize::new(0);
+    let total = jobs.len();
+    let work = |compiler: &mut Compiler| {
+        let mut done = Vec::new();
+        loop {
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            let Some(job) = jobs.get(index) else {
+                return done;
+            };
+            let shader = shaders[job.entry].1;
+            // The engine's own builds fail on every warning, so a build that passes has none.
+            let result = compiler.variant(
+                &shader_path(&shader.file),
+                &inputs.files[&shader.file],
+                &shader.pipelines,
+                job.variant,
+                &job.build,
+            );
+            done.push((index, result));
+            progress(finished.fetch_add(1, Ordering::Relaxed) + 1, total);
+        }
+    };
+    let mut helpers = (1..threads(jobs.len()))
+        .map(|_| {
+            Compiler::new(&inputs.files).map(|mut helper| {
+                helper.engine = true;
+                helper
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut done = if helpers.is_empty() {
+        work(compiler)
+    } else {
+        let work = &work;
+        std::thread::scope(|scope| {
+            let threads: Vec<_> = helpers
+                .iter_mut()
+                .map(|helper| scope.spawn(move || work(helper)))
+                .collect();
+            let mut done = work(compiler);
+            for thread in threads {
+                match thread.join() {
+                    Ok(more) => done.extend(more),
+                    Err(panic) => std::panic::resume_unwind(panic),
+                }
+            }
+            done
+        })
+    };
+    done.sort_unstable_by_key(|&(index, _)| index);
+    Ok(done.into_iter().map(|(_, result)| result).collect())
+}
+
+/// How many threads compile `jobs` builds: one for each core, and no more than there are builds.
+#[cfg(not(target_arch = "wasm32"))]
+fn threads(jobs: usize) -> usize {
+    let cores = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    cores.min(jobs).max(1)
+}
+
+/// WebAssembly has no threads in a page or a bundler, so its builds compile on one.
+#[cfg(target_arch = "wasm32")]
+fn threads(_jobs: usize) -> usize {
+    1
+}
+
+/// The builds of an entry's variants in build order, each with its variant: all of them, or the
+/// builds that `share` holds.
+fn planned_builds(
+    variants: &BTreeMap<String, Variant>,
+    share: Option<Share>,
+) -> Vec<(&Variant, Build)> {
+    let mut planned = Vec::new();
+    let mut place = 0;
+    for (name, variant) in variants {
+        for build in variant.builds(name) {
+            place += 1;
+            if share.is_none_or(|share| share.holds(place - 1, variant, build.permutation)) {
+                planned.push((variant, build));
+            }
+        }
+    }
+    planned
 }
 
 /// Checks that every entry shader the manifest names exists, that every entry shader is in the
@@ -322,20 +587,15 @@ impl Compiler {
         errors: &mut BuildError,
     ) -> BTreeMap<String, VariantOutput> {
         let mut built = BTreeMap::new();
-        let mut place = 0;
-        for (name, variant) in variants {
-            for build in variant.builds(name) {
-                place += 1;
-                if share.is_some_and(|share| !share.holds(place - 1, variant, build.permutation)) {
-                    continue;
+        for (variant, build) in planned_builds(variants, share) {
+            match self.variant(path, source, pipelines, variant, &build) {
+                Ok(Built {
+                    output, warnings, ..
+                }) => {
+                    self.warnings.add(warnings, Some(&label(&build.name)));
+                    built.insert(build.name, output);
                 }
-                match self.variant(path, source, pipelines, variant, &build) {
-                    Ok((output, warnings)) => {
-                        self.warnings.add(warnings, Some(&label(&build.name)));
-                        built.insert(build.name, output);
-                    }
-                    Err(problems) => errors.add(problems, Some(&label(&build.name))),
-                }
+                Err(problems) => errors.add(problems, Some(&label(&build.name))),
             }
         }
         built
@@ -370,11 +630,11 @@ impl Compiler {
         };
         // A host is one of the engine's templates, whose build already fails on any call that a
         // target browser cannot compile, so it has no warnings.
-        let (output, _) = self
+        let built = self
             .variant(key, host.source(), host.pipelines(), &base, &build)
             .map_err(BuildError::from_iter)?;
-        self.hosts.insert(id, output.clone());
-        Ok(output)
+        self.hosts.insert(id, built.output.clone());
+        Ok(built.output)
     }
 
     /// Builds one build of a variant of an entry shader: checks its source, composes and
@@ -386,7 +646,7 @@ impl Compiler {
         pipelines: &BTreeMap<String, Pipeline>,
         variant: &Variant,
         build: &Build,
-    ) -> Result<(VariantOutput, Vec<Problem>), Vec<Problem>> {
+    ) -> Result<Built, Vec<Problem>> {
         let defs: HashMap<String, ShaderDefValue> = build
             .defs
             .iter()
@@ -406,6 +666,21 @@ impl Compiler {
         let prepared = self
             .library
             .prepare(&self.preprocessor, path, source, &defs);
+        // The library files this build reads, which the cache invalidates the entry on. The first
+        // prepared file is the entry itself. The shader compiler that a page loads keeps no cache,
+        // so it records none.
+        #[cfg(not(target_arch = "wasm32"))]
+        let files: Vec<String> = prepared
+            .iter()
+            .skip(1)
+            .filter_map(|prepared| {
+                prepared
+                    .path
+                    .strip_prefix(SHADER_DIR)
+                    .and_then(|rest| rest.strip_prefix('/'))
+            })
+            .map(str::to_owned)
+            .collect();
         let views: Vec<View> = prepared.iter().map(View::new).collect();
         fail_on(features::scan(&views))?;
         let mut warnings = features::browser_faults(&views);
@@ -489,7 +764,12 @@ impl Compiler {
             wgsl,
             glsl,
         };
-        Ok((output, warnings))
+        Ok(Built {
+            output,
+            warnings,
+            #[cfg(not(target_arch = "wasm32"))]
+            files,
+        })
     }
 }
 
@@ -583,7 +863,8 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| {
-            name.starts_with(typescript::DEVICE_MODULE_PREFIX)
+            (name.starts_with(typescript::DEVICE_MODULE_PREFIX)
+                || name.starts_with(typescript::PARAGRAPHS_MODULE_PREFIX))
                 && (name.ends_with(".ts") || name.ends_with(".js"))
         })
         .map(|name| format!("{OUTPUT_DIR}/{name}"))
@@ -596,7 +877,25 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
 /// Builds and writes the TypeScript modules that changed, and deletes device modules that the
 /// build no longer makes.
 pub fn write(root: &Path) -> Result<Written, BuildError> {
-    let modules = generate(root)?;
+    write_cached(root, &Cache::disabled()).map(|(written, _)| written)
+}
+
+/// Builds and writes the TypeScript modules, reusing each entry from `cache` when it is unchanged,
+/// and deletes device modules that the build no longer makes. It gives whether it wrote a module,
+/// and how many entries it compiled and reused.
+pub fn write_cached(root: &Path, cache: &Cache) -> Result<(Written, CacheStats), BuildError> {
+    write_cached_reporting(root, cache, &|_, _| {})
+}
+
+/// [`write_cached`], reporting each compiled variant to `progress`.
+pub fn write_cached_reporting(
+    root: &Path,
+    cache: &Cache,
+    progress: Progress<'_>,
+) -> Result<(Written, CacheStats), BuildError> {
+    let inputs = Inputs::read(root)?;
+    let (output, stats) = build_with_cache_reporting(&inputs, cache, progress)?;
+    let modules = typescript(&output);
     let mut written = Written::Unchanged;
     for path in stale_modules(root, &modules) {
         fs::remove_file(root.join(&path))
@@ -614,5 +913,5 @@ pub fn write(root: &Path) -> Result<Written, BuildError> {
             .map_err(|e| Problem::in_file(path, format!("cannot write the file: {e}")))?;
         written = Written::Updated;
     }
-    Ok(written)
+    Ok((written, stats))
 }

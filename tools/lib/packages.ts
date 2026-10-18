@@ -37,6 +37,12 @@ export const DEFAULT_PACK_DIR = 'target/packages';
 /** The license files that every package carries, copied from the repository's root. */
 const LICENSES = ['LICENSE-MIT', 'LICENSE-APACHE'];
 
+/**
+ * The record of a release's shader set. The release writes it into the engine's `lib/` before the
+ * packages are packed, and the pack keeps it while the build replaces the other built files.
+ */
+const SHADER_ARTIFACT = `${LIB_DIR}/shader-artifact.json`;
+
 /** What a package's pack step makes, besides its license copies. */
 export interface PackageBuild {
 	/** Build `src/` into `lib/` with TypeScript. */
@@ -79,6 +85,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/meshopt/meshopt_decoder.wasm',
 			'vendor/draco/draco_wasm_wrapper_gltf.js',
 			'vendor/draco/draco_decoder_gltf.wasm',
+			'vendor/ltc/area-light-tables.bin',
 			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],
@@ -92,12 +99,23 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {
 		compile: true,
 		shaders: false,
 		docs: false,
 		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
+	},
+	terrain: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine'],
+		// The surface function lives in a .wgsl file, which the built module imports and the null3D
+		// Vite plugin compiles for the project that uses the package.
+		required: ['lib/terrain.wgsl'],
 	},
 	cli: {
 		compile: false,
@@ -135,6 +153,16 @@ const RELATIVE = /^\.{1,2}\//;
 /** A built file whose imports the build rewrites: JavaScript or a type declaration. */
 const BUILT_FILE = /\.(?:js|d\.ts)$/;
 
+/**
+ * A file that the build copies from `src/` into `lib/` as it is: JavaScript, type declarations, and
+ * the WGSL that a package's own modules import, which the Vite plugin compiles in the project that
+ * uses the package. Only the first two have their imports rewritten.
+ */
+const COPIED_FILE = /\.(?:js|d\.ts|wgsl)$/;
+
+/** A WGSL file, which a module imports for the null3D Vite plugin to compile. */
+const WGSL_FILE = /\.wgsl$/;
+
 /** The built files in `lib/` of each repository-only entry point of a package. */
 export function repositoryOnlyFiles(build: PackageBuild): string[] {
 	return (build.repositoryOnly ?? []).flatMap((entry) => {
@@ -169,8 +197,11 @@ export function builtAddress(
 				[`${base}.js`, `${address}.js`],
 				[`${base}/index.js`, `${address}/index.js`],
 			];
+	// A script becomes the `.js` file that TypeScript wrote, or a folder its `index.js`. A `.wgsl`
+	// file stays itself: the build copies it into `lib/`, and the null3D Vite plugin compiles it in
+	// the project that uses the package.
 	for (const [path, rewritten] of candidates)
-		if (/\.[cm]?js$/.test(path) && exists(path)) return rewritten;
+		if ((/\.[cm]?js$/.test(path) || WGSL_FILE.test(path)) && exists(path)) return rewritten;
 	return null;
 }
 
@@ -306,6 +337,11 @@ function run(command: string, args: readonly string[], cwd: string): string {
  */
 function compile(root: string, dir: string, build: PackageBuild): void {
 	const lib = join(dir, LIB_DIR);
+	// A release writes the shader set's record into the engine's `lib/` before the pack runs. Any
+	// package that needs the engine compiles it again, and the pack order is not the order of the
+	// records, so the record is kept across every rebuild of `lib/`.
+	const artifact = join(lib, SHADER_ARTIFACT);
+	const keptArtifact = existsSync(artifact) ? readFileSync(artifact) : null;
 	rmSync(lib, { recursive: true, force: true });
 	const tsc = join(root, 'node_modules/typescript/bin/tsc');
 	run(
@@ -331,7 +367,7 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 		],
 		root,
 	);
-	for (const path of walkFiles(dir, 'src', (path) => BUILT_FILE.test(path))) {
+	for (const path of walkFiles(dir, 'src', (path) => COPIED_FILE.test(path))) {
 		const to = join(lib, path.slice('src/'.length));
 		mkdirSync(dirname(to), { recursive: true });
 		copyFileSync(join(dir, path), to);
@@ -362,6 +398,7 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 	}
 	if (problems.length > 0)
 		throw new Error(`${relative(root, lib)} has problems:\n  ${problems.join('\n  ')}`);
+	if (keptArtifact !== null) writeFileSync(artifact, keptArtifact);
 }
 
 /**
@@ -473,14 +510,30 @@ export function publicPackages(root: string): string[] {
 }
 
 /**
- * The files that the engine's shader build wrote, as the engine's package holds them: built
- * into `lib/`.
+ * The generated declarations that the engine's types need, as the packed package holds them. The
+ * shader build's JavaScript leaves the tarball, so the check asks for a declaration for each
+ * generated TypeScript module: `shaders.d.ts` and the rest, and the engine's own constants modules.
+ * It never asks for a generated JavaScript file, which the package no longer carries.
  */
-function shaderModuleFiles(root: string): string[] {
+export function shaderDeclarationFiles(root: string): string[] {
+	const folder = MODULE_DIR.replace(/^packages\/engine\/src\//, `${LIB_DIR}/`);
+	return readdirSync(join(root, MODULE_DIR))
+		.filter((name) => name.endsWith('.ts'))
+		.map((name) => `${folder}/${name.replace(/\.ts$/, '.d.ts')}`)
+		.sort();
+}
+
+/**
+ * The built shader JavaScript, which the package does not ship: the plugin downloads the set or
+ * builds it locally. The engine's generated constants (`core.js` and `gpu.js`) are code of the
+ * engine itself, not shader modules, and they stay in the tarball.
+ */
+export function shaderModuleJsFiles(root: string): string[] {
 	const folder = MODULE_DIR.replace(/^packages\/engine\/src\//, `${LIB_DIR}/`);
 	return readdirSync(join(root, MODULE_DIR))
 		.filter(isShaderModule)
-		.map((name) => `${folder}/${name.replace(/\.ts$/, '.js')}`);
+		.map((name) => `${folder}/${name.replace(/\.ts$/, '.js')}`)
+		.sort();
 }
 
 /**
@@ -518,9 +571,15 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 				.map((line) => line.slice('package/'.length)),
 		);
 		const required = [...(PACKAGES[folder]?.required ?? [])];
-		if (PACKAGES[folder]?.shaders) required.push(...shaderModuleFiles(root));
-		const build = packageBuild(folder);
-		for (const problem of packageProblems(manifest, files, required, repositoryOnlyFiles(build)))
+		const forbidden = [...repositoryOnlyFiles(packageBuild(folder))];
+		if (PACKAGES[folder]?.shaders) {
+			required.push(...shaderDeclarationFiles(root));
+			forbidden.push(...shaderModuleJsFiles(root));
+			// A release's package carries the address, the file name and the hash of its shader set.
+			if (existsSync(join(root, 'packages', folder, SHADER_ARTIFACT)))
+				required.push(SHADER_ARTIFACT);
+		}
+		for (const problem of packageProblems(manifest, files, required, forbidden))
 			problems.push(`${manifest.name}: ${problem}`);
 		packed.push({ folder, name: manifest.name, version: manifest.version, tarball });
 	}

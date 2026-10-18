@@ -36,6 +36,9 @@ BoomBox.glb: 10.1 MB to 2.2 MB (the model 107.0 KB), in 9.6 s
   size 0.0198 x 0.0195 x 0.0202
   4 textures: 2 of 2048x2048 etc1s srgb, 1 of 2048x2048 etc1s linear, 1 of 2048x2048 uastc linear
   texture memory: 13.3 MB with ETC2 and ASTC, 21.3 MB with BC7 only, 85.3 MB uncompressed
+  shader permutations: VERTEX_TANGENT
+  draw buckets: 1 pipeline key, one pipeline each:
+    standard_maps uv0+tangent VERTEX_TANGENT: 1 object
 ```
 
 That is Khronos's BoomBox sample model, whose four PNG textures of 2048 x 2048 made most of its 10.1 MB.
@@ -203,11 +206,29 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `roughness levels baked` | The metal-rough maps that took the roughness bake |
 | `no roughness bake` | Each material with a normal map and a metal-rough map that got no bake, with the reason |
 | Textures not in whole blocks | Each KTX2 image of the model whose sides are not whole blocks of 4 texels, which the engine loads uncompressed |
+| `shader permutations` | The permutation bits that the model's materials and meshes turn on |
+| `shader files that load on first use` | The shader files that the engine downloads when it loads the model, one per feature it uses |
+| `draw buckets` | Each pipeline key that the model's draws need, with the objects that draw with it. Every object of one key shares one pipeline |
+| `warning` | Each quality preset whose texture memory budget the model's textures pass, with the memory that passes it |
 | `blockers` | The meshes that got blockers, and their triangles |
 | `no blocker` | Each mesh that could block but got no blocker, with the reason |
 | `stored trees` | The mesh parts whose trees the file stores, and their bytes before compression |
 
 `--report` writes the same figures as JSON, with each texture's source size, output size and encode time.
+
+## The shader list
+
+A feature that changes what a shader costs is a permutation bit, so a pipeline without the feature does not pay for it. The engine builds a pipeline the first time an object that needs it draws. The files of some features load on first use instead of with the engine's start. A page that never uses the feature downloads none of it ([Loading screens and warm-up](loading-screens.md#loading-everything-up-front) lists them).
+
+The command knows which features and bits each model needs, because it has just walked its materials and meshes. It records them in the model's `asset.extras`, under `NULL3D_shaders`:
+
+```json
+"NULL3D_shaders": { "permutations": ["VERTEX_COLOR", "ALPHA_MASK"], "features": ["cutout", "coverage"] }
+```
+
+The engine reads the list as it loads the file and downloads those shader files beside the textures. It holds back a file that the page's settings cannot use. Alpha to coverage (`coverage`) needs MSAA, and the fading levels (`lod_fade`) need the `lodFade` setting, which Low turns off. When the settings change to use one, its file downloads then. So `scene.warmUp()` builds only the pipelines that the model's objects need, and nothing new downloads while the game plays. The list names only what the model itself decides. Bits that a device fixes, such as half precision, and bits that the scene decides, such as receiving shadows, are not part of it.
+
+The report ends with the list and the pipeline keys it gives. It warns for each quality preset whose texture memory budget the model's textures pass. Phones and tablets run the Low and Medium presets, where the textures take their ETC2 or ASTC bytes. Computers run High and Ultra, where they take their BC7 bytes. The warning is a guide: a scene that loads several models adds their texture memory together.
 
 ## In a Vite project
 
@@ -220,7 +241,7 @@ import shipUrl from './models/ship.glb?optimized';
 const ship = await assets.loadGltf(shipUrl);
 ```
 
-The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your project first:
+The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your project first. With Bun, use Bun 1.4.3 or newer ([Install null3D](../getting-started/install.md) says why):
 
 ```sh
 bun add -d @null3d/cli

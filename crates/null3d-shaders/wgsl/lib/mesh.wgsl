@@ -2,8 +2,9 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material, MaterialRow, MaterialTransmission}
+#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission}
 #import null3d::lighting::{ambient_irradiance}
+#import null3d::sky_scattering::{aerial_perspective}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -47,8 +48,8 @@ enable draw_index;
 // finds its instance in the frame's index list, directly or through a cluster of rows, reads the
 // matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
 // takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
-// multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
-// draw.
+// multi-draw call and read each draw's record by `gl_DrawID`, from a texture copy of the call's
+// records; the other builds get one record per draw.
 //
 // The SKIN builds skin each vertex in the vertex shader: `skin_of` blends the skinning matrices of
 // the vertex's four joints by their weights, from the joint texture, which holds each animated
@@ -99,19 +100,12 @@ const MATRIX_ROW_SHIFT: u32 = 9u;
 const INDEX_ROW_SHIFT: u32 = 11u;
 /// A cluster texture entry that names no row: a place past the end of a batch's last cluster.
 const NO_ROW: u32 = 0xffffffffu;
-#ifdef DRAW_INDEX
-/// Draw records one multi-draw call reads.
-const DRAW_RECORDS: u32 = 256u;
-#else
-const DRAW_RECORDS: u32 = 1u;
-#endif
-
 /// One draw each: the start of its slice of the index list, its material, the data texture its
 /// instances come from (0 for the resident one, 1 for the streamed one), and its instances per
 /// list entry as a shift: 0 when each entry names a row of the data texture, more when each
 /// names a cluster of rows, which the cluster texture lists.
 struct DrawTable {
-    items: array<vec4u, DRAW_RECORDS>,
+    items: array<vec4u, 1>,
 }
 
 /// The offset from the camera to the center of each grid cell, by cell index.
@@ -120,7 +114,15 @@ struct CellOffsets {
 }
 
 @group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
+#ifdef DRAW_INDEX
+/// The draw records of a multi-draw call, one texel each, read at the draw index. The renderer
+/// binds the call's block of records here as a uniform buffer, as it binds one record in the other
+/// builds, and the WebGL2 backend copies the block into a texture. Some Adreno drivers fail to link
+/// a program whose vertex shader reads a uniform array at the draw index.
+@group(1) @binding(0) var draws: texture_2d<u32>;
+#else
 @group(1) @binding(0) var<uniform> draws: DrawTable;
+#endif
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
 @group(2) @binding(2) var visible: texture_2d<u32>;
@@ -387,6 +389,35 @@ fn material_transmission(id: u32) -> MaterialTransmission {
 }
 #endif
 
+#ifdef COAT_SHEEN
+/// The values of material `id`'s clear coat and sheen, which only the builds of layered
+/// materials read.
+fn material_coat_sheen(id: u32) -> MaterialCoatSheen {
+#ifdef WEBGL2
+    return MaterialCoatSheen(
+        textureLoad(materials, vec2u(11u, id), 0),
+        textureLoad(materials, vec2u(12u, id), 0),
+    );
+#else
+    return MaterialCoatSheen(materials[id].coat, materials[id].sheen);
+#endif
+}
+#endif
+
+#ifdef DECAL
+/// The values of decal material `id`: the cosines of the angles from the decal's direction at
+/// which it starts and stops fading, and the share of the box's depth over which it fades at each
+/// end. They take the place of the values that let light through, which a decal material never
+/// has.
+fn decal_values(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(9u, id), 0);
+#else
+    return materials[id].transmission;
+#endif
+}
+#endif
+
 /// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
 /// holds a custom material's uniforms. Vertex and fragment shaders can both read it. On WebGL2 the
 /// material table's data texture holds a row of custom values for each material after every
@@ -409,11 +440,12 @@ fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
     if ((u32(m.strengths.z) & NO_FOG) != 0u) {
         return c;
     }
+    let hazed = aerial_perspective(frame.aerial, c, relative);
     let factor = fog_factor(frame.fog, relative);
     if (factor == 0.0) {
-        return c;
+        return hazed;
     }
-    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
+    return mix(hazed, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.
@@ -450,10 +482,15 @@ const MAP_LINEAR_FLAG: u32 = 16u;
 /// them, so this divides the encoded colors by the alpha again; a linear map's colors divide as
 /// they are. The map then lights, fogs, tone maps and blends as the same image with straight
 /// colors does, on both output paths. A material that does not blend shows a premultiplied map's
-/// colors as they are, as three.js does. A texel with no alpha stays as it is.
+/// colors as they are, as three.js does. A decal always blends. A texel with no alpha stays as it
+/// is.
 fn straight_texel(m: Material, texel: vec4f) -> vec4f {
     let flags = u32(m.strengths.z);
+#ifdef DECAL
+    let blended_map = MAP_PREMULTIPLIED_FLAG;
+#else
     let blended_map = MAP_PREMULTIPLIED_FLAG | BLEND_FLAG;
+#endif
     if (flags & blended_map) != blended_map || texel.a <= 0.0 {
         return texel;
     }
@@ -543,14 +580,21 @@ fn instance_by_index(source: u32) -> Instance {
 }
 #endif
 
+#ifdef WEBGL2
+/// The record of the draw that a vertex shader invocation belongs to.
+fn draw_record(i: InstanceIn) -> vec4u {
+#ifdef DRAW_INDEX
+    return textureLoad(draws, vec2u(i.draw, 0u), 0);
+#else
+    return draws.items[0];
+#endif
+}
+#endif
+
 /// The instance that a vertex shader invocation draws.
 fn find_instance(i: InstanceIn) -> Instance {
 #ifdef WEBGL2
-#ifdef DRAW_INDEX
-    return instance_of(draws.items[i.draw], i.instance);
-#else
-    return instance_of(draws.items[0], i.instance);
-#endif
+    return instance_of(draw_record(i), i.instance);
 #else ifdef INSTANCE_INDEX
     return instance_by_index(i.source);
 #else
@@ -565,11 +609,7 @@ fn find_instance(i: InstanceIn) -> Instance {
 /// WebGL2 it follows the instance's entry in the index list.
 fn instance_fade(i: InstanceIn) -> f32 {
 #ifdef WEBGL2
-#ifdef DRAW_INDEX
-    let record = draws.items[i.draw];
-#else
-    let record = draws.items[0];
-#endif
+    let record = draw_record(i);
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let slot = record.x + i.instance * 2u + 1u;
     return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
@@ -654,7 +694,13 @@ fn finish(c: vec3f, pixel: vec2f) -> vec4f {
 /// The color a fragment writes for exposed linear color `c`, such as light from the frame's lights,
 /// at framebuffer position `pixel`, as `finish` writes it.
 fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
-    return null3d::tonemap::finish(c, pixel, frame.output);
+    return null3d::tonemap::finish(
+        c,
+        pixel,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.

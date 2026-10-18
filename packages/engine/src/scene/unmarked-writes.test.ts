@@ -313,6 +313,7 @@ describe('unmarked writes to the rows of a large batch', () => {
 			generation: 0,
 			glue: { batchArrays: (_id: number, field: number) => field },
 			i32: (address: number) => (address === C.BATCH_FIELD_DIRTY_WORDS ? dirty : rows),
+			holdViews: () => {},
 		};
 		const check = new UnmarkedRows(core, 3);
 		check.watch({ id: 1, count: 8, activeRows: 8, describe: () => 'the batch' }, [

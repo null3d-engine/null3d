@@ -21,8 +21,9 @@ import {
 	S5_DEFAULT_COUNT,
 	S5_GROUND,
 	S5_ORBIT,
+	S5_SHADOW_DISTANCE,
 	S5_VIEW_LIGHTS,
-	s5Camera,
+	s5CameraPath,
 	s5CharactersAt,
 } from '../../scenes/s5';
 import { S5_MODEL_URL } from '../lib/s5-model';
@@ -34,7 +35,12 @@ export default defineSketch(async (context) => {
 	// S5 measures how a preset holds its frame rate with a crowd, so it keeps the preset's render
 	// scale range and the quality governor, as S4 does. A comparison of two builds turns the
 	// governor off.
-	const camera = setUpView(context, S5_VIEW_LIGHTS, S5_BACKGROUND, { dynamicResolution: true });
+	// The sun names its shadow distance, so it matches the three.js twin's cascades, which the
+	// benchmark compares this page with, instead of following the automatic distance from R10.
+	const camera = setUpView(context, S5_VIEW_LIGHTS, S5_BACKGROUND, {
+		dynamicResolution: true,
+		shadowDistance: S5_SHADOW_DISTANCE,
+	});
 	context.quality.set({ governor: readGovernor(import.meta.url) });
 	const reportQuality = watchQuality(context);
 
@@ -83,34 +89,57 @@ export default defineSketch(async (context) => {
 	const rotations = new Float64Array(data.count * 4);
 	// Still knights keep the place of the first move.
 	let placed = false;
+	// A knight takes its place in a function that takes its index alone, so the browser boxes no
+	// number for the call where it does not inline it.
+	const place = (i: number): void => {
+		const character = characters[i] as Object3D;
+		character.setPosition(
+			positions[i * 3] as number,
+			positions[i * 3 + 1] as number,
+			positions[i * 3 + 2] as number,
+		);
+		character.setRotation(
+			rotations[i * 4] as number,
+			rotations[i * 4 + 1] as number,
+			rotations[i * 4 + 2] as number,
+			rotations[i * 4 + 3] as number,
+		);
+	};
 	const moveCharacters = (): void => {
 		s5CharactersAt(data, clock, positions, rotations);
-		for (let i = 0; i < data.count; i++) {
-			if (placed && still(i)) continue;
-			const character = characters[i] as Object3D;
-			character.setPosition(
-				positions[i * 3] as number,
-				positions[i * 3 + 1] as number,
-				positions[i * 3 + 2] as number,
-			);
-			character.setRotation(
-				rotations[i * 4] as number,
-				rotations[i * 4 + 1] as number,
-				rotations[i * 4 + 2] as number,
-				rotations[i * 4 + 3] as number,
-			);
-		}
+		for (let i = 0; i < data.count; i++) if (!placed || !still(i)) place(i);
 		placed = true;
 	};
 
+	// A character that the camera sees from far updates its pose less often, so the job workers
+	// sample and blend fewer of them in a frame. The `farAnimationInterval` quality setting gives
+	// the interval, which the governor may raise. `?anim=every` holds every character at every
+	// frame, as the image and parity tests need for a repeatable pose.
+	const everyFrame = new URL(import.meta.url).searchParams.get('anim') === 'every';
+	/** Under this distance of the camera a character looks large, so it updates in every frame. */
+	const nearDistance = 24;
+	const cameraPlace = new Float64Array(3);
+	const rateCharacters = (): void => {
+		const far = everyFrame ? 1 : context.quality.governor.farAnimationInterval;
+		const x = cameraPlace[0] as number;
+		const z = cameraPlace[2] as number;
+		for (let i = 0; i < data.count; i++) {
+			const dx = (positions[i * 3] as number) - x;
+			const dz = (positions[i * 3 + 2] as number) - z;
+			(animators[i] as Animator).setUpdateInterval(
+				dx * dx + dz * dz < nearDistance * nearDistance ? 1 : far,
+			);
+		}
+	};
+
 	if (demo) return playable();
-	const moveCamera = followPath(camera, (t, position, target) =>
-		s5Camera(data, t, position, target),
-	);
+	const moveCamera = followPath(camera, s5CameraPath(data));
 	const pose = (t: number): void => {
 		clock[0] = t;
 		moveCharacters();
 		moveCamera(t);
+		camera.getWorldPosition(cameraPlace);
+		rateCharacters();
 	};
 	pose(time.now);
 	return {
@@ -124,7 +153,7 @@ export default defineSketch(async (context) => {
 	function playable() {
 		debug.stats(true);
 		const start = new Float64Array(3);
-		s5Camera(data, 0, start, new Float64Array(3));
+		s5CameraPath(data)(0, start, new Float64Array(3));
 		camera.setPosition(start[0] as number, start[1] as number, start[2] as number);
 		const controls = createOrbitControls(context, camera, {
 			target: [0, S5_ORBIT.lookHeight, 0],
@@ -148,6 +177,8 @@ export default defineSketch(async (context) => {
 					moveCharacters();
 				}
 				controls.update(time.dt);
+				camera.getWorldPosition(cameraPlace);
+				rateCharacters();
 				reportQuality();
 			},
 		};

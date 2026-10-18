@@ -145,4 +145,17 @@ describe("the WebGL2 page's probe of its 32-bit target", () => {
 			`driver fault: ${precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
 		]);
 	});
+
+	it('notes a driver that keeps the floats of a struct at half precision, without a failure', () => {
+		const check = { kind: 'shader-library', tier: 'webgl2' } as const;
+		const notes: string[] = [];
+		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
+		const structFault =
+			"a shader's floats held in a struct, each declared highp, came back changed: wrote 1234.567, 0.123456, 0.00001, 70000, read 1234, 0.1234131, 0, 65504";
+		const result = { ok: true, cases: 433, failures: [], mismatches: [], structFault };
+		expect(judge(check, result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			`driver fault: ${structFault}. WebGL2 shaders here keep the values of a struct at half precision, so the engine keeps such values within half precision's range`,
+		]);
+	});
 });

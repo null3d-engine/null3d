@@ -5,7 +5,7 @@
 
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
-import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
+import { EngineError, errorOfMessage, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
@@ -40,7 +40,9 @@ import { URL_SWITCHES } from '../shared/dev';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
+import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { addMeasurementRelease } from '../shared/page-measurement';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
@@ -83,7 +85,7 @@ import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
-import { coreDevice, maxCanvasSize, maxInstances } from './limits';
+import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
@@ -100,7 +102,12 @@ import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
-import { STOP_TIMEOUT_MS, stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
+import {
+	STOP_TIMEOUT_MS,
+	stopJobWorkers,
+	waitForJobWorkersToLeave,
+	yieldJobWorkers,
+} from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -238,6 +245,15 @@ export interface EngineOptions {
 	 */
 	textureMemoryMiB?: number;
 	/**
+	 * True keeps the engine's copy of each texture's texels after their upload, so a texture that
+	 * maps an image draws with its map again after the browser takes the GPU away. It costs about
+	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
+	 * a texture draws with its color alone until the sketch gives it texels again. Without this
+	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
+	 * is likeliest to lose its GPU.
+	 */
+	keepTextureCopies?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -301,6 +317,15 @@ export interface EngineOptions {
 	 */
 	onSketchMessage?: (name: string, data: unknown) => void;
 	/**
+	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
+	 * while the engine runs. The error's message holds the failure, such as `E1102: ...`. The engine
+	 * keeps drawing and presenting frames, so the error alone does not stop it: a frame whose update
+	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`.
+	 * `engine.onSketchError` adds more handlers once the engine has started. Without a handler, the
+	 * error also reaches the console.
+	 */
+	onSketchError?: (error: Error) => void;
+	/**
 	 * Cancels a start in progress, for example when the user leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
 	 */
@@ -323,11 +348,14 @@ export interface EngineOptions {
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
 	 * until its shaders are built, `'transmission'` with the first material that lets light
-	 * through, and `'occlusion'` with the first object that `setOccluder(true)`
+	 * through, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'`
+	 * with the first material of the `weighted` blending, and `'occlusion'` with the first object that
+	 * `setOccluder(true)`
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
-	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
+	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
+	 * need together, such as a skinned mesh's with the alpha hash, download with them. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
 	 */
@@ -455,6 +483,12 @@ export interface EngineMode {
 	 * that the options asked for. `report.worker` holds the probe's answer.
 	 */
 	renderFallback: RenderFallback | null;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost. It is on for a phone and a tablet, and the page's
+	 * `keepTextureCopies` option can name either value.
+	 */
+	keepTextureCopies: boolean;
 }
 
 /**
@@ -511,13 +545,22 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the
-	 * engine draws no new frames: destroy it and start a new one. On WebGPU, the GPU can also run out
-	 * of memory (E1304) or reject the engine's work (E1305), and the engine draws on without the
-	 * objects that failed. The engine reports each failure once. Without a handler, it logs the
-	 * failure to the console. Returns a function that removes the handler.
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom material's
+	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
+	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
+	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
+	 * draws on without the objects that failed. The engine reports each failure once. Without a
+	 * handler, it logs the failure to the console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
+	/**
+	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
+	 * while the engine runs. The engine keeps drawing, so this error alone does not stop it: a frame
+	 * whose update failed is counted in `measure().updateErrors` and left out of
+	 * `measure().updatedFps`. The handler receives the errors reported after it was added. Returns a
+	 * function that removes the handler. Without a handler, the error also reaches the console.
+	 */
+	onSketchError(handler: (error: Error) => void): () => void;
 	/**
 	 * Pauses or resumes the sketch's frames. A pause also stops input: the sketch sees every key and
 	 * button that was down come up, and input that comes during the pause never reaches it.
@@ -559,9 +602,9 @@ export interface Engine {
 	 * the GPU draws nothing for it. While the engine is paused, the image shows the frame on the
 	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. When no
 	 * new frame comes within a second or two, as after a sketch error, the image shows the frame
-	 * drawn last. Fails with E1414 once the engine has stopped, or when the thread that draws could
-	 * not read the frame back, with the cause that the GPU gave, such as a lost device or too little
-	 * memory.
+	 * drawn last. Fails with E1414 once the engine has stopped, when the thread that draws gives no
+	 * answer within the engine's wait, or when that thread could not read the frame back, with the
+	 * cause that the GPU gave, such as a lost device or too little memory.
 	 */
 	capture(): Promise<Blob>;
 	/**
@@ -571,7 +614,8 @@ export interface Engine {
 	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
 	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
 	 * page shows again. When no new frame comes within a second or two, as after a
-	 * sketch error, it returns the frame drawn last.
+	 * sketch error, it returns the frame drawn last. It fails when the thread that draws gives no
+	 * answer within the engine's wait, rather than waiting with no end.
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
@@ -617,6 +661,16 @@ const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
+/**
+ * The longest that a request may wait for a worker's answer, in milliseconds. The slowest answer is
+ * a capture: the thread that draws waits for a frame's pipelines for up to `BUILD_WAIT_LIMIT_MS`
+ * before it draws, reads the frame back and encodes it. On a software renderer that work costs
+ * minutes, and the forest demo's held frame passed a minute on CI's SwiftShader, so this figure
+ * sits well above the slowest frame that was measured and below the image tests' own limit. A
+ * thread that stops taking messages then fails the request with a named error instead of leaving
+ * the page to wait with no end.
+ */
+export const WORKER_REPLY_LIMIT_MS = 300_000;
 
 interface TierChoice {
 	tier: Tier;
@@ -650,17 +704,32 @@ export function chooseTier(
 type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) => void };
 
 /**
+ * True while this page is hidden. A hidden page draws no frames, so a capture's answer comes once
+ * the page shows again, however long that takes, and the answer's limit counts only the time the
+ * page shows.
+ */
+function pageHidden(): boolean {
+	return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+/**
  * The error of a worker that failed to start. An engine error keeps its code and message; any
  * other failure becomes E1405.
  */
 export function startError(role: string, message: string): EngineError {
-	const code = /^(E\d{4}): /.exec(message)?.[1];
-	if (code && isErrorCode(code)) {
-		const error = new EngineError(code, '');
-		error.message = message;
-		return error;
-	}
-	return new EngineError('E1405', `the ${role} worker did not start: ${message}.`);
+	return (
+		errorOfMessage(message) ??
+		new EngineError('E1405', `the ${role} worker did not start: ${message}.`)
+	);
+}
+
+/**
+ * The error of an engine thread, or of the drawing on the page, that failed after the start,
+ * where `what` names it. An engine error keeps its code and message, such as E1424 for a custom
+ * material's builds that did not download; any other failure becomes E1404.
+ */
+export function failureError(what: string, message: string): EngineError {
+	return errorOfMessage(message) ?? new EngineError('E1404', `${what} failed: ${message}.`);
 }
 
 type RunnerModule = typeof import('../sketch/runner');
@@ -680,6 +749,8 @@ function loadRunnerModule(): Promise<RunnerModule> {
 interface WorkerEvents {
 	/** A message that the sketch sent with `ctx.page.post`. */
 	sketchMessage(name: string, data: unknown): void;
+	/** An error that the sketch's own code threw in a frame. The engine keeps drawing. */
+	sketchError(error: Error): void;
 	/**
 	 * A failure of a thread. It ends a start that is still under way, unless `endsStart` is false:
 	 * the engine then runs on without the thread.
@@ -707,7 +778,8 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
- * A failure that a started worker reports, or that ends it, reaches the page as E1404.
+ * A failure that a started worker reports, or that ends it, reaches the page as E1404, or with its
+ * own code when it is an engine error.
  */
 export class EngineWorker {
 	private readonly waiting: Pending[] = [];
@@ -721,7 +793,7 @@ export class EngineWorker {
 
 	constructor(
 		readonly worker: Worker,
-		role: string,
+		private readonly role: string,
 		events: WorkerEvents,
 	) {
 		this.readyPromise = new Promise((resolve, reject) => {
@@ -744,14 +816,16 @@ export class EngineWorker {
 		const failed = (message: string) => {
 			this.stoppedCleanly = false;
 			this.waiting.shift()?.reject(startError(role, message));
-			if (this.started)
-				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
+			if (this.started) events.failure(failureError(`the ${role} worker`, message));
 		};
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
 			switch (reply.type) {
 				case 'sketch-message':
 					events.sketchMessage(reply.name, reply.data);
+					return;
+				case 'sketch-error':
+					events.sketchError(new Error(reply.message));
 					return;
 				case 'quality':
 					events.quality(reply.update);
@@ -849,9 +923,39 @@ export class EngineWorker {
 		for (const pending of this.waiting.splice(0)) pending.reject(new Error('the engine stopped'));
 	}
 
+	/**
+	 * Sends a request and waits for the worker's answer, which ends with a failure once the answer
+	 * has taken longer than the wait's limit. The request keeps its place in the queue, so an answer
+	 * that arrives late is used up in order and reaches no other request.
+	 */
 	request(message: RendererRequest): Promise<WorkerReply> {
 		return new Promise((resolve, reject) => {
-			this.waiting.push({ resolve, reject });
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const pending: Pending = {
+				resolve: (reply) => {
+					clearTimeout(timer);
+					resolve(reply);
+				},
+				reject: (error) => {
+					clearTimeout(timer);
+					reject(error);
+				},
+			};
+			// A hidden page draws no frames, so its answer waits for the page to show again: the
+			// limit then starts over instead of failing the request.
+			const arm = () => {
+				timer = setTimeout(() => {
+					if (pageHidden()) arm();
+					else
+						pending.reject(
+							new Error(
+								`the ${this.role} worker did not answer the ${message.type} within ${WORKER_REPLY_LIMIT_MS / 1000} s`,
+							),
+						);
+				}, WORKER_REPLY_LIMIT_MS);
+			};
+			this.waiting.push(pending);
+			arm();
 			this.worker.postMessage(message);
 		});
 	}
@@ -897,7 +1001,8 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 
 /**
  * Starts job worker `index`. It joins the job system once it is ready: until then the sketch thread
- * and the job workers already running take every chunk, so no frame waits for it. A job worker that
+ * and the job workers already running take every chunk, so no frame waits for it. `started` hears
+ * once it is ready, so the thread that runs the sketch learns which workers run. A job worker that
  * fails to start is reported as a failure of the running engine, and returns undefined when the
  * browser refuses it at once.
  */
@@ -905,6 +1010,7 @@ function startJobWorker(
 	index: number,
 	slots: Int32Array,
 	events: WorkerEvents,
+	started: (index: number) => void,
 ): EngineWorker | undefined {
 	const failed = (error: unknown) => {
 		if (Atomics.load(slots, Slot.Running) !== 0)
@@ -926,7 +1032,10 @@ function startJobWorker(
 			`job ${index}`,
 			events,
 		);
-		job.ready().catch(failed);
+		job.ready().then(
+			() => started(index),
+			(error: unknown) => failed(error),
+		);
 		return job;
 	} catch (thrown) {
 		failed(thrown);
@@ -1168,6 +1277,15 @@ async function startEngine(
 		hints: readDeviceHints(),
 		crashedStarts: history.crashed,
 	};
+	/**
+	 * The engine keeps a copy of each texture's texels after their upload where the device is a
+	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
+	 * otherwise (D-164).
+	 */
+	const keepTextureCopies = keepTextureCopiesOption(
+		options.keepTextureCopies,
+		deviceKind(presetRequest.hints) !== 'desktop',
+	);
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,
@@ -1211,7 +1329,12 @@ async function startEngine(
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
+	const sketchErrorHandlers = new Set<(error: Error) => void>();
 	const reported = new Set<string>();
+	const onSketchError = (error: Error) => {
+		for (const handler of sketchErrorHandlers) handler(error);
+	};
+	if (options.onSketchError) sketchErrorHandlers.add(options.onSketchError);
 	/** Where a start that checks its preset keeps the check's result for later starts. */
 	let checkStore: CheckStore | undefined;
 	/**
@@ -1240,6 +1363,7 @@ async function startEngine(
 	let engineThreads!: [string, number[]][];
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
+		sketchError: onSketchError,
 		failure: onFailure,
 		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
 		// engine's mode reports the preset and the preset check, which the page stores for later
@@ -1278,7 +1402,7 @@ async function startEngine(
 			tier,
 			preset: () => mode.preset,
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
-			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
+			wasmBytes: () => memoryBytes(wasmMemory) ?? 0,
 		},
 		sharedMemory: threaded,
 		maxTargetFps: maxTarget,
@@ -1358,6 +1482,11 @@ async function startEngine(
 	let rendererHost: EngineWorker | undefined;
 	/** The job workers that got the core, which a stop waits for. */
 	let jobsWithCore: readonly EngineWorker[] = [];
+	// While the browser measures the page's memory, this engine's idle job workers run their
+	// threads' tasks, so the measurement never waits on a blocked thread.
+	const removeMeasurementRelease = addMeasurementRelease(() =>
+		coreMemory ? yieldJobWorkers(coreMemory, slots) : () => {},
+	);
 	/** The sketch worker and the render worker once they got the core, which a stop asks to stop. */
 	const withCore = new Set<EngineWorker>();
 	/** The worker that holds the canvas, or will once the start moves it there. */
@@ -1419,6 +1548,7 @@ async function startEngine(
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.store(slots, Slot.Paused, 2);
 			stopJobs();
+			removeMeasurementRelease();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
 			globalThis.removeEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 			statsSwitch.show(false);
@@ -1446,6 +1576,13 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			// A channel's ports keep the engine's closures alive while they stay open: a port with a
+			// listener is a pending activity, which the page never collects. The engine has stopped, so
+			// close both ends and let go of the channels.
+			for (const { port1, port2 } of channels) {
+				port1.close();
+				port2.close();
+			}
 			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
@@ -1563,6 +1700,7 @@ async function startEngine(
 			),
 			options: tierSettings,
 			textureCapMiB,
+			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck,
 		};
@@ -1578,6 +1716,7 @@ async function startEngine(
 			crashedStarts: history.crashed,
 			memoryMaximumMiB: threaded ? maximumMiB : null,
 			renderFallback,
+			keepTextureCopies,
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
@@ -1703,10 +1842,7 @@ async function startEngine(
 				...images,
 				presented: () => labels.update(),
 				fail: pageLoss,
-				fault: (error) =>
-					onFailure(
-						new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`),
-					),
+				fault: (error) => onFailure(failureError('the drawing on the page', messageOf(error))),
 				gpuError: (outOfMemory, message) =>
 					onFailure(gpuFailure('the page', outOfMemory, message), false),
 			});
@@ -1718,22 +1854,38 @@ async function startEngine(
 		/**
 		 * Makes a port for each job worker that the engine may start, for the on-demand loader's
 		 * tasks, and returns the other end of each, for the thread that runs the sketch. The job
-		 * workers start as that thread asks for them: each gets the core and its port as it starts.
+		 * workers start as that thread asks for them: each gets the core and its port as it starts,
+		 * and that thread then hears which of them run, so it sends its tasks only to those.
 		 * A stop waits until each started job worker reports that it left the job system, which one
 		 * without the core never does.
 		 */
 		const startJobs = (jobs: EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
 			const taskPorts = Array.from({ length: jobWorkers }, () => channel());
+			/** The job workers that started, by index, which the on-demand loader sends its tasks to. */
+			const running: number[] = [];
+			/** Notes a job worker that started, by its index. */
+			const noteStarted = (index: number) => running.push(index);
 			growJobs = (count) => {
+				const starting: Promise<unknown>[] = [];
 				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
-					if (Atomics.load(slots, Slot.Running) === 0) return;
-					const job = startJobWorker(index, slots, events);
-					if (!job) return;
+					if (Atomics.load(slots, Slot.Running) === 0) break;
+					const job = startJobWorker(index, slots, events, noteStarted);
+					if (!job) break;
 					jobs.push(job);
 					const port = (taskPorts[index] as MessageChannel).port1;
 					job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: port }, [port]);
+					starting.push(job.ready());
 				}
+				// The sketch thread hears which of a batch of job workers run once the whole batch has
+				// settled, so it never takes a worker for running before the batch is known. A batch
+				// that started no worker, because the browser refused them or the engine is stopping,
+				// stays unheard: the thread then uses the workers it asked for.
+				if (starting.length === 0) return;
+				void Promise.allSettled(starting).then(() => {
+					running.sort((a, b) => a - b);
+					threads?.sketch?.worker.postMessage({ type: 'job-workers', running: [...running] });
+				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
 		};
@@ -1830,6 +1982,7 @@ async function startEngine(
 					showStats: events.stats,
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
+					reportSketchError: (message) => events.sketchError(new Error(message)),
 				},
 				hold,
 			);
@@ -1978,6 +2131,10 @@ async function startEngine(
 				failureHandlers.add(handler);
 				return () => failureHandlers.delete(handler);
 			},
+			onSketchError(handler) {
+				sketchErrorHandlers.add(handler);
+				return () => sketchErrorHandlers.delete(handler);
+			},
 			setPaused(paused) {
 				userPaused = paused;
 				applyPause();
@@ -2011,7 +2168,7 @@ async function startEngine(
 				return {
 					seconds: (performance.now() - started) / 1000,
 					...summarizeFrames(reader.records, threadRoles(mode)),
-					memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
+					memory: { wasmBytes: memoryBytes(wasmMemory) ?? null, ...heap.stop() },
 					load: {
 						engineStartMs,
 						probeMs,

@@ -77,6 +77,11 @@ export interface StatsFigures {
 	readonly presentedFps: number;
 	/** Frames per second that the GPU finished, or null where the page does not know it. */
 	readonly completedFps: number | null;
+	/**
+	 * Frames of the window whose scene update threw, where the page knows it. The frames still
+	 * present, so a nonzero figure is shown as a warning line.
+	 */
+	readonly updateErrors?: number;
 	/** Mean CPU time per frame of the busiest thread, in milliseconds. */
 	readonly cpuMs: number;
 	/** CPU time per frame of each thread. */
@@ -143,6 +148,8 @@ export function statsText(figures: StatsFigures): string {
 		`${figures.presentedFps.toFixed(1)} fps presented${completed}`,
 		`busiest thread ${ms(figures.cpuMs)} per frame`,
 	);
+	if ((figures.updateErrors ?? 0) > 0)
+		lines.push(`the scene's update failed in ${Math.round(figures.updateErrors as number)} frames`);
 	let jobs = 0;
 	let busiestJob = 0;
 	for (const thread of figures.threads) {

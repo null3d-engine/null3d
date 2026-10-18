@@ -12,7 +12,7 @@ summary: "The npm packages; the Vite plugin, which every Vite build needs; packa
 
 null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch.
 
-The commands on these pages use [Bun](https://bun.sh). npm, pnpm and Yarn work too, with their own install and run commands.
+The commands on these pages use [Bun](https://bun.sh) 1.4.3 or newer. Older Bun can drop its link to the browser that `bunx @null3d/cli test` and the tool's other browser commands drive, and the command then waits forever. npm, pnpm and Yarn work too, with their own install and run commands.
 
 ## Install the packages
 
@@ -58,6 +58,24 @@ Every Vite build of a null3D project needs the plugin, for the dev server and fo
 null3D requires Vite with this plugin. Other bundlers are not supported or tested. The engine loads its workers, its WebAssembly and its other files in the standard form, `new URL('<file>', import.meta.url)`, which other bundlers read too.
 
 The build's files may come from a CDN, with the HTML page on your own origin. [The engine's files on a CDN](hosting.md#the-engines-files-on-a-cdn) gives the headers and the policy that this needs.
+
+## Builds
+
+The plugin compiles the WGSL in your project on each build and each start of the dev server:
+
+- Every `.wgsl` file that a module imports.
+- Every template literal that a `/* wgsl */` comment tags, in a script.
+- Every custom material, post effect and tone curve, built into the engine's own templates.
+
+A compile can take most of a second, and a project has many. So the plugin keeps each compiled shader in `node_modules/.cache/null3d-shaders`. The key of an entry is the WGSL, the variant spec that the compiler is given, and the compiler's version. A later build of the same shader takes the cached result and starts no compiler. A changed shader, a changed variant or a newer compiler misses and compiles again, so the cache never serves a wrong shader.
+
+The first build has no cached results, so it compiles every shader in the project and pauses while it does. The plugin prints a line that names the file it is compiling and the cache folder, so the pause does not look like a hang. Later builds read the cache and compile nothing.
+
+To ignore the cache, set `NULL3D_NO_CACHE=1`, or start the dev server with Vite's `--force`. To clear it, delete the folder:
+
+```sh
+rm -rf node_modules/.cache/null3d-shaders
+```
 
 ## Run the sketch
 

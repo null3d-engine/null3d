@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
-import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
+import { stopJobWorkers, waitForJobWorkersToLeave, yieldJobWorkers } from './stop-jobs';
 
-/** Where the test's job system keeps its wake word and its stop flag. */
+/** Where the test's job system keeps its wake word, its stop flag and its yield word. */
 const WAKE = 64;
 const STOP = 70;
+const YIELD = 72;
 
 function engine(withJobs: boolean) {
 	const memory = new WebAssembly.Memory({ initial: 1, maximum: 2, shared: true });
@@ -12,10 +13,17 @@ function engine(withJobs: boolean) {
 	if (withJobs) {
 		Atomics.store(slots, Slot.JobsWakeAddress, WAKE);
 		Atomics.store(slots, Slot.JobsStopAddress, STOP);
+		Atomics.store(slots, Slot.JobsYieldAddress, YIELD);
 	}
 	const words = new Int32Array(memory.buffer);
 	const flags = new Uint8Array(memory.buffer);
-	return { memory, slots, wake: () => words[WAKE / 4], stopped: () => flags[STOP] };
+	return {
+		memory,
+		slots,
+		wake: () => words[WAKE / 4],
+		stopped: () => flags[STOP],
+		yielding: () => words[YIELD / 4],
+	};
 }
 
 describe('stopJobWorkers', () => {
@@ -67,5 +75,38 @@ describe('stopJobWorkers', () => {
 		await left;
 		worker.terminate();
 		expect(replies).toEqual(['waiting', 'left']);
+	});
+});
+
+describe('yieldJobWorkers', () => {
+	it('raises the yield word and wakes the workers, and its end lowers the word again', () => {
+		const { memory, slots, wake, yielding } = engine(true);
+		const end = yieldJobWorkers(memory, slots);
+		const other = yieldJobWorkers(memory, slots);
+		expect(yielding()).toBe(2);
+		expect(wake()).toBe(2);
+		end();
+		expect(yielding()).toBe(1);
+		other();
+		expect(yielding()).toBe(0);
+		expect(wake()).toBe(2);
+	});
+
+	it('ends a yield after the shared memory grows', () => {
+		const { memory, slots, yielding } = engine(true);
+		const end = yieldJobWorkers(memory, slots);
+		memory.grow(1);
+		end();
+		expect(yielding()).toBe(0);
+	});
+
+	it('does nothing before the job system exists, and nor does its end', () => {
+		const { memory, slots, wake, yielding } = engine(false);
+		const end = yieldJobWorkers(memory, slots);
+		Atomics.store(slots, Slot.JobsWakeAddress, WAKE);
+		Atomics.store(slots, Slot.JobsYieldAddress, YIELD);
+		end();
+		expect(yielding()).toBe(0);
+		expect(wake()).toBe(0);
 	});
 });

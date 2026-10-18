@@ -3,12 +3,12 @@ id: concepts/shadows
 title: Shadows
 status: experimental
 since: "0.1"
-summary: "Cascades that stay still as the camera turns and blend where they meet; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
+summary: "Cascades that stay still as the camera turns and blend where they meet; contact shadows where small objects touch the ground; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
 ---
 
 # Shadows
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them since 0.2. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them since 0.2, and the directional light draws contact shadows since 0.2. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -142,13 +142,14 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | --- | --- | --- |
 | `cascades` | The preset's `shadowCascades` | The cascades, from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the casters once more. |
 | `mapSize` | The preset's `shadowMapSize` | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
-| `distance` | 200 | How far from the camera, in meters along its view, shadows fall. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. A camera under a scaled parent keeps the distance in meters. |
+| `distance` | `'auto'` | How far from the camera, in meters along its view, shadows fall, or `'auto'` to follow the farthest visible receiver. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. A camera under a scaled parent keeps the distance in meters. |
 | `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 | `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+| `contactDistance` | 0.3 | How far [contact shadows](#contact-shadows) reach from each surface toward the light, in meters. 0 turns them off for this light. |
 
 The quality preset gives the default cascade count and map size: the lighter presets draw fewer cascades and smaller maps ([Quality presets](quality-presets.md#the-settings-of-each-preset)). A light that names its own keeps them on every preset. So leave both out, unless your scene needs other values on every device.
 
-A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene.
+A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene. The default, `'auto'`, does this for you. The engine finds the farthest surface that receives shadows in the camera's view each frame. It rounds that distance up on a ladder of 1.25 times per step. Shadows in a small scene then get much finer texels than a fixed 200 m. The distance holds for one step before it falls, so a raw distance that moves across a step does not flicker. A light that names a number keeps it, as a port of a scene with a fixed shadow distance does.
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
@@ -281,6 +282,35 @@ So the directional light's filter compares each texel with the receiving surface
 
 The tiles of spot and point lights compare each read with the depth at the surface's own point. Their views are not orthographic, so a surface's plane is not a plane in the tile.
 
+## Contact shadows
+
+The cascades cannot hold the smallest shadows. Their texels are a few centimeters wide, the filter blurs over 3 or 5 of them, and the biases move each surface toward the light. So a stone in a stream bed, a foot, a wheel or a crate's edge can lose the dark line where it meets the ground. Contact shadows add those short shadows from the camera's depth.
+
+From each surface, a short ray goes toward the light, `contactDistance` meters long. It steps across the depth that the camera's view holds. Where a step lies behind a nearer surface, the ray is blocked, and the surface takes a contact shadow. A step that lies far behind a surface does not count, so a thin pole does not cast a long shadow. The shadow fades over the second half of the ray, so it ends softly.
+
+```ts
+const sun = scene.createDirectionalLight({
+  direction: [-1, -2, -1],
+  intensity: 3,
+  castShadows: true,
+  // Longer contact shadows, for a scene of large rocks.
+  shadow: { contactDistance: 0.6 },
+});
+// No contact shadows from this light.
+sun.setShadow({ contactDistance: 0 });
+```
+
+They follow these rules:
+
+- Only the first directional light draws them, and only while it casts shadows. Spot and point lights draw none.
+- The quality setting `contactShadowSteps` sets the steps of each ray: 8 on High and 16 on Ultra. Low draws none. Medium draws 4 on WebGL2 and none on WebGPU. `quality.set({ contactShadowSteps: 4 })` turns them on for any preset.
+- They darken the light's direct light only, on surfaces that receive shadows. Ambient and environment light stay as they are.
+- Every opaque object in the depth can block a ray, whether it casts shadows or not. Blended objects, sprites and particles block none.
+- They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.
+- A longer `contactDistance` finds larger contacts, with the same steps further apart. Keep it short, under a meter, and use the cascades for long shadows.
+
+The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+
 ## Which objects cast and receive
 
 - The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
@@ -305,6 +335,8 @@ Each layer of the shadow map takes 2 bytes per texel: 8 MiB at 2,048 texels on e
 
 A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws the tiles of the faces that a moving caster touches, and at most 12 tiles draw again in a frame. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MiB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
 
+Contact shadows need the depth prepass. WebGL2 draws it on every preset. On WebGPU they turn it on while they draw, which costs a second pass over the opaque objects' vertices. They then cost one copy of the depth at half the render size, and one ray of `contactShadowSteps` reads per texel at that size. A blur then smooths the rays' noise without crossing objects' edges. With ambient occlusion on, they share its copy, its horizon step and its denoise.
+
 To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters. For spot and point lights, give shadows only to the lights that need them, and keep their ranges short. Prefer a spot light to a point light where a cone covers the area.
 
 ## On each GPU path
@@ -325,6 +357,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - A spot or point light's `shadow.mapSize` has no equivalent. The quality preset sets the size of every tile. `shadow.camera` has none either, as the tiles fit the light by themselves.
 - A material with `alphaTest` cuts its shadow at `alphaTest` in three.js, and so does a masked material in null3D, at `alphaCutoff`. With `alphaToCoverage`, three.js cuts at 0.5, and null3D at `alphaCutoff`. With `alphaHash`, three.js casts the whole shape, and null3D a hashed shadow.
 - three.js draws a spot or point light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
+- three.js has no contact shadows, so a ported scene gains them on High and Ultra. Set `contactDistance: 0` on the light to match three.js's look. drei's `ContactShadows` component is another technique, a blurred shadow on a ground plane, which null3D does not draw.
 
 ## Related pages
 

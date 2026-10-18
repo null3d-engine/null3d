@@ -1,8 +1,8 @@
 # D-20: WebGPU skinning
 
-Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The change of the engine's default comes in a pull request of its own. Until it merges, the engine still skins in the compute pass. The owner's iPad ran the timing page on 2026-10-11, where the compute pass saved 0% to 9% with two or more cascades. The Mac's Safari, and S5 on the owner's iPad, are still to run. None of these can change the result. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
+Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The compute pass stays for morphed meshes, for materials without SKIN builds, and behind `?skinning=compute`. The owner's iPad ran the timing page on 2026-10-11, where the compute pass saved 0% to 9% with two or more cascades. The engine's default change landed on main on 2026-10-13 with M2-EX41. The Mac's Safari, and S5 on the owner's iPad, are still to run; neither can change the result. On 2026-10-12 the owner ruled that custom materials' SKIN builds load on first use (option B, last addendum). Date: 2026-10-04, updated 2026-10-13. Task: M2-C3, M2-C8, M2-EX41.
 
-Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. In S5 it saves at most 4.1% on the Android phones and 4.3% on a cloud iPad. On the timing page it costs 4% to 79% more on each phone, and 26% to 30% more on the iPad. So it fails the rule on all five devices measured. On 8 October 2026 the owner made the vertex shaders WebGPU's default.
+Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. In S5 it saves at most 4.1% on the Android phones and 4.3% on a cloud iPad. On the timing page it costs 4% to 79% more on each phone, and 26% to 30% more on the iPad. So it fails the rule on all five devices measured. On 8 October 2026 the owner made the vertex shaders WebGPU's default. The compute pass still skins morphed meshes, and meshes whose material has no SKIN build: the debug views and a sketch's full shaders. Since 12 October 2026, skinned copies of one mesh and material share an instanced draw, and custom materials have SKIN builds, which load on first use by the owner's ruling (last addendum).
 
 ## Question
 
@@ -14,24 +14,24 @@ Keep the compute pass if it saves at least 10% of the frame time with two or mor
 
 ## Both ways in the engine
 
-The engine builds both, so the data can pick either. The compute pass is the default, and the `?skinning=vertex` switch picks the vertex shader on WebGPU. What both share:
+The engine builds both, so the data can pick either. Until 8 October 2026 the compute pass was the default, and `?skinning=vertex` picked the vertex shader on WebGPU. Since then the vertex shader is the default, and `?skinning=compute` picks the compute pass. What both share:
 
 - A loader links a mesh object to an animated instance with the scene command `SET_SKIN`. A skinned object draws from a bucket of its own, as any object with bounds of its own does.
 - Each frame's skinning matrices reach the GPU in one RGBA32F texture: 512 joints per row, three texels per joint. A row is then 1,536 texels wide, as the WebGL2 data textures' rows are, so it fits the 2,048 texels that every WebGL2 device allows. Until 4 October 2026 a row held 1,024 joints, 3,072 texels, which a device at that floor could not create. The texture's height has the same floor, so an animation table holds at most 2,048 rows, 1,048,576 joints. The animation step writes one of two matrix buffers in turn. So each frame uploads straight from the buffer of its own step, with no copy. The WebGL2 path (M2-C4) can read the same texture.
 - A skinned object culls with a sphere that its pose moves. Each mesh keeps a sphere per joint around the vertices that the joint moves. After each animation step the core moves those spheres by the pose and writes the sphere around them all. A skinned vertex is a weighted average of its joints' matrices applied to it, so it lies inside that sphere, whatever the pose. A Rust test checks every vertex of a column against 200 random poses. Each joint turns up to half a turn, scales by 0.5 to 2 and moves up to 3 m.
 
-The compute pass (`gpu_driven/skin.rs`, `skin.wgsl`):
+The compute pass (`gpu_driven/skin.rs`, `skin.wgsl`, and `?skinning=compute`):
 
 - Each skinned object gets a region of a skinned vertex buffer for each part of its mesh, when the scene's structure changes. A region holds the mesh's vertices without joints and weights, with positions, normals and tangents as 32-bit floats. The views' bundles draw the regions with the mesh page's indices, so they are recorded only when the structure changes.
 - The regions fill up to 8 skinned vertex buffers, each at most the device's largest storage binding. That is 1 GiB in all at WebGPU's default of 128 MiB. Each run of one mesh page's parts in one buffer is a segment of the pass's table. At most 32 mesh pages hold skinned meshes. A scene past either cap gets E1501, which names it ([D-57](D-57-capacities.md)). Until 4 October 2026 the pass had one buffer and one dispatch per page. So a crowd past a binding or past 65,535 workgroups lost characters with no error.
 - Each frame, the CPU tests each skinned object's world sphere against the views that draw. These are the cameras, and for casters, the cascades and the shadow tiles that draw that frame. One dispatch per segment skins the parts of the objects that some view draws, one thread per vertex, 64 to a workgroup. A dispatch past 65,535 workgroups spreads them over rows. The shader reads every vertex type that glTF allows (D-25).
 - The passes then draw the skinned vertices with the pipelines of plain meshes. So every template skins, custom materials and the debug views too, with no shader variant of its own.
 
-The vertex shader (`?skinning=vertex`):
+The vertex shader (the default since 8 October 2026):
 
 - The lit, standard maps, unlit, unlit map and shadow depth templates gain SKIN builds. Each blends its vertex's four joints from the joint texture. A bind group of its own holds the texture, after the frame's group or after the maps' group.
 - Each skinned object's bucket names the first joint of its skin, and the culling pass copies it beside the material into each instance it draws.
-- Custom materials and the debug views have no SKIN builds, so they draw skinned meshes at rest in this mode. Giving custom materials SKIN builds would double their WebGPU builds.
+- Custom materials and the debug views have no SKIN builds. Giving custom materials SKIN builds would double their WebGPU builds. Until 8 October 2026 they drew skinned meshes at rest in this mode. Now the compute pass skins their objects, as it morphs morphed ones (see the last addendum).
 
 ## Data
 
@@ -61,7 +61,7 @@ The page runs with `bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad
 
 ## Decision
 
-The vertex shaders skin on WebGPU by default, as on WebGL2. The owner ruled so on 8 October 2026, by the rule: the compute pass never saved 10% of the frame time on any device measured. The last addendum gives the ruling and its figures. The engine skins in the compute pass until the change of default merges.
+The vertex shaders skin on WebGPU by default, as on WebGL2. The owner ruled so on 8 October 2026, by the rule: the compute pass never saved 10% of the frame time on any device measured. The compute pass stays in the engine for the objects that the vertex shaders cannot skin, and for measurements. The last addendum gives the ruling, its figures and what changed.
 
 ## How three.js handles it
 
@@ -69,7 +69,7 @@ three.js's WebGPU renderer (0.186) skins in the vertex shader, as its WebGL rend
 
 ## Consequences
 
-- Whichever way loses leaves the engine. For the compute pass, that is `skin.wgsl`, `gpu_driven/skin.rs`'s pass and the skinned vertex buffer. For the vertex shader, that is the WGSL modules' SKIN builds, the joint texture's bind group on WebGPU and the bucket's first joint. That frees 2.3 to 3.5 KB per WebGPU page. The `?skinning=` switch then goes too.
+- The plan was that the losing way leaves the engine, with the `?skinning=` switch. The compute pass lost, but it stays: WebGPU morphs only in it ([D-51](D-51-morph-targets.md)), and custom materials and the debug views skin only in it. The last addendum gives the reasons. So both ways stay, and so does the switch.
 - WebGL2 (M2-C4) skins in the vertex shader, by D-10, with the same joint texture and the GLSL builds of the same SKIN code.
 - The record is in the table in [README.md](README.md).
 
@@ -280,9 +280,42 @@ On 8 October 2026 the owner ruled on this record: the vertex shaders skin on Web
 - The vertex shaders' frames also cost less CPU time, as they record no dispatch and upload no table. They saved 0.27 ms on the Mac, 0.43 ms on the S25 and about 1.5 ms on the Pixel 11.
 - The rule needs a saving on every device. So the runs still to come on the Mac's Safari and the owner's iPad cannot keep the compute pass. They run all the same, to record the vertex shaders' figures there.
 
-### The change in the engine
+### Why the compute pass stays
 
-The change of the default comes in a pull request of its own (M2-C8's follow-up). Until it merges, the engine skins in the compute pass, and `?skinning=vertex` picks the vertex shaders. That pull request also says what stays of the compute pass. WebGPU morphs only in it ([D-51](D-51-morph-targets.md)), and custom materials and the debug views have no SKIN builds, so some objects still need it.
+The plan had the losing way leave the engine. The compute pass stays, for three reasons:
+
+- WebGPU morphs only in the pass ([D-51](D-51-morph-targets.md)). It has no MORPH builds, so morphed meshes, skinned or not, need the pass.
+- Custom materials and the debug views have no SKIN builds on WebGPU. Before this change, `?skinning=vertex` drew their skinned meshes at rest. As a default, that would break the intent parity rule ([D-52](D-52-intent-parity.md)). SKIN builds would double each custom material's WebGPU builds, as they doubled its WebGL2 builds. [D-10](D-10-webgl2-skinning.md) measured 17.0 KB against 22.7 KB after Brotli for one surface function. Most custom materials never draw a skinned mesh, so the pass serves the few that do.
+- `?skinning=compute` keeps the comparison open for the runs still to come, and for any device where the figures change.
+
+Options not taken:
+
+- Keep the compute pass as the default. It failed the rule on every device measured.
+- Take the compute pass out, with SKIN builds for custom materials and MORPH builds for WebGPU. That doubles every custom material's builds and adds a MORPH build to every WebGPU template. It would save one compute shader in a file that loads on first use.
+- Leave custom materials' skinned meshes at rest. That draws them wrong.
+
+### What changed
+
+- The core's default skinning mode is the vertex shader (`SkinningMode::VERTEX`). Without the switch, the engine starts in it.
+- At each new layout, a skinned object takes the vertex shaders only when its pair's pipeline has SKIN builds. These are the lit, standard maps, unlit and unlit map templates. The casters' and outline mask's templates all have SKIN builds. The pass takes morphed objects, and objects whose pair draws with any other template. Those are custom materials, the debug views and the test templates. The pair's pipeline already folds in the debug view, and turning a debug view on or off rebuilds the layouts, so the choice follows it.
+- The pass's buffers, table and dispatches cover only the objects it takes. A scene with no morphed object and no custom material on a skinned mesh records no skinning pass, and keeps no skinned vertex buffer. S5's 500 knights so no longer take 49.6 MB of skinned vertices.
+- `?skinning=compute` replaces the switch's old default, `lean`: the pass with both savings, for every skinned object. `full`, `skip` and `narrow` stay. The benchmark page kind `null3d-webgpu-skin-compute` replaces `-skin-vertex`.
+- When a page preloads skinning, WebGPU now also creates the shader modules of the SKIN builds while the vertex shaders skin. It still builds the pass's pipelines, which morphed meshes and custom materials need.
+- The image tests that drew the vertex shaders with `?skinning=vertex` now draw the compute pass with `?skinning=compute`. They keep the same references. `skinning-normal-map-compute` joins them: it checks the pass's 8-bit tangents against the vertex shaders' floats.
+- The shader modules did not change, so the download sizes did not change either.
+
+### The new default on the Mac
+
+The Mac's Chrome ran S5 on 11 October 2026, with the change merged with main: 500 knights at High, governor off, 3 runs of 10 s each, the two pages in turns, at a load of 4.7 to 7.4. `null3d-webgpu` is the new default, and `null3d-webgpu-skin-compute` skins every knight in the pass, as the old default did (runs `20261011-074653-bench` and `20261011-074904-bench`).
+
+| Page | CPU ms per frame | GPU ms | Presented fps |
+| --- | --- | --- | --- |
+| Every knight walks: vertex shaders | 1.81 (1.32 to 1.97) | 5.31 | 120.0 |
+| Every knight walks: the pass | 2.40 (1.97 to 2.43) | 5.16 | 114.8 |
+| Half the knights still: vertex shaders | 1.64 (1.28 to 1.76) | 5.36 | 120.0 |
+| Half the knights still: the pass | 2.18 (1.81 to 2.40) | 5.20 | 118.1 |
+
+The pass saves 2.8% to 3.0% of the GPU time, under the rule's 10%, as before. The vertex shaders save 0.54 to 0.59 ms of CPU time per frame, and hold 120 frames per second, where the pass drops frames.
 
 ## Addendum, 2026-10-11: the timing page on the owner's iPad
 
@@ -305,3 +338,45 @@ What the figures show:
 - The vertex shaders cost 0.01 to 0.08 ms less CPU time per frame.
 
 The rule needs a saving of 10% in S5 on every device. The compute pass failed it on the Mac, the three phones and the cloud iPad, so this run does not change the owner's ruling. It does show that on the A12X the compute pass is the faster way, by up to 9% at sizes that matter.
+
+## Addendum, 2026-10-12: shared buckets, and custom materials' SKIN builds on first use
+
+Battle's comparison (task M2-EX41, [D-121](D-121-comparison-tier.md#battle)) found that each skinned object drew from a bucket of its own on WebGPU, so each unit cost one indirect draw in each view. At 1,000 units that was 10,214 draws a frame: about 2,100 in the camera's view, 2,000 in the depth prepass and 6,000 in the 3 cascades. WebGL2 drew the same scene in 289 draws, as its skinned copies of one mesh and material share an instanced draw.
+
+What changed:
+
+- Skinned objects that the vertex shaders skin share a bucket by mesh and material, as on WebGL2. They need no vertices of their own. The bucket's record names `PER_SOURCE_JOINT` (`u32::MAX`) as its first joint. The culling pass then takes each copy's first joint from a texture of 32-bit indices, one per source, and writes it into the copy beside the material. A texture keeps the culling group within the eight storage buffers that every device allows a shader stage. The bucket's sphere holds every object's sphere, around their centres' mean, and the animation step moves it each frame.
+- The objects that the skinning pass skins keep a bucket each, as each has vertices of its own.
+- Custom materials built from the standard template now have SKIN builds on WebGPU, as on WebGL2. So the vertex shaders skin them, and a crowd with a custom material draws in one instanced draw per view. Battle's soldiers and mechs have custom materials.
+- A sketch's full shader has no SKIN builds. Its skinned meshes go to the skinning pass, which a full shader's flag (`Shading::is_full_shader`) picks. Before, a full shader on a skinned mesh would have failed its pipeline.
+
+### The owner's ruling on the size of the SKIN builds
+
+This record rejected SKIN builds for custom materials on 8 October 2026, for their size: they double each material's WebGPU builds, and most custom materials never draw a skinned mesh. On 12 October 2026 the owner chose option B: a custom material's WGSL SKIN builds load on first use only, when the material first draws a skinned mesh, as the engine's own first-use shader files do. A page with no skinned custom material pays nothing: no download and no pipeline.
+
+- The shader compiler puts a material's WebGPU SKIN builds apart from its other builds (`skinVariants`). The Vite plugin moves them to a module of their own, `virtual:null3d/skin/<hash>`, which the material's value imports with `skinBuilds()`. A production build puts that module in a file of its own.
+- The thread that draws holds a custom material's shader without its SKIN builds. The first pipeline that needs one parks, as a pipeline waits for a shader file, and asks the sketch's thread for them through the port of the images, once. The sketch's thread imports the module and sends the builds of its GPU path. The pipeline then builds. A failed import fails the pipelines that need the builds, with the reason.
+- `scene.warmUp()` waits for these pipelines too, so a game that must fetch nothing during play warms its skinned objects up in the setup.
+- WebGL2 keeps its SKIN builds in the material's module, as before.
+
+Options rejected:
+
+- SKIN builds in every custom material's module. They double each material's WebGPU builds for pages that never skin with it.
+- Keep the skinning pass for custom materials. Each object then draws on its own, and Battle's units cost a draw per view each.
+- Build the SKIN variant in the browser. The engine compiles no WGSL at run time.
+
+### Figures
+
+Battle on the Mac's Chrome 155, WebGPU, on 13 October 2026, before and after the change ([D-121](D-121-comparison-tier.md#battles-gpu-cost-and-memory-12-october-2026) has the whole run):
+
+- Draws a frame fell from 10,214 to 333 at 1,000 units, and from 10,464 to 343 on the 4,000-unit pages.
+- The busiest CPU thread's time fell from 8.6 to 13.9 ms to 5.7 to 9.6 ms on the 4,000-unit pages.
+- The 4,000-unit pages held only 1,024 soldiers, in a scene that stood still: the engine's table of animated objects held at most 1,024 objects (found on 13 October 2026, task M2-R36). Their figures compare the two builds on that same scene, not null3D's cost at 4,000 units. The sketch worker no longer lays out a bucket for each unit.
+- The frame's compute work fell from 1.4 to 1.6 ms to 0.1 ms, as the vertex shaders now skin Battle's custom materials.
+- The GPU's frame time did not change: 12.6 to 17.1 ms before, 9.7 to 16.7 ms after, in runs that varied as much as that from page to page. Its largest render pass took 6.8 to 9.6 ms in both builds. So the draw count was not what bound Battle's GPU time on the Mac.
+
+## Addendum, 2026-10-13: the default change landed on main
+
+The engine's default change landed on main on 2026-10-13 with M2-EX41. The core starts in `SkinningMode::VERTEX` (`9f93d1a19`, merged from `feat/webgpu-vertex-skinning-default`), so no branch carries it any longer. Its Mac S5 figures are in [The new default on the Mac](#the-new-default-on-the-mac) above, and its Battle figures are in [D-121](D-121-comparison-tier.md#battles-gpu-cost-and-memory-12-october-2026).
+
+Still to run, and neither can change the ruling: the Mac's Safari run of the timing page, and S5 on the owner's iPad. The compute pass failed the rule on every device that can decide it, and the rule needs a saving on every device measured.

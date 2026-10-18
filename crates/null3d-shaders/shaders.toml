@@ -1,7 +1,7 @@
-# The shader manifest. The shader build (cargo run -p null3d-shaders --bin shader-build) builds
-# every variant listed here into packages/engine/src/generated/shaders.ts and the device modules
-# beside it. Git ignores those files: `bun run shaders`, and every command that reads them, runs
-# the build when they are missing or out of date.
+# The shader manifest. The shader build (cargo run --profile shader -p null3d-shaders --bin
+# shader-build) builds every variant listed here into packages/engine/src/generated/shaders.ts and
+# the device modules beside it. Git ignores those files: `bun run shaders`, and every command that
+# reads them, runs the build when they are missing or out of date.
 #
 # Each [shaders.<name>] table is one entry shader:
 #
@@ -84,14 +84,16 @@
 # of the device's bits that those builds vary in. The engine loads one the first time a pipeline
 # asks for one of its builds, and the pipeline waits for it as for a custom material's shader.
 #
-#   shaders  Shaders that load by device, each of whose builds belongs to the feature: its templates.
+#   shaders  Shaders that load by device, each of whose builds needs the feature: its templates.
 #   bits     Permutation bits that a device does not fix: each build of a shader that loads by
-#            device with one of them belongs to the feature, such as the final pass's BLOOM builds.
+#            device with one of them needs the feature, such as the final pass's BLOOM builds.
 #
-# A build with no feature stays in the device modules of the start. A build of a feature's shader
-# belongs to that feature, and any other build to the feature of its lowest bit that a feature
-# names. The template of custom materials stays at the start. The size check holds each module of
-# a feature to the start shader file's own limit after Brotli.
+# A build that needs no feature stays in the device modules of the start, and a build that needs
+# one feature goes into that feature's modules. A build that needs several, such as a SKIN build
+# with ALPHA_HASH, goes into modules of its own, generated/shaders-hash-and-skinning-<target>...,
+# which a page loads only once it uses each of those features. So a feature's modules never grow by
+# another feature's builds. The template of custom materials stays at the start. The size check
+# holds each module of features to the start shader file's own limit after Brotli.
 #
 # Device modules are plain JavaScript, which the main module imports by address, so a production
 # build holds one copy of each for the page and every worker.
@@ -139,35 +141,94 @@
 # over to the next: each instance's fade value and a 4 × 4 ordered dither keep the pixels of its
 # side of the band, after the mask's own test by its cutoff or by coverage. It builds without
 # skins, morph targets, the alpha hash, transmission and index-read instances, and loads on first
-# use. Custom materials build none of
-# its builds: their levels switch at once.
+# use. Custom materials build none of its builds: their levels switch at once. WEIGHTED draws a
+# surface of the weighted blending into the camera's weighted layer (null3d::weighted), in any order
+# with the other weighted surfaces. It builds without a mask, light through the surface, index-read
+# instances, a fading level of detail, a prepass or a caster, and loads on first use with the layer's
+# own steps. Custom materials build without the bit (decision record D-150). COAT_SHEEN lights a
+# clear coat and a sheen above the base (null3d::coat_sheen); it builds without index-read instances
+# and loads on first use. Custom materials build it only where their WGSL names a layer's value of
+# the surface.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
-# occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
+# occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the COAT_SHEEN
+# builds the light and specular maps' slots hold the coat, coat normal and sheen maps instead.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
-# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material.
+# RECEIVE_SHADOWS, TRANSMISSION and COAT_SHEEN act as for the standard material.
 [shaders.standard_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 
+# Decals, from the same file with DECAL: a standard material projected onto the surfaces inside
+# each object's box, in a pass of their own after the camera's opaque pass. Each pixel reads the
+# scene's depth to find the surface under the box, then shades it as the standard material does,
+# with the material's maps at the box's coordinates in the maps builds. The box's axes give the
+# normal map's frame, so every build has VERTEX_TANGENT's surface code. DEPTH_MULTISAMPLED reads
+# sample 0 of a multisampled depth on WebGPU, and WebGL2 reads the backend's copy of one sample.
+# RECEIVE_SHADOWS and ROW_VALUES act as for the standard material. A page downloads them with its
+# first decal.
+[shaders.decal]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["DECAL", "VERTEX_TANGENT"], permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "HALF", "DEPTH_MULTISAMPLED", "ROW_VALUES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DECAL", "VERTEX_TANGENT"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "HALF", "ROW_VALUES"], targets = ["glsl"] }
+
+[shaders.decal_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["DECAL", "VERTEX_TANGENT", "MAPS"], permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "HALF", "DEPTH_MULTISAMPLED", "ROW_VALUES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DECAL", "VERTEX_TANGENT", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "HALF", "ROW_VALUES"], targets = ["glsl"] }
+
+[first_use.decals]
+shaders = ["decal", "decal_maps"]
+
+# The lit material with the scene's light probe grid (decision record D-146): the same file with
+# PROBE_GRID, in templates of its own so a page that sets no grid loads none of it. The engine
+# draws lit meshes through them while the scene sets a grid. RECEIVE_SHADOWS and ROW_VALUES act as
+# for the standard material.
+[shaders.probe_grid]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["PROBE_GRID"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+
+[shaders.probe_grid_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["PROBE_GRID", "MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", ], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "PROBE_GRID", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", ], targets = ["glsl"] }
+
+# A page downloads the grid templates when the sketch first sets a light probe grid.
+[first_use.probe_grid]
+shaders = ["probe_grid", "probe_grid_maps"]
+
+# The WEIGHTED builds of the standard material, the basic material and sprites, with or without
+# maps, draw surfaces of the weighted blending into the camera's weighted layer (null3d::weighted):
+# they write a weighted color sum and a coverage sum into two targets, in any order. They build
+# without a mask, light through the surface, index-read instances, the prepass or a caster, and load
+# on first use with the layer's own steps. Custom materials build without the bit.
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
 [shaders.unlit]
 file = "unlit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
 
 # The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
 # mesh's vertex colors with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -175,8 +236,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "unlit_map.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE"], targets = ["glsl"] }
+variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
 
 # Sprites, like three.js's Sprite with a SpriteMaterial: quads of a sprite batch's rows that face
 # the camera, in the material's color times each sprite's color. ALPHA_MASK as for the standard
@@ -185,20 +246,58 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "sprite.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "WEIGHTED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH", "WEIGHTED"], targets = ["glsl"] }
 
 # Sprites times the material's map at each sprite's frame of the atlas, from the same file.
 [shaders.sprite_map]
 file = "sprite.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "WEIGHTED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH", "WEIGHTED"], targets = ["glsl"] }
 
 # A page downloads the sprite templates with its first sprite batch.
 [first_use.sprites]
 shaders = ["sprite", "sprite_map"]
+
+# Particles of the particles add-on: a quad for each 32-byte record, which the vertex shader moves
+# in closed form to the particle's age, and colours by its curves over life. The plain builds draw
+# a soft round dot; the MAP builds read a frame of a flipbook atlas from the material's map.
+[shaders.particle]
+file = "particle.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# Particles with a flipbook atlas, from the same file.
+[shaders.particle_map]
+file = "particle.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# The copy of the camera's opaque depth that soft particles read, into a target of 32-bit floats.
+# The MULTISAMPLED build reads a multisampled depth's first sample; WebGL2's backend hands its build
+# a one-sample copy.
+[shaders.particle_depth]
+file = "particle_depth.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+[shaders.particle_depth_ms]
+file = "particle_depth.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the particle templates and the depth copy with its first particle system.
+[first_use.particles]
+shaders = ["particle", "particle_map", "particle_depth", "particle_depth_ms"]
 
 # Wide lines, like three.js's Line2 and LineSegments2 with a LineMaterial: a quad with round ends
 # for each segment of a line batch's rows, in the material's color times the segment's colors,
@@ -216,8 +315,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"]
 file = "line.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["LIT"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "LIT"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+variants.webgpu = { defs = ["LIT"], permutations = ["TONE_MAP", "AREA_LIGHTS"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "LIT"], permutations = ["DRAW_INDEX", "TONE_MAP", "AREA_LIGHTS"], targets = ["glsl"] }
 
 # A page downloads both line templates with its first line batch.
 [first_use.lines]
@@ -310,6 +409,23 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
 
+# GPU picking: each object written with its object or batch id and its instance's row, into a small
+# id target, where the scene's depth leaves it. The pass runs after the opaque pass, uses the
+# scene's depth with an EQUAL test that writes no depth, so a fragment that a material's mask
+# discarded (which wrote no depth) never matches. The fragment writes the id that the table of
+# object ranges gives, which the OBJECT_IDS def adds to the vertex shader. It loads on first use,
+# when a sketch first asks for GPU picking. Every build moves its vertices as the template that
+# shades the same draw does, since the EQUAL test compares positions to the last bit. A mesh drawn
+# with a custom material that moves its vertices has no build here: the material's own WGSL cannot
+# join this template, so picking finds such a mesh on the CPU (crates/null3d-render's picking and
+# the scene's queries).
+[shaders.pick]
+file = "pick.wgsl"
+first_use = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["OBJECT_IDS"], permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "OBJECT_IDS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH"], targets = ["glsl"] }
+
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and
 # `denoise` blurs it along each surface. The opaque pass then reads the result (null3d::gtao). The
@@ -331,10 +447,30 @@ by_device = true
 pipelines.depth = { vertex = "vs", fragment = "depth" }
 variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 
-# A page downloads ambient occlusion's steps when the sketch first turns it on. The frames keep the
-# opaque pass without it until the steps' pipelines are built.
+# Screen-space reflections' steps on ambient occlusion's grid (see ssr.wgsl): `reduce` makes one
+# level of the depth pyramid from the level below it, and `trace` marches each texel's mirror ray
+# through the pyramid and writes the ray's length into the screen texture. The WebGL2 variants count
+# rows from the bottom.
+[shaders.ssr]
+file = "ssr.wgsl"
+by_device = true
+pipelines.trace = { vertex = "vs", fragment = "trace_rays" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+[shaders.ssr_reduce]
+file = "ssr.wgsl"
+by_device = true
+pipelines.reduce = { vertex = "vs", fragment = "reduce" }
+variants.webgpu = { defs = ["REDUCE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "REDUCE"], targets = ["glsl"] }
+
+# A page downloads the steps of the screen texture, ambient occlusion's and screen-space
+# reflections', when the sketch first turns either on: reflections draw on ambient occlusion's grid
+# and use its depth step. The frames keep the opaque pass without them until the steps' pipelines
+# are built.
 [first_use.ao]
-shaders = ["ao", "ao_ms"]
+shaders = ["ao", "ao_ms", "ssr", "ssr_reduce"]
 
 # Depth of field's steps (see dof.wgsl): `setup` writes half-size color with each texel's signed
 # blur size from the depth, `gather` blurs the near and the far field apart over a disk or polygon of
@@ -364,6 +500,66 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.dof]
 shaders = ["dof", "dof_ms"]
 
+# The automatic exposure's downsample path (see exposure.wgsl): `downsample` draws 16 x 16 cells of
+# mean log luminance with their center weights, and `adapt` meters them into one texel of the
+# exposure. Devices without the compute histogram and the Low preset meter with it.
+[shaders.exposure]
+file = "exposure.wgsl"
+by_device = true
+pipelines.downsample = { vertex = "vs", fragment = "downsample" }
+pipelines.adapt = { vertex = "vs", fragment = "adapt" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The automatic exposure's histogram path (see exposure_histogram.wgsl): compute entry points
+# `histogram_main`, which bins a grid of the color's samples, and `adapt_main`, which meters the
+# bins into the exposure's texel. WebGPU only.
+[shaders.exposure_histogram]
+file = "exposure_histogram.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# A page downloads both paths' steps when the sketch first turns automatic exposure on. The final
+# pass keeps the camera's exposure until the meter's pipelines are built.
+[first_use.exposure]
+shaders = ["exposure", "exposure_histogram"]
+
+# The volumetric fog's light step (see fog_light.wgsl): one triangle over the grid's texture, which
+# lights each cell of the grid with the sun through its cascades and the clustered point and spot
+# lights through their shadow tiles. It binds the camera's frame group, so it builds with the
+# shadow lookups of RECEIVE_SHADOWS, and on WebGL2 with WEBGL2's data textures.
+[shaders.fog_light]
+file = "fog_light.wgsl"
+by_device = true
+pipelines.light = { vertex = "vs", fragment = "light" }
+variants.webgpu = { defs = ["RECEIVE_SHADOWS"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "RECEIVE_SHADOWS"], targets = ["glsl"] }
+
+# The volumetric fog's block, sum and apply steps (see fog_volume.wgsl): `block` sums the grid's
+# cells front to back within each block of slices, `sum` joins the blocks, and `apply` adds the
+# summed light to the scene's color at the render size.
+[shaders.fog_volume]
+file = "fog_volume.wgsl"
+by_device = true
+pipelines.block = { vertex = "vs", fragment = "block_sum" }
+pipelines.sum = { vertex = "vs", fragment = "sum" }
+pipelines.apply = { vertex = "vs", fragment = "apply" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The apply step from a multisampled depth target, whose sample 0 it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.fog_volume_ms]
+file = "fog_volume.wgsl"
+by_device = true
+pipelines.apply = { vertex = "vs", fragment = "apply" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the volumetric fog's steps when the sketch first turns it on. The frames draw
+# the fog with its sun glow until the steps' pipelines are built.
+[first_use.fog_volume]
+shaders = ["fog_light", "fog_volume", "fog_volume_ms"]
+
 # The copy of a view's image into the target that materials sample, with its rows turned around,
 # so the target holds the image's bottom row first, as on WebGL2. Only WebGPU copies: WebGL2 draws
 # the view into its target directly.
@@ -391,12 +587,50 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # A page downloads the copy and the builds of the mesh templates that let light through when its
 # first material that lets light through draws. The copy waits for its pipeline, and the frames
-# draw without it until then. It takes the builds that it shares with skinning and morph targets,
-# so the skinning and morph files do not grow.
+# draw without it until then.
 [first_use.transmission]
 shaders = ["transmission_copy"]
 bits = ["TRANSMISSION"]
-claims_shared_builds = true
+
+# A page downloads the builds of layered materials, with a clear coat or a sheen, when it creates
+# its first one. Its builds that need another feature too, such as skinning, go into files of their
+# own, so no other feature's files grow.
+[first_use.coat_sheen]
+bits = ["COAT_SHEEN"]
+
+# The steps of the camera's weighted layer (weighted_layer.wgsl): the composite, which blends the
+# layer over the scene color, and the copy of one sample of a multisampled scene depth, which the
+# weighted pass tests against. Only WebGPU reads a multisampled depth; WebGL2 reads the copy of one
+# sample that its backend keeps.
+[shaders.weighted_composite]
+file = "weighted_layer.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "composite" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+[shaders.weighted_depth]
+file = "weighted_layer.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "depth" }
+variants.webgpu = { defs = ["DEPTH", "MULTISAMPLED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DEPTH"], targets = ["glsl"] }
+
+# A page downloads the weighted layer's steps and the WEIGHTED builds of the mesh templates when
+# its first material of the weighted blending draws. The layer waits for its steps' pipelines, and
+# such materials draw back to front with the blended ones until then. It takes the builds that it
+# shares with skinning and morph targets, so the skinning and morph files do not grow. Sprites'
+# WEIGHTED builds stay with the sprites' own file.
+[first_use.weighted]
+shaders = ["weighted_composite", "weighted_depth"]
+bits = ["WEIGHTED"]
+
+# A page downloads the builds of the lit templates that shade rectangle and tube lights when its
+# first area light's tables have arrived. The frames draw with the builds without them until every
+# lit pipeline in use has its build with them. AREA_LIGHTS shares FXAA's value: only the lit
+# templates list it, and only the final pass lists FXAA (decision record D-156). Custom materials
+# always build the area lights' code, so they have no AREA_LIGHTS builds.
+[first_use.area_lights]
+bits = ["AREA_LIGHTS"]
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
@@ -535,6 +769,28 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 [first_use.sky]
 shaders = ["sky"]
 
+# The physical sky's lookup tables and its panorama for the sky's environment (see
+# sky_tables.wgsl): one shader, whose draw's first vertex names the table it draws.
+[shaders.sky_tables]
+file = "sky_tables.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The physical sky behind every object, drawn as the analytic sky is, from its tables.
+[shaders.sky_physical]
+file = "sky_physical.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the physical sky with its first physical sky background. The view shows the
+# background color until the tables are drawn.
+[first_use.physical_sky]
+shaders = ["sky_tables", "sky_physical"]
+
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.
 [shaders.timer_mark]
@@ -566,6 +822,7 @@ variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 [shaders.test_library]
 file = "test_library.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.atmosphere = { defs = ["ATMOSPHERE"], targets = ["wgsl", "glsl"] }
 variants.color = { defs = ["COLOR"], targets = ["wgsl", "glsl"] }
 variants.depth = { defs = ["DEPTH"], targets = ["wgsl", "glsl"] }
 variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
@@ -606,15 +863,12 @@ bits = ["MORPH"]
 
 # A page downloads the builds of alpha to coverage with its first material that turns it on, with
 # the SAMPLE_MASK builds on WebGPU where the scene color has no alpha, and the builds of the alpha
-# hash with its first hashed material. Each takes the builds that it shares with a feature of a
-# lower bit too, such as its SKIN and MORPH builds, so the skinning and morph files do not grow.
+# hash with its first hashed material.
 [first_use.coverage]
 bits = ["ALPHA_COVERAGE", "SAMPLE_MASK"]
-claims_shared_builds = true
 
 [first_use.hash]
 bits = ["ALPHA_HASH"]
-claims_shared_builds = true
 
 # A WebGPU page downloads the INSTANCE_INDEX builds when the test switch for index-only instance
 # data draws its first bucket with them.
@@ -627,12 +881,9 @@ bits = ["INSTANCE_INDEX"]
 bits = ["ROW_VALUES"]
 
 # A page downloads the LOD_FADE builds of the mesh templates with its first mesh whose levels of
-# detail fade. Until they arrive, the fading levels draw nothing, for a frame or two. It takes the
-# builds that it shares with alpha to coverage, so the coverage files do not grow on pages without
-# levels.
+# detail fade. Until they arrive, the fading levels draw nothing, for a frame or two.
 [first_use.lod_fade]
 bits = ["LOD_FADE"]
-claims_shared_builds = true
 
 # The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
 # entry point is `main`. WebGPU only.

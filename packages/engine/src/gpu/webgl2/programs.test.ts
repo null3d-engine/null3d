@@ -54,13 +54,25 @@ const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 /**
  * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
  * as probes of light or the tables of area lights. The builds that let light through take one of
- * them for the copy of the opaque color that they sample (decision record D-122).
+ * them for the copy of the opaque color that they sample (decision record D-122), the decal builds
+ * one for the scene depth that they read (decision record D-144), and the builds that shade area
+ * lights one for their tables (D-145). Every lit build reads the screen-space reflections through
+ * that copy too (D-134), which is why the number this test allows fell by one.
  */
-const SPARE_TEXTURE_UNITS = 4;
+const SPARE_TEXTURE_UNITS = 3;
 
-/** The spare texture units of a stage, by its name. */
-const spareUnits = (name: string) =>
-	name.includes('_transmission') ? SPARE_TEXTURE_UNITS - 1 : SPARE_TEXTURE_UNITS;
+/** The copy of the opaque color's binding in the scene shaders' frame group. */
+const OPAQUE_COPY = { group: 0, binding: 15 };
+
+/** The spare texture units of a stage: one fewer where it samples the copy of the opaque color. */
+const spareUnits = (name: string, stage: GlslStage) =>
+	stage.textures.some(
+		(texture) => texture.group === OPAQUE_COPY.group && texture.binding === OPAQUE_COPY.binding,
+	) ||
+	name.includes('_transmission') ||
+	name.startsWith('decal')
+		? SPARE_TEXTURE_UNITS - 1
+		: SPARE_TEXTURE_UNITS;
 
 describe('WebGL2 slots of bind groups', () => {
 	const stages = glslStages();
@@ -102,7 +114,10 @@ describe('WebGL2 slots of bind groups', () => {
 		let most: [string, number] = ['', 0];
 		for (const [name, stage] of stages) {
 			const units = new Set(stage.textures.map(key)).size;
-			expect([name, units <= MIN_STAGE_TEXTURE_UNITS - spareUnits(name)]).toEqual([name, true]);
+			expect([name, units <= MIN_STAGE_TEXTURE_UNITS - spareUnits(name, stage)]).toEqual([
+				name,
+				true,
+			]);
 			if (units > most[1]) most = [name, units];
 		}
 		for (const [name, program] of glslPrograms()) {
@@ -112,6 +127,21 @@ describe('WebGL2 slots of bind groups', () => {
 		console.log(
 			`the most texture units in one stage: ${most[1]} of ${MIN_STAGE_TEXTURE_UNITS}, in ${most[0]}`,
 		);
+	});
+});
+
+describe('WebGL2 multi-draw vertex shaders', () => {
+	// Some Adreno drivers fail to link a program whose vertex shader reads a uniform array at the
+	// draw index, with an empty log (see .dev/driver-bugs.md), so such shaders read a texture.
+	it('read no uniform array at the draw index', () => {
+		const multiDraw = glslPrograms().filter(([, program]) =>
+			program.vertex.source.includes('gl_DrawID'),
+		);
+		expect(multiDraw.length).toBeGreaterThan(0);
+		for (const [name, program] of multiDraw) {
+			const read = program.vertex.source.match(/_group_\d+_binding_\d+_vs\.\w+\[[^\]]*\bdraw\b/);
+			expect([name, read?.[0] ?? null]).toEqual([name, null]);
+		}
 	});
 });
 

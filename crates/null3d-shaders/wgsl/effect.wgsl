@@ -14,8 +14,15 @@
 // WebGL2 counts rows from the bottom, and draws a corner into its targets' top rows, so the
 // effect's places count rows from the top on both paths.
 //
+// A full-screen pass of the render graph runs the same build. It draws a texture of its own,
+// which materials and effects sample with v = 0 at its first row, the bottom of the image, on
+// both paths. It reads the scene color or the outline mask as its input image, or a blank texel.
+// The last vector of its block says so, and gives the size of its texture, which it fills whole.
+//
 // When the effect's WGSL declares `struct Uniforms`, the build adds `load_effect_uniforms` after
 // it, and CUSTOM_UNIFORMS makes the fragment shader fill `uniforms` from the effect's block. When
+// it declares textures, the build binds them in group 1 and adds `load_custom_texture_layers`,
+// which EFFECT_TEXTURES makes the fragment shader call. When
 // it calls `effectDepth`, `effectViewPosition` or `effectDistance`, the build adds EFFECT_DEPTH,
 // which binds the scene's depth. The DEPTH_MULTISAMPLED builds read sample 0 of a multisampled
 // depth, on WebGPU.
@@ -23,8 +30,10 @@
 // The effect's WGSL shares this file's names, so the names here keep an `effect` prefix, and the
 // file imports nothing.
 
-/// What the engine writes for each effect: the sizes, the clock, the camera, and the effect's
-/// uniforms as the build packed them.
+/// What the engine writes for each effect: the sizes, the clock, the camera, the effect's uniforms
+/// as the build packed them, and what it draws into.
+
+#import null3d::fullscreen::{triangle}
 struct EffectBlock {
     /// xy: the drawn corner in pixels, the render size. zw: the targets' size in texels.
     size: vec4f,
@@ -41,6 +50,9 @@ struct EffectBlock {
     u5: vec4f,
     u6: vec4f,
     u7: vec4f,
+    /// The output's width and height in pixels, its texture's height, and 1 for a full-screen pass
+    /// of the render graph, or 0 for an effect, whose output has the input image's sizes.
+    drawn: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> effect_block: EffectBlock;
@@ -62,7 +74,7 @@ struct EffectInput {
     uv: vec2f,
     /// The pixel's center in pixels of the image, from its top left.
     pixel: vec2f,
-    /// The image's size in pixels: the render size.
+    /// The image's size in pixels: the render size, or a full-screen pass's own size.
     size: vec2f,
     /// The sketch time in seconds.
     time: f32,
@@ -97,6 +109,19 @@ fn effect_texel(pixel: vec2i) -> vec2i {
 /// it. A pixel outside the image reads the nearest one inside.
 fn effectPixel(pixel: vec2i) -> vec4f {
     return textureLoad(effect_source, effect_texel(pixel), 0);
+}
+
+/// The place in a render pass's texture that holds the image's place `uv`, from 0 at the top
+/// left to 1 at the bottom right. A pass's texture keeps the image's bottom row first, as materials
+/// sample it, so `v` turns around.
+fn effectPassUv(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
+/// The input image's size in pixels: the render size. An effect's own pixels have this size too;
+/// a full-screen pass's may differ.
+fn effectInputSize() -> vec2f {
+    return effect_block.size.xy;
 }
 
 /// The color at `uv` on the image, from 0 at the top left to 1 at the bottom right, read with a
@@ -139,10 +164,7 @@ var<private> uniforms: Uniforms;
 
 @vertex
 fn effect_vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space, at a depth that every WebGL2 depth mode keeps.
-    let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.5, 1.0);
+    return triangle(vertex);
 }
 
 @fragment
@@ -150,17 +172,31 @@ fn effect_fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
 #ifdef CUSTOM_UNIFORMS
     uniforms = load_effect_uniforms();
 #endif
+#ifdef EFFECT_TEXTURES
+    load_custom_texture_layers();
+#endif
+    var input: EffectInput;
+    input.time = effect_block.clock.x;
+    let drawn = effect_block.drawn;
+    if drawn.w > 0.5 {
+        // A pass texture keeps the image's bottom row first: WebGL2 counts rows from the bottom,
+        // and WebGPU's first row, at the top, holds the image's last.
+        let from_top = vec2f(position.x, drawn.z - position.y);
+        input.size = drawn.xy;
+        input.pixel = from_top;
+        input.uv = from_top / drawn.xy;
+        input.color = effectColor(input.uv);
+        return effect(input);
+    }
 #ifdef WEBGL2
     let from_top = vec2f(position.x, effect_block.size.w - position.y);
 #else
     let from_top = position.xy;
 #endif
-    var input: EffectInput;
     input.color = textureLoad(effect_source, vec2i(position.xy), 0);
     input.size = effect_block.size.xy;
     input.pixel = from_top;
     input.uv = from_top / effect_block.size.xy;
-    input.time = effect_block.clock.x;
     return effect(input);
 }
 

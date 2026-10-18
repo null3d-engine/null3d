@@ -76,7 +76,7 @@ export function gpuTimerFeature(tier: string): string {
 }
 
 /** The triangles of the stats page's box, which every frame draws at least once. */
-const BOX_TRIANGLES = 12;
+export const BOX_TRIANGLES = 12;
 
 /** What the stats page publishes once the overlay and the sketch both show a window's figures. */
 export type StatsResult = {

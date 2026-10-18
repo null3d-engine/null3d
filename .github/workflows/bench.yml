@@ -9,24 +9,26 @@ name: Benchmarks
 # request it runs on demand, against the pull request's merge base: add the benchmark label, or
 # start it from the Actions tab with the pull request's number.
 #
-# On main it runs at most once an hour, on main's newest commit, against the last commit on main
-# that a run measured, so one run measures every merge since then. Each run holds 3 Mac machines
-# for about 20 minutes, and GitHub gives about 5 at once, which CI's Safari jobs need,
-# so main gets no run for each push. When no merge came since the last measured commit, the run
-# stops after choosing the commits, before any Mac machine starts. A run measured its commit when
+# On main it runs once a day, on main's newest commit, against the last commit on main that a run
+# measured, so one run measures every merge since then. Each run holds its Mac machines for about
+# half an hour, and GitHub gives about 5 at once, which CI's Safari jobs need, so main gets no run
+# for each push. When no merge came since the last measured commit, the run stops after choosing
+# the commits, before any Mac machine starts. A run measured its commit when
 # its report merged the shards into a whole comparison, whether the verdict passed or failed. So a
 # slowdown fails the one run that holds it, and the next run compares with that commit. A cancelled
 # run, a run whose builds failed and a run whose shards left pages out measured nothing, so the next
-# hour's run measures the same commits again. When the commits change the benchmark pages or the
+# day's run measures the same commits again. When the commits change the benchmark pages or the
 # comparison's switches, the two builds measure in different ways: the run reports "measurement
-# changed" and fails no page. .dev/benchmarks.md says how to read the summary and how to mark an
+# changed" and judges no time, but still fails a page that the new build could not run.
+# .dev/benchmarks.md says how to read the summary and how to mark an
 # expected slowdown.
 
 on:
-  # Seven minutes past the hour, away from the top of the hour, when GitHub delays the most
-  # scheduled runs. GitHub runs a schedule on the default branch only.
+  # At 19:07 UTC: away from the top of the hour, when GitHub delays the most scheduled runs, and in
+  # the hour with the fewest merges to main, when CI's Safari jobs need the Mac machines least.
+  # GitHub runs a schedule on the default branch only.
   schedule:
-    - cron: "7 * * * *"
+    - cron: "7 19 * * *"
   pull_request:
     types: [labeled, synchronize]
   workflow_dispatch:
@@ -37,6 +39,10 @@ on:
         default: main
       baseline:
         description: The commit to compare with. Empty takes the merge base with main, or the commit before on main
+        required: false
+        default: ""
+      scenes:
+        description: The scenes to compare, such as s6 or s5,s6, for a trial of a scene. Empty compares every scene
         required: false
         default: ""
 
@@ -61,7 +67,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  BUN_VERSION: "1.3.14"
+  BUN_VERSION: "1.4.3"
   # Only main's runs save caches, as in CI, whose workflow says why.
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
 
@@ -138,8 +144,9 @@ jobs:
     needs: commits
     if: needs.commits.outputs.new != ''
     runs-on: ubuntu-latest
-    # The job takes 4 to 8 minutes. Every CI job should take at most 15 minutes, and stops at 20.
-    timeout-minutes: 20
+    # The job took 4 to 8 minutes. Every CI job should take at most 15 minutes. This one stops at 35
+    # while a build that compiles every shader can take longer than 20.
+    timeout-minutes: 35
     strategy:
       matrix:
         build: [baseline, new]
@@ -174,7 +181,14 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - run: bun run build
+      # CI's shader caches serve this build too. An older commit, without the action, builds every
+      # shader.
+      - if: hashFiles('.github/actions/shaders/action.yml') != ''
+        uses: ./.github/actions/shaders
+        with:
+          run: bun run build
+      - if: hashFiles('.github/actions/shaders/action.yml') == ''
+        run: bun run build
       # The engine's WebAssembly files, the shader compiler and the shader modules with the record
       # of their inputs. An older commit may keep its shader modules in git, or lack the record.
       - name: Pack the build
@@ -193,8 +207,9 @@ jobs:
     # The Mac machine draws with a real GPU, shared with other machines. On the Linux machine the
     # software GPU draws the larger scenes at under one frame per second and takes the processor
     # from the engine's threads, so its CPU times vary far more between identical builds. Each shard
-    # runs every sixth page of the plan in both builds, and fails when its own pages fail. Every CI
-    # job should take at most 15 minutes (it stops at 20), and two pages take about 9 minutes with the setup.
+    # runs every eighth page of the plan in both builds, and fails when its own pages fail. Every CI
+    # job should take at most 15 minutes (it stops at 20), and two pages take about 9 minutes with
+    # the setup.
     # .dev/benchmarks.md says how the count was chosen. To change it, change the list.
     name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [commits, build]
@@ -203,7 +218,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
       HUSKY: "0"
       BASELINE: ${{ needs.commits.outputs.baseline }}
@@ -246,14 +261,16 @@ jobs:
       # S6's city files take minutes to build and optimize, and each build of the pages needs them.
       # The cache keeps the built files and the optimized models of every build. The asset tool keys
       # each optimized model by its inputs and the tool, so an entry from another commit is never
-      # used by mistake. Each run saves a new entry on main, and later runs restore the latest.
+      # used by mistake. Each run saves a new entry on main, and later runs restore the latest. The
+      # key holds the module that builds the city files too, so files that an older version of it
+      # built, under folder names that it no longer uses, are never restored.
       - uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cache/null3d/samples/city
             ~/.cache/null3d/bench-assets
-          key: null3d-bench-city-${{ hashFiles('tools/samples/lock.json') }}-${{ github.run_id }}
-          restore-keys: null3d-bench-city-${{ hashFiles('tools/samples/lock.json') }}-
+          key: null3d-bench-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts') }}-${{ github.run_id }}
+          restore-keys: null3d-bench-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts') }}-
       - name: Build S6's city files for each build that has S6
         run: |
           mkdir -p ~/.cache/null3d/bench-assets
@@ -271,14 +288,17 @@ jobs:
           path: |
             ~/.cache/null3d/samples/city
             ~/.cache/null3d/bench-assets
-          key: null3d-bench-city-${{ hashFiles('tools/samples/lock.json') }}-${{ github.run_id }}
+          key: null3d-bench-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts') }}-${{ github.run_id }}
 
       # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md. The command builds
       # each commit's benchmark pages for production, and serves each build on a port of its own.
+      # A run started by hand may name its scenes. It never sets main's baseline.
       - name: Run both builds' benchmark pages in turns, and compare them
+        env:
+          SCENES: ${{ inputs.scenes }}
         run: |
           rm -rf target/bench
-          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5 --shard ${{ matrix.shard }}/${{ strategy.job-total }} ${SCENES:+--scenes "$SCENES"}
 
       - name: Show the shard's summary on the job's page
         if: always()

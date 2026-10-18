@@ -17,6 +17,11 @@
 //! the inverse of the camera's projection and the effect's uniforms. A frame uploads a block only
 //! when it changed, so effects whose uniforms stay still upload nothing.
 //!
+//! An effect's WGSL can declare textures of its own, as a custom material's can ([`EffectMaps`]):
+//! the effect binds them in a second bind group of the material maps' layout, and their layers
+//! take the last floats of its uniforms. Such an effect draws in a pass of its own: it never joins
+//! a group, and nothing folds it into the final pass.
+//!
 //! Effects can also join: a group of them draws in one pass, with a shader that the engine joins
 //! from the effects' pieces at run time (`effect_group.wgsl`), which the sketch's thread gives a
 //! template of its own ([`EffectJoins`]). A group binds the whole uniform buffer, and each of its
@@ -25,13 +30,15 @@
 //! a group, is a [`Unit`].
 
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
+    DrawList, Op, address, buffer_usage as usage, compare, format, layout as bind_layout,
     permutation, resource_kind, state_flags, texture_usage, view,
 };
 
+use null3d_core::handle::Handle;
+
 use crate::bloom::bytes_of;
 use crate::camera::Mat4;
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
@@ -46,12 +53,55 @@ pub(crate) const FORMAT: u32 = format::RGBA16_FLOAT;
 
 /// Bytes between two effects' blocks in the uniform buffer: the offset alignment that bind groups
 /// need for a buffer range.
-const BLOCK: usize = 256;
+pub(crate) const BLOCK: usize = 256;
 
 /// The identity matrix, the inverse projection of a frame without a camera.
-const IDENTITY: Mat4 = [
+pub(crate) const IDENTITY: Mat4 = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
+
+/// The most textures that an effect's WGSL declares, as the shader build allows a custom
+/// material's.
+pub const MAX_TEXTURES: usize = 6;
+
+/// The textures that an effect's or a full-screen pass's WGSL samples, and the bind group that
+/// binds them, which the scene settings find each frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EffectMaps {
+    /// The texture of each slot, in the order the WGSL declares them, or [`Handle::NONE`].
+    pub textures: [Handle; MAX_TEXTURES],
+    /// The GPU id of the bind group of the material maps' layout that binds them, or 0 while the
+    /// WGSL declares none.
+    pub group: u32,
+    /// The views whose targets the textures show, as a mask of their places: the pass that draws
+    /// with them reads those targets.
+    pub views: u32,
+}
+
+impl Default for EffectMaps {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+impl EffectMaps {
+    /// No textures.
+    pub const NONE: Self = Self {
+        textures: [Handle::NONE; MAX_TEXTURES],
+        group: 0,
+        views: 0,
+    };
+
+    /// True when the WGSL declares textures, which bind in a group of their own.
+    pub fn any(&self) -> bool {
+        self.textures.iter().any(|texture| !texture.is_none())
+    }
+
+    /// The float of the values that holds the layer of texture `slot`: from the last one down.
+    pub const fn layer_float(slot: usize) -> usize {
+        EFFECT_FLOATS - 1 - slot
+    }
+}
 
 /// One effect, as the sketch sets it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,21 +110,27 @@ pub struct Effect {
     pub template: u32,
     /// True when the effect reads the scene's depth.
     pub depth: bool,
-    /// The effect's uniforms, where the shader build placed each.
+    /// The effect's uniforms, where the shader build placed each, and its textures' layers in the
+    /// last floats.
     pub values: [f32; EFFECT_FLOATS],
+    /// The textures that the effect samples.
+    pub maps: EffectMaps,
 }
 
 /// An effect's block, as `effect.wgsl` lays out its `EffectBlock` struct.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Block {
-    size: [f32; 4],
-    clock: [f32; 4],
-    inverse_projection: Mat4,
-    values: [f32; EFFECT_FLOATS],
+pub(crate) struct Block {
+    pub(crate) size: [f32; 4],
+    pub(crate) clock: [f32; 4],
+    pub(crate) inverse_projection: Mat4,
+    pub(crate) values: [f32; EFFECT_FLOATS],
+    /// The output's size and its texture's height, and 1 for a full-screen pass of the render
+    /// graph, or zeros for an effect, whose output has the input image's sizes.
+    pub(crate) drawn: [f32; 4],
 }
 
-const BLOCK_BYTES: usize = std::mem::size_of::<Block>();
+pub(crate) const BLOCK_BYTES: usize = std::mem::size_of::<Block>();
 const _: () = assert!(BLOCK_BYTES <= BLOCK);
 
 /// Bytes of the uniform buffer: a block for each effect that can run.
@@ -310,6 +366,7 @@ impl EffectPass {
                 clock: [clock[0], clock[1], 0.0, 0.0],
                 inverse_projection: inverse_projection.unwrap_or(IDENTITY),
                 values: effect.values,
+                drawn: [0.0; 4],
             };
             if self.uploaded[index] != Some(block) {
                 let (at, bytes) = arena.push(bytes_of(&block))?;
@@ -344,33 +401,11 @@ impl EffectPass {
             } else {
                 (0, BUFFER_BYTES as u32)
             };
-            list.push(
-                Op::CreateBindGroup,
-                &[
-                    ids.first_group + slot as u32,
-                    layout,
-                    4,
-                    0,
-                    resource_kind::BUFFER,
-                    ids.buffer,
-                    offset,
-                    size,
-                    1,
-                    resource_kind::TEXTURE,
-                    sources.color,
-                    0,
-                    0,
-                    2,
-                    resource_kind::SAMPLER,
-                    ids.sampler,
-                    0,
-                    0,
-                    3,
-                    resource_kind::TEXTURE,
-                    sources.depth,
-                    0,
-                    0,
-                ],
+            create_effect_group(
+                list,
+                (ids.first_group + slot as u32, layout),
+                (ids.buffer, offset, size),
+                (sources.color, ids.sampler, sources.depth),
             )?;
             self.bound[slot] = Some((sources, layout));
         }
@@ -405,6 +440,24 @@ impl EffectPass {
         )?;
         list.push(Op::Draw, &[3, 1, 0, 0])?;
         Ok(())
+    }
+
+    /// Records a unit as [`EffectPass::record`] does, binding the textures of `maps` too when its
+    /// lone effect samples textures of its own. An effect whose textures have no group yet draws
+    /// nothing.
+    pub(crate) fn record_with_maps(
+        &self,
+        list: &mut DrawList,
+        unit: Unit,
+        maps: &EffectMaps,
+    ) -> Result<(), RecordError> {
+        if maps.any() {
+            if maps.group == 0 {
+                return Ok(());
+            }
+            list.push(Op::SetBindGroup, &[1, maps.group, 0])?;
+        }
+        self.record(list, unit)
     }
 
     /// Forgets the GPU objects, so the next frame makes them again, after the thread that draws
@@ -447,42 +500,92 @@ pub(crate) fn plan_units(
 /// Records the creation of the uniform buffer, the linear sampler, which clamps at the edges, and
 /// the blank depth texture of one texel.
 fn create_objects(list: &mut DrawList, ids: EffectIds) -> Result<(), RecordError> {
+    create_shared_objects(list, (ids.buffer, BUFFER_BYTES), ids.sampler)?;
+    create_texel(list, ids.blank_depth, format::R32_FLOAT)
+}
+
+/// Records the creation of a uniform buffer of `bytes` under `buffer`, and of the linear sampler,
+/// which clamps at the edges, under `sampler`: the objects that effects and full-screen passes
+/// read their blocks and their input images through.
+pub(crate) fn create_shared_objects(
+    list: &mut DrawList,
+    (buffer, bytes): (u32, usize),
+    sampler: u32,
+) -> Result<(), RecordError> {
     list.push(
         Op::CreateBuffer,
-        &[
-            ids.buffer,
-            BUFFER_BYTES as u32,
-            usage::UNIFORM | usage::COPY_DST,
-        ],
+        &[buffer, bytes as u32, usage::UNIFORM | usage::COPY_DST],
     )?;
-    list.push(
-        Op::CreateSampler,
-        &[
-            ids.sampler,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            filter::LINEAR,
-            filter::LINEAR,
-            filter::NEAREST,
-            0f32.to_bits(),
-            0f32.to_bits(),
-            compare::NONE,
-            1,
-        ],
+    clamp_sampler(
+        list,
+        sampler,
+        address::CLAMP_TO_EDGE,
+        LINEAR_LEVEL,
+        0.0,
+        compare::NONE,
     )?;
+    Ok(())
+}
+
+/// Records the creation of a sampled texture of one texel in `texel_format` under `texture`, which
+/// a bind group binds where it reads nothing.
+pub(crate) fn create_texel(
+    list: &mut DrawList,
+    texture: u32,
+    texel_format: u32,
+) -> Result<(), RecordError> {
     list.push(
         Op::CreateTexture,
         &[
-            ids.blank_depth,
+            texture,
             1,
             1,
             1,
-            format::R32_FLOAT,
+            texel_format,
             texture_usage::TEXTURE_BINDING,
             1,
             1,
             view::D2,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Records the creation of bind group `group` of an effect's layout `layout`: the range of the
+/// uniform buffer from `offset` of `size` bytes, the input image `color`, read with `sampler`,
+/// and the depth texture `depth`.
+pub(crate) fn create_effect_group(
+    list: &mut DrawList,
+    (group, layout): (u32, u32),
+    (buffer, offset, size): (u32, u32, u32),
+    (color, sampler, depth): (u32, u32, u32),
+) -> Result<(), RecordError> {
+    list.push(
+        Op::CreateBindGroup,
+        &[
+            group,
+            layout,
+            4,
+            0,
+            resource_kind::BUFFER,
+            buffer,
+            offset,
+            size,
+            1,
+            resource_kind::TEXTURE,
+            color,
+            0,
+            0,
+            2,
+            resource_kind::SAMPLER,
+            sampler,
+            0,
+            0,
+            3,
+            resource_kind::TEXTURE,
+            depth,
+            0,
+            0,
         ],
     )?;
     Ok(())
@@ -507,6 +610,7 @@ mod tests {
             template,
             depth,
             values,
+            maps: EffectMaps::NONE,
         }
     }
 
@@ -695,9 +799,10 @@ mod tests {
 
     #[test]
     fn the_block_matches_the_shaders_layout() {
-        assert_eq!(BLOCK_BYTES, 224);
+        assert_eq!(BLOCK_BYTES, 240);
         // The hosts of joined effects pad each block to the distance between blocks, so their
-        // array of every block matches the buffer.
+        // array of every block matches the buffer. Their first spare vector lies where a lone
+        // effect's template keeps the output's size, which joined effects never read.
         for host in [
             include_str!("../../null3d-shaders/wgsl/effect_group.wgsl"),
             include_str!("../../null3d-shaders/wgsl/final.wgsl"),
@@ -712,6 +817,7 @@ mod tests {
             "clock: vec4f",
             "inverse_projection: mat4x4f",
             "u7: vec4f",
+            "drawn: vec4f",
         ] {
             assert!(shader.contains(field), "effect.wgsl lacks {field}");
         }

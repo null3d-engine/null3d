@@ -11,8 +11,9 @@
 //! The vignette multiplies each pixel's HDR color by a factor that falls from 1 at the canvas's
 //! center toward its edges, as Filament, URP, Bevy and Babylon.js do: darkening before the tone
 //! curve keeps bright corners from turning gray. Its default falloff, a power of 2, darkens linear
-//! color about as three.js's `VignetteShader` darkens display color toward black, so a port maps
-//! `offset` to the size and `darkness` to the intensity.
+//! color under ACES about as three.js's `VignetteShader` darkens display color toward black, so a
+//! port maps `offset` to the size and `darkness` to the intensity. Under AgX a falloff of 3, with
+//! the intensity at 1 or less, matches.
 //!
 //! Both are values of the final pass's settings, not builds of its shader: the pass binds a blank
 //! table of one texel while the sketch sets none, and its flags say what to apply. So turning

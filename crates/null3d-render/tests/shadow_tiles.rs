@@ -9,12 +9,13 @@ use std::collections::HashSet;
 
 use common::{BATCH_ROWS, World, count};
 use null3d_core::animation::{Channel, Interpolation, Play, SourceTrack, resample};
-use null3d_core::lights::{LightTable, kind};
+use null3d_core::handle::Handle;
+use null3d_core::lights::{LightTable, kind, value};
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{NO_TARGET, Op, format, template, view};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
-use null3d_render::frame::FrameBuilder;
+use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::LightGrid;
 use null3d_render::shadow_tiles::{MAX_REDRAWS, ShadowTiles, TileSettings};
@@ -895,4 +896,63 @@ fn webgl2_casters_draw_with_a_pipeline_for_each_depth_format() {
         };
         casters_draw_with_a_pipeline_for_each_depth_format(CpuCulledRenderer::new(config), depth);
     }
+}
+
+/// A rectangle light's record carries its image's layer where a point or spot light carries its
+/// tile of the atlas ([`VisibleLight::area`]), so marking the tiles leaves that layer alone: the
+/// shader reads it as the layer of the light tables' texture that holds the light's picture. The
+/// bench's rectangle-light tests drew the picture-less scene for four days while every mark of the
+/// tiles wiped the layer, and their references were pictures of nothing.
+#[test]
+fn an_area_lights_record_keeps_its_image_where_a_spot_light_keeps_its_tile() {
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), TWO_TILES);
+    // The area lights' tables arrive, as they do before an area light lights anything.
+    let tables = world.renderer.settings_mut().light_tables_mut();
+    tables.area_texels_mut().unwrap();
+    tables.finish_area();
+    world.add_spot([1.0, 4.0, 10.0], 6.0);
+    // A rectangle light of the scene at layer 3 of the tables, in the shape that `area_record`
+    // takes: half the width along X, half the height along Y.
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_position(object, [2.4, 4.0, -1.5]).unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::create(
+                object,
+                Handle::NONE,
+                NO_MESH,
+                flags::VISIBLE,
+            )],
+            world.frame,
+        )
+        .unwrap();
+    let table = world.light_table.as_mut().unwrap();
+    let rect = table.create(object, kind::RECT).unwrap();
+    for (which, number) in [
+        (value::RANGE, 8.0),
+        (value::WIDTH, 2.0),
+        (value::HEIGHT, 2.0),
+        (value::IMAGE, 3.0),
+    ] {
+        table.set_value(rect, which, number).unwrap();
+    }
+    // The frame that waits for every pipeline its own list creates, which is the frame a hold mode
+    // picture keeps, turns area shading on at once and lists the rectangle light.
+    world.pipelines_built = 0;
+    let mut mock = MockBackend::default();
+    step(&mut world, &mut mock, true);
+    let grid = world.renderer.light_grid().lights();
+    let record = |window: u32| {
+        grid.iter()
+            .find(|light| light.kind == window)
+            .unwrap()
+            .shadow
+    };
+    assert_eq!(record(kind::SPOT), 1.0, "the spot light takes tile 1");
+    assert_eq!(
+        record(kind::RECT),
+        3.0,
+        "the rectangle light keeps its image's layer"
+    );
 }

@@ -35,17 +35,27 @@ import {
 	NOTICES_FILE,
 	type OfflineFiles,
 } from '../packages/vite-plugin/src/index.ts';
-import { DEFAULT_PACK_DIR, type PackedPackage, packPackages } from '../tools/lib/packages.ts';
+import {
+	DEFAULT_PACK_DIR,
+	PACKAGES,
+	type PackedPackage,
+	packPackages,
+} from '../tools/lib/packages.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
 const TEMPLATE = join(ROOT, 'tests/fixtures/fresh-project');
-/** The packages that the project's page and sketch import. */
-const DEPENDENCIES = ['@null3d/engine', '@null3d/controls', '@null3d/geometry'];
 /** The packages that the project's tools run. */
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];
+/**
+ * Every other package that the repository publishes, the engine and each add-on, so that a new
+ * add-on is installed into the project without an edit here.
+ */
+const DEPENDENCIES = Object.keys(PACKAGES)
+	.map((name) => `@null3d/${name}`)
+	.filter((name) => !DEV_DEPENDENCIES.includes(name));
 /** Tools from npm, at the versions that the repository pins. */
 const TOOLS = ['vite', 'typescript'];
 /** Packages that the examples import besides null3D's, at the versions that the examples pin. */

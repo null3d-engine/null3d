@@ -47,3 +47,10 @@ export const DrawnObjects = 10;
  * triangles and objects are 0, and the frame figures leave them out of those means.
  */
 export const UncountedFigures = 11;
+/**
+ * 1 in a frame whose scene update did not run to its end, on the sketch thread's record: the
+ * sketch's own code, or a core call in the frame, threw and the engine logged it. The frame still
+ * presents, so its rate hides the failed update. `engine.measure().updatedFps` and `.updateErrors`
+ * count these frames.
+ */
+export const UpdateErrors = 12;

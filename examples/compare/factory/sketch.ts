@@ -39,6 +39,7 @@ import {
 	sampleCameraLoop,
 	surfaceMaps,
 } from '../../lib/compare-scene';
+import { SIGNATURE_MESSAGE } from '../scene-signature';
 import { type FactoryRows, poseFactoryRows } from './pose';
 import {
 	ARM_PARENT,
@@ -507,10 +508,17 @@ export default defineSketch(
 		scene.setActiveCamera(camera);
 
 		page.onMessage((type, value) => {
-			if (type !== COUNT_MESSAGE) return;
-			const next = Math.min(capacity, factoryCells(value as number));
-			setActiveCells(state, next);
-			cells.show(next);
+			if (type === COUNT_MESSAGE) {
+				const next = Math.min(capacity, factoryCells(value as number));
+				setActiveCells(state, next);
+				cells.show(next);
+			} else if (type === SIGNATURE_MESSAGE) {
+				// The ramp's browser test asks where the camera is now: a frozen scene answers the same.
+				page.post(SIGNATURE_MESSAGE, {
+					token: value,
+					camera: [cameraPosition[0], cameraPosition[2]],
+				});
+			}
 		});
 
 		const spark = new Float64Array(3);

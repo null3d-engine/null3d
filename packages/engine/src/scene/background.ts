@@ -1,16 +1,19 @@
 // Backgrounds that the camera shows behind every object, past the background color: a texture, an
-// environment, a cube map, or three.js's sky. `scene.setBackground` writes the background's values
+// environment, a cube map, three.js's sky, or the physical sky. `scene.setBackground` writes the background's values
 // into a block of the core's memory, as the environment's values go, so a sketch can turn a cube
 // map or move the sky's sun and clouds every frame with no allocation.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	BACKGROUND_KIND_ATMOSPHERE,
 	BACKGROUND_KIND_CUBEMAP,
 	BACKGROUND_KIND_ENVIRONMENT,
 	BACKGROUND_KIND_NONE,
 	BACKGROUND_KIND_SKY,
 	BACKGROUND_KIND_TEXTURE,
+	BACKGROUND_VALUE_AERIAL_PERSPECTIVE,
+	BACKGROUND_VALUE_ALTITUDE,
 	BACKGROUND_VALUE_BLUR,
 	BACKGROUND_VALUE_CLOUD_COVERAGE,
 	BACKGROUND_VALUE_CLOUD_DENSITY,
@@ -18,20 +21,28 @@ import {
 	BACKGROUND_VALUE_CLOUD_SCALE,
 	BACKGROUND_VALUE_CLOUD_SPEED,
 	BACKGROUND_VALUE_COUNT,
+	BACKGROUND_VALUE_GROUND_ALBEDO,
+	BACKGROUND_VALUE_HAZE,
 	BACKGROUND_VALUE_INTENSITY,
+	BACKGROUND_VALUE_METERS_PER_UNIT,
 	BACKGROUND_VALUE_MIE_COEFFICIENT,
 	BACKGROUND_VALUE_MIE_DIRECTIONAL_G,
+	BACKGROUND_VALUE_MOON_INTENSITY,
+	BACKGROUND_VALUE_MOON_POSITION,
+	BACKGROUND_VALUE_OZONE,
 	BACKGROUND_VALUE_RAYLEIGH,
 	BACKGROUND_VALUE_ROTATION,
 	BACKGROUND_VALUE_SECOND_SKY_WEIGHT,
 	BACKGROUND_VALUE_SECOND_SUN_POSITION,
+	BACKGROUND_VALUE_STARS,
 	BACKGROUND_VALUE_SUN_DISC,
+	BACKGROUND_VALUE_SUN_INTENSITY,
 	BACKGROUND_VALUE_SUN_POSITION,
 	BACKGROUND_VALUE_TIME,
 	BACKGROUND_VALUE_TURBIDITY,
 } from '../generated/core';
 import { Environment } from './environment';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 
@@ -129,6 +140,82 @@ export interface SkyBackground {
 }
 
 /**
+ * The settings of the physical sky: the earth's air, with Rayleigh and Mie scattering and ozone,
+ * lit by the sun and the moon. The same air hazes distant objects (aerial perspective). A call
+ * that leaves a setting out takes its default.
+ *
+ * @category api/scene
+ */
+export interface AtmosphereOptions {
+	/**
+	 * A point toward the sun. Its direction places the sun. The default is 20 degrees above the
+	 * horizon toward -Z: `[0, 0.342, -0.94]`.
+	 */
+	sunPosition?: readonly [number, number, number];
+	/**
+	 * The sun's light above the air, in the units of a directional light's intensity, 0 or more.
+	 * The air dims it on its way down, more as the sun sinks. The default is 3.6, which gives a
+	 * high sun's light about 3.2 at the ground.
+	 */
+	sunIntensity?: number;
+	/** Whether the sky shows the sun's disc. The default is true. */
+	showSunDisc?: boolean;
+	/** The factor of the scattering by the air's molecules, which makes the sky blue, 0 or more. The default is 1, the earth's. */
+	rayleigh?: number;
+	/** The factor of the haze in the air (Mie scattering), which whitens the sky and glows around the sun, 0 or more. The default is 1. */
+	haze?: number;
+	/** The factor of ozone, which keeps the twilight sky blue, 0 or more. The default is 1. */
+	ozone?: number;
+	/** How much the haze scatters toward the light, from 0 to 1 (below 1). The default is 0.8. */
+	mieDirectionalG?: number;
+	/** The share of light that the ground below the horizon reflects, from 0 to 1. The default is 0.3. */
+	groundAlbedo?: number;
+	/** The height of the scene's y = 0 above the ground, in meters, 0 or more. The default is 0. */
+	altitude?: number;
+	/** The meters in one unit of the scene, more than 0. The default is 1. */
+	metersPerUnit?: number;
+	/**
+	 * The factor of the haze between the camera and each object, 0 or more: 0 for none, 1 for the
+	 * real air. A larger value makes a small scene look as large as a landscape. The default is 1.
+	 */
+	aerialPerspective?: number;
+	/** The share of the sky that clouds cover, from 0 to 1. 0 draws no clouds. The default is 0.4. */
+	cloudCoverage?: number;
+	/** How solid the clouds are, 0 or more. The default is 0.4. */
+	cloudDensity?: number;
+	/** The height of the clouds, from 0 to 1: higher clouds look smaller. The default is 0.5. */
+	cloudElevation?: number;
+	/** The size of the clouds' pattern, more than 0: larger values make smaller clouds. The default is 0.0002. */
+	cloudScale?: number;
+	/** How fast the clouds drift as `time` grows. The default is 0.00002. */
+	cloudSpeed?: number;
+	/**
+	 * The time in seconds that moves the clouds, such as the sketch's `time`. The default is 0, so
+	 * the clouds stand still until a sketch sets it.
+	 */
+	time?: number;
+	/** A point toward the moon. The default is straight up. */
+	moonPosition?: readonly [number, number, number];
+	/**
+	 * The moon's light above the air, 0 or more. It lights the air as the sun does, and the sky
+	 * shows its disc, lit from the sun's side. The default is 0, no moon.
+	 */
+	moonIntensity?: number;
+	/** The stars' brightness, 0 or more. They show where the sky is dark. The default is 0, no stars. */
+	stars?: number;
+}
+
+/**
+ * The physical sky as a background: `scene.setBackground({ atmosphere: { sunPosition } })`.
+ *
+ * @category api/scene
+ */
+export interface AtmosphereBackground {
+	/** The physical sky's settings. */
+	atmosphere: AtmosphereOptions;
+}
+
+/**
  * The options of `scene.setBackground` for a texture, an environment, a cube map or the sky. A
  * call that leaves an option out takes its default.
  *
@@ -188,18 +275,67 @@ const SKY_RANGES: Readonly<Record<SkyNumber, readonly [number, number]>> = {
 	secondSkyWeight: [0, Number.POSITIVE_INFINITY],
 };
 
+/** The physical sky's defaults. */
+const ATMOSPHERE_DEFAULTS = {
+	sunPosition: [0, 0.342, -0.94],
+	sunIntensity: 3.6,
+	rayleigh: 1,
+	haze: 1,
+	ozone: 1,
+	mieDirectionalG: 0.8,
+	groundAlbedo: 0.3,
+	altitude: 0,
+	metersPerUnit: 1,
+	aerialPerspective: 1,
+	moonPosition: [0, 1, 0],
+	moonIntensity: 0,
+	stars: 0,
+} as const;
+
+/** The physical sky's settings that take one number. */
+type AtmosphereNumber = Exclude<
+	keyof AtmosphereOptions,
+	'sunPosition' | 'showSunDisc' | 'moonPosition'
+>;
+
+/** The lowest value of each of the physical sky's numbers, and the highest where it has one. */
+const ATMOSPHERE_RANGES: Readonly<Record<AtmosphereNumber, readonly [number, number]>> = {
+	sunIntensity: [0, Number.POSITIVE_INFINITY],
+	rayleigh: [0, Number.POSITIVE_INFINITY],
+	haze: [0, Number.POSITIVE_INFINITY],
+	ozone: [0, Number.POSITIVE_INFINITY],
+	mieDirectionalG: [0, 0.9999],
+	groundAlbedo: [0, 1],
+	altitude: [0, Number.POSITIVE_INFINITY],
+	metersPerUnit: [Number.MIN_VALUE, Number.POSITIVE_INFINITY],
+	aerialPerspective: [0, Number.POSITIVE_INFINITY],
+	cloudCoverage: SKY_RANGES.cloudCoverage,
+	cloudDensity: SKY_RANGES.cloudDensity,
+	cloudElevation: SKY_RANGES.cloudElevation,
+	cloudScale: SKY_RANGES.cloudScale,
+	cloudSpeed: SKY_RANGES.cloudSpeed,
+	time: SKY_RANGES.time,
+	moonIntensity: [0, Number.POSITIVE_INFINITY],
+	stars: [0, Number.POSITIVE_INFINITY],
+};
+
 /**
  * What `scene.setBackground` draws behind every object in place of a plain color: a texture, an
- * environment, a cube map or three.js's sky.
+ * environment, a cube map, three.js's sky or the physical sky.
  *
  * @category api/scene
  */
-export type BackgroundSource = Texture | Environment | Cubemap | SkyBackground;
+export type BackgroundSource =
+	| Texture
+	| Environment
+	| Cubemap
+	| SkyBackground
+	| AtmosphereBackground;
 
 const CALL = 'setBackground';
 
 /** @internal The scene's background source as the core holds it. */
-export class SceneBackground {
+export class SceneBackground implements ViewHolder {
 	/** The core's block of the background's values. */
 	private values: Float32Array | undefined;
 	/** The memory's generation that `values` was made in. */
@@ -209,7 +345,14 @@ export class SceneBackground {
 		private readonly core: CoreMemory,
 		/** Asks the thread that draws for a feature's shader file, once; it allocates nothing after. */
 		private readonly shaders: ShaderPreloads = new ShaderPreloads(),
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
+	}
 
 	/**
 	 * Draws `source` behind every object from the next frame on, with `options`. Throws E1203 for
@@ -227,8 +370,12 @@ export class SceneBackground {
 		values[BACKGROUND_VALUE_ROTATION + 2] = rotation ? rotation[2] : 0;
 		let kind = BACKGROUND_KIND_SKY;
 		let texture = 0;
-		this.shaders.need(isSkyBackground(source) ? 'sky' : 'background');
-		if (source instanceof Texture) {
+		const atmosphere = isAtmosphereBackground(source);
+		this.shaders.need(atmosphere ? 'physical_sky' : isSkyBackground(source) ? 'sky' : 'background');
+		if (atmosphere) {
+			kind = BACKGROUND_KIND_ATMOSPHERE;
+			writeAtmosphere(values, source.atmosphere);
+		} else if (source instanceof Texture) {
 			kind = BACKGROUND_KIND_TEXTURE;
 			texture = source.handle;
 		} else if (source instanceof Environment) {
@@ -238,7 +385,7 @@ export class SceneBackground {
 			kind = BACKGROUND_KIND_CUBEMAP;
 			texture = source.texture.handle;
 		} else {
-			writeSky(values, source.sky);
+			writeSky(values, (source as SkyBackground).sky);
 		}
 		const status = this.core.glue.setBackgroundSource(kind, texture);
 		this.core.check(status, CALL, 'a texture', true);
@@ -290,6 +437,42 @@ function writeSky(values: Float32Array, sky: SkyOptions): void {
 }
 
 /**
+ * Writes the physical sky's settings into the background's block, each read once by its name and
+ * written straight in. It shares the sky's places for the sun, Rayleigh's factor, the Mie
+ * directional g, the clouds, the time and the sun's disc.
+ */
+function writeAtmosphere(values: Float32Array, atmosphere: AtmosphereOptions): void {
+	const d = ATMOSPHERE_DEFAULTS;
+	const s = SKY_DEFAULTS;
+	const sun = atmosphere.sunPosition ?? d.sunPosition;
+	values[BACKGROUND_VALUE_SUN_POSITION] = sun[0];
+	values[BACKGROUND_VALUE_SUN_POSITION + 1] = sun[1];
+	values[BACKGROUND_VALUE_SUN_POSITION + 2] = sun[2];
+	values[BACKGROUND_VALUE_SUN_INTENSITY] = atmosphere.sunIntensity ?? d.sunIntensity;
+	values[BACKGROUND_VALUE_SUN_DISC] = atmosphere.showSunDisc === false ? 0 : 1;
+	values[BACKGROUND_VALUE_RAYLEIGH] = atmosphere.rayleigh ?? d.rayleigh;
+	values[BACKGROUND_VALUE_HAZE] = atmosphere.haze ?? d.haze;
+	values[BACKGROUND_VALUE_OZONE] = atmosphere.ozone ?? d.ozone;
+	values[BACKGROUND_VALUE_MIE_DIRECTIONAL_G] = atmosphere.mieDirectionalG ?? d.mieDirectionalG;
+	values[BACKGROUND_VALUE_GROUND_ALBEDO] = atmosphere.groundAlbedo ?? d.groundAlbedo;
+	values[BACKGROUND_VALUE_ALTITUDE] = atmosphere.altitude ?? d.altitude;
+	values[BACKGROUND_VALUE_METERS_PER_UNIT] = atmosphere.metersPerUnit ?? d.metersPerUnit;
+	values[BACKGROUND_VALUE_AERIAL_PERSPECTIVE] = atmosphere.aerialPerspective ?? d.aerialPerspective;
+	values[BACKGROUND_VALUE_CLOUD_COVERAGE] = atmosphere.cloudCoverage ?? s.cloudCoverage;
+	values[BACKGROUND_VALUE_CLOUD_DENSITY] = atmosphere.cloudDensity ?? s.cloudDensity;
+	values[BACKGROUND_VALUE_CLOUD_ELEVATION] = atmosphere.cloudElevation ?? s.cloudElevation;
+	values[BACKGROUND_VALUE_CLOUD_SCALE] = atmosphere.cloudScale ?? s.cloudScale;
+	values[BACKGROUND_VALUE_CLOUD_SPEED] = atmosphere.cloudSpeed ?? s.cloudSpeed;
+	values[BACKGROUND_VALUE_TIME] = atmosphere.time ?? s.time;
+	const moon = atmosphere.moonPosition ?? d.moonPosition;
+	values[BACKGROUND_VALUE_MOON_POSITION] = moon[0];
+	values[BACKGROUND_VALUE_MOON_POSITION + 1] = moon[1];
+	values[BACKGROUND_VALUE_MOON_POSITION + 2] = moon[2];
+	values[BACKGROUND_VALUE_MOON_INTENSITY] = atmosphere.moonIntensity ?? d.moonIntensity;
+	values[BACKGROUND_VALUE_STARS] = atmosphere.stars ?? d.stars;
+}
+
+/**
  * @internal Writes the sky's defaults into the background's block of `values` unless a sky
  * background wrote its settings there, so a sky map shows the default sky until the first one.
  */
@@ -299,6 +482,11 @@ export function writeSkyDefaults(values: Float32Array): void {
 	if (values[sun] === 0 && values[sun + 1] === 0 && values[sun + 2] === 0) writeSky(values, {});
 }
 
+/** True for a background source of the physical sky. */
+export function isAtmosphereBackground(value: unknown): value is AtmosphereBackground {
+	return typeof value === 'object' && value !== null && 'atmosphere' in value;
+}
+
 /** True for a background source of the sky. */
 export function isSkyBackground(value: unknown): value is SkyBackground {
 	return typeof value === 'object' && value !== null && 'sky' in value;
@@ -306,14 +494,15 @@ export function isSkyBackground(value: unknown): value is SkyBackground {
 
 /** Throws the errors that `SceneBackground.set` names. Call it inside `if (DEV)`. */
 function checkBackground(source: BackgroundSource, options: BackgroundOptions | undefined): void {
-	const sky = isSkyBackground(source);
+	const atmosphere = isAtmosphereBackground(source);
+	const sky = isSkyBackground(source) || atmosphere;
 	if (
 		!sky &&
 		!(source instanceof Texture || source instanceof Environment || source instanceof Cubemap)
 	)
 		throw new EngineError(
 			'E1213',
-			`${CALL}() got ${String(source)}, which takes a color, a texture, an environment, a cube map from assets.loadCubemap() or { sky }.`,
+			`${CALL}() got ${String(source)}, which takes a color, a texture, an environment, a cube map from assets.loadCubemap(), { sky } or { atmosphere }.`,
 		);
 	const intensity = options?.intensity ?? 1;
 	const blur = options?.blur ?? 0;
@@ -331,8 +520,12 @@ function checkBackground(source: BackgroundSource, options: BackgroundOptions | 
 			'E1213',
 			`${CALL}() got a rotation for ${sky ? 'the sky' : 'a texture'}. Only cube maps and environments turn: move the sky's sun with sunPosition.`,
 		);
+	if (atmosphere) {
+		checkAtmosphere(source.atmosphere);
+		return;
+	}
 	if (!sky) return;
-	const settings = source.sky;
+	const settings = (source as SkyBackground).sky;
 	if (typeof settings !== 'object' || settings === null)
 		throw new EngineError(
 			'E1213',
@@ -352,6 +545,30 @@ function checkBackground(source: BackgroundSource, options: BackgroundOptions | 
 		if (value === undefined) continue;
 		const [low, high] = SKY_RANGES[name];
 		checkNumber(`sky.${name}`, value, low, high);
+	}
+}
+
+/** Throws the errors that `SceneBackground.set` names for the physical sky's settings. */
+function checkAtmosphere(settings: AtmosphereOptions): void {
+	if (typeof settings !== 'object' || settings === null)
+		throw new EngineError(
+			'E1213',
+			`${CALL}() got ${String(settings)} for atmosphere, which takes an object of the physical sky's settings.`,
+		);
+	for (const name of ['sunPosition', 'moonPosition'] as const) {
+		checkTriple(`atmosphere.${name}`, settings[name]);
+		const point = settings[name];
+		if (point && point[0] === 0 && point[1] === 0 && point[2] === 0)
+			throw new EngineError(
+				'E1108',
+				`${CALL}() got [0, 0, 0] for atmosphere.${name}, which gives no direction. Give a point toward the ${name === 'sunPosition' ? 'sun' : 'moon'}.`,
+			);
+	}
+	for (const name of Object.keys(ATMOSPHERE_RANGES) as AtmosphereNumber[]) {
+		const value = settings[name];
+		if (value === undefined) continue;
+		const [low, high] = ATMOSPHERE_RANGES[name];
+		checkNumber(`atmosphere.${name}`, value, low, high);
 	}
 }
 

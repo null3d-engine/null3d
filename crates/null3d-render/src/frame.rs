@@ -14,33 +14,43 @@ use std::ops::Range;
 use null3d_core::alloc::reserve_keeping;
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
-use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
+use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
+use null3d_core::layers::ALL_LAYERS;
 use null3d_core::levels::{FADE_BAND, LevelRule};
-use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::lights::{
+    AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
+    farthest_receiver_distance, ladder_distance,
+};
 use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
+    DrawList, DrawListError, Op, address, buffer_usage, filter, permutation, state_flags, template,
+    vertex,
 };
 
-use crate::ao::{self, Ao};
+use crate::ao::{self, Ao, Contact};
+use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
-use crate::camera::{Lens, Mat4};
+use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::dof::{self, Dof, DofFrame};
-use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
+use crate::effects::{EFFECT_FLOATS, Effect, EffectJoins, EffectMaps, MAX_EFFECTS, MAX_TEXTURES};
 use crate::environment::{Environment, EnvironmentUniform};
+use crate::exposure::{AutoExposure, ExposureFrame, Meter};
 use crate::fog::{self, Fog};
+use crate::fog_volume::{self, FogVolumeFrame, Volumetric};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale};
 use crate::levels::{LevelError, Levels};
+use crate::light_grid::DEFAULT_AREA_LIGHT_CAP;
+use crate::light_tables::LightTables;
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
@@ -48,13 +58,19 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
+use crate::particles::ParticleTable;
+use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
+use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
+use crate::probe_grid::{ProbeGrid, ProbeGridUniform};
+use crate::probe_shading::ProbeShading;
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
     fit_cascades,
 };
-use crate::sky_maps::SkyMaps;
+use crate::sky_maps::{MapSky, SkyMaps};
+use crate::ssr::{self, Ssr, TraceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -365,6 +381,10 @@ pub trait FrameBuilder {
     fn check_graph(&mut self) -> Result<(), GraphError>;
     /// The render graph as Graphviz DOT text, compiled first.
     fn graph_dot(&mut self) -> String;
+    /// True when the frame recorded last draws with what the frame before it drew, as
+    /// screen-space reflections read the frame before's color. Hold mode then records its frame
+    /// twice, so the frame it shows has a frame before it.
+    fn reads_last_frame(&self) -> bool;
     /// A render graph error's message, with the passes and resources by name.
     fn graph_message(&self, error: GraphError) -> String;
 }
@@ -458,6 +478,48 @@ pub(crate) fn indices_as_bytes(indices: &[u16]) -> &[u8] {
             std::mem::size_of_val(indices),
         )
     }
+}
+
+/// The filters of a sampler that reads one level of a texture: linear magnification and
+/// minification, and no blend between levels.
+pub(crate) const LINEAR_LEVEL: [u32; 3] = [filter::LINEAR, filter::LINEAR, filter::NEAREST];
+
+/// The filters of a sampler that blends between a texture's levels, as a reader of an environment
+/// map's roughness does.
+pub(crate) const LINEAR_MIPMAP: [u32; 3] = [filter::LINEAR, filter::LINEAR, filter::LINEAR];
+
+/// The filters of a sampler that reads texels as they are stored, with nothing filtering between
+/// them: the sampler of a reader that compares its reads with a depth of its own.
+pub(crate) const NEAREST_TEXELS: [u32; 3] = [filter::NEAREST; 3];
+
+/// Records a `CreateSampler` that clamps each axis at its edge and reads no level below
+/// `highest_level`: `across` addresses the first axis, `filters` are its magnification,
+/// minification and level filters, and `compare` compares a read with a depth for a shadow map's
+/// receivers. Every pass that reads a target makes such a sampler on both GPU paths.
+pub(crate) fn clamp_sampler(
+    list: &mut DrawList,
+    id: u32,
+    across: u32,
+    filters: [u32; 3],
+    highest_level: f32,
+    compare: u32,
+) -> Result<(), RecordError> {
+    Ok(list.push(
+        Op::CreateSampler,
+        &[
+            id,
+            across,
+            address::CLAMP_TO_EDGE,
+            address::CLAMP_TO_EDGE,
+            filters[0],
+            filters[1],
+            filters[2],
+            0f32.to_bits(),
+            highest_level.to_bits(),
+            compare,
+            1,
+        ],
+    )?)
 }
 
 /// Copies of data a frame's list uploads. Chunks never move once allocated, so addresses stay
@@ -637,6 +699,9 @@ struct Lighting {
     hemisphere: [[f32; 4]; 3],
     /// The main directional light's shadows, or `None` when it casts none.
     sun_shadow: Option<SunShadow>,
+    /// The shadow distance held by the automatic ladder while the sun names none, in meters, or 0
+    /// before the first frame that resolved it.
+    auto_shadow_distance: f32,
     shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
@@ -672,6 +737,13 @@ pub struct SceneSettings {
     used_materials: Vec<bool>,
     /// What the camera's view draws behind every object, over the background color.
     background: Option<Background>,
+    /// The CPU model of the physical sky's air, once the scene drew a physical sky.
+    air: Option<AirModel>,
+    /// True while the quality settings draw the physical sky, else the analytic sky stands in.
+    physical_sky: bool,
+    /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
+    /// quality settings turn the physical sky off.
+    stand_in: Option<(crate::background::Sky, f32)>,
     /// The views, the camera's first.
     views: Vec<View>,
     /// The names that each view gives the render graph, by view.
@@ -696,16 +768,40 @@ pub struct SceneSettings {
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
     /// quality settings set: 0 draws none.
     ao_scale: f32,
+    /// The steps of each march of the main directional light's contact shadows, which the quality
+    /// settings set: 0 draws none.
+    contact_steps: u32,
     /// Depth of field's settings while the sketch turns it on.
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// Screen-space reflections' settings while the sketch turns them on.
+    ssr: Option<Ssr>,
+    /// The size of screen-space reflections' grid, as a share of the render size each way, which
+    /// the quality settings set: 0 draws none.
+    ssr_scale: f32,
+    /// The most steps of screen-space reflections' march, which the quality settings set.
+    ssr_steps: u32,
+    /// The automatic exposure's settings while the sketch turns it on.
+    auto_exposure: Option<AutoExposure>,
+    /// The meter of automatic exposure, which the quality settings set.
+    exposure_meter: Meter,
+    /// The volumetric fog's settings while the sketch turns it on.
+    fog_volume: Option<Volumetric>,
+    /// The slices of the volumetric fog's grid, which the quality settings set: 0 draws none.
+    fog_slices: u32,
+    /// The governor's halvings of the slices that a frame draws.
+    fog_halvings: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The scene's light probe grid while the sketch sets one.
+    probe_grid: Option<ProbeGrid>,
+    /// Whether lit meshes draw through the grid's templates.
+    probe_shading: ProbeShading,
     /// The environment maps of the scene's sky.
     sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
@@ -733,6 +829,19 @@ pub struct SceneSettings {
     /// How many times the targets of mirror views without a size of their own halve the render
     /// size, which the quality settings set.
     mirror_halvings: u8,
+    /// The area lights' tables and the lights' images, and their texture's state.
+    light_tables: LightTables,
+    /// The most area lights that one frame shades, which the quality settings set.
+    area_light_cap: u32,
+    /// Whether the lit templates draw with their builds that shade area lights.
+    area_shading: AreaShading,
+    /// True when the last gather found an area light whose tables have arrived.
+    area_wanted: bool,
+    /// The layers whose objects decals mark. An object on another layer too draws again after the
+    /// decals, over its own pixels.
+    decal_layers: u32,
+    /// The particle systems of the particles add-on.
+    particles: ParticleTable,
     /// The meshes with levels of detail.
     levels: Levels,
     /// How the levels of detail are picked, which the quality settings set.
@@ -782,6 +891,9 @@ impl SceneSettings {
             shared_map_units: 0,
             used_materials: Vec::new(),
             background: None,
+            air: None,
+            physical_sky: true,
+            stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
             lighting: Lighting {
@@ -790,6 +902,7 @@ impl SceneSettings {
                 ambient: [0.0; 4],
                 hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
+                auto_shadow_distance: 0.0,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
                 fog: None,
@@ -804,11 +917,22 @@ impl SceneSettings {
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
+            contact_steps: 0,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            ssr: None,
+            ssr_scale: ao::MAX_SCALE,
+            ssr_steps: ssr::DEFAULT_STEPS,
+            auto_exposure: None,
+            exposure_meter: Meter::default(),
+            fog_volume: None,
+            fog_slices: fog_volume::SLICE_COUNTS[1],
+            fog_halvings: 0,
             lut: None,
             vignette: None,
             environment: None,
+            probe_grid: None,
+            probe_shading: ProbeShading::default(),
             sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
@@ -820,11 +944,39 @@ impl SceneSettings {
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
             shadow_camera: None,
+            decal_layers: ALL_LAYERS,
             mirror_halvings: 1,
+            light_tables: LightTables::default(),
+            area_light_cap: DEFAULT_AREA_LIGHT_CAP,
+            area_shading: AreaShading::default(),
+            area_wanted: false,
+            particles: ParticleTable::default(),
             levels: Levels::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
         }
+    }
+
+    /// The area lights' tables and the lights' images.
+    pub fn light_tables(&self) -> &LightTables {
+        &self.light_tables
+    }
+
+    /// The area lights' tables and the lights' images, for the sketch thread to fill and the frame
+    /// builders to upload.
+    pub fn light_tables_mut(&mut self) -> &mut LightTables {
+        &mut self.light_tables
+    }
+
+    /// The most area lights that one frame shades: the ones that give the camera the most light
+    /// when more are visible, as the light grid ranks them.
+    pub fn area_light_cap(&self) -> u32 {
+        self.area_light_cap
+    }
+
+    /// Sets the most area lights that one frame shades, from the next frame on.
+    pub fn set_area_light_cap(&mut self, cap: u32) {
+        self.area_light_cap = cap;
     }
 
     /// Makes the standard material's maps share the first `units` bindings of their bind group,
@@ -933,6 +1085,42 @@ impl SceneSettings {
             }
             Some(_) => {}
             None => self.effects.truncate(index),
+        }
+    }
+
+    /// Finds the bind group of the textures that each custom effect and each full-screen pass
+    /// samples, and writes each texture's layer into its last values, -1 while its image is not on
+    /// the GPU. A full-screen pass reads the targets of the views that its textures show. A builder
+    /// calls it each frame before it gives the graph the effects and syncs the graph with the
+    /// views, and before the texture store records, which makes a new group. It allocates nothing
+    /// once each group exists.
+    pub(crate) fn prepare_effect_maps(&mut self) {
+        let textures = &mut self.textures;
+        for effect in &mut self.effects {
+            resolve_maps(textures, &mut effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            let Some(pass) = view.fullscreen_pass_mut() else {
+                continue;
+            };
+            resolve_maps(textures, &mut pass.maps, &mut pass.values);
+            let reads = pass.maps.views;
+            view.target_mut().reads = reads;
+        }
+    }
+
+    /// Writes the layer of each texture that the custom effects and full-screen passes sample into
+    /// their values again, once the frame's texture work has given the passes' targets their
+    /// textures and finished uploads, so a texture samples in the frame that makes it ready.
+    pub(crate) fn update_post_layers(&mut self) {
+        let textures = &self.textures;
+        for effect in &mut self.effects {
+            write_layers(textures, &effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            if let Some(pass) = view.fullscreen_pass_mut() {
+                write_layers(textures, &pass.maps, &mut pass.values);
+            }
         }
     }
 
@@ -1047,6 +1235,97 @@ impl SceneSettings {
         self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
     }
 
+    /// Screen-space reflections' settings while they draw: while the sketch turns them on, their
+    /// scale is above 0, and no debug view draws.
+    pub fn ssr(&self) -> Option<Ssr> {
+        self.ssr
+            .filter(|_| self.ssr_scale > 0.0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns screen-space reflections on with their settings, or off with `None`, from the next
+    /// recorded frame on.
+    pub fn set_ssr(&mut self, ssr: Option<Ssr>) {
+        self.ssr = ssr;
+    }
+
+    /// The size of screen-space reflections' grid, as a share of the render size each way.
+    pub fn ssr_scale(&self) -> f32 {
+        self.ssr_scale
+    }
+
+    /// Sets the size of screen-space reflections' grid, from 0, which draws none, to
+    /// [`ao::MAX_SCALE`], from the next recorded frame on. While ambient occlusion draws too, both
+    /// draw on the grid of the larger scale.
+    pub fn set_ssr_scale(&mut self, scale: f32) {
+        self.ssr_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// Sets the most steps of screen-space reflections' march, from 1 to [`ssr::MAX_STEPS`], from
+    /// the next recorded frame on. It changes only the trace's block, so it makes no GPU object.
+    pub fn set_ssr_steps(&mut self, steps: u32) {
+        self.ssr_steps = steps.clamp(1, ssr::MAX_STEPS);
+    }
+
+    /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,
+    /// or `None` while they draw nothing or without a camera.
+    pub(crate) fn ssr_frame(&self, canvas: (u32, u32)) -> Option<TraceFrame> {
+        let ssr = self.ssr()?;
+        let (_, lens) = self.views.first()?.camera()?;
+        Some(TraceFrame {
+            ssr,
+            projection: self.camera_projection(canvas)?,
+            orthographic: matches!(lens, Lens::Orthographic(_)),
+            steps: self.ssr_steps,
+        })
+    }
+
+    /// The size of the targets of ambient occlusion's steps, as a share of the render size each
+    /// way: ambient occlusion's scale, or the largest when that is 0 and only contact shadows
+    /// draw.
+    pub fn screen_scale(&self) -> f32 {
+        if self.ao_scale > 0.0 {
+            self.ao_scale
+        } else {
+            ao::MAX_SCALE
+        }
+    }
+
+    /// Sets the steps of each march of the main directional light's contact shadows, from 0,
+    /// which draws none, from the next recorded frame on. A new count above 0 changes only the
+    /// steps' settings, so it makes no GPU object.
+    pub fn set_contact_steps(&mut self, steps: u32) {
+        self.contact_steps = steps.min(ao::MAX_CONTACT_STEPS);
+    }
+
+    /// How far the main directional light's contact shadows reach, in meters, while they draw:
+    /// while the light casts shadows with a reach above 0, the quality settings give each march
+    /// steps, and no debug view draws.
+    fn contact_reach(&self) -> Option<f32> {
+        let reach = self.lighting.sun_shadow?.contact;
+        (reach > 0.0 && self.contact_steps > 0 && !self.debug_view.is_debug()).then_some(reach)
+    }
+
+    /// The main directional light's contact shadows for a frame whose camera view has the values
+    /// `camera`, on a canvas of `canvas` pixels, or `None` while they draw nothing.
+    pub fn contact(&self, camera: Option<&ViewFrame>, canvas: (u32, u32)) -> Option<Contact> {
+        let distance = self.contact_reach()?;
+        let (_, inverse) = self.camera_projection(canvas)?;
+        // The camera's view-projection matrix for positions relative to it is its projection after
+        // its turn, so the inverse projection leaves the turn, which takes the direction toward
+        // the light into view space.
+        let turn = multiply(&inverse, &camera?.uniform.view_proj);
+        let [x, y, z, _] = self.lighting.sun_direction;
+        let toward = [-x, -y, -z];
+        let view: [f32; 3] =
+            std::array::from_fn(|row| (0..3).map(|k| turn[k * 4 + row] * toward[k]).sum());
+        let length = view.iter().map(|c| c * c).sum::<f32>().sqrt();
+        (length > 0.0).then(|| Contact {
+            to_light: view.map(|c| c / length),
+            distance,
+            steps: self.contact_steps,
+        })
+    }
+
     /// Depth of field's settings while it draws: while the sketch turns it on, its gather has taps,
     /// and no debug view draws.
     pub fn dof(&self) -> Option<Dof> {
@@ -1060,11 +1339,105 @@ impl SceneSettings {
         self.dof = dof;
     }
 
+    /// The automatic exposure's settings while it adapts: while the sketch turns it on and no debug
+    /// view draws.
+    pub fn auto_exposure(&self) -> Option<AutoExposure> {
+        self.auto_exposure.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Turns automatic exposure on with its settings, or off with `None`, from the next recorded
+    /// frame on.
+    pub fn set_auto_exposure(&mut self, auto_exposure: Option<AutoExposure>) {
+        self.auto_exposure = auto_exposure;
+    }
+
+    /// Sets the meter of automatic exposure, which the quality settings set, from the next
+    /// recorded frame on.
+    pub fn set_exposure_meter(&mut self, meter: Meter) {
+        self.exposure_meter = meter;
+    }
+
+    /// What the meter of automatic exposure draws with in the frame, or `None` while it is off.
+    pub(crate) fn exposure_frame(&self) -> Option<ExposureFrame> {
+        Some(ExposureFrame {
+            settings: self.auto_exposure()?,
+            meter: self.exposure_meter,
+            seconds: self.clock[1],
+        })
+    }
+
     /// Sets the taps of depth of field's gather, one of [`dof::TAP_COUNTS`] or 0, which draws none,
     /// from the next recorded frame on. A count above 0 changes only the gather's block, so it
     /// makes no GPU object.
     pub fn set_dof_taps(&mut self, taps: u32) {
         self.dof_taps = taps;
+    }
+
+    /// Turns the volumetric fog on with its settings, or off with `None`, from the next recorded
+    /// frame on. It lights the scene's fog, so it draws only while the scene has fog.
+    pub fn set_fog_volume(&mut self, volumetric: Option<Volumetric>) {
+        self.fog_volume = volumetric;
+    }
+
+    /// Sets the slices of the volumetric fog's grid, one of [`fog_volume::SLICE_COUNTS`] or 0,
+    /// which draws none, from the next recorded frame on. A new count makes the grid's textures
+    /// again.
+    pub fn set_fog_slices(&mut self, slices: u32) {
+        self.fog_slices = slices;
+    }
+
+    /// Sets the governor's halvings of the slices that a frame draws of the volumetric fog's grid.
+    /// The grid keeps its textures, so a halving makes no GPU object.
+    pub fn set_fog_halvings(&mut self, halvings: u32) {
+        self.fog_halvings = halvings;
+    }
+
+    /// The volumetric fog's settings while it draws: while the sketch turns it on, the scene has
+    /// fog, its grid has slices, the scene draws HDR color and no debug view draws. While it
+    /// draws, the camera's view takes no sun glow, as the grid's sun light replaces it. In the few
+    /// frames before its pipelines are built, the fog then has neither.
+    pub fn fog_volume(&self) -> Option<Volumetric> {
+        self.fog_volume.filter(|_| {
+            self.lighting.fog.is_some()
+                && self.fog_slices > 0
+                && self.canvas.scene_color.is_hdr()
+                && !self.debug_view.is_debug()
+        })
+    }
+
+    /// What the volumetric fog draws with in a frame of `scene`'s positions of `parity`, for the
+    /// camera's view of a canvas of `canvas` pixels, or `None` while it is off or without a camera.
+    pub(crate) fn fog_volume_frame(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<FogVolumeFrame> {
+        let volumetric = self.fog_volume()?;
+        let fog = self.lighting.fog.as_ref()?;
+        let view = self.views.first()?;
+        let (_, lens) = view.camera()?;
+        let (_, inverse_projection) = self.camera_projection(canvas)?;
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let camera = view.transform(scene, parity, aspect)?;
+        let at = camera.cell.absolute();
+        let drawn = (self.fog_slices >> self.fog_halvings.min(31)).max(fog_volume::SLICES_PER_ROW);
+        let [x, y, z, _] = self.lighting.sun_direction;
+        let [r, g, b, _] = self.lighting.sun_color;
+        Some(FogVolumeFrame {
+            volumetric,
+            slices: self.fog_slices,
+            drawn_slices: drawn.min(self.fog_slices),
+            density: volumetric.density * fog.density_share_at(at[1] as f32),
+            falloff: fog.height_falloff,
+            view_proj: camera.view_proj,
+            inverse_projection,
+            depth_row: camera.depth.row,
+            perspective: matches!(lens, Lens::Perspective(_)),
+            camera: at,
+            sun_direction: [x, y, z],
+            sun_color: [r, g, b],
+        })
     }
 
     /// What depth of field draws with in a frame of `scene`'s positions of `parity`, for the
@@ -1134,6 +1507,11 @@ impl SceneSettings {
         self.environment = environment;
     }
 
+    /// Lights the scene with a light probe grid, or with none, from the next recorded frame on.
+    pub fn set_probe_grid(&mut self, grid: Option<ProbeGrid>) {
+        self.probe_grid = grid;
+    }
+
     /// The environment maps of the scene's sky.
     pub fn sky_maps(&self) -> &SkyMaps {
         &self.sky_maps
@@ -1153,8 +1531,9 @@ impl SceneSettings {
         });
         match ready {
             Some((mut environment, (map, levels))) => {
-                if let Some(sh) = self.sky_maps.sh(environment.texture) {
+                if let Some((sh, gain)) = self.sky_maps.light(environment.texture) {
                     environment.sh = sh;
+                    environment.intensity *= gain;
                 }
                 (
                     map,
@@ -1162,6 +1541,20 @@ impl SceneSettings {
                 )
             }
             None => (blank, EnvironmentUniform::default()),
+        }
+    }
+
+    /// The GPU id of the grid's 3D texture, once its texels are on the GPU, or `blank` while the
+    /// scene has no grid, with the grid's part of the frame uniform, whose intensity takes the
+    /// frame's exposure. A frame builder asks after the frame's uploads, so a held frame, which
+    /// uploads everything, draws with the grid.
+    pub(crate) fn probe_grid_map(&self, blank: u32) -> (u32, ProbeGridUniform) {
+        match self
+            .probe_grid
+            .and_then(|grid| Some((grid, self.textures.ready_volume(grid.texture)?)))
+        {
+            Some((grid, (map, _))) => (map, grid.uniform(self.drawn_output().exposure)),
+            None => (blank, ProbeGridUniform::default()),
         }
     }
 
@@ -1180,11 +1573,28 @@ impl SceneSettings {
         self.outline = outline;
     }
 
-    /// True while the sketch sets a color grading table or the vignette, outside a debug view,
-    /// whose colors reach the canvas as its shader writes them. The final pass then runs on every
-    /// path.
+    /// True while the sketch sets a color grading table, or the vignette on the HDR path, outside
+    /// a debug view, whose colors reach the canvas as its shader writes them. The final pass then
+    /// runs on every path. On the 8-bit path the scene shaders apply the vignette.
     pub(crate) fn grades(&self) -> bool {
-        (self.lut.is_some() || self.vignette.is_some()) && !self.debug_view.is_debug()
+        (self.lut.is_some() || self.final_vignette().is_some()) && !self.debug_view.is_debug()
+    }
+
+    /// The vignette that the final pass applies: the sketch's on the HDR path, none on the 8-bit
+    /// path.
+    fn final_vignette(&self) -> Option<Vignette> {
+        self.vignette.filter(|_| self.canvas.scene_color.is_hdr())
+    }
+
+    /// The vignette's values that the scene shaders apply before their tone mapping: the sketch's
+    /// on the 8-bit path outside a debug view, else zeros, which apply none.
+    pub(crate) fn scene_vignette(&self) -> [f32; 4] {
+        match self.vignette {
+            Some(vignette) if !self.canvas.scene_color.is_hdr() && !self.debug_view.is_debug() => {
+                vignette.uniform()
+            }
+            _ => [0.0; 4],
+        }
     }
 
     /// What the final pass grades the frame with: the table once its texels are on the GPU, and
@@ -1200,7 +1610,7 @@ impl SceneSettings {
         });
         Grading {
             lut,
-            vignette: self.vignette,
+            vignette: self.final_vignette(),
         }
     }
 
@@ -1371,22 +1781,112 @@ impl SceneSettings {
     }
 
     /// What the camera's view draws behind every object, or none for the background color alone,
-    /// as in every debug view.
+    /// as in every debug view. While the quality settings turn the physical sky off, the analytic
+    /// sky stands in for it.
     pub fn background(&self) -> Option<Background> {
-        self.background.filter(|_| !self.debug_view.is_debug())
+        let background = self.background.filter(|_| !self.debug_view.is_debug())?;
+        match (background.source, self.stand_in) {
+            (BackgroundSource::Atmosphere(_), Some((sky, gain))) => Some(Background {
+                source: BackgroundSource::Sky(sky),
+                intensity: background.intensity * gain,
+                ..background
+            }),
+            _ => Some(background),
+        }
+    }
+
+    /// The exposed background color that the camera's view draws as a background on the 8-bit
+    /// path while the vignette is on, or none. There the scene shaders darken their light by the
+    /// vignette before their tone mapping, and a clear alone would leave the color as it is. Without
+    /// a background color the clear is black, which the vignette leaves black.
+    pub(crate) fn vignetted_background_color(&self) -> Option<[f32; 3]> {
+        if self.background().is_some() || self.scene_vignette()[0] <= 0.0 {
+            return None;
+        }
+        let color = self.lighting.background?;
+        Some(self.drawn_output().expose(color))
     }
 
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
     pub fn set_background_source(&mut self, background: Option<Background>) {
-        if let Some(Background {
-            source: BackgroundSource::Sky(sky),
-            ..
-        }) = background
-        {
-            self.sky_maps.set_sky(sky);
-        }
         self.background = background;
+        self.update_sky();
+    }
+
+    /// Draws the physical sky while `on`, else the analytic sky in its place, as the quality
+    /// settings choose.
+    pub fn set_physical_sky(&mut self, on: bool) {
+        if self.physical_sky != on {
+            self.physical_sky = on;
+            self.update_sky();
+        }
+    }
+
+    /// The physical sky's settings while the scene's background is one, whichever sky draws.
+    fn atmosphere(&self) -> Option<&Atmosphere> {
+        match &self.background {
+            Some(Background {
+                source: BackgroundSource::Atmosphere(atmosphere),
+                ..
+            }) => Some(atmosphere),
+            _ => None,
+        }
+    }
+
+    /// The physical sky's settings and its background's intensity while its own tables draw it:
+    /// the scene's background is the physical sky, the quality settings draw it, and no debug view
+    /// draws.
+    pub(crate) fn physical_sky(&self) -> Option<(&Atmosphere, f32)> {
+        let intensity = self.background()?.intensity;
+        match &self.background()?.source {
+            BackgroundSource::Atmosphere(_) => Some((self.atmosphere()?, intensity)),
+            _ => None,
+        }
+    }
+
+    /// Brings the sky maps, the air's model and the analytic stand-in in line with the background
+    /// and the quality settings.
+    fn update_sky(&mut self) {
+        self.stand_in = None;
+        let Some(background) = self.background else {
+            return;
+        };
+        match background.source {
+            BackgroundSource::Sky(sky) => self.sky_maps.set_sky(MapSky::analytic(sky)),
+            BackgroundSource::Atmosphere(atmosphere) => {
+                let air = atmosphere.air();
+                match &mut self.air {
+                    Some(model) => model.set_air(air),
+                    None => self.air = Some(AirModel::new(air)),
+                }
+                let model = self.air.as_ref().expect("the model was just made");
+                if self.physical_sky {
+                    let height = match self.sky_maps.sky() {
+                        Some(MapSky::Physical { height, .. }) => height,
+                        _ => atmosphere.height_of(0.0),
+                    };
+                    self.sky_maps
+                        .set_sky(MapSky::Physical { atmosphere, height });
+                } else {
+                    let (sky, gain) = analytic_stand_in(&atmosphere, model);
+                    self.stand_in = Some((sky, gain));
+                    self.sky_maps.set_sky(MapSky::Analytic { sky, gain });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The aerial perspective's values for a camera at height `y` in the world, in a frame whose
+    /// exposure is `exposure`: all zero without a physical sky.
+    fn aerial(&self, y: f32, exposure: f32) -> AerialUniform {
+        match (self.atmosphere(), &self.air, self.background) {
+            (Some(atmosphere), Some(model), Some(background)) if !self.debug_view.is_debug() => {
+                AerialUniform::of(atmosphere, model, y, background.intensity * exposure)
+            }
+            _ => AerialUniform::default(),
+        }
     }
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
@@ -1400,6 +1900,7 @@ impl SceneSettings {
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
+        sky: &PhysicalSkyPass,
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -1409,7 +1910,17 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
-        self.sky_maps.record(&self.textures, list)?;
+        // A map of the physical sky starts a fill from the panorama of the sky as it is now, which
+        // the pass draws once the frame's texture work has made the map ready, so a held frame,
+        // whose first frame makes it, fills it too.
+        let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
+        self.sky_maps.record(
+            &self.textures,
+            list,
+            drawn,
+            sky.panorama(),
+            self.air.as_ref(),
+        )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(
@@ -1472,16 +1983,15 @@ impl SceneSettings {
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
         match pipeline.template {
-            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP => {
+            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP | template::PARTICLE_MAP => {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
-            maps if maps == template::INSTANCED_STANDARD_MAPS || maps >= template::CUSTOM_FIRST => {
-                self.map_groups
-                    .get(material as usize - 1)
-                    .copied()
-                    .unwrap_or(0)
-            }
+            maps if reads_material_maps(maps) => self
+                .map_groups
+                .get(material as usize - 1)
+                .copied()
+                .unwrap_or(0),
             _ => 0,
         }
     }
@@ -1646,6 +2156,16 @@ impl SceneSettings {
         self.mirror_halvings = halvings;
     }
 
+    /// The particle systems of the particles add-on.
+    pub fn particles(&self) -> &ParticleTable {
+        &self.particles
+    }
+
+    /// The particle systems, to make, change and destroy them.
+    pub fn particles_mut(&mut self) -> &mut ParticleTable {
+        &mut self.particles
+    }
+
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
     /// has its own, and the preset's size unless it has its own, and each view that draws once in
     /// several frames moves its turn on, drawing at once into a texture of a new size for the
@@ -1661,14 +2181,34 @@ impl SceneSettings {
         }
     }
 
-    /// True when a view draws the scene's background behind its objects: the camera's view, and
-    /// each mirror view, whose image shows the sky as a mirror does.
+    /// True when a view draws the scene's background behind its objects: the camera's view, each
+    /// mirror view, whose image shows the sky as a mirror does, and each other view of a scene
+    /// that clears to the camera's color, as a three.js render target shows the scene's
+    /// background. A view with a clear color of its own shows that color instead.
     pub(crate) fn draws_background(&self, view: ViewId) -> bool {
         view == ViewId::CAMERA
-            || self
-                .views
-                .get(view.index())
-                .is_some_and(|view| view.mirrored().is_some())
+            || self.views.get(view.index()).is_some_and(|view| {
+                view.mirrored().is_some()
+                    || (view.fullscreen_pass().is_none() && view.target().clear.is_none())
+            })
+    }
+
+    /// Gives the full-screen pass of a view new values and textures, from the next frame on. A view
+    /// of a scene, or a removed one, keeps what it has.
+    pub fn set_fullscreen_values(
+        &mut self,
+        view: ViewId,
+        values: &[f32; EFFECT_FLOATS],
+        textures: &[Handle; MAX_TEXTURES],
+    ) {
+        if let Some(pass) = self
+            .views
+            .get_mut(view.index())
+            .and_then(View::fullscreen_pass_mut)
+        {
+            pass.values = *values;
+            pass.maps.textures = *textures;
+        }
     }
 
     /// Switches a view other than the camera's on or off. A view switched off keeps the last
@@ -1680,12 +2220,21 @@ impl SceneSettings {
     }
 
     /// Marks each view's target shown while a live texture shows it, so the camera's passes read
-    /// it. A builder calls it before it syncs its graph with the views.
+    /// it. A full-screen pass that reads what the camera's view draws runs after the camera's
+    /// passes, so they show its image of the frame before. A builder calls it before it syncs its
+    /// graph with the views.
     pub(crate) fn mark_shown_views(&mut self) {
         let shown = self.textures.shown_views();
         for (index, view) in self.views.iter_mut().enumerate().skip(1) {
             view.target_mut().shown = shown & (1 << index) != 0;
         }
+    }
+
+    /// The views whose targets the custom effects' textures show, as a mask of view places.
+    pub(crate) fn effect_views(&self) -> u32 {
+        self.effects
+            .iter()
+            .fold(0, |mask, effect| mask | effect.maps.views)
     }
 
     /// Gives the textures that show views' targets the GPU id of each target, by `target_of`, once
@@ -1703,8 +2252,8 @@ impl SceneSettings {
     }
 
     /// True when a view may draw in the next frame: the camera's view, and any other view that is
-    /// switched on while a texture shows its target or another view reads it. The render graph
-    /// culls the rest, so a builder need not cull them.
+    /// switched on while a texture shows its target, or another view or a custom effect reads it.
+    /// The render graph culls the rest, so a builder need not cull them.
     pub fn view_draws(&self, view: ViewId) -> bool {
         if view == ViewId::CAMERA {
             return true;
@@ -1713,10 +2262,11 @@ impl SceneSettings {
             return false;
         };
         let bit = 1 << view.index();
-        let read = self
-            .views
-            .iter()
-            .any(|other| !other.is_removed() && other.target().reads & bit != 0);
+        let read = self.effect_views() & bit != 0
+            || self
+                .views
+                .iter()
+                .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
             && drawn.target().draws()
             && (self.textures.shown_views() & bit != 0 || read)
@@ -1765,13 +2315,16 @@ impl SceneSettings {
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
     /// main directional light, the ambient lights and the hemisphere lights become the light the
     /// shaders read, and the light table's visible list holds the point and spot lights the camera
-    /// sees. Every light's color takes the exposure that frames draw with.
+    /// sees. Every light's color takes the exposure that frames draw with. `pipelines_built` is the
+    /// newest frame that the thread that draws drew with every pipeline built, which decides what
+    /// the list may hold besides a point or spot light.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
+        pipelines_built: u32,
     ) {
         let view = self
             .view_frame(ViewId::CAMERA, scene, parity, canvas, RenderScale::FULL)
@@ -1780,6 +2333,15 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
+        // Area lights join the visible list only while the lit templates draw with their builds
+        // that shade them, so no build meets a light whose code it lacks. This list is made before
+        // `update_area_shading` decides for the frame, so the switch is read as the frame before it
+        // left it, except where the answer is already known: a frame that waits for every pipeline
+        // its own list creates, which is any frame of a device that has drawn nothing yet, turns
+        // area shading on itself (`crate::area_shading`).
+        self.area_wanted = self.light_tables.ready() && lights.has_area_lights();
+        let shading = self.area_shading.on() || (pipelines_built == 0 && self.area_wanted);
+        lights.set_area_ready(self.light_tables.ready() && shading);
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
@@ -1817,6 +2379,42 @@ impl SceneSettings {
     /// shadows. A builder calls it when it makes its GPU objects again.
     pub fn forget_shadow_maps(&mut self) {
         self.shadow_schedule.reset();
+        self.area_shading.forget_gpu();
+        self.probe_shading.forget_gpu();
+    }
+
+    /// Turns area shading on or off for the frame (see [`AreaShading::update`]): on once the last
+    /// gather found an area light whose tables have arrived and the lit pipelines in use have their
+    /// builds that shade area lights. Returns true when it changes, so the layouts take their keys
+    /// again.
+    pub(crate) fn update_area_shading(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) -> bool {
+        self.area_shading
+            .update(self.area_wanted, pipelines, pipelines_built)
+    }
+
+    /// The key that a pair draws with in the scene's passes, from its shading key: with the bit
+    /// that shades area lights while area shading is on (see [`AreaShading::key`]).
+    pub fn area_key(&self, pipeline: DrawKey) -> DrawKey {
+        self.probe_shading.key(self.area_shading.key(pipeline))
+    }
+
+    /// Turns probe shading on or off for the frame (see [`ProbeShading::update`]): on once the
+    /// scene sets a grid whose texture is on the GPU and the lit pipelines in use have their grid
+    /// builds. Returns true when it changes, so the layouts take their keys again.
+    pub(crate) fn update_probe_shading(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) -> bool {
+        let wanted = self
+            .probe_grid
+            .is_some_and(|grid| self.textures.ready_volume(grid.texture).is_some());
+        self.probe_shading
+            .update(wanted, pipelines, pipelines_built)
     }
 
     /// The main directional light's shadows in the next frame, whose targets have the canvas's
@@ -1843,20 +2441,44 @@ impl SceneSettings {
             .unwrap_or((slot, lens));
         let world = scene.world(parity).matrix(fitter as usize);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        // A light that names no distance follows the farthest visible receiver. The render worker
+        // computes it from the camera that places the cascades, so the cascades always fit the
+        // distance of the view they draw. The ladder holds the distance for one step, so a raw
+        // distance that moves across a ladder step does not make the shadows flicker.
+        let fitter_position = scene.cell_position(fitter, parity);
+        let mut distance = shadow.distance;
+        if shadow.auto {
+            let view = LightView {
+                camera: fitter_position,
+                frustum: Frustum::from_view_projection(&lens.view_projection(world, aspect)),
+                layers: self.views[ViewId::CAMERA.index()].layers(),
+            };
+            let raw = farthest_receiver_distance(scene, parity, &view);
+            let previous = self.lighting.auto_shadow_distance;
+            let held = if raw > 0.0 {
+                ladder_distance(previous, raw)
+            } else if previous > 0.0 {
+                previous
+            } else {
+                AUTO_FALLBACK
+            };
+            self.lighting.auto_shadow_distance = held;
+            distance = held;
+        }
         let quality = self.lighting.shadow_quality;
         let settings = ShadowSettings {
             cascades: shadow.cascades,
             map_size: shadow.map_size,
             bias: shadow.bias,
             normal_bias: shadow.normal_bias,
-            distance: shadow.distance,
+            distance,
             filter: quality.filter,
             blend: quality.blend,
         };
         let [x, y, z, _] = self.lighting.sun_direction;
         let position = scene.cell_position(slot, parity);
         let absolute = position.absolute();
-        let fitted = scene.cell_position(fitter, parity).absolute();
+        let fitted = fitter_position.absolute();
         let mut cascades = fit_cascades(world, fitted, &lens, aspect, [x, y, z], &settings);
         if fitter != slot {
             cascades.seen_from(fitted, absolute, shadow.map_size);
@@ -1965,6 +2587,18 @@ impl SceneSettings {
         }
     }
 
+    /// Sets the layers whose objects decals mark. An object that is also on a layer outside `mask`
+    /// shows no decals: it draws again after them, over its own pixels. The default is every layer.
+    pub fn set_decal_layers(&mut self, mask: u32) {
+        self.decal_layers = mask;
+    }
+
+    /// The layers on which objects draw again after the decals, so they show none: every layer
+    /// that decals do not mark.
+    pub fn decal_skipped_layers(&self) -> u32 {
+        !self.decal_layers
+    }
+
     /// The linear color behind every object. Exposure and tone mapping change it as they change
     /// the objects: the clear color takes the exposure of each frame.
     pub fn set_background(&mut self, color: [f32; 3]) {
@@ -2019,7 +2653,8 @@ impl SceneSettings {
     /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
     /// A material that lets light through draws with the shader variant that samples the copy of
-    /// the opaque objects behind it, in the transparent pass too, where its shading has one.
+    /// the opaque objects behind it, in the transparent pass too, where its shading has one. A
+    /// layered material draws with the builds that light its clear coat and sheen.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         self.rows_pipeline_of(mesh, material, false)
@@ -2042,6 +2677,9 @@ impl SceneSettings {
         let format = self.meshes.mesh(mesh - 1)?.format;
         let id = material - 1;
         let mut shading = self.materials.shading(id).ok()?;
+        if self.materials.features(id) & feature::DECAL != 0 {
+            return self.decal_key(id, shading, format, row_values);
+        }
         let uv0 = format & vertex::UV0 != 0;
         let live = |slot: MapSlot| self.textures.is_live(self.materials.map(id, slot));
         if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
@@ -2049,6 +2687,9 @@ impl SceneSettings {
         }
         if shading == Shading::Sprite && live(MapSlot::BaseColor) {
             shading = Shading::SpriteMap;
+        }
+        if shading == Shading::Particle && live(MapSlot::BaseColor) {
+            shading = Shading::ParticleMap;
         }
         if shading == Shading::Lit && uv0 && self.has_live_map(id) {
             shading = Shading::StandardMaps;
@@ -2060,6 +2701,7 @@ impl SceneSettings {
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
         let transmits = has(feature::TRANSMISSION) && shading.transmits();
+        let layers = has(feature::COAT_SHEEN) && shading.layers();
         let rows = row_values && shading.reads_row_values() && !transmits;
         let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
@@ -2075,7 +2717,8 @@ impl SceneSettings {
                 | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
-                | bit(rows, permutation::ROW_VALUES),
+                | bit(rows, permutation::ROW_VALUES)
+                | bit(layers, permutation::COAT_SHEEN),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
@@ -2085,6 +2728,42 @@ impl SceneSettings {
             bias: self.materials.depth_bias(id),
         });
         key.map(|key| self.debug_view.draw_key(key))
+    }
+
+    /// What a decal's pair asks of its pipeline: the decal template of its shading, with maps where
+    /// the material has a live one, whatever texture coordinates the mesh has, since the box gives
+    /// them. Each decal draws the back faces of its box with no depth test, so it draws with the
+    /// camera inside the box too, and blends its premultiplied color over the scene's. A debug
+    /// view draws no decals.
+    fn decal_key(
+        &self,
+        id: u32,
+        shading: Shading,
+        format: u32,
+        row_values: bool,
+    ) -> Option<DrawKey> {
+        if self.debug_view.is_debug() {
+            return None;
+        }
+        let shading = if shading == Shading::Lit && self.has_live_map(id) {
+            Shading::StandardMaps
+        } else {
+            shading
+        };
+        Some(DrawKey {
+            template: shading.decal_template()?,
+            permutation: if row_values {
+                permutation::ROW_VALUES
+            } else {
+                0
+            },
+            vertex_format: format,
+            state: state_flags::CULL_FRONT
+                | state_flags::NO_DEPTH_TEST
+                | state_flags::NO_DEPTH_WRITE
+                | state_flags::BLEND_NORMAL,
+            bias: DepthBias::NONE,
+        })
     }
 
     /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
@@ -2131,7 +2810,15 @@ impl SceneSettings {
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
-            fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
+            fog: {
+                let mut fog = fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure);
+                // The volumetric fog's sun light replaces the glow in the camera's view.
+                if view_id == ViewId::CAMERA && self.fog_volume().is_some() {
+                    fog.sun_glow = 0.0;
+                }
+                fog
+            },
+            aerial: self.aerial(y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
@@ -2141,11 +2828,17 @@ impl SceneSettings {
                 2.0 * pixel_ratio / pixels.0.max(1) as f32,
                 2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
-            occlusion: match self.ao() {
-                Some(ao) if view_id == ViewId::CAMERA => {
-                    ao::frame_values(ao, canvas, scale, self.ao_scale)
-                }
-                _ => [0.0; 4],
+            occlusion: if view_id == ViewId::CAMERA
+                && (self.ao().is_some() || self.contact_reach().is_some())
+            {
+                ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+            } else {
+                [0.0; 4]
+            },
+            vignette: if view_id == ViewId::CAMERA {
+                self.scene_vignette()
+            } else {
+                [0.0; 4]
             },
             ..FrameUniform::default()
         };
@@ -2158,6 +2851,36 @@ impl SceneSettings {
     }
 }
 
+/// Finds the bind group of the textures of `maps`, and the views whose targets they show, and
+/// writes each texture's layer into its float of `values`, -1 while its image is not on the GPU.
+/// A slot without a texture leaves its float alone: the sketch's thread writes -1 there for a
+/// texture that the WGSL declares and the sketch left out, and the float of a slot past the
+/// declared textures holds a uniform. WGSL without textures keeps group 0.
+fn resolve_maps(textures: &mut TextureStore, maps: &mut EffectMaps, values: &mut [f32]) {
+    if !maps.any() {
+        maps.group = 0;
+        maps.views = 0;
+        return;
+    }
+    let mut slots = [Handle::NONE; MAP_SLOTS];
+    slots[..maps.textures.len()].copy_from_slice(&maps.textures);
+    maps.group = textures.map_set_group(&slots).unwrap_or(0);
+    maps.views = textures.group_pass_views(maps.group);
+    write_layers(textures, maps, values);
+}
+
+/// Writes the layer of each texture of `maps` into its float of `values`, -1 while its image is
+/// not on the GPU. A slot without a texture leaves its float alone.
+fn write_layers(textures: &TextureStore, maps: &EffectMaps, values: &mut [f32]) {
+    for (slot, &texture) in maps.textures.iter().enumerate() {
+        if !texture.is_none() {
+            values[EffectMaps::layer_float(slot)] = textures
+                .ready_layer(texture)
+                .map_or(-1.0, |layer| layer as f32);
+        }
+    }
+}
+
 /// True when the material of `materials` with engine id `material` moves its vertices by a vertex
 /// offset of its own WGSL, which its shadows follow.
 fn sways(materials: &MaterialTable, material: u32) -> bool {
@@ -2167,19 +2890,28 @@ fn sways(materials: &MaterialTable, material: u32) -> bool {
             .is_ok_and(Shading::casts_its_own_way)
 }
 
+/// What makes a bucket of a layout, the same key that [`crate::levels`] names, so both frame
+/// builders share one sort and one type.
+pub(crate) type BucketKey = crate::levels::BucketKey;
+
+/// Scratch for layout rebuilds: every bucket key with its source count, sorted and merged into one
+/// entry per bucket. It holds an entry for every scene slot while it sorts, so a frame builder
+/// keeps one for all its layouts, which rebuild one after another and read it only while they do.
+pub(crate) type KeyCounts = Vec<(BucketKey, u32)>;
+
 /// Collects the bucket key of every scene slot, shown or hidden, with a count of one, and of every
 /// batch, with its row capacity. Sorted, equal keys merge into one entry per bucket, in key order.
 /// A slot or batch without a key draws nowhere. Reuses `out`, which grows only with the scene.
-pub(crate) fn collect_bucket_keys<K: Ord + Copy>(
-    out: &mut Vec<(K, u32)>,
+pub(crate) fn collect_bucket_keys(
+    out: &mut KeyCounts,
     scene: &SceneStorage,
     batches: &BatchTable,
-    scene_key: impl Fn(usize) -> Option<K>,
-    batch_key: impl Fn(usize, &InstanceBatch) -> Option<K>,
+    scene_key: impl Fn(usize) -> Option<BucketKey>,
+    batch_key: impl Fn(usize, &InstanceBatch) -> Option<BucketKey>,
 ) {
     let scene_rows = (scene.capacity() + 1) as usize;
     out.clear();
-    out.reserve(scene_rows + batches.len() as usize);
+    out.reserve_exact(scene_rows + batches.len() as usize);
     for slot in 0..scene_rows {
         if let Some(key) = scene_key(slot) {
             out.push((key, 1));
@@ -2201,7 +2933,7 @@ pub(crate) fn collect_bucket_keys<K: Ord + Copy>(
 }
 
 /// The bucket of a key in a table that [`collect_bucket_keys`] made, or `None` for no key.
-pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Option<u32> {
+pub(crate) fn bucket_of(table: &[(BucketKey, u32)], key: Option<BucketKey>) -> Option<u32> {
     let key = key?;
     table
         .binary_search_by_key(&key, |&(k, _)| k)
@@ -2401,6 +3133,17 @@ impl MeshBuffers {
     }
 }
 
+/// True for the templates that read the material's maps from the maps' group: the standard
+/// material's build, the decal's, the probes' (which carry the same maps as the lit builds that
+/// they switch from, so a textured mesh keeps them while a probe lights it) and custom
+/// materials' own templates.
+pub(crate) const fn reads_material_maps(template: u32) -> bool {
+    template == template::INSTANCED_STANDARD_MAPS
+        || template == template::PROBE_GRID_MAPS
+        || template == template::DECAL_MAPS
+        || template >= template::CUSTOM_FIRST
+}
+
 /// True for the templates whose masked casters cut holes in their shadows: the engine's mesh
 /// templates, whose alpha the cutout templates compute alike.
 const fn cuts_shadows(template: u32) -> bool {
@@ -2446,6 +3189,28 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 mod tests {
     use super::*;
 
+    /// A pair of drawings that differ only in their template: a textured mesh keeps its maps'
+    /// group when a probe lights it, and a plain lit pair reads none.
+    #[test]
+    fn the_maps_group_reaches_every_template_that_reads_a_material_s_map() {
+        for maps in [
+            template::INSTANCED_STANDARD_MAPS,
+            template::PROBE_GRID_MAPS,
+            template::DECAL_MAPS,
+            template::CUSTOM_FIRST,
+        ] {
+            assert!(reads_material_maps(maps), "template {maps}");
+        }
+        for plain in [
+            template::INSTANCED_LIT,
+            template::PROBE_GRID,
+            template::DECAL,
+            template::INSTANCED_UNLIT,
+        ] {
+            assert!(!reads_material_maps(plain), "template {plain}");
+        }
+    }
+
     #[test]
     fn drawn_rows_trim_the_rows_that_draw_nowhere() {
         let buckets = [HIDDEN, 3, HIDDEN, 4, HIDDEN, HIDDEN];
@@ -2466,5 +3231,40 @@ mod tests {
         );
         assert_eq!(joined_rows((10, 5), 16 + MERGE_GAP_ROWS, 2), None);
         assert_eq!(joined_rows((10, 5), 9, 3), None);
+    }
+
+    /// Every operand in its place: the id, each axis's addressing, the three filters, the two ends
+    /// of the levels, the comparison and the anisotropy.
+    #[test]
+    fn a_clamped_sampler_names_its_filters_levels_and_comparison() {
+        use null3d_gpu::drawlist::{compare, decode};
+        let mut list = DrawList::with_capacity(16);
+        clamp_sampler(
+            &mut list,
+            7,
+            address::REPEAT,
+            LINEAR_MIPMAP,
+            32.0,
+            compare::GREATER_EQUAL,
+        )
+        .unwrap();
+        let command = decode(list.words()).next().unwrap().unwrap();
+        assert_eq!(command.op, Op::CreateSampler);
+        assert_eq!(
+            command.operands,
+            [
+                7,
+                address::REPEAT,
+                address::CLAMP_TO_EDGE,
+                address::CLAMP_TO_EDGE,
+                filter::LINEAR,
+                filter::LINEAR,
+                filter::LINEAR,
+                0f32.to_bits(),
+                32f32.to_bits(),
+                compare::GREATER_EQUAL,
+                1,
+            ]
+        );
     }
 }

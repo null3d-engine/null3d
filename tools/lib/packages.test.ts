@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	builtAddress,
 	exportTargets,
@@ -8,7 +11,10 @@ import {
 	protectedConstructors,
 	repositoryOnlyFiles,
 	rewriteAddresses,
+	shaderDeclarationFiles,
+	shaderModuleJsFiles,
 } from './packages';
+import { MODULE_DIR } from './shader-modules';
 
 /** The built files of a small package, by path in `lib/`. */
 const BUILT = new Set([
@@ -18,6 +24,7 @@ const BUILT = new Set([
 	'page/engine.js',
 	'render/draw.js',
 	'scene/ktx2.js',
+	'shader.wgsl',
 	'workers/sketch-worker.js',
 	'workers/transcoder-worker.js',
 	'shared/index.js',
@@ -36,9 +43,14 @@ describe('builtAddress', () => {
 		);
 	});
 
+	it('keeps a copied .wgsl file, which the null3D Vite plugin compiles', () => {
+		expect(builtAddress('material.js', './shader.wgsl', exists)).toBe('./shader.wgsl');
+	});
+
 	it('is null when no built file answers', () => {
 		expect(builtAddress('index.js', './missing', exists)).toBeNull();
 		expect(builtAddress('index.js', './missing.ts', exists)).toBeNull();
+		expect(builtAddress('index.js', './missing.wgsl', exists)).toBeNull();
 		expect(builtAddress('scene/ktx2.js', '../../vendor/basis/basis.wasm', exists)).toBeNull();
 	});
 });
@@ -157,6 +169,41 @@ describe('packageProblems', () => {
 			'it lacks ./dist/wasm/*, which its manifest names',
 			'it lacks bin/demo.js, which its manifest names',
 			'it lacks docs/api.md',
+		]);
+	});
+});
+
+describe('the shader module checks', () => {
+	const root = mkdtempSync(join(tmpdir(), 'null3d-packages-'));
+	const folder = join(root, MODULE_DIR);
+	mkdirSync(folder, { recursive: true });
+	for (const name of [
+		'shaders.ts',
+		'shader-features.ts',
+		'shaders-ao-wgsl.ts',
+		'shaders-sky-glsl.js',
+		'core.ts',
+		'gpu.ts',
+	])
+		writeFileSync(join(folder, name), '');
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	it('asks for a declaration for each generated TypeScript module, and none for JavaScript', () => {
+		expect(shaderDeclarationFiles(root)).toEqual([
+			'lib/generated/core.d.ts',
+			'lib/generated/gpu.d.ts',
+			'lib/generated/shader-features.d.ts',
+			'lib/generated/shaders-ao-wgsl.d.ts',
+			'lib/generated/shaders.d.ts',
+		]);
+	});
+
+	it('names the built shader JavaScript, and leaves the generated constants alone', () => {
+		expect(shaderModuleJsFiles(root)).toEqual([
+			'lib/generated/shader-features.js',
+			'lib/generated/shaders-ao-wgsl.js',
+			'lib/generated/shaders-sky-glsl.js',
+			'lib/generated/shaders.js',
 		]);
 	});
 });

@@ -7,6 +7,7 @@ import type { CoreMemory } from './memory';
 import { Post } from './post';
 import type { CompiledWgsl } from './resources';
 import { ShaderTemplates } from './shader-templates';
+import { Texture } from './textures';
 
 /** Pieces whose builds each add `size` characters of WGSL to a host. */
 function pieces(size: number) {
@@ -22,14 +23,17 @@ function effectWgsl(
 	depth = false,
 	joins = true,
 	size = 100,
+	textures: { name: string; offset: number }[] = [],
 ): CompiledWgsl {
 	return {
 		kind: 'effect',
 		uniforms,
 		depth,
-		joins,
+		joins: joins && textures.length === 0,
+		textures,
 		variants: {},
-		pieces: pieces(size),
+		// An effect with textures has no pieces, as the build gives it.
+		pieces: textures.length > 0 ? { group: {}, fold: {} } : pieces(size),
 	} as unknown as CompiledWgsl;
 }
 
@@ -42,8 +46,11 @@ const CURVE = { kind: 'toneCurve', variants: {}, pieces: pieces(50) } as unknown
  * that draws.
  */
 function post(hdrEffects = true, join = true) {
-	const block = new Float32Array(C.EFFECT_FLOATS);
-	const effects: { template: number; flags: number; values: number[] }[] = [];
+	// The core's memory, with the block of values first and the block of texture handles after it.
+	const memory = new ArrayBuffer(512);
+	const block = new Float32Array(memory, 0, C.EFFECT_FLOATS);
+	const effects: { template: number; flags: number; values: number[]; textures: number[] }[] = [];
+	const handles = new Uint32Array(memory, 256, C.EFFECT_TEXTURES);
 	const groups: [number, number][] = [];
 	let fold: [number, number] = [0, 0];
 	const curves: number[] = [];
@@ -51,16 +58,17 @@ function post(hdrEffects = true, join = true) {
 	let setEffects = 0;
 	const core = {
 		generation: 0,
-		f32: (_address: number, length: number) =>
-			length === C.EFFECT_FLOATS ? block : new Float32Array(length),
+		f32: (_address: number, length: number) => new Float32Array(length),
+		heap: (type: typeof Float32Array | typeof Uint32Array) => new type(memory),
 		glue: {
 			postValues: () => 0,
-			effectValues: () => 8,
+			effectValues: () => 0,
+			effectTextures: () => 256,
 			setOutput: () => 0,
 			setEffect(index: number, template: number, flags: number) {
 				setEffects++;
 				if (template === 0) effects.length = Math.min(effects.length, index);
-				else effects[index] = { template, flags, values: [...block] };
+				else effects[index] = { template, flags, values: [...block], textures: [...handles] };
 				return 0;
 			},
 			setToneCurve(template: number) {
@@ -77,6 +85,7 @@ function post(hdrEffects = true, join = true) {
 			},
 		},
 		check: (result: number) => result,
+		holdViews: () => {},
 	} as unknown as CoreMemory;
 	const templates = new ShaderTemplates((template, shader) => sent.push([template, shader]));
 	return {
@@ -266,6 +275,39 @@ describe('joined effects', () => {
 		output.addEffect({ wgsl: effectWgsl(), order: -1 });
 		output.removeEffect(output.addEffect({ wgsl: effectWgsl(), order: -1 }));
 		expect(groups().every(([, template]) => template !== group)).toBe(true);
+	});
+
+	it('draws an effect with textures in a pass of its own, which nothing joins or folds', () => {
+		const { post: output, groups, fold, effects, sent } = post();
+		const own = effectWgsl();
+		const glow = effectWgsl([], false, true, 100, [
+			{ name: 'glow', offset: 31 },
+			{ name: 'dust', offset: 30 },
+		]);
+		const texture = Object.assign(Object.create(Texture.prototype), { handle: 9, depth: 1 });
+		output.addEffect({ wgsl: own });
+		output.addEffect({ wgsl: glow, textures: { glow: texture } as never });
+		output.addEffect({ wgsl: own });
+		expect(groups().map((group) => group?.[0])).toEqual([1, 1, 1]);
+		// The effect after it folds into the final pass alone.
+		expect(fold()[0]).toBe(2);
+		output.removeEffect(output.addEffect({ wgsl: own, order: -1 }));
+		const last = output.addEffect({ wgsl: glow, order: 1 });
+		expect(fold()).toEqual([3, 0]);
+		output.removeEffect(last);
+		const textured = effects[1];
+		expect(textured?.textures.slice(0, 2)).toEqual([9, 0]);
+		// The texture that the option leaves out samples as white.
+		expect(textured?.values[30]).toBe(-1);
+		const shader = sent.find(([, shader]) => shader.textures === 2);
+		expect(shader?.[1].kind).toBe('effect');
+		let wrong = 'none';
+		try {
+			output.addEffect({ wgsl: glow, textures: { halo: texture } as never });
+		} catch (error) {
+			wrong = (error as EngineError).code;
+		}
+		expect(wrong).toBe('E1216');
 	});
 
 	it('joins nothing with ?join=off', () => {

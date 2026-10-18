@@ -193,7 +193,7 @@ The engine makes its memory while it tests the GPU paths. So the memory maximum 
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
-Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion turns it on while it draws, because it reads the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion and the directional light's [contact shadows](shadows.md#contact-shadows) turn it on while they draw, because they read the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). So High and Ultra draw it on WebGPU while the directional light casts shadows. The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
 
 WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same. On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
 
@@ -222,7 +222,7 @@ flowchart LR
     controller -- "down 0.05 after 1 s under 95% of the target rate" --> scale["Render scale, from<br/>minRenderScale to maxRenderScale"]
     controller -- "up 0.05 after 5 s with time to spare" --> scale
     scale --> scene["Scene passes draw into a corner<br/>of targets the canvas's size"]
-    scene --> final["The final pass scales the corner<br/>up to the whole canvas"]
+    scene --> final["The final pass scales the corner<br/>up to the whole canvas,<br/>in two steps below it"]
 ```
 
 The engine can draw the scene at a render scale below the canvas's size. Its final pass then scales the image up to the canvas. The render scale is a part of the canvas's width and height. At 0.5, the scene fills a quarter of the canvas's pixels. Most of a frame's GPU work grows with the pixels that it fills. So a lower scale keeps the frame rate on a GPU that falls behind, and the image gets softer.
@@ -259,7 +259,7 @@ export default defineSketch(({ quality, page }) => {
 });
 ```
 
-A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass scales the image up instead of running FXAA: the scaling softens edges already.
+A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass runs in two steps: the first draws at the render size and smooths edges with FXAA, which the pass at the whole canvas's scale always did, and the second scales the image up to the canvas, with a bilinear filter. [The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale) describes both steps, and the two costs that a lowest scale of 1 avoids.
 
 ## The frame-budget governor
 
@@ -279,6 +279,10 @@ Dynamic resolution is the first part of the frame-budget governor. A sketch can 
 3. The shadow filter blends 3 x 3 texels instead of 5 x 5.
 4. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.
 5. Ambient occlusion draws at a quarter of the render size instead of half. This step happens only while ambient occlusion draws at half the size.
+6. Screen-space reflections trace at a quarter of the render size instead of half. This step happens only while reflections trace at half the size.
+7. Contact shadows take 4 steps per ray. This step happens only while the directional light casts shadows and `contactShadowSteps` is above 4.
+8. Far characters update their poses half as often, up to every 4th frame. Each step doubles the interval, so the step happens only while the `farAnimationInterval` setting is below 4. A sketch reads `quality.governor.farAnimationInterval` to give it to its far characters ([Animation](../api/animation.md#crowds)).
+9. The volumetric fog draws half the slices of its grid, into the same textures, so its rays turn a little coarser along the view and no texture is made. This step happens only while the volumetric fog draws.
 
 Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. A lower render scale picks coarser levels of detail too, as the render height counts in each level's error in pixels. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 

@@ -97,6 +97,9 @@
 //                       In the showcase plan, the sustained runs' seconds, 300 by default. In the
 //                       occlusion-s6 plan, each side's seconds in each round, 10 by default
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
+//   --shaders <set>     which builds the checks plan's shaders page compiles: all, by default, or
+//                       sampled, the builds without the coat and sheen bit and one part of a
+//                       sample of those with it, as CI's Safari does (D-147)
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split by their expected time in CI's Safari,
 //                       and an item stays with the items whose results its check compares with,
@@ -173,10 +176,12 @@ import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import {
 	type AppWindow,
 	appWindow,
+	displayRateProblem,
 	frontApp,
 	giveFocusBack,
 	PARKED_APPS,
 	parkWindow,
+	refuseBackgroundPriority,
 } from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
@@ -217,6 +222,8 @@ import {
 	overloadSummary,
 	PLANS,
 	REPORT_ON_TOP_PLANS,
+	SHADER_PLANS,
+	type ShaderPlan,
 	skinningSummary,
 	soakSummary,
 	startupSummary,
@@ -302,6 +309,8 @@ export interface Options {
 	seconds?: number;
 	/** The soak plan's minutes on each GPU path, when given. */
 	minutes?: number;
+	/** Which builds the checks plan's shaders page compiles, when given. */
+	shaders?: ShaderPlan;
 	/** The state of Brave's Shields for the dev server's site, when given. */
 	shields?: ShieldsState;
 	/** The one shard of a fixed plan to run, when given. */
@@ -331,7 +340,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -381,6 +390,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
 		else if (arg === '--minutes') options.minutes = wholeNumber(arg, args[++i]);
+		else if (arg === '--shaders') options.shaders = oneOf(arg, args[++i], SHADER_PLANS);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--only') options.only = list(args[++i]);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
@@ -440,6 +450,8 @@ export function parseArgs(args: readonly string[]): Options {
 		);
 	if (options.minutes && options.plan !== 'soak')
 		throw new Error(`--minutes works with --plan soak only\n${USAGE}`);
+	if (options.shaders && options.plan !== 'checks')
+		throw new Error(`--shaders works with --plan checks only\n${USAGE}`);
 	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
 	if (other && other.length > 0)
 		throw new Error(
@@ -587,10 +599,23 @@ function appMachine(): AppMachine {
 const isApp = (launch: Launch | undefined): launch is AppLaunch =>
 	launch?.kind === 'mac' || launch?.kind === 'linux';
 
+/** True for a plan that times frames or loads: a fixed timed plan, or the phone-scale search. */
+const timedPlan = (plan: string) => TIMED_PLANS.has(plan) || plan === SCALE_PLAN;
+
+/**
+ * True for a run whose browser apps on this machine time frames or loads, which macOS background
+ * priority would slow for every browser the run starts.
+ */
+export const timesOnThisMachine = (options: Options) =>
+	options.apps.length > 0 && timedPlan(options.plan);
+
 function runnersOf(options: Options): LaunchedRunner[] {
 	const machine = options.apps.length > 0 ? appMachine() : 'mac';
-	const timed = TIMED_PLANS.has(options.plan) || options.plan === SCALE_PLAN;
-	const window = appWindow(options.front === true, Boolean(process.env.CI), timed);
+	const window = appWindow(
+		options.front === true,
+		Boolean(process.env.CI),
+		timedPlan(options.plan),
+	);
 	const runners: LaunchedRunner[] = options.apps.map((app) => ({
 		name: `${machine}-${slug(app)}`,
 		device: machine,
@@ -710,6 +735,12 @@ function reportQuiet(name: string, seconds: number, at?: PlanPlace): false {
 	const where = at ? ` on page ${at.index + 1}, ${at.item.id}` : '';
 	console.log(`${name}: sent nothing for ${seconds} s${where}, so its runner page has stopped`);
 	return false;
+}
+
+/** Names a prompt on a cloud device's own screen as the cause, when one held the runner page. */
+function reportHold(name: string, cloud: CloudSessions | undefined): void {
+	const held = cloud?.heldBy(name);
+	if (held) console.log(`${name}: the likely cause: ${held}`);
 }
 
 /** How many new runner pages the runner tool opens for one runner in one run. */
@@ -1024,8 +1055,6 @@ export function noFramesTodo(runner: string, launch: Launch | undefined): string
 
 /** The display refresh rate that the device checklist asks for, in hertz. */
 export const EXPECTED_REFRESH_HZ = 60;
-/** The lowest refresh rate at which a run's timing figures still compare with other runs', in hertz. */
-export const LOWEST_REFRESH_HZ = 55;
 /** How far the refresh rate may change through one run, as a share of its highest reading. */
 export const REFRESH_SPREAD = 0.1;
 
@@ -1044,9 +1073,13 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bloom-sizes',
 	'environment',
 	'ao',
+	'ao-calls',
+	'ao-calls-sync',
 	'dof',
+	'contact',
 	'effects',
 	'effects-joined',
+	'physical-sky',
 	'occlusion',
 	'gpu-occlusion',
 	'occlusion-s6',
@@ -1065,8 +1098,8 @@ export function refreshProblem(rates: readonly number[]): string | undefined {
 	if (rates.length === 0) return undefined;
 	const low = Math.min(...rates);
 	const high = Math.max(...rates);
-	if (low < LOWEST_REFRESH_HZ)
-		return `the display ran at ${low} Hz (expected ${EXPECTED_REFRESH_HZ})`;
+	const slow = displayRateProblem(low, EXPECTED_REFRESH_HZ);
+	if (slow) return slow;
 	if (high - low > REFRESH_SPREAD * high)
 		return `the display's rate changed between ${low} and ${high} Hz through the run`;
 	return undefined;
@@ -1276,6 +1309,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		scenes: options.scenes,
 		seconds: options.seconds,
 		minutes: options.minutes,
+		shaders: options.shaders,
 	});
 	if (!planned) return undefined;
 	const { shard, only, rounds = 1, switches } = options;
@@ -1349,13 +1383,18 @@ async function runPlan(
 		try {
 			await waitForRunners(plan, await openRunners([name], launches, run, local.url, cloud), {
 				onFinish: (runner) => console.log(`${runner}: finished`),
-				onQuiet: recovery.onQuiet,
+				onQuiet: (runner, seconds, at) => {
+					reportHold(runner, cloud);
+					return recovery.onQuiet(runner, seconds, at);
+				},
 				onHandover: recovery.onHandover,
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,
-					onNoStart: (runner: string, seconds: number) =>
-						console.log(`${runner}: its runner page did not start within ${seconds} s`),
+					onNoStart: (runner: string, seconds: number) => {
+						console.log(`${runner}: its runner page did not start within ${seconds} s`);
+						reportHold(runner, cloud);
+					},
 				}),
 			});
 		} finally {
@@ -1490,7 +1529,7 @@ async function runPlan(
 			} else {
 				counts.fail++;
 				if (item.check.kind === 'image') imageFailures++;
-				const again = !rerun && rerunsInNewTab(browser.name, verdict);
+				const again = !rerun && rerunsInNewTab(browser.name, verdict, device);
 				if (again) reruns.set(name, [...(reruns.get(name) ?? []), { item, verdict }]);
 				console.log(
 					`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}${again ? ' (RERUN: runs once more in a new runner page)' : ''}`,
@@ -1554,8 +1593,8 @@ interface PlanOutcome {
 }
 
 /**
- * Runs each page that failed in Safari in a way that kept memory explains once more, each in a new
- * runner page, and returns the run's failures: those of the first run, less the pages that passed
+ * Runs each page that failed in Safari, or in any browser on iOS, which draws with WebKit, in a way
+ * that kept memory explains once more, each in a new runner page, and returns the run's failures: those of the first run, less the pages that passed
  * the second time. Each rerun is printed, and recorded in the first run's results as `reruns`, so
  * a fault that a second run hides stays in the record.
  */
@@ -1572,7 +1611,7 @@ async function rerunInNewTabs(
 		const runner = runners.find((r) => r.name === name);
 		if (!runner) continue;
 		console.log(
-			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory Safari kept explains. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
+			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory WebKit kept explains, in Safari or in any browser on iOS. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
 		);
 		const items = pages.map(({ item }) => ({ ...item, ownTab: true as const }));
 		const again = await runPlan(options, items, [runner], launches, local, cloud, true);
@@ -1761,6 +1800,7 @@ function cloudSessions(options: Options): CloudSessions | undefined {
 
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
+	if (timesOnThisMachine(options)) refuseBackgroundPriority();
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
 	if (options.apps.length > 0) keepDisplayAwake();

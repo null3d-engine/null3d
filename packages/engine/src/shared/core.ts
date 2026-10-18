@@ -52,8 +52,11 @@ export interface CoreGlue extends CoreErrors {
 	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
 	 */
 	jobWorkerFailed(index: number): void;
-	/** Serves the job system on a job worker: true when a task call made it return, false at stop. */
-	jobWorkerLoop(index: number): boolean;
+	/**
+	 * Serves the job system on a job worker until it returns: `JOB_LOOP_STOPPED` at stop,
+	 * `JOB_LOOP_CALLED` for a task call, `JOB_LOOP_YIELDED` to let the thread run its own tasks.
+	 */
+	jobWorkerLoop(index: number): number;
 	/** Asks a job worker to leave the job loop for one more task. */
 	callJobWorker(index: number): void;
 	/** Ends one task call of a job worker. */
@@ -70,6 +73,8 @@ export interface CoreGlue extends CoreErrors {
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
 	jobsStopAddress(): number;
+	/** The address of the job system's yield word, or 0 before it exists. */
+	jobsYieldAddress(): number;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
 	/**
@@ -78,6 +83,13 @@ export interface CoreGlue extends CoreErrors {
 	 * the page keeps that instance for the next engine.
 	 */
 	releaseInstance?(): void;
+	/**
+	 * Forgets the views of the shared memory that the threaded build's glue keeps for passing
+	 * strings and arrays, which it makes again at its next use. Without it, a view made before the
+	 * memory grew keeps the old buffer object. The single-threaded build lacks it: its memory is
+	 * not shared, and a growth empties the old views.
+	 */
+	dropMemoryViews?(): void;
 	sceneCapacity(): number;
 	/**
 	 * The address of a 32-bit count that grows each time arrays that views read move without the
@@ -98,6 +110,11 @@ export interface CoreGlue extends CoreErrors {
 	worldMatrix(handle: number): number;
 	/** The address of the 64-bit floats that `worldMatrix` writes. */
 	worldMatrixAddress(): number;
+	/**
+	 * The address of the call values (`CALL_VALUE_COUNT` 64-bit floats): the numbers that
+	 * TypeScript writes, from the first on, before it calls a setter that takes numbers.
+	 */
+	callValues(): number;
 	commandRing(field: number): number;
 	/**
 	 * Wakes the job workers at the start of a frame when the previous frame gave them work, so they
@@ -210,11 +227,17 @@ export interface CoreGlue extends CoreErrors {
 		worldUnits: boolean,
 		dashed: boolean,
 	): number;
-	/** Sets the width of a line batch's segments, which updates every segment again. */
-	setLineWidth(batch: number, width: number): number;
+	/**
+	 * Sets the width of a line batch's segments to the first call value, which updates every
+	 * segment again.
+	 */
+	setLineWidth(batch: number): number;
 	destroyBatch(batch: number, frame: number): number;
-	/** Places a batch's origin, which its rows are relative to, and marks every row for update. */
-	setBatchOrigin(batch: number, x: number, y: number, z: number): number;
+	/**
+	 * Places a batch's origin, which its rows are relative to, at the first three call values, and
+	 * marks every row for update.
+	 */
+	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
@@ -334,22 +357,14 @@ export interface CoreGlue extends CoreErrors {
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
-	 * The value takes as many of `x`, `y` and `z` as it has numbers. Colors are linear.
+	 * The value takes as many of the first three call values as it has numbers. Colors are linear.
 	 */
-	setMaterialValue(material: number, param: number, x: number, y: number, z: number): number;
+	setMaterialValue(material: number, param: number): number;
 	/**
-	 * Changes `count` custom values of a material, from float `at` of its row of custom values:
-	 * a custom material's uniform, as the shader compiler placed it.
+	 * Changes `count` custom values of a material, the first call values, from float `at` of its row
+	 * of custom values: a custom material's uniform, as the shader compiler placed it.
 	 */
-	setMaterialValues(
-		material: number,
-		at: number,
-		count: number,
-		x: number,
-		y: number,
-		z: number,
-		w: number,
-	): number;
+	setMaterialValues(material: number, at: number, count: number): number;
 	/**
 	 * Gives a material a map in `slot` (a `MAP_SLOT_*` code): a texture's handle, or none with 0.
 	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
@@ -443,48 +458,34 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setShadowTiles(tiles: number, size: number, pointShadows: boolean): number;
 	/**
-	 * Draws from a camera object with a perspective lens, a vertical field of view in degrees, and
-	 * the objects on `layers`. With `target` set to `CAMERA_TARGET_SHADOWS`, the camera fits the
-	 * main directional light's shadow cascades instead.
+	 * Draws from a camera object with a perspective lens and the objects on `layers`. The call
+	 * values give the vertical field of view in degrees, the near distance and the far distance.
+	 * With `target` set to `CAMERA_TARGET_SHADOWS`, the camera fits the main directional light's
+	 * shadow cascades instead.
 	 */
-	setPerspectiveCamera(
-		camera: number,
-		fovDegrees: number,
-		near: number,
-		far: number,
-		layers: number,
-		target: number,
-	): number;
+	setPerspectiveCamera(camera: number, layers: number, target: number): number;
 	/**
-	 * Draws from a camera object with an orthographic lens: a view `height` tall and `width` wide,
-	 * where a width of 0 follows the canvas's aspect ratio, centered right of and above the
-	 * camera's axis by `centerX` and `centerY`, and the objects on `layers`. `target` acts as in
-	 * `setPerspectiveCamera`.
+	 * Draws from a camera object with an orthographic lens and the objects on `layers`. The call
+	 * values give the view's height and width, where a width of 0 follows the canvas's aspect
+	 * ratio, how far right of and above the camera's axis it is centered, and the near and far
+	 * distances. `target` acts as in `setPerspectiveCamera`.
 	 */
-	setOrthographicCamera(
-		camera: number,
-		height: number,
-		width: number,
-		centerX: number,
-		centerY: number,
-		near: number,
-		far: number,
-		layers: number,
-		target: number,
-	): number;
+	setOrthographicCamera(camera: number, layers: number, target: number): number;
 	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
 	clearShadowCamera(): number;
 	/**
-	 * Adds a pass named `pass`, which draws into a target named `target` and reads the targets
-	 * named in `reads`, one per line. With `clears`, the target clears to the exposed linear color
-	 * `r`, `g`, `b`, `a`. With `scale` below 0 it is a scene pass of a `width` x `height` target.
-	 * From 0 it is a reflection pass across the plane through the point (`px`, `py`, `pz`) with
-	 * normal (`nx`, `ny`, `nz`), whose target takes `scale` of the render size each way, or the
-	 * share that `setReflectionScale` sets for 0, and which draws the objects on `layers`, or the
-	 * camera's for -1, in one frame of every `every`. Returns the view's place from 1, or 0 on
+	 * Adds a pass of `kind` (`PASS_KIND_SCENE` or `PASS_KIND_REFLECTION`) named `pass`, which draws
+	 * into a target named `target` and reads the targets named in `reads`, one per line. With
+	 * `clears`, the target clears to the exposed linear color `r`, `g`, `b`, `a`. A scene pass has
+	 * a `width` x `height` target, or with a width of 0, one of `scale` of the render size each
+	 * way. A reflection pass mirrors across the plane through the point (`px`, `py`, `pz`) with
+	 * normal (`nx`, `ny`, `nz`), its target takes `scale` of the render size each way, or the share
+	 * that `setReflectionScale` sets for 0, and it draws the objects on `layers`, or the camera's
+	 * for -1. Either draws in one frame of every `every`. Returns the view's place from 1, or 0 on
 	 * failure: the render graph's errors (1502 to 1505), whose message `renderGraphMessage` gives.
 	 */
 	addPass(
+		kind: number,
 		pass: string,
 		target: string,
 		reads: string,
@@ -506,10 +507,48 @@ export interface CoreGlue extends CoreErrors {
 		pz: number,
 	): number;
 	/**
-	 * Sets the share of the render size each way that the targets of reflection passes without a
-	 * scale of their own take.
+	 * Adds a full-screen pass named `pass`, which draws the compiled WGSL of render pipeline
+	 * template `template` over the whole of a target named `target`: of `width` x `height`
+	 * texels, or with a width of 0, of `scale` of the render size each way. It reads the input
+	 * image `source` (`PASS_SOURCE_*`), the scene's depth with the flag `EFFECT_DEPTH`, the
+	 * uniforms at `effectValues` and the textures at `effectTextures`, in one frame of every
+	 * `every`. Returns the view's place from 1, or 0 on failure, as `addPass` does.
 	 */
-	setReflectionScale(scale: number): number;
+	addFullscreenPass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		flags: number,
+		source: number,
+	): number;
+	/**
+	 * Gives the full-screen pass of a view place the uniforms at `effectValues` and the textures at
+	 * `effectTextures`, from the next frame on, or fails with the render graph's error.
+	 */
+	setPassValues(place: number): number;
+	/**
+	 * Sets the share of the render size each way that the targets of reflection passes without a
+	 * scale of their own take: the first call value.
+	 */
+	setReflectionScale(): number;
+	/** Sets the most area lights that one frame shades. */
+	setAreaLightCap(cap: number): number;
+	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
+	areaLightTables(): number;
+	/** Marks the area lights' tables as written, so frames light with area lights. */
+	finishAreaLightTables(): number;
+	/** Makes room for a rectangle light's image; the address of its half floats, or 0. */
+	areaLightImage(light: number): number;
+	/** Marks a rectangle light's image as written, so frames show it. */
+	finishAreaLightImage(light: number): number;
+	/** Takes a rectangle light's image away. */
+	removeAreaLightImage(light: number): number;
+	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
+	setPhysicalSky(on: boolean): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -528,16 +567,23 @@ export interface CoreGlue extends CoreErrors {
 	/** Adds a light for object `handle` with the kind, colors and numbers of `light`. */
 	copyLight(light: number, handle: number): number;
 	destroyLight(light: number): number;
-	/** Sets one of a light's linear colors: `which` is one of the `LIGHT_COLOR_*` codes. */
-	setLightColor(light: number, which: number, r: number, g: number, b: number): number;
-	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
-	setLightValue(light: number, which: number, value: number): number;
 	/**
-	 * Sets the number that each light created from now on starts with: `which` is one of the
-	 * `LIGHT_VALUE_*` codes.
+	 * Sets one of a light's linear colors to the first three call values: `which` is one of the
+	 * `LIGHT_COLOR_*` codes.
 	 */
-	setLightDefault(which: number, value: number): number;
-	setBackground(r: number, g: number, b: number): number;
+	setLightColor(light: number, which: number): number;
+	/**
+	 * Sets one of a light's numbers to the first call value: `which` is one of the `LIGHT_VALUE_*`
+	 * codes.
+	 */
+	setLightValue(light: number, which: number): number;
+	/**
+	 * Sets the number that each light created from now on starts with to the first call value:
+	 * `which` is one of the `LIGHT_VALUE_*` codes.
+	 */
+	setLightDefault(which: number): number;
+	/** Sets the linear background color to the first three call values. */
+	setBackground(): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
 	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette` or
@@ -557,10 +603,48 @@ export interface CoreGlue extends CoreErrors {
 	 * the next frame on: 0 draws none.
 	 */
 	setAoScale(thousandths: number): number;
+	/**
+	 * The steps of each march of the main directional light's contact shadows, from the next frame
+	 * on: 0 draws none.
+	 */
+	setContactSteps(steps: number): number;
 	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
 	setDof(on: boolean): number;
+	/** Turns screen-space reflections on with the post-processing values' settings, or off. */
+	setSsr(on: boolean): number;
+	/**
+	 * 1 when the frame recorded last draws with what the frame before it drew, as screen-space
+	 * reflections read the frame before's color, else 0.
+	 */
+	readsLastFrame(): number;
+	/**
+	 * The size of screen-space reflections' grid in thousandths of the render size, and the most
+	 * steps of their march, from the next frame on: a size of 0 draws none.
+	 */
+	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** Turns automatic exposure on with the post-processing values' settings, or off. */
+	setAutoExposure(on: boolean): number;
+	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
+	setExposureMeter(meter: number): number;
+	/**
+	 * Makes a particle system of `capacity` records for the object in scene slot `slot`, and
+	 * returns its id, or 0 when the scene holds the most systems already.
+	 */
+	createParticles(slot: number, capacity: number): number;
+	/** Forgets a particle system and frees its records. */
+	destroyParticles(id: number): number;
+	/** The address of a particle system's records in engine memory, or 0 for no such system. */
+	particleRecords(id: number): number;
+	/** The address of a particle system's values, then its frame's values, or 0 for none. */
+	particleValues(id: number): number;
+	/** Marks `count` records of a particle system from `start` on for the next frame's upload. */
+	markParticleRecords(id: number, start: number, count: number): number;
+	/** Marks a particle system's values for the next frame's upload. */
+	markParticleValues(id: number): number;
+	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
+	setSoftParticles(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -586,9 +670,14 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	effectValues(): number;
 	/**
+	 * The address of a custom effect's or full-screen pass's texture handles (`EFFECT_TEXTURES`
+	 * 32-bit words), which TypeScript writes with its uniforms.
+	 */
+	effectTextures(): number;
+	/**
 	 * Sets the custom effect at a place in the order effects run, from the next frame on: its render
-	 * pipeline template, its flags (`EFFECT_DEPTH`) and the uniforms at `effectValues`. Template 0
-	 * removes the effect at the place and every one after it.
+	 * pipeline template, its flags (`EFFECT_DEPTH`), the uniforms at `effectValues` and the textures
+	 * at `effectTextures`. Template 0 removes the effect at the place and every one after it.
 	 */
 	setEffect(index: number, template: number, flags: number): number;
 	/**
@@ -619,32 +708,40 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setEnvironment(texture: number): number;
 	/**
+	 * The address of the block of the light probe grid's values (`LIGHT_PROBE_VALUE_*`), 32-bit
+	 * floats that TypeScript writes before it calls `setLightProbeGrid`.
+	 */
+	lightProbeValues(): number;
+	/**
+	 * Lights the scene with the light probe grid whose coefficients are 3D texture `texture`, or
+	 * with none when `texture` is 0, from the next frame on.
+	 */
+	setLightProbeGrid(texture: number): number;
+	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
 	 */
 	setCanvasOutput(sceneColor: number, antialias: number): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
-	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
-	setPixelRatio(ratio: number): number;
+	/**
+	 * The device pixels per CSS pixel of the canvas, the first call value, which size sprites given
+	 * in screen pixels.
+	 */
+	setPixelRatio(): number;
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
 	 * shadow cascade, from 1 to 8, whether a far cascade draws in every frame while a moving
-	 * caster touches it, and the share of each cascade's length over which it blends into the next,
-	 * from 0 to 0.5, from the next frame on.
+	 * caster touches it, and, as the first call value, the share of each cascade's length over
+	 * which it blends into the next, from 0 to 0.5, from the next frame on.
 	 */
-	setShadowQuality(
-		filter: number,
-		farInterval: number,
-		followMovers: boolean,
-		cascadeBlend: number,
-	): number;
+	setShadowQuality(filter: number, farInterval: number, followMovers: boolean): number;
 	/**
-	 * How objects and batches pick their meshes' levels of detail, from the next frame on: the
-	 * error in pixels under which a coarser level draws, 0 for none, what the shadow maps' views
-	 * multiply it by, and whether two levels hand over in a fading band.
+	 * How objects and batches pick their meshes' levels of detail, from the next frame on. The call
+	 * values give the error in pixels under which a coarser level draws, 0 for none, and what the
+	 * shadow maps' views multiply it by. `fades` says whether two levels hand over in a fading band.
 	 */
-	setLevelQuality(threshold: number, shadowFactor: number, fades: boolean): number;
+	setLevelQuality(fades: boolean): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
@@ -665,28 +762,33 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setBackgroundSource(kind: number, texture: number): number;
 	/**
-	 * The scene's fog: its curve (`FOG_CURVE_*`), or none, its linear color, the density of
-	 * exponential and exponential squared fog, the near and far distances of linear fog, the height
-	 * where the fog has that density, its height falloff, its sun glow and the glow's exponent.
+	 * The scene's fog: its curve (`FOG_CURVE_*`), or none. The call values give its linear color,
+	 * the density of exponential and exponential squared fog, the near and far distances of linear
+	 * fog, the height where the fog has that density, its height falloff, its sun glow and the
+	 * glow's exponent.
 	 */
-	setFog(
-		curve: number,
-		r: number,
-		g: number,
-		b: number,
-		density: number,
-		near: number,
-		far: number,
-		height: number,
-		heightFalloff: number,
-		sunGlow: number,
-		sunGlowExponent: number,
-	): number;
+	setFog(curve: number): number;
+	/**
+	 * Turns the volumetric fog on, or off: the light of the sun and the point and spot lights that
+	 * the scene's fog scatters toward the camera, through their shadows. The call values give how
+	 * much light the fog scatters, the anisotropy, the distance that its grid reaches and the fog's
+	 * density.
+	 */
+	setFogVolume(on: boolean): number;
+	/** The slices of the volumetric fog's grid, from the next frame on: 0 draws none. */
+	setFogSlices(slices: number): number;
+	/** The governor's halvings of the slices that each frame draws of the volumetric fog's grid. */
+	setFogHalvings(halvings: number): number;
 	/**
 	 * Draws the scene with a debug view (`DEBUG_VIEW_*`), or with its materials with
 	 * `DEBUG_VIEW_LIT`, from the next frame on.
 	 */
 	setDebugView(view: number): number;
+	/**
+	 * The layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+	 * layer draws again after the decals.
+	 */
+	setDecalLayers(mask: number): number;
 	// The animation table. Ids that its create calls return, and that its other calls take, are the
 	// table's ids plus one; a create call returns 0 on failure.
 	/** Creates the animation table for `instances` animated objects with `joints` joints in all. */
@@ -731,6 +833,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createAnimatedInstance(skeleton: number, object: number): number;
 	/**
+	 * The most animated instances that the animation table holds now. A new instance that does not
+	 * fit grows the table, which moves its arrays.
+	 */
+	animationCapacity(): number;
+	/**
 	 * Makes the table of joint overrides and look-at targets (`ANIMATION_FIELD_JOINT_OVERRIDES`
 	 * and `ANIMATION_FIELD_LOOK_TARGETS`), once. Until then, the frame step does no override work.
 	 */
@@ -769,8 +876,11 @@ export interface CoreGlue extends CoreErrors {
 	 * their points as floats, with the fade, speed and phase written into the play numbers.
 	 */
 	animatorPlayBlend(instance: number, count: number, layer: number, flags: number): number;
-	/** Stops a clip on an instance, or every clip when `clip` is 0, fading over `fade` seconds. */
-	animatorStop(instance: number, clip: number, fade: number): number;
+	/**
+	 * Stops a clip on an instance, or every clip when `clip` is 0, fading over the seconds of the
+	 * fade written into the play numbers.
+	 */
+	animatorStop(instance: number, clip: number): number;
 	/** Creates a joint mask of a skeleton from the staging words: one weight from 0 to 1 per joint. */
 	createJointMask(skeleton: number): number;
 	/** Gives an instance's layer a joint mask, or every joint when `mask` is 0. */
@@ -801,6 +911,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'timeHandedLoops',
 	'jobsWakeAddress',
 	'jobsStopAddress',
+	'jobsYieldAddress',
 	'destroyEngine',
 	'sceneCapacity',
 	'arraysMovedAddress',
@@ -809,6 +920,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'reserveObjects',
 	'worldMatrix',
 	'worldMatrixAddress',
+	'callValues',
 	'commandRing',
 	'prepareJobs',
 	'beginFrame',
@@ -880,7 +992,16 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOrthographicCamera',
 	'clearShadowCamera',
 	'addPass',
+	'addFullscreenPass',
+	'setPassValues',
 	'setReflectionScale',
+	'setAreaLightCap',
+	'areaLightTables',
+	'finishAreaLightTables',
+	'areaLightImage',
+	'finishAreaLightImage',
+	'removeAreaLightImage',
+	'setPhysicalSky',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'createPassTexture',
@@ -899,16 +1020,32 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'setSsr',
+	'readsLastFrame',
+	'setSsrQuality',
+	'setAutoExposure',
+	'setExposureMeter',
+	'createParticles',
+	'destroyParticles',
+	'particleRecords',
+	'particleValues',
+	'markParticleRecords',
+	'markParticleValues',
+	'setSoftParticles',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',
 	'setVignette',
 	'environmentValues',
 	'setEnvironment',
+	'lightProbeValues',
+	'setLightProbeGrid',
 	'setOutline',
 	'effectValues',
+	'effectTextures',
 	'setEffect',
 	'setEffectGroup',
 	'setEffectFold',
@@ -923,7 +1060,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'backgroundValues',
 	'setBackgroundSource',
 	'setFog',
+	'setFogVolume',
+	'setFogSlices',
+	'setFogHalvings',
 	'setDebugView',
+	'setDecalLayers',
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',
@@ -934,6 +1075,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resampledClips',
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
+	'animationCapacity',
 	'removeAnimatedInstance',
 	'enableJointOverrides',
 	'createMorphWeights',
@@ -954,6 +1096,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
+
+/** What `jobWorkerLoop` returns after the job system stopped. */
+export const JOB_LOOP_STOPPED = 0;
+/** What `jobWorkerLoop` returns when a task call took the worker out of the job system. */
+export const JOB_LOOP_CALLED = 1;
+/** What `jobWorkerLoop` returns while the page asks idle job workers to run their own tasks. */
+export const JOB_LOOP_YIELDED = 2;
 
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */

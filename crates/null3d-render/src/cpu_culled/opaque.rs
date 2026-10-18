@@ -3,7 +3,8 @@
 //! in a uniform block: the start of its bucket's slice of the index list, its material and its
 //! data texture. The draws of one pipeline and one vertex page sit next to each other, so one
 //! multi-draw call draws a whole run of them where the device has `WEBGL_multi_draw`, and the
-//! shader reads the record of `gl_DrawID`. Without the extension, each draw binds its own record.
+//! shader reads the record of `gl_DrawID`, from a texture copy of the block that the WebGL2 backend
+//! makes. Without the extension, each draw binds its own record.
 //!
 //! Each view has a ring of frame uniforms and a ring of draw records, whose slots move on only
 //! when the frame writes new data, as the index list textures' slots do. A frame uniform's slot
@@ -32,6 +33,7 @@ use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
+use crate::probe_grid;
 use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
@@ -41,6 +43,8 @@ const ROW_VALUES_BINDING: u32 = 8;
 /// The binding of the table of object ranges in the frame group, where WebGL2's mesh shaders
 /// declare it.
 const OBJECT_RANGES_BINDING: u32 = 8;
+/// The binding of the light tables in the frame group (see [`crate::light_tables`]).
+const LIGHT_TABLES_BINDING: u32 = 3;
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
 const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
@@ -63,6 +67,7 @@ pub(super) struct LitTextures {
     pub(super) atlas: u32,
     pub(super) occlusion: u32,
     pub(super) environment: u32,
+    pub(super) probe_grid: u32,
     pub(super) lights: u32,
     /// The copy of the opaque color that surfaces which let light through sample: the camera's,
     /// or a blank texel for other views.
@@ -259,14 +264,15 @@ impl Opaque {
     }
 
     /// Records the creation of a view's frame groups, which bind its uniform block, its cell
-    /// offsets and the material table's texture, which also holds three.js's table of the
-    /// split-sum terms of specular light. A camera's view has one group for each slot of the light
-    /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
-    /// cascades' uniform block that read it, the slot's texture of `lit`'s ring of light data
-    /// textures, the shadow atlas of `lit` with the tiles' uniform block, the texture of ambient
-    /// occlusion, the environment's cube texture of `lit` with its sampler, and the copy of the
-    /// opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or a
-    /// shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
+    /// offsets, the material table's texture, which also holds three.js's table of the split-sum
+    /// terms of specular light, and the table of object ranges. A camera's view has one group for
+    /// each slot of the light textures' ring. Each also binds the shadow map of `lit` with the
+    /// comparison sampler, the shadow settings block, which holds the cascades' settings beside the
+    /// shadow tiles', the slot's texture of `lit`'s ring of light data textures, the shadow atlas
+    /// of `lit`, the light probe grid's 3D texture, the texture of ambient occlusion, the light
+    /// tables' texture, the environment's cube texture of `lit` with its sampler, and the copy of
+    /// the opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or
+    /// a shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
     /// it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
@@ -304,6 +310,7 @@ impl Opaque {
             atlas,
             occlusion,
             environment,
+            probe_grid,
             lights,
             transmission: copy,
         }) = lit
@@ -314,9 +321,9 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 63 + environment::ENTRY_WORDS];
+        let mut words = [0; 68 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
-        words[23..48].copy_from_slice(&[
+        words[23..43].copy_from_slice(&[
             4,
             resource_kind::TEXTURE,
             map,
@@ -331,20 +338,16 @@ impl Opaque {
             resource_kind::BUFFER,
             ids::SHADOWS,
             0,
-            sizes::SHADOW_UNIFORM_BYTES,
+            sizes::SHADOW_SETTINGS_BYTES,
             9,
             resource_kind::TEXTURE,
             atlas,
             0,
             0,
-            10,
-            resource_kind::BUFFER,
-            ids::SHADOW_TILES,
-            0,
-            sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
+        words[43..48].copy_from_slice(&probe_grid::entries(probe_grid));
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 15]);
             words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
             words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
             words[58..63].copy_from_slice(&[
@@ -354,7 +357,14 @@ impl Opaque {
                 0,
                 0,
             ]);
-            words[63..]
+            words[63..68].copy_from_slice(&[
+                LIGHT_TABLES_BINDING,
+                resource_kind::TEXTURE,
+                ids::LIGHT_TABLES,
+                0,
+                0,
+            ]);
+            words[68..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }

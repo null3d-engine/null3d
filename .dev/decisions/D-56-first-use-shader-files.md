@@ -150,7 +150,7 @@ bits = ["SKIN"]
 
 - `shaders` lists templates whose every build belongs to the feature.
 - `bits` lists permutation bits that a device does not fix. Every build of any template with one of them belongs to the feature. Examples are the final pass's BLOOM builds and every template's SKIN builds.
-- A build belongs to its template's feature, or else to the feature of its lowest bit that a table names. Every other build stays in the start files.
+- A build belongs to its template's feature, or else to the feature of its lowest bit that a table names. Every other build stays in the start files. The [addendum of 12 October 2026](#addendum-2026-10-12-builds-that-need-several-features) gives a build that needs several features files of its own.
 
 Each feature gets a file, such as `generated/shaders-skinning-wgsl.js`, for each value of the device's fixed bits that its builds vary in. Then `DeviceShaderSet` loads one the first time a pipeline asks for one of its builds. It adds the file's builds to the variants that the backends hold. Meanwhile the pipeline waits, as a custom material's pipeline waits for its shader. Before the first frame, the frame waits with it. After it, frames go on, and the pipeline's draws draw nothing until it is built. On WebGPU, a compute pipeline whose file has not arrived waits in the same way.
 
@@ -211,3 +211,109 @@ The owner decided on 4 October 2026 that a game can have every shader it needs b
   - Morph targets (M2-C5) add a bit, as SKIN does. Where the GPU blends them, they add a pass whose output the drawing passes read. Their table names the bit. Their objects keep out of the layouts until their pipelines are built, as `SkinnedGate` keeps skinned objects out.
   - GPU occlusion culling (M2-I1) adds compute templates, which wait for their file as the skinning pass's does. Its culling must keep the previous frame's results, or none, until its pipelines are built.
 - The record is in the table in README.md.
+
+## Addendum, 2026-10-12: builds that need several features
+
+Status: decided, 2026-10-12, by the coordinator for the owner (ruling C).
+
+**Question.** A build can need two features that load on first use, such as a SKIN build with ALPHA_HASH. By the rule above, it went into the file of the feature with the lower bit. Later, a table could claim such builds (`claims_shared_builds`, [D-82](D-82-transparency-parity.md)), which then went into the claiming feature's file. Either way, one feature's files held builds that only pages with another feature draw. Displacement (M2-J4) has bit 26, above most features' bits. Its builds with skinning, morph targets, per-instance colors, transmission, alpha to coverage and the alpha hash went into those features' files. That grew 96 files of six features by 20% to 30%, about 5 to 6 KB each after Brotli, for every page that uses one of those features, with displacement or without.
+
+**Rule.** A build needs the feature of its template and the feature of each of its bits that a table names.
+
+- A build that needs no feature stays in the start files.
+- A build that needs one feature goes into that feature's files.
+- A build that needs several features goes into files of their own for that set of features, such as `shaders-hash-and-skinning-wgsl-half.js`. The file names list the features in alphabetical order, joined by `-and-`. No feature name may hold the word `and`, and the manifest check refuses one.
+- A set of features without builds has no files. A set has one file for each value of the device's fixed bits that its builds vary in, as a single feature's files have.
+- The `claims_shared_builds` setting is gone. No table needs it now.
+
+**How the engine loads them.** The main shader module's `firstUseFile(shader, permutation)` gives the key of the file that holds a build: its features' names, sorted and joined by `+`, such as `hash+skinning`. A pipeline whose build is missing loads the file of that key, once, and nothing else.
+
+The addresses of the combined files do not sit in the main module. There, 157 hashed file names grew the renderer that every page loads at its start by about 2 KB after Brotli: 24% for the page's renderer and 18% for the render worker. So each GPU path has small tables of its own, `shaders-wgsl-combos.ts` and `shaders-glsl-combos.ts` and their half-precision halves ([Addendum, 2026-10-16](#addendum-2026-10-16-the-combos-tables-split-by-the-half-precision-bit)). The engine loads it the first time it needs a combined file. The main module keeps only the keys. Once a page has asked for the own file of each feature of a combined key, the table starts to download beside that file. A combined build then mostly waits for its own file alone. A preload, from `createEngine`'s `preload` list or from the sketch, loads each feature's own file. It also loads each file of several features once the preloads so far have named all of them (`filesFor` in `gpu/device-shaders.ts`). So a page that uses X and Y loads X's file, Y's file and the X and Y file, and no other. The offline file list (D-102) puts a file of several features under each of them, so a game that caches either feature has it.
+
+**Figures.** Measured on 12 October 2026, on the merge of main at 3f8825965, before displacement merges.
+
+- The new rule makes 157 new files for 24 sets of features. The largest is the WebGL2 morph and skinning file with the draw index, tone mapping and half precision: 21.1 KB after Brotli, 45.1 KB after gzip and 406 KB uncompressed. That is 66%, 14% and 26% of the limits of a file that loads on first use. The smallest, skinning with the test template, is 2.7 KB after Brotli.
+- The sets with the most files are skinning, alpha to coverage, the alpha hash, level fades, transmission and morph targets in pairs and triples, 8 or 12 files each. The cutout shader's sets have 2 or 3 files each.
+- No feature's own file grew. These shrank, after Brotli, as their combined builds moved out:
+
+| Feature | Files | Change after Brotli | Largest file, before and after |
+| --- | --- | --- | --- |
+| `coverage` | 12 | -17% to -19% | 23.1 to 19.0 KB |
+| `hash` | 12 | -17% to -19% | 24.0 to 19.8 KB |
+| `lod_fade` | 12 | -15% to -19% | 23.4 to 19.8 KB |
+| `transmission` | 12 | -10% to -15% | 22.6 to 19.4 KB |
+| `skinning` | 12 | 0% to -10.5% | 22.7 to 21.7 KB |
+| `cutout` | 3 | -41% to -58% | 9.3 to 3.9 KB |
+| `sprites` | 6 | -16% to -24% | 6.4 to 5.4 KB |
+| `texcoords` | 6 | 0% to -22% | 4.2 to 3.5 KB |
+
+- The renderer that every page loads at its start grew by about 0.4 KB after Brotli: 5.1% for the page's renderer, 5.0% for the sketch worker's and 3.8% for the render worker. About half is the keys of the combined files: 805 bytes uncompressed for both paths, about 0.2 KB after Brotli. The rest is the loader of the two tables, the check that starts a table early, and the preload's choice of files. These cannot move into a file that loads on first use. A preload and the early check must know which combined files exist before any of them loads. Without the keys, a page would have to fetch the table as soon as it used two features, and most pages use bloom and ambient occlusion. It would then download 0.7 to 1.7 KB that it never reads. Each table takes 0.7 KB after Brotli for WebGPU and 1.7 KB for WebGL2, and loads only with the first combined file.
+
+**Files that pages fetch.** The demos ran for 12 seconds each in Chrome on the Mac, on the dev server, on both GPU paths. The count is the first-use shader files that each fetched, without the environment generator's. On main, each build of several features sat in the file of one of its features, so a page fetched one file per feature.
+
+| Page | Features | Files on main | Files now |
+| --- | --- | --- | --- |
+| Battle comparison: skins and custom materials | 5 to 7 | 5 to 7 | 5 to 7 |
+| Look-at: skins and per-instance colors | 5 | 5 | 5 |
+| Animated characters | 4 | 4 | 4 |
+| Objects, a plain page | 2 | 2 | 2 |
+| Instancing | 3 | 3 | 3 |
+| Creek: masks, level fades, sprites, transmission | 9 on WebGPU, 8 on WebGL2 | 9 and 8 | 11 and 10 |
+
+Only Creek uses two features whose builds meet. It fetches the files of alpha to coverage with level fades and with sprites, and the WebGL2 or WebGPU table. Battle's count depends on how far its scene got in the 12 seconds. Battle and Creek did not start on the main build that the size check left, so their counts on main follow from the rule: one file per feature that the branch's run fetched.
+
+**The cost of the table on first use.** Creek asks for the files of alpha to coverage, level fades and cutout in the same frame as the two combined ones. So the table cannot start earlier, and the combined files wait for it. On WebGL2 in three runs, the table took 7, 6 and 112 ms on the dev server. The combined files' last byte came 26, 33 and 0 ms after that of the level fades' file, which held those builds on main. On WebGPU it came 24, 22 and 16 ms after it. That is at most two frames at 60 Hz, once per page, while the masked plants' pipelines build. It is not done earlier, at a page's first feature file: most pages that use skinning or sprites would then fetch a table that they never read.
+
+## Addendum, 2026-10-14: the build compiles only the entries that changed
+
+Status: decided, 2026-10-14, by the owner's build-speed priority.
+
+**Question.** The build composed and compiled every entry of the manifest on each run, and compared the modules only afterwards. Editing one `.wgsl` file therefore recompiled all 54 entries and their builds, about 8 minutes on the Mac. The modules' cache in `tools/lib/shader-modules.ts` keys on a hash of every WGSL file, so the very edit that caused the work changed its key, and it could not help.
+
+**Rule.** The build keys each entry on that entry's own inputs, and reuses the entry's compiled output when they are unchanged:
+
+- the entry's file and source;
+- the entry's table in the manifest: its pipelines, its variants, and each variant's defs, permutation bits and targets, as the build names its builds;
+- every library module the entry imports, directly or through another module, with the text of each, so a change to a library module reaches exactly the entries that import it;
+- a stamp of the compiler, which the wrapper hashes from the compiler's sources, so a change to the compiler misses every entry.
+
+The shared tables, `shaders.ts` and the feature and combos modules, are assembled from the entries' records on every run, which is cheap. An entry that is missing, unreadable or written under another key, or whose dependency's text changed, is a miss, and the entry compiles again. A folder that cannot be read or written costs the next run its work and nothing else. The cache lives in `~/.cache/null3d/shader-cache/<stamp>`, which every checkout on the machine shares.
+
+**Data.** All figures are the wall time of `cargo run -p null3d-shaders --bin shader-build -- --root .` on the Mac on 14 October 2026, with the cargo build warm. The machine was otherwise busy, so the figures carry some load.
+
+| What changed | Entries compiled | Entries reused | Time |
+| --- | --- | --- | --- |
+| Nothing, cold cache | 54 | 0 | 442.4 s |
+| Nothing, warm cache | 0 | 54 | 10.6 s |
+| One entry's file, `cull.wgsl`, which the two cull entries share | 2 | 52 | 10.4 s |
+| The library module `lib/math.wgsl` | 31 | 23 | 356.0 s |
+
+The 31 entries that import `null3d::math` include the two custom-material templates, which build every variant, so they are the dearest of the 54. The module reaches them through `null3d::lighting` and `null3d::area_lights`, so an edit to `math.wgsl` is the dearest library edit, close to a full build. The 23 entries that do not import it, directly or through another module, stay on disk.
+
+The folder held 499 MB after the cold run, because an entry's record holds the WGSL and the GLSL with reflection of each of its builds. The warm run reads it in 10.6 s. A run with nothing changed does not reach the build at all: the modules' cache answers first. The folder is written once for each compiler stamp, and a later run rewrites only the entries that changed.
+
+**Options.**
+- Keep the modules' cache alone and rebuild it whenever any WGSL file changed. This is what main did. It costs 442 s for any edit, however small.
+- Key one cache entry on the whole manifest, as the modules' cache does. An edit to one shader would still miss every entry, so this saves nothing.
+- Key each entry on its own file alone. A change to a shared library module would then serve a stale entry, so this is wrong.
+- Key each entry on its file, its manifest table, the library modules it imports and a compiler stamp, as the rule says. This compiles exactly what changed.
+
+**Decision.** Keep a per-entry cache, keyed on the entry's own inputs and the library modules it imports, under a folder named by the compiler's stamp. A hit skips the composition and the GLSL translation for that entry and reuses its recorded output. `--no-cache`, and `NULL3D_NO_SHADER_CACHE=1`, compile every entry again. The Vite plugin's own shader cache ([D-175](D-175-vite-plugin-shader-cache.md)) uses the same environment variable for the same reason.
+
+**Consequences.**
+- `crates/null3d-shaders/src/cache.rs` holds the cache, `crates/null3d-shaders/src/lib.rs` builds each entry through it, and `--cache`, `--stamp` and `--no-cache` reach `shader-build`.
+- `tools/lib/shader-modules.ts` passes the folder and the compiler stamp, and turns the cache off for `NULL3D_NO_SHADER_CACHE=1`.
+- The build output does not change. A warm run writes the same modules as a cold one, which the tests in `crates/null3d-shaders/tests/cache.rs` and `tests/cli.rs` check.
+- [Branches and parallel work](../pull-requests.md#builds) notes the cache and its figures beside the repository's other caches.
+
+## Addendum, 2026-10-16: the combos tables split by the half-precision bit
+
+Status: decided, 2026-10-16, by the coordinator for the owner (the owner raised the start budget on 2026-10-14, D-14).
+
+**Question.** The combos table of each GPU path holds one entry for each set of features that builds need together, and one module address for each value of the device's fixed bits. The COAT_SHEEN bit (M2-EX30) joins every other bit, and AREA_LIGHTS joins it too. Their cross-product made 82 keys and 598 module addresses in the WebGL2 table, 79,783 bytes of text. The page's copy, `js/page-shaders-glsl-combos.js`, then took 76,563 bytes uncompressed, over the 64 KB cap of a file that loads after the start.
+
+**Rule.** Each combos table is two files: the builds of a device without half precision, and those with it. The main module's loader picks the file by the half bit of the device's fixed bits. The keys stay in the main module, so the early preload check and the offline file list (D-102) are unchanged.
+
+**Why not split by shader.** A device module file holds the builds that need one set of features, for every template that needs it, so the `lit` and `standard_maps` builds of a key share one file. A table per shader would list the same addresses twice and shrink nothing. The half bit partitions the addresses instead.
+
+**Figures.** The WebGL2 tables are 39.6 KB and 38.6 KB uncompressed (3.7 and 3.3 KB after Brotli); the WebGPU tables are 13.0 and 12.7 KB. `bun run build:check-size` prints each beside its cap.

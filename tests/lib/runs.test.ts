@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
+import { type ShaderSet, variantInShaderSet } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -20,6 +20,7 @@ import { isLoadPath } from './load-routes.ts';
 import {
 	benchPlan,
 	benchSummary,
+	type Check,
 	checksPlan,
 	depthPlan,
 	depthSummary,
@@ -36,7 +37,6 @@ import {
 	PLANS,
 	parityPlan,
 	REPORT_ON_TOP_PLANS,
-	SHADER_PARTS,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -71,6 +71,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
+import { glslProgramCount, glslProgramCountOf, glslProgramsByVariant } from './shader-programs.ts';
 import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
@@ -156,6 +157,33 @@ describe('waitForRunners', () => {
 			expect(quiet).toEqual([['quiet-phone', 'a']]);
 		}));
 
+	it("keeps waiting on a runner page whose heartbeat goes on past its page's quiet time", () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'slow-ipad', 'device', {});
+			const beats = setInterval(
+				() => writeRunnerFile(plan.run, 'slow-ipad', HEARTBEAT_NAME, { item: 'a' }),
+				20,
+			);
+			setTimeout(() => {
+				clearInterval(beats);
+				writeRunnerFile(plan.run, 'slow-ipad', 'a', { ok: true });
+				writeRunnerFile(plan.run, 'slow-ipad', 'done', {});
+			}, 300);
+			const quiet: string[] = [];
+			const finished = await waitForRunners(plan, ['slow-ipad'], {
+				quietMs: () => 80,
+				onQuiet: (runner) => quiet.push(runner) < 0,
+			});
+			clearInterval(beats);
+			expect(quiet).toEqual([]);
+			expect(finished).toEqual(['slow-ipad']);
+		}));
+
+	it('gives the whole plan the most time that each page may get', () => {
+		const plan = { run: 'r', createdAt: '', items: [item('a', 220), item('b', 30)] };
+		expect(batchTimeoutMs(plan)).toBeGreaterThanOrEqual((220 + 30) * MOST_TIME_SHARE * 1000);
+	});
+
 	it('waits again for a runner whose quiet page the caller replaced', () =>
 		withRun(['a', 'b'], async (plan) => {
 			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
@@ -238,6 +266,37 @@ describe('waitForRunners', () => {
 		);
 		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
+
+	it('runs a page once more in a new runner page on iOS, whatever the browser is called', () => {
+		// Chromium on iOS names itself Chrome, but its memory is WebKit's.
+		const iphone = {
+			userAgent:
+				'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0.7827.137 Mobile/15E148 Safari/604.1',
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], iphone)).toBe(true);
+		// iPad Safari gives a Mac's user agent; only the touch screen tells the two apart.
+		const ipad = {
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15',
+			maxTouchPoints: 5,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], ipad)).toBe(true);
+		// Desktop and Android browsers draw with Blink, so their failures are not explained by it.
+		const mac = {
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+			maxTouchPoints: 0,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], mac)).toBe(false);
+		const android = {
+			userAgent:
+				'Mozilla/5.0 (Linux; Android 14; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36',
+			maxTouchPoints: 5,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], android)).toBe(false);
+		// The rerun needs a held-memory failure, whatever the device is.
+		expect(rerunsInNewTab('Chrome', ['the image differs from its reference'], iphone)).toBe(false);
 	});
 
 	it('names a sketch module that did not load, with what the test server sends for it now', async () => {
@@ -807,24 +866,26 @@ describe('the checks plan', () => {
 		]);
 	});
 
-	/** The checks plan's shards in Safari, as `--shard <i>/<count>` gives each. */
+	/** The checks plan's shards in CI's Safari, as `--shard <i>/<count>` gives each. */
 	const shardsOf = (count: number) =>
 		Array.from(
 			{ length: count },
-			(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
+			(_, i) =>
+				planItems(parseArgs(['--shaders', 'sampled', '--shard', `${i + 1}/${count}`, 'Safari'])) ??
+				[],
 		);
+	const sampled = checksPlan({ shaders: 'sampled' });
 	const secondsOf = (shard: { id: string }[]) =>
 		shard.reduce((sum, item) => sum + expectedSeconds(item), 0);
 
 	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
-		const shaderParts = items.filter((item) => item.check.kind === 'shaders');
-		expect(shaderParts.length).toBe(SHADER_PARTS);
+		const shaderParts = sampled.filter((item) => item.check.kind === 'shaders');
 		for (const count of [2, 3, 4, 5]) {
 			const shards = shardsOf(count);
 			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
 			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
-			expect(ids(once.flat())).toEqual(ids(items));
+			expect(ids(once.flat())).toEqual(ids(sampled));
 			// The longest group is the shaders page's parts; each later shard adds the capabilities
 			// page.
 			const seconds = shards.map(secondsOf);
@@ -836,7 +897,7 @@ describe('the checks plan', () => {
 				for (const item of shard)
 					for (const id of itemsTogether(item)) expect(inShard).toContain(id);
 				// Each shard keeps the plan's order.
-				expect(shard).toEqual(items.filter(({ id }) => inShard.has(id)));
+				expect(shard).toEqual(sampled.filter(({ id }) => inShard.has(id)));
 			}
 		}
 		// The shard with the capabilities page's second load ends with it.
@@ -848,14 +909,19 @@ describe('the checks plan', () => {
 
 	// CI runs the plan in each browser in the shards that its workflow names. A job should take at
 	// most about 12 minutes, and about 2 of them go to its setup, the dev server's start and the
-	// judging. .dev/devices.md says what to do when the pages need more.
+	// judging. .dev/devices.md says what to do when the pages need more. Safari compiles the sampled
+	// set of the shaders page, which this model counts.
 	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
+		expect(workflow).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
 		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
 		expect(count).toBeGreaterThan(0);
+		// The matrix must list every shard from 1 to the count, or a shard never runs.
+		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflow)?.[1]?.split(',').map(Number);
+		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 	});
@@ -988,22 +1054,54 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
-	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
-		const parts = items.filter((item) => item.check.kind === 'shaders');
-		const programs = glslProgramsOf(await everyShader()).length;
-		expect(programs).toBeGreaterThan(100);
-		expect(parts.length).toBe(SHADER_PARTS);
-		expect(SHADER_PARTS).toBeGreaterThan(1);
-		expect(parts.map(({ id, path }) => [id, path])).toEqual(
-			parts.map((_, i) => [
-				`shaders-${i + 1}`,
-				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
-			]),
+	it('splits the shaders page into parts that share every program, each with time for its share', () => {
+		const all = glslProgramCount();
+		expect(all).toBeGreaterThan(100);
+		const inSet = (set: ShaderSet) => glslProgramCountOf(set);
+		const [base, coat, sample] = [inSet('base'), inSet('coat'), inSet('coat-sample')];
+		// The base and coat sets split every program, and the sample is some of the coat's.
+		expect(base + coat).toBe(all);
+		expect(sample).toBeGreaterThan(0);
+		expect(sample).toBeLessThanOrEqual(400);
+		// The sample pairs the coat with shadows, row values and half precision, alone and together.
+		const sampledBuilds = [...glslProgramsByVariant()].filter(
+			([build, programs]) => programs > 0 && variantInShaderSet(build, 'coat-sample'),
 		);
-		// No part compiles more than a few hundred programs in one WebGL2 context.
-		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
-		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
-		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
+		const pairs = (bits: string[]) =>
+			sampledBuilds.some(([name]) => bits.every((bit) => name.includes(`_${bit}_`)));
+		for (const bit of ['receive_shadows', 'row_values', 'half', 'alpha_mask', 'vertex_tangent'])
+			expect(pairs([bit]), bit).toBe(true);
+		expect(pairs(['receive_shadows', 'row_values', 'half'])).toBe(true);
+		const partsOf = (plan: PlanItem<Check>[], set: string) =>
+			plan.filter((item) => item.check.kind === 'shaders' && item.path.endsWith(`set=${set}`));
+		const sampled = checksPlan({ shaders: 'sampled' });
+		for (const [plan, sets] of [
+			[items, { base, coat }],
+			[sampled, { base, 'coat-sample': sample }],
+		] as const) {
+			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
+				Object.values(sets).reduce((sum, programs) => sum + Math.ceil(programs / 400), 0),
+			);
+			for (const [set, programs] of Object.entries(sets) as [ShaderSet, number][]) {
+				const parts = partsOf(plan, set);
+				expect(parts.length).toBe(Math.ceil(programs / 400));
+				expect(parts[0]?.id).toBe(set === 'base' ? 'shaders-1' : `shaders-${set}-1`);
+				expect(parts.map(({ path }) => path)).toEqual(
+					parts.map(
+						(_, i) => `/tests/pages/shaders.html?part=${i + 1}&parts=${parts.length}&set=${set}`,
+					),
+				);
+				// Each part downloads its share of the builds and keeps the set's among them, so the
+				// parts together check every build of the set, and no part compiles more than a few
+				// hundred programs in one WebGL2 context. Holding the parts beside the builds they load
+				// needs the whole set: that check runs in a process of its own
+				// (`bun run test:heavy`, [Test memory](../../.dev/tests.md)).
+				for (const part of parts) {
+					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
+					expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / parts.length / 4);
+				}
+			}
+		}
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {

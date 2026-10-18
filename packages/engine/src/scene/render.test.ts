@@ -6,6 +6,8 @@ import type { CoreMemory } from './memory';
 import { Render } from './render';
 import type { Camera, Scene } from './scene';
 import { ShaderPreloads } from './shader-preloads';
+import { ShaderTemplates } from './shader-templates';
+import { Texture } from './textures';
 
 /** A camera that records the targets that it sends its lens to, with their layers. */
 function camera(layers = 1) {
@@ -14,7 +16,7 @@ function camera(layers = 1) {
 		layers,
 		destroyedFrame: -1,
 		describe: () => '"Map camera" (slot 3)',
-		sendLens(_glue: unknown, target: number, sent = layers) {
+		sendLens(_core: unknown, target: number, sent = layers) {
 			lenses.push([target, sent]);
 		},
 	};
@@ -31,18 +33,32 @@ function setup() {
 	let error: [number, string] = [0, ''];
 	let next = 1;
 	const written = new Set<string>();
+	// The core's memory, with the block of values first and the block of texture handles after it.
+	const memory = new ArrayBuffer(512);
+	const values = new Float32Array(memory, 0, C.EFFECT_FLOATS);
+	const textures = new Uint32Array(memory, 256, C.EFFECT_TEXTURES);
 	const glue = {
 		addPass(...args: unknown[]) {
 			calls.push(['add', ...args]);
-			const [, target, reads] = args as [string, string, string];
+			const [, pass, target, reads] = args as [number, string, string, string];
 			const missing = reads.split('\n').find((read) => read !== '' && !written.has(read));
 			if (missing !== undefined) {
-				error = [1502, `E1502: the pass "${args[0]}" uses "${missing}", but no pass creates it.`];
+				error = [1502, `E1502: the pass "${pass}" uses "${missing}", but no pass creates it.`];
 				return 0;
 			}
 			written.add(target);
 			return next++;
 		},
+		addFullscreenPass(...args: unknown[]) {
+			calls.push(['fullscreen', ...args, [...values], [...textures]]);
+			return next++;
+		},
+		setPassValues(place: number) {
+			calls.push(['values', place, [...values], [...textures]]);
+			return 0;
+		},
+		effectValues: () => 0,
+		effectTextures: () => 256,
 		removeScenePass(place: number) {
 			calls.push(['remove', place]);
 			return 0;
@@ -58,6 +74,8 @@ function setup() {
 	};
 	const core = {
 		glue,
+		generation: 0,
+		heap: (type: typeof Float32Array | typeof Uint32Array) => new type(memory),
 		check(result: number, call: string, what?: string, isStatus = false) {
 			if (isStatus ? result !== 0 : result === 0) throw coreFailure(glue, call, what);
 			return result;
@@ -67,12 +85,15 @@ function setup() {
 	const scene = {
 		setPassCamera(place: number, camera: Camera | undefined, layers: number | undefined) {
 			cameras.push([place, camera, layers]);
-			if (camera) camera.sendLens(glue as never, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
+			if (camera) camera.sendLens(core, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
 		},
 	} as unknown as Scene;
 	const shaders = new ShaderPreloads((features) => preloads.push([...features]));
+	const sent: number[] = [];
+	const templates = new ShaderTemplates((template) => sent.push(template));
 	return {
-		render: new Render(core, scene, shaders, 4096),
+		render: new Render(core, scene, shaders, templates, 4096),
+		sent,
 		scene: scene as unknown as Scene,
 		calls,
 		cameras,
@@ -108,9 +129,10 @@ describe('render passes', () => {
 			128,
 			true,
 		]);
-		// A scale below 0 makes a scene pass, whose camera sends its layers.
+		// A scene pass of its own size, whose camera sends its layers.
 		expect(calls[0]).toEqual([
 			'add',
+			C.PASS_KIND_SCENE,
 			'minimap',
 			'minimap',
 			'',
@@ -121,7 +143,7 @@ describe('render passes', () => {
 			0,
 			0,
 			1,
-			-1,
+			1,
 			1,
 			-1,
 			0,
@@ -148,6 +170,7 @@ describe('render passes', () => {
 		});
 		expect(calls[1]).toEqual([
 			'add',
+			C.PASS_KIND_SCENE,
 			'Mirror',
 			'mirror',
 			'minimap',
@@ -158,7 +181,7 @@ describe('render passes', () => {
 			0.25,
 			1,
 			0.5,
-			-1,
+			1,
 			1,
 			4,
 			0,
@@ -224,7 +247,12 @@ describe('render passes', () => {
 		const { render } = setup();
 		const map = camera().camera;
 		const add = (options: object) => thrown(() => render.addPass(options as never));
-		expect(add({ kind: 'fullscreen', camera: map, writes: 'a', size: [8, 8] }).code).toBe('E1220');
+		expect(add({ kind: 'blur', camera: map, writes: 'a', size: [8, 8] }).code).toBe('E1220');
+		expect(add({ kind: 'scene', camera: map, writes: 'a' }).code).toBe('E1220');
+		expect(add({ kind: 'scene', camera: map, writes: 'a', size: [8, 8], scale: 1 }).code).toBe(
+			'E1220',
+		);
+		expect(add({ kind: 'scene', camera: map, writes: 'a', scale: 0.3 }).code).toBe('E1220');
 		expect(add({ kind: 'scene', writes: 'a', size: [8, 8] }).code).toBe('E1220');
 		expect(add({ kind: 'scene', camera: map, writes: '', size: [8, 8] }).code).toBe('E1220');
 		expect(add({ kind: 'scene', camera: map, writes: 'a', size: [0, 8] }).code).toBe('E1220');
@@ -263,7 +291,7 @@ describe('render passes', () => {
 			render.addPass({ kind: 'scene', camera: map, writes: 'last', size: [8, 8] }),
 		);
 		expect(error.code).toBe('E1220');
-		expect(error.message).toContain(`at most ${C.SCENE_PASS_MAX} scene passes`);
+		expect(error.message).toContain(`at most ${C.SCENE_PASS_MAX} passes`);
 	});
 
 	it('adds a reflection pass with its plane, size, pace and layers, and no camera', () => {
@@ -282,6 +310,7 @@ describe('render passes', () => {
 		// Without a scale, the preset's sets the size; without layers, the camera's are drawn.
 		expect(calls[0]).toEqual([
 			'add',
+			C.PASS_KIND_REFLECTION,
 			'water',
 			'water',
 			'',
@@ -315,6 +344,7 @@ describe('render passes', () => {
 		});
 		expect(calls[1]).toEqual([
 			'add',
+			C.PASS_KIND_REFLECTION,
 			'Floor',
 			'floor',
 			'water',
@@ -362,6 +392,110 @@ describe('render passes', () => {
 		expect(sized.message).toContain('which a reflection pass does not take');
 		expect(add({ plane: { point }, layers: 0.5 }).code).toBe('E1207');
 		expect(add({ plane: { point }, reads: ['w'] }).code).toBe('E1504');
+	});
+
+	it('adds a scene pass that takes a share of the render size', () => {
+		const { render, calls } = setup();
+		const pass = render.addPass({
+			kind: 'scene',
+			camera: camera().camera,
+			writes: 'half',
+			scale: 0.5,
+			every: 2,
+		});
+		expect([pass.width, pass.height]).toEqual([0, 0]);
+		const [, kind, , , , width, height, , , , , , scale, every] = calls[0] as number[];
+		expect([kind, width, height, scale, every]).toEqual([C.PASS_KIND_SCENE, 0, 0, 0.5, 2]);
+	});
+
+	it('adds a full-screen pass with its template, size, input, uniforms and textures', () => {
+		const { render, calls, sent } = setup();
+		const texture = Object.assign(Object.create(Texture.prototype), { handle: 77, depth: 1 });
+		const wgsl = {
+			kind: 'effect',
+			uniforms: [{ name: 'spread', type: 'vec2f', offset: 0 }],
+			depth: true,
+			joins: false,
+			textures: [
+				{ name: 'mask', offset: 31 },
+				{ name: 'noise', offset: 30 },
+			],
+			variants: {},
+			pieces: { group: {}, fold: {} },
+		};
+		const pass = render.addPass({
+			kind: 'fullscreen',
+			wgsl: wgsl as never,
+			writes: 'edges',
+			scale: 0.5,
+			input: 'outlineMask',
+			uniforms: { spread: [2, 3] } as never,
+			textures: { mask: texture } as never,
+		});
+		expect([pass.kind, pass.width, pass.height, pass.camera]).toEqual([
+			'fullscreen',
+			0,
+			0,
+			undefined,
+		]);
+		expect(sent.length).toBe(1);
+		const call = calls[0] as unknown[];
+		expect(call.slice(0, 10)).toEqual([
+			'fullscreen',
+			'edges',
+			'edges',
+			0,
+			0,
+			0.5,
+			1,
+			sent[0],
+			C.EFFECT_DEPTH,
+			C.PASS_SOURCE_OUTLINE_MASK,
+		]);
+		const [values, handles] = call.slice(10) as [number[], number[]];
+		expect(values.slice(0, 2)).toEqual([2, 3]);
+		// The texture that the option leaves out samples as white.
+		expect(values[30]).toBe(-1);
+		expect(handles.slice(0, 3)).toEqual([77, 0, 0]);
+		render.setPassUniform(pass, 'spread', [4, 5]);
+		const update = calls[1] as [string, number, number[], number[]];
+		expect([update[0], update[1], update[2].slice(0, 2), update[3][0]]).toEqual([
+			'values',
+			1,
+			[4, 5],
+			77,
+		]);
+		expect(thrown(() => render.setPassUniform(pass, 'radius', 1)).code).toBe('E1216');
+		const scene = render.addPass({
+			kind: 'scene',
+			camera: camera().camera,
+			writes: 'map',
+			size: [8, 8],
+		});
+		expect(thrown(() => render.setPassUniform(scene, 'spread', [1, 1])).code).toBe('E1220');
+	});
+
+	it('refuses options that a full-screen pass does not take', () => {
+		const { render } = setup();
+		const wgsl = {
+			kind: 'effect',
+			uniforms: [],
+			depth: false,
+			joins: true,
+			textures: [],
+			variants: {},
+			pieces: { group: {}, fold: {} },
+		};
+		const add = (options: object) =>
+			thrown(() => render.addPass({ kind: 'fullscreen', writes: 'f', wgsl, ...options } as never));
+		expect(add({ wgsl: 'fn effect() {}' }).code).toBe('E1215');
+		expect(add({ wgsl: { kind: 'material' } }).code).toBe('E1215');
+		expect(add({ input: 'sceneDepth' }).code).toBe('E1220');
+		expect(add({ scale: 2 }).code).toBe('E1220');
+		expect(add({ size: [8, 8], scale: 0.5 }).code).toBe('E1220');
+		expect(add({ reads: ['map'] }).code).toBe('E1220');
+		expect(add({ textures: { mask: {} } }).code).toBe('E1216');
+		expect(add({ uniforms: { radius: 1 } }).code).toBe('E1216');
 	});
 
 	it("dumps the core's graph", () => {

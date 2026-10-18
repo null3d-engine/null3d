@@ -1,7 +1,8 @@
 // The null3d version of S1, the swarm: every instance moves every frame, and the camera orbits.
 // The `blend` switch makes the boxes see through, for the allocation sample of the transparent pass.
 // The `animated` switch adds that many animated characters, for the allocation sample of the
-// animator. The `morphed` switch adds that many morphed spheres whose weights change every frame,
+// animator, and the `inertial` switch makes the characters that play one clip switch clips by
+// inertial transitions, for the allocation sample of those transitions. The `morphed` switch adds that many morphed spheres whose weights change every frame,
 // for the allocation sample of morph targets. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
@@ -21,11 +22,18 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
 // changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `areaLights` switch adds eight rectangle lights, two of which show images, and four tube
+// lights, which circle the swarm and change their intensities every frame, for the allocation
+// sample of area lights.
 // The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
-// sample of post.set's focus point and depth of field's steps.
+// sample of post.set's focus point and depth of field's steps. The `exposure` switch turns automatic
+// exposure on, and changes its compensation every frame, for the allocation sample of post.set's
+// automatic exposure and the meter's steps. The `fog` switch gives the scene height fog with the
+// volumetric fog on, and changes the volumetric fog's intensity every frame, for the allocation
+// sample of scene.setFog and the fog's steps, whose block the core writes again in every frame.
 // The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
 // swarm and the background into, for the allocation sample of the pass and for its cost: the
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
@@ -34,6 +42,36 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `ssr` switch puts a polished floor under the swarm and turns screen-space reflections on, for
+// the allocation sample and the cost of their steps, the copy of the opaque colors that they read,
+// and the floor's shading: the camera orbits, so the reflections move every frame. `ssr=half` and
+// `ssr=quarter` give their grid that share of the render size, `ssr=off` keeps the floor with the
+// reflections off, and the switch alone takes the preset's.
+// The `coatSheen` switch gives the swarm's boxes a clear coat and a sheen, for the allocation sample
+// and the cost of their shading: `coatSheen=coat` and `coatSheen=sheen` give one of them, and the switch
+// alone both.
+// The `weighted` switch puts a column of smoke over the swarm's middle: puffs of the weighted
+// blending in a sprite batch that rise and swell in every frame, for the allocation sample and the
+// cost of the camera's weighted layer. `weighted=sorted` gives the same smoke the normal blending,
+// which the transparent pass sorts, for the cost of one against the other.
+// The `decals` switch puts a ground under the swarm with a batch of decals on it, which turn every
+// frame, for the cost of the decal pass and the allocation sample of its rows. The tall boxes of
+// the decals reach the lowest boxes of the swarm too. `decals=off` puts the ground alone, the
+// other side of the decals' cost.
+// The `passes` switch adds a full-screen pass that reads the scene's color at half the render
+// size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
+// the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
+// block and the effect's texture. It also keeps the pass on with render.setPassEnabled in every frame.
+// The `terrain` switch puts the terrain add-on's ground under the swarm, whose quadtree follows
+// the orbiting camera in every frame, and the `impostors` switch a field of the impostors
+// add-on's cards around it, which pick their views from the camera in every frame, for the
+// allocation samples of the add-ons' steps.
+// The `calls` switch makes, in every frame, the calls whose docs promise no allocation and that no
+// other switch makes: a raycast, a mesh's vertex update, a camera's ray through the pointer and
+// its screen point of a place, the orbit and fly controls' update, and the sketch's read of the
+// frame's figures, for the allocation sample of each.
+// The `timeOfDay` switch moves a day cycle's hour in every frame, through the object that its
+// first call made, for the allocation sample of the helper's per-frame form.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -42,22 +80,34 @@
 // every row a color and values that change every frame, read by a custom material that sways and
 // tints each box, for the allocation sample of the row values' uploads. The `levels` switch gives
 // the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
-// fading bands between levels.
-import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
+// fading bands between levels. The `setters` switch calls, in every frame, each setter that a
+// sketch may call per frame, with fractions and colors: the lights', a standard and a custom
+// material's, a line batch's, the camera's field of view, the fog and the background color.
+import { createFlyControls, createOrbitControls } from '@null3d/controls';
+import {
+	defineSketch,
+	type Environment,
+	emptyTimeOfDay,
+	type PerspectiveCamera,
+	type RaycastHit,
+	type SketchContext,
+	type Texture,
+	timeOfDay,
+} from '@null3d/engine';
+import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
+import { createImpostorField, createTerrainGround } from './addons';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
-import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
+import { createLineSwarm, createSpriteSwarm, createSwarm, type SwarmCoatSheen } from './swarm';
 
 export default defineSketch(async (context) => {
 	const { time } = context;
 	const cascades = readShadows(import.meta.url);
-	const moveCamera = followPath(
-		setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades }),
-		s1Camera,
-	);
+	const camera = setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades });
+	const moveCamera = followPath(camera, s1Camera);
 	const switches = new URL(import.meta.url).searchParams;
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
@@ -68,8 +118,18 @@ export default defineSketch(async (context) => {
 					shadows: switches.has('batchShadows'),
 					rowValues: switches.has('rowValues'),
 					levels: switches.has('levels'),
+					layers: readCoatSheen(switches.get('coatSheen')),
 				}).pose;
-	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
+	const animate = createAnimatedCrowd(
+		context,
+		readAnimated(import.meta.url),
+		switches.has('inertial'),
+	);
+	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
+	const pickViews = switches.has('impostors') ? await createImpostorField(context) : undefined;
+	// The camera's position for the add-ons' steps, and the target that the path writes beside it.
+	const cameraAt = new Float64Array(3);
+	const lookAt = new Float64Array(3);
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
@@ -79,6 +139,15 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const ssr = switches.get('ssr');
+	if (ssr !== null) createPolishedFloor(context, ssr);
+	const weighted = switches.get('weighted');
+	const moveSmoke =
+		weighted === null ? undefined : await createSmoke(context, weighted === 'sorted');
+	const decals = switches.get('decals');
+	const turnDecals = decals === null ? undefined : createDecals(context, decals !== 'off');
+	const particles = switches.has('particles') ? await createParticleFountains(context) : [];
+	const soft = switches.has('passes') ? createSoftGlow(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -96,6 +165,12 @@ export default defineSketch(async (context) => {
 	const focus: [number, number, number] = [0, 0, 0];
 	const lens = { dof: { aperture: 2, focusPoint: focus } };
 	const dof = switches.has('dof');
+	const eye = { autoExposure: { compensation: 0 } };
+	const exposure = switches.has('exposure');
+	const fogged = switches.has('fog');
+	// The volumetric fog's options, changed in place: its light swells and fades every frame.
+	const volume = { intensity: 1, anisotropy: 0.3 };
+	const fog = { color: '#8090a0', density: 0.01, heightFalloff: 0.05, volumetric: volume };
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -106,6 +181,9 @@ export default defineSketch(async (context) => {
 	// The effects' colors, changed in place, so a frame's calls allocate no array.
 	const warm: [number, number, number] = [1, 0.95, 0.9];
 	const mist: [number, number, number] = [0.43, 0.55, 0.69];
+	// The glow's strength in each color, changed in place: a fraction passed on its own to a call
+	// that the browser does not inline becomes a number object of its own each frame.
+	const softness: [number, number, number] = [0.3, 0.3, 0.3];
 	// The environment's options, changed in place, as the grading's settings are.
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
@@ -114,6 +192,9 @@ export default defineSketch(async (context) => {
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
 	// `sky=light` lights the swarm with the sky's environment too, which refreshes in stages as
 	// the sun moves, for the allocation sample of the sky map's stages and its diffuse light.
+	// `sky=physical` draws the physical sky in place of three.js's, which draws its sky view table
+	// again in every frame while the sun moves, and `sky=physical-light` lights the swarm with its
+	// environment too.
 	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
 	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
 	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
@@ -126,13 +207,14 @@ export default defineSketch(async (context) => {
 	if (switches.has('extraBox')) addSmallBox(context, true);
 	const sun: [number, number, number] = [0, 0.2, -1];
 	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
-	const skyBackground = { sky: skySettings };
+	const physical = skyMode === 'physical' || skyMode === 'physical-light';
+	const skyBackground = physical ? { atmosphere: skySettings } : { sky: skySettings };
 	if (sky) context.scene.setBackground(skyBackground);
 	if (skyMode === 'room')
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			context.scene.setBackground(loaded);
 		});
-	if (skyMode === 'light')
+	if (skyMode === 'light' || skyMode === 'physical-light')
 		void context.assets.skyEnvironment().then((loaded) => {
 			context.scene.setEnvironment(loaded);
 		});
@@ -140,21 +222,32 @@ export default defineSketch(async (context) => {
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
 		});
-	const hemispheres = switches.has('hemisphere') ? createHemispheres(context) : undefined;
+	const now = new Float64Array(1);
+	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
+	const areas = switches.has('areaLights') ? createAreaLights(context, now) : undefined;
+	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
+	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
+	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
 		morph(t);
 		moveCasters?.(t);
+		moveSmoke?.(t);
+		turnDecals?.(t);
+		if (followTerrain || pickViews) {
+			s1Camera(t, cameraAt, lookAt);
+			followTerrain?.(cameraAt);
+			pickViews?.(cameraAt);
+		}
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
 		}
-		if (hemispheres) {
-			hemispheres[0].setIntensity(0.3 + 0.1 * Math.sin(t));
-			hemispheres[1].setIntensity(0.2 + 0.1 * Math.cos(t));
-		}
+		// The frame's time goes through a typed array: a step of its own takes no fraction, so no
+		// number crosses a call that the browser may not inline.
+		now[0] = t;
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -164,6 +257,10 @@ export default defineSketch(async (context) => {
 			sun[1] = 0.2 + 0.15 * Math.sin(t);
 			skySettings.time = t;
 			context.scene.setBackground(skyBackground);
+		}
+		if (fogged) {
+			volume.intensity = 1 + 0.25 * Math.sin(t);
+			context.scene.setFog(fog);
 		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -178,11 +275,21 @@ export default defineSketch(async (context) => {
 			focus[2] = 20 * Math.cos(0.5 * t);
 			context.post.set(lens);
 		}
+		if (exposure) {
+			eye.autoExposure.compensation = 0.5 * Math.sin(t);
+			context.post.set(eye);
+		}
+
 		if (tint && haze) {
 			warm[2] = 0.9 + 0.1 * Math.sin(t);
 			context.post.setEffectUniform(tint, 'color', warm);
 			mist[0] = 0.43 + 0.05 * Math.cos(t);
 			context.post.setEffectUniform(haze, 'color', mist);
+		}
+		if (soft) {
+			softness[0] = 0.3 + 0.1 * Math.sin(t);
+			context.render.setPassUniform(soft, 'glow', softness);
+			context.render.setPassEnabled(soft, true);
 		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
@@ -196,8 +303,53 @@ export default defineSketch(async (context) => {
 			pose(time.now);
 			if (frames) Atomics.add(frames, 0, 1);
 		},
+		// The setters' steps run in their own small callback, apart from the large `pose`: the
+		// browser then inlines each step and the setters it calls, so a fraction that a step computes
+		// stays in a register instead of becoming an object.
+		onLateUpdate() {
+			poseHemispheres?.();
+			areas?.();
+			setValues?.();
+			makeCalls?.();
+			moveDay?.();
+			for (let k = 0; k < particles.length; k++) particles[k]?.update();
+		},
 	};
 });
+
+/**
+ * Two particle systems for the `particles` switch, which write births every frame: soft dots that
+ * bounce off the ground, and glows from a texture made in code that fade near the boxes behind
+ * them, so the frame copies the opaque depth.
+ */
+async function createParticleFountains(context: SketchContext): Promise<ParticleSystem[]> {
+	const fountain = await createParticles(context, {
+		rate: 4000,
+		lifetime: [1.5, 2.5],
+		shape: { type: 'cone', radius: 0.5, angle: 0.4 },
+		speed: [6, 9],
+		gravity: [0, -9.8, 0],
+		groundHeight: 0,
+		size: [0.08, 0.12],
+		colors: ['#9cc8ff', '#ffffff'],
+		alphaOverLife: [1, 1, 0],
+	});
+	const glows = await createParticles(context, {
+		...particleTextures.glow(context.textures),
+		position: [0, S1_BOB_HEIGHT, 0],
+		rate: 1500,
+		lifetime: 3,
+		shape: { type: 'box', size: [2 * S1_EXTENT, 2, 2 * S1_EXTENT] },
+		speed: 0.2,
+		turbulence: 1,
+		size: [0.3, 0.5],
+		colors: '#ffb060',
+		intensity: 2,
+		alphaOverLife: [0, 1, 0],
+		softness: 1,
+	});
+	return [fountain, glows];
+}
 
 /** A custom effect that tints each pixel toward a color. */
 const TINT = /* wgsl */ `
@@ -219,19 +371,257 @@ fn effect(input: EffectInput) -> vec4f {
 `;
 
 /**
+ * A full-screen pass that reads the scene's color at half the render size and softens it, with
+ * the glow's strength in each color as a uniform, and a custom effect that adds its texture to the
+ * scene.
+ */
+function createSoftGlow({ render, post, textures }: SketchContext) {
+	const pass = render.addPass({
+		kind: 'fullscreen',
+		wgsl: SOFTEN,
+		writes: 'soft',
+		scale: 0.5,
+		input: 'sceneColor',
+		uniforms: { glow: [0.3, 0.3, 0.3] },
+	});
+	post.addEffect({ wgsl: ADD_SOFT, textures: { soft: textures.fromPass(pass) } });
+	return pass;
+}
+
+/** A full-screen pass that averages its input around each pixel, scaled by `glow`. */
+const SOFTEN = /* wgsl */ `
+struct Uniforms { glow: vec3f }
+
+fn effect(input: EffectInput) -> vec4f {
+    let step = 2.0 / effectInputSize();
+    var sum = vec3f(0.0);
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            sum += effectColor(input.uv + vec2f(f32(x), f32(y)) * step).rgb;
+        }
+    }
+    return vec4f(sum / 9.0 * uniforms.glow, 1.0);
+}
+`;
+
+/** A custom effect that adds the soft pass's texture to the scene's color. */
+const ADD_SOFT = /* wgsl */ `
+var soft: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let glow = textureSampleLevel(soft, softSampler, effectPassUv(input.uv), 0.0).rgb;
+    return vec4f(input.color.rgb + glow * input.color.a, input.color.a);
+}
+`;
+
+/**
  * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
  * warm one tilted an eighth of a turn about X.
  */
-function createHemispheres({ scene }: SketchContext) {
+/**
+ * The `hemisphere` switch: two hemisphere lights, one tilted. Returns the frame's step, which
+ * changes their intensities. The calls sit in a step of their own, as a game's update function
+ * does, so the browser inlines them and no fraction crosses a call as an object of its own.
+ */
+function createHemispheres({ scene }: SketchContext, now: Float64Array): () => void {
 	const tilt = Math.sin(Math.PI / 8);
-	return [
-		scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' }),
-		scene.createHemisphereLight({
-			skyColor: '#ffd9a8',
-			groundColor: '#202830',
-			rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
-		}),
-	] as const;
+	const sky = scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' });
+	const warm = scene.createHemisphereLight({
+		skyColor: '#ffd9a8',
+		groundColor: '#202830',
+		rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
+	});
+	return () => {
+		const t = now[0] as number;
+		sky.setIntensity(0.3 + 0.1 * Math.sin(t));
+		warm.setIntensity(0.2 + 0.1 * Math.cos(t));
+	};
+}
+
+/** A custom material with a color uniform and a number uniform, for the `setters` switch. */
+const TINTED = /* wgsl */ `
+struct Uniforms { tint: vec3f, strength: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = mix(s.baseColor, material.tint, material.strength);
+    return s;
+}
+`;
+
+/**
+ * The `setters` switch: a point light, a spot light, a hemisphere light, a line batch, a standard
+ * material and a custom one. Returns the frame's step, which calls the per-frame setters of the
+ * lights, the materials, the camera's field of view, the line's width and dashes, the fog and the
+ * background color with fractions and colors. The colors are an array changed in place, a hex
+ * number and a hex string. The calls sit in a small step of their own, as in a game's update
+ * function, so the browser inlines them and no number crosses a call as an object of its own.
+ */
+async function createSetters(
+	{ scene, materials, geometry }: SketchContext,
+	camera: PerspectiveCamera,
+	now: Float64Array,
+): Promise<() => void> {
+	const point = scene.createPointLight({ position: [0, 6, 0], intensity: 0.01, range: 10 });
+	const spot = scene.createSpotLight({ position: [0, 9, 0], intensity: 0.01, range: 12 });
+	const hemisphere = scene.createHemisphereLight({ skyColor: '#9cc8ff', intensity: 0.01 });
+	const lines = await scene.createLines({
+		positions: new Float32Array([0, 1, 0, 0, 2, 0]),
+		mode: 'segments',
+		width: 2,
+		dashed: true,
+	});
+	const paint = materials.standard({ color: '#808080' });
+	const custom = materials.shader({ wgsl: TINTED, uniforms: { tint: [1, 1, 1], strength: 0.5 } });
+	// A box of each material, so the frames upload and draw the values that the step sets.
+	const box = geometry.box({ width: 2, height: 2, depth: 2 });
+	scene.createMesh({ mesh: box, material: paint, position: [-3, 1, 0] });
+	scene.createMesh({ mesh: box, material: custom, position: [3, 1, 0] });
+	const fov = camera.fov;
+	// Every options object and color is made once and changed in place. The materials' values go
+	// through setUniform in the frame, as a value that changes every frame does.
+	const color: [number, number, number] = [1, 1, 1];
+	const lineValues = { color, dashOffset: 0.5 };
+	const fog = { color, density: 0.001 };
+	return () => {
+		const t = now[0] as number;
+		const s = Math.sin(t);
+		const c = Math.cos(t);
+		color[0] = 0.75 + 0.25 * s;
+		color[2] = 0.75 + 0.25 * c;
+		point.setIntensity(0.01 + 0.005 * s);
+		point.setRange(10 + s);
+		point.setDecay(2 + 0.5 * c);
+		point.setColor(color);
+		spot.setIntensity(0.01 + 0.005 * c);
+		spot.setAngle(0.5 + 0.1 * s);
+		spot.setPenumbra(0.25 + 0.1 * c);
+		spot.setColor(s > 0 ? 0xffd9a8 : '#9cc8ff');
+		hemisphere.setGroundColor(color);
+		camera.setFov(fov + 0.5 * s);
+		lines.setWidth(2 + s);
+		lineValues.dashOffset = 0.5 + 0.5 * s;
+		lines.material.set(lineValues);
+		paint.setUniform('roughness', 0.5 + 0.25 * s);
+		paint.setUniform('emissiveIntensity', 1 + 0.5 * c);
+		custom.setUniform('tint', color);
+		custom.setUniform('strength', 0.5 + 0.25 * c);
+		custom.setUniform('roughness', 0.5 + 0.25 * s);
+		fog.density = 0.001 + 0.0005 * s;
+		scene.setFog(fog);
+		scene.setBackground(color);
+	};
+}
+
+/** The vertices along each side of the `calls` switch's rippling sheet. */
+const SHEET_ROWS = 32;
+
+/**
+ * The `calls` switch: a sheet whose vertices ripple, and two cameras of their own for the orbit and
+ * the fly controls. Returns the frame's step, which updates the sheet's vertices, casts a ray down
+ * into the swarm, turns the pointer into a ray and a point of the swarm into the canvas's pixels,
+ * updates both controls and reads the frame's figures, with arrays and a hit made once.
+ */
+function createCalls(
+	context: SketchContext,
+	camera: PerspectiveCamera,
+	now: Float64Array,
+): () => void {
+	const { scene, geometry, materials, debug, time, input } = context;
+	const count = SHEET_ROWS * SHEET_ROWS;
+	const positions = new Float32Array(count * 3);
+	const normals = new Float32Array(count * 3);
+	for (let v = 0; v < count; v++) {
+		positions[v * 3] = (v % SHEET_ROWS) - SHEET_ROWS / 2;
+		positions[v * 3 + 2] = Math.floor(v / SHEET_ROWS) - SHEET_ROWS / 2;
+		normals[v * 3 + 1] = 1;
+	}
+	const quads = SHEET_ROWS - 1;
+	const indices = new Uint16Array(quads * quads * 6);
+	for (let q = 0; q < quads * quads; q++) {
+		const v = Math.floor(q / quads) * SHEET_ROWS + (q % quads);
+		indices.set([v, v + SHEET_ROWS, v + 1, v + 1, v + SHEET_ROWS, v + SHEET_ROWS + 1], q * 6);
+	}
+	const sheet = geometry.fromArrays({ positions, normals, indices });
+	const blue = materials.standard({ color: '#4080c0' });
+	scene.createMesh({ mesh: sheet, material: blue, position: [0, -2, 0] });
+	const orbit = createOrbitControls(
+		context,
+		scene.createPerspectiveCamera({ position: [0, 20, 60], target: [0, 0, 0] }),
+	);
+	const fly = createFlyControls(context, scene.createPerspectiveCamera({ position: [0, 20, 60] }));
+	const origin: [number, number, number] = [0, 80, 0];
+	const down: [number, number, number] = [0, -1, 0];
+	const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
+	const onScreen = [0, 0, 0];
+	const hit: RaycastHit = {
+		object: null,
+		instance: -1,
+		point: [0, 0, 0],
+		normal: [0, 0, 0],
+		distance: 0,
+		triangle: -1,
+	};
+	return () => {
+		const t = now[0] as number;
+		for (let v = 0; v < count; v++) positions[v * 3 + 1] = Math.sin(t + v * 0.1) * 0.5;
+		sheet.updateVertices('positions', positions);
+		origin[0] = 20 * Math.sin(t);
+		origin[2] = 20 * Math.cos(t);
+		scene.raycast(origin, down, undefined, hit);
+		camera.screenToRay(input.pointer.x, input.pointer.y, ray);
+		camera.worldToScreen(origin, onScreen);
+		orbit.update(time.dt);
+		fly.update(time.dt);
+		debug.frameStats();
+	};
+}
+
+/**
+ * The `timeOfDay` switch: a day cycle that moves its hour in every frame. Returns the frame's step,
+ * which fills the object that the first call made, so the cycle allocates nothing. A call without
+ * that object makes an object tree in every frame.
+ */
+function createTimeOfDay(now: Float64Array): () => void {
+	const day = emptyTimeOfDay();
+	const options = {};
+	return () => {
+		timeOfDay(17 + (now[0] as number) * 0.01, options, day);
+	};
+}
+
+/**
+ * Eight rectangle lights, two of which show a striped image, and four tube lights for the
+ * `areaLights` switch. Returns the frame's step, which moves them around the swarm. The step runs
+ * in `onLateUpdate`, apart from the large `pose`: the browser then inlines it and the setters it
+ * calls, so no fraction that it computes crosses a call as an object of its own.
+ */
+function createAreaLights({ scene }: SketchContext, now: Float64Array): () => void {
+	const stripes = new Uint8Array(16 * 16 * 4).map((_, i) => ((i >> 6) % 2 ? 255 : 40));
+	const image = { width: 16, height: 16, data: stripes };
+	const range = S1_EXTENT * 3;
+	const lights = Array.from({ length: 12 }, (_, k) =>
+		k < 8
+			? scene.createRectAreaLight({
+					width: 4,
+					height: 2,
+					range,
+					color: k % 2 ? '#ffd29a' : '#9ad2ff',
+					dynamic: true,
+					...(k < 2 ? { image } : {}),
+				})
+			: scene.createTubeLight({ length: 3, range, color: '#ff6ab0', dynamic: true }),
+	);
+	return () => {
+		const t = now[0] as number;
+		for (let k = 0; k < lights.length; k++) {
+			const angle = t * 0.3 + (k * Math.PI * 2) / lights.length;
+			const light = lights[k] as (typeof lights)[number];
+			light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
+			light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
+			light.setIntensity(4 + Math.sin(t + k));
+		}
+	};
 }
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
@@ -307,6 +697,14 @@ function createWater(
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
 }
 
+/** The layers that the `coatSheen` switch asks for, or none without it. */
+function readCoatSheen(value: string | null): SwarmCoatSheen | undefined {
+	if (value === null) return undefined;
+	if (value === '') return 'both';
+	if (value === 'coat' || value === 'sheen' || value === 'both') return value;
+	throw new Error(`coatSheen=${value} names no layers: take coat, sheen or both`);
+}
+
 /** Adds the `transmission` switch's clear water under the swarm, which lets the light below through. */
 function createClearWater({ scene, geometry, materials }: SketchContext) {
 	const water = scene.createMesh({
@@ -322,6 +720,134 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** The reflections' grid as a share of the render size, by the `ssr` switch's value. */
+const SSR_SCALES = { half: 0.5, quarter: 0.25, off: 0 } as const;
+
+/**
+ * Adds the `ssr` switch's polished floor under the swarm, and turns screen-space reflections on,
+ * which reflect the swarm in it.
+ */
+function createPolishedFloor(
+	{ scene, geometry, materials, post, quality }: SketchContext,
+	size: string,
+) {
+	const scale = SSR_SCALES[size as keyof typeof SSR_SCALES];
+	if (scale !== undefined) quality.set({ ssrScale: scale });
+	post.set({ ssr: { maxDistance: 400, thickness: 2 } });
+	const floor = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({ color: '#1a1d21', roughness: 0.08, metalness: 0.3 }),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	floor.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+/** The puffs of the `weighted` switch's smoke, and how long each one rises, in seconds. */
+const SMOKE_PUFFS = 2000;
+const SMOKE_LIFE = 8;
+
+/**
+ * Adds the `weighted` switch's column of smoke over the swarm's middle: soft puffs of the weighted
+ * blending, or of the normal blending with `sorted`, that rise, swell and fade. Returns the function
+ * that moves them to a time, which writes the batch's arrays and allocates nothing.
+ */
+async function createSmoke({ scene, textures }: SketchContext, sorted: boolean) {
+	const size = 32;
+	const dot = new Uint8Array(size * size * 4).fill(255);
+	for (let i = 0; i < size * size; i++) {
+		const r = Math.hypot((i % size) + 0.5 - size / 2, Math.floor(i / size) + 0.5 - size / 2);
+		dot[i * 4 + 3] = 255 * Math.max(0, 1 - (2 * r) / size) ** 2;
+	}
+	const map = textures.fromData({ width: size, height: size, data: dot });
+	const puffs = await scene.createSprites({
+		count: SMOKE_PUFFS,
+		map,
+		dynamic: true,
+		depthWrite: false,
+		blending: sorted ? 'normal' : 'weighted',
+	});
+	return (t: number) => {
+		const { positions, sizes, colors } = puffs;
+		for (let i = 0; i < SMOKE_PUFFS; i++) {
+			const seed = (i * 0.618034) % 1;
+			const age = (t / SMOKE_LIFE + seed) % 1;
+			const turn = i * 2.39996 + age * 3;
+			const spread = 2 + age * 18;
+			positions[i * 3] = Math.cos(turn) * spread * seed;
+			positions[i * 3 + 1] = S1_BOB_HEIGHT + age * 60;
+			positions[i * 3 + 2] = Math.sin(turn) * spread * seed;
+			sizes[i * 2] = sizes[i * 2 + 1] = 4 + age * 14;
+			colors[i * 4] = colors[i * 4 + 1] = colors[i * 4 + 2] = 0.55 + 0.3 * seed;
+			colors[i * 4 + 3] = 0.35 * Math.min(1, age * 8) * (1 - age);
+		}
+	};
+}
+
+/** Decals on each side of the `decals` switch's square of them, and the texels of their image. */
+const DECAL_ROWS = 16;
+const DECAL_TEXELS = 64;
+
+/**
+ * Adds the `decals` switch's ground under the swarm, and with `marked` a dynamic batch of decals on
+ * it: soft round marks with a dark ring, in a square across the swarm's extent. Returns the step
+ * that turns each one about the vertical, which writes the batch's rotations in place.
+ */
+function createDecals({ scene, geometry, materials, textures }: SketchContext, marked: boolean) {
+	const ground = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({ color: '#6b6560', roughness: 0.9 }),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	ground.setRotationEuler(-Math.PI / 2, 0, 0);
+	if (!marked) return undefined;
+	const data = new Uint8Array(DECAL_TEXELS * DECAL_TEXELS * 4);
+	for (let y = 0; y < DECAL_TEXELS; y++)
+		for (let x = 0; x < DECAL_TEXELS; x++) {
+			const r =
+				Math.hypot(x + 0.5 - DECAL_TEXELS / 2, y + 0.5 - DECAL_TEXELS / 2) / (DECAL_TEXELS / 2);
+			const ring = Math.max(0, 1 - Math.abs(r - 0.8) * 8);
+			const shade = 40 + 120 * (1 - ring);
+			data.set(
+				[shade, shade * 0.8, shade * 0.6, 255 * Math.max(0, Math.min(1, (1 - r) * 4))],
+				(y * DECAL_TEXELS + x) * 4,
+			);
+		}
+	const map = textures.fromData({
+		width: DECAL_TEXELS,
+		height: DECAL_TEXELS,
+		data,
+		colorSpace: 'srgb',
+		mipmaps: true,
+	});
+	const count = DECAL_ROWS * DECAL_ROWS;
+	const decals = scene.createInstances(geometry.box(), count, {
+		material: materials.decal({ map, roughness: 0.4 }),
+		dynamic: true,
+	});
+	const spacing = (2 * S1_EXTENT) / DECAL_ROWS;
+	for (let k = 0; k < count; k++) {
+		const [column, row] = [k % DECAL_ROWS, Math.floor(k / DECAL_ROWS)];
+		const x = -S1_EXTENT + (column + 0.5) * spacing;
+		const z = -S1_EXTENT + (row + 0.5) * spacing;
+		decals.positions.set([x, WATER_HEIGHT, z], k * 3);
+		decals.scales.set([spacing * 0.9, spacing * 0.9, 30], k * 3);
+	}
+	return (t: number) => {
+		// Read the rows inside the frame: the engine makes its views again when its memory grows,
+		// and the page adds more after these decals.
+		const rotations = decals.rotations;
+		for (let k = 0; k < count; k++) {
+			// A box turned to project down, then about the vertical by its own angle.
+			const half = 0.5 * (t + k);
+			const c = Math.SQRT1_2 * Math.cos(half);
+			const s = Math.SQRT1_2 * Math.sin(half);
+			rotations[k * 4] = -c;
+			rotations[k * 4 + 1] = s;
+			rotations[k * 4 + 2] = s;
+			rotations[k * 4 + 3] = c;
+		}
+	};
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */

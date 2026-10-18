@@ -917,8 +917,8 @@ export const S4_VIEW_LIGHTS: SceneLights = {
 /** Linear fog, whose color is also the background's. */
 export const S4_FOG = { color: '#a7b6c6', near: 80, far: 360 } as const;
 /**
- * How far from the camera the sun's shadows reach, in meters: null3D's default, and the far end of
- * the three.js twin's cascades.
+ * How far from the camera the sun's shadows reach, in meters, in both engines: the far end of the
+ * three.js twin's cascades, which null3D's sun names, so both draw the same cascades.
  */
 export const S4_SHADOW_DISTANCE = 200;
 /**

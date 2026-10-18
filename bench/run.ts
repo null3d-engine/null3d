@@ -23,8 +23,8 @@
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 //   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4; the default is s1, and every scene with
-//                     --sweep or --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6; the default is s1, and every
+//                     scene with --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
@@ -41,8 +41,9 @@
 //                     the checkout's sources and engine build stay the same. The baseline a may
 //                     also be a prepared baseline from the GPU check's cache, whose pages are
 //                     built already (bench/lib/baseline-cache.ts). Every page runs at the High
-//                     preset, within each GPU path's ceiling, with the quality governor off,
-//                     unless --switches names them. The command fails when b is slower than
+//                     preset, within each GPU path's ceiling, with the quality governor off and
+//                     every animated character posed in every frame, unless --switches names
+//                     them. The command fails when b is slower than
 //                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
 //                     the commits from a to b names it. When those commits change the benchmark
 //                     pages or the comparison's switches, the measurement changed: the command
@@ -67,12 +68,16 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { type Browser, chromium } from '@playwright/test';
-import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src/browser.js';
+import type { Browser } from '@playwright/test';
+import {
+	launchChromium,
+	SWIFTSHADER_ARGS,
+	WEBGPU_DEVELOPER_FEATURES,
+} from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
-import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
-import { pageResult } from '../tests/lib/page-result.ts';
+import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
 import {
@@ -155,13 +160,6 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	// S6's counts are the objects nearest the route's start, up to the whole city.
 	s6: [1, 100, 1_000, 5_000, 10_000, S6_FULL_COUNT],
 };
-/**
- * The scenes that a comparison of two builds runs unless `--scenes` names others: every scene but
- * S5 and S6. They join the benchmark job in CI once that job pins a preset for them; `--scenes s5`
- * or `--scenes s6` compares them now. Each build of the pages still holds their pages, so the job
- * needs the sample content.
- */
-const COMPARED_SCENES = BENCH_SCENES.filter((scene) => scene !== 's5' && scene !== 's6');
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'threejs-webgpu',
@@ -170,8 +168,19 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 ];
 /** Time for a page to start, beyond its warm-up and measured seconds. */
 const START_MARGIN_MS = 60_000;
+/**
+ * More time to start for a scene that streams in before its warm-up. S6's whole city took more than
+ * the start margin on CI's Mac machines, so every run of its pages failed there.
+ */
+const STREAM_MARGIN_MS: Partial<Record<BenchScene, number>> = { s6: 240_000 };
 /** The browsers the command can drive. */
 const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
+/**
+ * Rounds in a row in which a page fails in both builds before a comparison stops running it. Such a
+ * page is broken in both, so more rounds only spend the job's time: S6's pages once timed out in
+ * every round and ran CI's shards past their time limit.
+ */
+const FAILED_ROUNDS_TO_STOP = 2;
 /** A comparison of two builds needs this many runs of each page per build, or more. */
 const MIN_COMPARE_RUNS = 3;
 
@@ -203,10 +212,10 @@ const runSeconds = (seconds: number | null) => ({
 	measure: seconds ?? MEASURE_SECONDS,
 });
 
-/** How long a page may take to publish its result. */
-function pageTimeoutMs(seconds: number | null): number {
+/** How long a page of a scene may take to publish its result. */
+function pageTimeoutMs(seconds: number | null, scene: BenchScene): number {
 	const { warmup, measure } = runSeconds(seconds);
-	return (warmup + measure) * 1000 + START_MARGIN_MS;
+	return (warmup + measure) * 1000 + START_MARGIN_MS + (STREAM_MARGIN_MS[scene] ?? 0);
 }
 
 function list<T extends string>(
@@ -294,7 +303,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
  */
 function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	if (name === 'chromium')
-		return chromium.launch({
+		return launchChromium({
 			headless: true,
 			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
 		});
@@ -304,14 +313,27 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	});
 }
 
-/** Opens one benchmark page in a fresh parked window and waits for its result. */
+/** Problems of a failed page that its error carries: enough to name the cause, few to print. */
+const PAGE_PROBLEMS = 8;
+
+/**
+ * Opens one benchmark page in a fresh parked window and waits for its result. The window's display
+ * rate is measured first, and a result whose rate fell short of the display's says why. A page that
+ * fails gives its first problems with its error.
+ */
 async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
 	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
+	const problems = watchPageProblems(page);
 	try {
+		const displayProblem = await displayRateCheck(page);
+		if (displayProblem)
+			console.warn(`${url}: ${displayProblem}, so its timing figures do not compare with others`);
 		await page.goto(url);
-		return await pageResult<BenchResult>(page, timeoutMs);
+		const result = await pageResult<BenchResult>(page, timeoutMs);
+		return displayProblem ? { ...result, displayProblem } : result;
 	} catch (e) {
-		return { ok: false, error: (e as Error).message } as BenchResult;
+		const error = [(e as Error).message, ...problems.slice(0, PAGE_PROBLEMS)].join('\n  ');
+		return { ok: false, error } as BenchResult;
 	} finally {
 		await page.close();
 	}
@@ -324,7 +346,6 @@ async function runProtocol(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds;
-	const timeoutMs = pageTimeoutMs(seconds);
 	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
 	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
@@ -344,7 +365,7 @@ async function runProtocol(
 					const result = await runPage(
 						browser,
 						`${baseUrl}${pagePath(scene, kind, switches)}`,
-						timeoutMs,
+						pageTimeoutMs(seconds, scene),
 					);
 					writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
 					// A page that ran with another job worker count would put its times under the wrong count.
@@ -407,7 +428,6 @@ async function runSweep(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds ?? 5;
-	const timeoutMs = 2 * seconds * 1000 + START_MARGIN_MS;
 	const report: string[] = [];
 	// A window larger than the charts; each picture is of its chart alone.
 	const chartPage = await newParkedPage(browser, { viewport: { width: 1200, height: 800 } });
@@ -420,7 +440,7 @@ async function runSweep(
 				const result = await runPage(
 					browser,
 					`${baseUrl}${pagePath(scene, kind, withSwitches([`seconds=${seconds}`, `n=${n}`], options))}`,
-					timeoutMs,
+					pageTimeoutMs(seconds, scene),
 				);
 				writeFileSync(
 					join(dir, `sweep-${scene}-${kind}-${n}.json`),
@@ -543,7 +563,7 @@ async function runComparison(
 		baseline: preparedBaseline ? preparedPages(roots.baseline) : roots.baseline,
 		new: roots.new,
 	};
-	const plan = (options.scenes ?? COMPARED_SCENES).flatMap((scene) =>
+	const plan = (options.scenes ?? BENCH_SCENES).flatMap((scene) =>
 		(options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })),
 	);
 	const share = options.shard ? shardPages(plan, options.shard) : plan;
@@ -557,14 +577,17 @@ async function runComparison(
 		if (!hasScene(scene))
 			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = share.filter((page) => hasScene(page.scene));
-	const switches = withSwitches(
-		[
-			...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
-			...comparisonSwitches(options.switches),
-		],
-		options,
-	);
-	const timeoutMs = pageTimeoutMs(options.seconds);
+	// A page's switches: the seconds of its run, then the preset and governor rules of every
+	// comparison, then the switches that its scene's compared pages need. S5's page takes one, so
+	// the two builds animate their crowds alike.
+	const switchesOfScene = (scene: BenchScene): string =>
+		withSwitches(
+			[
+				...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
+				...comparisonSwitches(scene, options.switches),
+			],
+			options,
+		);
 	const servers: DevServer[] = [];
 	const results: BuildRun[] = [];
 	try {
@@ -584,21 +607,32 @@ async function runComparison(
 			servers.push(server);
 			urls[build] = server.url;
 		}
+		// Rounds in a row in which a page failed in both builds, by page.
+		const failedRounds = new Map<string, number>();
 		for (let round = 1; round <= options.runs; round++)
-			for (const { scene, kind } of pages)
+			for (const { scene, kind } of pages) {
+				const page = `${scene}-${kind}`;
+				if ((failedRounds.get(page) ?? 0) >= FAILED_ROUNDS_TO_STOP) continue;
+				let failed = 0;
 				for (const build of roundOrder(round)) {
 					const result = await runPage(
 						browser,
-						`${urls[build]}${pagePath(scene, kind, switches)}`,
-						timeoutMs,
+						`${urls[build]}${pagePath(scene, kind, switchesOfScene(scene))}`,
+						pageTimeoutMs(options.seconds, scene),
 					);
-					const name = `${build}-${scene}-${kind}-${round}`;
+					const name = `${build}-${page}-${round}`;
 					writeFileSync(join(dir, `${name}.json`), JSON.stringify(result, null, '\t'));
 					results.push({ build, scene, kind, round, result });
+					if (!result.ok) failed++;
 					console.log(
-						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}`,
+						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}${result.load ? `, whole after ${(result.load.wholeMs / 1000).toFixed(1)} s` : ''}`,
 					);
 				}
+				const streak = failed === BUILDS.length ? (failedRounds.get(page) ?? 0) + 1 : 0;
+				failedRounds.set(page, streak);
+				if (streak === FAILED_ROUNDS_TO_STOP)
+					console.log(`${page}: failed in both builds in ${streak} rounds in a row, so it stops`);
+			}
 	} finally {
 		for (const server of servers) server.stop();
 	}

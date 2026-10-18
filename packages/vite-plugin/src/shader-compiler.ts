@@ -167,6 +167,8 @@ export interface EffectBuild {
 	readonly depth: boolean;
 	/** True when the effect joins the effect before it. */
 	readonly joins: boolean;
+	/** The textures that an effect declares, where the engine writes each one's layer. */
+	readonly textures: readonly CompiledTexture[];
 	/** The template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The pieces that the engine joins into its hosts. */
@@ -272,9 +274,38 @@ export type ShaderBuildResult =
 	| { readonly ok: true; readonly output: ShaderBuildOutput }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
-/** Builds every variant in a shader manifest, as the native `bun run shaders` does. */
+/**
+ * Builds every variant in a shader manifest, as the native `bun run shaders` does. The answer may
+ * be large — the engine's own manifest answers with hundreds of megabytes — and the module hands
+ * it over in pieces, which `CompilerCalls` joins before this reads it.
+ */
 export function buildShaders(inputs: ShaderBuildInputs): ShaderBuildResult {
 	return call<ShaderBuildOutput>('build', inputs);
+}
+
+/**
+ * Prepares the engine's own manifest, whose sources the compiler carries, and lists the file names
+ * of every module it makes. No text is rendered yet: the modules come one at a time, so a build
+ * never holds the whole set beside its sources.
+ */
+export function prepareEngineModules(): readonly string[] {
+	const result = call<readonly string[]>('prepare_modules', {});
+	if (!result.ok) throw new Error(problemsText(result.problems));
+	return result.output;
+}
+
+/** One module of the prepared engine build: its file name and its text. */
+export function engineModule(name: string): { readonly path: string; readonly text: string } {
+	const result = call<{ readonly path: string; readonly text: string }>('module', { name });
+	if (!result.ok) throw new Error(problemsText(result.problems));
+	return result.output;
+}
+
+/** The problems of a failed call as one message, for a failure that ends a build. */
+function problemsText(problems: readonly ShaderProblem[]): string {
+	return problems
+		.map((problem) => `${problem.file ?? 'the shader build'}: ${problem.message}`)
+		.join('\n');
 }
 
 /**
@@ -290,7 +321,13 @@ export type Response<T> =
 	  };
 
 /** The name of one of the module's exports that takes a request. */
-export type CallName = 'compile' | 'compile_material' | 'compile_effect' | 'build';
+export type CallName =
+	| 'compile'
+	| 'compile_material'
+	| 'compile_effect'
+	| 'build'
+	| 'prepare_modules'
+	| 'module';
 
 let compiled: WebAssembly.Module | undefined;
 let calls: CompilerCalls | undefined;

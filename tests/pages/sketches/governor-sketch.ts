@@ -23,17 +23,19 @@ const MIN_SCALE = Number(params.get('min') ?? GOVERNOR.walkMinScale * 100) / 100
 
 /** A surface whose color takes a loop of `work` steps of noise, which the compiler cannot skip. */
 const heavy = /* wgsl */ `
+#import null3d::noise::{pcg, to_unit}
+
 struct Uniforms {
     work: u32,
 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    var v = input.uv.x + input.uv.y;
+    var h = bitcast<u32>(input.uv.x + input.uv.y);
     for (var i = 0u; i < material.work; i++) {
-        v = fract(sin(v * 12.9898 + f32(i) * 0.37) * 43758.5453);
+        h = pcg(h ^ i);
     }
-    s.baseColor = s.baseColor * (0.9 + 0.1 * v);
+    s.baseColor = s.baseColor * (0.9 + 0.1 * to_unit(h));
     return s;
 }
 `;

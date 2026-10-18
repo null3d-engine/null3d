@@ -24,6 +24,13 @@ run('replay', async () => {
 	const adapter = await navigator.gpu?.requestAdapter();
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const device = await adapter.requestDevice();
+	// A bind group that mismatches one of its layout's bindings makes the browser drop the whole
+	// command buffer: the page draws nothing and has no error of its own to show. Publish what the
+	// device says, as the other replay pages do, so a list that drifted from the engine says so.
+	const errors: string[] = [];
+	device.addEventListener('uncapturederror', (event) =>
+		errors.push((event as GPUUncapturedErrorEvent).error.message),
+	);
 	const target = device.createTexture({
 		size: [SIZE, SIZE],
 		format: 'rgba8unorm',
@@ -105,8 +112,9 @@ run('replay', async () => {
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
 		// A one-entry table of the split-sum terms of specular light that the frame group binds:
-		// the scale and bias of a smooth surface seen head on.
-		dfg: memory.put(new Float32Array([1, 0, 0, 0])),
+		// the scale and bias of a smooth surface seen head on, as the 16-bit halves that the light
+		// tables hold. One is `0x3c00` as a half, and zero is zero.
+		dfg: memory.put(new Uint16Array([0x3c00, 0, 0, 0])),
 	};
 	const U = {
 		VERTEX: 0x20,
@@ -131,13 +139,17 @@ run('replay', async () => {
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
 		// The cell order, which a dispatch with no runs never reads.
 		[12, 4, U.STORAGE | U.COPY_DST, -1],
-		// The shadow cascades' uniform, which the frame group binds; no light casts shadows here.
-		[13, G.SIZE_SHADOW_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		// The shadow settings' uniform, the cascades then the tiles, which the frame group binds;
+		// no light casts shadows here.
+		[
+			13,
+			G.SIZE_SHADOW_UNIFORM_BYTES + G.SIZE_SHADOW_TILES_UNIFORM_BYTES,
+			U.UNIFORM | U.COPY_DST,
+			-1,
+		],
 		// The light grid and the light list, which the frame group binds and the shader skips.
 		[14, 16, U.STORAGE, -1],
 		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
-		// The shadow atlas's tiles, which the frame group binds; no light casts shadows here.
-		[16, G.SIZE_SHADOW_TILES_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
 		// The depth pyramid of occlusion culling, which the culling group binds and this view,
 		// which culls in one phase, never reads.
 		[17, 16, U.STORAGE, -1],
@@ -218,20 +230,39 @@ run('replay', async () => {
 		G.COMPARE_NONE,
 		1,
 	);
+	// The light tables, which the frame group binds: an array of half-float layers whose first
+	// layer holds the split-sum table, which the shader loads texel by texel. This view reads one
+	// entry of it, so one layer of one texel holds the scale and the bias above.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		3,
 		1,
 		1,
 		1,
-		G.FORMAT_RGBA32_FLOAT,
+		G.FORMAT_RGBA16_FLOAT,
 		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
 		1,
 		1,
-		G.VIEW_2D,
+		G.VIEW_2D_ARRAY,
 	);
-	memory.push(G.OP_WRITE_TEXTURE, 3, 0, 0, 0, 0, 1, 1, 1, blobs.dfg, 16);
-	// The materials' custom values, which no material here has: a new texture reads as zero.
+	memory.push(G.OP_WRITE_TEXTURE, 3, 0, 0, 0, 0, 1, 1, 1, blobs.dfg, 8);
+	// The blank light probe grid, which the frame group binds while a scene has none: one black
+	// texel, as the engine makes it.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		11,
+		1,
+		1,
+		1,
+		G.FORMAT_RGBA16_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_3D,
+	);
+	// The frame group's other texture bindings, which nothing here reads: the materials' custom
+	// values, ambient occlusion's texture, and the row values of instance batches. A texture that
+	// nothing writes reads as zero.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
@@ -239,7 +270,7 @@ run('replay', async () => {
 		1,
 		1,
 		G.FORMAT_RGBA32_FLOAT,
-		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		GPUTextureUsage.TEXTURE_BINDING,
 		1,
 		1,
 		G.VIEW_2D,
@@ -300,6 +331,20 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D_ARRAY,
 	);
+	// The first joint of each source of a shared skinned bucket, which the culling group binds:
+	// one texel, since this view draws no skinned object.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		9,
+		1,
+		1,
+		1,
+		G.FORMAT_R32_UINT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D,
+	);
 	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
@@ -329,22 +374,23 @@ run('replay', async () => {
 		...[7, G.RESOURCE_BUFFER, 14, 0, 0],
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
-		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
+		// The light probe grid, which only shaders built to read it do.
+		...[10, G.RESOURCE_TEXTURE, 11, 0, 0],
 		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
-		...[11, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[11, G.RESOURCE_TEXTURE, 5, 0, 0],
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
 		...[15, G.RESOURCE_TEXTURE, 8, 0, 0],
 		// The row values of instance batches, which only shaders built for them read.
-		...[16, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[16, G.RESOURCE_TEXTURE, 5, 0, 0],
 		...[17, G.RESOURCE_BUFFER, 18, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		10,
+		11,
 		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
@@ -353,6 +399,9 @@ run('replay', async () => {
 			0,
 		]),
 		...[9, G.RESOURCE_TEXTURE, 7, 0, 0],
+		// The first joint of each source of a shared skinned bucket. This view draws no skinned
+		// object, but the culling group's last binding must still be filled.
+		...[10, G.RESOURCE_TEXTURE, 9, 0, 0],
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);
@@ -403,5 +452,11 @@ run('replay', async () => {
 	await counts.mapAsync(GPUMapMode.READ);
 	const drawn = new Uint32Array(counts.getMappedRange().slice(0));
 	const pixels = await readbackWebGPU(device, target);
-	return { visible: [drawn[1], drawn[6]], width: SIZE, height: SIZE, pixels: toBase64(pixels) };
+	return {
+		visible: [drawn[1], drawn[6]],
+		width: SIZE,
+		height: SIZE,
+		pixels: toBase64(pixels),
+		errors,
+	};
 });

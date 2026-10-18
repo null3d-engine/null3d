@@ -8,12 +8,12 @@ declare global {
 		/** The folder of the sample files, when a build sets it. */
 		readonly VITE_NULL3D_SAMPLES_BASE?: string;
 	}
-	interface ImportMeta {
-		readonly env: ImportMetaEnv;
-	}
 }
 
-const base = import.meta.env.VITE_NULL3D_SAMPLES_BASE ?? '/samples/';
+// The environment is read through a cast, so the file does not redeclare `import.meta.env` and
+// clash with a bundler's own declaration of it.
+const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+const base = env?.VITE_NULL3D_SAMPLES_BASE ?? '/samples/';
 
 /**
  * The address of a sample file. Name the file with a string literal, so the sample check can read

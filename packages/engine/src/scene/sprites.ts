@@ -11,7 +11,7 @@
 // this module the engine's geometry and materials.
 
 import * as C from '../generated/core';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type {
 	ObjectEventHandler,
 	ObjectEventType,
@@ -173,6 +173,15 @@ interface SpriteRows {
 	frames: Uint32Array;
 }
 
+/** The row arrays of a sprite batch that dropped its views, until its next read makes them again. */
+const NO_ROWS: SpriteRows = {
+	positions: new Float32Array(0),
+	sizes: new Float32Array(0),
+	rotations: new Float32Array(0),
+	colors: new Float32Array(0),
+	frames: new Uint32Array(0),
+};
+
 /** What a sprite batch's calls that change rows reach in the core: the instance batch's calls. */
 export interface SpriteBatchRows extends PointerRows {
 	setActiveCount(count: number): void;
@@ -188,7 +197,7 @@ export interface SpriteBatchRows extends PointerRows {
  *
  * @category api/sprites
  */
-export class SpriteBatch {
+export class SpriteBatch implements ViewHolder {
 	private generation = -1;
 	private rows!: SpriteRows;
 	/** @internal The batch's pointer event handlers, from its first `on`. */
@@ -204,7 +213,16 @@ export class SpriteBatch {
 		readonly material: Material<SpriteValues>,
 		/** @internal The instance batch's calls, which a point batch's calls reach too. */
 		readonly batch: SpriteBatchRows,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the row arrays, which the next read makes again. */
+	dropViews(): void {
+		if (this.generation === -1) return;
+		this.generation = -1;
+		this.rows = NO_ROWS;
+	}
 
 	/**
 	 * The row arrays, made again after the engine's memory grew. Sketches read rows every frame, so

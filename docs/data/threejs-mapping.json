@@ -76,8 +76,8 @@
       "three": "renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Custom, Linear) / toneMappingExposure",
       "status": "changed",
       "since": "0.1",
-      "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none' | curveWgsl, exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
+      "target": "post.set({ toneMapping: 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none' | curveWgsl, exposure })",
+      "notes": "The engine default is \"agx-punchy\", AgX with Filament's punchy look; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: AgXToneMapping becomes \"agx\" and ACESFilmicToneMapping \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -165,7 +165,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'scene', camera, writes: 'myTexture', size: [width, height] }); materials.unlit({ map: textures.fromPass(pass) })",
-      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw point and spot lights, but no ambient occlusion and no sky in this version, and a light that only a pass sees casts no shadow there.",
+      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw point and spot lights and the scene's background, unless a clearColor replaces it, and no ambient occlusion, as three.js's render targets draw none. A light that only a pass sees casts no shadow there. A render target the size of the canvas or a share of it takes scale: 1, 0.5 or 0.25 in place of size, and follows the render size. A render target that a ShaderPass fills becomes a full-screen pass: render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, textures }).",
       "docs": "guides/custom-passes",
       "detect": "\\b(WebGL)?RenderTarget\\b|\\.setRenderTarget\\s*\\("
     },
@@ -173,10 +173,10 @@
       "id": "viewports",
       "category": "Renderer and loop",
       "three": "renderer.setViewport / setScissor (split screens, picture in picture)",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "1.0",
       "target": "A scene pass whose texture (textures.fromPass) a mesh or sprites show, for minimaps and picture in picture (0.2)",
-      "notes": "Several full views (scene.createView), such as split screens, come after 1.0.",
+      "notes": "Several full views (scene.createView), such as split screens, come in 1.0.",
       "docs": "guides/multiple-views",
       "detect": "\\.set(Scissor|Viewport)(Test)?\\s*\\("
     },
@@ -245,6 +245,17 @@
       "notes": "Pass three.js's density. Its default there is 0.00025, and null3D's is 0.01. null3D measures the straight-line distance from the camera, where three.js measures the depth along the view. So fog at the screen's corners is a little thicker, and it no longer shifts as the camera turns. null3D mixes the fog in linear color before the tone mapping, as WebGPURenderer does, and as WebGLRenderer does when it draws into a half-float target. Only WebGLRenderer's default 8-bit canvas mixes the fog after the sRGB encoding, so there the same fog looks a little darker at middle distances. Materials opt out with fog: false.",
       "docs": "api/scene",
       "detect": "\\bFogExp2\\b"
+    },
+    {
+      "id": "volumetric-fog",
+      "category": "Scene graph",
+      "three": "VolumeNodeMaterial (webgpu_volume_lighting) / GodRaysEffect",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })",
+      "notes": "three.js has no lit fog in its core. Its webgpu_volume_lighting example marches rays through a box with VolumeNodeMaterial, lit by point and spot lights with shadows. null3D lights the scene's own fog instead, in a grid that follows the camera's view, with the sun's shadow cascades and the point and spot lights' shadows. Drop the box: the fog's density and heightFalloff say where the air holds haze, and its scattering intensity becomes intensity. The god rays effects of add-on libraries blur a mask of the sky toward the sun on the screen. null3D's rays also come from lamps and from shadows off the screen. It draws where the quality setting fogSlices is above 0: Medium and up. On Low the fog keeps its sunGlow.",
+      "docs": "api/scene",
+      "detect": "\\bVolumeNodeMaterial\\b|\\bGodRays(Effect|Pass)?\\b"
     },
     {
       "id": "group",
@@ -459,10 +470,10 @@
       "id": "override-material",
       "category": "Scene graph",
       "three": "scene.overrideMaterial",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "1.0",
       "target": "debug.view('normals' | 'depth' | 'wireframe') while you debug",
-      "notes": "A material override for a whole pass comes after 1.0.",
+      "notes": "A material override for a whole pass comes in 1.0.",
       "docs": "guides/custom-passes",
       "detect": "\\.overrideMaterial\\s*="
     },
@@ -536,10 +547,10 @@
       "id": "cube-camera",
       "category": "Cameras",
       "three": "CubeCamera (dynamic reflections)",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "0.3",
       "target": "A static environment map, or a reflection pass for a flat mirror: render.addPass({ kind: 'reflection', writes, plane }) (0.2)",
-      "notes": "",
+      "notes": "Not built yet. In step 0.3, a reflection probe captures the scene again when the sketch asks, which is what CubeCamera.update does. Until then, use the target.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bCubeCamera\\b"
     },
@@ -561,7 +572,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -583,7 +594,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come in 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -613,12 +624,23 @@
       "id": "rect-light",
       "category": "Lights and shadows",
       "three": "RectAreaLight",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A spot light plus emissive geometry",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createRectAreaLight({ color, intensity, width, height, range })",
+      "notes": "Needs a range, where three.js's light has no end. No RectAreaLightUniformsLib.init() call. The light leaves along -Z, as in three.js. Casts no shadows, as in three.js.",
+      "docs": "api/lights",
       "detect": "\\bRectAreaLight\\b"
+    },
+    {
+      "id": "rect-light-setup",
+      "category": "Lights and shadows",
+      "three": "RectAreaLightUniformsLib / RectAreaLightTexturesLib",
+      "status": "changed",
+      "since": "0.2",
+      "target": "Nothing: the engine loads the area lights' tables with the first area light",
+      "notes": "Remove the init() call.",
+      "docs": "api/lights",
+      "detect": "\\bRectAreaLight(UniformsLib|TexturesLib)\\b"
     },
     {
       "id": "light-probe",
@@ -626,10 +648,32 @@
       "three": "LightProbe / LightProbeGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setEnvironment: diffuse spherical harmonics come with the environment",
-      "notes": "`bunx @null3d/cli assets env` computes them offline.",
-      "docs": "concepts/lighting",
+      "target": "scene.setLightProbeGrid: a grid of irradiance probes lights the scene where a surface stands",
+      "notes": "One LightProbe that lights the whole scene is an environment: scene.setEnvironment takes the diffuse spherical harmonics with the environment map, which `bunx @null3d/cli assets env` computes offline. For light that changes from place to place, bake a grid with bakeProbes and set it with scene.setLightProbeGrid. The grid holds L1 spherical harmonics per probe, where three.js's LightProbeGrid holds L2. The light probe grid section of the scene page shows both calls.",
+      "docs": "api/scene",
       "detect": "\\bLightProbe(Generator)?\\b"
+    },
+    {
+      "id": "light-probe-grid",
+      "category": "Lights and shadows",
+      "three": "LightProbeGrid (addons: a baked grid of L2 irradiance probes)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setLightProbeGrid with a grid that bakeProbes bakes in the sketch",
+      "notes": "three.js's grid stores L2 spherical harmonics per probe. null3D's stores L1, which takes three texture reads per pixel in place of seven. The light keeps its direction, but small bright patches spread a little wider. three.js adds the grid's light to the environment's diffuse light; null3D's grid takes the environment's place. To add it as three.js does, set environmentWeight: 0. Bake the grid again with bakeProbes.",
+      "docs": "api/scene",
+      "detect": "\\bLightProbeGrid\\b"
+    },
+    {
+      "id": "clustered-lights",
+      "category": "Lights and shadows",
+      "three": "ClusteredLighting / ClusteredLightsNode (addons, webgpu_lights_clustered)",
+      "status": "changed",
+      "since": "0.1",
+      "target": "Built in: scene.createPointLight and scene.createSpotLight; the engine clusters every light",
+      "notes": "Delete the add-on and its setup. null3D sorts point and spot lights into clusters on both GPU paths, and they may cast shadows. three.js's add-on takes point lights without shadows, on WebGPU only.",
+      "docs": "api/lights",
+      "detect": "\\bClustered(Lighting|LightsNode)\\b"
     },
     {
       "id": "csm",
@@ -641,6 +685,28 @@
       "notes": "Delete the addon. Its cascades, maxFar and shadowMapSize become the cascades, distance and mapSize settings. The cascades keep still edges as the camera turns, and far cascades draw every few frames, as the farCascadeInterval quality setting says. The fade option is on by default: neighboring cascades blend over a band, which the shadowCascadeBlend quality setting sizes, and fade: false maps to shadowCascadeBlend: 0. The mode setting has no equivalent: the engine's split leans a little more toward the camera than the addon's practical mode, so its near cascade is shorter.",
       "docs": "concepts/shadows",
       "detect": "\\bCSM\\b|csm/CSM"
+    },
+    {
+      "id": "sun-light",
+      "category": "Lights and shadows",
+      "three": "SunLight / SunLightShadow / SunShadowNode (addons)",
+      "status": "changed",
+      "since": "0.1",
+      "target": "scene.createDirectionalLight({ direction, castShadows: true, shadow: { cascades: 2 } })",
+      "notes": "Delete the add-on. The directional light's shadow takes cascades fitted to the camera's view, with a blend between neighbours. SunLight's two cascades become cascades: 2. The CSM entry maps the other settings.",
+      "docs": "concepts/shadows",
+      "detect": "\\bSun(Light|LightShadow|ShadowNode)\\b"
+    },
+    {
+      "id": "screen-space-shadows",
+      "category": "Lights and shadows",
+      "three": "SSSNode / sss() (screen-space shadows)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "Contact shadows of the directional light: scene.createDirectionalLight({ contactDistance })",
+      "notes": "Both search the camera's depth toward the main light for short shadows where objects touch. contactDistance sets their reach in meters, 0.3 by default. They draw where the quality setting contactShadowSteps is above 0, as on High and Ultra.",
+      "docs": "api/lights",
+      "detect": "\\bSSSNode\\b"
     },
     {
       "id": "shadow-params",
@@ -770,7 +836,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform.",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform. Roughness has three.js r187's floor of 0.045. Highlights on small curved shapes widen by Filament's specular anti-aliasing, where three.js adds its own term, so they are a little brighter and narrower there. A normal map that tilts a reflection below the surface fades the environment's reflection, which three.js does not.",
       "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
@@ -780,8 +846,8 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps, and transmission",
-      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, and transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry). Clearcoat, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat and sheen",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), and the clear coat and the sheen (see their entries). Iridescence and anisotropy come in 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
@@ -803,9 +869,42 @@
       "status": "changed",
       "since": "0.2",
       "target": "materials.standard({ transmission, thickness, ior, roughness, attenuationColor, attenuationDistance })",
-      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet, and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
+      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet (they come in 1.0), and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
+    },
+    {
+      "id": "mat-clearcoat",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial clearcoat / clearcoatRoughness / clearcoatNormalScale / clearcoatMap / clearcoatRoughnessMap / clearcoatNormalMap",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ clearcoat, clearcoatRoughness, clearcoatNormalScale, clearcoatMap, clearcoatRoughnessMap, clearcoatNormalMap })",
+      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function.",
+      "docs": "api/materials",
+      "detect": "\\bclearcoat(Roughness|NormalScale|Map|RoughnessMap|NormalMap)?\\b"
+    },
+    {
+      "id": "mat-sheen",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial sheen / sheenColor / sheenRoughness / sheenColorMap / sheenRoughnessMap",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ sheenColor, sheenRoughness, sheenColorMap, sheenRoughnessMap })",
+      "notes": "The same Charlie sheen with three.js's formulas, and glTF's KHR_materials_sheen loads into it. There is no sheen option: give sheenColor times three.js's sheen, which defaults to 0, so a three.js material without sheen shows none and its port leaves the sheen options out. Give a sheen option when you create the material to change it later. sheenColorMap and sheenRoughnessMap must be one texture, with the roughness in alpha, as glTF packs them. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap.",
+      "docs": "api/materials",
+      "detect": "\\bsheen(Color|Roughness|ColorMap|RoughnessMap)?\\b"
+    },
+    {
+      "id": "decal-geometry",
+      "category": "Geometry",
+      "three": "DecalGeometry (addon), with a material that has polygonOffset",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createMesh({ mesh: geometry.box(), material: materials.decal({ map, normalMap, roughness }), position, rotation, scale: size })",
+      "notes": "No geometry is cut: the box projects the material onto every opaque surface inside it, in a pass after the opaque objects, lit by every light and shadow. DecalGeometry's position, orientation and size become the box's position, rotation and scale. The image lies on the box's x and y sides and looks along its z axis, as DecalGeometry lays it. There is no target mesh: the decal marks every opaque surface in its box. polygonOffset, depthWrite: false and transparent: true are not needed. angleFade and edgeFade fade the decal on surfaces that turn away and near the box's ends, where DecalGeometry stretches the image. A batch of boxes with one decal material draws many decals in one draw. Blended surfaces show no decals. Projected texture libraries, such as three-projected-material, become a large decal box.",
+      "docs": "api/materials",
+      "detect": "\\bDecalGeometry\\b"
     },
     {
       "id": "mat-basic",
@@ -901,10 +1000,21 @@
       "three": "transparent / opacity / alphaTest / depthWrite / depthTest / blending / vertexColors / flatShading",
       "status": "changed",
       "since": "0.1",
-      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
+      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply' | 'weighted' (0.2), vertexColors, flatShading",
       "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker.",
       "docs": "api/materials",
       "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
+    },
+    {
+      "id": "oit-pass",
+      "category": "Materials",
+      "three": "oitPass(scene, camera) (OITPassNode)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "alphaMode: 'blend' with blending: 'weighted' on each material that the pass blended",
+      "notes": "The same weighted blended order-independent transparency (McGuire and Bavoil 2013), with three.js's default weight, the paper's equation 9. three.js's pass takes every transparent material of normal blending without transmission; null3D takes the materials that ask for it. Like three.js's pass, the weighted surfaces blend over the other see-through surfaces, test the scene's depth and write none. The coverage sums -log2(1 - alpha) instead of multiplying 1 - alpha, so both targets blend alike, which compatibility mode needs; the result is the same. The layer draws at one sample on every path, where three.js's matches the scene's samples on WebGPU. weightNode has no counterpart. Custom materials do not take it.",
+      "docs": "api/materials",
+      "detect": "\\boitPass\\s*\\(|\\bOITPassNode\\b"
     },
     {
       "id": "mat-side",
@@ -989,8 +1099,8 @@
       "three": "ShadowMaterial (shadow-catcher planes)",
       "status": "direct",
       "since": "0.2",
-      "target": "materials.shadowCatcher({ opacity })",
-      "notes": "Not built yet. Until then, give a plane receiveShadows and a material whose color matches the background.",
+      "target": "materials.shadowCatcher({ color, opacity })",
+      "notes": "The plane shows the main directional light's shadow in the material's color where the shadow falls, and nothing where the light reaches it. The default color is black, as three.js's. Create the mesh with receiveShadows: true, or call setReceiveShadows(true), as the material needs it. Point and spot light shadows do not show on it. The scene's fog leaves it alone. Put the plane just above the surface whose shadows it catches.",
       "docs": "api/materials",
       "detect": "\\bShadowMaterial\\b"
     },
@@ -1064,10 +1174,10 @@
       "id": "tone-mapped-flag",
       "category": "Materials",
       "three": "material.toneMapped = false",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "1.0",
       "target": "Tune the color so that tone mapping gives the value you want, or draw the item in the page's HTML",
-      "notes": "A per-material flag comes after 1.0; tone mapping runs once for the whole image.",
+      "notes": "A per-material flag comes in 1.0. Until then, tone mapping runs once for the whole image.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\btoneMapped\\s*[:=]\\s*false"
     },
@@ -1152,9 +1262,9 @@
       "id": "tex-video",
       "category": "Textures",
       "three": "VideoTexture",
-      "status": "post-1.0",
-      "since": null,
-      "target": "After 1.0: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap)",
+      "status": "changed",
+      "since": "0.3",
+      "target": "In 0.3: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap)",
       "notes": "The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14).",
       "docs": "guides/video-textures",
       "detect": "\\bVideoTexture\\b"
@@ -1364,7 +1474,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.play('walk', { time: 0.4, weight: 0.7 }); anim.setWeight('walk', 0.5); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
-      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. startAt has no counterpart: call play at that time.",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. crossFadeTo and crossFadeFrom map to crossFade, which keeps the weighted blend that three.js shows; it never uses an inertial transition, which samples only the new clip. startAt has no counterpart: call play at that time.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
@@ -1372,10 +1482,10 @@
       "id": "keyframe-tracks",
       "category": "Animation",
       "three": "AnimationClip / KeyframeTrack built in code",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "1.0",
       "target": "Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2)",
-      "notes": "Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes after 1.0.",
+      "notes": "Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes in 1.0.",
       "docs": "api/animation",
       "detect": "\\bAnimationClip\\b|\\b\\w+KeyframeTrack\\b"
     },
@@ -1460,10 +1570,10 @@
       "id": "gizmos",
       "category": "Interaction and controls",
       "three": "TransformControls / DragControls",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "1.0",
       "target": "Dragging with scene.raycast against a plane",
-      "notes": "Gizmos come after 1.0.",
+      "notes": "Gizmos come in 1.0.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\b(Transform|Drag)Controls\\b"
     },
@@ -1556,15 +1666,48 @@
       "detect": "\\b(SSAO|SAO|GTAO|N8AO)(Pass|PostPass)?\\b"
     },
     {
+      "id": "ssgi",
+      "category": "Post-processing",
+      "three": "SSGINode / ssgi() (bounce light from the screen) / VXGINode",
+      "status": "changed",
+      "since": "0.2",
+      "target": "A light probe grid for bounce light (scene.setLightProbeGrid), with ambient occlusion (post.set({ ao }))",
+      "notes": "null3D has no bounce light from the screen and no voxel cone tracing. The probe grid gives coloured bounce light everywhere, from objects off the screen too, at a fixed cost per pixel. Light from moving objects reaches it only when the sketch bakes it again.",
+      "docs": "api/scene",
+      "detect": "\\b(SSGI|VXGI)Node\\b|\\bssgi\\s*\\("
+    },
+    {
       "id": "aa-passes",
       "category": "Post-processing",
       "three": "FXAAPass / FXAAShader / SMAAPass / TAARenderPass / SSAARenderPass",
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
-      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA and SSAA have no equivalent. TAA comes after 1.0.",
+      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA, SSAA and TAA have no equivalent.",
       "docs": "concepts/quality-presets",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
+    },
+    {
+      "id": "temporal-aa",
+      "category": "Post-processing",
+      "three": "TRAANode / traa() / TAAUNode / TemporalReprojectNode",
+      "status": "changed",
+      "since": "0.1",
+      "target": "MSAA, which the quality presets take from Medium up, with FXAA on Low",
+      "notes": "null3D has no temporal anti-aliasing and no temporal upscaler. Drop the node and keep the scene's MSAA, which TAAUNode had to turn off. For speed on phones, the governor lowers the render scale, and the final pass scales the image up.",
+      "docs": "concepts/quality-presets",
+      "detect": "\\b(TRAA|TAAU|TemporalReproject)Node\\b|\\btraa\\s*\\("
+    },
+    {
+      "id": "fsr1",
+      "category": "Post-processing",
+      "three": "FSR1Node / fsr1() (spatial upscale and sharpening)",
+      "status": "changed",
+      "since": "0.1",
+      "target": "The render scale: quality.set({ minRenderScale, maxRenderScale })",
+      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up. It has no FSR 1 pass and no separate sharpening.",
+      "docs": "api/quality",
+      "detect": "\\bFSR1Node\\b|\\bfsr1\\s*\\("
     },
     {
       "id": "outline",
@@ -1573,7 +1716,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true)",
-      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. One outline style covers every outlined object.",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. For OutlinePass's soft glow, a full-screen pass reads the mask with input: 'outlineMask', at scale 0.5, and an effect adds its texture to the scene color; width: 0 drops the crisp line (guides/custom-passes, a soft outline glow). One outline style covers every outlined object.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },
@@ -1589,13 +1732,24 @@
       "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b|\\bdof\\s*\\("
     },
     {
+      "id": "auto-exposure",
+      "category": "Post-processing",
+      "three": "None built in; pmndrs ToneMappingEffect with ToneMappingMode.REINHARD2_ADAPTIVE (adaptationRate, middleGrey), AdaptiveLuminancePass, AdaptiveToneMappingPass",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ autoExposure: { metering, percentiles, centerWeight, speedUp, speedDown, minEv, maxEv, compensation } })",
+      "notes": "three.js has no automatic exposure; renderer.toneMappingExposure stays post.set({ exposure }), and the eye adapts from it. pmndrs's adaptive tone mapping becomes autoExposure with metering: 'mean'. Its adaptationRate becomes about speedUp and speedDown, and its middleGrey the compensation, log2(middleGrey / 0.18) stops. Its Reinhard curve becomes a custom tone curve. The meter runs on the GPU in the same frame: a histogram on WebGPU, or 16 x 16 cells on WebGL2 and the Low preset (quality setting exposureMeter). It weights the center, adapts at its own speeds for brighter and darker scenes, and stays within minEv and maxEv, in stops from the camera's exposure. Hold mode settles at once, so image tests stay the same. It needs HDR color, as bloom does.",
+      "docs": "api/post",
+      "detect": "\\bREINHARD2_ADAPTIVE\\b|\\bAdaptive(Luminance|ToneMapping)Pass\\b|\\badaptationRate\\b"
+    },
+    {
       "id": "shader-pass",
       "category": "Post-processing",
       "three": "ShaderPass (custom full-screen GLSL)",
       "status": "manual",
       "since": "0.2",
-      "target": "post.addEffect({ wgsl, uniforms, order })",
-      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). The engine joins effects that read only their own pixel into one pass. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters.",
+      "target": "post.addEffect({ wgsl, uniforms, textures, order }), or render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale }) for a pass that writes a render target of its own",
+      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). The engine joins effects that read only their own pixel into one pass. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters. Other textures of the shader become var name: texture_2d<f32> with the textures option; sample a render pass's texture at effectPassUv(input.uv). A ShaderPass that writes a render target of its own, which a later pass reads, becomes a full-screen pass, with its input image as input: 'sceneColor', or a texture.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bShaderPass\\b"
     },
@@ -1606,7 +1760,7 @@
       "status": "manual",
       "since": "0.2",
       "target": "A custom effect for each, with post.addEffect",
-      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. Effects take no textures, so GlitchPass's random texture becomes noise from null3d::noise. AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
+      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. GlitchPass's random texture becomes a texture of the effect, from textures.fromData, or noise from null3d::noise. AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\b(Film|Glitch|Halftone|Afterimage|DotScreen|RenderPixelated|Bleach|Sobel)(Pass|Shader)\\b"
     },
@@ -1628,19 +1782,19 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ vignette: { intensity, size, falloff, roundness } })",
-      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; the default falloff of 2 and roundness of 0 give a close match. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
+      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; under ACES the default falloff of 2 and roundness of 0 give a close match, and under AgX intensity stays at 1 or less with a falloff of 3. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bVignette(Shader|Effect)\\b"
     },
     {
       "id": "ssr",
       "category": "Post-processing",
-      "three": "SSRPass / ReflectorForSSRPass",
+      "three": "SSRPass / ReflectorForSSRPass / ssr() node",
       "status": "changed",
       "since": "0.2",
-      "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
-      "notes": "Not built yet. Until then, a flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
-      "docs": "porting/threejs-unsupported",
+      "target": "post.set({ ssr: { maxDistance, thickness, intensity } }) with quality.set({ ssrScale })",
+      "notes": "Reflects what the screen shows in smooth opaque surfaces, in place of the environment's reflection, through the material's Fresnel term, where SSRPass adds its reflections over the finished image. maxDistance and thickness keep their names, and opacity becomes intensity. The material's roughness picks the surfaces and blurs their reflections, up to maxRoughness, so selects and blur have no settings. A groundReflector (ReflectorForSSRPass) becomes a reflection pass, which wins on its plane. The ssr() node's resolutionScale becomes the ssrScale quality setting, which is 0 on the Low preset of phones, and its quality becomes ssrSteps, the most steps of each ray. Where a ray hits nothing on the screen, the environment's reflection shows.",
+      "docs": "api/post",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
     {
@@ -1650,7 +1804,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
-      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. A water add-on that does this work for rivers and lakes comes in step 0.3. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
       "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },
@@ -1661,9 +1815,20 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
-      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other.",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other. For a physical sky with ozone, twilight and haze on distant objects, move to `{ atmosphere }`, which looks different from three.js's sky.",
       "docs": "api/scene",
       "detect": "new\\s+Sky(Mesh)?\\s*\\("
+    },
+    {
+      "id": "atmosphere",
+      "category": "Post-processing",
+      "three": "A physical sky and aerial perspective (add-ons such as @takram/three-atmosphere: SkyMaterial, AerialPerspectiveEffect)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setBackground({ atmosphere: { sunPosition, sunIntensity, rayleigh, haze, ozone, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, ... } })",
+      "notes": "The engine's own physical sky, from Hillaire's lookup tables, with no files to load. One background call draws the sky and hazes every object by its distance, so drop the sky mesh, the precomputed textures and the aerial perspective effect. Set metersPerUnit to the scene's scale, and aerialPerspective above 1 to make a small scene look larger. The sun's light is in the units of a directional light: aim the scene's light at the sun yourself, or take it from timeOfDay(hours, { model: 'physical' }). The sky lights nothing by itself: scene.setEnvironment(await assets.skyEnvironment()) follows it. The Low preset draws the analytic sky in its place.",
+      "docs": "api/scene",
+      "detect": "new\\s+(SkyMaterial|AerialPerspectiveEffect|StarsMaterial)\\s*\\("
     },
     {
       "id": "lensflare",
@@ -1721,13 +1886,35 @@
       "detect": "new\\s+(THREE\\.)?(Line|LineSegments|LineLoop|Line2|LineSegments2)\\s*\\(|\\bLine(Basic|Dashed)?Material\\b|\\bLineGeometry\\b"
     },
     {
+      "id": "particles",
+      "category": "Sprites, points, lines and labels",
+      "three": "Points or InstancedMesh particles moved on the CPU / three.quarks ParticleSystem / three-nebula",
+      "status": "changed",
+      "since": "0.2",
+      "target": "await createParticles(ctx, { rate, bursts, lifetime, shape, speed, gravity, drag, wind, turbulence, size, colors, alphaOverLife, blending, map, flipbook }) from @null3d/particles; system.update() in onLateUpdate",
+      "notes": "three.js has no particle system. A port replaces the loop that moves Points or InstancedMesh rows with an emitter whose particles the GPU moves in closed form: gravity, drag toward the wind, turbulence and a ground that bounces them. Write the effect's look as curves over life in place of per-frame color and size code. AdditiveBlending becomes blending 'additive'; particles never write depth. A sprite atlas becomes map with flipbook. three.quarks's sub-emitters become subEmitters on 'death' or 'ground'. A system does not sort its own particles, cast shadows or take light.",
+      "docs": "api/particles",
+      "detect": "\\b(ParticleSystem|BatchedRenderer|ParticleEmitter)\\b|three\\.quarks|three-nebula"
+    },
+    {
+      "id": "terrain",
+      "category": "Geometry",
+      "three": "A PlaneGeometry displaced on the CPU, with heights from ImprovedNoise or a height map",
+      "status": "changed",
+      "since": "0.2",
+      "target": "createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
+      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centred quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
+      "docs": "api/terrain",
+      "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
+    },
+    {
       "id": "css-renderers",
       "category": "Sprites, points, lines and labels",
       "three": "CSS2DRenderer / CSS3DRenderer (HTML labels)",
       "status": "changed",
       "since": "0.2",
       "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element)",
-      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center or rotation2D. CSS3D transforms come after 1.0.",
+      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center or rotation2D. CSS3D transforms come in 1.0.",
       "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },
@@ -1735,12 +1922,23 @@
       "id": "xr",
       "category": "Other",
       "three": "WebXR (renderer.xr, VRButton, ARButton)",
-      "status": "unsupported",
+      "status": "post-1.0",
       "since": null,
       "target": "None",
-      "notes": "XR is out of scope for version 1.",
+      "notes": "WebXR is not in version 1. It comes after 1.0.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\.xr\\.|\\b(VR|AR|XR)Button\\b|XRControllerModelFactory"
+    },
+    {
+      "id": "gaussian-splat",
+      "category": "Other",
+      "three": "GaussianSplat / GaussianSplatPLYLoader / SPZLoader / SPLATLoader / KSPLATLoader (addons)",
+      "status": "changed",
+      "since": "0.3",
+      "target": "The Gaussian splats add-on",
+      "notes": "Not built yet. A splats add-on comes in step 0.3, with detail levels, streaming, a splat budget and depth mixing with meshes. It reads KHR_gaussian_splatting glTF files and SPZ files.",
+      "docs": "porting/threejs-unsupported",
+      "detect": "\\bGaussianSplat\\w*\\b|\\b(SPZ|SPLAT|KSPLAT)Loader\\b"
     },
     {
       "id": "audio",

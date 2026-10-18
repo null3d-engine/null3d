@@ -1,17 +1,22 @@
 #define_import_path null3d::tonemap
 #ifdef HALF
-#import null3d::half::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_neutral}
+#import null3d::half::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_agx_punchy}
+#import null3d::half::{tone_map_neutral}
 #else
-#import null3d::color::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_neutral}
+#import null3d::color::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_agx_punchy}
+#import null3d::color::{tone_map_neutral}
 #endif
 #import null3d::color::{limit_hdr}
 #import null3d::noise
 
 // The output transform: tone mapping, sRGB encoding and dithering. The final pass applies it to
 // the scene color, and dithers last, after its other steps. On the 8-bit path each fragment shader
-// applies it itself. The tone mapping curves come from the color module, which follows three.js's
-// formulas, so a scene looks as it does in three.js with the same curve and exposure. The HALF builds take the curves and the sRGB
-// encoding from the half precision module instead.
+// applies it itself. The vignette darkens light before the tone mapping on both paths: in the
+// final pass on the HDR path, and in each fragment shader on the 8-bit path. The tone mapping
+// curves come from the color module, which follows three.js's formulas, so a scene looks as it
+// does in three.js with the same curve and exposure. AgX's punchy look is Filament's, which
+// three.js does not offer. The HALF builds take the curves and the sRGB encoding from the half
+// precision module instead.
 //
 // The scene's color is exposed color: the exposure scales each light where it starts, not the
 // scene color at the end. The core multiplies it into the frame's lights, its fog color and its
@@ -24,6 +29,7 @@ const ACES: u32 = 0u;
 const AGX: u32 = 1u;
 const NEUTRAL: u32 = 2u;
 const NONE: u32 = 3u;
+const AGX_PUNCHY: u32 = 4u;
 
 /// How the output maps scene color to the display: the exposure, which scene shaders multiply into
 /// the colors of materials and textures, and the tone mapping, by code. Only the final pass reads
@@ -41,6 +47,9 @@ struct Output {
 fn tone_map(exposed: vec3f, settings: Output) -> vec3f {
     if settings.tone_mapping == AGX {
         return tone_map_agx(exposed);
+    }
+    if settings.tone_mapping == AGX_PUNCHY {
+        return tone_map_agx_punchy(exposed);
     }
     if settings.tone_mapping == NEUTRAL {
         return tone_map_neutral(exposed);
@@ -72,13 +81,29 @@ fn encode(c: vec3f, pixel: vec2f) -> vec3f {
     return linear_to_srgb(c) + dither(pixel);
 }
 
+/// The vignette's factor at `pixel` of a picture of `size` pixels, for the intensity, size,
+/// falloff and roundness in `shape`: 1 at the center, falling toward the edges by the intensity.
+/// The place from the center is scaled by the size, and across by the picture's shape as the
+/// roundness sets it: 0 follows the picture, 1 makes a circle. An intensity of 0 gives 1.
+fn vignette(pixel: vec2f, size: vec2f, shape: vec4f) -> f32 {
+    if shape.x <= 0.0 {
+        return 1.0;
+    }
+    var d = (pixel / size - 0.5) * shape.y;
+    d.x *= mix(1.0, size.x / size.y, shape.w);
+    // The smallest value keeps the power's logarithm finite at the edges, on every GPU.
+    let light = pow(max(1.0 - dot(d, d), 1e-6), shape.z);
+    return max(mix(1.0 - shape.x, 1.0, light), 0.0);
+}
+
 /// The color that a scene shader writes for exposed linear color `c` at framebuffer position
-/// `pixel`: `c` itself into the HDR scene color, which the final pass tone maps, or on the 8-bit
-/// path (the TONE_MAP builds), `c` after the output transform that `settings` sets, encoded for
-/// the canvas. The HDR scene color takes `c` no brighter than the 16-bit float target holds.
-fn finish(c: vec3f, pixel: vec2f, settings: Output) -> vec4f {
+/// `pixel` of a target of `size` pixels: `c` itself into the HDR scene color, which the final pass
+/// tone maps, or on the 8-bit path (the TONE_MAP builds), `c` darkened by the vignette of `shape`
+/// and after the output transform that `settings` sets, encoded for the canvas. The HDR scene
+/// color takes `c` no brighter than the 16-bit float target holds.
+fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -> vec4f {
 #ifdef TONE_MAP
-    return vec4f(encode(tone_map(c, settings), pixel), 1.0);
+    return vec4f(encode(tone_map(c * vignette(pixel, size, shape), settings), pixel), 1.0);
 #else
     return vec4f(limit_hdr(c), 1.0);
 #endif

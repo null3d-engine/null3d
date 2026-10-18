@@ -166,6 +166,7 @@ h3 span { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .counts small { font-size: 11px; color: #5b6573; }
 .heading { font-size: 11px; }
 .held { font-size: 12px; font-weight: 600; color: var(--bad-text); }
+.update-error-line { font-size: 12px; font-weight: 600; color: var(--bad-text); }
 @media (prefers-reduced-motion: reduce) { .chevron, .tip { transition: none; } }
 `;
 
@@ -707,6 +708,7 @@ export class StatsCard {
 	private readonly gpu: Lane;
 	private readonly lanes: readonly Lane[];
 	private readonly heldBack: { element: HTMLElement; text: Text };
+	private readonly updateError: { element: HTMLElement; text: Text };
 	private readonly memoryTotal: Text;
 	private readonly memoryParts: Part[] = [];
 	private readonly memoryKeys: LegendItem[] = [];
@@ -746,6 +748,8 @@ export class StatsCard {
 		this.gpu = new Lane(lanes, 'gpu', 'GPU', 'gpu');
 		this.lanes = [this.both, this.sketch, this.drawing, this.jobs, this.page, this.gpu];
 		this.heldBack = figure('div', 'held-back', work, 'held');
+		this.updateError = figure('div', 'update-error', work, 'update-error-line');
+		this.updateError.element.hidden = true;
 		const memory = element('div', '', card);
 		const heading = element('h3', '', memory);
 		heading.append('Memory');
@@ -802,6 +806,14 @@ export class StatsCard {
 		const held = !waiting && rateLevel(figures.presentedFps, target) !== 'ok';
 		this.heldBack.element.hidden = !held;
 		if (held) setText(this.heldBack.text, `Held back by: ${threads.heldBackBy(targetMs, gpuMs)}`);
+		// A scene whose update threw still presents, so the rates hide it. A red line names it.
+		const failed = figures.updateErrors ?? 0;
+		this.updateError.element.hidden = failed <= 0;
+		if (failed > 0)
+			setText(
+				this.updateError.text,
+				`The scene's update failed in ${Math.round(failed)} of the last ${figures.frames} frames: the frames still present.`,
+			);
 		this.updateMemory(figures);
 		setText(this.draws, `${Math.round(figures.drawCalls)}`);
 		setText(this.triangles, count(figures.triangles));

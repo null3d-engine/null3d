@@ -29,7 +29,13 @@ import {
 import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
-import { docsFiles, readIfExists } from './files';
+import { docsFiles, readIfExists, walkFiles } from './files';
+import {
+	FIRST_USE_PAGE_ID,
+	firstUsePage,
+	firstUseProblems,
+	manifestFeatures,
+} from './first-use-docs';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
@@ -115,6 +121,9 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
 	{ id: 'api/points', title: 'Points', since: '0.2', summary: 'createPoints; size attenuation; textures.' },
 	{ id: 'api/lines', title: 'Lines', since: '0.2', summary: 'createLines; pixel and world widths; dashes; edges from meshes.' },
+	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
+	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', since: '0.2', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
+	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
 	{ id: 'api/ui', title: 'UI overlays and labels', since: '0.2', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
 	{ id: 'api/page', title: 'Messages between sketch and page', since: '0.1', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
 
@@ -126,10 +135,10 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
 	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
 	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', since: '0.2', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
-	{ id: 'guides/video-textures', title: 'Video textures', since: 'after 1.0', summary: 'Planned after 1.0. Until then, the page sends ImageBitmap frames to the sketch; browser limits.' },
+	{ id: 'guides/video-textures', title: 'Video textures', since: '0.3', summary: 'engine.registerVideo and textures.fromVideo; until then, the page sends ImageBitmap frames to the sketch; browser limits.' },
 	{ id: 'guides/audio', title: 'Audio with Web Audio', since: '0.1', summary: 'Why audio stays on the page; sending positions from the sketch.' },
 	{ id: 'guides/physics', title: 'Using a physics library', since: '0.1', summary: 'Running Rapier or cannon-es in the sketch worker; copying transforms.' },
-	{ id: 'guides/multiple-views', title: 'Multiple views', since: 'after 1.0', summary: 'Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes.' },
+	{ id: 'guides/multiple-views', title: 'Multiple views', since: '1.0', summary: 'Split screens with scene.createView, in 1.0; minimaps work from 0.2 through render-to-texture passes.' },
 	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
@@ -317,6 +326,25 @@ ${PLACEHOLDER_MARKER}
 
 This page will cover: ${page.summary}
 ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
+}
+
+/**
+ * Maintainer guides that AGENTS.md's table of paths or the guides' own README does not link: each
+ * Markdown file directly in `.dev/`, apart from the README and the generated tables.
+ */
+export function guideListProblems(root: string): string[] {
+	const guides = walkFiles(root, '.dev', (path) => /^\.dev\/[^/]+\.md$/.test(path)).filter(
+		(path) => path !== '.dev/README.md' && path !== RECORD_TABLES_PAGE,
+	);
+	const agents = readIfExists(root, 'AGENTS.md') ?? '';
+	const readme = readIfExists(root, '.dev/README.md') ?? '';
+	return guides.flatMap((path) => {
+		const name = path.slice('.dev/'.length);
+		return [
+			...(agents.includes(`(${path})`) ? [] : [`AGENTS.md's row of .dev/ does not link ${path}`]),
+			...(readme.includes(`(${name})`) ? [] : [`.dev/README.md does not list ${path}`]),
+		];
+	});
 }
 
 /** Problems with the shader library's modules that keep its page from being right. */
@@ -552,6 +580,7 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 			libraryPage(readLibrary(root).modules, library.title, library.summary),
 		);
 	out.set(pagePath(PRESET_TABLES_ID), presetTablesPage());
+	out.set(pagePath(FIRST_USE_PAGE_ID), firstUsePage(manifestFeatures(root)));
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
@@ -650,7 +679,12 @@ export function checkDocs(root: string): string[] {
 	let generated = new Map<string, string>();
 	try {
 		const api = readApi(root);
-		problems.push(...referenceProblems(api), ...libraryProblems(root));
+		problems.push(
+			...referenceProblems(api),
+			...libraryProblems(root),
+			...firstUseProblems(manifestFeatures(root)),
+			...guideListProblems(root),
+		);
 		generated = generateDocs(root, api);
 		problems.push(...readRecord(recordFiles(root)).problems);
 	} catch (e) {

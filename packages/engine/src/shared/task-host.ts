@@ -9,6 +9,14 @@
 export interface JobTaskHost {
 	/** One port to each job worker, by its index. */
 	ports: readonly MessagePort[];
+	/**
+	 * The indices of the job workers that run, once the page has said which of them started. The page
+	 * leaves out a worker whose script or its core did not load, and the loader then sends it no
+	 * task: such a worker never answers, and a task that waits for it stops the page that asked.
+	 * Undefined until the page's first word, when every worker the thread asked for counts as
+	 * running. `tasks.ts` decides which of them take tasks.
+	 */
+	running?: readonly number[];
 	/** Asks job worker `index` to leave the job loop for one more task, once no frame work waits. */
 	call(index: number): void;
 	/**
@@ -16,6 +24,18 @@ export interface JobTaskHost {
 	 * of those workers take tasks. The page starts the job workers only as the work asks for them.
 	 */
 	want(count: number): number;
+}
+
+/**
+ * The job workers that take this thread's tasks, out of `running` and the `asked` count of workers
+ * the thread has asked the page for. With two or more job workers the first stays in the job loop
+ * for the frames, so it takes none. Before the page has said which workers run, every worker the
+ * thread asked for counts, as a thread with job workers always had.
+ */
+export function taskTakers(running: readonly number[] | undefined, asked: number): number[] {
+	const workers = running ?? Array.from({ length: asked }, (_, index) => index);
+	const below = workers.filter((index) => index < asked);
+	return below.length > 1 ? below.slice(1) : below;
 }
 
 /**

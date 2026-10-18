@@ -24,8 +24,9 @@
 //   --network <list>    slow-4g, full: slow-4g on this computer, both on a phone
 //   --switches <query>  more page switches for every load, such as jobs=4
 //   --android           Chrome on the Android phone connected by USB
-import { chromium } from '@playwright/test';
+import { launchChromium } from '../packages/cli/src/browser.js';
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
+import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
 import { ENGINE_MODES, type EngineMode } from '../tests/lib/engine-checks.ts';
 import {
 	LOAD_KINDS,
@@ -209,7 +210,8 @@ interface Driven {
 
 /** Chrome on this computer, with a fresh profile, so its caches start empty. */
 async function macChrome(): Promise<Driven> {
-	const browser = await chromium.launch({
+	refuseBackgroundPriority();
+	const browser = await launchChromium({
 		channel: 'chrome',
 		args: ['--enable-unsafe-webgpu', `--remote-debugging-port=${DEBUG_PORT}`],
 	});

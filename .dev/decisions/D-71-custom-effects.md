@@ -161,7 +161,7 @@ On the cloud Pixel 10 (PowerVR D-Series, Chrome 149), the plan passed 10 of 10 p
    - Core WebGPU with MSAA reads sample 0 of the multisampled depth, through a build with the `DEPTH_MULTISAMPLED` permutation bit (262144) and the layout `EFFECT_DEPTH_MS` (22).
    - Compatibility mode reads depth as unfilterable floats with `textureLoad`, through the layout `EFFECT` (21).
    - WebGL2 reads a copy of one sample of a multisampled depth, which the backend keeps as it does for ambient occlusion.
-4. Uniforms: a `struct Uniforms` of up to 32 floats, packed as custom materials pack theirs ([D-32](D-32-typed-uniforms.md)), read as `uniforms.name`. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects take no textures yet: a texture input needs the `textures.fromPass` work of custom passes, and the same bind group for both GPU paths.
+4. Uniforms: a `struct Uniforms` of up to 32 floats, packed as custom materials pack theirs ([D-32](D-32-typed-uniforms.md)), read as `uniforms.name`. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects took no textures at first: a texture input needed the `textures.fromPass` work of custom passes, and the same bind group for both GPU paths. Since part 2 of [D-104](D-104-scene-passes.md) (12 October 2026), an effect takes up to six textures, as a custom material does.
 5. The tone-curve hook: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, passed as `post.set({ toneMapping })`. The plugin builds it into every non-`HALF` variant of the final pass. The final pass calls it in place of the built-in curves and clamps its result to 0 to 1. A curve takes no uniforms.
 6. A custom curve and effects need HDR color, as bloom does ([D-21](D-21-effect-chain.md), decision 2). On the 8-bit path that serves only MSAA, the first effect or custom curve moves the engine to HDR color with FXAA, for its life. Where the device has no HDR target in any mode, effects and the custom curve stay off. The built-in curve stays, and development builds warn once.
 7. Errors reuse the custom material codes. E1215 is for WGSL that the plugin did not compile as an effect or a curve, and E1216 for a wrong uniform. A ninth effect throws E1213. An order that is not a number throws E1203, and a uniform set on a removed effect E1101.
@@ -237,3 +237,14 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 - New claims: this record, the layouts `EFFECT` (21) and `EFFECT_DEPTH_MS` (22), and the permutation bit `DEPTH_MULTISAMPLED` (262144).
 - The effect cost page gains `effect=effects`, and the device runner gains the `effects` plan.
 - Docs: `api/post`, `concepts/post-processing`, `guides/custom-passes`, `porting/threejs-postprocessing` and the mapping entries `ShaderPass` and `FilmPass / GlitchPass / ...`. Skills: both skills' `shaders.md`, the port skill's `post-processing.md`, and the develop skill's recipes and quick reference.
+
+## Addendum, 15 October 2026: the joins never built on WebGL2
+
+The joins above did not run on WebGL2, on any device, from the day they shipped. The engine writes a
+joined chain into the group host's built shader at run time, and it wrote that text in the structure
+form, naming `EffectInput`. The WebGL2 build removes every structure parameter, one parameter for
+each member, which the Adreno 619's driver needs ([driver bugs](../driver-bugs.md)). So the chain's
+calls fitted no function, and the driver refused the whole shader with "'fx74470501_effect_piece_main'
+: no matching overloaded function found". The engine then drew each effect in a pass of its own, so
+the images still matched and the fault stayed hidden. D-167's addendum records the fix, the check
+that refuses such a call, and its evidence. The joins now run at every render scale.
