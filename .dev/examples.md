@@ -331,6 +331,18 @@ Factory:
 
 Against the old pictures the drawn ones differ in 3.8% to 5.8% of their pixels for the Battle tests. They differ in 7.6% to 12.8% of their pixels for the Factory tests, against the limit of 0.1%. The references moved in both sets. The image tests' time limit rose to 600 seconds for both comparisons, because the lens grade and the decals cost the software GPU more.
 
+### The Night town upgrade for its comparison (M2-EX43, 19 October 2026)
+
+Night town took the Rive City touches that D-172 gives it. As in the other comparisons, one description draws the same content in both halves at the same simulation time.
+
+- A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. Its settings are softer than Battle's, because the town is dark and its lights are small. It runs on the linear light before bloom and tone mapping in both engines, and it is a switch.
+- Every lit window shows a room behind its glass. The eye's ray reaches the back wall and the side walls of a box that starts at the glass. A window thus shows more of its room from the side of the street than from in front. The window boxes and the room's depth come from the scene description. null3D draws it in the facade's WGSL surface function. three.js draws it in the GLSL it adds to `MeshStandardMaterial`, and in the node material on WebGPURenderer. The rooms multiply the window's light, so an unlit window stays dark.
+- Flying cars cross the sky above the streets: four lanes, two heights and four cars a lane. The scene description gives each car's place and turn from the simulation time. Both engines draw them as batches in both modes, so they add no parts to the measured scene graph. Their nose and tail strips are emissive, with a halo in each car's layer of glows. They add no lights, so the count keeps its meaning.
+- The power-on wave stays out. It would set the intensity of every lamp, sign and car light each frame for its first seconds. Those thousands of lights are what the comparison's ramp measures. Factory shows the wave with its five spot lights.
+- The LCD screens stay out. Factory took the LCD technique this task. Night town's shop windows already show shelves, neon and the room's depth, where a screen would replace the window that the touch before it adds.
+- The reflection probes wait for M2-EX32. The page's effect list reserves the switch after the lens grade, and no half reads it yet.
+- The cars' halos, the rooms and the lens grade change every held picture. Against the old pictures the drawn ones differ in 9.6% to 11.0% of their pixels, against the limit of 0.1%. The references moved in both sets. The held frame stays at 3 seconds and 96 lights, and SwiftShader still draws 24.
+
 ### The stats panel of three.js
 
 `examples/lib/stats-three.ts` measures three.js as the engine's overlay measures null3D, and shows the figures in the same panel, `StatsPanel` from `@null3d/engine/stats`. The worker times its frames, splits each into the scene's code and three.js's render calls, and counts draws, triangles and instances through `renderer.info`. The GPU time comes from WebGL2's timer queries or WebGPURenderer's timestamps, where the page starts with the panel open. The page adds its own heap and the whole page's memory with the overlay's calls. three.js reports no GPU bytes, so the card leaves those out and names the counts of geometries and textures in its last line.

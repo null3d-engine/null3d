@@ -79,8 +79,12 @@ export interface Comparison {
 const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', 'grade'];
 /** A scene with the lens grade on its light. */
 const LENS_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens'];
-/** Night town's effects: every one it draws. */
-const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'reflections', 'particles'];
+/**
+ * Night town's effects: every one it draws. The reflection probes' switch joins after `lens` when
+ * M2-EX32 lands: the page then shows one more switch, and each half reads `effects.probes` where
+ * it builds the town.
+ */
+const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens', 'reflections', 'particles'];
 
 export const COMPARISONS: readonly Comparison[] = [
 	{
@@ -188,6 +192,9 @@ export const COMPARISONS: readonly Comparison[] = [
 			"null3D lists the point and spot lights near each part of the view in clusters, on WebGPU and WebGL2. three.js's WebGPURenderer does the same for point lights with its ClusteredLighting add-on, and shades every spot light in every pixel. three.js's WebGLRenderer shades every light in every pixel, in one shader, which holds only so many lights.",
 			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
 			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
+			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
+			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. Both engines draw it in the facade shade, from the same window boxes and the same room depth.",
+			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines and modes. Their lights are emissive strips, so they add no lights to the count.',
 		],
 		effects: NIGHT_EFFECTS,
 	},
