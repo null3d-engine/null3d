@@ -166,15 +166,30 @@ const CASES: Record<string, (context: SketchContext) => SketchCallbacks | void> 
 	},
 	lod_fade: fadingLevels,
 	// A pick draws the scene into the pass's id target, whose builds load with its first call. The
-	// call waits for the frame loop, so the case asks on the first frame: a pick during setup has
-	// no frame to draw it and answers with a ray, which loads no shader.
-	picking: ({ scene }) => {
+	// call needs a frame that the camera has drawn, so the case asks on the frame after the first
+	// one: a pick during setup has none and answers with a ray, which loads no shader. The live
+	// first-use page hears the outcome, and a later update throws the error the runner reports.
+	picking: ({ scene, page, time }) => {
 		let picked = false;
+		let failure: unknown = null;
 		return {
 			onUpdate() {
-				if (picked) return;
+				if (failure !== null) {
+					const error = failure;
+					failure = null;
+					throw error;
+				}
+				if (picked || time.frame < 2) return;
 				picked = true;
-				void scene.pick(160, 90).catch(() => {});
+				void scene.pick(160, 90).then(
+					() => page.post('picked', {}),
+					(error: unknown) => {
+						failure = error;
+						page.post('picked', {
+							error: error instanceof Error ? error.message : String(error),
+						});
+					},
+				);
 			},
 		};
 	},

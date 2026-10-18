@@ -390,6 +390,13 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 };
 
 /**
+ * The features whose first use needs frames that the engine draws, which hold mode has none of. A
+ * pick asked before any draw answers by ray and loads no shader, so picking runs on a live page
+ * that the sketch tells when its pick has settled. The guide says why it differs.
+ */
+const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
+
+/**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
  * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
  * index-only instance data and culls by occlusion on the GPU, and only WebGPU copies a view's
@@ -437,9 +444,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const sketch =
 				FIRST_USE_SKETCHES[feature] ??
 				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
-			await page.goto(
-				`image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`,
-			);
+			const address = FIRST_USE_LIVE.has(feature)
+				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
+				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
+			await page.goto(address);
 			const result = await pageResult<{ error?: string }>(page, FIRST_USE_WAIT_MS);
 			expect(result.error).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
