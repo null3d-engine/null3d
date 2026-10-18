@@ -56,6 +56,7 @@ use crate::materials::{
     blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
+use crate::motion;
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::particles::ParticleTable;
@@ -421,6 +422,10 @@ pub trait FrameBuilder {
     /// graph makes its targets again, and every pipeline that draws into them changes, so the caller
     /// rebuilds the draw tables. The canvas keeps its transparency.
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias);
+    /// Says whether the device draws the motion target with one sample, and with MSAA's samples,
+    /// as the page's test of its float targets found. Every device draws it until this says
+    /// otherwise.
+    fn allow_motion(&mut self, one_sample: bool, multisampled: bool);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
     /// How still the camera's view is: the frames it has accumulated, from 0 while it moves. The
@@ -2782,6 +2787,37 @@ impl SceneSettings {
             bias: DepthBias::NONE,
         };
         (key, group)
+    }
+
+    /// The pipeline that draws the motion of a pair whose mesh and material draw with `pipeline`,
+    /// and the bind group of the map that it reads, or 0 for none, as [`motion::motion_key`]
+    /// picks it: `None` for a pair that draws no motion. A masked material of the engine's mesh
+    /// templates tests its alpha as its caster does, with its base color map where the mesh has
+    /// texture coordinates and the map has an image. A custom material with a vertex offset draws
+    /// with its own template's motion builds, which bind the material's textures.
+    pub fn motion_of(&self, pipeline: DrawKey, material: u32) -> Option<(DrawKey, u32)> {
+        let mapped_mesh = pipeline.vertex_format & vertex::UV0 != 0;
+        let masked = pipeline.permutation & permutation::ALPHA_MASK != 0
+            && cuts_shadows(pipeline.template)
+            && mapped_mesh;
+        let key = motion::motion_key(pipeline, masked, self.sways(material))?;
+        if key.template != template::MOTION {
+            return Some((key, self.texture_group(material, pipeline)));
+        }
+        let map = self.materials.map(material - 1, MapSlot::BaseColor);
+        let group = if key.permutation & permutation::ALPHA_MASK != 0 && self.textures.is_live(map)
+        {
+            self.textures.group_id(map).unwrap_or(0)
+        } else {
+            0
+        };
+        Some((key, group))
+    }
+
+    /// True while a pass of the frame reads the motion target: in development builds, the motion
+    /// debug view.
+    pub fn motion_wanted(&self) -> bool {
+        self.debug_view == DebugView::Motion
     }
 
     /// True when the material, by engine id, moves its vertices by a vertex offset of its own WGSL,

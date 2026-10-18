@@ -113,6 +113,15 @@
 //! render size, and the camera's opaque pass reads the last one. They are declared only while
 //! ambient occlusion is on, on either path, since it needs no HDR color.
 //!
+//! While a pass reads the motion target, which in development builds the motion debug view does,
+//! the motion passes come after the transparent passes (see [`crate::motion`]). On WebGPU a culling
+//! pass culls the moving objects for the motion view. The motion pass draws them into the motion
+//! target, at the scene's samples, with the scene's depth as its depth target, so the scene's
+//! render pass stores the depth for it. The motion debug view's step then reads the target, which
+//! resolves into one sample, and the scene depth, and draws over the scene color. Where the device
+//! cannot draw the motion target, the step reads a blank texture in its place, and shows the
+//! camera's motion alone.
+//!
 //! While the sketch turns automatic exposure on, on the HDR path, the meter's steps run just
 //! before the final pass's render pass (see [`crate::exposure`]). They read the color that the
 //! final pass reads and write the exposure's texel, which the final pass then multiplies the color
@@ -176,6 +185,7 @@ use crate::graph::{
     CANVAS, GraphError, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph,
     RenderScale, ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
+use crate::motion::{self, MotionFrame, MotionIds, MotionView};
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::particles::{DEPTH_COPY_FORMAT, ParticleDepthCopy};
@@ -227,6 +237,8 @@ pub(crate) struct GraphIds {
     pub(crate) transmission: TransmissionIds,
     /// The subsurface blur's steps.
     pub(crate) subsurface: SubsurfaceIds,
+    /// The motion debug view's step.
+    pub(crate) motion: MotionIds,
     pub(crate) ssr: SsrIds,
     /// The composite and the depth copy of the camera's weighted layer.
     pub(crate) weighted: WeightedIds,
@@ -396,6 +408,15 @@ const SUBSURFACE_TARGETS: [&str; subsurface::STEPS] = ["subsurfaceAcross", "subs
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
 const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
+/// The motion view's culling pass on WebGPU, and the buffer of its compacted instances and
+/// indirect draws.
+const MOTION_CULLING: &str = "MotionCulling";
+const MOTION_VISIBLE: &str = "motionVisible";
+/// The motion pass, and the motion target that it draws into.
+const MOTION_PASS: &str = "Motion";
+const MOTION_TARGET: &str = "motionVectors";
+/// The motion debug view's step.
+const MOTION_VIEW_PASS: &str = "MotionView";
 /// The copy of the camera's opaque color for surfaces that let light through, and the target with
 /// a mip chain that it creates, which the camera's transparent pass reads.
 const TRANSMISSION_PASS: &str = "Transmission";
@@ -548,6 +569,11 @@ pub(crate) enum Role {
     /// Copies the camera's opaque color into the first level of the target that surfaces which
     /// let light through sample. The graph records it, and the mip levels after its render pass.
     TransmissionCopy,
+    /// Draws the moving objects into the motion target, from the motion view.
+    Motion,
+    /// Draws each pixel's motion as a color over the scene color, for the motion debug view. The
+    /// graph records it itself.
+    MotionView,
     /// Draws the camera's weighted surfaces into the weighted layer's two sums. The builder
     /// records it, after the graph's copy of a multisampled scene depth.
     Weighted,
@@ -920,6 +946,18 @@ pub(crate) struct FrameGraph {
     transmission_declared: bool,
     /// The textures that the copy reads and draws into, found once for each compile of the graph.
     transmission_target: CompileCache<(u32, u32)>,
+    /// Whether the device draws the motion target with one sample, and with MSAA's samples.
+    motion_allowed: (bool, bool),
+    /// True while the motion debug view shows.
+    motion_view: bool,
+    /// The camera's move in the frame being recorded, while the motion debug view shows.
+    motion_frame: Option<MotionFrame>,
+    /// The motion debug view's step.
+    motion_step: MotionView,
+    /// True once the step's pipeline is built, after the frame whose list created it.
+    motion_view_built: bool,
+    /// True when the declared passes hold the motion debug view's step.
+    motion_declared: bool,
     /// The composite and the depth copy of the camera's weighted layer.
     weighted: WeightedLayer,
     /// True when the device draws into the weighted layer's targets of 16-bit floats.
@@ -1120,6 +1158,12 @@ impl FrameGraph {
             transmission_built: false,
             transmission_declared: false,
             transmission_target: CompileCache::default(),
+            motion_allowed: (true, true),
+            motion_view: false,
+            motion_frame: None,
+            motion_step: MotionView::new(ids.motion),
+            motion_view_built: false,
+            motion_declared: false,
             weighted: WeightedLayer::new(ids.weighted),
             weighted_targets: true,
             weighted_wanted: false,
@@ -1558,6 +1602,11 @@ impl FrameGraph {
         } else {
             0
         };
+        let motion = if self.motion_view {
+            motion::VIEW_UPLOAD_BYTES
+        } else {
+            0
+        };
         let fog = if self.fog.is_some() {
             FogVolumePass::UPLOAD_BYTES
         } else {
@@ -1591,6 +1640,7 @@ impl FrameGraph {
             + effects
             + dof
             + subsurface
+            + motion
             + fog
             + fullscreen
             + exposure
@@ -2157,6 +2207,16 @@ impl FrameGraph {
             .unwrap_or_else(|| self.transmission.blank())
     }
 
+    /// Says whether the device draws the motion target with one sample, and with MSAA's samples.
+    /// Where it does not draw it at the scene's samples, the motion debug view shows the camera's
+    /// motion alone, and no motion pass runs.
+    pub(crate) fn allow_motion(&mut self, one_sample: bool, multisampled: bool) {
+        if (one_sample, multisampled) != self.motion_allowed {
+            self.motion_allowed = (one_sample, multisampled);
+            self.declared = false;
+        }
+    }
+
     /// Says whether the device draws into one-sample targets of 16-bit floats, which the camera's
     /// weighted layer needs. Without them, weighted surfaces draw back to front in the transparent
     /// pass, as surfaces of normal blending.
@@ -2194,6 +2254,49 @@ impl FrameGraph {
         self.particle_depth_wanted = on;
         if self.particle_depth_draws() != was {
             self.declared = false;
+        }
+    }
+
+    /// True when the device draws the motion target at the scene's samples.
+    fn motion_supported(&self) -> bool {
+        if self.samples > 1 {
+            self.motion_allowed.1
+        } else {
+            self.motion_allowed.0
+        }
+    }
+
+    /// Shows the motion debug view or not, for the next frames, with the camera's move of the
+    /// frame being recorded. The passes are declared again only when the view starts or stops
+    /// drawing. Call it before [`FrameGraph::request_pipelines`], which asks for the step's
+    /// pipeline, so the view draws from the frame in which the pipeline is built.
+    pub(crate) fn set_motion(&mut self, view: bool, frame: Option<MotionFrame>) {
+        let was = self.motion_view_draws();
+        self.motion_view = view;
+        self.motion_frame = frame;
+        if self.motion_view_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while the motion debug view draws: it shows, and its step's pipeline is built.
+    fn motion_view_draws(&self) -> bool {
+        self.motion_view && self.motion_view_built
+    }
+
+    /// True while the motion pass runs: a pass reads the motion target, and the device draws it.
+    pub(crate) fn motion_draws(&self) -> bool {
+        self.motion_declared && self.motion_supported()
+    }
+
+    /// What the motion pass's pipelines and bundles draw into: the motion target's format, the
+    /// depth format and the scene's sample count.
+    pub(crate) fn motion_targets(&self) -> PassTargets {
+        PassTargets {
+            color_format: motion::FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: self.samples,
+            permutation: 0,
         }
     }
 
@@ -2591,6 +2694,10 @@ impl FrameGraph {
                 self.view_images.push(Some((image, pass)));
             }
         }
+        self.motion_declared = self.motion_view_draws() && !views.is_empty();
+        if self.motion_declared {
+            self.declare_motion(color.samples);
+        }
         self.view_on.clear();
         self.view_on
             .extend(views.iter().map(|view| view.target().draws()));
@@ -2821,6 +2928,40 @@ impl FrameGraph {
             .reads(SCENE_DEPTH)
             .creates(SUBSURFACE_TARGETS[1], Target::color(subsurface::FORMAT));
         self.add(down, Role::Subsurface(1));
+    }
+
+    /// Declares the motion passes, after the transparent passes: where the device draws the motion
+    /// target, on WebGPU the motion view's culling pass, then the motion pass, which draws into a
+    /// target of the scene's `samples` with the scene's depth; then the motion debug view's step,
+    /// which reads the target and the depth, and draws over the scene color. The motion passes are
+    /// optional: they run while a running pass reads the target.
+    fn declare_motion(&mut self, samples: u32) {
+        if self.motion_supported() {
+            let target = Target::color(motion::FORMAT).samples(samples);
+            let mut pass = Pass::new(MOTION_PASS, PassKind::Scene)
+                .optional()
+                .creates(MOTION_TARGET, target)
+                .writes(SCENE_DEPTH);
+            if self.gpu_culling {
+                let culling = Pass::new(MOTION_CULLING, PassKind::Compute)
+                    .optional()
+                    .reads(OBJECTS)
+                    .creates_buffer(MOTION_VISIBLE);
+                self.add(culling, Role::Cull(ViewId::MOTION));
+                pass = pass.reads(MOTION_VISIBLE);
+            }
+            if self.skins() {
+                pass = pass.reads(SKINNED);
+            }
+            self.add(pass, Role::Motion);
+        }
+        let mut step = Pass::new(MOTION_VIEW_PASS, PassKind::Fullscreen)
+            .reads(SCENE_DEPTH)
+            .writes(SCENE_COLOR);
+        if self.motion_supported() {
+            step = step.reads(MOTION_TARGET);
+        }
+        self.add(step, Role::MotionView);
     }
 
     /// Declares the custom effects' passes, one for each unit: each reads the color that the pass
@@ -3418,6 +3559,24 @@ impl FrameGraph {
             transmission_built,
             FrameGraph::declare_again,
         );
+        let motion_view_built = self.motion_view && {
+            let multisampled = self.gpu_culling && self.samples > 1;
+            let id = self.motion_step.request_pipeline(
+                pipelines,
+                self.scene_color.format(),
+                self.samples,
+                !self.scene_color.is_hdr(),
+                multisampled,
+            );
+            pipelines.built(id, pipelines_built)
+        };
+        if motion_view_built != self.motion_view_built {
+            let was = self.motion_view_draws();
+            self.motion_view_built = motion_view_built;
+            if self.motion_view_draws() != was {
+                self.declared = false;
+            }
+        }
         let ssr_built = ssr_built && transmission_built;
         if ssr_built != self.ssr_built {
             let was = self.ssr_draws();
@@ -3536,6 +3695,7 @@ impl FrameGraph {
         self.upload_fog(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
+        self.prepare_motion_view(list, arena)?;
         self.bind_weighted(list)?;
         self.bind_particle_depth(list)?;
         if !self.final_runs() {
@@ -3776,6 +3936,42 @@ impl FrameGraph {
             clock,
             inverse,
             made,
+        )
+    }
+
+    /// Records what the motion debug view's step reads while it draws: its objects, its block and
+    /// its bind group, with the motion target's texture, or a blank one where the device draws
+    /// none, and the scene depth's.
+    fn prepare_motion_view(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !self.motion_declared {
+            return Ok(());
+        }
+        let motion = if self.motion_supported() {
+            self.sampled_id(MOTION_TARGET)
+        } else {
+            None
+        };
+        let depth = self
+            .sampled_id(SCENE_DEPTH)
+            .expect("the motion debug view reads the scene depth");
+        let multisampled = self.gpu_culling && self.samples > 1;
+        let reproject = self
+            .motion_frame
+            .map_or(motion::IDENTITY, |frame| frame.reproject);
+        let render = self.render_size();
+        self.motion_step.prepare(
+            list,
+            arena,
+            motion,
+            depth,
+            multisampled,
+            render,
+            self.canvas,
+            &reproject,
         )
     }
 
@@ -4194,24 +4390,26 @@ impl FrameGraph {
         self.first_texture + LAYER_VIEWS + first_view + layer
     }
 
-    /// Records the plan's render and compute passes, then submits them. The graph records the
-    /// final pass, and `record` the commands of each other declared pass. Each render pass clears
-    /// its color targets to `clear`, except the outline mask's pass and the skin pass, which clear
-    /// to zero: no object covers the mask there, and no skin drew there. A render pass whose passes
-    /// all have roles that `skips` names is left out, so its targets keep what earlier frames drew.
-    /// The words that differ between a frame that blends a still view and one that does not are
-    /// noted for [`FrameGraph::word_marks`]: the accumulation's steps, the two-step pass's first
-    /// step and the commands of the final pass or its still build.
+    /// Records the plan's render and compute passes, then `finish`'s commands after them, such as
+    /// copies, then submits them all. The graph records the final pass, and `record` the commands
+    /// of each other declared pass. Each render pass clears its color targets to `clear`, except
+    /// the passes of the outline mask, the skin pass and the motion target, which clear to zero: no
+    /// object covers the mask there, no skin drew there, and still surfaces add no motion. A render
+    /// pass whose passes all have roles that `skips` names is left out, so its targets keep what
+    /// earlier frames drew. The words that differ between a frame that blends a still view and one
+    /// that does not are noted for [`FrameGraph::word_marks`]: the accumulation's steps, the
+    /// two-step pass's first step and the commands of the final pass or its still build.
     pub(crate) fn record(
         &mut self,
         list: &mut DrawList,
         clear: impl Fn(ViewId) -> [f32; 4],
         skips: impl Fn(Role) -> bool,
         mut record: impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
+        finish: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
     ) -> Result<(), RecordError> {
         let mut marks = std::mem::take(&mut self.word_marks);
         marks.clear();
-        let recorded = self.record_steps(list, clear, skips, &mut record, &mut marks);
+        let recorded = self.record_steps(list, clear, skips, &mut record, finish, &mut marks);
         self.word_marks = marks;
         recorded
     }
@@ -4224,6 +4422,7 @@ impl FrameGraph {
         clear: impl Fn(ViewId) -> [f32; 4],
         skips: impl Fn(Role) -> bool,
         record: &mut impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
+        finish: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
         marks: &mut Vec<Range<usize>>,
     ) -> Result<(), RecordError> {
         let plan = self
@@ -4277,7 +4476,7 @@ impl FrameGraph {
                     let masks = passes.iter().any(|&pass| {
                         matches!(
                             self.roles[pass.index()],
-                            Role::OutlineMask | Role::SkinLight | Role::Weighted
+                            Role::OutlineMask | Role::SkinLight | Role::Motion | Role::Weighted
                         )
                     });
                     let clear = if masks {
@@ -4375,6 +4574,7 @@ impl FrameGraph {
                                 }
                             }
                             Role::TransmissionCopy => self.transmission.record(list)?,
+                            Role::MotionView => self.motion_step.record(list)?,
                             Role::Weighted => {
                                 if self.weighted_copies_depth() {
                                     self.weighted.record_depth(list)?;
@@ -4397,6 +4597,7 @@ impl FrameGraph {
                 }
             }
         }
+        finish(list)?;
         list.push(Op::Submit, &[])?;
         Ok(())
     }
@@ -4622,6 +4823,7 @@ impl FrameGraph {
             copies.reset_gpu();
         }
         self.transmission.reset_gpu();
+        self.motion_step.reset_gpu();
         self.weighted.reset_gpu();
         self.particle_depth.reset_gpu();
     }
@@ -5081,6 +5283,12 @@ mod tests {
             first_group: 210,
         },
         // The reflections' own bands, clear of the view copies' groups, which take 32 ids from 60.
+        motion: MotionIds {
+            buffer: 21,
+            group: 125,
+            sampler: 18,
+            blank: 911,
+        },
         ssr: SsrIds {
             buffer: 21,
             first_group: 220,
@@ -5239,6 +5447,18 @@ mod tests {
             ssr::STEPS as u32,
         ));
         groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        buffers.push(("the motion view's block".to_string(), IDS.motion.buffer, 1));
+        samplers.push((
+            "the motion view's sampler".to_string(),
+            IDS.motion.sampler,
+            1,
+        ));
+        textures.push((
+            "the motion view's blank map".to_string(),
+            IDS.motion.blank,
+            1,
+        ));
+        groups.push(("the motion view's step".to_string(), IDS.motion.group, 1));
         // The graph takes its own textures from `first_texture` on: one for each texture of its
         // plan and one view for each of their layers, each run at most [`LAYER_VIEWS`] long.
         textures.push((
@@ -5602,7 +5822,13 @@ mod tests {
         // The prepass begins each view's render pass, which clears the color and the depth.
         list.clear();
         frames
-            .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| false,
+                |_, _| Ok(()),
+                |_| Ok(()),
+            )
             .unwrap();
         let passes = operands(&list, Op::BeginRenderPass);
         let both = pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH;
@@ -5672,7 +5898,13 @@ mod tests {
         let views = [[129, 1, 0, 0], [130, 1, 0, 1], [131, 1, 0, 2]];
         assert_eq!(operands(&list, Op::CreateTextureView), views);
         frames
-            .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| false,
+                |_, _| Ok(()),
+                |_| Ok(()),
+            )
             .unwrap();
         let depth_only = pass_flags::CLEAR_DEPTH | pass_flags::STORE_DEPTH;
         let passes = operands(&list, Op::BeginRenderPass);
@@ -5895,7 +6127,7 @@ mod tests {
         let record = |frames: &mut FrameGraph, list: &mut DrawList| {
             list.clear();
             frames
-                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()), |_| Ok(()))
                 .unwrap();
             (
                 operands(list, Op::BeginRenderPass).len(),
@@ -6218,7 +6450,7 @@ mod tests {
                 .upload(list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
             frames
-                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()), |_| Ok(()))
                 .unwrap();
             null3d_gpu::drawlist::decode(list.words())
                 .map(|command| command.unwrap())
@@ -6410,7 +6642,13 @@ mod tests {
         assert!(layouts.contains(&bind_layout::FINAL_EFFECTS_DEPTH_MS));
         list.clear();
         frames
-            .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| false,
+                |_, _| Ok(()),
+                |_| Ok(()),
+            )
             .unwrap();
         assert!(
             operands(&list, Op::SetPipeline)
@@ -6491,6 +6729,64 @@ mod tests {
         assert!(frames.bloom_draws(), "built pipelines draw at once");
     }
 
+    /// The names of the graph's passes for one camera view, in the order of its steps, as the
+    /// builders declare and compile them at the start of a frame.
+    fn pass_names(frames: &mut FrameGraph, list: &mut DrawList) -> Vec<String> {
+        frames.sync(&[View::default()]);
+        frames.prepare(list, (320, 180), RenderScale::FULL).unwrap();
+        steps(frames).into_iter().flatten().collect()
+    }
+
+    #[test]
+    fn the_motion_passes_run_only_while_the_motion_view_draws() {
+        for (scene_color, gpu_culling) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
+            let mut frames = frame_graph(scene_color, Antialias::Msaa, gpu_culling, true);
+            frames.sync(&[View::default()]);
+            let mut list = DrawList::with_capacity(4096);
+            let without = pass_names(&mut frames, &mut list);
+            let textures = frames.graph().plan().unwrap().textures().len();
+
+            // The view adds nothing until its step's pipeline is built.
+            frames.set_motion(true, None);
+            assert_eq!(pass_names(&mut frames, &mut list), without);
+            assert!(!frames.motion_draws());
+
+            frames.request_pipelines(&mut PipelineCache::default(), 0);
+            let names = pass_names(&mut frames, &mut list);
+            let motion: Vec<&str> = names
+                .iter()
+                .map(String::as_str)
+                .filter(|name| name.starts_with("Motion"))
+                .collect();
+            let expected: &[&str] = if gpu_culling {
+                &["MotionCulling", "Motion", "MotionView"]
+            } else {
+                &["Motion", "MotionView"]
+            };
+            assert_eq!(motion, expected);
+            let at = |name: &str| names.iter().position(|step| step == name).unwrap();
+            assert!(
+                at("Opaque") < at("Motion"),
+                "the motion pass tests the scene's depth"
+            );
+            assert!(frames.motion_draws());
+
+            // A device that cannot draw the target with MSAA shows the camera's motion alone.
+            frames.allow_motion(true, false);
+            let names = pass_names(&mut frames, &mut list);
+            assert!(names.iter().any(|name| name == "MotionView"));
+            assert!(!names.iter().any(|name| name == "Motion"));
+            assert!(!frames.motion_draws());
+
+            // With the view off again, the frame is as it was, with no texture of the motion.
+            frames.allow_motion(true, true);
+            frames.set_motion(false, None);
+            assert_eq!(pass_names(&mut frames, &mut list), without);
+            assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+            assert!(!frames.motion_draws());
+        }
+    }
+
     #[test]
     fn outlines_run_their_mask_with_the_scene_depth_only_while_something_is_outlined() {
         for (scene_color, gpu_culling) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
@@ -6547,6 +6843,7 @@ mod tests {
                     |_| [0.25, 0.5, 0.75, 1.0],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             let passes = operands(&list, Op::BeginRenderPass);
@@ -6700,7 +6997,13 @@ mod tests {
             assert!(list.is_empty(), "a new scale makes no texture");
             list.clear();
             frames
-                .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(
+                    &mut list,
+                    |_| [0.0; 4],
+                    |_| false,
+                    |_, _| Ok(()),
+                    |_| Ok(()),
+                )
                 .unwrap();
             let viewports = operands(&list, Op::SetViewport);
             assert!(viewports.iter().any(|v| v[2..4] == [80, 45]));
@@ -6841,7 +7144,13 @@ mod tests {
             );
             list.clear();
             frames
-                .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(
+                    &mut list,
+                    |_| [0.0; 4],
+                    |_| false,
+                    |_, _| Ok(()),
+                    |_| Ok(()),
+                )
                 .unwrap();
             let viewports = operands(&list, Op::SetViewport);
             for size in [[160, 90], [80, 45], [40, 23], [3, 2]] {
@@ -7289,7 +7598,13 @@ mod tests {
             // The layer's pass clears both sums to nothing and stores them for the composite.
             list.clear();
             frames
-                .record(&mut list, |_| [0.5; 4], |_| false, |_, _| Ok(()))
+                .record(
+                    &mut list,
+                    |_| [0.5; 4],
+                    |_| false,
+                    |_, _| Ok(()),
+                    |_| Ok(()),
+                )
                 .unwrap();
             let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
                 .into_iter()
@@ -7422,7 +7737,13 @@ mod tests {
             // first level, and the frame makes the other levels before the transparent pass.
             list.clear();
             frames
-                .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(
+                    &mut list,
+                    |_| [0.0; 4],
+                    |_| false,
+                    |_, _| Ok(()),
+                    |_| Ok(()),
+                )
                 .unwrap();
             let commands: Vec<_> = null3d_gpu::drawlist::decode(list.words())
                 .map(Result::unwrap)

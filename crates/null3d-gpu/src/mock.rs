@@ -628,7 +628,7 @@ impl MockBackend {
                     op,
                     "a multisampled texture is a render target of one layer and one mip level, which only a depth target's bind group reads",
                 )?;
-                let float16 = texture.format == format::RGBA16_FLOAT
+                let float16 = matches!(texture.format, format::RGBA16_FLOAT | format::RG16_FLOAT)
                     && self.caps.contains(Capabilities::MSAA_FLOAT16);
                 let small_float = texture.format == format::RG11B10_UFLOAT && rg11b10;
                 check(

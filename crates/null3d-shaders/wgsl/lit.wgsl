@@ -61,6 +61,12 @@ enable draw_index;
 // does (pick.wgsl). Without them, the pick template would test the scene's depth at the object's
 // place before the offset moved it.
 //
+// The MOTION builds, which only custom materials with a vertex offset have, draw the motion of a
+// moving object for the motion pass (decision record D-140, null3d::motion): the vertex shader
+// moves each vertex by the offset with this frame's built-in values, and again with the last
+// frame's time, places the second with the last frame's matrix, and the fragment shader writes the
+// difference on the screen. Like the casters, they ignore the material's alpha.
+//
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
 // keeps the pixels of its side of a 4 × 4 ordered dither, with the alpha test, after every
@@ -132,6 +138,9 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
+#ifdef CUSTOM
+#import null3d::mesh::{Instance}
+#endif
 #ifdef OBJECT_IDS
 #import null3d::mesh::{object_ids}
 #endif
@@ -146,6 +155,13 @@ enable draw_index;
 #endif
 #ifdef CASTER
 #import null3d::mesh::{caster_clip}
+#endif
+#ifdef MOTION
+#import null3d::motion::{last_transform, motion_block, surface_motion}
+#import null3d::vertex::{transform_point}
+#ifndef WEBGL2
+#import null3d::motion::{LastIn}
+#endif
 #endif
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
@@ -877,6 +893,96 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     return s;
 }
 
+#ifdef CUSTOM
+/// Fills the object's id and matrices for a custom material that reads them, and returns the
+/// instance's index in its batch and the object's id, or zeros when the material reads neither.
+fn fill_object(found: Instance) -> vec2u {
+    var ids = vec2u(0u);
+#ifdef OBJECT_IDS
+    ids = object_ids(found);
+    object.id = ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(found.row_x, found.row_y, found.row_z);
+    object.normalMatrix = affine_normal_matrix(found.row_x, found.row_y, found.row_z);
+#endif
+    return ids;
+}
+#endif
+
+#ifdef CUSTOM_VERTEX_OFFSET
+/// What the vertex offset function reads of a vertex at `position` with `normal`, with the
+/// instance's index from `ids` when the material reads it.
+fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> VertexInput {
+    var input: VertexInput;
+    input.position = position;
+    input.normal = normal;
+    input.uv = mesh_uv(v.uv0);
+#ifdef CUSTOM_UV1
+    input.uv1 = mesh_second_uv(v.uv1);
+#endif
+#ifdef OBJECT_IDS
+    input.instance = ids.x;
+#endif
+    return input;
+}
+#endif
+
+#ifdef MOTION
+/// What a motion build's vertex shader passes on: this frame's clip position, where this frame's
+/// point would have shown in the last frame, and where the moved point showed in it.
+struct MotionOut {
+    @invariant @builtin(position) clip: vec4f,
+    @location(0) still: vec4f,
+    @location(1) last: vec4f,
+}
+
+@vertex
+#ifdef WEBGL2
+fn vs(v: VertexIn, i: InstanceIn) -> MotionOut {
+#else
+fn vs(v: VertexIn, i: InstanceIn, l: LastIn) -> MotionOut {
+#endif
+    let found = find_instance(i);
+#ifdef ROW_VALUES
+    let row = row_values_of(found);
+#endif
+    let origin = relative_position(found, vec3f(0.0));
+    fill_builtins(origin);
+#ifdef ROW_VALUES
+    object.values = row.values;
+#endif
+    let ids = fill_object(found);
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(found.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(found.material);
+#endif
+    let position = mesh_position(v.position);
+    let input = vertex_input(v, position, v.normal, ids);
+    let now = relative_position(found, position + vertexOffset(input));
+    frame.time = motion_block.last_clock.x;
+    frame.deltaTime = motion_block.last_clock.y;
+    frame.index = bitcast<u32>(motion_block.last_clock.z);
+#ifdef WEBGL2
+    let last = last_transform(found);
+#else
+    let last = last_transform(found, l);
+#endif
+    let then = transform_point(last, position + vertexOffset(input));
+    var out: MotionOut;
+    out.clip = clip_of(found, now);
+    out.still = motion_block.last_view_proj * vec4f(now, 1.0);
+    out.last = motion_block.last_view_proj * vec4f(then, 1.0);
+    return out;
+}
+
+@fragment
+fn fs(in: MotionOut) -> @location(0) vec4f {
+    return surface_motion(in.still, in.last);
+}
+#else
 #ifndef DECAL
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
@@ -890,14 +996,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef ROW_VALUES
     object.values = row.values;
 #endif
-#ifdef OBJECT_IDS
-    let ids = object_ids(found);
-    object.id = ids.y;
-#endif
-#ifdef OBJECT_MATRICES
-    object.worldMatrix = affine_matrix(found.row_x, found.row_y, found.row_z);
-    object.normalMatrix = affine_normal_matrix(found.row_x, found.row_y, found.row_z);
-#endif
+    let ids = fill_object(found);
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(found.material);
@@ -934,17 +1033,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let normal = rest_normal;
 #endif
 #ifdef CUSTOM_VERTEX_OFFSET
-    var offset_input: VertexInput;
-    offset_input.position = position;
-    offset_input.normal = normal;
-    offset_input.uv = mesh_uv(v.uv0);
-#ifdef CUSTOM_UV1
-    offset_input.uv1 = mesh_second_uv(v.uv1);
-#endif
-#ifdef OBJECT_IDS
-    offset_input.instance = ids.x;
-#endif
-    let offset = vertexOffset(offset_input);
+    let offset = vertexOffset(vertex_input(v, position, normal, ids));
     out.relative = relative_position(found, position + offset);
 #else
     out.relative = relative_position(found, position);
@@ -1629,4 +1718,5 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let s = defaultSurface(input);
     return shade(s, input, vec4f(in.clip.xy, depth, 1.0));
 }
+#endif
 #endif

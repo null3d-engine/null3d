@@ -51,6 +51,7 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
+TEXTURE_FORMATS[G.FORMAT_RG16_FLOAT] = 'rg16float';
 TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
@@ -736,7 +737,7 @@ export class WebGPUBackend {
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
 	private computeReady(template: number, permutation: number): boolean {
-		const variants = this.pipelines.computeVariants(template);
+		const variants = this.pipelines.computeVariants(template, permutation);
 		return (
 			variants === undefined || (this.moreShaders?.ready(variants, permutation, 'wgsl') ?? true)
 		);

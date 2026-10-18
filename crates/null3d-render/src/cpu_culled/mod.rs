@@ -91,6 +91,7 @@ mod cull;
 mod data;
 mod layout;
 mod lights;
+mod motion;
 mod opaque;
 mod skin;
 mod transparent;
@@ -132,6 +133,7 @@ use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
+use crate::motion::MotionIds;
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
@@ -197,8 +199,12 @@ mod ids {
     pub const EFFECTS: u32 = BACKGROUND + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
+    /// The uniform buffer of the motion debug view's step.
+    pub const MOTION_VIEW: u32 = DOF + 1;
+    /// The motion pass's block: the last frame's view and clock.
+    pub const MOTION_BLOCK: u32 = MOTION_VIEW + 1;
     /// The particle systems' buffers, three for each system from here.
-    pub const PARTICLE_BUFFERS: u32 = DOF + 1;
+    pub const PARTICLE_BUFFERS: u32 = MOTION_BLOCK + 1;
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
@@ -287,8 +293,11 @@ mod ids {
     pub const LIGHT_TABLES: u32 = STREAMED_VALUES + RING;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = LIGHT_TABLES + 1;
+    /// The texture of one texel that the motion debug view reads in place of the motion target
+    /// where the device draws none.
+    pub const BLANK_MOTION: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The physical sky's tables and panorama.
-    pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const SKY_TABLES: u32 = BLANK_MOTION + 1;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
     pub const EXPOSURE_CELLS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
@@ -297,8 +306,23 @@ mod ids {
     /// that it never destroys the final pass's.
     pub const STILL_BLANK_LUT: u32 = EXPOSURE_STORED + 1;
     pub const STILL_BLANK_OUTLINE: u32 = STILL_BLANK_LUT + 1;
+    /// The two copies of the last frame's resident texture, and of its joint texture with its
+    /// morph weights after it, one for each frame parity.
+    const LAST_RESIDENT: u32 = STILL_BLANK_OUTLINE + 1;
+    const LAST_SKINS: u32 = LAST_RESIDENT + 2;
+
+    pub const fn last_resident(copy: usize) -> u32 {
+        LAST_RESIDENT + copy as u32
+    }
+    pub const fn last_skins(copy: usize) -> u32 {
+        LAST_SKINS + copy as u32
+    }
+
+    /// The texel that the motion view's frame groups bind in place of the last frame's resident
+    /// rows, joints and morph weights before the scene has them.
+    pub const BLANK_LAST: u32 = LAST_SKINS + 2;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = STILL_BLANK_OUTLINE + 1;
+    pub const TARGETS: u32 = BLANK_LAST + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -315,8 +339,10 @@ mod ids {
     pub const DOF_SAMPLER: u32 = 6;
     /// The physical sky's samplers.
     pub const SKY_SAMPLERS: u32 = 7;
+    /// The sampler of the motion debug view's step.
+    pub const MOTION_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
     /// The linear sampler of the full-screen passes.
-    pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
+    pub const FULLSCREEN_SAMPLER: u32 = MOTION_SAMPLER + 1;
     /// The linear sampler of the volumetric fog's steps.
     pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The linear sampler of the automatic exposure's meter.
@@ -381,8 +407,10 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of each step of screen-space reflections, after the full-screen passes'.
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
-    /// The bind group of the still-camera accumulation's blend, after screen-space reflections'.
-    pub const ACCUMULATE_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// The bind group of the motion debug view's step, after screen-space reflections'.
+    pub const MOTION_VIEW_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// The bind group of the still-camera accumulation's blend, after the motion view's step.
+    pub const ACCUMULATE_GROUP: u32 = MOTION_VIEW_GROUP + 1;
     /// The bind group of the final pass's still build.
     pub const STILL_GROUP: u32 = ACCUMULATE_GROUP + 1;
     /// The bind group of the scene depth that the decal pass reads, after the still build's.
@@ -391,8 +419,16 @@ mod ids {
     pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
-    /// The bind groups of materials' maps, after the meter's.
-    pub const TEXTURE_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
+    /// The motion pass's frame group for each frame parity and each slot of the streamed ring,
+    /// whose slot before it holds the last frame's dynamic rows.
+    const MOTION_FRAME_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
+
+    pub const fn motion_frame_group(parity: usize, streamed: u32) -> u32 {
+        MOTION_FRAME_GROUPS + parity as u32 * RING + streamed
+    }
+
+    /// The bind groups of materials' maps, after the motion pass's.
+    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -485,6 +521,14 @@ pub struct CpuCulledRenderer {
     scattering: Layout,
     /// True when the layouts were built while the subsurface blur has taps.
     layouts_scattered: bool,
+    /// True when the scene's layout was built with the motion pipelines, while a pass reads the
+    /// motion.
+    layouts_moving: bool,
+    /// The motion pass's last frame's data.
+    motion: motion::Motion,
+    /// Whether each bucket of the scene's layout holds something that moved in the frame.
+    motion_moving: Vec<bool>,
+
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
@@ -674,6 +718,12 @@ impl CpuCulledRenderer {
                             buffer: ids::SUBSURFACE,
                             first_group: ids::SUBSURFACE_GROUPS,
                         },
+                        motion: MotionIds {
+                            buffer: ids::MOTION_VIEW,
+                            group: ids::MOTION_VIEW_GROUP,
+                            sampler: ids::MOTION_SAMPLER,
+                            blank: ids::BLANK_MOTION,
+                        },
                         ssr: SsrIds {
                             buffer: ids::SSR,
                             first_group: ids::SSR_GROUPS,
@@ -697,6 +747,10 @@ impl CpuCulledRenderer {
             layouts_outlined: false,
             scattering: Layout::new(Drawn::Subsurface),
             layouts_scattered: false,
+            layouts_moving: false,
+            motion: motion::Motion::default(),
+            motion_moving: Vec::new(),
+
             layout_prepass: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
@@ -857,12 +911,14 @@ impl CpuCulledRenderer {
     /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
     /// shadow maps. With `outlines`, the outlined layout holds the outlined objects, and with
     /// `scatters` the subsurface layout holds the objects whose material has a scatter radius.
+    /// With `motion`, the scene's draws get their motion pipelines.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
         shadows: CasterPasses,
         outlines: bool,
         scatters: bool,
+        motion: bool,
     ) -> Result<(), RecordError> {
         self.settings
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -883,6 +939,7 @@ impl CpuCulledRenderer {
         let targets = self.with_draw_index(self.graph.scene_targets());
         self.layout_prepass = self.graph.depth_prepass();
         let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
+        let motion_targets = motion.then(|| self.with_draw_index(self.graph.motion_targets()));
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings,
@@ -894,8 +951,10 @@ impl CpuCulledRenderer {
             multi_draw,
             shadows,
             prepass,
+            motion_targets,
             &mut self.key_counts,
         )?;
+        self.layouts_moving = motion;
         // The casters' layout holds buckets only while a light casts shadows.
         if shadows.any() {
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
@@ -909,6 +968,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                None,
                 &mut self.key_counts,
             )?;
         } else {
@@ -928,6 +988,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                None,
                 &mut self.key_counts,
             )?;
         } else {
@@ -1202,6 +1263,11 @@ impl CpuCulledRenderer {
                 .upload_bound(self.settings.particles(), views)
             + PhysicalSkyPass::UPLOAD_BYTES
             + sizes::OBJECT_RANGE_BYTES as usize
+            + if self.layouts_moving {
+                crate::motion::BLOCK_BYTES as usize
+            } else {
+                0
+            }
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -1503,6 +1569,17 @@ impl CpuCulledRenderer {
             !self.scattering.buckets.is_empty(),
         );
         self.graph.set_transmission(self.sorted.transmits());
+        let motion = self.settings.motion_wanted();
+        let motion_frame = match (motion, self.culling.frame(ViewId::CAMERA)) {
+            (true, Some(camera)) => Some(self.motion.advance(camera)),
+            _ => {
+                if !motion {
+                    self.motion.stop();
+                }
+                None
+            }
+        };
+        self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
         let skipped = self.settings.decal_skipped_layers();
         let redraws = self.redraws_built && skipped != 0;
@@ -1728,6 +1805,25 @@ impl CpuCulledRenderer {
             false
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
+        let motion_on =
+            motion && self.layouts_moving && self.graph.motion_draws() && motion_frame.is_some();
+        if let (true, Some(motion_frame)) = (motion_on, motion_frame.as_ref()) {
+            let ranges = input.snapshot.uploads().len() + 1;
+            self.motion.reserve(ranges)?;
+            let buckets = self.layout.buckets.len();
+            self.motion_moving
+                .try_reserve(buckets.saturating_sub(self.motion_moving.len()))
+                .map_err(|_| RecordError::OutOfMemory {
+                    bytes: buckets as u32,
+                })?;
+            let resident_rows = self.textures.resident_rows();
+            let remade = rebuilt || new_texture;
+            self.motion
+                .prepare(list, resident_rows, &self.skins, remade)?;
+            self.motion
+                .mark(input, &self.layout, &mut self.motion_moving);
+            self.motion.upload(list, arena, motion_frame)?;
+        }
         self.skins.set_morph_cap(self.settings.morph_cap());
         let meshes = self.settings.meshes();
         self.skins
@@ -1878,6 +1974,10 @@ impl CpuCulledRenderer {
             }
         };
         let never = |_| false;
+        let motion_draws = motion_on && self.motion.draws();
+        let (motion_state, motion_moving, skins) =
+            (&mut self.motion, &self.motion_moving, &self.skins);
+        let motion_group = ids::motion_frame_group(input.parity(), self.streamed_slot.slot());
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
@@ -2029,6 +2129,11 @@ impl CpuCulledRenderer {
                         ids::frame_group(ViewId::CAMERA) + light_textures.slot(ViewId::CAMERA);
                     lines.record(list, group, &[slot, slot])
                 }
+                Role::Motion if motion_draws && culling.frame(ViewId::CAMERA).is_some() => {
+                    let starts = culling.culled(frame, ViewId::CAMERA).bucket_starts();
+                    let moving = motion_moving.as_slice();
+                    opaque.record_motion(list, arena, starts, layout, meshes, motion_group, moving)
+                }
                 Role::FogLight(_) => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
                     let group =
@@ -2036,6 +2141,12 @@ impl CpuCulledRenderer {
                     bind_frame_group(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
+            },
+            |list| {
+                if motion_on {
+                    motion_state.finish(list, input.parity(), skins)?;
+                }
+                Ok(())
             },
         )?;
         self.tiles
@@ -2188,6 +2299,7 @@ impl FrameBuilder for CpuCulledRenderer {
         };
         let outlines = self.settings.outline().is_some();
         let scatters = self.settings.holds_scattering();
+        let motion = self.settings.motion_wanted();
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
         let settings = &self.settings;
@@ -2226,11 +2338,12 @@ impl FrameBuilder for CpuCulledRenderer {
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || scatters != self.layouts_scattered
+            || motion != self.layouts_moving
             || prepass_changed
             || self.redraws_wanted() != self.redraws_built
             || skinned_appear
         {
-            self.rebuild_layout(input, shadows, outlines, scatters)?;
+            self.rebuild_layout(input, shadows, outlines, scatters, motion)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -2446,6 +2559,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lights.forget_gpu();
         self.light_textures.forget_gpu();
         self.skins.forget_gpu();
+        self.motion.forget_gpu();
         self.decal_depth_bound = None;
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
@@ -2483,5 +2597,9 @@ impl FrameBuilder for CpuCulledRenderer {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias) {
         let canvas = self.settings.switch_canvas(scene_color, antialias);
         self.graph.set_canvas(canvas);
+    }
+
+    fn allow_motion(&mut self, one_sample: bool, multisampled: bool) {
+        self.graph.allow_motion(one_sample, multisampled);
     }
 }

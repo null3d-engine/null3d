@@ -381,6 +381,7 @@ export class SketchRunner {
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		if (glue.allowMotion(...device.motionTargets) !== 0) throw coreFailure(glue, 'createEngine');
 		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		const {
 			shadowTiles,
@@ -1050,21 +1051,26 @@ export class SketchRunner {
 		const { slots } = this.sketch.control;
 		const { glue } = this.sketch;
 		let frame = 0;
+		let first = 0;
 		this.holding = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
-				if (step === steps) {
+				// A held frame whose passes read the motion since the frame before it, as the motion
+				// debug view does, has the thread that draws draw the frame before it first.
+				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
+				if (first === 0 && (before || step === steps)) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
-					// earlier frames' lists created, so the last frame records as it does after a GPU
-					// loss.
+					// earlier frames' lists created, so the first frame that it draws records as it
+					// does after a GPU loss.
 					this.gpuEpoch = -1;
 				}
 				frame = this.frame();
+				if (first === 0 && (before || step === steps)) first = frame;
 			}
 			Atomics.store(slots, Slot.HeldFrom, frame);
 			if (glue.readsLastFrame() !== 0) {
@@ -1079,6 +1085,7 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 		}
+		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
 	}

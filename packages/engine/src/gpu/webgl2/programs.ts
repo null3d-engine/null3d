@@ -46,6 +46,8 @@ import {
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOTION,
+	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_PARTICLE,
 	TEMPLATE_PARTICLE_DEPTH,
@@ -75,6 +77,7 @@ import {
 	type DeviceShaders,
 	type GlslProgram,
 	type GlslStage,
+	MOTION_VIEW_SHADER,
 	type ShaderVariants,
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
@@ -260,6 +263,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_CUTOUT] = { shader: shaders.shadow_cutout, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
+	templates[TEMPLATE_MOTION] = { shader: shaders.motion, pipeline: 'main' };
 	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
@@ -324,6 +328,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 		};
 		// The debug views draw meshes in place of every material, so they draw the prepass too.
 		templates[TEMPLATE_DEBUG_VIEW] = mesh(DEBUG_VIEW_SHADER);
+		templates[TEMPLATE_MOTION_VIEW] = { shader: MOTION_VIEW_SHADER, pipeline: 'main' };
 	}
 	return templates;
 }

@@ -43,8 +43,8 @@
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind, sizes,
-    template, texture_usage, view,
+    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, permutation, resource_kind,
+    sizes, template, texture_usage, view,
 };
 
 use super::ids;
@@ -153,6 +153,9 @@ pub(super) enum Phase {
     Early,
     /// The second phase of occlusion culling: every source against the pyramid.
     Late,
+    /// The motion view's culling, which keeps the sources that move, with the last frame's
+    /// matrices of the frame parity's copy.
+    Motion(usize),
 }
 
 /// Records a bind group of `layout` that binds `buffers` in order, then the cell offsets texture,
@@ -188,6 +191,25 @@ fn push_offsets_group(
 pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
     list.push(Op::CreateComputePipeline, &[ids::CULL, template::CULL, 0])?;
     Ok(())
+}
+
+/// Records the creation of the motion view's culling pipeline, whose shader loads on first use.
+pub(super) fn create_motion_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
+    list.push(
+        Op::CreateComputePipeline,
+        &[ids::CULL_MOTION, template::CULL, permutation::MOTION],
+    )?;
+    Ok(())
+}
+
+/// The bind group of the motion view's culling for each frame parity: the view's culling group,
+/// and its index group, which no motion pipeline reads.
+pub(super) const fn motion_group(parity: usize) -> u32 {
+    if parity == 0 {
+        ids::cull_group(ViewId::MOTION)
+    } else {
+        ids::index_group(ViewId::MOTION)
+    }
 }
 
 /// The part of the render size's larger side that an occluder's bounds span at least. Smaller
@@ -297,6 +319,99 @@ impl Culling {
         binding_bytes: u32,
         occlusion: bool,
     ) -> Result<(), RecordError> {
+        let recreated = self.size_buffers(
+            list,
+            view,
+            layout,
+            shared_recreated,
+            binding_bytes,
+            occlusion,
+        )?;
+        if recreated {
+            let pyramid = if occlusion {
+                ids::pyramid(view)
+            } else {
+                ids::NO_PYRAMID
+            };
+            let buffers = Self::group_buffers(view, layout, pyramid);
+            push_offsets_group(
+                list,
+                ids::cull_group(view),
+                bind_layout::CULL,
+                &buffers,
+                &[ids::SKIN_FIRSTS],
+            )?;
+            if self.index_instances {
+                push_offsets_group(
+                    list,
+                    ids::index_group(view),
+                    bind_layout::INSTANCE_INDEX,
+                    &buffers[..4],
+                    &[],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Sizes the motion view's buffers for the motion layout, as [`Self::apply`] sizes a view's,
+    /// and binds its two culling groups again when a buffer they bind is new, or the last frame's
+    /// matrix buffers are (`last_recreated`): one for each frame parity, each with that parity's
+    /// copy of the last frame's matrices, `last`, where other views bind their pyramid.
+    pub(super) fn apply_motion(
+        &mut self,
+        list: &mut DrawList,
+        layout: &Layout,
+        shared_recreated: bool,
+        binding_bytes: u32,
+        last: [u32; 2],
+    ) -> Result<(), RecordError> {
+        let view = ViewId::MOTION;
+        let recreated =
+            self.size_buffers(list, view, layout, shared_recreated, binding_bytes, false)?;
+        if recreated {
+            for (parity, last) in last.into_iter().enumerate() {
+                let buffers = Self::group_buffers(view, layout, last);
+                push_offsets_group(
+                    list,
+                    motion_group(parity),
+                    bind_layout::CULL,
+                    &buffers,
+                    &[ids::SKIN_FIRSTS],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The buffers of a view's culling group, in binding order, with `eighth` at binding 8.
+    fn group_buffers(view: ViewId, layout: &Layout, eighth: u32) -> [u32; 9] {
+        let (bucket_table, bucket_records) = layout.table_ids();
+        [
+            ids::cull_params(view),
+            ids::MATRICES,
+            bucket_table,
+            bucket_records,
+            ids::visible(view),
+            ids::indirect(view),
+            ids::SOURCE_LAYERS,
+            ids::ORDER,
+            eighth,
+        ]
+    }
+
+    /// Sizes a view's compacted instance and indirect buffers for the layout, at most
+    /// `binding_bytes` each. Returns true when its culling group must be made again: a buffer of
+    /// its own is new, or one that `shared_recreated` names, or its phases changed.
+    fn size_buffers(
+        &mut self,
+        list: &mut DrawList,
+        view: ViewId,
+        layout: &Layout,
+        shared_recreated: bool,
+        binding_bytes: u32,
+        occlusion: bool,
+    ) -> Result<bool, RecordError> {
         let buffers = self.views[view.index()]
             .as_mut()
             .expect("a view's buffers exist before it culls");
@@ -329,42 +444,7 @@ impl Culling {
                 recreated = true;
             }
         }
-        if recreated {
-            let (bucket_table, bucket_records) = layout.table_ids();
-            let pyramid = if occlusion {
-                ids::pyramid(view)
-            } else {
-                ids::NO_PYRAMID
-            };
-            let buffers = [
-                ids::cull_params(view),
-                ids::MATRICES,
-                bucket_table,
-                bucket_records,
-                ids::visible(view),
-                ids::indirect(view),
-                ids::SOURCE_LAYERS,
-                ids::ORDER,
-                pyramid,
-            ];
-            push_offsets_group(
-                list,
-                ids::cull_group(view),
-                bind_layout::CULL,
-                &buffers,
-                &[ids::SKIN_FIRSTS],
-            )?;
-            if self.index_instances {
-                push_offsets_group(
-                    list,
-                    ids::index_group(view),
-                    bind_layout::INSTANCE_INDEX,
-                    &buffers[..4],
-                    &[],
-                )?;
-            }
-        }
-        Ok(())
+        Ok(recreated)
     }
 
     /// Sizes a view's compacted instance buffer for the layout on the direct-draw path, which
@@ -517,13 +597,14 @@ impl Culling {
         if layout.buckets.is_empty() || groups == 0 {
             return Ok(());
         }
-        let pipeline = match phase {
-            Phase::Once => ids::CULL,
-            Phase::Early => ids::OCCLUSION_EARLY,
-            Phase::Late => ids::OCCLUSION_LATE,
+        let (pipeline, group) = match phase {
+            Phase::Once => (ids::CULL, ids::cull_group(view)),
+            Phase::Early => (ids::OCCLUSION_EARLY, ids::cull_group(view)),
+            Phase::Late => (ids::OCCLUSION_LATE, ids::cull_group(view)),
+            Phase::Motion(parity) => (ids::CULL_MOTION, motion_group(parity)),
         };
         list.push(Op::SetComputePipeline, &[pipeline])?;
-        list.push(Op::SetBindGroup, &[0, ids::cull_group(view), 0])?;
+        list.push(Op::SetBindGroup, &[0, group, 0])?;
         list.push(Op::Dispatch, &[groups, 1, 1])?;
         Ok(())
     }

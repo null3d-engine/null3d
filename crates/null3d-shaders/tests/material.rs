@@ -287,9 +287,11 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     assert_eq!(built.functions, ["vertexOffset"]);
     // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values and one that
     // skins. Then the shadow caster's builds: with and without the caster offset, each plain, with
-    // row values or skinned, and on WebGL2 with and without the draw index. Then the pick builds,
-    // each plain, with row values or skinned, and on WebGL2 with and without the draw index.
-    assert_eq!(built.variants.len(), 144 + 6 + 12 + 3 + 6);
+    // row values or skinned, and on WebGL2 with and without the draw index. Then the motion builds,
+    // with and without row values: one on WebGPU, and on WebGL2 with and without the draw index.
+    // Then the pick builds, each plain, with row values or skinned, and on WebGL2 with and without
+    // the draw index.
+    assert_eq!(built.variants.len(), 144 + 6 + 12 + 6 + 3 + 6);
     // A pick build moves each vertex by the offset, finds the instance's ids and writes them.
     let pick = &built.variants["webgpu_pick_pick"]
         .wgsl
@@ -446,11 +448,13 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 ";
 
-/// The highest location of a value that the vertex stage of a build passes to its fragment stage.
+/// The highest location of a value that the vertex stage of a build passes to its fragment stage,
+/// in the main builds' output or the motion builds'.
 fn highest_location(wgsl: &str) -> u32 {
     let start = wgsl
         .find("struct VertexOut")
-        .expect("the template's VertexOut");
+        .or_else(|| wgsl.find("struct MotionOut"))
+        .expect("the template's VertexOut or MotionOut");
     let fields = &wgsl[start..start + wgsl[start..].find('}').expect("its end")];
     fields
         .split("@location(")

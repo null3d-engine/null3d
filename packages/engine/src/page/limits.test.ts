@@ -45,6 +45,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	effectsSceneColor: FORMAT_RGBA16_FLOAT,
 	effectsAntialias: C.ANTIALIAS_MSAA,
 	occlusionTargets: true,
+	motionTargets: [true, true],
 	transparent: false,
 	shaderBits: 0,
 	cellCulling: true,

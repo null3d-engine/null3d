@@ -56,6 +56,7 @@ import {
 } from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
 
 /**
  * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
@@ -1349,6 +1350,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// The motion debug view (D-140) of a scene where most things move: a drifting camera, a sliding
+	// box, a spinning box, a dynamic batch, grass that a custom material sways, a skinned tube, a
+	// morphed sphere and a masked pane. The motion spec checks exact cases pixel by pixel.
+	{
+		name: 'motion-vectors',
+		sketch: 'tests/pages/sketches/motion-vectors-sketch.ts',
+		hold: MOTION_HOLD,
+	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.

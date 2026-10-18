@@ -40,6 +40,8 @@
 //! - `meshes`: mesh storage for both GPU paths
 //! - `mirror`: planar reflections: the camera's view mirrored across a plane, with the plane as its
 //!   near plane
+//! - `motion`: motion vectors: each pixel's surface's motion since the last frame, from the motion
+//!   pass, which draws the moving objects, and the motion debug view
 //! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
 //! - `outline`: a crisp line around the objects that the sketch outlines: a mask of the outlined
 //!   objects, from which the final pass draws the line
@@ -94,6 +96,7 @@ pub mod materials;
 pub mod meshes;
 pub mod mirror;
 pub mod morph;
+pub mod motion;
 pub mod object_ranges;
 pub mod occlusion;
 pub mod outline;
