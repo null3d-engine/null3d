@@ -377,6 +377,9 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	coat_sheen: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv',
 	weighted: 'tests/pages/sketches/weighted-sketch.ts',
 	decals: 'tests/pages/sketches/decal-first-use-sketch.ts',
+	// The motion pass draws only while a pass reads the motion, and the debug view reads it, so
+	// the motion vectors sketch asks for that view.
+	motion: 'tests/pages/sketches/motion-vectors-sketch.ts?case=slide',
 	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
 };
 
