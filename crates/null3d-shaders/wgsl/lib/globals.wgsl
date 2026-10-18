@@ -66,6 +66,16 @@ struct Frame {
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
     /// plane and 0 at the far plane. Zero in the views of lights.
     projection: mat4x4f,
+    /// Takes a position relative to this frame's camera into the clip space of the camera's view in
+    /// the frame before, which screen-space reflections read the color of (see null3d::ssr).
+    reflection_reprojection: mat4x4f,
+    /// Screen-space reflections' strength, 0 when the view draws none, the most roughness that
+    /// reflects, the most distance of a ray, and the share of the screen over which they fade
+    /// toward its edges.
+    reflection: vec4f,
+    /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
+    /// spans at a distance of one unit in its view, along y, and a spare.
+    reflection_corner: vec4f,
     /// The sub-pixel jitter of a still view's accumulated sample, in clip space: `xy` is the offset
     /// a scene's vertex shaders add to a position's clip position, scaled by its `w`. A still view
     /// draws each frame with a different offset, and the frames average to a sharper image. Zero

@@ -238,8 +238,14 @@ pub mod post_value {
     pub const AUTO_EXPOSURE_MIN_EV: u32 = 56;
     pub const AUTO_EXPOSURE_MAX_EV: u32 = 57;
     pub const AUTO_EXPOSURE_COMPENSATION: u32 = 58;
+    /// Screen-space reflections' intensity, most distance, thickness and most roughness, in this
+    /// order.
+    pub const SSR_INTENSITY: u32 = 59;
+    pub const SSR_MAX_DISTANCE: u32 = 60;
+    pub const SSR_THICKNESS: u32 = 61;
+    pub const SSR_MAX_ROUGHNESS: u32 = 62;
     /// The values in the block.
-    pub const COUNT: u32 = 59;
+    pub const COUNT: u32 = 63;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -1162,6 +1168,10 @@ pub fn typescript() -> String {
                     "AUTO_EXPOSURE_COMPENSATION",
                     post_value::AUTO_EXPOSURE_COMPENSATION,
                 ),
+                ("SSR_INTENSITY", post_value::SSR_INTENSITY),
+                ("SSR_MAX_DISTANCE", post_value::SSR_MAX_DISTANCE),
+                ("SSR_THICKNESS", post_value::SSR_THICKNESS),
+                ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("COUNT", post_value::COUNT),
             ],
         ),

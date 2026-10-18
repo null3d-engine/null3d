@@ -145,6 +145,7 @@ export type {
 	OutlineSettings,
 	Post,
 	PostSettings,
+	SsrSettings,
 	ToneCurve,
 	ToneMapping,
 	VignetteSettings,

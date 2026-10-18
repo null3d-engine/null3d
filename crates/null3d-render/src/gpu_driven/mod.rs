@@ -165,6 +165,7 @@ use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
+use crate::ssr::SsrIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
@@ -341,8 +342,10 @@ mod ids {
     pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
+    /// The uniform buffer of screen-space reflections' steps.
+    pub const SSR: u32 = FULLSCREEN + 1;
     /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
-    pub const FOG_VOLUME: u32 = FULLSCREEN + 1;
+    pub const FOG_VOLUME: u32 = SSR + 1;
     /// The automatic exposure's meter: its uniform buffer, its histogram and its stored exposure.
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
@@ -522,11 +525,13 @@ mod ids {
     pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
     /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
-    /// The bind group of the still-camera accumulation's blend.
-    pub const ACCUMULATE_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of screen-space reflections, after the full-screen passes'.
+    pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of the still-camera accumulation's blend, after screen-space reflections'.
+    pub const ACCUMULATE_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
     /// The bind group of the final pass's still build.
     pub const STILL_GROUP: u32 = ACCUMULATE_GROUP + 1;
-    /// The bind group of the scene depth that the decal pass reads, after the full-screen passes'.
+    /// The bind group of the scene depth that the decal pass reads, after the still build's.
     pub const DECAL_DEPTH_GROUP: u32 = STILL_GROUP + 1;
     /// The decal pass's frame group, after its depth's.
     pub const DECAL_FRAME_GROUP: u32 = DECAL_DEPTH_GROUP + 1;
@@ -810,6 +815,10 @@ impl GpuDrivenRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        ssr: SsrIds {
+                            buffer: ids::SSR,
+                            first_group: ids::SSR_GROUPS,
+                        },
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
@@ -997,6 +1006,8 @@ impl GpuDrivenRenderer {
             settings.camera_projection(input.canvas),
             settings.screen_scale(),
         );
+        self.graph
+            .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -1483,6 +1494,8 @@ impl GpuDrivenRenderer {
         }
         if let Some(Some(frame)) = self.frames.get_mut(ViewId::CAMERA.index()) {
             frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
+            let eye = frame.camera.absolute();
+            self.graph.write_screen_values(&mut frame.uniform, eye);
         }
         self.graph.upload(
             list,
@@ -2250,6 +2263,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
+    }
+
+    fn reads_last_frame(&self) -> bool {
+        self.graph.ssr_draws()
     }
 
     fn graph_message(&self, error: GraphError) -> String {

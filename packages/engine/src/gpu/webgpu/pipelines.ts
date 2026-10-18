@@ -36,6 +36,8 @@ import {
 	LAYOUT_PARTICLE_DEPTH_MS,
 	LAYOUT_PARTICLE_SCENE_DEPTH,
 	LAYOUT_SKIN,
+	LAYOUT_SSR_REDUCE,
+	LAYOUT_SSR_TRACE,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
 	LAYOUT_WEIGHTED_COMPOSITE,
@@ -123,6 +125,8 @@ import {
 	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_SSR_REDUCE,
+	TEMPLATE_SSR_TRACE,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
@@ -574,13 +578,14 @@ export class Pipelines {
 			objectRanges,
 		];
 		this.defineLayout(LAYOUT_FRAME, 'frame', frame);
-		// The decals' frame group leaves out the probe grid and the copy of the opaque color, which
-		// no decal build reads, so that a decal with maps stays within the default count of sampled
-		// textures in the fragment stage. It is made at the first decal.
+		// The decals' frame group leaves out the probe grid, which no decal build reads, so that a
+		// decal with maps stays within the default count of sampled textures in the fragment stage.
+		// It carries the copy of the opaque color, which the reflections' lit code reads in every
+		// lit build, decals included. It is made at the first decal.
 		this.defineLayout(
 			LAYOUT_DECAL_FRAME,
 			'decal frame',
-			frame.filter((entry) => entry !== probeGrid && entry !== transmission),
+			frame.filter((entry) => entry !== probeGrid),
 			true,
 		);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
@@ -721,7 +726,15 @@ export class Pipelines {
 		});
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
-		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)]);
+		// Screen-space reflections' steps read every texture with textureLoad too: a level of the
+		// depth pyramid reads the level below it, and the trace ambient occlusion's depth copy and
+		// the pyramid's six levels above it.
+		this.defineLayout(LAYOUT_SSR_REDUCE, 'ssr reduce', [aoSettings, unfiltered(1)]);
+		this.defineLayout(LAYOUT_SSR_TRACE, 'ssr trace', [
+			aoSettings,
+			...[1, 2, 3, 4, 5, 6, 7].map((binding) => unfiltered(binding)),
+		]);
 		// The background's values, which the sky's vertex stage reads too, a cube map and its
 		// filtering sampler.
 		this.defineLayout(LAYOUT_BACKGROUND, 'background', [
@@ -936,6 +949,8 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[TEMPLATE_SSR_REDUCE, 'ssr reduce', shaders.ssr_reduce, 'reduce', LAYOUT_SSR_REDUCE],
+			[TEMPLATE_SSR_TRACE, 'ssr trace', shaders.ssr, 'trace', LAYOUT_SSR_TRACE],
 			[
 				TEMPLATE_EXPOSURE_LUMINANCE,
 				'exposure cells',

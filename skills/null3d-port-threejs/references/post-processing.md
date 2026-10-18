@@ -42,7 +42,8 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file. A `Data3DTexture` that code fills becomes `lut: await assets.lutFromData({ size, data })`, floats from 0 to 1 in the same order (divide 8-bit values by 255) |
 | `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` (0.2) under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default `falloff` of 2 gives a close match. With `darkness` below 1, three.js also lifts dark corners toward a gray: list that as a visible difference |
 | `BokehPass` (`focus`, `aperture`, `maxblur`) | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), with `camera.setFocalLength(mm)` (0.2) | A camera's lens: `aperture` is an f-number (try 2.8, lower blurs more), and the focal length is the camera's. `maxblur` is a share of the width; `maxBlur` of the height, so multiply by the aspect ratio. Near and far fields blur apart, so sharp edges spread no halo: list that as a visible difference. It draws where `dofSamples` is above 0: Medium and up, or `quality.set({ dofSamples: 16 })` on Low |
-| `SSRPass`, `ReflectorForSSRPass` | Screen-space reflections (0.2, not built yet) | Until then, environment reflections (0.2), or a reflection pass for a flat floor (0.2) |
+| `SSRPass` (`maxDistance`, `thickness`, `opacity`, `selects`), the WebGPU `ssr()` node | `ssr: { maxDistance, thickness, intensity: opacity }` (0.2), with `quality.set({ ssrScale: 0.5 })` where phones should draw it | Reflections take the place of the environment's, through the material's Fresnel term, where `SSRPass` adds them over the image. Smooth materials reflect: `selects` and `blur` have no setting, and `maxRoughness` sets how rough a reflecting surface may be. Give the scene an environment, which shows where rays miss. `resolutionScale` becomes `ssrScale` |
+| `ReflectorForSSRPass` (`groundReflector`) | A reflection pass for the flat floor (0.2) | It wins over the screen's reflections on its plane |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | `post.addEffect` (0.2), one effect each | Port the shader as in section 6. Grain sized for display color looks weaker on HDR color: tune it by eye. `GlitchPass`'s random texture becomes the effect's texture, or `null3d::noise` |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. List it as dropped |
 | `ShaderPass(customShader)` | `post.addEffect({ wgsl, uniforms, order })` (0.2) | Section 6; GLSL to WGSL: `references/shaders.md` |
@@ -63,7 +64,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2), section 6. Effects that read only their own pixel join into one pass, so each can stay an effect of its own |
 | `DepthOfFieldEffect` (`worldFocusDistance`, `bokehScale`, `target`) | `dof: { focusDistance, maxBlur, aperture }` (0.2): `worldFocusDistance` becomes `focusDistance`, a `target` becomes `focusPoint`, and `bokehScale` becomes `maxBlur` with `aperture`, tuned by eye |
 | `GodRaysEffect` | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy } })` (0.2): the scene's fog lit by the sun and lamps through their shadows, so rays also come from shadows off the screen. Set the fog's density low where the scene had no fog. It draws where the quality setting `fogSlices` is above 0: Medium and up |
-| `SSREffect` | Screen-space reflections (0.2, not built yet) |
+| `SSREffect` | `ssr` (0.2), mapped as `SSRPass` |
 | `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }` (0.2): a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
 | `SelectiveBloomEffect` | Selective bloom through emissive strength and the bloom threshold (0.2) |
 
@@ -76,7 +77,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `fxaa(node)`, `smaa(node)` | `createEngine({ antialias: 'fxaa' })`, or MSAA, which the presets from Medium use |
 | `ao(...)`, `gtao(...)` | `ao` (0.2) |
 | `dof(node, viewZ, focus, aperture, maxblur)` | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), mapped as `BokehPass` |
-| `ssr(...)` | Screen-space reflections (0.2, not built yet) |
+| `ssr(...)` | `ssr` (0.2), mapped as `SSRPass`; `resolutionScale` becomes `ssrScale`, and `quality` becomes `ssrSteps` |
 | Custom node graphs on the scene color | A custom effect in WGSL (0.2), section 6. The pass's color node becomes `input.color` or `effectColor(uv)`, and its depth node `effectDepth(uv)` |
 
 ## 5. Bloom settings

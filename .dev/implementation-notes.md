@@ -208,7 +208,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
   - The split-sum table fills the 16 columns after each row's texels in the material table's texture. That texture needs 16 rows, so the WebGL2 builder keeps room for 8 materials or more.
 
   New per-pixel inputs of the standard material take a texture array layer, an atlas part or a place in a shared texture. The [technique review](technique-review-2026-10.md#webgl2-texture-units) gives the rules. A new map slot takes a shared unit. The unit test fails when a stage passes 12.
-- WebGPU counts a pipeline's resources per shader stage over every entry of its groups' layouts, whether or not the shader reads them. The frame group gives the fragment stage 8 textures and the maps' group 8 more, so a standard material with maps reads all 16 of WebGPU's default. The decal templates bind the scene's depth as well, so they bind a frame group of their own (`layout::DECAL_FRAME`), which leaves out the light probe grids' texture and the copy of the opaque color. No decal build reads either one, and a decal with maps reads 15 textures. The probe grid's binding had put textured decals at 17, and their pipelines failed on WebGPU while the WebGL2 path drew them. A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's sampled textures, samplers and buffers per stage over its layouts. It covers every template with the layout bits that its shader lists in the manifest, custom materials and effects, and the compute pipelines, and it fails above WebGPU's default limits.
+- WebGPU counts a pipeline's resources per shader stage over every entry of its groups' layouts, whether or not the shader reads them. The frame group gives the fragment stage 8 textures and the maps' group 8 more, so a standard material with maps reads all 16 of WebGPU's default. The decal templates bind the scene's depth as well, so they bind a frame group of their own (`layout::DECAL_FRAME`), which leaves out the light probe grids' texture. No decal build reads that grid. A decal with maps reads 16 textures, WebGPU's default, so nothing more may join the frame. It keeps the copy of the opaque color, because the reflections' lit code reads that copy in every lit build. The probe grid's binding had put textured decals at 17, and their pipelines failed on WebGPU while the WebGL2 path drew them. A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's sampled textures, samplers and buffers per stage over its layouts. It covers every template with the layout bits that its shader lists in the manifest, custom materials and effects, and the compute pipelines, and it fails above WebGPU's default limits.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
 
 ## Cube, 3D and high dynamic range textures
@@ -1090,9 +1090,10 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest's 115 variants make 21,164 builds on 17 October 2026: 14,994 GLSL builds and 6,170
-WGSL ones. The GLSL figure rose by four when the picking template took the MORPH bit on WebGL2, so a
-morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
+The manifest's 115 variants make 21,168 builds on 18 October 2026: 14,996 GLSL builds and 6,172
+WGSL ones. Two more builds on each target are the reflections' two full-screen passes, the pyramid's
+reduce and the trace. Before them, the GLSL figure rose by four when the picking template took the
+MORPH bit on WebGL2, so a morphed mesh picks where it draws; nothing else changed. A build counts once for each target that its variant writes, so a variant that writes
 both targets adds to both counts. The figure is a count of the manifest and its bit table, not of
 files on disk. A variant may carry more than one pipeline, and so hold several programs. A variant
 builds once for each combination of its free bits, so removing any free bit halves it. Tone mapping

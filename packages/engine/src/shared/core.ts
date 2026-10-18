@@ -617,6 +617,18 @@ export interface CoreGlue extends CoreErrors {
 	setContactSteps(steps: number): number;
 	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
 	setDof(on: boolean): number;
+	/** Turns screen-space reflections on with the post-processing values' settings, or off. */
+	setSsr(on: boolean): number;
+	/**
+	 * 1 when the frame recorded last draws with what the frame before it drew, as screen-space
+	 * reflections read the frame before's color, else 0.
+	 */
+	readsLastFrame(): number;
+	/**
+	 * The size of screen-space reflections' grid in thousandths of the render size, and the most
+	 * steps of their march, from the next frame on: a size of 0 draws none.
+	 */
+	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
@@ -1018,6 +1030,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'setSsr',
+	'readsLastFrame',
+	'setSsrQuality',
 	'setAutoExposure',
 	'setExposureMeter',
 	'createParticles',

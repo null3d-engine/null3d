@@ -107,8 +107,9 @@ The measurements:
   row their parity held. The comparison reads that one. A camera, which the engine creates as a
   dynamic object, therefore does not keep a still view from settling.
 - A view never blends while bloom, an outline, an effect that folds into the final pass,
-  automatic exposure or the volumetric fog draws, on a canvas that keeps its alpha, or on the
-  8-bit path. Their pictures change on the GPU alone, or the blend could not average them.
+  automatic exposure, the volumetric fog or screen-space reflections draws, on a canvas that keeps
+  its alpha, or on the 8-bit path. Their pictures change on the GPU alone, or the blend could not
+  average them.
 - The thread that draws takes a resting frame but submits nothing, and the sketch keeps stepping,
   so it sees the change that ends the rest. The first frame after a rest records no frame interval.
 - Test and benchmark pages default to `?still-camera=off` (`tests/pages/lib/result.ts`): their captures,

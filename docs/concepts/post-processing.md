@@ -3,17 +3,20 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas."
+summary: "HDR scene color, ambient occlusion and screen-space reflections at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas."
 ---
 
 # The post-processing chain
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves.
 
 ```mermaid
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
+    prepass --> ssr["Screen-space reflections:<br/>a depth pyramid and a trace<br/>at half size"]
     ao --> scene
+    ssr --> scene
+    copy["The frame before's<br/>opaque colors"] --> scene
     scene["Scene passes:<br/>linear HDR color"] --> fog["Volumetric fog:<br/>adds the light in the fog"]
     fog --> custom["Custom effects:<br/>joined into few passes"]
     custom --> dof["Depth of field:<br/>three steps at half size,<br/>then a composite"]
@@ -31,7 +34,7 @@ flowchart LR
     scaled --> canvas
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass, while the render scale cannot drop below the whole canvas. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers. [Below the whole canvas's render scale](#below-the-whole-canvass-render-scale) describes how that work splits in two when the scale can drop.
+Ambient occlusion and screen-space reflections run before the scene's opaque objects shade. They read the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the occlusion and reflects the frame before's colors where the reflections' rays hit. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass, while the render scale cannot drop below the whole canvas. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers. [Below the whole canvas's render scale](#below-the-whole-canvass-render-scale) describes how that work splits in two when the scale can drop.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -260,6 +263,49 @@ Ambient occlusion adds the depth prepass and three small passes at half the rend
 - The depth prepass costs a second pass over the opaque objects' vertices. In a scene with many vertices it adds time of its own. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass pays.
 - `aoScale: 0.25` draws at a quarter of the render size each way, with softer occlusion. Its steps then find a quarter as many texels. When frames take too long, the frame-budget governor takes that step last.
 - Turning ambient occlusion on or off adds or removes passes. The last image stays on screen while the new pipelines build, which takes a few frames.
+
+## Screen-space reflections
+
+Screen-space reflections make shiny opaque surfaces reflect what the screen shows along their mirror direction. A wet street shows the lamps and windows above it, a polished floor the furniture on it, and a metal pipe the wall beside it. They work in four steps, the first three at the size of ambient occlusion's grid:
+
+1. The depth prepass draws the opaque objects' depth, and a first step copies the depth of one pixel under each texel, as for ambient occlusion.
+2. Six small steps build a depth pyramid. Each texel of a level keeps the nearest depth of the four texels under it, so a level shows where nothing stands in front of a ray.
+3. The trace rebuilds each surface's normal from the depth, and marches its mirror ray through the pyramid. Where a cell holds nothing nearer than the ray, the ray crosses the whole cell and climbs to a larger one. Where it does, the ray drops to a smaller cell, until it meets a surface. A hit counts only where the ray passes no further behind that surface than `thickness`. The trace keeps the ray's length.
+4. The opaque pass casts each pixel's own reflected ray, along its shading normal, for the length of the hits around it. So a normal map's ripples bend the reflection. It reads the frame before's colors where the ray ends, from the copy of the opaque colors that transmission samples too. The rougher the surface and the longer the ray, the blurrier the mip level it reads.
+
+```ts
+quality.set({ ssrScale: 0.5 });
+post.set({ ssr: { maxDistance: 50, thickness: 0.5 } });
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `intensity` | From 0 to 1: how much of the environment's reflection the screen's reflection replaces where a ray hits. | 1 |
+| `maxDistance` | How far a ray travels, in world units: above 0. | 100 |
+| `thickness` | How far behind a surface a ray may pass and still hit it, in world units: 0 or more. | 0.5 |
+| `maxRoughness` | From 0 to 1: the roughest surface that shows them. | 0.5 |
+
+- The reflection takes the place of the environment's reflection, weighed by the material's Fresnel term, metalness and specular values. A metal floor reflects most of what it sees. A dark plastic floor reflects a few percent straight down and most of it at a low angle, which is what makes a wet street shine.
+- Where a ray leaves the screen, hits nothing, turns back toward the camera or nears `maxDistance`, the reflection fades into the environment's reflection. Rough surfaces fade into it from 70% of `maxRoughness`. So there is no hard edge, but the environment fills those parts: give the scene one, such as the sky's.
+- Rough reflections blur through the copy's mip levels: a level as wide as the cone of the surface's roughness over the ray's length. This blur has no noise, so the reflections stay steady from frame to frame.
+- The frame before's colors hold the opaque objects, the background and the reflections of that frame. Blended objects, particles and surfaces that let light through do not show in the reflections. A fast object's reflection lags it by one frame. The first frame after the reflections turn on shows none.
+- A planar reflection pass's reflection wins on its plane, over both the screen's reflection and the environment. Blended surfaces and surfaces that let light through keep the environment's reflection.
+
+### Where screen-space reflections draw
+
+The quality setting `ssrScale` sets the size of the trace's grid, as a share of the render size each way. High and Ultra draw at half size, and Medium at a quarter. Low, which phones start with, sets 0, so phones keep the environment's light even when the sketch turns the reflections on. `ssrSteps` sets the most steps of each ray's march: 24 on Medium, 48 on High and 64 on Ultra. Rays that cross much of the screen need more steps.
+
+Screen-space reflections and ambient occlusion share one grid, at the larger of their scales. Like ambient occlusion, the reflections need float targets, which WebGL2 draws into only with the `EXT_color_buffer_float` extension. On the 8-bit path the copy holds display color, so the reflections look a little grayer there.
+
+### Cost
+
+The reflections add the depth prepass, the depth copy, six small steps for the pyramid, the trace and the copy of the opaque colors with its mip levels. Transmission shares that copy. The opaque pass reads four texels of the screen texture at each pixel, the same reads that ambient occlusion and contact shadows use. It adds one filtered read to each pixel of a smooth enough surface. While the reflections are off, the frame has none of these passes or targets, and the shaders download only when a sketch first turns them on.
+
+The engine's benchmark scene of 100,000 boxes over a polished floor ran on a MacBook Pro in Chrome. With WebGPU, the reflections added about 0.7 ms of GPU time per frame on Medium, at a quarter of the render size. On High, at half the size, they added about 1.8 ms. On WebGL2 they added between 0.25 and 1.24 ms. They added no CPU time beyond the noise.
+
+- The trace's targets follow the render scale, and a new scale makes no new target. The pyramid takes about 5 bytes per texel of the grid, and the trace 8.
+- When frames take too long, the frame-budget governor lowers `ssrScale` to a quarter, in the step after ambient occlusion's.
+
 
 ## Outlines
 
