@@ -14,9 +14,9 @@
 //
 // The probe runs in the probe worker, on the device it creates to test WebGPU, so it costs the
 // render worker no device and the page's first frame no time. Its work is a few hundred draws in a
-// 64 pixel target: some tens of milliseconds on a slow device.
-
-import { needsOwnArguments } from './indirect-arguments';
+// 64 pixel target: some tens of milliseconds on a slow device. It is part of the worker's own
+// script, not a file that loads on demand: every page starts that worker, so a file of its own
+// would load on every page and count outside the start's budget.
 
 /** The draws of each arm: enough that a per-draw cost of a few microseconds shows over the noise. */
 const DRAWS = 512;
@@ -48,13 +48,17 @@ const SHADER = `@vertex fn v(@location(0) p: vec2f) -> @builtin(position) vec4f 
  * arm that cannot run, a device lost during the probe, or an inconclusive result keeps the
  * engine's current path: the answer is false.
  */
-export async function probeDirectDraws(device: GPUDevice, info: GPUAdapterInfo): Promise<boolean> {
+export async function probeDirectDraws(
+	device: GPUDevice,
+	info: GPUAdapterInfo,
+	own: boolean,
+): Promise<boolean> {
 	// Compose the words that name a software renderer. Its slow indirect draws say nothing about
 	// the per-draw GPU cost that the direct path removes, and its pictures must not change.
 	const words = [info.vendor, info.architecture, info.device, info.description].join(' ');
 	if (/swiftshader|llvmpipe|software/i.test(words)) return false;
 	try {
-		return await measure(device);
+		return await measure(device, own);
 	} catch {
 		return false;
 	}
@@ -63,8 +67,7 @@ export async function probeDirectDraws(device: GPUDevice, info: GPUAdapterInfo):
 /** What one arm draws, in the probe's target. */
 type Arm = (pass: GPURenderPassEncoder) => void;
 
-async function measure(device: GPUDevice): Promise<boolean> {
-	const own = needsOwnArguments(globalThis.navigator?.userAgent ?? '');
+async function measure(device: GPUDevice, own: boolean): Promise<boolean> {
 	// Each draw's arguments: the index count, one instance, and zeros for the rest.
 	const argumentsOf = new Uint32Array(DRAWS * 5);
 	for (let d = 0; d < DRAWS; d++) {
