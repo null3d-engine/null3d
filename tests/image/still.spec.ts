@@ -25,7 +25,10 @@ const REST_FRAMES = 64 + 2 + 30;
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	test(`a still view rests and a change draws at once, on ${gpu}`, async ({ page }) => {
 		test.setTimeout(180_000);
-		await page.goto(`still.html?gpu=${gpu}&still-camera=on`);
+		// ?target-fps=1 keeps the frame-budget governor and the preset check from lowering the render
+		// scale while the test measures: a lower scale resets the accumulation and draws the view
+		// again, which would count as frames to rest that the still view never took.
+		await page.goto(`still.html?gpu=${gpu}&still-camera=on&target-fps=1`);
 		const result = await pageResult<StillResult>(page, 150_000);
 		console.log(`still on ${gpu}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
