@@ -395,6 +395,9 @@ pub struct Target {
     /// so its texture can always be sampled: a full-screen pass's texture, whose image of the frame
     /// before the camera's passes show.
     pub shown: bool,
+    /// True for a target that a copy reads into a buffer, as GPU picking's result does: its
+    /// texture takes the copy usage, and it cannot live in tile memory alone.
+    pub copy_source: bool,
 }
 
 impl Target {
@@ -408,6 +411,7 @@ impl Target {
             array: false,
             mipmapped: false,
             shown: false,
+            copy_source: false,
         }
     }
 
@@ -421,6 +425,7 @@ impl Target {
             array: false,
             mipmapped: false,
             shown: false,
+            copy_source: false,
         }
     }
 
@@ -447,6 +452,15 @@ impl Target {
         Self {
             mipmapped: true,
             ..self.array()
+        }
+    }
+
+    /// The same target, which a copy reads into a buffer: a target of the frame's result that no
+    /// pass samples, as GPU picking's resolved ids.
+    pub const fn copy_source(self) -> Self {
+        Self {
+            copy_source: true,
+            ..self
         }
     }
 

@@ -228,6 +228,15 @@ struct Engine {
     query_hits: Vec<f64>,
     /// The rays of a batch, `query::RAY_FLOATS` numbers each.
     query_rays: Vec<f64>,
+    /// The bytes that GPU picking's reads land in: four words for each read of the ring.
+    pick_results: Box<[u32; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]>,
+    /// True when the last recorded frame drew a pick and copied its ids back, so the thread that
+    /// draws must take that frame.
+    pick_recorded: bool,
+    /// True when that frame's id pass drew every source of the scene. The sketch reads it to decide
+    /// whether a landed answer is the GPU's or needs a ray, after later frames moved the layout on.
+    pick_covered: bool,
+
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
     world_matrix: [f64; 12],
@@ -612,6 +621,10 @@ pub fn init_engine(
         query_input: [0.0; query::INPUT_FLOATS as usize],
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
         query_rays: Vec::new(),
+        pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
+        pick_recorded: false,
+        pick_covered: false,
+
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
@@ -1115,8 +1128,17 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
         let scale = RenderScale::from_thousandths(scale);
         e.renderer.settings_mut().set_level_scale(scale);
         let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
+        let picked = renderer.settings().picking();
         let recorded = renderer.record(&input);
+        let pick_recorded = picked && !renderer.settings().picking();
+        let pick_covered = pick_recorded && renderer.pick_covers_scene();
         e.lines.clear();
+        e.pick_recorded = pick_recorded;
+        if pick_recorded {
+            // The answer stays until the next read: the sketch may poll frames after the one that
+            // copied it, and those frames would otherwise overwrite it.
+            e.pick_covered = pick_covered;
+        }
         match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
@@ -1178,7 +1200,9 @@ pub fn set_still_enabled(enabled: bool) {
 pub fn frame_rests() -> bool {
     let mut rests = false;
     with_engine(|e| {
-        rests = e.renderer.still().rests();
+        // A frame with a pick's read must draw, whatever the still view accumulated: a frame the
+        // thread that draws takes without drawing it would never copy the ids back.
+        rests = !e.pick_recorded && e.renderer.still().rests();
         0
     });
     rests
@@ -4676,6 +4700,62 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
         }
     });
     if status == 0 { count } else { query::FAILED }
+}
+
+/// Asks the next recorded frame to answer which object draws at a point of the canvas. `x` and
+/// `y` are CSS pixels from its top-left corner, `ring` names the read of the pick ring that the
+/// answer lands in, and `slot` the control slot that the read raises once its bytes are in engine
+/// memory. Returns 0 when the frame will draw the pick, and 1 when a pick already waits for a
+/// frame.
+#[wasm_bindgen(js_name = requestPick)]
+pub fn request_pick(x: f64, y: f64, ring: u32, slot: u32) -> u32 {
+    with_engine(|e| {
+        if !(x.is_finite() && y.is_finite()) || ring as usize >= null3d_render::pick::RING {
+            return 1;
+        }
+        if e.renderer.settings().picking() {
+            return 1;
+        }
+        let words = null3d_render::pick::RESULT_WORDS as u32;
+        let destination = address(&e.pick_results[..]) + ring * words * 4;
+        e.renderer
+            .settings_mut()
+            .set_pick(null3d_render::pick::PickRequest {
+                x: x as f32,
+                y: y as f32,
+                ring,
+                slot,
+                destination,
+            });
+        0
+    })
+}
+
+/// The address in engine memory of the pick ring's results, four words for each read.
+#[wasm_bindgen(js_name = pickResultAddress)]
+pub fn pick_result_address() -> u32 {
+    value_with_engine(|e| Ok(address(&e.pick_results[..])))
+}
+
+/// True when the frame that recorded the landed pick drew every source of the scene. Else a pick
+/// answers with a raycast, which tests triangles and ignores masks. The frame is the one that
+/// copied the ids, not the frame that reads them, since the scene can change between the two.
+#[wasm_bindgen(js_name = pickCoversScene)]
+pub fn pick_covers_scene() -> u32 {
+    value_with_engine(|e| Ok(u32::from(e.pick_covered)))
+}
+
+/// The object or batch id that a pick's source key names, or 0 for a key that names nothing, such
+/// as a miss.
+#[wasm_bindgen(js_name = pickTargetId)]
+pub fn pick_target_id(key: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.pick_target(key).map_or(0, |(id, _)| id)))
+}
+
+/// The instance row that a pick's source key names, or 0xFFFFFFFF for an object of the scene.
+#[wasm_bindgen(js_name = pickTargetRow)]
+pub fn pick_target_row(key: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.pick_target(key).map_or(u32::MAX, |(_, row)| row)))
 }
 
 /// The address of a query array, or the hit array's capacity in records.

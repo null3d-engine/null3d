@@ -1099,7 +1099,9 @@ impl Compiler {
                     texture: placement.texture.unwrap_or(Surface::Canvas),
                     resolve,
                     load,
-                    store: if keeps || later {
+                    // A target that a copy reads keeps its contents even when no later pass uses
+                    // it, as GPU picking's resolved ids do.
+                    store: if keeps || later || state.target.copy_source {
                         StoreOp::Store
                     } else {
                         StoreOp::Discard
@@ -1239,6 +1241,9 @@ fn usage_of(target: Target, drawn: bool, sampled: bool, storage: bool) -> u32 {
     if storage {
         usage |= texture_usage::STORAGE_BINDING;
     }
+    if target.copy_source && drawn {
+        usage |= texture_usage::COPY_SRC;
+    }
     usage
 }
 
@@ -1278,7 +1283,7 @@ fn frame_texture(state: &ResourceState, transient_attachments: bool) -> PlannedT
         !state.sampled.is_empty(),
         !state.storage.is_empty(),
     );
-    if transient_attachments && one_pass && target.layers == 1 {
+    if transient_attachments && one_pass && target.layers == 1 && !target.copy_source {
         usage |= texture_usage::TRANSIENT_ATTACHMENT;
     }
     PlannedTexture {

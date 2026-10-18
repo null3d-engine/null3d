@@ -297,13 +297,15 @@ pub(super) fn record_bundle(
         motion,
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false)?,
+        Bundle::Opaque | Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        }
+        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
+        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false)?;
-            draws.record(list, |b| b.prepass, |_| false)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
     }
     list.push(Op::EndBundle, &[])?;
@@ -349,16 +351,52 @@ pub(super) fn record_direct(
         },
     };
     match kind {
-        Bundle::Opaque | Bundle::Subsurface => draws.record(list, |b| b.pipeline, |_| true)?,
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false)?,
+        Bundle::Opaque | Bundle::Subsurface => {
+            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
+        }
+        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
+        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
         Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false)?;
-            draws.record(list, |b| b.prepass, |_| false)?;
+            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
+            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
     }
     Ok(())
+}
+
+/// Records a view's pick pass: the draws of every bucket that has a pick build, each with the
+/// pipeline that finds its pixels in the scene's depth, from the view's compacted instances.
+/// `counts` holds each bucket's instance count on the direct-draw path, and `None` reads the
+/// view's indirect draws. A bucket whose pick build binds the material's maps binds them, as a
+/// custom material's pick build does; the pick template reads none.
+pub(super) fn record_pick(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    counts: Option<&[u32]>,
+    hidden: &dyn Fn(u32) -> bool,
+) -> Result<(), RecordError> {
+    let draws = Draws {
+        view,
+        layout,
+        meshes,
+        frame_group: ids::frame_group(view),
+        shading_group: ids::frame_group(view),
+        first_draw: 0,
+        hidden,
+        counts,
+        motion: None,
+    };
+    draws.record(
+        list,
+        |bucket| bucket.pick,
+        // A pick build reads the frame group, and a masked one reads the material's maps too, as
+        // the shading of the same draw does.
+        |_| true,
+        |bucket| if bucket.pick_maps { bucket.group } else { 0 },
+    )
 }
 
 /// What a bundle's buckets draw from: the view, its layout and the mesh pages' buffers, the
@@ -388,6 +426,7 @@ impl Draws<'_> {
         list: &mut DrawList,
         pipeline_of: impl Fn(&Bucket) -> u32,
         own_of: impl Fn(&Bucket) -> bool,
+        maps_of: impl Fn(&Bucket) -> u32,
     ) -> Result<(), RecordError> {
         let Self {
             view,
@@ -419,7 +458,9 @@ impl Draws<'_> {
                 list.push(Op::SetPipeline, &[id])?;
                 pipeline = Some(id);
             }
-            let maps = if own || motion.is_some() {
+            let maps = if own {
+                maps_of(bucket)
+            } else if motion.is_some() {
                 bucket.group
             } else {
                 0

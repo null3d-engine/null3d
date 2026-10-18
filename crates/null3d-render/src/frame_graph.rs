@@ -189,6 +189,7 @@ use crate::motion::{self, MotionFrame, MotionIds, MotionView};
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::particles::{DEPTH_COPY_FORMAT, ParticleDepthCopy};
+use crate::pick;
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
@@ -404,6 +405,13 @@ const SKIN_DEPTH: &str = "skinDepth";
 /// final pass read.
 const SUBSURFACE_PASSES: [&str; subsurface::STEPS] = ["SubsurfaceAcross", "SubsurfaceDown"];
 const SUBSURFACE_TARGETS: [&str; subsurface::STEPS] = ["subsurfaceAcross", "subsurfaceColor"];
+/// The pick's id pass, which draws the camera's opaque objects where the scene's depth leaves
+/// them, and the target it creates, which the device resolves into one sample per pixel.
+const PICK_PASS: &str = "Pick";
+const PICK_IDS: &str = "pickIds";
+/// The pass that copies the resolved ids whole, and the target that a copy reads into a buffer.
+const PICK_RESOLVE_PASS: &str = "PickResolve";
+const PICK_RESOLVED: &str = "pickResolved";
 /// Each step of ambient occlusion and the target it creates: the depth copy, the horizon search and
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
@@ -528,6 +536,11 @@ pub(crate) enum Role {
     Decals,
     /// Draws the camera's opaque objects on the layers that decals skip again, over the decals.
     DecalRedraw,
+    /// Draws the camera's opaque objects into GPU picking's id target, from the scene's depth.
+    Pick,
+    /// Copies GPU picking's id target, which the device resolved, into the target that a copy
+    /// reads.
+    PickResolve,
     /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
     /// attachment of its render pass resolves.
     Resolve,
@@ -765,6 +778,15 @@ pub(crate) struct FrameGraph {
     outlined: bool,
     /// The outline's culling pass on WebGPU and its mask pass, once declared.
     outline_passes: Vec<PassId>,
+    /// True while a pick waits for a frame: the next declared graph holds the pick's passes.
+    picking_wanted: bool,
+    /// True once the graph has declared the pick's passes. They stay declared, so the plan keeps
+    /// their targets and never remakes one while a copy may still read it.
+    pick_declared: bool,
+    /// The pick's id pass, once declared.
+    pick_pass: Option<PassId>,
+    /// The pass that resolves the pick's ids into the target a copy reads, once declared.
+    pick_resolve_pass: Option<PassId>,
     /// The render scale of the frame being recorded.
     scale: RenderScale,
     /// The passes that can take the scene color to the canvas, once declared.
@@ -1074,6 +1096,10 @@ impl FrameGraph {
             outline: None,
             outlined: false,
             outline_passes: Vec::new(),
+            picking_wanted: false,
+            pick_declared: false,
+            pick_pass: None,
+            pick_resolve_pass: None,
             scale: RenderScale::FULL,
             outputs: None,
             bloom_pass: scene_color
@@ -2596,6 +2622,7 @@ impl FrameGraph {
             self.opaque.push((index as u16, pass));
             self.view_passes.push((index as u16, pass));
         }
+        self.declare_pick(views);
         self.decals_declared = self.decals_wanted && !views.is_empty();
         if self.decals_declared {
             // Decals read the depth that the camera's opaque pass leaves, and draw over its color
@@ -2865,6 +2892,78 @@ impl FrameGraph {
     /// passes draw into, in pixels.
     pub(crate) fn render_size(&self) -> (u32, u32) {
         Size::Full.viewport(self.canvas, self.scale)
+    }
+
+    /// Declares the pick's passes while a pick waits: the id pass, which reads the scene's depth
+    /// as the camera's opaque pass leaves it and draws the opaque objects into an id target of the
+    /// scene's samples, then the resolve pass, which copies the ids that the device resolved into
+    /// a target of one sample that the frame copies into a buffer. The id pass runs before the
+    /// decal and transparent passes, whose draws write the depth it tests.
+    fn declare_pick(&mut self, views: &[View]) {
+        self.pick_pass = None;
+        self.pick_resolve_pass = None;
+        if views.is_empty() || (!self.picking_wanted && !self.pick_declared) {
+            return;
+        }
+        self.pick_declared = true;
+        let size = view_size(&views[ViewId::CAMERA.index()]);
+        let ids = Target::color(pick::FORMAT).samples(self.samples);
+        let pass = Pass::new(PICK_PASS, PassKind::Scene)
+            .size(size)
+            .reads_so_far(SCENE_DEPTH)
+            .writes(SCENE_DEPTH)
+            .creates(PICK_IDS, ids);
+        self.pick_pass = Some(self.add(pass, Role::Pick));
+        let resolve = Pass::new(PICK_RESOLVE_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(PICK_IDS)
+            .creates(PICK_RESOLVED, Target::color(pick::FORMAT).copy_source());
+        self.pick_resolve_pass = Some(self.add(resolve, Role::PickResolve));
+    }
+
+    /// Declares the pick's passes when the first pick waits, and leaves them declared afterwards.
+    /// Their targets stay in every plan, so no plan releases one while a copy may still read it. A
+    /// frame without a pick skips their step and draws nothing.
+    pub(crate) fn set_picking(&mut self, on: bool) {
+        self.picking_wanted = on;
+        if on && !self.pick_declared {
+            self.declared = false;
+        }
+    }
+
+    /// Switches the pick's passes on once they are declared. A frame without a pick leaves them on:
+    /// the plan keeps their targets, and the frame's skip of their step draws nothing.
+    pub(crate) fn set_picking_draws(&mut self, on: bool) {
+        if !on {
+            return;
+        }
+        for pass in [self.pick_pass, self.pick_resolve_pass]
+            .into_iter()
+            .flatten()
+        {
+            self.graph.set_enabled(pass, true);
+        }
+    }
+
+    /// What the pick's pipelines draw into: the id format, the scene depth's format and samples,
+    /// and the draw index where WebGL2 reads it.
+    pub(crate) fn pick_targets(&self) -> PassTargets {
+        pick::targets(DEPTH_FORMAT, self.samples, 0)
+    }
+
+    /// The draw list's id of the target that holds the pick's resolved ids, or `None` while the
+    /// pick passes are not declared. Valid once the frame's [`FrameGraph::prepare`] made the
+    /// plan's textures.
+    pub(crate) fn pick_result_texture(&self) -> Option<u32> {
+        let resource = self.graph.find_resource(PICK_RESOLVED)?;
+        let surface = self.graph.plan()?.texture_of(resource)?;
+        Some(self.texture_id(surface))
+    }
+
+    /// The draw list's id of the id target that the pick pass drew, which the resolve pass and the
+    /// bind group read, or `None` while the pick passes are not declared.
+    pub(crate) fn pick_sample_texture(&self) -> Option<u32> {
+        self.sampled_id(PICK_IDS)
     }
 
     /// Declares the outline's passes: on WebGPU the outline view's culling pass, then the mask
@@ -4494,11 +4593,15 @@ impl FrameGraph {
                         meter.record(list)?;
                     }
                     // The outline mask, the weighted layer's sums and the skin pass's light start
-                    // from nothing.
+                    // from nothing; so does the pick's id target, whose 0 names no object.
                     let masks = passes.iter().any(|&pass| {
                         matches!(
                             self.roles[pass.index()],
-                            Role::OutlineMask | Role::SkinLight | Role::Motion | Role::Weighted
+                            Role::OutlineMask
+                                | Role::SkinLight
+                                | Role::Motion
+                                | Role::Weighted
+                                | Role::Pick
                         )
                     });
                     let clear = if masks {

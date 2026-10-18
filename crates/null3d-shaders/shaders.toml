@@ -442,22 +442,52 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
 
-# GPU picking: each object written with its object or batch id and its instance's row, into a small
-# id target, where the scene's depth leaves it. The pass runs after the opaque pass, uses the
-# scene's depth with an EQUAL test that writes no depth, so a fragment that a material's mask
-# discarded (which wrote no depth) never matches. The fragment writes the id that the table of
-# object ranges gives, which the OBJECT_IDS def adds to the vertex shader. It loads on first use,
-# when a sketch first asks for GPU picking. Every build moves its vertices as the template that
-# shades the same draw does, since the EQUAL test compares positions to the last bit. A mesh drawn
-# with a custom material that moves its vertices has no build here: the material's own WGSL cannot
-# join this template, so picking finds such a mesh on the CPU (crates/null3d-render's picking and
-# the scene's queries).
+# GPU picking: each object written with the source key of its object or of its instance's row,
+# where the scene's depth leaves it. The pass runs after the opaque pass, uses the scene's depth
+# with a test that writes no depth, so a fragment that a material's mask discarded (which wrote no
+# depth) never matches. The vertex shader passes the key flat and the fragment writes its four
+# bytes. It loads on first use, when a sketch first asks for GPU picking. Every build
+# moves its vertices as the template that shades the same draw does, since the test compares
+# positions to the last bit. A mesh drawn with a custom material that moves its vertices has no
+# build here: its own template has pick builds when its vertex offset moves them, and the scene's
+# queries answer it with a raycast otherwise (crates/null3d-render's pick module).
 [shaders.pick]
 file = "pick.wgsl"
-first_use = true
+by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["OBJECT_IDS"], permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "OBJECT_IDS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["SKIN", "INSTANCE_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
+
+# The pick template of a masked material that reads its base color map: the same mask's texels cut
+# the same pixels that the shading cuts. It binds the material's maps, as the shading does. A
+# standard material's map group holds every map slot, and an unlit map's the base color map alone.
+[shaders.pick_maps]
+file = "pick.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP", "MATERIAL_MAPS"], permutations = ["SKIN", "INSTANCE_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP", "MATERIAL_MAPS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
+
+[shaders.pick_texture_maps]
+file = "pick.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP"], permutations = ["SKIN", "INSTANCE_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
+
+# GPU picking's resolve: one triangle over the render size, which copies the id target that the
+# device resolved into one sample per pixel, so the frame can copy the picked pixel into a buffer.
+# It loads with the pick pass, on a page's first pick.
+[shaders.pick_resolve]
+file = "pick_resolve.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads the picking templates with its first pick.
+[first_use.picking]
+shaders = ["pick", "pick_maps", "pick_texture_maps", "pick_resolve"]
 
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and

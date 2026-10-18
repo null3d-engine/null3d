@@ -112,6 +112,8 @@ pub(super) enum Shading {
     /// Each caster's pipeline for the shadow atlas, with the single frame group of a shadow tile's
     /// view.
     Tile,
+    /// Each draw's pipeline for GPU picking's id target, with the camera view's frame group.
+    Pick,
 }
 
 /// Each view's rings, and how the device draws many buckets. The views are of one kind, in order
@@ -656,11 +658,12 @@ impl Opaque {
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
         // The prepass's pipelines and the tiles' pipelines both sit in each draw's second slot.
-        let (light_slot, second) = match shading {
-            Shading::Lit { light_slot } => (light_slot, false),
-            Shading::Prepass { light_slot } => (light_slot, true),
-            Shading::Depth => (0, false),
-            Shading::Tile => (0, true),
+        let (light_slot, second, pick) = match shading {
+            Shading::Lit { light_slot } => (light_slot, false, false),
+            Shading::Prepass { light_slot } => (light_slot, true, false),
+            Shading::Depth => (0, false, false),
+            Shading::Tile => (0, true, false),
+            Shading::Pick => (0, false, true),
         };
         self.bind_view(list, view, light_slot)?;
         let mut pipeline = None;
@@ -668,12 +671,19 @@ impl Opaque {
         let mut run = usize::MAX;
         for_each_call(draws, &visible, multi_draw, |index, call| {
             let first = draws[call.run];
-            let id = if second {
+            let id = if pick {
+                first.pick
+            } else if second {
                 first.prepass
             } else {
                 first.pipeline
             };
-            if id == 0 || (first.textures != 0 && hidden(first.textures)) {
+            let maps = if pick {
+                first.pick_textures
+            } else {
+                first.textures
+            };
+            if id == 0 || (maps != 0 && hidden(maps)) {
                 return Ok(());
             }
             if call.run != run {
@@ -683,10 +693,11 @@ impl Opaque {
                     pipeline = Some(id);
                 }
                 // The prepass draws with each pipeline's own vertex shader, which can read the
-                // material's textures, as a custom material's vertex offset may.
-                if first.textures != 0 && first.textures != textures {
-                    list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
-                    textures = first.textures;
+                // material's textures, as a custom material's vertex offset may. A custom
+                // material's pick build reads them too.
+                if maps != 0 && maps != textures {
+                    list.push(Op::SetBindGroup, &[TEXTURES_GROUP, maps, 0])?;
+                    textures = maps;
                 }
                 let (vertices, indices) = meshes.ids(first.page);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
@@ -786,6 +797,8 @@ mod tests {
             index_count: 36,
             first_index: 0,
             pairs: false,
+            pick: 0,
+            pick_textures: 0,
         }
     }
 

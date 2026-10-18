@@ -499,8 +499,12 @@ mod ids {
     /// Two pairs of the reflection probes' maps and the chain that each probe's filter draws
     /// through (see [`crate::probes::ProbeTextures`]).
     pub const PROBE_TEXTURES: u32 = STILL_BLANK_OUTLINE + 1;
+    /// The buffers of GPU picking's reads, one for each read that may wait for the GPU.
+    pub const PICK_BUFFERS: u32 = PROBE_TEXTURES + 4;
+    /// The bind group of GPU picking's resolve pass.
+    pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = PROBE_TEXTURES + 4;
+    pub const TARGETS: u32 = PICK_GROUP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -758,6 +762,9 @@ pub struct GpuDrivenRenderer {
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
+    /// True when the scene's layout was built while a pick waits, so its buckets hold the pick
+    /// pipelines.
+    layouts_picked: bool,
     /// True once the outline view's GPU objects exist.
     outline_made: bool,
     /// The layout of the objects whose material has a scatter radius, which the subsurface view
@@ -841,6 +848,8 @@ pub struct GpuDrivenRenderer {
     probes_listed: bool,
     /// The texel rows of the row values texture, 0 before it exists.
     value_rows: u32,
+    /// GPU picking's GPU objects, while a page picks.
+    pick: crate::pick::PickState,
 }
 
 /// The builder's scene settings from `config`: meshes in shared buffers, each page within one
@@ -1003,6 +1012,7 @@ impl GpuDrivenRenderer {
             key_counts: KeyCounts::new(),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
+            layouts_picked: false,
             outline_made: false,
             scattering: Layout::new(Drawn::Subsurface, config.index_instances),
             layouts_scattered: false,
@@ -1054,6 +1064,7 @@ impl GpuDrivenRenderer {
             tiles_made: 0,
             cascades_held: false,
             created: false,
+            pick: crate::pick::PickState::default(),
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
@@ -1173,6 +1184,12 @@ impl GpuDrivenRenderer {
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
         let settings = &self.settings;
+        // A pick that waits declares the pick's passes for this frame, and builds the layout
+        // again with their pipelines. The request stays until a frame records its read, and the
+        // passes stay declared for a few frames after it, while its copy may still wait.
+        let requested = settings.picking();
+        let picking = requested || self.pick.keep > 0;
+        self.graph.set_picking(picking);
         self.graph.set_ao(
             settings.ao(),
             settings.contact(camera.as_ref(), input.canvas),
@@ -1210,6 +1227,7 @@ impl GpuDrivenRenderer {
             || motion != self.layouts_moving
             || self.graph.depth_prepass() != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
+            || picking != self.layouts_picked
             || skinned_appear;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
@@ -1236,6 +1254,8 @@ impl GpuDrivenRenderer {
                 self.graph.depth_pass(Prepass::DepthTemplate),
                 &self.skinning,
                 &mut self.key_counts,
+                self.graph.pick_targets(),
+                picking,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
             let (skinning, layout) = (&self.skinning, &self.layout);
@@ -1305,6 +1325,8 @@ impl GpuDrivenRenderer {
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
                 )?;
             } else {
                 self.casters.clear();
@@ -1325,6 +1347,8 @@ impl GpuDrivenRenderer {
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
                 )?;
             } else {
                 self.outlined.clear();
@@ -1345,6 +1369,8 @@ impl GpuDrivenRenderer {
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
                 )?;
             } else {
                 self.scattering.clear();
@@ -1364,11 +1390,14 @@ impl GpuDrivenRenderer {
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
                 )?;
             } else {
                 self.moving.clear();
             }
             self.layouts_moving = motion;
+            self.layouts_picked = picking;
             // The cell order holds every object that a view or a cascade culls: blended casters
             // have no bucket in the scene's layout, as the transparent pass draws them, but cast
             // all the same. Blended objects can be outlined too.
@@ -1481,6 +1510,13 @@ impl GpuDrivenRenderer {
         if occlusion && self.layout.occluders() > 0 {
             created_pipelines |= self.pyramids.create_pipelines(list, input.frame)?;
         }
+        // A pick's resolve pass draws one triangle over the render size, after the id pass.
+        if picking {
+            let id = self
+                .pipelines
+                .id(crate::pick::resolve_key(crate::pick::FORMAT));
+            self.pick.resolve = Some((id, crate::pick::FORMAT));
+        }
         created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -1501,7 +1537,20 @@ impl GpuDrivenRenderer {
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
+        // The pick's passes are switched on before the graph compiles this frame: a change that
+        // follows the compile would leave them out of the plan, and the frame would copy a stale
+        // target. A frame whose pick pipelines still build keeps the passes off.
+        let pick_drawing = self.pick_ready(input, requested);
+        self.graph.set_picking_draws(pick_drawing);
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        let pick_frame = self.begin_pick(list, input, pick_drawing)?;
+        self.pick.keep = if pick_frame.is_some() {
+            crate::pick::KEEP_FRAMES
+        } else if requested {
+            self.pick.keep
+        } else {
+            self.pick.keep.saturating_sub(1)
+        };
         let graph = &self.graph;
         self.settings
             .set_view_targets(|view| graph.view_target(view), graph.textures_made());
@@ -2405,6 +2454,7 @@ impl GpuDrivenRenderer {
         let skips = |role: Role| match role {
             Role::Shadow(view) => !drawn(view),
             Role::Occluders(_) => !occluding,
+            Role::Pick | Role::PickResolve => pick_frame.is_none(),
             _ => false,
         };
         let (sorted, transparent) = (&self.sorted, &self.transparent);
@@ -2440,6 +2490,9 @@ impl GpuDrivenRenderer {
                     &hidden,
                 )
             };
+        let pick_pipeline = self.pick.resolve.map_or(0, |(id, _)| id);
+        let pick_group = self.pick.group;
+        let pick_pixel = pick_frame.map(|(_, pixel)| pixel);
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -2553,6 +2606,24 @@ impl GpuDrivenRenderer {
                         particles,
                     )
                 }
+                Role::Pick => {
+                    // One pixel is all the frame reads, so the pass shades no other.
+                    if let Some((x, y)) = pick_pixel {
+                        list.push(Op::SetScissor, &[x, y, 1, 1])?;
+                    }
+                    let hidden_targets = settings.hidden_targets(ViewId::CAMERA);
+                    let textures = settings.textures();
+                    let hidden =
+                        |group: u32| textures.group_pass_views(group) & hidden_targets != 0;
+                    let counts = direct_draws.then(|| direct.counts(ViewId::CAMERA));
+                    opaque::record_pick(list, ViewId::CAMERA, layout, meshes, counts, &hidden)
+                }
+                Role::PickResolve => {
+                    list.push(Op::SetPipeline, &[pick_pipeline])?;
+                    list.push(Op::SetBindGroup, &[0, pick_group, 0])?;
+                    list.push(Op::Draw, &[3, 1, 0, 0])?;
+                    Ok(())
+                }
                 Role::Weighted => transparent.record(
                     list,
                     ViewId::CAMERA,
@@ -2574,9 +2645,91 @@ impl GpuDrivenRenderer {
                 Ok(())
             },
         )?;
+        if let Some((request, pixel)) = pick_frame
+            && let Some(texture) = self.graph.pick_result_texture()
+        {
+            let buffer = ids::PICK_BUFFERS + request.ring;
+            crate::pick::record_readback(
+                list,
+                &request,
+                pixel,
+                input.canvas,
+                texture,
+                buffer,
+                false,
+            )?;
+            self.settings.take_pick();
+        }
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
         Ok(upload_everything)
+    }
+
+    /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
+    /// of every bucket are built. A frame that gives false records no read, so the request stays.
+    fn pick_ready(&self, input: &FrameInput<'_>, requested: bool) -> bool {
+        if !requested {
+            return false;
+        }
+        let pipeline = self.pick.resolve.map(|(id, _)| id);
+        pipeline.is_some_and(|id| self.pipelines.built(id, input.pipelines_built))
+            && self.layout.buckets.iter().all(|bucket| {
+                bucket.pick == 0 || self.pipelines.built(bucket.pick, input.pipelines_built)
+            })
+    }
+
+    /// Prepares the frame's pick while it draws one: it creates the ring's read buffers and the
+    /// bind group that the resolve pass reads the id target through, and says which pixel the
+    /// frame copies back.
+    fn begin_pick(
+        &mut self,
+        list: &mut DrawList,
+        input: &FrameInput<'_>,
+        drawing: bool,
+    ) -> Result<Option<crate::pick::PickFrame>, RecordError> {
+        let Some(request) = self.settings.pick().filter(|_| drawing) else {
+            return Ok(None);
+        };
+        let Some(texture) = self.graph.pick_sample_texture() else {
+            return Ok(None);
+        };
+        if !self.pick.buffers_made {
+            for ring in 0..crate::pick::RING as u32 {
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        ids::PICK_BUFFERS + ring,
+                        crate::pick::READ_BYTES,
+                        usage::MAP_READ | usage::COPY_DST,
+                    ],
+                )?;
+            }
+            self.pick.buffers_made = true;
+        }
+        if self.pick.group == 0 || self.pick.bound != texture {
+            let group = ids::PICK_GROUP;
+            let words = [
+                group,
+                bind_layout::VIEW_COPY,
+                1,
+                0,
+                resource_kind::TEXTURE,
+                texture,
+                0,
+                0,
+            ];
+            list.push(Op::CreateBindGroup, &words)?;
+            self.pick.group = group;
+            self.pick.bound = texture;
+        }
+        let size = self.graph.render_size();
+        let pixel = crate::pick::pixel_of(
+            &request,
+            self.settings.pixel_ratio(),
+            input.render_scale,
+            size,
+        );
+        Ok(Some((request, pixel)))
     }
 
     /// Makes the row values texture big enough for the scene layout's sources with row values,
@@ -2815,6 +2968,26 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.tiles.shape().is_some()
     }
 
+    fn pick_covers_scene(&self) -> bool {
+        self.layout.buckets.iter().all(|bucket| bucket.pick != 0) && self.sorted.is_empty()
+    }
+
+    fn pick_target(&self, key: u32) -> Option<(u32, u32)> {
+        if key == 0 {
+            return None;
+        }
+        let layout = &self.layout;
+        if key < layout.scene_rows {
+            return Some((key, u32::MAX));
+        }
+        let &(batch, base) = layout
+            .batch_bases()
+            .iter()
+            .rev()
+            .find(|&&(_, first)| first <= key)?;
+        Some((batch, key - base))
+    }
+
     fn meshes_moved(&mut self, _ids: &[u32], moves: &MeshMoves) {
         self.meshes.moved(moves);
         if let Some(first) = moves.morph_texels {
@@ -2852,7 +3025,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.moving.forget_gpu();
         self.motion_made = false;
         self.motion.forget_gpu();
-
+        self.pick.reset_gpu();
         self.culling.forget_gpu();
         self.pyramids.forget_gpu();
         self.views_made = 0;

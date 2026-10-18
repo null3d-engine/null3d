@@ -52,6 +52,10 @@ import {
 	TEMPLATE_PARTICLE,
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PICK,
+	TEMPLATE_PICK_MAPS,
+	TEMPLATE_PICK_RESOLVE,
+	TEMPLATE_PICK_TEXTURE_MAPS,
 	TEMPLATE_PROBE_GRID,
 	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
@@ -264,6 +268,10 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
 	templates[TEMPLATE_MOTION] = { shader: shaders.motion, pipeline: 'main' };
+	templates[TEMPLATE_PICK] = { shader: shaders.pick, pipeline: 'main' };
+	templates[TEMPLATE_PICK_MAPS] = { shader: shaders.pick_maps, pipeline: 'main' };
+	templates[TEMPLATE_PICK_TEXTURE_MAPS] = { shader: shaders.pick_texture_maps, pipeline: 'main' };
+	templates[TEMPLATE_PICK_RESOLVE] = { shader: shaders.pick_resolve, pipeline: 'main' };
 	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
