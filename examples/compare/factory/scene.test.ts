@@ -385,7 +385,7 @@ describe('surfaces, grade and effects', () => {
 
 	test('effects read and write as address text', () => {
 		expect(effectsToText(effectsFromText(null))).toBe(
-			'shadows,fog,bloom,ao,grade,lens,decals,reflections,particles',
+			'shadows,fog,bloom,ao,grade,lens,probes,decals,reflections,particles',
 		);
 		expect(effectsFromText('fog,bloom')).toEqual({
 			shadows: false,
@@ -394,6 +394,7 @@ describe('surfaces, grade and effects', () => {
 			ao: false,
 			grade: false,
 			lens: false,
+			probes: false,
 			decals: false,
 			reflections: false,
 			particles: false,

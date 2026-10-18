@@ -1872,6 +1872,19 @@ export const NIGHT_LOOK = {
 	lens: { shift: 5, streak: 0.3, grain: 0.035 },
 } as const;
 
+/**
+ * The reflection probe that lights the town's own core: its box reaches over the camera's loop,
+ * it captures the town from above the roofs where the lit facades and the sky fill its views, and
+ * it fades out over several meters beyond the box. The town itself, with the street and the near
+ * buildings, gives the surfaces their reflections in place of the night sky's environment.
+ */
+export const NIGHT_PROBE = {
+	box: { min: [-72, 0, -72] as const, max: [72, 40, 72] as const },
+	position: [0, 30, 0] as const,
+	blend: 8,
+	intensity: 4,
+} as const;
+
 // The camera: a minute's loop that starts high over the town, sinks into a street at the height
 // of a person, drives down it among the cars, and climbs back out.
 
@@ -1913,7 +1926,7 @@ export const NIGHT_RAMPS = {
 export const NIGHT_HOLD = {
 	seconds: WIDE_SHOT,
 	count: 96,
-	timeoutSeconds: 180,
+	timeoutSeconds: 420,
 	softwareCount: 24,
 } as const;
 

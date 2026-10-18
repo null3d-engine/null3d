@@ -66,6 +66,7 @@ import {
 	NIGHT_CAMERA,
 	NIGHT_HOLD,
 	NIGHT_LOOK,
+	NIGHT_PROBE,
 	type NightMesh,
 	nightBlocks,
 	nightMeshes,
@@ -140,6 +141,18 @@ export default defineSketch(
 		);
 		setActiveBlocks(town, startBlocks);
 		const look = NIGHT_LOOK;
+
+		// The town's own light in place of the night sky's, on the surfaces in its box. It captures
+		// the town once, when the first frame poses it, so both engines reflect the same state. It
+		// takes its capture views first, before the post effects and the street's mirror take
+		// theirs, so a scene with every effect still captures.
+		if (effects.probes)
+			scene.createReflectionProbe({
+				box: NIGHT_PROBE.box,
+				position: NIGHT_PROBE.position,
+				blend: NIGHT_PROBE.blend,
+				intensity: NIGHT_PROBE.intensity,
+			});
 
 		// The comparison's fixed settings: no governor, every pixel drawn, and ambient occlusion at
 		// half the render size in each direction, as the three.js half draws it.

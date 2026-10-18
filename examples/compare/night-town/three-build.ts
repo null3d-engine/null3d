@@ -64,6 +64,7 @@ import {
 	NEON_COLORS,
 	NIGHT_CAMERA,
 	NIGHT_LOOK,
+	NIGHT_PROBE,
 	type NightMesh,
 	nightBlocks,
 	nightMeshes,
@@ -97,6 +98,8 @@ const CASCADES = 3;
 const SHADOW_MAP = 2048;
 /** How far each receiver moves along its normal before its shadow test: null3D's default. */
 const NORMAL_BIAS = 0.02;
+/** A face of the reflection probe's cube, in texels. */
+const PROBE_SIZE = 256;
 
 /** A BufferGeometry that holds the shared mesh data as it is. */
 function toGeometry(three: Three, mesh: MeshData): ThreeModule.BufferGeometry {
@@ -919,6 +922,43 @@ export async function buildNightTown({
 		}
 	};
 
+	// The reflection probe: a cube capture of the town from the probe's point, filtered into the
+	// environment that lights the surfaces in its box. It runs once, on the first pose, so both
+	// engines capture the same state of the town.
+	const cube = (() => {
+		if (!effects.probes) return null;
+		if (kind === 'webgpu') {
+			const { CubeRenderTarget } = three as unknown as typeof import('three/webgpu');
+			return new CubeRenderTarget(PROBE_SIZE, {
+				type: three.HalfFloatType,
+			}) as unknown as ThreeModule.WebGLRenderTarget;
+		}
+		return new three.WebGLCubeRenderTarget(PROBE_SIZE, {
+			type: three.HalfFloatType,
+			generateMipmaps: false,
+		});
+	})();
+	const probeCamera = cube
+		? new three.CubeCamera(look.camera.near, look.camera.far, cube as never)
+		: null;
+	let probed = false;
+	const captureProbe = () => {
+		if (!cube || !probeCamera || probed) return;
+		probed = true;
+		probeCamera.position.set(...NIGHT_PROBE.position);
+		scene.add(probeCamera);
+		const toneMapping = renderer.toneMapping;
+		renderer.toneMapping = three.NoToneMapping;
+		probeCamera.update(renderer as never, scene);
+		renderer.toneMapping = toneMapping;
+		scene.remove(probeCamera);
+		const pmrem = new three.PMREMGenerator(renderer as never);
+		const environment = pmrem.fromCubemap(cube.texture as ThreeModule.CubeTexture).texture;
+		pmrem.dispose();
+		scene.environment = environment;
+		scene.environmentIntensity = NIGHT_PROBE.intensity;
+	};
+
 	// Particles: an instanced quad for each layer of the town's sprite rows.
 	const sprites = effects.particles
 		? await makeNightSprites(capacity, async (layer) => {
@@ -993,6 +1033,7 @@ export async function buildNightTown({
 			if (sprites) drawNightSprites(town, seconds, cameraPosition, sprites);
 			updateShadows();
 			updateReflection(street);
+			captureProbe();
 		},
 	};
 }

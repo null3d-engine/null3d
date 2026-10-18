@@ -79,12 +79,14 @@ export interface Comparison {
 const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', 'grade'];
 /** A scene with the lens grade on its light. */
 const LENS_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens'];
-/**
- * Night town's effects: every one it draws. The reflection probes' switch joins after `lens` when
- * M2-EX32 lands: the page then shows one more switch, and each half reads `effects.probes` where
- * it builds the town.
- */
-const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens', 'reflections', 'particles'];
+/** Night town's effects: every one it draws. */
+const NIGHT_EFFECTS: readonly EffectName[] = [
+	...PLAIN_EFFECTS,
+	'lens',
+	'probes',
+	'reflections',
+	'particles',
+];
 
 export const COMPARISONS: readonly Comparison[] = [
 	{
@@ -195,6 +197,7 @@ export const COMPARISONS: readonly Comparison[] = [
 			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
 			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. Both engines draw it in the facade shade, from the same window boxes and the same room depth.",
 			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines and modes. Their lights are emissive strips, so they add no lights to the count.',
+			"The town's own light lights it: a reflection probe over the town's core replaces the night sky's environment for the surfaces in its box. null3D captures the town from the probe's point and projects the reflections onto the box's sides. three.js captures the same views with a cube camera, filters them as the environment and gives them to the whole scene, so the ground beyond the town reflects the town too.",
 		],
 		effects: NIGHT_EFFECTS,
 	},

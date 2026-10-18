@@ -1012,6 +1012,7 @@ export const EFFECT_NAMES = [
 	'ao',
 	'grade',
 	'lens',
+	'probes',
 	'decals',
 	'reflections',
 	'particles',
