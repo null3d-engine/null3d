@@ -479,9 +479,6 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 			'page-message.js',
 			'page-gpu.js',
 			'page-control.js',
-			// The probe worker measures the direct path on every device with WebGPU, whichever path
-			// the page draws with, and the measurement loads in a file of its own.
-			'draw-path-probe.js',
 			`${drawing}-${path.part}.js`,
 			`${drawing}-gpu-shared.js`,
 		],
