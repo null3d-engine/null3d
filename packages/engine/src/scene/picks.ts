@@ -136,7 +136,16 @@ export class ScenePicks implements ViewHolder {
 		this.ring = (ring + 1) % RING;
 		const slot = PickRead0 + ring;
 		Atomics.store(slots, slot, 0);
-		if (this.core.glue.requestPick(job.x, job.y, ring, slot) !== 0) {
+		// The pass tests the pixel that the camera draws, so a point between pixels takes the
+		// pixel it lies in. A point beyond the core call's whole-number range names no pixel.
+		const x = Math.floor(job.x);
+		const y = Math.floor(job.y);
+		if (x < -0x8000_0000 || x > 0x7fff_ffff || y < -0x8000_0000 || y > 0x7fff_ffff) {
+			job.resolve(null);
+			this.send();
+			return;
+		}
+		if (this.core.glue.requestPick(x, y, ring, slot) !== 0) {
 			// A pick still waits for its frame, as a lost device can leave it: try again next frame.
 			this.queue.unshift(job);
 			return;
