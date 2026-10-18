@@ -1042,10 +1042,9 @@ pub mod permutation {
     /// switch reads instances by index, which no build of such a surface needs. Layers win over
     /// light through a thin surface, whose maps would take their slots, and a weighted surface lets
     /// no light through a thin surface either, so neither doubles the builds of the other.
-    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map. A
-    /// motion build writes motion alone: it has none of them either, and a skinned or morphed
-    /// custom material draws its motion through the motion template, without its vertex offset.
-
+    /// A motion build writes motion alone: it has none of those bits either, and a skinned or
+    /// morphed custom material draws its motion through the motion template, without its vertex
+    /// offset.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once. A motion build never fades.
