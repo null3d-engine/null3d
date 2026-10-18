@@ -4702,15 +4702,15 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
     if status == 0 { count } else { query::FAILED }
 }
 
-/// Asks the next recorded frame to answer which object draws at a point of the canvas. `x` and
-/// `y` are CSS pixels from its top-left corner, `ring` names the read of the pick ring that the
-/// answer lands in, and `slot` the control slot that the read raises once its bytes are in engine
-/// memory. Returns 0 when the frame will draw the pick, and 1 when a pick already waits for a
-/// frame.
+/// Asks the next recorded frame to answer which object draws at a pixel of the canvas. `x` and
+/// `y` are whole CSS pixels from its top-left corner, `ring` names the read of the pick ring that
+/// the answer lands in, and `slot` the control slot that the read raises once its bytes are in
+/// engine memory. Returns 0 when the frame will draw the pick, and 1 when a pick already waits for
+/// a frame.
 #[wasm_bindgen(js_name = requestPick)]
-pub fn request_pick(x: f64, y: f64, ring: u32, slot: u32) -> u32 {
+pub fn request_pick(x: i32, y: i32, ring: u32, slot: u32) -> u32 {
     with_engine(|e| {
-        if !(x.is_finite() && y.is_finite()) || ring as usize >= null3d_render::pick::RING {
+        if ring as usize >= null3d_render::pick::RING {
             return 1;
         }
         if e.renderer.settings().picking() {
