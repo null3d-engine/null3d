@@ -580,7 +580,8 @@ const INERTIAL_CROWD = 64;
 
 /**
  * What S4, S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
- * - S4's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each;
+ * - S4's and S5's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each.
+ *   S5's sun casts them too, at the preset that the Mac picks;
  * - S5's camera path, which the browser runs beside 500 knights' moves without inlining the
  *   camera's setters, so it boxes up to all seven numbers that it passes to them: 46 to 84 bytes
  *   per frame on the Mac;
@@ -601,7 +602,11 @@ const SCENE_BUDGETS: Partial<Record<(typeof ALLOCATION_SCENES)[number], WorkerBu
 	},
 	s5: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 48 },
-		'render-worker': { 'write webgpu/staging.ts': 8 * 64, 'giveUpStalled gpu/completion.ts': 12 },
+		'render-worker': {
+			'replay webgpu/backend.ts': CONTACT_PASSES * PASS_REPLAY_BYTES,
+			'write webgpu/staging.ts': 8 * 64,
+			'giveUpStalled gpu/completion.ts': 12,
+		},
 	},
 	s6: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 16 },
