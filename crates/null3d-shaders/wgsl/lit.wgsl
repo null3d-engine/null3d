@@ -142,7 +142,9 @@ enable draw_index;
 #ifdef CUSTOM
 #import null3d::mesh::{Instance}
 #endif
+#ifndef DECAL
 #import null3d::probes::{has_probes, probe_light}
+#endif
 #ifdef OBJECT_IDS
 #import null3d::mesh::{object_ids}
 #endif
@@ -1129,14 +1131,28 @@ fn probe_surrounding(
         radiance = environment_radiance(env, to_view, normal, roughness);
         irradiance = environment_irradiance(env, normal);
     }
+    // A decal modulates the surface under it, which reflects the probes already, so the decal
+    // build reads none: that keeps its fragment stage within WebGL2's texture units.
+#ifndef DECAL
     if has_probes() {
         let reflected = reflected_direction(to_view, normal, roughness);
         let local = probe_light(relative, reflected, normal, roughness);
         radiance = local.radiance + radiance * (1.0 - local.weight);
         irradiance = local.irradiance + irradiance * (1.0 - local.weight);
     }
+#endif
     let strength = material_row.uv_u.w;
     return Surrounding(radiance * strength, irradiance * strength);
+}
+
+/// True when a surface has light around it to read: the environment's, the probes', or both. A
+/// decal reads no probes, since it modulates the surface under it, which reflects them already.
+fn has_surrounding() -> bool {
+#ifdef DECAL
+    return has_environment(engine_frame.environment);
+#else
+    return has_environment(engine_frame.environment) || has_probes();
+#endif
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
@@ -1223,9 +1239,9 @@ fn light_surface(
     let env = engine_frame.environment;
     let mirrored = saturate(reflection.a);
 #ifdef PROBE_GRID
-    if has_environment(env) || has_probes() || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
+    if has_surrounding() || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
 #else
-    if has_environment(env) || has_probes() || mirrored > 0.0 {
+    if has_surrounding() || mirrored > 0.0 {
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
         let around = probe_surrounding(relative, normal, to_view, m.roughness);

@@ -59,6 +59,8 @@ Each view lists up to 8 probes in a uniform block of its own: the ready probes w
 
 The priority of reflections, from the top: a mirror's reflection (D-120), screen-space reflections (D-134, in progress), the probes, the environment. In the shaders: `radiance = mix(mix(probes + environment, ssr, ssr share), mirror, mirror share)`.
 
+Decal builds read no probes: a decal modulates the surface under it, which reflects the probes already. The probes' maps share the array at binding 3. A decal build that read them would take one unit more than its spare units leave (D-144).
+
 ### The 8-bit path
 
 On the 8-bit path, views draw display color ([D-104](D-104-scene-passes.md#display-color-on-the-8-bit-path-owner-8-october-2026)). That is compatibility mode with MSAA. There the probes hold display color, and their reflections look grayer, as reflection passes do. WebGL2 devices that draw into no half-float targets have no probes: the scene keeps the environment's light, and development builds warn once.
