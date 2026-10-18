@@ -149,6 +149,8 @@ A pick finds these sources:
 
 A scene with a source that the pick's id target cannot hold answers the whole pick with a raycast instead. That source is a whole shader of your own, a material with `blending` or `transmission`, or a sprite, point or line. The raycast tests triangles, so it ignores masks, and it uses the camera of the frame that last ran.
 
+A pick before the first frame answers `null`. The engine has not drawn the camera yet, so no pixel of a frame shows anything.
+
 A pick costs one more draw of the camera's opaque objects and one read of four bytes. Picks wait in a queue of their own. Each answers in a frame after the one that records it. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null`.
 
 ## Overlap queries

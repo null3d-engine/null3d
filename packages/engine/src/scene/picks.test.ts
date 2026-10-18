@@ -79,6 +79,16 @@ async function answer(picks: ScenePicks, slots: Int32Array, ring: number) {
 }
 
 describe('a pick', () => {
+	test('answers through its promise when the ray fails before the loop starts', async () => {
+		const core = fakeCore();
+		const picks = new ScenePicks(core.core, fakeTargets(), () => {
+			throw new Error('no camera');
+		});
+		// No slots are attached, so the pick answers by ray. A ray that throws rejects the promise
+		// rather than throwing out of the call.
+		await expect(picks.pick(1, 2)).rejects.toThrow('no camera');
+	});
+
 	test('asks the core for the next frame and answers the object that the ids name', async () => {
 		const core = fakeCore();
 		const { picks, slots } = fakePicks(core.core);

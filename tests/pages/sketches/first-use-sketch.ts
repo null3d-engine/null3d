@@ -4,7 +4,12 @@
 // scene keeps every other such feature out: no sun that casts shadows unless the feature needs one,
 // and then no contact shadows, which would load ambient occlusion's file on a desktop. A feature
 // with no case here fails the test, so a new first-use table needs a case.
-import { defineSketch, type SketchContext, type StandardOptions } from '@null3d/engine';
+import {
+	defineSketch,
+	type SketchCallbacks,
+	type SketchContext,
+	type StandardOptions,
+} from '@null3d/engine';
 import {
 	animateObject,
 	createAnimationRig,
@@ -84,7 +89,7 @@ function morphedCard({ scene, geometry, materials }: SketchContext) {
 }
 
 /** The cases, by the shader manifest's names of the features. */
-const CASES: Record<string, (context: SketchContext) => void> = {
+const CASES: Record<string, (context: SketchContext) => SketchCallbacks | void> = {
 	ao: ({ post }) => post.set({ ao: {} }),
 	bloom: ({ post }) => post.set({ bloom: { intensity: 0.4 } }),
 	dof: ({ post }) => post.set({ dof: { focusDistance: 4, aperture: 4 } }),
@@ -160,9 +165,18 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 		batch.markDirty();
 	},
 	lod_fade: fadingLevels,
-	// A pick draws the scene into the pass's id target, whose builds load with the first call.
+	// A pick draws the scene into the pass's id target, whose builds load with its first call. The
+	// call waits for the frame loop, so the case asks on the first frame: a pick during setup has
+	// no frame to draw it and answers with a ray, which loads no shader.
 	picking: ({ scene }) => {
-		void scene.pick(0, 0).catch(() => {});
+		let picked = false;
+		return {
+			onUpdate() {
+				if (picked) return;
+				picked = true;
+				void scene.pick(160, 90).catch(() => {});
+			},
+		};
 	},
 	// The page's ?occlusion=on switch runs GPU occlusion culling, which a marked occluder starts.
 	occlusion: ({ scene, geometry, materials }) => {
@@ -202,6 +216,5 @@ export default defineSketch((context) => {
 		receiveShadows: true,
 	});
 	ground.setRotationEuler(-Math.PI / 2, 0, 0);
-	use(context);
-	return {};
+	return use(context) ?? {};
 });
