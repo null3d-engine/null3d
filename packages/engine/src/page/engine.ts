@@ -5,8 +5,7 @@
 
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
-import { EngineError, errorOfMessage, setErrorFixes } from '../errors/engine-error';
-import { ERROR_FIXES } from '../errors/fixes';
+import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
@@ -41,7 +40,7 @@ import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
-import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
@@ -73,14 +72,7 @@ import {
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
-import {
-	type FrameMetrics,
-	HeapSampler,
-	secondRates,
-	summarizeFrames,
-	threadRoles,
-	wasmDownloadBytes,
-} from './frame-stats';
+import type { FrameMetrics } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
@@ -593,7 +585,8 @@ export interface Engine {
 	attach(container: Element): void;
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
-	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
+	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. The first call
+	 * downloads the code that turns the frame records into these figures.
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
@@ -757,6 +750,11 @@ let pageSketch: Holder | undefined;
  */
 function loadRunnerModule(): Promise<RunnerModule> {
 	return awaitLater(import('../sketch/runner'));
+}
+
+/** Loads the frame figures that a measurement reads, in a file of their own. */
+function loadFrameStats(): Promise<typeof import('./frame-stats')> {
+	return import('./frame-stats');
 }
 
 /** What the page does with the replies of a worker that answer no request. */
@@ -1139,9 +1137,6 @@ function prefetch(url: string): void {
  * @category api/engine
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
-	// The page's errors end with the fixes from its own table, and each worker gets the same table
-	// in its handoff.
-	setErrorFixes(ERROR_FIXES);
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
@@ -1196,6 +1191,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		return await startEngine(options, switches, hold, place, canvas, holder, release);
 	} catch (error) {
 		release();
+		// A coded error's fix arrives in a file of its own, and a failed start reports it whole.
+		await errorFixesReady();
 		if (holding) publishHold(holdFailure(error));
 		throw error;
 	} finally {
@@ -1803,7 +1800,6 @@ async function startEngine(
 			control,
 			metrics,
 			device,
-			errorFixes: ERROR_FIXES,
 			wakeByMessage,
 		};
 		// Only a canvas that no engine used before may need its CSS size fixed: the fix resizes the
@@ -2178,6 +2174,8 @@ async function startEngine(
 				applyPause();
 			},
 			async measure(seconds) {
+				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
+					await loadFrameStats();
 				const reader = new MetricsReader(metrics);
 				const heap = new HeapSampler();
 				const mainThread = new MainThreadWatch();
@@ -2256,6 +2254,7 @@ async function startEngine(
 			await stop();
 			throw error;
 		}
+		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,
 			time: hold,
@@ -2270,6 +2269,9 @@ async function startEngine(
 		starting = false;
 		signal?.removeEventListener('abort', cancelStart);
 		await stop();
+		// The fix text of a coded error arrives in a file of its own, so a failed start waits for it
+		// to end the message it rejects with.
+		await errorFixesReady();
 		throw e;
 	}
 }

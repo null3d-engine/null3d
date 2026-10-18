@@ -53,13 +53,14 @@ describe('EngineError', () => {
 		for (const code of codes) expect(message(code)).toBe(expected(code));
 	});
 
-	it('leaves the fix out of the message on a thread without a table of fixes', () => {
+	it('leaves the fix out of the message until the file of fixes arrives', () => {
 		delete (globalThis as Record<symbol, unknown>)[FIXES_KEY];
 		try {
 			expect(new EngineError('E1108', 'what failed.').message).toBe(
 				`E1108: what failed. See ${DOCS}E1108.md`,
 			);
-			expect(isErrorCode('E1108')).toBe(false);
+			// The code is known at the start, so the error keeps it before its text arrives.
+			expect(isErrorCode('E1108')).toBe(true);
 		} finally {
 			setErrorFixes(ERROR_FIXES);
 		}
@@ -104,6 +105,46 @@ describe('a second copy of the error module in the thread', () => {
 	});
 });
 
+describe('the fixes that load at the first error', () => {
+	/** A copy of the error module whose own load of the fixes has not run yet. */
+	async function freshCopy(name: string): Promise<typeof import('./engine-error')> {
+		return await import(`${import.meta.dirname}/engine-error.ts?${name}`);
+	}
+
+	it('adds the fix to a message that waited for it', async () => {
+		delete (globalThis as Record<symbol, unknown>)[FIXES_KEY];
+		try {
+			const copy = await freshCopy('waits');
+			const error = new copy.EngineError('E1108', 'what failed.');
+			expect(error.message).toBe(`E1108: what failed. See ${DOCS}E1108.md`);
+			await copy.errorFixesReady();
+			expect(error.message).toBe(`E1108: what failed. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`);
+		} finally {
+			setErrorFixes(ERROR_FIXES);
+		}
+	});
+
+	it('adds the fix to a message that another thread sent before it had the text', async () => {
+		delete (globalThis as Record<symbol, unknown>)[FIXES_KEY];
+		try {
+			const copy = await freshCopy('relayed');
+			const raw = `E1108: what failed. See ${DOCS}E1108.md`;
+			const error = copy.errorOfMessage(raw);
+			expect(error?.message).toBe(raw);
+			await copy.errorFixesReady();
+			expect(error?.message).toBe(`E1108: what failed. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`);
+		} finally {
+			setErrorFixes(ERROR_FIXES);
+		}
+	});
+
+	it('keeps the whole text of a message whose thread had the fix', async () => {
+		const copy = await freshCopy('complete');
+		const message = `E1108: what failed. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`;
+		expect(copy.errorOfMessage(message)?.message).toBe(message);
+	});
+});
+
 describe('the error table', () => {
 	it("joins every code's docs with its fix, in one order", () => {
 		expect(Object.keys(ERRORS)).toEqual(Object.keys(ERROR_FIXES));
@@ -113,7 +154,7 @@ describe('the error table', () => {
 
 	it('knows its own codes and nothing else', () => {
 		for (const code of Object.keys(ERROR_FIXES)) expect(isErrorCode(code)).toBe(true);
-		for (const code of ['E9999', 'E1', 'toString', 'constructor'])
+		for (const code of ['E9999', 'E1099', 'E1600', 'E1', 'E11000', 'toString', 'constructor'])
 			expect(isErrorCode(code)).toBe(false);
 	});
 });
