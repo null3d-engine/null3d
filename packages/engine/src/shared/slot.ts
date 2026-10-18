@@ -121,3 +121,15 @@ export const HeldFrom = 35;
  * so idle job workers let their threads run the measurement instead of blocking.
  */
 export const JobsYieldAddress = 36;
+/**
+ * Nonzero while the thread that draws must take a frame without drawing it, by frame parity: a still
+ * view that has accumulated enough frames rests until the scene changes. The thread that draws
+ * takes the frame anyway, so the sketch keeps stepping and can see the change that ends the rest.
+ */
+export const FrameRest0 = 33;
+export const FrameRest1 = 34;
+/**
+ * Nonzero where the page turns the still-camera accumulation off, such as in hold mode and the
+ * image tests: a still view then draws every frame as it moves.
+ */
+export const StillOff = 35;

@@ -245,6 +245,13 @@ export interface Switches {
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
 	hold: string | undefined;
+	/**
+	 * True while ?still-camera lets a still view accumulate its frames, which is the default, and
+	 * false with ?still-camera=off. The image tests and hold mode draw the frame the sketch drew
+	 * once, without the accumulation. A sketch may take `?still` itself, as the crowd benchmark
+	 * does, to hold an animation still.
+	 */
+	still: boolean;
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
@@ -371,6 +378,7 @@ export function parseSwitches(search: string): Switches {
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
+		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
 		stats: statsSwitch(params.get('stats')),
 		glTiming: !params.has('gl-timing')

@@ -96,7 +96,21 @@ impl<B: FrameBuilder> World<B> {
     }
 
     /// The world, drawn by `renderer`, with room for `capacity` scene objects.
-    pub fn build_sized(mut renderer: B, capacity: u32) -> World<B> {
+    pub fn build_sized(renderer: B, capacity: u32) -> World<B> {
+        World::build_with(renderer, capacity, true)
+    }
+
+    /// The world, drawn by `renderer`, whose frames a still view settles: every frame of one parity
+    /// records the same draw list. The still tests use it.
+    pub fn build_still(renderer: B) -> World<B> {
+        World::build_with(renderer, SCENE_CAPACITY, false)
+    }
+
+    /// The world, drawn by `renderer`, with room for `capacity` scene objects and an instance batch
+    /// that `dynamic` makes recompute its rows every frame. A batch that recomputed rows counts as
+    /// a change, so a dynamic batch's frames never settle. The batch's rows are static here either
+    /// way, so both worlds draw the same scene.
+    pub fn build_with(mut renderer: B, capacity: u32, dynamic: bool) -> World<B> {
         let jobs = JobSystem::new(0);
         let mut scene = SceneStorage::with_capacity(capacity);
         let mut batches = BatchTable::with_capacity(4);
@@ -157,7 +171,7 @@ impl<B: FrameBuilder> World<B> {
         }
         scene.apply_commands(&commands, 1).unwrap();
         let batch = batches
-            .create(BATCH_ROWS, true, false, box_mesh, lit, 0.9)
+            .create(BATCH_ROWS, dynamic, false, box_mesh, lit, 0.9)
             .unwrap();
         batches
             .get_mut(batch)
@@ -165,6 +179,9 @@ impl<B: FrameBuilder> World<B> {
             .set_active_count(BATCH_ROWS)
             .unwrap();
         let settings = renderer.settings_mut();
+        // The world's frames draw as a moving view's do, as the test pages' do: a still view would
+        // swap the final pass for its blend after a few frames. The still tests turn it on.
+        settings.set_still_enabled(false);
         settings.set_camera(camera, LENS);
         settings.set_sun([-1.0, -2.0, -1.0], [3.0, 3.0, 3.0]);
         settings.set_ambient([0.4, 0.4, 0.4]);

@@ -99,6 +99,7 @@ use null3d_gpu::drawlist::{
     resource_kind, sizes, texture_usage, view,
 };
 
+use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
@@ -113,7 +114,8 @@ use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, UploadArena, bind_frame_group, drawn_rows, joined_rows,
+    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
+    settled,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -199,8 +201,12 @@ mod ids {
     pub const FOG_VOLUME: u32 = SSR + 1;
     /// The uniform buffer of the automatic exposure's meter.
     pub const EXPOSURE: u32 = FOG_VOLUME + 1;
+    /// The still-camera accumulation's blend's values.
+    pub const ACCUMULATE: u32 = EXPOSURE + 1;
+    /// The settings of the final pass's still build, which draws a still view's accumulated color.
+    pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = EXPOSURE + 1;
+    pub const PAGES: u32 = STILL_SETTINGS + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -274,8 +280,12 @@ mod ids {
     pub const EXPOSURE_CELLS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
     pub const EXPOSURE_STORED: u32 = EXPOSURE_TEXEL + 1;
+    /// The blank color grading table and outline mask that the final pass's still build owns, so
+    /// that it never destroys the final pass's.
+    pub const STILL_BLANK_LUT: u32 = EXPOSURE_STORED + 1;
+    pub const STILL_BLANK_OUTLINE: u32 = STILL_BLANK_LUT + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = EXPOSURE_STORED + 1;
+    pub const TARGETS: u32 = STILL_BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -301,8 +311,10 @@ mod ids {
     /// The linear sampler of the first step of the two-step pass's color grading table, which it
     /// owns so that it never destroys the final pass's.
     pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
+    /// The color grading table's sampler that the final pass's still build owns.
+    pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = OUTPUT_LUT_SAMPLER + 1;
+    pub const SAMPLERS: u32 = STILL_LUT_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -354,8 +366,12 @@ mod ids {
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind group of each step of screen-space reflections, after the full-screen passes'.
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
-    /// The bind group of the scene depth that the decal pass reads, after screen-space reflections'.
-    pub const DECAL_DEPTH_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// The bind group of the still-camera accumulation's blend, after screen-space reflections'.
+    pub const ACCUMULATE_GROUP: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
+    /// The bind group of the final pass's still build.
+    pub const STILL_GROUP: u32 = ACCUMULATE_GROUP + 1;
+    /// The bind group of the scene depth that the decal pass reads, after the still build's.
+    pub const DECAL_DEPTH_GROUP: u32 = STILL_GROUP + 1;
     /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
     pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
     /// The bind groups of the automatic exposure's meter, after the fog's.
@@ -565,6 +581,17 @@ impl CpuCulledRenderer {
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        accumulate: AccumulateIds {
+                            buffer: ids::ACCUMULATE,
+                            group: ids::ACCUMULATE_GROUP,
+                        },
+                        still_pass: FinalIds {
+                            settings: ids::STILL_SETTINGS,
+                            group: ids::STILL_GROUP,
+                            blank_lut: ids::STILL_BLANK_LUT,
+                            lut_sampler: ids::STILL_LUT_SAMPLER,
+                            blank_outline: ids::STILL_BLANK_OUTLINE,
                         },
                         output_pass: FinalIds {
                             settings: ids::OUTPUT_SETTINGS,
@@ -1360,6 +1387,9 @@ impl CpuCulledRenderer {
             self.cull(input)?;
         }
         self.add_culled_views()?;
+        // A view whose scene stopped changing draws from the uniform slot of its frame's parity,
+        // so the frames of one parity record the same words (see `crate::still`).
+        let hold_uniforms = settled(input, self.settings.still_enabled());
         let views = self.settings.views().len();
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -1391,6 +1421,8 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_still_enabled(self.settings.still_enabled());
+        self.graph.set_still(self.settings.still());
         self.graph.set_transmission(self.sorted.transmits());
         self.graph.set_weighted(self.sorted.weighs());
         let skipped = self.settings.decal_skipped_layers();
@@ -1638,8 +1670,11 @@ impl CpuCulledRenderer {
                     ],
                 }),
                 views,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             let shadowed = self.layouts_shadowed.any();
             if self.shadow.is_none() && self.cascades_held && shadowed {
@@ -1656,8 +1691,11 @@ impl CpuCulledRenderer {
                 (&mut self.tile_culling, &mut self.tile_draws, &self.casters),
                 None,
                 tiles,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             upload_views(
                 list,
@@ -1669,8 +1707,11 @@ impl CpuCulledRenderer {
                 ),
                 None,
                 outlines,
-                frame,
-                streamed,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
             )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
@@ -1684,8 +1725,11 @@ impl CpuCulledRenderer {
                     ),
                     None,
                     cascades,
-                    frame,
-                    streamed,
+                    UploadFrame {
+                        frame,
+                        hold_uniforms,
+                        streamed,
+                    },
                 )?;
             }
         }
@@ -1696,7 +1740,6 @@ impl CpuCulledRenderer {
             &input.lines,
             camera.map(|values| &values.camera),
         )?;
-
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let weighted = self.graph.weighted_declared();
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
@@ -1883,6 +1926,15 @@ struct SortedPasses<'a> {
     camera: [(&'a mut Transparent, &'a SortedLayout, u32); 2],
 }
 
+/// What the uploads of one frame's views share: the frame's number, whether a settled view holds
+/// its uniform slot to its parity's, and the streamed texture's ring slot.
+#[derive(Clone, Copy)]
+struct UploadFrame {
+    frame: u32,
+    hold_uniforms: bool,
+    streamed: u32,
+}
+
 /// Uploads, for each of the first `count` views of `culling` that the frame draws, its index list
 /// when it changed, and its frame uniform and draw records, from the views' culling output and the
 /// draws of `layout`. Every view reads the streamed texture of ring slot `streamed`. With `sorted`,
@@ -1895,9 +1947,13 @@ fn upload_views(
     (culling, draws, layout): (&mut Culling, &mut Opaque, &Layout),
     mut sorted: Option<SortedPasses>,
     count: usize,
-    frame: u32,
-    streamed: u32,
+    upload_frame: UploadFrame,
 ) -> Result<(), RecordError> {
+    let UploadFrame {
+        frame,
+        hold_uniforms,
+        streamed,
+    } = upload_frame;
     for k in 0..count {
         let view = culling.view(k);
         let Some(values) = culling.frame(view).copied() else {
@@ -1907,6 +1963,7 @@ fn upload_views(
         let starts = culling.culled(frame, view).bucket_starts();
         let upload = ViewUpload {
             frame,
+            hold_uniforms,
             values: &values,
             offsets: culling.offsets(view),
             streamed,
@@ -2155,9 +2212,15 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
+        self.settings.set_still(self.lists.still());
         let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena, result)
+        let marks = StillMarks::of(input, &self.settings, &self.graph, &self.pipelines);
+        self.lists.restore(input.frame, list, arena, marks, result)
+    }
+
+    fn still(&self) -> crate::still::Still {
+        self.lists.still()
     }
 
     fn visible_entries(&self, frame: u32) -> Option<u32> {

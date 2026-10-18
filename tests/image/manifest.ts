@@ -1207,6 +1207,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	...toneMappingTests(),
 	...antialiasTests(),
+	// The edges scene in a live engine with the still-camera accumulation on, captured once the
+	// view has blended its frames and rests (tests/pages/still.ts). Its edges come out smoother
+	// than any single frame's.
+	{
+		name: 'still',
+		page: 'tests/pages/still.html',
+		size: [320, 180],
+		switches: ['still-camera=on', 'image'],
+		expect: { rested: true },
+		timeoutSeconds: 60,
+	},
 	...bloomTests(),
 	...dofTests(),
 	...exposureTests(),

@@ -1683,7 +1683,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
-      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA, SSAA and TAA have no equivalent.",
+      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA has no equivalent. TAARenderPass and SSAARenderPass need no pass on a still camera, and sampleLevel has no counterpart: a view that holds still blends jittered frames into a sharper picture by itself and then stops drawing (concepts/post-processing). TAA of a moving view comes after 1.0.",
       "docs": "concepts/quality-presets",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
     },

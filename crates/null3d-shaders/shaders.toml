@@ -398,6 +398,15 @@ variants.webgl2 = { targets = ["glsl"] }
 shaders = ["bloom"]
 bits = ["BLOOM"]
 
+# The still-camera accumulation's steps: one triangle over the render size, which blends the scene
+# color into the history of a still view, or copies it (the STORE build).
+[shaders.accumulate]
+file = "accumulate.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # The outline effect's mask: outlined objects drawn as instanced meshes, which mark every part of
 # them, and with OUTLINE_VISIBLE the parts that nothing hides. It reads each instance as the mesh
 # templates do, and loads by device with them. SKIN skins in the vertex shader, as the mesh

@@ -772,6 +772,9 @@ pub mod layout {
     /// opaque color for transmission: the image, which it reads with `textureLoad`, as plain
     /// floats.
     pub const VIEW_COPY: u32 = 25;
+    /// Group 0 of the still-camera accumulation's blend: its values, then the scene color that it
+    /// reads with `textureLoad`, as plain floats.
+    pub const ACCUMULATE: u32 = 26;
     /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
     /// blurred image at half the render size, which the step reads with the linear sampler.
     pub const DOF_COMPOSITE: u32 = 27;
@@ -1489,10 +1492,10 @@ pub mod sizes {
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
     /// shadow lookups, the camera's view and projection matrices, which custom materials read,
-    /// screen-space reflections' matrix into the frame before's view and their two vectors, the
-    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
-    /// fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 976;
+    /// screen-space reflections' matrix into the frame before's view and their two vectors, a
+    /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
+    /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 992;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1714,6 +1717,10 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// The still-camera accumulation's blend: one triangle over the render size, which blends the
+    /// scene color into the history of a still view. It binds as
+    /// [`layout::ACCUMULATE`](super::layout::ACCUMULATE) does.
+    pub const ACCUMULATE: u32 = 48;
     /// The exposure meter's adaptation from the histogram: a compute shader that meters the bins,
     /// moves the stored exposure toward the result and writes the new exposure. WebGPU only.
     pub const EXPOSURE_ADAPT_HISTOGRAM: u32 = 40;
@@ -1821,7 +1828,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 66] = [
+    pub const NAMES: [(&str, u32); 67] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -1858,6 +1865,7 @@ pub mod template {
         ("SHADOW_CUTOUT", SHADOW_CUTOUT),
         ("SHADOW_CUTOUT_MAP", SHADOW_CUTOUT_MAP),
         ("VIEW_COPY", VIEW_COPY),
+        ("ACCUMULATE", ACCUMULATE),
         ("DOF_SETUP", DOF_SETUP),
         ("DOF_SETUP_MS", DOF_SETUP_MS),
         ("DOF_BLUR", DOF_BLUR),
@@ -2012,6 +2020,7 @@ pub mod groups {
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),
         (template::VIEW_COPY, own!(layout::VIEW_COPY)),
+        (template::ACCUMULATE, own!(layout::ACCUMULATE)),
         (template::EXPOSURE_ADAPT_HISTOGRAM, own!(layout::EXPOSURE)),
         (template::DOF_SETUP, own!(layout::EFFECT)),
         (template::DOF_SETUP_MS, own!(layout::EFFECT_DEPTH_MS)),
@@ -2339,6 +2348,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),
+                ("ACCUMULATE", layout::ACCUMULATE),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
                 ("SSR_REDUCE", layout::SSR_REDUCE),

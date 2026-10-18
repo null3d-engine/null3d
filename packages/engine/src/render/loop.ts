@@ -216,6 +216,8 @@ export class Presenter {
 	private callbackHz = 0;
 	/** True when this thread drew a frame since the last callback started. */
 	private drew = false;
+	/** True while a still view rests: the thread takes frames without drawing them. */
+	private rested = false;
 	/** The page's callbacks in a row, up to the last one, that drew a frame. */
 	private busyCallbacks = 0;
 	/** The page's callbacks in a row, up to the last one, that drew nothing. */
@@ -403,6 +405,14 @@ export class Presenter {
 	 */
 	draw(frame: number, timestamp: number): void {
 		if (this.stale(frame)) return;
+		// A still view that has accumulated enough frames submits no draw work: the callers take the
+		// frame anyway, so the sketch keeps stepping and can see the change that ends the rest, and
+		// the canvas keeps the converged image.
+		if (Atomics.load(this.slots, Slot.FrameRest0 + (frame & 1)) !== 0) {
+			this.drew = false;
+			this.rested = true;
+			return;
+		}
 		const start = performance.now();
 		this.drew = true;
 		this.record.begin(frame);
@@ -412,7 +422,9 @@ export class Presenter {
 		this.presented?.();
 		const lastPresented = this.lastPresented[0] as number;
 		if (lastPresented < 0) this.markFirstFrame(performance.now() - start);
-		else this.record.interval(timestamp - lastPresented);
+		// The first frame after a rest records no interval: the time the view rested is no frame's.
+		else if (!this.rested) this.record.interval(timestamp - lastPresented);
+		this.rested = false;
 		this.lastPresented[0] = timestamp;
 		this.record.commit(performance.now() - start);
 	}

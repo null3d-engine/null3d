@@ -2,7 +2,7 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission}
+#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission, clip_with_jitter}
 #import null3d::lighting::{ambient_irradiance}
 #import null3d::sky_scattering::{aerial_perspective}
 #import null3d::tonemap
@@ -652,7 +652,7 @@ fn clip_of(found: Instance, relative: vec3f) -> vec4f {
     if !found.drawn {
         return OUTSIDE_CLIP;
     }
-    return to_clip(frame.view_proj, relative);
+    return clip_with_jitter(frame.view_proj, frame.jitter.xy, relative);
 }
 
 /// A position from the mesh into the world, relative to the camera.

@@ -131,6 +131,10 @@ pub(super) struct Opaque {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ViewUpload<'a> {
     pub(super) frame: u32,
+    /// True when nothing outside the frame's list changed, so the view draws from the uniform slot
+    /// of its frame's parity: the frames of one parity then record the same slots, and the still
+    /// comparison can match them. A page that turns the accumulation off never holds.
+    pub(super) hold_uniforms: bool,
     pub(super) values: &'a ViewFrame,
     pub(super) offsets: &'a CellOffsets,
     pub(super) streamed: u32,
@@ -488,14 +492,23 @@ impl Opaque {
         let new_uniform = !state.uniform.holds_any()
             || uniform != state.uploaded
             || frame.offsets.as_slice() != state.offsets_uploaded.as_slice();
+        // A still view takes the slot of its frame's parity, which a frame two before it used: the
+        // uniform's parts outside the clock and the jitter are the same, so the older frame may
+        // still read it while this one records. A moving view takes the ring's next slot.
+        let slot = if frame.hold_uniforms {
+            frame.frame & 1
+        } else {
+            state.uniform.take(frame.frame, new_uniform)
+        };
         state.slots = FrameSlots {
-            uniform: state.uniform.take(frame.frame, new_uniform),
+            uniform: slot,
             streamed: frame.streamed,
             listed: frame.listed,
         };
         if new_uniform {
             let slot = state.slots.uniform * FRAME_SLOT_BYTES;
-            let (at, bytes) = arena.push(uniform.as_bytes())?;
+            let (at, bytes) =
+                arena.push_masked(uniform.as_bytes(), &FrameUniform::volatile_ranges())?;
             list.push(Op::WriteBuffer, &[ids::frame(view), slot, at, bytes])?;
             let (at, bytes) = arena.push(frame.offsets.as_bytes())?;
             list.push(

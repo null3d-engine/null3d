@@ -5,6 +5,7 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	LAYOUT_ACCUMULATE,
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
@@ -65,6 +66,7 @@ import {
 	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
+	TEMPLATE_ACCUMULATE,
 	TEMPLATE_AO,
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
@@ -752,6 +754,11 @@ export class Pipelines {
 		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
+		// The still-camera accumulation's blend: its values, and the color it reads with textureLoad.
+		this.defineLayout(LAYOUT_ACCUMULATE, 'accumulate', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			unfiltered(1),
+		]);
 		// The weighted layer's composite reads its two sums, and its depth copy a multisampled scene
 		// depth, with textureLoad.
 		this.defineLayout(LAYOUT_WEIGHTED_COMPOSITE, 'weighted composite', [
@@ -993,6 +1000,13 @@ export class Pipelines {
 			shader: shaders.view_copy,
 			pipeline: 'main',
 			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_ACCUMULATE, {
+			label: 'accumulate',
+			shader: shaders.accumulate,
+			pipeline: 'main',
+			layouts: [LAYOUT_ACCUMULATE],
 			vertexBuffers: [],
 		});
 		this.defineTemplate(TEMPLATE_TRANSMISSION_COPY, {

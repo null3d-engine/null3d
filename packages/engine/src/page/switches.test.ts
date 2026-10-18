@@ -37,6 +37,7 @@ describe('parseSwitches', () => {
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
+			still: true,
 			bench: false,
 			stats: undefined,
 			glTiming: undefined,

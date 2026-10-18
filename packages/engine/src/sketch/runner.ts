@@ -244,6 +244,8 @@ export class SketchRunner {
 	/** The page's count of canvas size changes when the viewport last read them. */
 	private viewportSerial = -1;
 	private gpuEpoch = 0;
+	/** True while the page lets a still view accumulate its frames, as the frame loop last read it. */
+	private stillEnabled = true;
 	/**
 	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
 	 * 0 while nobody samples, so the first frame that samples publishes them.
@@ -1241,6 +1243,11 @@ export class SketchRunner {
 		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
 		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		const scale = this.renderScale();
+		const stillEnabled = Atomics.load(slots, Slot.StillOff) === 0;
+		if (stillEnabled !== this.stillEnabled) {
+			this.stillEnabled = stillEnabled;
+			glue.setStillEnabled(stillEnabled);
+		}
 		if (glue.cullFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
@@ -1285,6 +1292,7 @@ export class SketchRunner {
 		const parity = frame & 1;
 		Atomics.store(slots, Slot.DrawListAddress0 + parity, glue.drawListAddress(parity));
 		Atomics.store(slots, Slot.DrawListWords0 + parity, glue.drawListWords(frame));
+		Atomics.store(slots, Slot.FrameRest0 + parity, glue.frameRests() ? 1 : 0);
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		// The first frame that records after a restart, whether the sketch asked for it between
 		// frames or in this frame's own code, has the new settings, so the thread that draws holds it
