@@ -377,11 +377,38 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
  */
 export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
-	'render-worker': { '(IDLE)': 512, '(JS)': 256, 'giveUpStalled gpu/completion.ts': 256 },
+	'render-worker': {
+		'(IDLE)': 512,
+		'(JS)': 256,
+		'giveUpStalled gpu/completion.ts': 256,
+		// The frame's own work is paid at each call of the render worker, which the browser makes at
+		// the display's rate, while the check counts the frames that S1 steps. A slower runner
+		// therefore steps fewer frames for the same calls: a healthy CI run read 110.7 bytes per
+		// frame at 430a851c9, a local run in CI's mode 157.7 to 173.6 (most 190.5), and one slow
+		// runner 444.4, which failed the real-GPU budget of 192. The Mac's gate keeps that 192.
+		'drawFrame render/webgpu-renderers.ts': 512,
+	},
 };
 
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
+
+/**
+ * The budget of `place` in `worker` for a run: the tables' figure, SwiftShader's own where it has
+ * one, plus what the run's switches and scene add. A run on SwiftShader judges a place by the
+ * SwiftShader figure when the table names one.
+ */
+export function placeBudget(
+	worker: string,
+	place: string,
+	options: { swiftShader: boolean; extra?: number },
+): number {
+	const table = {
+		...BUDGETS[worker as (typeof WORKERS)[number]],
+		...(options.swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
+	};
+	return (table[place] ?? OTHER_BUDGET) + (options.extra ?? 0);
+}
 
 /** The place of the WebGPU replay, which makes the browser's objects of each pass. */
 const REPLAY = 'replay webgpu/backend.ts';
@@ -836,10 +863,6 @@ async function main(): Promise<void> {
 		const over: string[] = [];
 		const unsampled: string[] = [];
 		for (const [worker, workerSamples] of samples) {
-			const budgets = {
-				...BUDGETS[worker as (typeof WORKERS)[number]],
-				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
-			};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
@@ -853,7 +876,7 @@ async function main(): Promise<void> {
 						0,
 					) +
 					(sceneBudgets[name] ?? 0);
-				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
+				const budget = placeBudget(worker, name, { swiftShader, extra });
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
 					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,
