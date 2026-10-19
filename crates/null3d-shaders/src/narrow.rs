@@ -9,13 +9,19 @@ use toml::{Table, Value};
 use crate::Inputs;
 
 /// `inputs` with only the named shaders in the manifest. The files are the library modules and the
-/// named shaders' own files. Each first-use feature keeps the named shaders among its shaders and
-/// the bits that a named shader which loads by device permutes, and a feature left with neither
-/// goes.
+/// named shaders' own files, and a named shader keeps its part. Each first-use feature keeps the
+/// named shaders among its shaders and the bits that a named shader which loads by device
+/// permutes, and a feature left with neither goes.
 pub fn narrowed(inputs: &Inputs, names: &[&str]) -> Inputs {
     let mut inputs = Inputs {
         manifest: inputs.manifest.clone(),
         files: inputs.files.clone(),
+        parts: inputs
+            .parts
+            .iter()
+            .filter(|(name, _)| names.contains(&name.as_str()))
+            .map(|(name, part)| (name.clone(), *part))
+            .collect(),
     };
     let mut manifest: Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
 
@@ -59,22 +65,6 @@ pub fn narrowed(inputs: &Inputs, names: &[&str]) -> Inputs {
         .retain(|file, _| file.starts_with("lib/") || files.contains(file));
     inputs.manifest = toml::to_string(&manifest).expect("the narrowed manifest");
     inputs
-}
-
-/// `inputs` narrowed to every nth shader of the manifest, for shard `index` of `count`. A build of
-/// one shard costs a share of the whole build, so CI can run several of them at once.
-pub fn sharded(inputs: &Inputs, index: usize, count: usize) -> Inputs {
-    let manifest: Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
-    let shaders = manifest["shaders"]
-        .as_table()
-        .expect("the manifest's shaders");
-    let names: Vec<&str> = shaders
-        .keys()
-        .enumerate()
-        .filter(|(at, _)| at % count == index)
-        .map(|(_, name)| name.as_str())
-        .collect();
-    narrowed(inputs, &names)
 }
 
 /// Narrows a list of names in a first-use feature to those that pass, and removes a list left empty.

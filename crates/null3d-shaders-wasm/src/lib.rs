@@ -56,7 +56,7 @@ use std::sync::Once;
 
 use null3d_shaders::{
     BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, ModuleSet,
-    Output, PostTemplates, Problem, Response, ShaderSource, VariantOutput,
+    Output, PostTemplates, Problem, Response, ShaderSource, Shard, ShardPlan, VariantOutput,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -229,14 +229,17 @@ pub extern "C" fn prepare_modules() {
         // of what a 32-bit module may hold.
         MODULES.with_borrow_mut(|slot| *slot = None);
         // A request may name a shard, `{ "shard": "i/n" }`, so CI splits the whole build across
-        // jobs. An empty request builds every shader.
+        // jobs by estimated build cost. The modules need whole entries, so the split keeps each
+        // entry whole. An empty request builds every shader.
         let inputs = inputs();
         let inputs = match parse::<PrepareRequest>(request)
             .ok()
             .and_then(|ask| ask.shard)
         {
-            Some(spec) => match shard_of(&spec) {
-                Some((index, count)) => null3d_shaders::sharded(&inputs, index, count),
+            Some(spec) => match Shard::parse(&spec) {
+                Some(shard) => {
+                    ShardPlan::by_entry(&inputs, shard.count)?.inputs(&inputs, shard.index)
+                }
                 // A shard that does not parse builds everything, so a typo costs time, not truth.
                 None => inputs,
             },
@@ -495,15 +498,8 @@ fn inputs() -> Inputs {
     Inputs {
         manifest: MANIFEST.replace("\r\n", "\n"),
         files,
+        parts: BTreeMap::new(),
     }
-}
-
-/// The shard that `i/n` names, with `i` from 0 and `n` shards in all.
-fn shard_of(spec: &str) -> Option<(usize, usize)> {
-    let (index, count) = spec.split_once('/')?;
-    let index: usize = index.parse().ok()?;
-    let count: usize = count.parse().ok()?;
-    (count > 0 && index < count).then_some((index, count))
 }
 
 /// A request to prepare the build, which may name the shard to build.
@@ -657,8 +653,16 @@ mod tests {
     /// whose text is the set's for that module.
     #[test]
     fn prepare_modules_lists_every_module_and_module_renders_one() {
-        // CI builds a shard per job; without a shard, every shader is built.
-        let request = std::env::var("NULL3D_SHADER_SHARD")
+        // CI builds a shard per job; without a shard, every shader is built. The test prints the
+        // whole split, so a job's log shows every shard's estimated share beside its own.
+        let spec = std::env::var("NULL3D_SHADER_SHARD").ok();
+        if let Some(shard) = spec.as_deref().and_then(Shard::parse) {
+            let plan = ShardPlan::by_entry(&inputs(), shard.count).expect("the engine's manifest");
+            let shown = format!("This job prepares shard {shard} of the shader entries.\n{plan}");
+            // Written to the stream itself, past the test harness's capture of `eprintln!`.
+            let _ = std::io::Write::write_all(&mut std::io::stderr(), shown.as_bytes());
+        }
+        let request = spec
             .map(|spec| serde_json::json!({ "shard": spec }).to_string())
             .unwrap_or_default();
         let prepared = call(prepare_modules, request.as_bytes());
