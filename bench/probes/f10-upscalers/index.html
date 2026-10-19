@@ -1038,6 +1038,9 @@ void main() {
 				for (let s = 0; s < samples; s++)
 					for (let k = 0; k < names.length; k++) {
 						const name = names[(s + k) % names.length];
+						// A driver that stalls inside a draw leaves no word of its own, so the page names
+						// each pass before it starts: the last line printed is the pass that stalled.
+						console.log(`round ${s + 1} of ${samples}: ${name}`);
 						let ms = null;
 						while (ms === null) ms = await timeQuery(repeats, draws[name]);
 						values[name].push(ms);
@@ -1265,12 +1268,15 @@ void main() {
 				out.glErrorAfter = gl.getError();
 
 				// Each result image, drawn once more and read back.
+				console.log('timing done; drawing the result images');
 				const referencePixels = read(reference);
 				const images = {};
 				for (const name of ['today', 'bilinear', 'nearest', 'gsr', 'easuRcas']) {
+					console.log(`drawing ${name}`);
 					const target_ = drawVariant(name);
 					images[name] = read(target_);
 				}
+				console.log('the images are read; computing the metrics');
 
 				out.pipelines.today = timings.pipelineToday.median;
 				out.pipelines.bilinear = timings.pipelineBilinear.median;
