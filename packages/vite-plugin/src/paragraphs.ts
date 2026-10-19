@@ -3,28 +3,50 @@
 // and each device module imports that module by a relative path.
 //
 // A bundler emits a device module as an asset and copies its bytes without reading them, so the
-// import survives exactly as the shader build wrote it. Nothing else names the table, so the
-// bundler never emits it, and the load fails only in a browser. This plugin reads each copied
-// device module's head for that import and emits the table it names, in the folder the bundler put
-// the module in, at the name the import uses. The table then sits beside every module that imports
-// it, whatever the project's assets folder and asset naming pattern are.
+// imports survive exactly as the shader build wrote them. Nothing else names the tables, so the
+// bundler never emits them, and the load fails only in a browser. This plugin reads each copied
+// device module's imports and emits the tables they name, in the folder the bundler put the module
+// in, at the names the imports use. The tables then sit beside every module that imports them,
+// whatever the project's assets folder and asset naming pattern are.
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import type { Plugin, Rollup } from 'vite';
 
-/** The import of a table of shared paragraphs, at the top of a device module of its kind. */
-const PARAGRAPH_IMPORT = /from '\.\/(shader-paragraphs-[a-z0-9-]+)\.js';/;
+/** An import of a table of shared paragraphs, at the top of a device module of its kind. */
+const PARAGRAPH_IMPORT = /from '\.\/(shader-paragraphs-[a-z0-9-]+)\.js';/g;
 
 /**
- * How much of a copied file this reads for that import. The shader build writes it among the first
- * lines, and a device module is hundreds of kilobytes, so the rest is never read.
+ * How much of a copied file this reads at first. The shader build writes the imports among the
+ * first lines, and a device module is hundreds of kilobytes, so the rest is never read. A device
+ * module names a table for each family of paragraphs that it holds, so its imports can run past
+ * this much: the reader then takes a larger part of the file, up to the end of its imports.
  */
 const IMPORT_WINDOW = 4096;
 
-/** A file's first bytes as text, enough to hold the import of a table. */
-function headOf(source: string | Uint8Array): string {
-	if (typeof source === 'string') return source.slice(0, IMPORT_WINDOW);
-	return new TextDecoder().decode(source.subarray(0, IMPORT_WINDOW));
+/** A file's first `bytes` bytes as text. */
+function headOf(source: string | Uint8Array, bytes: number): string {
+	if (typeof source === 'string') return source.slice(0, bytes);
+	return new TextDecoder().decode(source.subarray(0, bytes));
+}
+
+/**
+ * The names of the paragraph tables that a copied device module imports. A module imports its
+ * kind's table and one for each feature family whose paragraphs it holds, so the module of a
+ * relief feature imports several. The imports end at the first blank line after them.
+ */
+function tableStems(source: string | Uint8Array): string[] {
+	const length = source.length;
+	let window = Math.min(IMPORT_WINDOW, length);
+	for (;;) {
+		const head = headOf(source, window);
+		// A device module's imports follow its short header, so a file with none in the first
+		// window is no device module and holds no table.
+		const first = head.indexOf('import ');
+		if (first < 0) return [];
+		const complete = window >= length || head.indexOf('\n\n', first) >= 0;
+		if (complete) return [...head.matchAll(PARAGRAPH_IMPORT)].map((match) => match[1] as string);
+		window = Math.min(window * 2, length);
+	}
 }
 
 /**
@@ -42,22 +64,24 @@ function tablePath(file: Rollup.OutputAsset, stem: string): string | undefined {
 
 /**
  * Emits each shared table of shader paragraphs beside the copied device modules that import it,
- * and gives the file of the table of each of those modules. A build's bundle is the same after a
+ * and gives the files of the tables of each of those modules. A build's bundle is the same after a
  * second call, because a table is emitted once for each folder it belongs in.
  */
 export function emitParagraphTables(
 	this: Rollup.PluginContext,
 	bundle: Rollup.OutputBundle,
-): Map<string, string> {
-	const tables = new Map<string, string>();
+): Map<string, string[]> {
+	const tables = new Map<string, string[]>();
 	const emitted = new Set<string>();
 	for (const file of Object.values(bundle)) {
 		if (file.type !== 'asset') continue;
-		const stem = PARAGRAPH_IMPORT.exec(headOf(file.source))?.[1];
-		if (!stem) continue;
-		const table = posix.join(posix.dirname(file.fileName), `${stem}.js`);
-		if (!emitted.has(table)) {
+		const stems = [...new Set(tableStems(file.source))];
+		if (stems.length === 0) continue;
+		const own = stems.map((stem) => posix.join(posix.dirname(file.fileName), `${stem}.js`));
+		for (const table of own) {
+			if (emitted.has(table)) continue;
 			emitted.add(table);
+			const stem = posix.basename(table, '.js');
 			const path = tablePath(file, stem);
 			if (!path)
 				return this.error(
@@ -65,7 +89,7 @@ export function emitParagraphTables(
 				);
 			this.emitFile({ type: 'asset', fileName: table, source: readFileSync(path) });
 		}
-		tables.set(file.fileName, table);
+		tables.set(file.fileName, own);
 	}
 	return tables;
 }
