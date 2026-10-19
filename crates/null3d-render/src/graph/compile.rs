@@ -1053,6 +1053,7 @@ impl Compiler {
                     || state.storage.first < at;
                 let load = if written
                     || (kept && self.starts_by_keeping(graph, &step, resource, attachment.layer))
+                    || self.starts_by_overwriting(graph, &step, resource, attachment.layer)
                 {
                     LoadOp::Load
                 } else {
@@ -1144,6 +1145,30 @@ impl Compiler {
                         .any(|a| a.resource == resource && !a.mode.writes())
             })
         })
+    }
+
+    /// True when the step's first pass that draws into the layer of the target draws every texel
+    /// that a later pass reads, so the target need not start from a clear.
+    fn starts_by_overwriting(
+        &self,
+        graph: Decls<'_>,
+        step: &Step,
+        resource: u16,
+        layer: u32,
+    ) -> bool {
+        self.plan
+            .passes(step)
+            .iter()
+            .find_map(|pass| {
+                graph
+                    .uses(pass.index())
+                    .iter()
+                    .find(|a| {
+                        a.resource == resource && a.mode.writes() && a.layer.unwrap_or(0) == layer
+                    })
+                    .map(|a| a.overwrites)
+            })
+            .unwrap_or(false)
     }
 
     /// True when the step's first pass that attaches the layer of the target keeps what it holds:

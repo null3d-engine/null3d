@@ -2580,7 +2580,14 @@ impl FrameGraph {
                 }
                 let screen = if camera { self.screen_target() } else { None };
                 if screen.is_some() {
-                    prepass = prepass.creates(PREPASS_COLOR, color);
+                    // The screen's steps give the prepass a render pass of its own, and none of
+                    // them reads this color. WebGL2 therefore starts it from what the texture
+                    // holds, which costs less than a clear of the whole canvas.
+                    prepass = if self.gpu_culling {
+                        prepass.creates(PREPASS_COLOR, color)
+                    } else {
+                        prepass.creates_overwriting(PREPASS_COLOR, color)
+                    };
                 }
                 prepass = reads_targets(prepass, views, &named, index);
                 let prepass = optional_beyond_camera(prepass, index);
@@ -3189,10 +3196,20 @@ impl FrameGraph {
     /// and the denoise, which reads the copy, the search and the trace.
     fn declare_screen(&mut self) {
         self.ao_steps();
-        let depth = Pass::new(AO_PASSES[0], PassKind::Fullscreen)
-            .size(ao::SIZE)
-            .creates(AO_TARGETS[0], Target::color(ao::FORMATS[0]))
-            .reads_so_far(SCENE_DEPTH);
+        // Each step writes every texel of its target that a later step or pass reads: the reads
+        // clamp inside the drawn corner. So on WebGL2, where Safari can spend about a millisecond
+        // of the frame on one clear of a large target, a step's target need not start from a
+        // clear. WebGPU's clear is cheap, and a load there would read the whole target, so its
+        // passes keep the clear.
+        let no_clear = !self.gpu_culling;
+        let target = Target::color(ao::FORMATS[0]);
+        let pass = Pass::new(AO_PASSES[0], PassKind::Fullscreen).size(ao::SIZE);
+        let pass = if no_clear {
+            pass.creates_overwriting(AO_TARGETS[0], target)
+        } else {
+            pass.creates(AO_TARGETS[0], target)
+        };
+        let depth = pass.reads_so_far(SCENE_DEPTH);
         self.add(depth, Role::Ao(0));
         let reflects = self.ssr_draws();
         if reflects {
@@ -3219,10 +3236,14 @@ impl FrameGraph {
             return;
         }
         for step in 1..ao::STEPS {
-            let mut pass = Pass::new(AO_PASSES[step], PassKind::Fullscreen)
-                .size(ao::SIZE)
-                .creates(AO_TARGETS[step], Target::color(ao::FORMATS[step]))
-                .reads(AO_TARGETS[0]);
+            let target = Target::color(ao::FORMATS[step]);
+            let pass = Pass::new(AO_PASSES[step], PassKind::Fullscreen).size(ao::SIZE);
+            let mut pass = if no_clear {
+                pass.creates_overwriting(AO_TARGETS[step], target)
+            } else {
+                pass.creates(AO_TARGETS[step], target)
+            };
+            pass = pass.reads(AO_TARGETS[0]);
             if step == 2 {
                 pass = pass.reads(AO_TARGETS[1]);
                 if reflects {
@@ -7068,7 +7089,7 @@ mod tests {
                     .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
             );
             // The prepass stores the depth that the depth step reads and the opaque pass loads,
-            // and drops its stand-in color.
+            // and drops its stand-in color. WebGL2 need not clear that color, which nothing reads.
             let plan = frames.graph().plan().unwrap();
             let attachments = plan.attachments(&plan.steps()[prepass]);
             for attachment in attachments {
@@ -7078,7 +7099,12 @@ mod tests {
                     StoreOp::Discard
                 };
                 assert_eq!(attachment.store, store);
-                assert_eq!(attachment.load, LoadOp::Clear);
+                let load = if attachment.depth || gpu_culling {
+                    LoadOp::Clear
+                } else {
+                    LoadOp::Load
+                };
+                assert_eq!(attachment.load, load, "the prepass's attachments start");
             }
             let attachments = plan.attachments(&plan.steps()[opaque]);
             let depth = attachments.iter().find(|a| a.depth).unwrap();
@@ -7107,6 +7133,21 @@ mod tests {
                 assert_eq!(made.size, ao::SIZE);
                 assert_eq!(made.target, Target::color(ao::FORMATS[step]));
             }
+            // On WebGL2, every read clamps inside the corner that the step draws, so a step's
+            // target starts from what the texture holds rather than a clear, which Safari can make
+            // expensive on an iPhone. WebGPU keeps its clear, cheaper than a load there.
+            let expected_load = if gpu_culling {
+                LoadOp::Clear
+            } else {
+                LoadOp::Load
+            };
+            for name in AO_PASSES {
+                let pass = frames.graph().find_pass(name).unwrap();
+                let step = plan.step_of(pass).unwrap();
+                for attachment in plan.attachments(&plan.steps()[step]) {
+                    assert_eq!(attachment.load, expected_load, "{name}'s target's load");
+                }
+            }
             assert!(frames.ao_texture().is_some());
 
             // A lower scale draws a smaller corner of the same targets.
@@ -7133,6 +7174,34 @@ mod tests {
                 .unwrap();
             let viewports = operands(&list, Op::SetViewport);
             assert!(viewports.iter().any(|v| v[2..4] == [80, 45]));
+            // On WebGL2, the steps' render passes ask for no clear, so the backend makes no clear
+            // call for any of them.
+            if !gpu_culling {
+                let plan = frames.graph().plan().unwrap();
+                let began = operands(&list, Op::BeginRenderPass);
+                let mut render = 0;
+                let mut ao_passes = 0;
+                for step in plan.steps() {
+                    if !matches!(step.kind, StepKind::Render { .. }) {
+                        continue;
+                    }
+                    let some_ao = plan.passes(step).iter().any(|&pass| {
+                        AO_PASSES
+                            .iter()
+                            .any(|name| frames.graph().pass_name(pass) == *name)
+                    });
+                    if some_ao {
+                        assert_eq!(
+                            began[render][8] & pass_flags::CLEAR_COLOR,
+                            0,
+                            "an ambient occlusion step clears its target"
+                        );
+                        ao_passes += 1;
+                    }
+                    render += 1;
+                }
+                assert_eq!(ao_passes, ao::STEPS);
+            }
 
             // Off again, the steps and their targets are gone, and the prepass with them.
             frames.set_ao(None, None, None, 0.5);
