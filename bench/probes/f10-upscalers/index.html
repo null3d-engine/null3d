@@ -431,6 +431,95 @@ void main() {
 }
 `;
 
+			// The same shader with every tap named and the two loops written out. Some mobile
+			// drivers stall while linking the looped form, which indexes vectors and arrays inside
+			// a loop; the unrolled form gives the compiler the same work without those indexes.
+			const GSR_FS_UNROLLED = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform ivec2 uSourceSize;
+uniform vec2 uOutput;
+uniform float uEdgeThreshold;
+uniform float uSharpness;
+out vec4 outColor;
+const float TAP = 0.55;
+const float DELTA_LIMIT = 23.0 / 255.0;
+float fastLanczos2(float x) {
+	float wA = x - 4.0;
+	float wB = x * wA - wA;
+	wA *= wA;
+	return wB * wA;
+}
+vec3 texel(ivec2 p) {
+	p = clamp(p, ivec2(0), uSourceSize - 1);
+	return texelFetch(uSource, p, 0).rgb;
+}
+vec2 weightY(vec2 d, float c, float std) {
+	float x = dot(d, d) * TAP + clamp(abs(c) * std, 0.0, 1.0);
+	float w = fastLanczos2(x);
+	return vec2(w, w * c);
+}
+void main() {
+	vec2 uv = gl_FragCoord.xy / uOutput;
+	vec2 position = uv * vec2(uSourceSize) - 0.5;
+	ivec2 base = ivec2(floor(position));
+	vec2 fraction = position - vec2(base);
+	vec3 center = texture(uSource, uv).rgb;
+	vec3 t00 = texel(base);
+	vec3 t10 = texel(base + ivec2(1, 0));
+	vec3 t01 = texel(base + ivec2(0, 1));
+	vec3 t11 = texel(base + ivec2(1, 1));
+	float edgeVote = abs(t10.g - t00.g) + abs(center.g - t00.g) + abs(center.g - t10.g);
+	vec3 result = center;
+	if (edgeVote > uEdgeThreshold) {
+		float mean = (t00.g + t10.g + t01.g + t11.g) * 0.25;
+		float c00 = t00.g - mean;
+		float c10 = t10.g - mean;
+		float c01 = t01.g - mean;
+		float c11 = t11.g - mean;
+		float k0 = texel(base + ivec2(0, -1)).g - mean;
+		float k1 = texel(base + ivec2(1, -1)).g - mean;
+		float k2 = texel(base + ivec2(-1, 0)).g - mean;
+		float k3 = c00;
+		float k4 = c10;
+		float k5 = texel(base + ivec2(2, 0)).g - mean;
+		float k6 = texel(base + ivec2(-1, 1)).g - mean;
+		float k7 = c01;
+		float k8 = c11;
+		float k9 = texel(base + ivec2(2, 1)).g - mean;
+		float k10 = texel(base + ivec2(0, 2)).g - mean;
+		float k11 = texel(base + ivec2(1, 2)).g - mean;
+		float sum = abs(k0) + abs(k1) + abs(k2) + abs(k3) + abs(k4) + abs(k5)
+			+ abs(k6) + abs(k7) + abs(k8) + abs(k9) + abs(k10) + abs(k11);
+		float std = 2.181818 / max(sum, 0.0001);
+		vec2 weighted =
+			weightY(vec2(0.0, -1.0) - fraction, k0, std) +
+			weightY(vec2(1.0, -1.0) - fraction, k1, std) +
+			weightY(vec2(-1.0, 0.0) - fraction, k2, std) +
+			weightY(vec2(0.0, 0.0) - fraction, k3, std) +
+			weightY(vec2(1.0, 0.0) - fraction, k4, std) +
+			weightY(vec2(2.0, 0.0) - fraction, k5, std) +
+			weightY(vec2(-1.0, 1.0) - fraction, k6, std) +
+			weightY(vec2(0.0, 1.0) - fraction, k7, std) +
+			weightY(vec2(1.0, 1.0) - fraction, k8, std) +
+			weightY(vec2(2.0, 1.0) - fraction, k9, std) +
+			weightY(vec2(0.0, 2.0) - fraction, k10, std) +
+			weightY(vec2(1.0, 2.0) - fraction, k11, std);
+		// The kernel's negative lobes can make the weight sum negative, and the average is still
+		// the ratio; only an exactly zero sum needs a guard.
+		float weightSum = abs(weighted.x) < 1e-6 ? 1e-6 : weighted.x;
+		float finalY = weighted.y / weightSum;
+		// The bounds and the average live in the same mean-subtracted space.
+		float maxY = max(max(c00, c10), max(c01, c11));
+		float minY = min(min(c00, c10), min(c01, c11));
+		finalY = clamp(uSharpness * finalY, minY, maxY);
+		float delta = clamp(finalY - (center.g - mean), -DELTA_LIMIT, DELTA_LIMIT);
+		result = clamp(center + vec3(delta), 0.0, 1.0);
+	}
+	outColor = vec4(clamp(result + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0), 1.0);
+}
+`;
+
 			// FSR 1's EASU: 12 taps on the 4 by 4 block around the source position, each weighted
 			// by a Lanczos 2 window stretched and rotated along the edge's direction, then deringed
 			// against the four nearest texels.
@@ -639,8 +728,11 @@ void main() {
 			const bilinearProgram = makeProgram(BILINEAR_FS);
 			log('linking nearest');
 			const nearestProgram = makeProgram(NEAREST_FS);
-			log('linking gsr');
-			const gsrProgram = makeProgram(GSR_FS);
+			// `?gsr=unrolled` links the shader without its arrays and loops, which shows whether a
+			// driver that stalls on the looped form links this one.
+			const gsrUnrolled = params.get('gsr') === 'unrolled';
+			log(`linking gsr (${gsrUnrolled ? 'unrolled' : 'looped'} form)`);
+			const gsrProgram = makeProgram(gsrUnrolled ? GSR_FS_UNROLLED : GSR_FS);
 			log('linking easu');
 			const easuProgram = makeProgram(EASU_FS);
 			log('linking rcas');
