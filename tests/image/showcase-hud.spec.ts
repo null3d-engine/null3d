@@ -2,8 +2,17 @@
 // opens the night town's HUD, picks a button in each group, and checks the toast's text
 // ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner, 14 October 2026). A toast
 // alone cannot show that a change took: the stage writes the sky, the fog and the environment light
-// every frame, and once undid each switch a frame after the toast named it. So the test also reads
-// the canvas, and checks that each part stays off while it is off and comes back when it turns on.
+// every frame, and once undid each switch a frame after the toast named it. So the tests also read
+// the canvas, and check that each part stays off while it is off and comes back when it turns on.
+//
+// The checks fall into three tests, and each one opens the page afresh, so CI can run them in jobs
+// of their own at the same time. The first checks the toasts of the camera, the time of day, the
+// shadows, the bloom and the quality, and where the toast sits. The second turns the sky and then
+// the fog off and on, and the third does the same with the environment light. Each test first sets
+// up the state its checks need: the switches run with the camera held, the time of day on Auto and
+// the snow off, and the environment light with the fog on. Each name starts with "the showcase
+// HUD": the job of the other tests that run alone leaves the three out by those words, and the rest
+// of the name picks one test.
 import { expect, type Page, test } from '@playwright/test';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
 import { ALONE } from '../lib/alone.ts';
@@ -13,19 +22,19 @@ import { watchPageProblems } from '../lib/page-result.ts';
 const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
 /**
  * The picks, the startup and the slow software GPU need longer than the default limit. The engine's
- * first frame is part of that, and on a software GPU it arrives long after the controls do, so the
- * budget covers that wait and the switches after it, and the test runs alone.
+ * first frame is part of that, and on a software GPU it arrives long after the controls do, so each
+ * test's budget covers that wait and the picks or switches after it, and each test runs alone.
  *
- * Alone for two reasons. Its pictures need the engine to draw frames, and on CI's two-core runner a
- * heavy test beside it starves this page's frames, which is the fault D-186 measures. And its budget
- * cannot sit in a shard: a shard's limit is 25 minutes, which covers its tests taking twice as long
- * as the median, and this test's failure is exactly a slow machine. Moved out of shard 14, then out
- * of the alone job, which the rest of its tests filled to 21 minutes, this test runs in a job of its
- * own, whose 35 minutes bound its waits. The waits below are sized for a software renderer on a
- * loaded runner: a first frame there took longer than three minutes, and a switch showed no new
- * frame within one. A passing run took 16.4 minutes and a slower one ran out of 18. Its own budget
- * sits under the job's limit, so a page that truly stops drawing still fails by name rather than by
- * the job's clock.
+ * Alone for two reasons. Their pictures need the engine to draw frames, and on CI's two-core runner
+ * a heavy test beside one starves its page's frames, which is the fault D-186 measures. And their
+ * budget cannot sit in a shard: a shard's limit is 25 minutes, which covers its tests taking twice
+ * as long as the median, and these tests fail exactly on a slow machine. The waits below are sized
+ * for a software renderer on a loaded runner: a first frame there took longer than three minutes,
+ * and a switch showed no new frame within one. The whole sequence of picks and switches takes 14 to
+ * 24 minutes on CI's software GPU, so the file splits it into three tests that CI can run at once.
+ * Each pays for its own page's first frame, and the sky and fog test, with two of the three
+ * switches, is the longest. Each budget sits under the limit of the job that runs the test, so a
+ * page that truly stops drawing still fails by name rather than by the job's clock.
  */
 test.describe.configure({ timeout: 1_500_000 });
 
@@ -189,64 +198,112 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 		.toBeGreaterThan(departure * RETURNED);
 }
 
+/**
+ * Opens the night town's HUD as a visitor finds it, once the engine has drawn its first frame, and
+ * watches the page for problems from the start. Gives the list of problems, which each test checks
+ * last.
+ */
+async function openHud(page: Page): Promise<string[]> {
+	const errors = watchPageProblems(page);
+	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
+	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
+	// engine on the page, which is how these tests read the canvas's frames.
+	await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
+	const hud = page.locator('.hud');
+	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
+	await expect(hud).toBeVisible({ timeout: 90_000 });
+	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
+	// The controls come up while the sketch finishes its scene, which is before the engine's first
+	// frame. On a software GPU that frame arrives much later, and a picture read before it is an
+	// empty canvas: two empty frames differ by nothing, so a switch's settle would take one for a
+	// still look and every frame the engine drew afterwards would be measured against nothing. The
+	// page takes its loading overlay away on the first frame, so that is the signal to wait for
+	// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
+	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
+	// Open the panel, as a visitor does, with the chevron.
+	await page.locator('.hud__chevron').click();
+	await expect(hud).toHaveClass(/\bopen\b/);
+	return errors;
+}
+
+/**
+ * Sets up the scene for the switches, and checks the toast of each pick. The manual camera holds
+ * the view and the snow goes off, so the scene holds still between frames. The time of day goes to
+ * Auto, so each part is checked against the sky rather than the studio backdrop.
+ */
+async function holdForSwitches(page: Page): Promise<void> {
+	// Camera is a radio group: a pick names the group and the new mode. The town opens on its
+	// cinematic route, and Manual stops the camera where the route stands.
+	await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
+	// The town opens at a fixed hour, and Auto moves the hour through the day.
+	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
+	// Atmosphere is a group of toggles: each names the effect, with its label's own case, and its
+	// new state.
+	await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
+}
+
+test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page }) => {
+	const errors = await openHud(page);
+
+	// Camera is a radio group: a pick names the group and the new mode.
+	await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
+	// The toast sits at the top centre of the stage, where the scene draws.
+	const stage = await page.locator('main.stage').boundingBox();
+	const toast = await page.locator('.hud__toast').boundingBox();
+	expect(stage).not.toBeNull();
+	expect(toast).not.toBeNull();
+	expect(
+		Math.abs(
+			(toast?.x ?? 0) + (toast?.width ?? 0) / 2 - ((stage?.x ?? 0) + (stage?.width ?? 0) / 2),
+		),
+	).toBeLessThan(3);
+	expect(toast?.y ?? 0).toBeLessThan(80);
+
+	// Time of day is an hour slider with Auto and Studio beside it. The slider sets any hour; the
+	// two buttons pick a mood, and each names its new state.
+	await page.getByRole('tab', { name: 'Time of day' }).click();
+	await panel(page, 'hour').locator('input.hud__range').fill('18.4');
+	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
+	await pick(page, 'Time of day', 'hour', 'Studio', 'Studio: on');
+	// Back to Auto, which leaves the studio backdrop for the sky again.
+	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
+	// Lighting and Post are toggles: each names the effect, with its label's own case, and its
+	// new state.
+	await pick(page, 'Lighting', 'lighting', 'Shadows', 'Shadows: off');
+	await pick(page, 'Post', 'post', 'Bloom', 'Bloom: on');
+	// Quality is a radio group of the presets.
+	await pick(page, 'Quality', 'quality', 'Medium', 'quality: medium');
+
+	expect(errors).toEqual([]);
+});
+
 test(
-	'the showcase HUD names each group change in a toast at the top centre',
+	'the showcase HUD keeps the sky and the fog off until they turn on',
 	ALONE,
 	async ({ page }) => {
-		const errors = watchPageProblems(page);
-		// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its
-		// own look from code, so the toast text does not depend on the preset. `bench` publishes the
-		// demo's engine on the page, which is how this test reads the canvas's frames.
-		await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
-		const hud = page.locator('.hud');
-		// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
-		await expect(hud).toBeVisible({ timeout: 90_000 });
-		await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
-		// The controls come up while the sketch finishes its scene, which is before the engine's first
-		// frame. On a software GPU that frame arrives much later, and a picture read before it is an
-		// empty canvas: two empty frames differ by nothing, so the settle below would take one for a
-		// still look and every frame the engine drew afterwards would be measured against nothing. The
-		// page takes its loading overlay away on the first frame, so that is the signal to wait for
-		// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
-		await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
-		// Open the panel, as a visitor does, with the chevron.
-		await page.locator('.hud__chevron').click();
-		await expect(hud).toHaveClass(/\bopen\b/);
+		const errors = await openHud(page);
+		await holdForSwitches(page);
 
-		// Camera is a radio group: a pick names the group and the new mode.
-		await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
-		// The toast sits at the top centre of the stage, where the scene draws.
-		const stage = await page.locator('main.stage').boundingBox();
-		const toast = await page.locator('.hud__toast').boundingBox();
-		expect(stage).not.toBeNull();
-		expect(toast).not.toBeNull();
-		expect(
-			Math.abs(
-				(toast?.x ?? 0) + (toast?.width ?? 0) / 2 - ((stage?.x ?? 0) + (stage?.width ?? 0) / 2),
-			),
-		).toBeLessThan(3);
-		expect(toast?.y ?? 0).toBeLessThan(80);
-
-		// Time of day is an hour slider with Auto and Studio beside it. The slider sets any hour; the
-		// two buttons pick a mood, and each names its new state.
-		await page.getByRole('tab', { name: 'Time of day' }).click();
-		await panel(page, 'hour').locator('input.hud__range').fill('18.4');
-		await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
-		await pick(page, 'Time of day', 'hour', 'Studio', 'Studio: on');
-		// Back to Auto, so the switches below are checked against the sky, not the studio backdrop.
-		await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
-		// Atmosphere, Lighting and Post are toggles: each names the effect, with its label's own case,
-		// and its new state. The snow goes off first, so the scene holds still between frames.
-		await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
 		await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
 		// The fog starts off, so it is turned on before the part that checks it goes off and on.
 		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
 		await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+
+		expect(errors).toEqual([]);
+	},
+);
+
+test(
+	'the showcase HUD keeps the environment light off until it turns on',
+	ALONE,
+	async ({ page }) => {
+		const errors = await openHud(page);
+		await holdForSwitches(page);
+
+		// The fog starts off. It goes on first, so the environment light is checked with the sky and
+		// the fog both drawn.
+		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
 		await switchPart(page, 'Environment', 'Lighting', 'lighting');
-		await pick(page, 'Lighting', 'lighting', 'Shadows', 'Shadows: off');
-		await pick(page, 'Post', 'post', 'Bloom', 'Bloom: on');
-		// Quality is a radio group of the presets.
-		await pick(page, 'Quality', 'quality', 'Medium', 'quality: medium');
 
 		expect(errors).toEqual([]);
 	},
