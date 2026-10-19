@@ -32,8 +32,11 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 			}
 			return Promise.resolve();
 		},
+		// A preset gives every setting its own value, as the engine's presets do: a threshold of
+		// 2 pixels on Low and 1 above it.
 		setPreset: (preset: string) => {
 			quality.preset = preset;
+			quality.settings.lodThreshold = preset === 'low' ? 2 : 1;
 			seen.push(`preset ${preset}`);
 		},
 	};
@@ -121,6 +124,31 @@ describe('createShowcaseEffects', () => {
 		expect(seen).toContain('lodThreshold 1');
 	});
 
+	it('keeps the level of detail off when a preset is picked', () => {
+		const { effects, scene, seen, quality } = stub();
+		scene.handler?.('quality', 'medium');
+		expect(quality.settings.lodThreshold).toBe(0);
+		expect(seen).toEqual(['preset medium', 'lodThreshold 0']);
+		const group = effects.groups().find((entry) => entry.name === 'quality');
+		expect(group?.extras?.[0]?.active).toBe(false);
+	});
+
+	it("turns the level of detail on at the preset's threshold", () => {
+		const { scene, quality } = stub();
+		scene.handler?.('quality', 'low');
+		scene.handler?.('quality', 'lod');
+		expect(quality.settings.lodThreshold).toBe(2);
+		scene.handler?.('quality', 'lod');
+		expect(quality.settings.lodThreshold).toBe(0);
+		// A preset picked while it is on keeps it on, at that preset's threshold.
+		scene.handler?.('quality', 'lod');
+		scene.handler?.('quality', 'ultra');
+		expect(quality.settings.lodThreshold).toBe(1);
+		scene.handler?.('quality', 'lod');
+		scene.handler?.('quality', 'lod');
+		expect(quality.settings.lodThreshold).toBe(1);
+	});
+
 	it('sends a slider hour to the scene', () => {
 		const { scene, seen } = stub();
 		scene.handler?.('hour', '18.4');
@@ -196,6 +224,6 @@ describe('createShowcaseEffects', () => {
 		expect(calls).toEqual(['select Manual', 'refresh', 'refresh', 'refresh', 'refresh']);
 		// A mood that the scene does not know changes nothing.
 		send('mood', 'Noon');
-		expect(seen).toEqual(['mood Dawn', 'sky false', 'focal 50', 'preset medium']);
+		expect(seen).toEqual(['mood Dawn', 'sky false', 'focal 50', 'preset medium', 'lodThreshold 0']);
 	});
 });

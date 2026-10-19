@@ -90,7 +90,9 @@ export function createShowcaseEffects(
 		options;
 	const on: Record<string, boolean> = { ...start };
 	// The level of detail starts off, so every mesh draws at its fullest until the Quality tab turns
-	// it on; a threshold of 0 picks every mesh's base level.
+	// it on; a threshold of 0 picks every mesh's base level. The switch turns it on again at the
+	// preset's own threshold, or at a default threshold when the page started with it off.
+	let lodThreshold = quality.settings.lodThreshold || 1;
 	if (quality.settings.lodThreshold > 0) void quality.set({ lodThreshold: 0 });
 	// The stage starts with every part on, so a part that the scene starts with off must be turned
 	// off now; the HUD state and the scene then agree, and the button reads the scene's real state.
@@ -154,9 +156,17 @@ export function createShowcaseEffects(
 			set(picked, !(on[picked] ?? false));
 			film().refresh();
 		} else if (name === 'quality') {
-			if (picked === 'lod')
-				void quality.set({ lodThreshold: quality.settings.lodThreshold > 0 ? 0 : 1 });
-			else void quality.setPreset(picked as QualityPreset);
+			const lod = quality.settings.lodThreshold > 0;
+			if (picked === 'lod') {
+				if (lod) lodThreshold = quality.settings.lodThreshold;
+				void quality.set({ lodThreshold: lod ? 0 : lodThreshold });
+			} else {
+				// A preset gives every setting its own value, so the switch keeps the new preset's
+				// threshold for its next turn on, and stays off when it was off.
+				void quality.setPreset(picked as QualityPreset);
+				lodThreshold = quality.settings.lodThreshold || lodThreshold;
+				if (!lod) void quality.set({ lodThreshold: 0 });
+			}
 			film().refresh();
 		}
 	});
