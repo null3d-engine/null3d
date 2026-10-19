@@ -227,12 +227,14 @@ test(
 		).toBeLessThan(3);
 		expect(toast?.y ?? 0).toBeLessThan(80);
 
-		// Time of day is a radio group too. Its last entry is the studio, which is not an hour: every
-		// mood the stage supports is reachable here and checked.
-		await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
-		await pick(page, 'Time of day', 'mood', 'Studio', 'time of day: studio');
-		// Back to an hour, so the switches below are checked against the sky, not the studio backdrop.
-		await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
+		// Time of day is an hour slider with Auto and Studio beside it. The slider sets any hour; the
+		// two buttons pick a mood, and each names its new state.
+		await page.getByRole('tab', { name: 'Time of day' }).click();
+		await panel(page, 'hour').locator('input.hud__range').fill('18.4');
+		await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
+		await pick(page, 'Time of day', 'hour', 'Studio', 'Studio: on');
+		// Back to Auto, so the switches below are checked against the sky, not the studio backdrop.
+		await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
 		// Atmosphere, Lighting and Post are toggles: each names the effect, with its label's own case,
 		// and its new state. The snow goes off first, so the scene holds still between frames.
 		await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
