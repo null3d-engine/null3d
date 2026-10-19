@@ -5,7 +5,12 @@
 // module of the start, the module of a feature that loads on first use, or the module of a shader
 // that loads on a feature's first use as a whole, such as the texture generators'.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
-// functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
+// functions here do no file or process work of their own: tools/build-wasm.ts builds, reads and
+// prints, and hands in each file's bytes as a function that reads them.
+//
+// CI can split the measuring into parts that run at the same time: each part builds the same page
+// and measures its own share of the files, and one step merges the parts' sizes and judges them.
+import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
@@ -33,6 +38,147 @@ export function measure(bytes: Buffer): SizeEntry {
 		params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
 	}).length;
 	return { raw: bytes.length, gzip, brotli };
+}
+
+/** A file of a page's build that the size report measures. */
+export interface ReportFile {
+	/** The name that the report prints, such as `js/page.js` or `first-use/meshopt_decoder.wasm`. */
+	name: string;
+	/** The built file's own name, whose hash changes with its content. */
+	built: string;
+	/** The file's length, which balances the parts of a split measuring. */
+	weight: number;
+	/** Reads the file's bytes, only when the file is measured. */
+	read: () => Buffer;
+}
+
+/** The size of each of `files`, by name, in their order. `onMeasured` follows each file. */
+export function measureFiles(
+	files: readonly ReportFile[],
+	onMeasured?: (file: ReportFile) => void,
+): Map<string, SizeEntry> {
+	const sizes = new Map<string, SizeEntry>();
+	for (const file of files) {
+		sizes.set(file.name, measure(file.read()));
+		onMeasured?.(file);
+	}
+	return sizes;
+}
+
+/** One part of a measuring split into `count` parts: `index` runs from 1 to `count`. */
+export interface PartSpec {
+	index: number;
+	count: number;
+}
+
+/** Reads a part as `<i>/<n>`, such as `2/6`. */
+export function parsePartSpec(text: string): PartSpec {
+	const match = /^(\d+)\/(\d+)$/.exec(text);
+	const index = Number(match?.[1]);
+	const count = Number(match?.[2]);
+	if (!match || index < 1 || index > count)
+		throw new Error(`a part is <i>/<n>, with i from 1 to n, such as 2/6, not ${text}`);
+	return { index, count };
+}
+
+/** The name of the file that a part writes its sizes to. */
+export const sizePartFile = ({ index, count }: PartSpec) => `part-${index}-of-${count}.json`;
+
+/** True for the name of a file that a part writes its sizes to. */
+export const isSizePartFile = (name: string) => /^part-\d+-of-\d+\.json$/.test(name);
+
+/**
+ * The names of the files that part `index` of `count` measures. The files go out heaviest first,
+ * each to the part with the least weight so far, so the parts take about equal time. Every part
+ * that reads the same build makes the same split, so each file falls in exactly one part.
+ */
+export function partShare(
+	files: readonly Pick<ReportFile, 'name' | 'weight'>[],
+	{ index, count }: PartSpec,
+): Set<string> {
+	const loads = new Array<number>(count).fill(0);
+	const share = new Set<string>();
+	const order = files
+		.map((file, at) => ({ file, at }))
+		.sort((a, b) => b.file.weight - a.file.weight || a.at - b.at);
+	for (const { file } of order) {
+		let lightest = 0;
+		for (let part = 1; part < count; part++) if (loads[part]! < loads[lightest]!) lightest = part;
+		loads[lightest]! += file.weight;
+		if (lightest === index - 1) share.add(file.name);
+	}
+	return share;
+}
+
+/** What one part of a split measuring writes, for the step that judges every part together. */
+export interface SizePart {
+	/** The part's number, from 1. */
+	part: number;
+	/** How many parts the measuring has. */
+	of: number;
+	/** A hash of every file's name and built name, the same only for parts of one build. */
+	build: string;
+	/** The name of every file that the build's report measures, in the report's order. */
+	files: string[];
+	/** The sizes of this part's own files, by name. */
+	sizes: Record<string, SizeEntry>;
+}
+
+/** The hash that tells the files of one build from another's. */
+function buildHash(files: readonly Pick<ReportFile, 'name' | 'built'>[]): string {
+	const lines = files.map(({ name, built }) => `${name}\t${built}`).join('\n');
+	return createHash('sha256').update(lines).digest('hex');
+}
+
+/** Measures the share of `files` that `spec` names, and returns the record that the part writes. */
+export function measureSizePart(
+	files: readonly ReportFile[],
+	spec: PartSpec,
+	onMeasured?: (file: ReportFile) => void,
+): SizePart {
+	const share = partShare(files, spec);
+	const own = files.filter(({ name }) => share.has(name));
+	return {
+		part: spec.index,
+		of: spec.count,
+		build: buildHash(files),
+		files: files.map(({ name }) => name),
+		sizes: Object.fromEntries(measureFiles(own, onMeasured)),
+	};
+}
+
+/**
+ * The size of every file, from the records of every part, in the report's order: the same map as
+ * one measuring of every file gives. It throws when a part is missing or there twice, when the
+ * parts read different builds or split into different counts, and when a file has no size or more
+ * than one.
+ */
+export function mergeSizeParts(parts: readonly SizePart[]): Map<string, SizeEntry> {
+	const first = parts[0];
+	if (!first) throw new Error('there is no part of the size measuring to merge');
+	const count = first.of;
+	for (const { part, of, build } of parts) {
+		if (of !== count) throw new Error(`part ${part} of ${of} cannot merge with parts of ${count}`);
+		if (build !== first.build)
+			throw new Error(
+				`part ${part} of ${count} measured another build than part ${first.part}: every part must build the same commit`,
+			);
+	}
+	const numbers = parts.map(({ part }) => part).sort((a, b) => a - b);
+	if (numbers.join() !== Array.from({ length: count }, (_, i) => i + 1).join())
+		throw new Error(`expected parts 1 to ${count}, each once, but found ${numbers.join(', ')}`);
+	const files = new Set(first.files);
+	const merged = new Map<string, SizeEntry>();
+	for (const name of first.files) {
+		const holders = parts.filter(({ sizes }) => Object.hasOwn(sizes, name));
+		if (holders.length !== 1)
+			throw new Error(`${name} has a size in ${holders.length} parts, not in exactly one`);
+		merged.set(name, holders[0]!.sizes[name]!);
+	}
+	for (const { part, sizes } of parts)
+		for (const name of Object.keys(sizes))
+			if (!files.has(name)) throw new Error(`part ${part} measured ${name}, which no build lists`);
+	return merged;
 }
 
 /** The core's two builds: with threads and shared memory, and without. */
