@@ -196,6 +196,24 @@ describe('timeOfDay', () => {
 		expect(night.exposure).toBeGreaterThan(1);
 	});
 
+	test('keeps the physical fog at the sky’s light as the sun sets, so no evening hour washes the scene', () => {
+		const fog = (hours: number | TimeOfDayPreset) => {
+			const day = timeOfDay(hours, { model: 'physical' });
+			return luminance(day.fog.color) * day.exposure;
+		};
+		// Golden hour holds the brightest fog that the sun gives. Every later hour is dimmer, so a
+		// low sun never lights the whole scene through the haze.
+		const golden = fog('goldenHour');
+		for (const hours of [18, 18.2, 18.4, 18.6, 19, 20, 23] as const)
+			expect(fog(hours)).toBeLessThan(golden * 1.5);
+		// At dusk only the sun's side of the sky glows, so the fog takes the sky's mean color there
+		// and the sun's own warm color while it stands.
+		const dusk = timeOfDay('blueHour', { model: 'physical' }).fog.color;
+		expect(dusk[0] as number).toBeLessThan(1.5 * (dusk[2] as number));
+		const warm = timeOfDay('goldenHour', { model: 'physical' }).fog.color;
+		expect(warm[0] as number).toBeGreaterThan(1.8 * (warm[2] as number));
+	});
+
 	test('changes the physical values with no jump as the day passes', () => {
 		// Steps of 2 minutes through dusk and dawn: each value changes by a small share.
 		for (const [start, end] of [

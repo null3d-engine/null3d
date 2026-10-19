@@ -144,7 +144,7 @@ export default defineSketch(async (ctx) => {
 		heading: HEADING,
 		fogDensity: 0.006,
 		cloudCoverage: 0.3,
-		haze: { Golden: 2.2, Dusk: 1.5 },
+		haze: { Golden: 1.2, Dusk: 1.5 },
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });

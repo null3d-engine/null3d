@@ -110,6 +110,7 @@ export default defineSketch(async (ctx) => {
 		heading: HEADING,
 		fogDensity: 0.0075,
 		cloudCoverage: 0.35,
+		haze: { Golden: 0.7 },
 		backdrop: [0.02, 0.025, 0.04],
 	});
 	const start = params.get('mood');

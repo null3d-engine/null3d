@@ -179,3 +179,36 @@ The owner found the first fix wrong in the showcase. Dusk and Night looked swapp
 The day's ambient luminance times its exposure is 0.66 at noon against the analytic model's 0.64, and 0.62 at 10:00 against 0.68. The total light falls from 2.25 at noon to 1.09 at 17:00 and 0.68 at the crossing. From 18:00 to midnight it runs between 0.31 and 0.38. Dusk is 0.68, the low moon at 19:00 is 0.33, the moon at 20:00 is 0.38, and the night is 0.32. No hour falls more than a tenth below the night's value. The exposure stays within 0.55 to 4, and no 0.1-hour step changes it by more than 1.5 times. Between 0.05-hour samples the total light changes by less than 1.25 times. The main light's direction changes by less than 0.24, and its intensity by less than 0.39. The moon takes no part while the sun stands up. Four unit tests hold the direction and the intensity, the moon's absence by day, the presets' heights, and the total light's continuity and order.
 
 The night and night-8-bit `physical-sky-*` tests draw different pixels, so their references are made again in both sets. The blue-hour, golden-hour, afternoon and no-haze images stay within their tolerance.
+
+## Third addendum: fog at dusk follows the mean sky light
+
+Status: fixed on 19 October 2026, for the owner's review. Date: 2026-10-19. Task: the dusk haze experiment.
+
+The owner found Creek and Night town washed out at Dusk and Golden. At Dusk a bright brown haze lay over the trees, rocks and stream, and only the fireflies read.
+
+### The cause
+
+The physical model gave the fog the sky's light 3 degrees up, averaged all around. That band keeps the sunset's glow after the sun has gone. The exposure followed the sky's mean light, which falls away far faster than that band. It rose to its limit of 4. The exposed fog then reached a luminance of 0.48 at the blue hour, against 0.22 at golden hour. The fog grew brighter as the sun set, and its color was the sunset's warm glow. The analytic model had already turned its fog from the horizon's color to the sky's average as the sun set (`mix(DAY_HORIZON, DAY_AVERAGE, dusk)`). The physical model had not.
+
+At the held afternoon and night hours no value changes, and no other test sketch sets a fog from the physical model.
+
+### The fix
+
+`physicalDay` blends the fog's color from the horizon's light to the sky's mean light. The blend runs over the sun's height, from 5 degrees above the horizon to 5 below it. It starts before the sun reaches the horizon, where the exposure rises fastest. So no evening hour carries a brighter fog than the sky. The moon's light takes the same share as before.
+
+| Hour | Exposure | Fog's exposed luminance, before | After |
+| --- | --- | --- | --- |
+| 15, afternoon | 0.658 | 0.185 | 0.185 |
+| 17.6, golden hour | 1.700 | 0.218 | 0.218 |
+| 18.0, the sun on the horizon | 3.779 | 0.471 | 0.288 |
+| 18.4, blue hour | 3.885 | 0.484 | 0.109 |
+| 19 | 3.394 | 0.053 | 0.053 |
+| 23, night | 1.102 | 0.011 | 0.011 |
+
+- A unit test holds that no hour of the evening has an exposed fog above 1.5 times golden hour's. It also holds that the dusk fog's red is under 1.5 times its blue, while golden hour's is above 1.8.
+- The showcase scenes also thin their own haze at golden hour. Creek's factor falls from 2.2 to 1.2, and the showcase Night town gains a factor of 0.7. `examples.md` records the pictures and the figures.
+- No image reference changes. The physical sky's test sketch sets no fog, and the showcase image tests hold the afternoon and the night.
+
+### What the fix showed
+
+With the veil gone, Creek at Dusk is dark. The sun is below the horizon, its main light grazes the ground, and the sky's environment is nearly out. The scene's fine detail survives: the spread a one-pixel blur leaves out stayed at 1.3 of 255 in the near band, against 1.3 before. Raising the exposure was tried at 1.6 and 2.2 times. It brightened the fog with the scene and did not add detail, so the exposure band stays as it is. A scene that faces the sunset, as the dawn side of Creek's route does, keeps a lit valley.

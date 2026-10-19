@@ -450,7 +450,7 @@ The sky's environment shows the physical sky too. When a refresh starts, the eng
 
 ## Time of day
 
-`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background, so the fog fades into the sky's horizon.
+`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background, so by day the fog fades into the sky's horizon. As the sun sets, only its own side of the sky glows, so the fog turns to the sky's mean color and stays as dim as the sky around it.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';

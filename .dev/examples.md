@@ -559,6 +559,15 @@ The choices, and why:
 - **The night is darker than the preset's exposure.** At the `night` preset's exposure, the grass showed as green as by day under the moon. The night takes 0.55 of it.
 - **Blue hour and night have fireflies,** a sprite batch whose colors are above white, so bloom gives them halos.
 
+#### The haze at dusk and golden hour (19 October 2026)
+
+The haze hid the scene at the two low-sun moods. A Dusk picture showed a bright brown veil over the trees, rocks and stream, and the fireflies were the clearest thing in it. Golden hour washed in the same way. Two changes fixed it.
+
+- **The fog follows the sky's mean light as the sun drops.** The physical model took the fog's color from the sky 3 degrees up, averaged all around. At dusk that band holds the sunset's glow, while the rest of the sky has gone dark. The exposure rises to make up for the dark sky. The fog then showed about four times brighter than the sky around it, and hid every shaded surface. The fog now turns from the horizon's color to the sky's mean color over the sun's last ten degrees of height. The analytic model already did this ([D-143](decisions/D-143-physical-sky.md#third-addendum-fog-at-dusk-follows-the-mean-sky-light)). Golden hour, the day and the night keep their fog.
+- **The golden hour haze is thinner.** Creek's factor falls from 2.2 to 1.2 of its fog's density, and the showcase Night town gains a factor of 0.7. It is the first haze its stage sets. The near and middle ground keep their texture. On the held frame, the near band's local detail stays the same at dusk and rises at golden hour. The far bank keeps its aerial depth.
+
+On Creek's held frame, the mean luminance of the whole picture fell from 75 to 24 of 255 at Dusk. At golden hour it fell from 61 to 46. The mean of the near band fell from 63 to 15 at dusk. The spread that a one-pixel blur leaves out stayed at 1.3 of 255. At golden hour that spread rose from 1.6 to 2.0. Night town's Dusk lost the cream veil. Its mean fell from 84 to 46. The standard deviation of every band rose, from 24 to 38 in the far pines and from 23 to 39 in the middle. No image test's reference changes. The held demo frames draw the afternoon and the night, whose fog does not change. The physical sky's test sketch sets no fog.
+
 #### Frame rates of the Creek on the Mac
 
 The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
