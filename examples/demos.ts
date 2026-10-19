@@ -91,7 +91,9 @@ export const DEMOS: readonly Demo[] = [
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
 		hold: 0.5,
-		timeoutSeconds: 60,
+		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it
+		// well past a minute on a loaded runner.
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'night-town',
@@ -103,7 +105,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
 		hold: 0.5,
-		timeoutSeconds: 60,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'generators',
