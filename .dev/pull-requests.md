@@ -217,6 +217,29 @@ A branch lands on main by direct push ([D-157](decisions/D-157-direct-pushes-to-
 - The Safari and Firefox jobs compare the image tests with the Mac's `chrome-real-gpu` references. A test without one of these references, or without its SwiftShader reference, fails `bun run check` ([Image tests](image-tests.md#references)).
 - CI's last job, `ci-passed`, waits for every other CI job, and it passes only when each one passed. A job may skip only when the first job, `changes`, passed and said that the job does not run. Main's rules require `ci-passed`, not each job, so a CI job can split into more shards and change its name with no change to the rules.
 
+### A pull request of a long branch
+
+Work lands by direct push since 13 October 2026. A pull request remains useful for a long piece of
+work. On a pull request, the `commits` check reads every commit from the merge base with main, not
+only the latest push. A branch that lives for weeks carries commits from before a rule tightened,
+and those commits fail the check.
+
+On 19 October 2026, 22 of 1,299 commits on the M2 branch failed it: 28 findings, mostly subjects
+that named a decision record and `Size-Growth:` values that named no measured file. The rules
+changed after those commits were made. None of the recent work was at fault.
+
+A squash merge keeps the pull request's title and drops every commit message, so those findings
+never reach main. To avoid a red gate before the merge, squash the branch to one commit first:
+
+```
+git reset --soft "$(git merge-base origin/main HEAD)"
+git commit -F message.txt
+```
+
+Check the whole range before the merge: `bun tools/hooks/check-trailers.ts origin/main..HEAD` and
+`bunx commitlint --from origin/main --to HEAD`. A direct push has no such problem: the pre-push
+hook and CI read only the commits that the push adds.
+
 ### Before you push to main
 
 Two branches that change the same code files land one after another. The smaller or readier one lands first, and the other merges main again and runs its checks before it pushes.
