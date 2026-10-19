@@ -194,3 +194,17 @@ Consequence for the text the engine adds at run time: a shader the engine builds
 
 To report: Qualcomm, through Chromium's issue tracker, with the probe page.
 
+## Safari 26.6: a fragment shader that returns only its depth is read as a color output
+
+Status: not reported yet. Found 19 October 2026.
+
+- Device: Mac, Safari 26.6.2, WebGPU in core mode and in compatibility mode.
+- Seen in: null3D's weighted layer, the depth copy that the weighted pass tests against (`crates/null3d-shaders/wgsl/weighted_layer.wgsl`), at commit 33c0bbe0e. The image tests `weighted`, `weighted-compat`, `weighted-reverse`, `weighted-reverse-compat` and `demo-weighted-transparency` failed to build their pipelines, so the held frame could not be read back (E1408).
+
+What happens: pipeline creation fails with `pipeline creation - color target pixel format(0) for location(115) is incompatible with shader output data type of 3`. WebKit swaps two numbers in that message: 0 is the index of the color target, and 115 is its Metal pixel format, `MTLPixelFormatRGBA16Float`. The method `ShaderModule::parseFragmentReturnType` in `Source/WebGPU/WebGPU/ShaderModule.cpp` records a fragment entry point that returns a primitive at color location 0, even when the primitive's attribute is `@builtin(frag_depth)`. A depth of `f32` becomes `MTLDataTypeFloat`, which is 3. The weighted pass declares two color targets, and the depth copy's pipeline declares both with a write mask of 0 so that its draws join that pass. The first target is `rgba16float`, which needs four floats, so WebKit rejects the pipeline. Chrome accepts it: WGSL gives a `frag_depth` output no color location.
+
+Smallest known case: a WGSL fragment entry point that returns `@builtin(frag_depth) f32` alone, in a pipeline whose first color target is `rgba16float` with a write mask of 0.
+
+Workaround in the engine: the WebGPU build of the depth copy returns a structure of its depth and a `@location(0) vec4f` that the target's zero write mask never writes. The WebGL2 build keeps its depth-only return, as GLSL needs no such output.
+
+To report: WebKit's Bugzilla, with `parseFragmentReturnType` and the swapped arguments of the message in `RenderPipeline.mm`.

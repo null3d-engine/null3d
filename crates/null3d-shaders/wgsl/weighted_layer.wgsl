@@ -33,10 +33,28 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
 }
 
 #ifdef DEPTH
+#ifdef MULTISAMPLED
+/// What the depth copy returns where WebKit reads it. The pipeline declares the weighted pass's
+/// two color targets so that its draws join that pass, and writes neither. WebKit takes a
+/// fragment shader that returns its depth alone as a float at color location 0, and then rejects
+/// that against the first target's 16-bit float format, which needs four floats. A color output
+/// that the target's write mask never writes gives the format the target declares.
+struct DepthFragment {
+    @builtin(frag_depth) depth: f32,
+    @location(0) unwritten: vec4f,
+}
+
+@fragment
+fn depth(@builtin(position) at: vec4f) -> DepthFragment {
+    let copy = textureLoad(scene_depth, vec2u(at.xy), 0).x;
+    return DepthFragment(copy, vec4f(0.0));
+}
+#else
 @fragment
 fn depth(@builtin(position) at: vec4f) -> @builtin(frag_depth) f32 {
     return textureLoad(scene_depth, vec2u(at.xy), 0).x;
 }
+#endif
 #else
 @fragment
 fn composite(@builtin(position) at: vec4f) -> @location(0) vec4f {
