@@ -417,7 +417,7 @@ What the engine does now:
 - The probe runs in the probe worker after the direct-draw probe, on the same device. It draws a fixed crowd of 64 characters of 1,024 vertices in four passes: three shadow cascades and the main pass.
   - The vertex arm draws one instanced draw in each pass, and every vertex blends four joints from the joint texture.
   - The compute arm dispatches once over the crowd, then each pass draws each character from its own region of a buffer of 20-byte skinned vertices. The draw path that the direct-draw probe chose decides whether those draws are direct or indirect, so the compute arm pays the draw count that the engine pays.
-- Both arms warm up, then take turns in four timing rounds of six frames. Each arm keeps its fastest run. The probe picks the compute way only when it is at least 5% and at least 0.05 ms a frame faster. A warm-up frame over 50 ms, a failure, or a software renderer keeps the vertex shaders.
+- Both arms warm up, then take turns in four timing rounds of six frames. Each arm keeps its fastest run. The probe picks the compute way only when it is at least 5% and at least 0.05 ms a frame faster. A warm-up over 50 ms, a failure, or a software renderer keeps the vertex shaders.
 - The answer travels with the capability report as `webgpu.computeSkinning`, and `coreDevice` turns it into the core's mode before the first frame. The worker reports the two figures as `worker.skinningProbe`.
 
 Measured on the Mac on 2026-10-19, in milliseconds a frame from submit to GPU completion, the fastest of four rounds, in four runs each:

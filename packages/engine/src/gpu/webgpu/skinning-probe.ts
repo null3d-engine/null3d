@@ -466,16 +466,22 @@ async function measure(
 		}
 	};
 	/**
-	 * Runs one frame of an arm, so the driver compiles what it needs before the timing, and says
-	 * whether the device is too slow to probe.
+	 * Runs two frames of an arm, so the driver compiles what it needs before the timing, and returns
+	 * the second frame's time, which says whether the device is too slow to probe.
 	 */
-	const warm = async (frame: (encoder: GPUCommandEncoder) => void): Promise<boolean> => {
-		const start = performance.now();
-		const encoder = device.createCommandEncoder();
-		frame(encoder);
-		device.queue.submit([encoder.finish()]);
+	const warm = async (frame: (encoder: GPUCommandEncoder) => void): Promise<number> => {
+		// Two frames: the first lets the driver compile what the arm needs, and the second times a
+		// frame that carries no compile, as every timed frame after it does.
+		const first = device.createCommandEncoder();
+		frame(first);
+		device.queue.submit([first.finish()]);
 		await device.queue.onSubmittedWorkDone();
-		return performance.now() - start <= LIMIT_MS;
+		const start = performance.now();
+		const second = device.createCommandEncoder();
+		frame(second);
+		device.queue.submit([second.finish()]);
+		await device.queue.onSubmittedWorkDone();
+		return performance.now() - start;
 	};
 	/** One timing run of an arm, in milliseconds a frame. */
 	const time = async (frame: (encoder: GPUCommandEncoder) => void): Promise<number> => {
@@ -486,12 +492,22 @@ async function measure(
 		await device.queue.onSubmittedWorkDone();
 		return (performance.now() - start) / FRAMES;
 	};
-	const probeable = (await warm(vertexFrame)) && (await warm(computeFrame));
+	const vertexWarm = await warm(vertexFrame);
+	const computeWarm = await warm(computeFrame);
+	const slowestWarm = Math.max(vertexWarm, computeWarm);
+	if (slowestWarm > LIMIT_MS) {
+		return {
+			compute: false,
+			vertexMs: null,
+			computeMs: null,
+			error: `the probe's warm-up took ${Math.round(slowestWarm)} ms, over its ${LIMIT_MS} ms limit`,
+		};
+	}
 	let vertexMs = Number.POSITIVE_INFINITY;
 	let computeMs = Number.POSITIVE_INFINITY;
 	// The arms take turns in the lead, so neither meets a colder GPU or a busier queue than the
 	// other. Each arm keeps its fastest run, which is the run that its own work set.
-	for (let round = 0; probeable && round < ROUNDS; round++) {
+	for (let round = 0; round < ROUNDS; round++) {
 		const vertexFirst = round % 2 === 0;
 		if (vertexFirst) vertexMs = Math.min(vertexMs, await time(vertexFrame));
 		else computeMs = Math.min(computeMs, await time(computeFrame));
