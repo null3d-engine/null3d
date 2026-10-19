@@ -101,3 +101,14 @@ family's table only. A preload loads the tables of the keys that it expects, not
   builds the engine makes. M2-J4's three bits raise it from 8,671 to 19,175 WGSL builds and from
   21,910 to 53,622 GLSL builds, which `BUILD_BUDGET` records with the reason in the implementation
   notes.
+
+### Addendum, 19 October 2026: the size check and the new family files
+
+The split writes 164 family tables and 214 combination loaders where the set
+held 12 and 8. The size check treated each new file as unexplained growth and
+asked for a `Size-Growth:` trailer that named it; the first run to reach the
+check listed 4,083 new files. A family table or a combination loader loads only
+on the first use of its feature, so it adds nothing to a page's start download,
+and its own budget caps it. The check now passes a new file of those kinds
+without a trailer. Every file the split writes stays inside its budget, which is
+the rule that D-190 set.
