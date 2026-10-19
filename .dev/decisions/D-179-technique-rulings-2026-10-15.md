@@ -69,12 +69,12 @@ The owner ruled on 15 October 2026, at about 10:40 (UTC+8), with the words "i ap
 
 ### Items not ruled on
 
-The brief also listed smaller items with a recommendation. The owner's rulings above do not name them, so they stay open:
+The brief also listed smaller items with a recommendation. The owner's rulings above do not name them, so they stay open. On 19 October 2026 the owner ruled on three of them, in [D-137](D-137-lod-groups.md)'s addendum of that day. Cluster culling for large static meshes, the impostors' three-view blend and follow-ups 1, 4 and 5 of levels of detail come in M3. The rest stay open:
 
-- rooms and portals; cluster culling for large static meshes; virtual texturing;
-- the impostors' three-view blend, bake helper and `assets impostor` command;
+- rooms and portals; virtual texturing;
+- the impostors' bake helper and `assets impostor` command;
 - lit fog for transparent surfaces and particles;
-- the follow-ups of levels of detail, of outlines, of transmission's back faces and of MSAA with FXAA;
+- follow-ups 2 and 3 of levels of detail, and the follow-ups of outlines, of transmission's back faces and of MSAA with FXAA;
 - surface functions that read the scene's lights, for toon shading;
 - the memory items of [D-130](D-130-memory-toward-threejs.md): exact upload arenas and tables, and the two always-on threads.
 
