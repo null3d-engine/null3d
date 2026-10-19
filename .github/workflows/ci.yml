@@ -441,9 +441,11 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Its repository-wide shader test builds every shader, which takes longer than 35 minutes on one
-    # core. The limit comes down when the shader build runs on every core.
-    timeout-minutes: 90
+    # Its repository-wide test builds every shader natively, then every entry through the shader
+    # compiler. The M2 feature families tripled that work: the same test took 105 minutes alone in
+    # the whole shader build's job, and this job was cancelled at its old 90-minute limit, 88
+    # minutes into the test. The limit comes down when the shader build gets faster.
+    timeout-minutes: 180
     env:
       HUSKY: "0"
     steps:
@@ -510,10 +512,12 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    # A shard's tests take about 12 minutes, with the median times that the weights come from, and
-    # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
-    # the median, so the limit leaves room for that rather than for a hang.
-    timeout-minutes: 25
+    # A shard's tests take about 20 minutes with the shader parts that the M2 feature families make:
+    # 340 parts of about 72 s each, against main's 104 of about 50 s. A shard's setup takes 1 to 5
+    # minutes. A shard that meets a slow machine runs its tests up to twice as slowly as the median,
+    # so the limit leaves room for that rather than for a hang. The shard weights need retuning for
+    # the new part count ([Image tests](../../.dev/image-tests.md)).
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

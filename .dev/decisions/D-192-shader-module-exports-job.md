@@ -41,3 +41,20 @@ The test could not join the whole shader build's part: that part already builds 
 - `.github/workflows/ci.yml` and `.github/workflows/nightly-rust.yml` gain the third part.
 - [Branches and parallel work](../pull-requests.md#cis-jobs) states the split and the measured times.
 - The test and its checks do not change.
+
+## Addendum 2026-10-19: the shader families and the other jobs' limits
+
+The feature families pushed other jobs past their limits in the same run, 39191671424.
+
+| Job | Measure |
+| --- | --- |
+| Browser shard 12 | 340 shader parts of about 72 s each; 32 of 33 tests passed, and the 25-minute limit cut the last |
+| Browser shard 11, which passed | 28 tests, 19 minutes of tests, 19.7 minutes in all |
+| `shader-compiler` | cancelled at its 90-minute limit, 88 minutes into the shader test |
+| The whole shader build's part | failed at 6,312 s (105 minutes) on a module-kind check, below its 135-minute limit |
+
+The browser's 340 parts come from 50,907 GLSL programs. Main at `865f3e6bb` had 104 parts, so about 15,450 to 15,600 programs. The count grew with the feature families' builds, not with duplicates: 487 builds sit in more than one module, and counting each once would remove 583 programs, 1.1 per cent. The extra programs are distinct compiled shaders, so the page must compile them.
+
+The browser job's limit rose from 25 to 45 minutes. The slowest shard needed about 26 minutes on that run, and the new limit keeps room for a machine that runs the tests twice as slowly. The shard weights still come from main's part count and need retuning ([Image tests](../image-tests.md#ci)).
+
+`shader-compiler`'s limit rose from 90 to 180 minutes. It runs the same 105-minute test and then builds every entry through the shader compiler. On main that extra work took about 15 minutes, and the feature families multiply it with the builds. The whole shader build's part keeps 135 minutes: its test takes 105, which leaves 30 minutes. Read these times again when the shader build gets faster.
