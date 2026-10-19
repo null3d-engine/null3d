@@ -76,7 +76,13 @@ const F16 = C.CAPABILITY_FLOAT16_TARGETS;
 /** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {}, features, transientAttachments: false, directDraws: false },
+		webgpu: {
+			limits: {},
+			features,
+			transientAttachments: false,
+			directDraws: false,
+			computeSkinning: false,
+		},
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
@@ -98,7 +104,7 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	join: true,
-	skinning: 'vertex',
+	skinning: 'auto',
 	indexInstances: false,
 	direct: 'auto',
 	shadowDepthBits: 16,
@@ -384,6 +390,24 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgpu', report({}), { ...PLAIN, direct: 'on' }).directDraws).toBe(true);
 		expect(coreDevice('webgpu', probed, { ...PLAIN, direct: 'off' }).directDraws).toBe(false);
 		expect(coreDevice('webgl2', probed, { ...PLAIN, direct: 'on' }).directDraws).toBe(false);
+	});
+
+	it('skins in the pass where the probe measured it faster, as ?skinning= forces', () => {
+		const probed = report({});
+		probed.webgpu.computeSkinning = true;
+		expect(coreDevice('webgpu', probed, PLAIN).skinning).toBe(C.SKINNING_LEAN);
+		expect(coreDevice('webgpu', report({}), PLAIN).skinning).toBe(C.SKINNING_VERTEX);
+		for (const [mode, code] of [
+			['vertex', C.SKINNING_VERTEX],
+			['compute', C.SKINNING_LEAN],
+			['full', C.SKINNING_FULL],
+			['skip', C.SKINNING_SKIP_ONLY],
+			['narrow', C.SKINNING_NARROW_ONLY],
+		] as const) {
+			expect(coreDevice('webgpu', report({}), { ...PLAIN, skinning: mode }).skinning).toBe(code);
+			expect(coreDevice('webgpu', probed, { ...PLAIN, skinning: mode }).skinning).toBe(code);
+			expect(coreDevice('webgl2', probed, { ...PLAIN, skinning: mode }).skinning).toBe(code);
+		}
 	});
 
 	it('culls in two phases on WebGPU where the options ask for it', () => {

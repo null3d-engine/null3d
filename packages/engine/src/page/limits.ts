@@ -30,8 +30,8 @@ import type {
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
 
-/** The core's code of each skinning mode that ?skinning= picks. */
-const SKINNING_CODES: Record<SkinningSwitch, number> = {
+/** The core's code of each skinning mode that ?skinning= names. */
+const SKINNING_CODES: Record<Exclude<SkinningSwitch, 'auto'>, number> = {
 	vertex: C.SKINNING_VERTEX,
 	compute: C.SKINNING_LEAN,
 	full: C.SKINNING_FULL,
@@ -53,6 +53,7 @@ export interface DeviceReport {
 		features: string[];
 		transientAttachments: boolean;
 		directDraws: boolean;
+		computeSkinning: boolean;
 	};
 	webgl2: {
 		extensions: Record<string, boolean>;
@@ -436,7 +437,12 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
-		skinning: SKINNING_CODES[options.skinning],
+		skinning:
+			options.skinning === 'auto'
+				? report.webgpu.computeSkinning
+					? C.SKINNING_LEAN
+					: C.SKINNING_VERTEX
+				: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
 		expectedObjects: options.expectedObjects,

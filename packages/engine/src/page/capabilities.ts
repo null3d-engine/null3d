@@ -112,6 +112,13 @@ export interface WebGPUReport {
 	 */
 	directDraws: boolean;
 	/**
+	 * True when the start-up probe measured the device skinning a crowd faster in the skinning pass
+	 * than in the vertex shader of every pass that draws it, so the engine skins in the pass. The
+	 * probe runs on a worker's device and reads no browser or GPU name, except to never choose the
+	 * pass on a software renderer (D-20). False on WebGL2.
+	 */
+	computeSkinning: boolean;
+	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
 	 * earlier start's, to tell whether a stored preset check came from the same GPU.
 	 */
@@ -233,6 +240,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		preferredCanvasFormat: null,
 		transientAttachments: false,
 		directDraws: false,
+		computeSkinning: false,
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -259,9 +267,10 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			transientAttachments:
 				(globalThis.GPUTextureUsage as unknown as Record<string, number> | undefined)
 					?.TRANSIENT_ATTACHMENT === TEXTURE_USAGE_TRANSIENT_ATTACHMENT,
-			// The worker's probe measures this on the device that draws; until then the engine
-			// keeps its current path.
+			// The worker's probes measure these on the device that draws; until then the engine
+			// keeps its current paths.
 			directDraws: false,
+			computeSkinning: false,
 			adapterInfo: info
 				? {
 						vendor: info.vendor,
@@ -555,9 +564,10 @@ export async function probeCapabilities(
 	hints: DeviceHints = readDeviceHints(),
 ): Promise<CapabilityReport> {
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
-	// The probe worker measures the draw paths on a device of its own, which the render worker's
-	// device answers the same way for the browser and the driver.
+	// The probe worker measures the draw paths and the skinning ways on a device of its own, which
+	// the render worker's device answers the same way for the browser and the driver.
 	const directDraws = 'directDraws' in worker && worker.directDraws;
+	const computeSkinning = 'computeSkinning' in worker && worker.computeSkinning;
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
@@ -569,7 +579,11 @@ export async function probeCapabilities(
 		transferControlToOffscreen:
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
-		webgpu: { ...webgpu, directDraws: webgpu.available && directDraws },
+		webgpu: {
+			...webgpu,
+			directDraws: webgpu.available && directDraws,
+			computeSkinning: webgpu.available && computeSkinning,
+		},
 		webgl2: probeWebGL2(powerPreference),
 		worker,
 	};

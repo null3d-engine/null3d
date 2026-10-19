@@ -1,10 +1,12 @@
 // A short-lived worker that tests what a dedicated worker can do: the worker frame timer, WebGL2 in
 // an OffscreenCanvas, and WebGPU with a canvas context. The render worker depends on all three. It
-// also measures the device's two draw paths, so the engine can draw the faster one (D-174).
+// also measures the device's two draw paths and its two skinning ways, so the engine can take the
+// faster one of each (D-174, D-20).
 
 import { messageOf } from '../errors/message';
 import { probeDirectDraws } from '../gpu/webgpu/draw-path-probe';
 import { needsOwnArguments } from '../gpu/webgpu/indirect-arguments';
+import { probeSkinning, type SkinningProbeResult } from '../gpu/webgpu/skinning-probe';
 
 /**
  * What a dedicated worker can do, in `CapabilityReport.worker`. A render worker needs the frame
@@ -24,6 +26,13 @@ export interface WorkerProbe {
 	 * draws, measured on the worker's own device at start.
 	 */
 	directDraws: boolean;
+	/**
+	 * True when the device skins a crowd faster in the skinning pass than in the vertex shader of
+	 * each pass, measured on the worker's own device at start.
+	 */
+	computeSkinning: boolean;
+	/** The skinning probe's figures, when it measured them. */
+	skinningProbe: SkinningProbeResult | null;
 	/** Why the WebGPU check failed, when it threw. The WebGL2 check's answer still holds. */
 	webgpuError?: string;
 }
@@ -44,6 +53,8 @@ async function probe(): Promise<WorkerProbe> {
 		offscreenWebGL2: false,
 		offscreenWebGPU: false,
 		directDraws: false,
+		computeSkinning: false,
+		skinningProbe: null,
 	};
 	try {
 		const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
@@ -61,11 +72,11 @@ async function probe(): Promise<WorkerProbe> {
 			if (context) {
 				context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat() });
 				result.offscreenWebGPU = true;
-				result.directDraws = await probeDirectDraws(
-					device,
-					adapter.info,
-					needsOwnArguments(globalThis.navigator?.userAgent ?? ''),
-				);
+				const own = needsOwnArguments(globalThis.navigator?.userAgent ?? '');
+				result.directDraws = await probeDirectDraws(device, adapter.info, own);
+				const skinning = await probeSkinning(device, adapter.info, result.directDraws, own);
+				result.computeSkinning = skinning.compute;
+				result.skinningProbe = skinning;
 			}
 			device.destroy();
 		}

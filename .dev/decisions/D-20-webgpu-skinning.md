@@ -1,6 +1,6 @@
 # D-20: WebGPU skinning
 
-Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The compute pass stays for morphed meshes, for materials without SKIN builds, and behind `?skinning=compute`. The owner's iPad ran the timing page on 2026-10-11, where the compute pass saved 0% to 9% with two or more cascades. The engine's default change landed on main on 2026-10-13 with M2-EX41. The Mac's Safari, and S5 on the owner's iPad, are still to run; neither can change the result. On 2026-10-12 the owner ruled that custom materials' SKIN builds load on first use (option B, last addendum). Date: 2026-10-04, updated 2026-10-13. Task: M2-C3, M2-C8, M2-EX41.
+Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The compute pass stays for morphed meshes, for materials without SKIN builds, behind `?skinning=compute`, and, since the owner's ruling of 19 October 2026, on a device whose start-up probe measures it clearly faster (last addendum). The owner's iPad ran the timing page on 2026-10-11, where the compute pass saved 0% to 9% with two or more cascades. The engine's default change landed on main on 2026-10-13 with M2-EX41. The Mac's Safari, and S5 on the owner's iPad, are still to run; neither can change the result. On 2026-10-12 the owner ruled that custom materials' SKIN builds load on first use (option B, last addendum). Date: 2026-10-04, updated 2026-10-13. Task: M2-C3, M2-C8, M2-EX41.
 
 Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. In S5 it saves at most 4.1% on the Android phones and 4.3% on a cloud iPad. On the timing page it costs 4% to 79% more on each phone, and 26% to 30% more on the iPad. So it fails the rule on all five devices measured. On 8 October 2026 the owner made the vertex shaders WebGPU's default. The compute pass still skins morphed meshes, and meshes whose material has no SKIN build: the debug views and a sketch's full shaders. Since 12 October 2026, skinned copies of one mesh and material share an instanced draw, and custom materials have SKIN builds, which load on first use by the owner's ruling (last addendum).
 
@@ -69,7 +69,7 @@ three.js's WebGPU renderer (0.186) skins in the vertex shader, as its WebGL rend
 
 ## Consequences
 
-- The plan was that the losing way leaves the engine, with the `?skinning=` switch. The compute pass lost, but it stays: WebGPU morphs only in it ([D-51](D-51-morph-targets.md)), and custom materials and the debug views skin only in it. The last addendum gives the reasons. So both ways stay, and so does the switch.
+- The plan was that the losing way leaves the engine, with the `?skinning=` switch. The compute pass lost, but it stays: WebGPU morphs only in it ([D-51](D-51-morph-targets.md)), custom materials and the debug views skin only in it, and a device whose start-up probe measures it clearly faster takes it. The last addendum gives the reasons. So both ways stay, and so does the switch.
 - WebGL2 (M2-C4) skins in the vertex shader, by D-10, with the same joint texture and the GLSL builds of the same SKIN code.
 - The record is in the table in [README.md](README.md).
 
@@ -405,4 +405,50 @@ The figures do not hold. In the same session the first page is about 5 ms slower
 - Warm, the pass is no faster than the vertex shaders on this phone, and it draws each skinned unit on its own: 1,238 draws against 265. On the indirect path it fell to 10.4 frames and 79.35 ms, because WebKit charges for each of its indexed indirect draws.
 - So the vertex shaders stay the default on every device. `?skinning=compute` remains the switch for a page that measures the pass, and no default changed.
 
-The owner's ruling of 8 October 2026 stands, and this phone finds no reason to revisit it. The next step for a phone's crowd would be a pass whose skinned copies share one instanced draw, which the pass cannot do today: each copy keeps vertices of its own.
+The owner's ruling of 8 October 2026 stood until later that day, when the owner ruled that a start-up probe decides the way for each device. The next addendum records the probe, and the measured figures above stand for the phone.
+
+## Addendum, 2026-10-19: the start-up probe picks the way
+
+The owner ruled on 19 October 2026 that the compute skinning pass stays only where a start-up probe measures it cheaper than skinning in the vertex shader. Battle's Mac measurements show that the pass saves no frame time. It raises the draw count from 302 to 10,196, because each object that the pass skins draws from a bucket of its own. The vertex shaders stay the default, and the probe decides for each device.
+
+What the engine does now:
+
+- `?skinning=auto`, the default, takes the probe's answer. `?skinning=vertex`, `compute`, `full`, `skip` and `narrow` still force a way, and they win over the probe. WebGL2 is unchanged: it skins in the vertex shader.
+- The probe runs in the probe worker after the direct-draw probe, on the same device. It draws a fixed crowd of 64 characters of 1,024 vertices in four passes: three shadow cascades and the main pass.
+  - The vertex arm draws one instanced draw in each pass, and every vertex blends four joints from the joint texture.
+  - The compute arm dispatches once over the crowd, then each pass draws each character from its own region of a buffer of 20-byte skinned vertices. The draw path that the direct-draw probe chose decides whether those draws are direct or indirect, so the compute arm pays the draw count that the engine pays.
+- Both arms warm up, then take turns in four timing rounds of six frames. Each arm keeps its fastest run. The probe picks the compute way only when it is at least 5% and at least 0.05 ms a frame faster. A warm-up frame over 50 ms, a failure, or a software renderer keeps the vertex shaders.
+- The answer travels with the capability report as `webgpu.computeSkinning`, and `coreDevice` turns it into the core's mode before the first frame. The worker reports the two figures as `worker.skinningProbe`.
+
+Measured on the Mac on 2026-10-19, in milliseconds a frame from submit to GPU completion, the fastest of four rounds, in four runs each:
+
+| Browser | Vertex shaders | Skinning pass | Probe's choice |
+| --- | --- | --- | --- |
+| Safari 26.6.2 | 0.147 to 0.220 | 0.300 to 0.370 | vertex |
+| Chrome 155 | 0.308 to 0.354 | 0.290 to 0.378 | vertex |
+
+Safari measured the pass costing 45% to 104% more. Chrome measured a near tie: the pass was 7% and 13% cheaper in two runs and 3% and 23% more expensive in the other two. The smallest gain that the probe counts is 0.05 ms a frame, so every Chrome run kept the vertex shaders. The 5% margin and the absolute gain together keep a near tie from changing the way on noise.
+
+The renderer allocates no skinned vertex buffer and no skinning pipeline for an object that the vertex shaders skin. The Rust test `with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins` checks that no skinning compute pipeline is created.
+
+Battle on the Mac in Safari 26.6.2 on 2026-10-19: 1,000 units, WebGPU, High, the governor off, into a 450 by 719 canvas. Each figure is the page's own measurement of 8 seconds, after 8 seconds of warm-up.
+
+| Route | Frames a second | GPU ms | CPU ms, every thread | Draws |
+| --- | --- | --- | --- | --- |
+| auto, which the probe left on the vertex shaders | 30.0 | 25.17 | 10.81 | 313 |
+| vertex shaders, forced | 30.5 | 25.30 | 10.40 | 316 |
+| skinning pass, forced | 25.3 | 22.43 | 16.42 | 10,193 |
+
+The pass cut the GPU time by 2.9 ms. It added 9,880 draws a frame. Their CPU cost raised the CPU time across the threads by 6.0 ms, and the frame lost 5.2 frames a second. The probe's choice draws what the forced vertex route draws.
+
+Battle on the Mac in Chrome 155 on 2026-10-19, at the same settings and canvas:
+
+| Route | Frames a second | GPU ms | CPU ms, every thread | Draws |
+| --- | --- | --- | --- | --- |
+| auto, which the probe left on the vertex shaders | 119.9 | 4.94 | 6.26 | 312 |
+| vertex shaders, forced | 120.0 | 4.86 | 6.13 | 313 |
+| skinning pass, forced | 79.7 | 5.66 | 10.38 | 10,194 |
+
+Chrome draws the vertex route at the display's cap. The pass added 0.8 ms of GPU time and 4.1 ms of CPU time across the threads. It lost 40.3 frames a second. Again the probe's choice matches the forced vertex route.
+
+On the cloud iPhone 17 in Safari 26.5 on 2026-10-19 the probe also kept the vertex shaders. Battle on WebGPU drew 298 draws a frame, the route that the vertex shaders give; the pass gives each object a bucket and its own draw. Its frame rate matched the tip's run: 25.0 against 24.7 frames a second, with three.js at 29.5. The other ten pages are in the [tested devices record](../tested-devices.md).

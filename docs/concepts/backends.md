@@ -115,6 +115,8 @@ The `features` field lists the WebGPU adapter's optional features. On WebGL2 it 
 
 The engine also measures whether direct draws are clearly faster than its indirect draws. That is not a capability flag. `engine.capabilities.directDraws` reports the choice, and it is false on WebGL2, which always draws directly.
 
+On WebGPU the engine also measures which way skins cheaper on the device: in the vertex shader of each pass that draws a character, as WebGL2 does, or once per frame in the skinning pass. It keeps the vertex shader unless the pass measures clearly faster. A software renderer keeps the vertex shader.
+
 Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
 Code that uses an optional feature checks this object first. A sketch reads the same values in its context, as `ctx.engine.capabilities`.

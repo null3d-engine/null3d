@@ -19,6 +19,8 @@ describe('the GPU path for a worker that draws', () => {
 			offscreenWebGL2: true,
 			offscreenWebGPU: false,
 			directDraws: false,
+			computeSkinning: false,
+			skinningProbe: null,
 			webgpuError: 'requestDevice() failed',
 		});
 		expect(chooseTier(report, 'webgl2', true)).toEqual({ tier: 'webgl2', forceCompat: false });

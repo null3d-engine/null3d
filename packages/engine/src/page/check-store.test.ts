@@ -51,6 +51,7 @@ function report(change: Partial<CapabilityReport> = {}): CapabilityReport {
 			limits: { maxTextureDimension2D: 16384 },
 			preferredCanvasFormat: 'bgra8unorm',
 			directDraws: false,
+			computeSkinning: false,
 		},
 		webgl2: {
 			renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max)',

@@ -75,14 +75,15 @@ export type ShadowDepthBits = 16 | 32;
 export type DirectSwitch = 'auto' | 'on' | 'off';
 
 /**
- * How WebGPU skins, which ?skinning= picks to measure the ways against each other: `vertex`, the
- * default, skins in the vertex shader of each pass that draws a character, as WebGL2 does.
- * `compute` skins in the skinning pass, once per frame, which skips characters whose pose held
- * still and writes normals and tangents in 8 bits. `full` skins every drawn character in the pass
- * every frame with 32-bit directions, `skip` only skips held poses, and `narrow` only writes 8-bit
- * directions.
+ * How WebGPU skins. `auto`, the default, takes the start-up probe's measured choice: the vertex
+ * shader of each pass that draws a character, unless the skinning pass measured clearly faster.
+ * `vertex` skins in the vertex shader of every pass, as WebGL2 does, and `compute` skins in the
+ * skinning pass, once per frame, which skips characters whose pose held still and writes normals
+ * and tangents in 8 bits. The remaining values measure the pass with fewer of its savings: `full`
+ * skins every drawn character every frame with 32-bit directions, `skip` only skips held poses, and
+ * `narrow` only writes 8-bit directions.
  */
-export type SkinningSwitch = 'vertex' | 'compute' | 'full' | 'skip' | 'narrow';
+export type SkinningSwitch = 'auto' | 'vertex' | 'compute' | 'full' | 'skip' | 'narrow';
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -184,7 +185,7 @@ export interface Switches {
 	 * other.
 	 */
 	occlusionBuffer: number | undefined;
-	/** How ?skinning= makes WebGPU skin, `vertex` without the switch. */
+	/** How ?skinning= makes WebGPU skin, `auto` without the switch. */
 	skinning: SkinningSwitch;
 	/**
 	 * True when ?instances=index makes the vertex shaders on core WebGPU read each culled instance
@@ -366,7 +367,8 @@ export function parseSwitches(search: string): Switches {
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
 		skinning:
-			oneOf(params.get('skinning'), ['compute', 'full', 'skip', 'narrow'] as const) ?? 'vertex',
+			oneOf(params.get('skinning'), ['vertex', 'compute', 'full', 'skip', 'narrow'] as const) ??
+			'auto',
 		indexInstances: params.get('instances') === 'index',
 		direct: oneOf(params.get('direct'), ['on', 'off'] as const) ?? 'auto',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
