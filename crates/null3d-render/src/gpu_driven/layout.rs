@@ -927,12 +927,14 @@ impl Layout {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
-            // A bucket whose pipeline skins or morphs moves every frame, though its objects'
-            // matrices stay still, so the motion view draws it. A custom material's motion build
-            // moves too. The object's own skin data is not the test: a skinned bucket may hold
-            // objects that the skin table names by their batch's row instead.
+            // A bucket moves by itself when its pipeline skins or morphs in the vertex shader, when
+            // the skinning pass computes its vertices, or when a custom material's vertex offset
+            // moves them. The object's own skin data is not the test: a skinned bucket may hold
+            // objects that the skin table names by their batch's row instead, and a morphed
+            // object's pipeline has no morph build where the skinning pass morphs it.
             let moves = drawn == Drawn::Motion
                 && (pipeline.permutation & (permutation::SKIN | permutation::MORPH) != 0
+                    || regions.is_some()
                     || (pipeline.template >= template::CUSTOM_FIRST
                         && pipeline.permutation & permutation::MOTION != 0));
             // The motion template's pipelines bind a map's group after the frame's, and a blank
