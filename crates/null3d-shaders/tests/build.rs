@@ -1272,13 +1272,16 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
     let whole = Inputs::read(root).unwrap();
     // CI splits the work across jobs: `NULL3D_SHADER_SHARD=i/n` builds every nth entry of the
     // manifest here, and the first shard also builds the entries that the determinism check needs.
-    let (names, sharded) = shard_names(&whole);
+    let (names, shards) = shard_names(&whole);
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let inputs = if sharded {
+    let inputs = if shards.is_some() {
         subset::repository_subset(&refs)
     } else {
         whole
     };
+    // A shard builds a share of the entries alone, so a floor that guards against an empty build
+    // must shrink with the share.
+    let divide = shards.unwrap_or(1);
     let output = null3d_shaders::build(&inputs).unwrap();
     // The second build runs beside the portability checks, which read only this shard's build. It
     // runs where every entry of the determinism subset is present, so only the first shard has it.
@@ -1294,9 +1297,9 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
             .as_ref()
             .map(|narrow| scope.spawn(|| null3d_shaders::build(narrow).unwrap()));
         let failures: Vec<String> = [
-            glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
+            glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output, divide),
             glsl_declares_no_structure_value(&output),
-            wgsl_has_only_number_literals_that_safari_reads(&output),
+            wgsl_has_only_number_literals_that_safari_reads(&output, divide),
             standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
         ]
         .into_iter()
@@ -1323,16 +1326,17 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
-/// The manifest's shader names for this process's shard, and whether a shard was asked for. With
-/// `NULL3D_SHADER_SHARD` unset, the names are the whole manifest's and no subset is built.
-fn shard_names(inputs: &Inputs) -> (Vec<String>, bool) {
+/// The manifest's shader names for this process's shard, and how many shards the work is split
+/// into, or none when `NULL3D_SHADER_SHARD` names no shard. With no shard, the names are the whole
+/// manifest's and no subset is built.
+fn shard_names(inputs: &Inputs) -> (Vec<String>, Option<usize>) {
     let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
     let shaders = manifest["shaders"]
         .as_table()
         .expect("the manifest's shaders");
     let all: Vec<String> = shaders.keys().cloned().collect();
     let Some((index, count)) = shard() else {
-        return (all, false);
+        return (all, None);
     };
     let mut names: Vec<String> = all
         .iter()
@@ -1348,7 +1352,7 @@ fn shard_names(inputs: &Inputs) -> (Vec<String>, bool) {
             }
         }
     }
-    (names, true)
+    (names, Some(count))
 }
 
 /// The shard that `NULL3D_SHADER_SHARD=i/n` asks for, with `i` from 0 and `n` shards in all.
@@ -1488,7 +1492,10 @@ fn same_modules(
     }
 }
 
-fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(output: &Output) -> Result<(), String> {
+fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(
+    output: &Output,
+    divide: usize,
+) -> Result<(), String> {
     let mut breaks = Vec::new();
     let mut stages = 0;
     for (shader, variants) in &output.shaders {
@@ -1508,7 +1515,7 @@ fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(output: &Output) -> Result<
             }
         }
     }
-    if stages <= 100 {
+    if stages <= (100 / divide).max(1) {
         return Err(format!("only {stages} GLSL shaders were built"));
     }
     if !breaks.is_empty() {
@@ -1778,7 +1785,10 @@ int b = findMSB(c);
     assert!(found[1].starts_with("line 3: `findMSB`"));
 }
 
-fn wgsl_has_only_number_literals_that_safari_reads(output: &Output) -> Result<(), String> {
+fn wgsl_has_only_number_literals_that_safari_reads(
+    output: &Output,
+    divide: usize,
+) -> Result<(), String> {
     let mut refused = Vec::new();
     let mut modules = 0;
     for (shader, variants) in &output.shaders {
@@ -1792,7 +1802,7 @@ fn wgsl_has_only_number_literals_that_safari_reads(output: &Output) -> Result<()
             );
         }
     }
-    if modules <= 100 {
+    if modules <= (100 / divide).max(1) {
         return Err(format!("only {modules} WGSL modules were built"));
     }
     if !refused.is_empty() {
@@ -1810,9 +1820,14 @@ fn standard_material_samples_each_map_without_a_switch_on_webgpu(
     // A switch that picked each map's texture by its slot, though the slot was a constant at each
     // call, made every textured draw many times slower in Chrome on Apple GPUs with a multisampled
     // target (decision record D-89). Only the WebGL2 builds pick a shared unit with a switch.
+    // A shard builds a share of the manifest, and this entry is not in every share; the first
+    // shard always carries it, so the check still runs in a sharded build.
+    let Some(entry) = output.shaders.get("standard_maps") else {
+        return Ok(());
+    };
     let mut switches = Vec::new();
     let mut modules = 0;
-    for (variant, built) in &output.shaders["standard_maps"] {
+    for (variant, built) in entry {
         let Some(wgsl) = &built.wgsl else { continue };
         modules += 1;
         if wgsl.source.contains("switch ") {

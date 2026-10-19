@@ -837,14 +837,50 @@ impl<'a> ModuleSet<'a> {
 /// JavaScript. A caller that writes the modules one at a time uses [`ModuleSet`] instead.
 pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
     let set = ModuleSet::new(output);
-    set.names()
-        .map(|name| {
-            let text = set
-                .text(name)
-                .expect("a module that the set names has text");
-            (name.to_owned(), text)
-        })
-        .collect()
+    let names: Vec<&str> = set.names().collect();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |count| count.get())
+        .min(names.len());
+    if threads <= 1 {
+        return names
+            .into_iter()
+            .map(|name| {
+                let text = set
+                    .text(name)
+                    .expect("a module that the set names has text");
+                (name.to_owned(), text)
+            })
+            .collect();
+    }
+    // Rendering a module reads the build without changing it, and the largest modules take
+    // seconds, so the modules render on every core. Each thread takes every nth name, which
+    // spreads the large device modules between them; the map sorts by name, so the threads leave
+    // no trace in the text.
+    let set = &set;
+    let names = &names;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|at| {
+                scope.spawn(move || {
+                    names
+                        .iter()
+                        .skip(at)
+                        .step_by(threads)
+                        .map(|name| {
+                            let text = set
+                                .text(name)
+                                .expect("a module that the set names has text");
+                            ((*name).to_owned(), text)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("a module renderer"))
+            .collect()
+    })
 }
 
 /// The device modules of `files` whose fixed bits hold the half-precision bit, or those that do
