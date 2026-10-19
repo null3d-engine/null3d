@@ -1487,6 +1487,20 @@ mod tests {
     }
 
     #[test]
+    fn a_line_keeps_its_dashes_beside_the_displacement_values() {
+        let mut table = MaterialTable::with_capacity(1);
+        let line = table.create(Shading::Line, 0, [1.0; 4]).unwrap();
+        // Dash size, gap size, dash scale and dash offset, in the fourth texel of the custom values.
+        table.set_values(line, 12, &[0.25, 0.12, 1.0, 0.0]).unwrap();
+        table.update_map_layers(true, |_| None, |_| Premultiplied::No);
+        assert_eq!(
+            &table.values(0..1)[12..16],
+            &[0.25, 0.12, 1.0, 0.0],
+            "the displacement map's values leave the dashes alone"
+        );
+    }
+
+    #[test]
     fn custom_values_start_at_zero_and_change_apart_from_the_rows() {
         let mut table = MaterialTable::with_capacity(3);
         for _ in 0..3 {
