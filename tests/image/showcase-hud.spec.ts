@@ -239,6 +239,8 @@ test(
 		// and its new state. The snow goes off first, so the scene holds still between frames.
 		await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
 		await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
+		// The fog starts off, so it is turned on before the part that checks it goes off and on.
+		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
 		await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
 		await switchPart(page, 'Environment', 'Lighting', 'lighting');
 		await pick(page, 'Lighting', 'lighting', 'Shadows', 'Shadows: off');

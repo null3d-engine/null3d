@@ -324,18 +324,28 @@ export function createHud(
 	/** Names a change in the controls, as a toast: a mode's new value, or a toggle's on and off. */
 	const toastChanges = (model: HudModel): void => {
 		const next = new Map<string, boolean>();
+		// One render can change two buttons at once, such as Auto coming on as Studio goes off. The
+		// control that the press turned on names the change; an off names it only when nothing came on.
+		let turnedOn: string | undefined;
+		let switched: string | undefined;
+		let turnedOff: string | undefined;
 		for (const group of model.groups)
 			for (const button of [...group.buttons, ...(group.extras ?? [])]) {
 				const key = `${group.name}\u0000${button.id}`;
 				next.set(key, button.active);
 				const before = shown?.get(key);
 				if (shown === undefined || before === undefined || before === button.active) continue;
-				if (button.active)
-					showToast(
-						group.radio ? `${group.title}: ${button.label}`.toLowerCase() : `${button.label}: on`,
-					);
-				else if (!group.radio) showToast(`${button.label}: off`);
+				// A group's own choice outranks a switch beside it, which a preset change can flip too.
+				if (button.active) {
+					const named = group.radio
+						? `${group.title}: ${button.label}`.toLowerCase()
+						: `${button.label}: on`;
+					if (group.extras?.includes(button)) switched = named;
+					else turnedOn = named;
+				} else if (!group.radio) turnedOff = `${button.label}: off`;
 			}
+		const named = turnedOn ?? switched ?? turnedOff;
+		if (named !== undefined) showToast(named);
 		shown = next;
 	};
 	return {
