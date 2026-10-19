@@ -224,11 +224,25 @@ pub extern "C" fn build_next() {
 /// makes. The module keeps the build, and the work that every module shares, for `module`.
 #[unsafe(no_mangle)]
 pub extern "C" fn prepare_modules() {
-    respond(|_| {
+    respond(|request| {
         // Drop the previous build before the next one takes its room: the engine's output is most
         // of what a 32-bit module may hold.
         MODULES.with_borrow_mut(|slot| *slot = None);
-        let output = null3d_shaders::build(&inputs())?;
+        // A request may name a shard, `{ "shard": "i/n" }`, so CI splits the whole build across
+        // jobs. An empty request builds every shader.
+        let inputs = inputs();
+        let inputs = match parse::<PrepareRequest>(request)
+            .ok()
+            .and_then(|ask| ask.shard)
+        {
+            Some(spec) => match shard_of(&spec) {
+                Some((index, count)) => null3d_shaders::sharded(&inputs, index, count),
+                // A shard that does not parse builds everything, so a typo costs time, not truth.
+                None => inputs,
+            },
+            None => inputs,
+        };
+        let output = null3d_shaders::build(&inputs)?;
         let prepared = Prepared::new(output);
         let names: Vec<String> = prepared.set.names().map(str::to_owned).collect();
         MODULES.with_borrow_mut(|slot| *slot = Some(prepared));
@@ -484,6 +498,20 @@ fn inputs() -> Inputs {
     }
 }
 
+/// The shard that `i/n` names, with `i` from 0 and `n` shards in all.
+fn shard_of(spec: &str) -> Option<(usize, usize)> {
+    let (index, count) = spec.split_once('/')?;
+    let index: usize = index.parse().ok()?;
+    let count: usize = count.parse().ok()?;
+    (count > 0 && index < count).then_some((index, count))
+}
+
+/// A request to prepare the build, which may name the shard to build.
+#[derive(serde::Deserialize)]
+struct PrepareRequest {
+    shard: Option<String>,
+}
+
 /// Reads a JSON request.
 fn parse<T: DeserializeOwned>(request: &[u8]) -> Result<T, BuildError> {
     serde_json::from_slice(request).map_err(|e| {
@@ -629,7 +657,11 @@ mod tests {
     /// whose text is the set's for that module.
     #[test]
     fn prepare_modules_lists_every_module_and_module_renders_one() {
-        let prepared = call(prepare_modules, b"");
+        // CI builds a shard per job; without a shard, every shader is built.
+        let request = std::env::var("NULL3D_SHADER_SHARD")
+            .map(|spec| serde_json::json!({ "shard": spec }).to_string())
+            .unwrap_or_default();
+        let prepared = call(prepare_modules, request.as_bytes());
         assert_eq!(prepared["ok"], true, "{}", prepared["problems"]);
         let names: Vec<String> = serde_json::from_value(prepared["output"].clone()).unwrap();
         assert!(!names.is_empty(), "the build makes modules");

@@ -1269,12 +1269,30 @@ const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "environment", "pick", "
 #[test]
 fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let inputs = Inputs::read(root).unwrap();
+    let whole = Inputs::read(root).unwrap();
+    // CI splits the work across jobs: `NULL3D_SHADER_SHARD=i/n` builds every nth entry of the
+    // manifest here, and the first shard also builds the entries that the determinism check needs.
+    let (names, sharded) = shard_names(&whole);
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let inputs = if sharded {
+        subset::repository_subset(&refs)
+    } else {
+        whole
+    };
     let output = null3d_shaders::build(&inputs).unwrap();
-    // The second build runs beside the portability checks, which read only the whole build.
-    let narrow = subset::repository_subset(DETERMINISM_ENTRIES);
+    // The second build runs beside the portability checks, which read only this shard's build. It
+    // runs where every entry of the determinism subset is present, so only the first shard has it.
+    let determinism: Vec<&str> = DETERMINISM_ENTRIES
+        .iter()
+        .copied()
+        .filter(|name| refs.contains(name))
+        .collect();
+    let complete = determinism.len() == DETERMINISM_ENTRIES.len();
+    let narrow = complete.then(|| subset::repository_subset(&determinism));
     let (again, failures) = std::thread::scope(|scope| {
-        let again = scope.spawn(|| null3d_shaders::build(&narrow).unwrap());
+        let again = narrow
+            .as_ref()
+            .map(|narrow| scope.spawn(|| null3d_shaders::build(narrow).unwrap()));
         let failures: Vec<String> = [
             glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
             glsl_declares_no_structure_value(&output),
@@ -1284,23 +1302,62 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
         .into_iter()
         .filter_map(Result::err)
         .collect();
-        (again.join().unwrap(), failures)
+        (again.map(|again| again.join().unwrap()), failures)
     });
     the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
-    // Rendering every module of a build costs minutes on the larger entries, so each output is
-    // rendered once and both checks read the same modules.
-    let written = typescript(&narrowed(output, &again, DETERMINISM_ENTRIES));
-    let again_written = typescript(&again);
     let mut failures = failures;
-    failures.extend(
-        [
-            same_modules(&written, &again_written),
-            every_module_kind(&again_written),
-        ]
-        .into_iter()
-        .filter_map(Result::err),
-    );
+    if let Some(again) = again {
+        // Rendering every module of a build costs minutes on the larger entries, so each output is
+        // rendered once and both checks read the same modules.
+        let written = typescript(&narrowed(output, &again, &determinism));
+        let again_written = typescript(&again);
+        failures.extend(
+            [
+                same_modules(&written, &again_written),
+                every_module_kind(&again_written),
+            ]
+            .into_iter()
+            .filter_map(Result::err),
+        );
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// The manifest's shader names for this process's shard, and whether a shard was asked for. With
+/// `NULL3D_SHADER_SHARD` unset, the names are the whole manifest's and no subset is built.
+fn shard_names(inputs: &Inputs) -> (Vec<String>, bool) {
+    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
+    let shaders = manifest["shaders"]
+        .as_table()
+        .expect("the manifest's shaders");
+    let all: Vec<String> = shaders.keys().cloned().collect();
+    let Some((index, count)) = shard() else {
+        return (all, false);
+    };
+    let mut names: Vec<String> = all
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| at % count == index)
+        .map(|(_, name)| name.clone())
+        .collect();
+    if index == 0 {
+        // The first shard carries the entries that the determinism check compares.
+        for name in DETERMINISM_ENTRIES {
+            if !names.iter().any(|kept| kept == name) {
+                names.push((*name).to_owned());
+            }
+        }
+    }
+    (names, true)
+}
+
+/// The shard that `NULL3D_SHADER_SHARD=i/n` asks for, with `i` from 0 and `n` shards in all.
+fn shard() -> Option<(usize, usize)> {
+    let spec = std::env::var("NULL3D_SHADER_SHARD").ok()?;
+    let (index, count) = spec.split_once('/')?;
+    let index: usize = index.parse().ok()?;
+    let count: usize = count.parse().ok()?;
+    (count > 0 && index < count).then_some((index, count))
 }
 
 /// The whole build's entries for the determinism subset, with the subset build's own records of

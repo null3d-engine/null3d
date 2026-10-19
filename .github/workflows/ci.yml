@@ -225,6 +225,9 @@ jobs:
     # profiles in .config/nextest.toml split the tests.
     # --no-fail-fast runs every test after a failure, so a run reports every failing test.
     name: rust-tests (${{ matrix.part }})
+    env:
+      # Unset for the parts that do not shard; each sharded test reads it only when it parses.
+      NULL3D_SHADER_SHARD: ${{ matrix.shard || '' }}
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -236,18 +239,67 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - part: every test but the whole shader build
-            id: ci
+          # Four jobs share the workspace's tests through nextest's own partition, which splits
+          # them by a stable hash of their names.
+          - part: every test but the whole shader build (1 of 4)
+            id: ci-1
             tests: --workspace --profile ci
+            partition: count:1/4
             limit: 35
-          - part: the whole shader build
-            id: whole-shader-build
+          - part: every test but the whole shader build (2 of 4)
+            id: ci-2
+            tests: --workspace --profile ci
+            partition: count:2/4
+            limit: 35
+          - part: every test but the whole shader build (3 of 4)
+            id: ci-3
+            tests: --workspace --profile ci
+            partition: count:3/4
+            limit: 35
+          - part: every test but the whole shader build (4 of 4)
+            id: ci-4
+            tests: --workspace --profile ci
+            partition: count:4/4
+            limit: 35
+          # A shard builds every nth entry of the shader manifest, so four jobs share the work
+          # that one job took. The first shard also builds the determinism entries.
+          - part: the whole shader build (1 of 4)
+            id: whole-shader-build-1
             tests: -p null3d-shaders --test build --profile whole-shader-build
-            limit: 135
-          - part: the shader module exports
-            id: shader-module-exports
+            shard: 0/4
+            limit: 60
+          - part: the whole shader build (2 of 4)
+            id: whole-shader-build-2
+            tests: -p null3d-shaders --test build --profile whole-shader-build
+            shard: 1/4
+            limit: 60
+          - part: the whole shader build (3 of 4)
+            id: whole-shader-build-3
+            tests: -p null3d-shaders --test build --profile whole-shader-build
+            shard: 2/4
+            limit: 60
+          - part: the whole shader build (4 of 4)
+            id: whole-shader-build-4
+            tests: -p null3d-shaders --test build --profile whole-shader-build
+            shard: 3/4
+            limit: 60
+          # Three jobs share the build of every shader module through the WebAssembly compiler,
+          # each on every third shader of the manifest.
+          - part: the shader module exports (1 of 3)
+            id: shader-module-exports-1
             tests: -p null3d-shaders-wasm --profile shader-module-exports
-            limit: 90
+            shard: 0/3
+            limit: 60
+          - part: the shader module exports (2 of 3)
+            id: shader-module-exports-2
+            tests: -p null3d-shaders-wasm --profile shader-module-exports
+            shard: 1/3
+            limit: 60
+          - part: the shader module exports (3 of 3)
+            id: shader-module-exports-3
+            tests: -p null3d-shaders-wasm --profile shader-module-exports
+            shard: 2/3
+            limit: 60
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -259,9 +311,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --no-fail-fast ${{ matrix.tests }}
-      # nextest runs no documentation tests.
-      - if: matrix.id == 'ci'
+      - run: cargo nextest run --no-fail-fast ${{ matrix.tests }} ${{ matrix.partition && format('--partition {0}', matrix.partition) || '' }}
+      # nextest runs no documentation tests. One job splits the tests, so the doc tests run in it.
+      - if: matrix.id == 'ci-1'
         run: cargo test --workspace --doc --no-fail-fast
 
   build:

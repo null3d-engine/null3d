@@ -27,6 +27,7 @@ mod literals;
 mod manifest;
 mod material;
 mod names;
+mod narrow;
 mod output;
 mod pieces;
 mod position;
@@ -57,6 +58,7 @@ pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
 pub use manifest::{BUILD_BUDGET, BuildCounts, Manifest, Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
+pub use narrow::{narrowed, sharded};
 pub use output::{
     Binding, FEATURE_JOIN, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock,
     Output, Response, VariantOutput, WgslOutput,
