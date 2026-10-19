@@ -262,7 +262,7 @@ It is also the prerequisite of add-on modules ([D-54](decisions/D-54-addon-modul
 | M2-R11 | Per-feature shader files | |
 | M2-I5 | Culling shader counters | G2 |
 | M2-D7 | Raycasts against sprite, point and line rows | |
-| M2-C8 | Lean WebGPU skinning | A1 |
+| M2-C8 | Lean WebGPU skinning ([D-194](decisions/D-194-skinning-route-on-the-iphone.md)) | A1 |
 | M2-C9 | Animator start time, clip weight, phase-synced 1D blend | |
 | M2-C10 | Inertial transitions (P1 priority) | A4 |
 | M2-A7 | WebP, AVIF and UASTC HDR in the loader, and the Linux guard | |
