@@ -20,9 +20,12 @@ import {
 	keepTextureCopiesOption,
 	maxCanvasSize,
 	maxInstances,
+	phoneShadowFilter,
+	phoneWebKit,
 	portableMaxInstances,
 	rowLimitWarning,
 	sceneColorFormat,
+	skinningSwitch,
 	storageBindingBytes,
 	WEBGL2_SMALL_SCENE_COLOR,
 	webgl2Depth,
@@ -565,5 +568,42 @@ describe('keepTextureCopiesOption', () => {
 	it('takes a value that names none as none, so the device decides', () => {
 		expect(keepTextureCopiesOption(null, true)).toBe(true);
 		expect(keepTextureCopiesOption(null, false)).toBe(false);
+	});
+});
+
+describe('the device defaults of Apple WebKit on a phone', () => {
+	const IPHONE_SAFARI =
+		'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1';
+	const IPHONE_CHROME =
+		'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/153.0.0.0 Mobile/15E148 Safari/604.1';
+	/** An iPad's Safari reports a Mac, so no user agent tells it from a desktop. */
+	const IPAD_SAFARI =
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+	const MAC_SAFARI =
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15';
+	const MAC_CHROME =
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
+	const ANDROID_CHROME =
+		'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36';
+
+	it('finds a phone that runs Apple WebKit, and no other device', () => {
+		expect(phoneWebKit(IPHONE_SAFARI)).toBe(true);
+		expect(phoneWebKit(IPHONE_CHROME)).toBe(true);
+		for (const userAgent of [IPAD_SAFARI, MAC_SAFARI, MAC_CHROME, ANDROID_CHROME])
+			expect(phoneWebKit(userAgent), userAgent).toBe(false);
+	});
+
+	it('skins in the vertex shaders unless ?skinning= names a mode', () => {
+		expect(skinningSwitch(undefined)).toBe('vertex');
+		for (const mode of ['vertex', 'compute', 'full', 'skip', 'narrow'] as const)
+			expect(skinningSwitch(mode)).toBe(mode);
+	});
+
+	it('takes the smaller shadow filter square on such a phone alone', () => {
+		expect(phoneShadowFilter('webgpu', 5, IPHONE_SAFARI)).toBe(3);
+		expect(phoneShadowFilter('webgpu', 3, IPHONE_SAFARI)).toBe(3);
+		expect(phoneShadowFilter('webgpu', 5, MAC_SAFARI)).toBe(5);
+		expect(phoneShadowFilter('webgpu', 5, IPAD_SAFARI)).toBe(5);
+		expect(phoneShadowFilter('webgl2', 5, IPHONE_SAFARI)).toBe(5);
 	});
 });
