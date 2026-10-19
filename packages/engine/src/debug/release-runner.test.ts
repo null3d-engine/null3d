@@ -2,7 +2,7 @@
 // in production builds, so the sketch runner keeps no debug drawing code. This builds the runner
 // both ways and compares what each build holds.
 import { describe, expect, it } from 'bun:test';
-import { bundleOne, holds, sizeOf } from './release-build.ts';
+import { bundleOne, holds, sizeOf } from '../../../../tests/lib/release-build.ts';
 
 /** Text that only the debug drawing code holds: the warning past a frame's limit of lines. */
 const DRAWING_CODE = 'debug lines. This frame left out';

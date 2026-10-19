@@ -1,7 +1,7 @@
 // A sketch that calls helpers of two modules brings only the helpers that those calls reach, and
 // the helpers those helpers use. This builds one small sketch for production and reads the bundle.
 import { describe, expect, it } from 'bun:test';
-import { bundle, helpersIn } from './tree-shaking.ts';
+import { bundle, helpersIn } from '../../../../tests/lib/tree-shaking-build.ts';
 
 describe('the math helpers', () => {
 	it('bring along only the helpers that the called ones use', async () => {

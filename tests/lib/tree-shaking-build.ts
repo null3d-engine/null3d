@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import null3d from '@null3d/vite-plugin';
 import { build, type Rollup } from 'vite';
 
-const ENGINE = join(import.meta.dirname, '../index.ts');
+const ENGINE = join(import.meta.dirname, '../../packages/engine/src/index.ts');
 /** The first line of the bundle's region for a public math module, which names its source file. */
 const MATH_REGION = /^\S*\/math\/(vec3|quat|mat4|math|color)\.ts\n/;
 

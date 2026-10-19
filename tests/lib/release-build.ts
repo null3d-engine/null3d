@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import null3d from '@null3d/vite-plugin';
 import { build, type Rollup } from 'vite';
 
-const SOURCE = join(import.meta.dirname, '..');
+const SOURCE = join(import.meta.dirname, '../../packages/engine/src');
 
 /** One build's code, and the files that it copies rather than holds in its code. */
 export interface Built {
