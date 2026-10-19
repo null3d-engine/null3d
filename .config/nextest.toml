@@ -50,5 +50,5 @@ default-filter = 'not (binary_id(null3d-shaders::build) & test(=the_repository_b
 # The whole shader build gets most of its job's limit, until the shader build runs on every core.
 [profile.whole-shader-build]
 fail-fast = false
-slow-timeout = { period = "300s", terminate-after = 17 }
+slow-timeout = { period = "300s", terminate-after = 24 }
 default-filter = 'binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule)'

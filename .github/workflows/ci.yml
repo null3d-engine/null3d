@@ -227,7 +227,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Every CI job should take at most 15 minutes. The other tests stop at 35, and the whole shader
-    # build at 90, until the shader build runs on every core.
+    # build at 135, until the shader build runs on every core. The M2 feature families multiply the
+    # builds, and the determinism test builds them twice.
     timeout-minutes: ${{ matrix.limit }}
     strategy:
       fail-fast: false
@@ -240,7 +241,7 @@ jobs:
           - part: the whole shader build
             id: whole-shader-build
             tests: -p null3d-shaders --test build --profile whole-shader-build
-            limit: 90
+            limit: 135
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
