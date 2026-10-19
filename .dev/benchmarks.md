@@ -393,10 +393,11 @@ A run folder holds every page's full result, with frames and images, and stays o
 | The same page with the skinning pass | 27.1 | 25.36 ms | 1,238 |
 | The same page with the skinning pass | 27.3 | 26.04 ms | 1,238 |
 
-- Warm, null3D holds 28.5 to 30.0 frames a second against three.js's 30.8 to 31.4 on the same device, a gap of about one to three frames rather than eight. Part of that gap is the same first-page effect in the three.js figures.
+- In the pages that ran warm, null3D held 28.5 to 30.0 frames a second against three.js's 30.8 to 31.4 on the same device, a gap of about one to three frames rather than eight.
 - Neither engine lever closed it: the smaller sun filter is neutral warm ([D-169](decisions/D-169-anti-acne-plane-cost.md#addendum-2026-10-19-the-filters-square-on-an-iphone-17-and-a-cold-first-page)), and the skinning pass is slower while drawing four times as many draws ([D-20](decisions/D-20-webgpu-skinning.md#addendum-2026-10-19-the-pass-measured-on-an-iphone-17-and-why-it-is-not-a-default)). No default changed.
 - Across sessions the same page moved further than the cold page alone explains: 23.6 to 23.9 frames in the twelve-page sessions, 28.5 to 30.0 warm in the interleaved session. three.js held 30.8 to 32.0 in the same sessions. A single page, or two pages from different sessions, cannot settle an engine gap; alternate the engines and drop or warm the first page.
-- A cloud run that judges an engine should therefore warm the device before its first measured page, or drop that page. The twelve pages of [the run](tested-devices/iphone-17-safari/20261019-050200-battle-webgpu-twelve.md) keep the figures as measured.
+- Alternating the engines with three.js first measured three.js at 30.7 frames and null3D at 27.9, then three.js at 17.3 and null3D at 27.7 in the same session ([the run](tested-devices/iphone-17-safari/20261019-053000-battle-webgpu-engines.md)). The device's page-to-page variance is as large as the gap, so the day's same-session pairs only bound it at 2.8 to 7.5 frames.
+- A cloud run that judges an engine should therefore warm the device before its first measured page, discard that page, alternate the engines and repeat the rounds. The twelve pages of [the run](tested-devices/iphone-17-safari/20261019-050200-battle-webgpu-twelve.md) keep the figures as measured.
 
 ## The depth prepass
 
