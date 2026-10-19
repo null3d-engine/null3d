@@ -38,6 +38,10 @@ const TINY_INVERSE: f32 = 4294967296.0;
 const WORLD_UNITS_BIT: u32 = 1u;
 /// The look bit of a dashed line.
 const DASHED_BIT: u32 = 2u;
+/// The texel of a material's custom values that holds a line's dash size, gap size, dash scale and
+/// dash offset. A standard material's displacement map keeps its values in the three texels before
+/// it, which every material's row holds.
+const DASH_VALUES: u32 = 3u;
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -116,7 +120,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let point = mix(a, b, t);
     let point_clip = mix(clip_a, clip_b, t);
     out.relative = point;
-    let dash_scale = custom_value(found.material, 0u).z;
+    let dash_scale = custom_value(found.material, DASH_VALUES).z;
     out.distance = dash_scale * (found.row_z.y * TINY_INVERSE + 2.0 * length(half) * t);
 
     // A width in world units: the corner moves across the segment, at right angles to the view
@@ -204,7 +208,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let dashed = (bits & DASHED_BIT) != 0u;
     if dashed {
         // Dash size, gap size, dash scale and dash offset.
-        let dash = custom_value(id, 0u);
+        let dash = custom_value(id, DASH_VALUES);
         if in.uv.y < -1.0 || in.uv.y > 1.0 {
             discard;
         }

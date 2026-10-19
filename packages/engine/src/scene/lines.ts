@@ -175,6 +175,13 @@ function hasBase(values: LineValues): boolean {
 const DASH_DEFAULTS = [1, 1, 1, 0] as const;
 
 /**
+ * Where a line's dash values start in the material's custom values: the fourth texel. A standard
+ * material's displacement map keeps its values in the first three, which every material's row
+ * holds, so the dashes take the texel after them.
+ */
+const DASH_VALUES_AT = 12;
+
+/**
  * A line batch's material: its color and opacity, as a material's `set` takes them, and its dash
  * values.
  *
@@ -235,7 +242,7 @@ export class LineMaterial {
 	write(call: string): void {
 		const { core } = this;
 		core.callValues().set(this.dash);
-		core.check(core.glue.setMaterialValues(this.id, 0, 4), call, undefined, true);
+		core.check(core.glue.setMaterialValues(this.id, DASH_VALUES_AT, 4), call, undefined, true);
 	}
 }
 
