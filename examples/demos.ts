@@ -92,8 +92,8 @@ export const DEMOS: readonly Demo[] = [
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
 		hold: 0.5,
 		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it
-		// well past a minute on a loaded runner.
-		timeoutSeconds: 180,
+		// well past a minute on a loaded runner, and past three on an emulated Firefox GPU.
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'night-town',
