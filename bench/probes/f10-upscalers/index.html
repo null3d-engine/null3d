@@ -631,21 +631,21 @@ void main() {
 			}
 			// A driver can stall while it compiles or links a program, before any draw. Each program
 			// names itself first, so the last line printed is the one that stalled.
-			console.log('linking resolve');
+			log('linking resolve');
 			const resolveProgram = makeProgram(RESOLVE_FS, FXAA ? '#define FXAA 1\n' : '');
-			console.log('linking today');
+			log('linking today');
 			const todayProgram = makeProgram(TODAY_FS);
-			console.log('linking bilinear');
+			log('linking bilinear');
 			const bilinearProgram = makeProgram(BILINEAR_FS);
-			console.log('linking nearest');
+			log('linking nearest');
 			const nearestProgram = makeProgram(NEAREST_FS);
-			console.log('linking gsr');
+			log('linking gsr');
 			const gsrProgram = makeProgram(GSR_FS);
-			console.log('linking easu');
+			log('linking easu');
 			const easuProgram = makeProgram(EASU_FS);
-			console.log('linking rcas');
+			log('linking rcas');
 			const rcasProgram = makeProgram(RCAS_FS);
-			console.log('every program is linked');
+			log('every program is linked');
 
 			// ---------------------------------------------------------------- scene
 
@@ -1050,7 +1050,7 @@ void main() {
 						const name = names[(s + k) % names.length];
 						// A driver that stalls inside a draw leaves no word of its own, so the page names
 						// each pass before it starts: the last line printed is the pass that stalled.
-						console.log(`round ${s + 1} of ${samples}: ${name}`);
+						log(`round ${s + 1} of ${samples}: ${name}`);
 						let ms = null;
 						while (ms === null) ms = await timeQuery(repeats, draws[name]);
 						values[name].push(ms);
@@ -1166,14 +1166,14 @@ void main() {
 			async function main() {
 				// The scene at the canvas size is the reference's source; the low render size is what
 				// the first step and every upscaler see.
-				console.log('drawing the reference scene');
+				log('drawing the reference scene');
 				drawScene(hdrHigh, 0);
 				bindReference();
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 				drawScene(hdrLow, MIP_BIAS ? -1 : 0);
 				bindResolve();
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
-				console.log('the reference and the low scene are drawn');
+				log('the reference and the low scene are drawn');
 
 				// Warm every pass before timing any, so the first timed pass does not carry the
 				// GPU's clock ramp and every shader is compiled.
@@ -1181,31 +1181,31 @@ void main() {
 					// The warm-up runs before the first timed pass, and a driver that stalls inside
 					// one of its draws prints nothing. The pass about to run names itself, so the
 					// last line printed is the draw that stalled.
-					if (round === 0) console.log('warm resolve');
+					if (round === 0) log('warm resolve');
 					bindResolve();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
-					if (round === 0) console.log('warm today');
+					if (round === 0) log('warm today');
 					bindToday(hdrLow, scratch);
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
-					if (round === 0) console.log('warm bilinear');
+					if (round === 0) log('warm bilinear');
 					bindBilinear();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
-					if (round === 0) console.log('warm nearest');
+					if (round === 0) log('warm nearest');
 					bindNearest();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
-					if (round === 0) console.log('warm gsr');
+					if (round === 0) log('warm gsr');
 					bindGsr();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
-					if (round === 0) console.log('warm easu');
+					if (round === 0) log('warm easu');
 					bindEasu();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
-					if (round === 0) console.log('warm rcas');
+					if (round === 0) log('warm rcas');
 					bindRcas();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
 				}
-				console.log('the warm-up drew every pass; waiting for the GPU');
+				log('the warm-up drew every pass; waiting for the GPU');
 				gl.finish();
-				console.log('the GPU finished the warm-up');
+				log('the GPU finished the warm-up');
 				out.glErrorBefore = gl.getError();
 
 				// Each round writes a different target of the pair, so the render pass ends and its
@@ -1292,15 +1292,15 @@ void main() {
 				out.glErrorAfter = gl.getError();
 
 				// Each result image, drawn once more and read back.
-				console.log('timing done; drawing the result images');
+				log('timing done; drawing the result images');
 				const referencePixels = read(reference);
 				const images = {};
 				for (const name of ['today', 'bilinear', 'nearest', 'gsr', 'easuRcas']) {
-					console.log(`drawing ${name}`);
+					log(`drawing ${name}`);
 					const target_ = drawVariant(name);
 					images[name] = read(target_);
 				}
-				console.log('the images are read; computing the metrics');
+				log('the images are read; computing the metrics');
 
 				out.pipelines.today = timings.pipelineToday.median;
 				out.pipelines.bilinear = timings.pipelineBilinear.median;
