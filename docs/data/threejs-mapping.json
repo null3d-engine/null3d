@@ -1716,7 +1716,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "The render scale: quality.set({ minRenderScale, maxRenderScale })",
-      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up. It has no FSR 1 pass and no separate sharpening.",
+      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up with GSR 1, an edge-aware spatial upscaler, which fills FSR 1's role. It has no FSR 1 pass and no separate sharpening control.",
       "docs": "api/quality",
       "detect": "\\bFSR1Node\\b|\\bfsr1\\s*\\("
     },
