@@ -93,3 +93,22 @@ A code review on 15 October 2026 found two faults in the controls, and both are 
 - **The studio had no button.** `MOODS`, the stage and both scenes support the studio, and Creek's caustics and air tables hold a row for it, but `TIMES_OF_DAY` had no Studio entry, so only `?mood=Studio` reached it and no test covered it. Studio is now the last entry of the Time of day tab, with a tip that names it as a backdrop rather than an hour, and `tests/image/showcase-hud.spec.ts` picks it and checks its toast. The tab keeps Auto and the seven hours as rule 7 describes, since Auto never eases through the studio.
 - **A settled look must still write once per mood change.** The stage leaves the scene alone once every eased value has reached its target, which saves a frame's setters for a fixed mood. The studio writes the scene itself rather than easing into it, so leaving the studio for an hour found the eased values already on their target and skipped the environment light, the fog, the sun and the exposure: the scene kept the studio's look, and the HUD's Sky switch then brought the sky back without the light that belongs with it. A mood change now asks for one whole write whatever the eased values say, and `examples/lib/stage.test.ts` covers a studio visit followed by an hour.
 - **The HUD and the demo runner leaked listeners.** `createHud` bound a `keydown` on the document and a `pointerdown` on the stage, and `startDemo` bound a wheel and a click on the canvas, none of which a page could remove; a page that started a second demo in the same document got two `keydown` handlers, so H toggled the panel twice. `createHud` now returns `dispose()`, which drops those listeners and the nodes it added, and `startDemo` takes an optional `AbortSignal` that does the same for its own listeners, its loading overlay and the HUD. `keydown` also ignores a key with Ctrl, Cmd or Alt held and any editable target, so a shortcut never types into a field. The controls HUD is otherwise unchanged.
+
+## Addendum: the hours become a slider (19 October 2026, owner)
+
+The owner asked for any hour of their choosing, not only the seven fixed ones, and for Auto to move
+the control by itself.
+
+- **Time of day is an hour slider.** The Time of day tab now holds a slider from 0 to 24 hours with
+  Dawn, Morning, Midday, Afternoon, Golden, Dusk and Night labelled along it, and the Auto and
+  Studio buttons beside it. A new hour holds the stage at exactly that hour (`Stage.setHour`), and a
+  scene takes the look of the fixed mood nearest to it, as Auto already does.
+- **Auto moves the slider.** While Auto runs, the controls model is posted to the page four times a
+  second, so the thumb follows the hour; a drag holds the page's thumb while the pointer is on it.
+  Pressing Auto or a fixed hour stops the movement at once.
+- **The labels sit in two rows**, so the seven names never overlap on a narrow screen, and the first
+  and last anchor to the track's ends.
+- **Creek opens with its bloom on.** The owner turned it on for the look of its stream and flowers.
+- **The fog switch owns a scene's own haze.** Creek's mist over the water and Night town's low mist
+  are sprites of their own, so turning the fog off left them drawn; both scenes now show them only
+  while the fog is on.

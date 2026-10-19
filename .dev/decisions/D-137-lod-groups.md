@@ -63,7 +63,7 @@ level j draws when  error[j] × scale × k < threshold × d,  with k = render he
 | Geomorphing (moving vertices toward the coarser level) | Rejected. It needs vertex-to-vertex links between levels, which the simplifier does not keep, and a custom vertex path for every template |
 | A plain switch at the distance | Kept for Low, where the fade is off, and for groups that turn the fade off |
 
-The band starts at the switch distance and is 15% of it long. In it, the source draws its new level with a fade amount `t` from 0 to 1 and its old level with `1 - t`. A pixel draws the new level where its dither value is under `t`, and the old level elsewhere.
+The band starts at the switch distance and is 8% of it long. In it, the source draws its new level with a fade amount `t` from 0 to 1 and its old level with `1 - t`. A pixel draws the new level where its dither value is under `t`, and the old level elsewhere.
 
 `discard` turns off hidden-surface removal on tile GPUs (Apple, PowerVR), so the fading builds must not draw the sources that do not fade. Each level's bucket therefore has a fade bucket beside it, whose pipelines are the `LOD_FADE` builds. Only sources inside a band land there. Their builds are a first-use shader set, so a page without fading levels downloads none.
 
@@ -168,3 +168,11 @@ Ship the design as above. The data shows a clear saving on every path and preset
 3. Fading builds for custom materials, which double their builds, and for the alpha hash.
 4. Levels as index ranges of the base mesh's vertices, so a file's levels take no copy of them.
 5. Levels for trees with leaf cards in the asset tool. The step keeps a share of the cards and grows them ("Trees with leaf cards" above). Creek needs this step before its trees from files can use levels.
+
+
+## Addendum: the band is narrower (19 October 2026)
+
+The owner saw the 4 × 4 dither as a grid of dots on foliage close to the camera in Creek. The band
+was 15% of the switch distance, which at a short switch distance covers a wide part of a tree. It is
+now 8%, so less of the tree dithers at once while the hand-over stays smooth. The band's test reads
+`FADE_BAND` rather than fixed distances, so the share can change again without rewriting the test.
