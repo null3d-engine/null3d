@@ -35,6 +35,19 @@ function roundCard({ textures }: SketchContext) {
 	return textures.fromData({ width: size, height: size, data, colorSpace: 'srgb' });
 }
 
+/** Heights that rise and fall in waves, for the cards that bend or move their surface. */
+function waves({ textures }: SketchContext) {
+	const size = 32;
+	const data = new Uint8Array(size * size * 4);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const height =
+				128 + 100 * Math.sin((x / size) * Math.PI * 4) * Math.cos((y / size) * Math.PI * 4);
+			data.set([height, height, height, 255], (y * size + x) * 4);
+		}
+	return textures.fromData({ width: size, height: size, data, colorSpace: 'linear' });
+}
+
 /** A card that the camera faces, with a material of the given alpha options. */
 function card(context: SketchContext, alpha: StandardOptions, castShadows = false) {
 	const { scene, geometry, materials } = context;
@@ -133,6 +146,30 @@ const CASES: Record<string, (context: SketchContext) => SketchCallbacks | void> 
 	},
 	coverage: (context) =>
 		card(context, { alphaMode: 'mask', alphaCutoff: 0.5, alphaToCoverage: true }),
+	bump: (context) => {
+		const { scene, geometry, materials } = context;
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.5, height: 1.5, widthSegments: 16, heightSegments: 16 }),
+			material: materials.standard({
+				color: '#b8b0a8',
+				bumpMap: waves(context),
+				bumpScale: 1,
+			}),
+			position: [0, 1, 0],
+		});
+	},
+	displacement: (context) => {
+		const { scene, geometry, materials } = context;
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.5, height: 1.5, widthSegments: 32, heightSegments: 32 }),
+			material: materials.standard({
+				color: '#b8b0a8',
+				displacementMap: waves(context),
+				displacementScale: 0.15,
+			}),
+			position: [0, 1, 0],
+		});
+	},
 	hash: (context) => card(context, { alphaMode: 'hash' }),
 	sky: ({ scene }) => scene.setBackground({ sky: { sunPosition: [0, 0.2, -1] } }),
 	physical_sky: ({ scene }) => scene.setBackground({ atmosphere: { sunPosition: [0, 0.2, -1] } }),
