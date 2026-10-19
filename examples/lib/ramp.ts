@@ -178,7 +178,7 @@ export function stopText(title: string, result: RampResult, unit: string): strin
 	const count = (n: number) => n.toLocaleString('en-US');
 	const last = result.steps.at(-1);
 	const at = count(last?.count ?? 0);
-	const fps = last ? last.fps.toFixed(0) : '0';
+	const fps = last ? String(Number(last.fps.toFixed(1))) : '0';
 	switch (result.stopReason) {
 		case 'maximum':
 			return `${title} reached the maximum of ${at} ${unit} at ${fps} fps: the top of this ramp, not a limit of ${title}.`;

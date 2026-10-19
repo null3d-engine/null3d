@@ -608,7 +608,11 @@ export async function rampComparison(
 	run.collapseStats(true);
 	const plan = options.plan ?? run.plan;
 	run.setCount(plan.start);
-	await new Promise((resolve) => setTimeout(resolve, (options.warmupSeconds ?? 2) * 1000));
+	// The warm-up takes the caller's wait, so a page's stop ends it at once.
+	const wait =
+		options.wait ??
+		((seconds: number) => new Promise<void>((resolve) => setTimeout(resolve, seconds * 1000)));
+	await wait(options.warmupSeconds ?? 2);
 	const result = await runRamp(run, plan, options);
 	if (result.stopReason === 'no-frame')
 		result.failure = run.failure ?? 'it drew no frame within the step';
