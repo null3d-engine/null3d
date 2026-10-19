@@ -2,7 +2,7 @@
 // a module calls and drops the rest. This builds one small sketch for production, as the Vite
 // plugin does, and reads which helpers the bundle holds.
 import { describe, expect, it } from 'bun:test';
-import { bundle, helpersIn } from './tree-shaking.ts';
+import { bundle, helpersIn } from '../../../../tests/lib/tree-shaking-build.ts';
 
 describe('the math helpers', () => {
 	it('reach a bundle only when a module calls them', async () => {
