@@ -10,6 +10,7 @@ use common::World;
 use null3d_core::handle::Handle;
 use null3d_core::lights::{LightTable, color, kind, value};
 use null3d_core::scene::{Command, flags};
+use null3d_gpu::drawlist::{Op, format, layout};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::fog::{self, Fog};
@@ -17,7 +18,9 @@ use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::frame_data::FrameUniform;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
+use null3d_render::light_tables::FIRST_IMAGE_LAYER;
 use null3d_render::output::{Output, ToneMapping};
+use null3d_render::probes;
 use null3d_render::view::ViewId;
 
 /// Adds a light object at `position`, turned `angle` radians about X, in the world's current
@@ -297,4 +300,108 @@ fn a_frame_that_finds_the_area_tables_lists_its_area_light_on_webgl2() {
     a_frame_that_finds_the_area_tables_lists_its_area_light(World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
+}
+
+/// The operands of each command of `op`.
+fn operands(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
+    commands
+        .iter()
+        .filter(|(o, _)| *o == op)
+        .map(|(_, operands)| operands.clone())
+        .collect()
+}
+
+/// The shared array of the light tables and the probes' maps that a frame makes, with `layers`.
+fn shared_array(commands: &[(Op, Vec<u32>)], layers: u32) -> u32 {
+    let found: Vec<u32> = operands(commands, Op::CreateTexture)
+        .into_iter()
+        .filter(|o| o[3] == layers && o[4] == format::RGBA16_FLOAT)
+        .map(|o| o[0])
+        .collect();
+    let [array] = found[..] else {
+        panic!("one RGBA16F array of {layers} layers, not {found:?}");
+    };
+    array
+}
+
+/// The array that each camera view's frame group binds.
+fn bound_arrays(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    operands(commands, Op::CreateBindGroup)
+        .into_iter()
+        .filter(|o| o[1] == layout::FRAME)
+        .map(|o| {
+            o[3..]
+                .chunks(5)
+                .find(|entry| entry[0] == probes::ARRAY_BINDING)
+                .map_or_else(
+                    || panic!("a frame group binds the shared array"),
+                    |entry| entry[2],
+                )
+        })
+        .collect()
+}
+
+/// Records a frame and returns its commands, without replaying them on the mock. The frame that
+/// makes the array again copies the old layers and writes a light's image in one submit, which the
+/// mock's write-after-use rule rejects although the copy and the image take different layers.
+fn record_commands<B: FrameBuilder>(
+    world: &mut World<B>,
+    structure_changed: bool,
+) -> Vec<(Op, Vec<u32>)> {
+    world.record(structure_changed);
+    let commands = world.commands();
+    world.frame += 1;
+    commands
+}
+
+/// A light's first image makes the shared array again: the frame that makes it binds it in every
+/// camera view's frame group, and only the frame after that destroys the old array.
+fn a_light_image_makes_the_array_again_and_the_frame_groups_bind_it<B: FrameBuilder>(
+    mut world: World<B>,
+) {
+    let first = record_commands(&mut world, true);
+    let old = shared_array(&first, FIRST_IMAGE_LAYER);
+
+    // One image gives the array room for four, and the mip levels that the images need.
+    let probe_layers = world.renderer.settings().probes().probe_layers();
+    let tables = world.renderer.settings_mut().light_tables_mut();
+    assert!(tables.image_texels_mut(1).is_some());
+    assert_eq!(
+        tables.finish_image(1, probe_layers),
+        Some(FIRST_IMAGE_LAYER)
+    );
+    let second = record_commands(&mut world, false);
+    let new = shared_array(&second, FIRST_IMAGE_LAYER + 4);
+    assert_ne!(old, new, "the image makes the array again");
+    let bound = bound_arrays(&second);
+    assert!(!bound.is_empty(), "the camera views bind the array again");
+    assert!(
+        bound.iter().all(|&array| array == new),
+        "every frame group binds the new array, not {old}: {bound:?}"
+    );
+
+    // The old array goes only after the frame that bound the new one drew.
+    let third = record_commands(&mut world, false);
+    assert!(
+        operands(&third, Op::DestroyTexture).contains(&vec![old]),
+        "the old array goes"
+    );
+    assert!(
+        bound_arrays(&third).iter().all(|&array| array != old),
+        "no frame group binds the old array"
+    );
+}
+
+#[test]
+fn a_light_image_makes_the_array_again_and_the_frame_groups_bind_it_on_webgpu() {
+    a_light_image_makes_the_array_again_and_the_frame_groups_bind_it(World::build(
+        GpuDrivenRenderer::new(RendererConfig::default()),
+    ));
+}
+
+#[test]
+fn a_light_image_makes_the_array_again_and_the_frame_groups_bind_it_on_webgl2() {
+    a_light_image_makes_the_array_again_and_the_frame_groups_bind_it(World::build(
+        CpuCulledRenderer::new(CpuCulledConfig::default()),
+    ));
 }

@@ -1768,14 +1768,18 @@ impl CpuCulledRenderer {
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
-        // The probes own the frame group's shared array, so they record it before the frame groups
-        // bind it, and no later block rebinds them for it.
+        // The probes own the frame group's shared array, which the light tables write into, so they
+        // record it before the frame groups bind it. A new array leaves the frame groups holding
+        // the old one, so every camera view binds the new one again in this frame.
         let shape = self.settings.light_tables().shape(
             self.settings.probes().size(),
             self.settings.probes().probe_layers(),
         );
         self.settings.probes_mut().record(list, shape)?;
-        self.bound_probes = self.settings.probes().array();
+        // The next frame destroys the old array, so no frame group may still bind it.
+        let probes_now = self.settings.probes().array();
+        let probes_remade = probes_now != self.bound_probes;
+        self.bound_probes = probes_now;
         let mut lit = LitTextures {
             shadow_map,
             atlas,
@@ -1784,9 +1788,7 @@ impl CpuCulledRenderer {
             probe_grid: self.bound_probe_grid,
             lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
-            probes: self
-                .bound_probes
-                .map_or(ids::BLANK_PROBES, |(array, _)| array),
+            probes: probes_now.map_or(ids::BLANK_PROBES, |(array, _)| array),
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1816,7 +1818,11 @@ impl CpuCulledRenderer {
             .record(list, array, probe_layers)?;
         let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
-            if index >= first_new || textures_made || lights_remade & (1 << index) != 0 {
+            if index >= first_new
+                || textures_made
+                || probes_remade
+                || lights_remade & (1 << index) != 0
+            {
                 let view = ViewId::from_index(index);
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
@@ -1844,7 +1850,7 @@ impl CpuCulledRenderer {
         let skin_views = self.skin_views();
         let first_new_skin = self.skin_draws.views();
         self.skin_draws.add_views(list, skin_views)?;
-        let camera_rebound = textures_made || lights_remade & 1 != 0;
+        let camera_rebound = textures_made || probes_remade || lights_remade & 1 != 0;
         if skin_views > 0 && (first_new_skin < skin_views || camera_rebound) {
             Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
         }
