@@ -1,6 +1,7 @@
 // Levels of detail, for their image tests. A sphere has three lower levels, each in a color of its
 // own, so the image shows which level each copy draws: red, then green, blue and yellow. Each row
-// holds two copies of one switch, at 94% and 106% of the distance where its level switches in.
+// holds two copies of one switch, at 95% and 103% of the distance where its level switches in,
+// so the second copy lies inside the hand-over band at every preset.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
@@ -23,7 +24,7 @@ const LEVELS: [number, Vec3][] = [
 	[5, [0.95, 0.8, 0.2]],
 ];
 /** Each copy's distance as a share of its switch distance: before and after. */
-const SIDES = [0.94, 1.06];
+const SIDES = [0.95, 1.03];
 /** Each row's height on the screen, from -1 at the bottom to 1 at the top. */
 const ROWS = [0.55, -0.1, -0.6];
 
