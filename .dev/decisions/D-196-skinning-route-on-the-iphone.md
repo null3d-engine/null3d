@@ -1,4 +1,4 @@
-# D-194: The skinning route on the iPhone, and the probe's flapping answer
+# D-196: The skinning route on the iPhone, and the probe's flapping answer
 
 Status: decided. Date: 2026-10-19. Task: M2-C8.
 
