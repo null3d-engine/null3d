@@ -109,6 +109,7 @@ describe('createShowcaseEffects', () => {
 		expect(time?.slider?.max).toBe(24);
 		expect(time?.slider?.live).toBe(false);
 		expect(time?.buttons.map((button) => button.id)).toEqual(['Auto', 'Studio']);
+		expect(time?.buttons.map((button) => button.name)).toEqual(['mood', 'mood']);
 	});
 
 	it('turns the level of detail off by default, and on and off under Quality', () => {

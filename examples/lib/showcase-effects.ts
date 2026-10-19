@@ -173,6 +173,8 @@ export function createShowcaseEffects(
 					id: option.id,
 					label: option.label,
 					tip: option.tip,
+					// The slider posts hours; the two buttons beside it pick a mood instead.
+					name: 'mood',
 					active: option.id === 'Auto' ? stage.auto : stage.mood === 'Studio',
 				})),
 				slider: {

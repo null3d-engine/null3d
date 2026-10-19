@@ -432,6 +432,8 @@ export function createMoods(
 			if (!started) snap();
 		},
 		setHour(hours) {
+			// A slider always posts a number; a stray value is ignored rather than poisoning the hour.
+			if (!Number.isFinite(hours)) return;
 			manualHours = Math.min(24, Math.max(0, hours));
 			wasAuto = false;
 			mood = nearestMood(manualHours);

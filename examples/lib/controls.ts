@@ -15,6 +15,8 @@ export interface HudButton {
 	key?: string;
 	/** What the button does, alone, with no input device named. */
 	tip: string;
+	/** The message that the button posts, when it is not its group's name. */
+	name?: string;
 }
 
 /** A slider of one value, with labels at key points along it. */

@@ -261,7 +261,7 @@ export function createHud(
 							document.createTextNode(button.label),
 							...(button.key ? [node('kbd', undefined, button.key)] : []),
 						);
-						el.addEventListener('click', () => post(group.name, button.id));
+						el.addEventListener('click', () => post(button.name ?? group.name, button.id));
 						bindTip(el);
 						buttons.append(el);
 						drawn.set(`${group.name}\u0000${button.id}`, el);
@@ -275,7 +275,7 @@ export function createHud(
 							el.type = 'button';
 							el.dataset.tip = button.tip;
 							el.append(document.createTextNode(button.label));
-							el.addEventListener('click', () => post(group.name, button.id));
+							el.addEventListener('click', () => post(button.name ?? group.name, button.id));
 							bindTip(el);
 							buttons.append(el);
 							drawn.set(`${group.name}\u0000extra:${button.id}`, el);
