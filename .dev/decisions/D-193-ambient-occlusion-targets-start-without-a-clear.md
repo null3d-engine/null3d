@@ -35,9 +35,23 @@ the render scale sets. The call profile of 14 October 2026 (run `20261014-060504
 4.07 ms in six `clear` calls a frame. It put 0.20 ms in two calls without ambient occlusion. That is
 about 0.95 ms for each of the four clears that ambient occlusion adds.
 
+The Mac's Safari 26.6.2 hides the iPhone's cost: ambient occlusion added 0.04 to 0.20 ms of
+render-worker time there, before and after the change alike, which is the noise of a 0.6 ms frame.
+The call profile shows the change instead. The count follows the engine's draw list, not the device:
+
+| Clear calls a frame, ambient occlusion on | Before | After | Device and browser |
+| --- | --- | --- | --- |
+| Render scale 1 | 6 | 3 | iPhone 18 Pro before; Mac Safari after |
+| Render scale 0.5 | 6 | 4 | iPhone 18 Pro before; Mac Safari after |
+
+Ambient occlusion adds four clears a frame before, and one after: the prepass's depth. Without it,
+the same frames make two clears at scale 1 and three at 0.5.
+
 How the data was produced: `bun tests/real-browsers.ts --plan ao` and `--plan ao-calls-sync` on
 each device, through the device runner. The iPhone figures come from the records in
-[`tested-devices`](../tested-devices/iphone-18-pro-safari/20261018-030850-ao.md).
+[`tested-devices`](../tested-devices/iphone-18-pro-safari/20261018-030850-ao.md). The Mac runs are
+`20261019-053734-ao`, `20261019-061226-ao` and `20261019-061308-ao-calls-sync` in
+[`mac-safari`](../tested-devices/mac-safari/).
 
 ## Decision
 
