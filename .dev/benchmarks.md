@@ -377,23 +377,6 @@ A run folder holds every page's full result, with frames and images, and stays o
 - `?far=<n>` on S4's null3D pages sets `farCascadeInterval`, from 1 to 8. `--switches far=1` draws every cascade in every frame. Its difference from the preset's run is what drawing the far cascades in turn saves. S4's cars drive through every cascade. Since [D-16](decisions/D-16-moving-casters-and-bias.md), its far cascades therefore draw in every frame anyway, and both runs draw the same passes.
 - `?shadowCascadeBlend=<share>` on S4's null3D pages sets the band where each cascade blends into the next, from 0 to 0.5. The page kinds that end in `-blend-off` start S4 with the band at 0. A bench run then takes turns between a page and its twin in one browser session: `bun run bench:run --scenes s4 --pages null3d-webgpu,null3d-webgpu-blend-off --switches "preset=low&governor=off"`. [D-73](decisions/D-73-cascade-blend.md) gives the results.
 
-### The sun shadow filter on a phone
-
-- Battle's comparison on the iPhone 17's Safari measured the phone's two GPU levers on 19 October 2026. Each page drew at 100 units on a 603 x 1009 canvas at a pixel ratio of 1.5, on the direct path, with the page's own measure.
-
-| Page | Presented fps | GPU time | Draws |
-| --- | --- | --- | --- |
-| Battle, as it started | 24.4 | 32.01 ms | 304 |
-| Battle, the 3-texel sun filter | 30.3 | 24.11 ms | 267 |
-| Battle, the skinning pass (`?skinning=compute`) | 28.0 | 25.36 ms | 1,238 |
-| Factory, as it started | 45.6 | 15.86 ms | 152 |
-
-- The smaller sun filter is the phone's default now: a phone that runs Apple's WebKit draws the square of 3 whatever the preset ([D-169](decisions/D-169-anti-acne-plane-cost.md#addendum-2026-10-19-the-smaller-square-on-a-phone)). It keeps the draw count low and saves 7.9 ms of the frame.
-- The skinning pass is not a default. On the twelve-page run after the change it drew 23.7 frames a second in its two Battle pages, against 24.4 before it, and 10.4 on the indirect path, where WebKit charges for each of its 1,246 indexed indirect draws ([D-20](decisions/D-20-webgpu-skinning.md#addendum-2026-10-19-the-vertex-shaders-lose-on-an-iphone-17)). It stays available through `?skinning=compute`.
-- The Mac's Safari shows neither saving at 1,000 units: the smaller filter saved about 1.1 ms there, and the skinning routes tied on GPU time. The device that decides them is the phone.
-- iPads report a Mac's user agent, so they keep the presets' values. A sketch's own `quality.set({ shadowFilter })` still wins over the phone default.
-- The twelve pages, with the filter default and the vertex shaders: Battle's null3D pages are in the run's record ([the iPhone 17's run](tested-devices/iphone-17-safari/20261019-043500-battle-webgpu.md)).
-
 ## The depth prepass
 
 - The page switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, whatever the preset says. Both GPU paths draw it ([Depth on WebGL2](implementation-notes.md#depth-on-webgl2)). `?prepass=on` on a benchmark page, with `measure`'s `gpuPassMs`, gives the prepass's GPU cost in the scene's render pass.
