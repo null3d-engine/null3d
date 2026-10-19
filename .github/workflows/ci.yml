@@ -220,15 +220,17 @@ jobs:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
     # The one test that builds every shader, twice, takes longer than all the others together, so
-    # it runs in a job of its own beside them. The profiles in .config/nextest.toml split the tests.
+    # it runs in a job of its own beside them. The test that prepares every shader module through
+    # the WebAssembly compiler builds the whole shader set as well, so it has a third job. The
+    # profiles in .config/nextest.toml split the tests.
     # --no-fail-fast runs every test after a failure, so a run reports every failing test.
     name: rust-tests (${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Every CI job should take at most 15 minutes. The other tests stop at 35, and the whole shader
-    # build at 135, until the shader build runs on every core. The M2 feature families multiply the
-    # builds, and the determinism test builds them twice.
+    # Every CI job should take at most 15 minutes. The other tests stop at 35, the shader module
+    # exports at 90, and the whole shader build at 135, until the shader build runs on every core.
+    # The M2 feature families multiply the builds, and the determinism test builds them twice.
     timeout-minutes: ${{ matrix.limit }}
     strategy:
       fail-fast: false
@@ -242,6 +244,10 @@ jobs:
             id: whole-shader-build
             tests: -p null3d-shaders --test build --profile whole-shader-build
             limit: 135
+          - part: the shader module exports
+            id: shader-module-exports
+            tests: -p null3d-shaders-wasm --profile shader-module-exports
+            limit: 90
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
