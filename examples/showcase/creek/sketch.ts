@@ -185,7 +185,7 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: false,
 			shafts: false,
 			fireflies: false,
 			shadows: true,

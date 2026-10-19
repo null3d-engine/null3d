@@ -74,6 +74,28 @@ const MINUTES_PER_DAY = 4;
 const EASE = 0.14;
 /** How close a value must be to its target before the look counts as settled, in size. */
 const STILL = 1e-4;
+/** The sun's height, as the sine of its elevation, above which a town's lamps are out. */
+const LAMPS_OUT = 0.26;
+/** The sun's height below which a town's lamps are at full power. */
+const LAMPS_FULL = -0.42;
+/** The share of a town's lamps' light at the moment the sun crosses the horizon. */
+const LAMPS_DUSK = 0.32;
+
+/** Rises from 0 at `a` to 1 at `b`, smoothly, for either order of `a` and `b`. */
+function smoothstep(a: number, b: number, x: number): number {
+	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+	return t * t * (3 - 2 * t);
+}
+
+/**
+ * The share of a town's own lights at a sun height, as the sine of the sun's elevation: off while the
+ * sun stands high, a little as it sinks below the horizon, and all once the moon has the sky.
+ */
+export function lampShare(sunHeight: number): number {
+	if (sunHeight >= LAMPS_OUT) return 0;
+	if (sunHeight >= 0) return LAMPS_DUSK * smoothstep(LAMPS_OUT, 0, sunHeight);
+	return LAMPS_DUSK + (1 - LAMPS_DUSK) * smoothstep(0, LAMPS_FULL, sunHeight);
+}
 
 /** True when two vectors match to within a step nothing can see. */
 function near(a: Vec3, b: Vec3): boolean {
@@ -108,6 +130,10 @@ export interface Stage {
 	readonly auto: boolean;
 	/** The hour now, from 0 up to 24. */
 	readonly hours: number;
+	/**
+	 * The share of a town's own lights, from 0 by day to 1 at night. The studio lights them fully.
+	 */
+	readonly lamps: number;
 	/** Eases toward the target and applies it. Call once per frame with the frame's step. */
 	update(dt: number): void;
 	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
@@ -146,6 +172,7 @@ export function createMoods(
 		moonLight: 0,
 		stars: 0,
 		clouds: cloudCoverage,
+		lamps: 0,
 	};
 	const target = structuredClone(current);
 	const clouds = { cloudCoverage, time: 0 };
@@ -197,7 +224,7 @@ export function createMoods(
 		const day = timeOfDay(hours, { heading, model: 'physical' });
 		// The target's own arrays are written, never replaced: Auto aims again every frame.
 		for (let k = 0; k < 3; k++) {
-			target.dir[k] = -(day.light.direction[k] as number);
+			target.dir[k] = day.light.direction[k] as number;
 			target.color[k] = day.light.color[k] as number;
 			target.fog[k] = day.fog.color[k] as number;
 			target.sunPosition[k] = day.atmosphere.sunPosition[k] as number;
@@ -212,6 +239,7 @@ export function createMoods(
 		target.moonLight = day.atmosphere.moonIntensity;
 		target.stars = day.atmosphere.stars;
 		target.clouds = cloudCoverage;
+		target.lamps = lampShare(day.atmosphere.sunPosition[1] as number);
 		targetHours = hours;
 	};
 
@@ -228,6 +256,7 @@ export function createMoods(
 		current.moonLight = mix(current.moonLight, target.moonLight);
 		current.stars = mix(current.stars, target.stars);
 		current.clouds = mix(current.clouds, target.clouds);
+		current.lamps = mix(current.lamps, target.lamps);
 		for (let k = 0; k < 3; k++) {
 			current.color[k] = mix(current.color[k] as number, target.color[k] as number);
 			current.fog[k] = mix(current.fog[k] as number, target.fog[k] as number);
@@ -258,6 +287,7 @@ export function createMoods(
 			Math.abs(current.moonLight - target.moonLight) <= STILL &&
 			Math.abs(current.stars - target.stars) <= STILL &&
 			Math.abs(current.clouds - target.clouds) <= STILL &&
+			Math.abs(current.lamps - target.lamps) <= STILL &&
 			near(current.dir, target.dir) &&
 			near(current.color, target.color) &&
 			near(current.fog, target.fog) &&
@@ -276,6 +306,7 @@ export function createMoods(
 		current.moonLight = target.moonLight;
 		current.stars = target.stars;
 		current.clouds = target.clouds;
+		current.lamps = target.lamps;
 		for (let k = 0; k < 3; k++) {
 			current.color[k] = target.color[k] as number;
 			current.fog[k] = target.fog[k] as number;
@@ -357,6 +388,9 @@ export function createMoods(
 		get hours() {
 			if (wasAuto) return autoHours;
 			return mood === 'Studio' ? 12 : mood === 'Auto' ? autoHours : HOURS[mood];
+		},
+		get lamps() {
+			return mood === 'Studio' ? 1 : current.lamps;
 		},
 		set(next) {
 			mood = next;

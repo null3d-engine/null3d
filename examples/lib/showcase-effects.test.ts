@@ -18,7 +18,7 @@ function stubFilm() {
 }
 
 /** A scene whose every part records what the controls write to it. */
-function stub(options: { dslr?: boolean } = {}) {
+function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {}) {
 	const seen: string[] = [];
 	const posts: unknown[] = [];
 	const shown: string[] = [];
@@ -60,7 +60,14 @@ function stub(options: { dslr?: boolean } = {}) {
 		camera: camera as never,
 		sun: sun as never,
 		stage: stage as never,
-		start: { sky: true, fog: true, shadows: true, ao: true, dof: false, exposure: false },
+		start: options.start ?? {
+			sky: true,
+			fog: true,
+			shadows: true,
+			ao: true,
+			dof: false,
+			exposure: false,
+		},
 		supported: {
 			atmosphere: ['sky', 'fog'],
 			lighting: ['shadows', 'ao'],
@@ -78,6 +85,11 @@ function stub(options: { dslr?: boolean } = {}) {
 }
 
 describe('createShowcaseEffects', () => {
+	it('turns a part off at the start when the scene starts with it off', () => {
+		const { shown } = stub({ start: { sky: true, fog: false, shadows: true } });
+		expect(shown).toEqual(['fog false']);
+	});
+
 	it('sends each shared switch to the part that owns it', () => {
 		const { effects, shown, seen } = stub();
 		effects.set('sky', false);

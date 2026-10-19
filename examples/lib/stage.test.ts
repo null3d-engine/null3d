@@ -1,7 +1,7 @@
 // The stage writes the sky, the fog and the environment light every frame, so a part that the HUD
 // turns off must stay off in every later frame and mood, and come back when it turns on again.
 import { expect, test } from 'bun:test';
-import { createMoods, type Mood, nearestMood, type StagePart } from './stage';
+import { createMoods, lampShare, type Mood, nearestMood, type StagePart } from './stage';
 
 const SKY = { name: 'sky' };
 const ROOM = { name: 'room' };
@@ -13,6 +13,7 @@ function staged() {
 		background?: unknown;
 		environment?: unknown;
 		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
+		dir?: readonly number[];
 	} = {};
 	const scene = {
 		setBackground: (background: unknown) => {
@@ -25,7 +26,13 @@ function staged() {
 			last.fog = fog;
 		},
 	};
-	const sun = { setDirection() {}, setColor() {}, setIntensity() {} };
+	const sun = {
+		setDirection(x: number, y: number, z: number) {
+			last.dir = [x, y, z];
+		},
+		setColor() {},
+		setIntensity() {},
+	};
 	const context = { scene, post: { set() {} }, time: { now: 0 } };
 	const stage = createMoods(context as never, sun as never, SKY as never, ROOM as never, {
 		heading: 0,
@@ -97,6 +104,44 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test('the light travels downward from above through every fixed mood', () => {
+	const { stage, last, frames } = staged();
+	// The engine gives a light's direction as the path its light takes, so a sun above the scene
+	// points down. A sign flip lights the scene from below and leaves it dark.
+	for (const mood of ['Dawn', 'Morning', 'Midday', 'Afternoon', 'Golden', 'Dusk', 'Night']) {
+		stage.set(mood as Mood);
+		frames(240);
+		expect(last.dir?.[1]).toBeLessThan(0);
+	}
+	stage.set('Midday');
+	frames(240);
+	expect(last.dir?.[1]).toBeLessThan(-0.5);
+});
+
+test("a town's own lights follow the sun", () => {
+	// The sun's height is the sine of its elevation: 0 is the horizon, and 1 is overhead.
+	expect(lampShare(0.9)).toBe(0);
+	expect(lampShare(0)).toBeCloseTo(0.32, 2);
+	expect(lampShare(-0.9)).toBe(1);
+	// The lamps warm up as the sun sinks and stand down as it climbs.
+	expect(lampShare(0.1)).toBeGreaterThan(0);
+	expect(lampShare(0.1)).toBeLessThan(0.32);
+	expect(lampShare(-0.2)).toBeGreaterThan(0.32);
+	expect(lampShare(-0.2)).toBeLessThan(1);
+});
+
+test("the stage's lamps are out at midday, full at night, and full in the studio", () => {
+	const { stage, frames } = staged();
+	stage.set('Midday');
+	frames(240);
+	expect(stage.lamps).toBeCloseTo(0, 3);
+	stage.set('Night');
+	frames(240);
+	expect(stage.lamps).toBeCloseTo(1, 3);
+	stage.set('Studio');
+	expect(stage.lamps).toBe(1);
 });
 
 test('the fixed mood nearest an hour carries the look of the moment', () => {

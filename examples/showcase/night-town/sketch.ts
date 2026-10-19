@@ -125,7 +125,7 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: false,
 			snow: true,
 			shadows: true,
 			contact: true,
@@ -175,6 +175,9 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			// The town's own lights follow the sun: out by day, a little at dusk, all at night.
+			lamps.power(stage.lamps);
+			houses.power(stage.lamps);
 			film.update(dt);
 			const lens = controls.lens();
 			if (lens) post.set(lens);

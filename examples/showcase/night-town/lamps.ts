@@ -44,7 +44,7 @@ function glow({ textures }: SketchContext) {
 /** The town's lamps, with the glow that follows them and a way to light only the nearest. */
 export async function createLamps(
 	ctx: SketchContext,
-): Promise<{ fit(preset: QualityPreset): void; count: number }> {
+): Promise<{ fit(preset: QualityPreset): void; power(share: number): void; count: number }> {
 	const { scene, geometry, materials } = ctx;
 	const next = random(97);
 	const places = LAMPS.map(([x, z]) => ({ x, z, y: groundHeight(x, z) }));
@@ -121,20 +121,33 @@ export async function createLamps(
 	places.forEach((p, k) => {
 		glowSprites.positions.set([p.x, p.y + HEIGHT, p.z], k * 3);
 		glowSprites.sizes.set([4.2, 4.2], k * 2);
-		glowSprites.colors.set([1.5, 1.05, 0.5, 0.5], k * 4);
 	});
 	glowSprites.markDirty();
 
+	/** How many lanterns this preset lights. */
 	let lit = places.length;
+	/** The share of their light that the hour allows: none by day, all at night. */
+	let power = 1;
+	/** Writes the share of the light that the lanterns give, at the preset's count. */
+	const apply = (): void => {
+		glowSprites.setActiveCount(lit);
+		for (let k = 0; k < places.length; k++) {
+			lights[k]?.setIntensity(k < lit ? (brightness[k] as number) * power : 0);
+			glowSprites.colors.set([1.5 * power, 1.05 * power, 0.5 * power, 0.5 * power], k * 4);
+		}
+		glowSprites.markDirty();
+	};
+	apply();
 	return {
 		count: places.length,
 		fit(preset) {
 			lit = LIT[preset];
-			// The lanterns glow at every preset; the far lights go dark, so a phone pays for fewer
-			// point lights, and the glow sprites follow them.
-			glowSprites.setActiveCount(lit);
-			for (let k = 0; k < places.length; k++)
-				lights[k]?.setIntensity(k < lit ? (brightness[k] as number) : 0);
+			// The far lights go dark at the lower presets, so a phone pays for fewer point lights.
+			apply();
+		},
+		power(share) {
+			power = share;
+			apply();
 		},
 	};
 }
