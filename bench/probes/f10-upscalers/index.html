@@ -1166,22 +1166,34 @@ void main() {
 				// Warm every pass before timing any, so the first timed pass does not carry the
 				// GPU's clock ramp and every shader is compiled.
 				for (let round = 0; round < 6; round++) {
+					// The warm-up runs before the first timed pass, and a driver that stalls inside
+					// one of its draws prints nothing. The pass about to run names itself, so the
+					// last line printed is the draw that stalled.
+					if (round === 0) console.log('warm resolve');
 					bindResolve();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) console.log('warm today');
 					bindToday(hdrLow, scratch);
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) console.log('warm bilinear');
 					bindBilinear();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) console.log('warm nearest');
 					bindNearest();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) console.log('warm gsr');
 					bindGsr();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) console.log('warm easu');
 					bindEasu();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) console.log('warm rcas');
 					bindRcas();
 					gl.drawArrays(gl.TRIANGLES, 0, 3);
 				}
+				console.log('the warm-up drew every pass; waiting for the GPU');
 				gl.finish();
+				console.log('the GPU finished the warm-up');
 				out.glErrorBefore = gl.getError();
 
 				// Each round writes a different target of the pair, so the render pass ends and its
