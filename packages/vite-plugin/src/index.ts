@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
@@ -737,8 +737,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					({ fileName, source }) => !existsSync(join(outDir, fileName)) && existsSync(source),
 				);
 				if (recovered.length === 0) return;
-				for (const { fileName, source } of recovered)
-					writeFileSync(join(outDir, fileName), readFileSync(source));
+				for (const { fileName, source } of recovered) {
+					const path = join(outDir, fileName);
+					mkdirSync(dirname(path), { recursive: true });
+					writeFileSync(path, readFileSync(source));
+				}
 				const listPath = join(outDir, FILES_LIST);
 				if (!existsSync(listPath)) return;
 				const list = JSON.parse(readFileSync(listPath, 'utf8')) as {
