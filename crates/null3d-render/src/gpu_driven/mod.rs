@@ -1583,14 +1583,18 @@ impl GpuDrivenRenderer {
         let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         // Only the camera's view copies its opaque color for surfaces that let light through.
-        // The probes own the frame group's shared array, so they record it before the frame groups
-        // bind it, and no later block rebinds them for it.
+        // The probes own the frame group's shared array, which the light tables write into, so they
+        // record it before the frame groups bind it. A new array leaves the frame groups holding
+        // the old one, so every camera view binds the new one again in this frame.
         let shape = self.settings.light_tables().shape(
             self.settings.probes().size(),
             self.settings.probes().probe_layers(),
         );
         self.settings.probes_mut().record(list, shape)?;
-        self.bound_probes = self.settings.probes().array();
+        // The next frame destroys the old array, so no frame group may still bind it.
+        let probes_now = self.settings.probes().array();
+        let probes_remade = probes_now != self.bound_probes;
+        self.bound_probes = probes_now;
         let copy = self.graph.transmission_texture();
         let transmission = |view: ViewId| {
             if view == ViewId::CAMERA {
@@ -1621,11 +1625,11 @@ impl GpuDrivenRenderer {
             if depth_pass != Prepass::Off && (index >= self.prepass_views || values_remade) {
                 shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
-            if index >= first_new || self.graph.textures_made() || values_remade {
+            if index >= first_new || self.graph.textures_made() || values_remade || probes_remade {
                 let inputs = frame_inputs(
                     light_owner(self.lights_made, view),
                     view,
-                    probe_array(self.bound_probes),
+                    probe_array(probes_now),
                 );
                 self.bind_frame(list, view, inputs)?;
             }
@@ -1738,7 +1742,7 @@ impl GpuDrivenRenderer {
             self.bind_frame(
                 list,
                 view,
-                frame_inputs(view, view, probe_array(self.bound_probes)),
+                frame_inputs(view, view, probe_array(probes_now)),
             )?;
         }
 
