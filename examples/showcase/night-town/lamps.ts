@@ -146,6 +146,9 @@ export async function createLamps(
 			apply();
 		},
 		power(share) {
+			// Writing the lights and the sprites costs a buffer upload, so a step too small to see is
+			// left out.
+			if (Math.abs(share - power) < 0.01) return;
 			power = share;
 			apply();
 		},
