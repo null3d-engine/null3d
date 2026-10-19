@@ -629,13 +629,23 @@ void main() {
 				if (!gl.getProgramParameter(sceneProgram, gl.LINK_STATUS))
 					throw new Error(`scene program failed: ${gl.getProgramInfoLog(sceneProgram)}`);
 			}
+			// A driver can stall while it compiles or links a program, before any draw. Each program
+			// names itself first, so the last line printed is the one that stalled.
+			console.log('linking resolve');
 			const resolveProgram = makeProgram(RESOLVE_FS, FXAA ? '#define FXAA 1\n' : '');
+			console.log('linking today');
 			const todayProgram = makeProgram(TODAY_FS);
+			console.log('linking bilinear');
 			const bilinearProgram = makeProgram(BILINEAR_FS);
+			console.log('linking nearest');
 			const nearestProgram = makeProgram(NEAREST_FS);
+			console.log('linking gsr');
 			const gsrProgram = makeProgram(GSR_FS);
+			console.log('linking easu');
 			const easuProgram = makeProgram(EASU_FS);
+			console.log('linking rcas');
 			const rcasProgram = makeProgram(RCAS_FS);
+			console.log('every program is linked');
 
 			// ---------------------------------------------------------------- scene
 
@@ -1156,12 +1166,14 @@ void main() {
 			async function main() {
 				// The scene at the canvas size is the reference's source; the low render size is what
 				// the first step and every upscaler see.
+				console.log('drawing the reference scene');
 				drawScene(hdrHigh, 0);
 				bindReference();
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 				drawScene(hdrLow, MIP_BIAS ? -1 : 0);
 				bindResolve();
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
+				console.log('the reference and the low scene are drawn');
 
 				// Warm every pass before timing any, so the first timed pass does not carry the
 				// GPU's clock ramp and every shader is compiled.
