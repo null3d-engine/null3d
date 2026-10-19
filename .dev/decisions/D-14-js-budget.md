@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb), and to 176 KB the same day with a reclaim, in [The fifth raise](#the-fifth-raise-18-october-2026-the-start-to-176-kb-with-a-reclaim). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb), and to 176 KB the same day with a reclaim, in [The fifth raise](#the-fifth-raise-18-october-2026-the-start-to-176-kb-with-a-reclaim). On 19 October 2026 the owner accepted about 45 ms of extra cold start and permitted a raise when a feature needs one, in [The owner's standing ruling](#the-owners-standing-ruling-19-october-2026). Date: 2026-09-30.
 
 Summary: The engine's JavaScript that a page downloads at its start may take 176 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
 
@@ -678,3 +678,13 @@ files, and their `Size-Growth:` trailers give the reason on this branch.
 
 The start budget rose from 140 KB to 145 KB in the morning and was over again within hours. Hours after the raise to 160 KB, the light probe grid's figures put the pipelined WebGL2 start at 159.6 KB, 99.8% of the new budget ([D-146](D-146-light-probe-grid.md)). Every raise so far went to the GLSL side, and the WebGL2 start module is the binding one. The next landing that adds a mesh-template permutation moves it again.
 
+
+### The owner's standing ruling, 19 October 2026
+
+The owner accepts about 45 ms of extra cold start and permits raising the start budget when a
+feature needs the room. The cost is about 6.5 ms per kilobyte of start download on the Galaxy S24+,
+against the 5.5 s cold-start target ([D-83](D-83-gate-rulings-2026-10-06.md)). No raise was needed on this date:
+the worst start measured 167.5 KB of the 176 KB budget, so 8.5 KB remained.
+
+The reclaimed code stays out. The frame figures behind `engine.measure()` and the error-fix table
+serve measurements and error text, not drawing, so no page loses anything it uses to draw.
