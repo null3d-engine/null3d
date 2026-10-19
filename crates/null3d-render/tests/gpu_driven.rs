@@ -11,7 +11,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::{Command, NO_PARENT, flags};
 use null3d_core::world::SphereArrays;
-use null3d_gpu::drawlist::{NO_TARGET, Op, format, layout, resource_kind};
+use null3d_gpu::drawlist::{NO_TARGET, Op, format, layout, resource_kind, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::frame::FrameBuilder;
@@ -1349,5 +1349,38 @@ fn the_direct_path_culls_on_the_cpu_and_draws_each_bucket_with_its_count() {
                 .any(|(op, o)| *op == Op::WriteBuffer && o[0] == buffer),
             "the frame uploads the instances that the draws read"
         );
+    }
+}
+
+#[test]
+fn the_direct_path_uploads_each_bucket_s_visible_copies() {
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    world.record(true);
+    let commands = world.commands();
+    // The buffer that a draw binds at vertex slot 1 holds the view's copies, and the frame
+    // writes them there.
+    let visible: Vec<u32> = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert!(!visible.is_empty(), "a draw binds its view's instances");
+    let writes: Vec<(u32, u32)> = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && visible.contains(&o[0]))
+        .map(|(_, o)| (o[1], o[3]))
+        .collect();
+    // Every bucket that draws sends its copies up on their own, so the frame never holds a copy
+    // of each row that a bucket could draw. The world draws three buckets.
+    assert!(
+        writes.len() > 1,
+        "each bucket's copies go up in a write of their own: {writes:?}"
+    );
+    for (offset, size) in writes {
+        assert_eq!(offset % sizes::INSTANCE_STRIDE, 0, "{offset}");
+        assert_eq!(size % sizes::INSTANCE_STRIDE, 0, "{size}");
     }
 }

@@ -59,10 +59,6 @@ struct ViewCull {
     cull: BucketedCull,
     /// Each bucket's instance count, in the layout's bucket order.
     counts: Vec<u32>,
-    /// The view's compacted instance buffer as it is recorded: one copy per visible source.
-    copies: Vec<u32>,
-    /// The words of `copies` that the frame uploads.
-    used: usize,
 }
 
 /// Every view's culling output on the direct-draw path.
@@ -73,6 +69,9 @@ pub(super) struct Direct {
     runs: Vec<CullRun>,
     /// The offsets from the frame's view to each cell in use.
     offsets: CellOffsets,
+    /// The copies of one bucket, as the frame uploads them. One bucket is written at a time, so the
+    /// room that the copies need is the largest bucket's, not the whole layout's.
+    bucket_copies: Vec<u32>,
 }
 
 impl Direct {
@@ -121,14 +120,6 @@ impl Direct {
         let entry = &mut self.views[view.index()];
         if entry.counts.len() < buckets as usize {
             entry.counts.resize(buckets as usize, 0);
-        }
-        let copy_words = drawn.copied as usize * COPY_WORDS;
-        if entry.copies.len() < copy_words {
-            entry
-                .copies
-                .try_reserve(copy_words - entry.copies.len())
-                .map_err(out_of_memory)?;
-            entry.copies.resize(copy_words, 0);
         }
         let by_row = runs
             .iter()
@@ -201,12 +192,8 @@ impl Direct {
             layers: frame.layers,
             occlusion: None,
         };
-        let ViewCull {
-            cull,
-            counts,
-            copies,
-            used,
-        } = entry;
+        let ViewCull { cull, counts } = entry;
+        let mut copies = std::mem::take(&mut self.bucket_copies);
         cull_into_buckets(
             jobs,
             cull_view,
@@ -217,23 +204,22 @@ impl Direct {
             Some(&choice),
             cull,
         );
-        *used = write_copies(
+        let recorded = write_copies(
+            list,
+            arena,
+            view,
             drawn,
             cull,
             counts,
-            copies,
+            &mut copies,
             scene.world(parity).matrices(),
             batches,
             sources,
             parity,
             offsets,
         );
-        if *used == 0 {
-            return Ok(());
-        }
-        let (at, bytes) = arena.push(words_as_bytes(&copies[..*used]))?;
-        list.push(Op::WriteBuffer, &[super::ids::visible(view), 0, at, bytes])?;
-        Ok(())
+        self.bucket_copies = copies;
+        recorded
     }
 
     /// The offsets from the camera of the view culled last to each cell in use.
@@ -252,23 +238,25 @@ impl Direct {
 
 /// Writes each bucket's visible sources into the view's compacted instance buffer in the layout
 /// that the mesh shaders read, with its matrix moved by its cell's offset from the view's camera.
-/// Returns the words that the frame uploads: up to the highest slice end, so the gaps between
-/// slices need no write.
+/// Each bucket's copies go up in one write of their own, so the frame holds the visible copies
+/// instead of a copy of every row that the layout could draw.
 #[allow(clippy::too_many_arguments)]
 fn write_copies(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    view: ViewId,
     drawn: &Layout,
     cull: &BucketedCull,
     counts: &mut [u32],
-    copies: &mut [u32],
+    copies: &mut Vec<u32>,
     scene_matrices: &[f32],
     batches: &BatchTable,
     sources: &Layout,
     parity: usize,
     offsets: &[[f32; 4]],
-) -> usize {
+) -> Result<(), RecordError> {
     let starts = cull.bucket_starts();
     let entries = cull.indices();
-    let mut used = 0;
     for (index, bucket) in drawn.buckets.iter().enumerate() {
         let words = &entries[starts[index] as usize..starts[index + 1] as usize];
         // A fade bucket lists each instance as a pair: its entry, then its fade value's bits.
@@ -278,14 +266,20 @@ fn write_copies(
         if count == 0 {
             continue;
         }
-        let mut at = bucket.base as usize * COPY_WORDS;
+        let needed = count * COPY_WORDS;
+        if copies.len() < needed {
+            copies
+                .try_reserve(needed - copies.len())
+                .map_err(out_of_memory)?;
+            copies.resize(needed, 0);
+        }
         for k in 0..count {
             let entry = words[k * if pair { 2 } else { 1 }];
             let source = entry & ENTRY_SOURCE;
             let cell = (entry >> CELL_SHIFT) as usize;
             let offset = offsets.get(cell).copied().unwrap_or([0.0; 4]);
             let matrix = matrix_of(source, scene_matrices, batches, sources, parity);
-            let dst = at + k * COPY_WORDS;
+            let dst = k * COPY_WORDS;
             copies[dst] = matrix[0].to_bits();
             copies[dst + 1] = matrix[1].to_bits();
             copies[dst + 2] = matrix[2].to_bits();
@@ -303,10 +297,14 @@ fn write_copies(
             copies[dst + IDS_SOURCE] = source;
             copies[dst + IDS_FADE] = if pair { words[k * 2 + 1] } else { 0 };
         }
-        at += count * COPY_WORDS;
-        used = used.max(at);
+        let (at, bytes) = arena.push(words_as_bytes(&copies[..needed]))?;
+        let offset = bucket.base * drawn.copy_stride();
+        list.push(
+            Op::WriteBuffer,
+            &[super::ids::visible(view), offset, at, bytes],
+        )?;
     }
-    used
+    Ok(())
 }
 
 /// The twelve floats of a source's world matrix: a scene slot's from the scene's world buffer, or
