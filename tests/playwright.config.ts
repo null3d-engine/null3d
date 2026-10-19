@@ -72,8 +72,9 @@ export default defineConfig({
 			reuseExistingServer: false,
 			// The chain builds seven pages before the preview serves them, and on a slow runner the
 			// default minute runs out partway through: the run then fails as if the server never
-			// started, with every build it finished in the log.
-			timeout: 300_000,
+			// started, with every build it finished in the log. A busy CI machine took the chain
+			// past five minutes on 19 October 2026 while each build was still finishing.
+			timeout: 900_000,
 		},
 	],
 	projects: [
