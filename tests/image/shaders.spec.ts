@@ -16,6 +16,7 @@ interface ShaderResult {
 	webgpu: boolean;
 	wgslModules: number;
 	wgslSkipped: number;
+	wgslExpected: number;
 	failures: { shader: string; stage: string; log: string }[];
 	relinked: { shader: string; stage: string; log: string }[];
 }
@@ -58,7 +59,10 @@ for (let part = 1; part <= PARTS; part++)
 		expect(result.failures).toEqual([]);
 		expect(result.glslPrograms).toBeGreaterThan(0);
 		expect(result.webgpu).toBe(true);
-		expect(result.wgslModules).toBeGreaterThan(0);
+		// A part's share may hold only modules that need 16-bit floats, which a GPU without them skips.
+		// The check then holds what the share holds: every module compiled or was skipped for that.
+		expect(result.wgslModules + result.wgslSkipped).toBeGreaterThan(0);
+		expect(result.wgslModules + result.wgslSkipped).toBe(result.wgslExpected);
 		// Only programs that read the draw index may be skipped, and only without WEBGL_multi_draw,
 		// which Chrome on a real GPU always has.
 		if (result.multiDraw) expect(result.skipped).toEqual([]);

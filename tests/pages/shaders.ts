@@ -37,7 +37,8 @@ run('shaders', async () => {
 	const glslStart = performance.now();
 	const glsl = await checkGlslPrograms(glslProgramsOf(shaders).filter(inSet), failures);
 	const glslSeconds = Math.round(performance.now() - glslStart) / 1000;
-	const wgsl = await checkWgslModules(wgslModulesOf(shaders).filter(inSet), failures);
+	const modules = wgslModulesOf(shaders).filter(inSet);
+	const wgsl = await checkWgslModules(modules, failures);
 	return {
 		glslPrograms: glsl.programs,
 		glslSeconds,
@@ -50,6 +51,9 @@ run('shaders', async () => {
 		webgpu: wgsl.webgpu,
 		wgslModules: wgsl.modules,
 		wgslSkipped: wgsl.skipped,
+		// What the part's share holds, so a part whose modules all need 16-bit floats reads as
+		// checked on a GPU that has none rather than as one that drew nothing.
+		wgslExpected: modules.length,
 		failures,
 	};
 });
