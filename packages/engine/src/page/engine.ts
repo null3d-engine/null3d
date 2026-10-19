@@ -77,7 +77,13 @@ import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
-import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
+import {
+	coreDevice,
+	keepTextureCopiesOption,
+	maxCanvasSize,
+	maxInstances,
+	phoneShadowFilter,
+} from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
@@ -1795,13 +1801,19 @@ async function startEngine(
 				? { ...pageSettings, gpuOcclusion: false }
 				: pageSettings;
 		const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
+		const settings = capTextureMemory(
+			checkedSettings(chosen, preset, tierSettings, tier),
+			tierSettings,
+			textureCapMiB,
+		);
+		settings.shadowFilter = phoneShadowFilter(
+			tier,
+			settings.shadowFilter,
+			globalThis.navigator?.userAgent ?? '',
+		);
 		const quality: QualityStart = {
 			preset,
-			settings: capTextureMemory(
-				checkedSettings(chosen, preset, tierSettings, tier),
-				tierSettings,
-				textureCapMiB,
-			),
+			settings,
 			options: tierSettings,
 			textureCapMiB,
 			keepCopies: keepTextureCopies,

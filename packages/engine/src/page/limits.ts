@@ -19,6 +19,7 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
+import { isAppleWebKit } from '../shared/webkit';
 import type {
 	CompressionFamily,
 	DepthMode,
@@ -29,6 +30,34 @@ import type {
 
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
+
+/**
+ * True for a phone that runs Apple's WebKit, whose WebGPU measures the device default below.
+ * iPads report a Mac's user agent, so they keep the desktop values that the presets give.
+ */
+export function phoneWebKit(userAgent: string): boolean {
+	return isAppleWebKit(userAgent) && /\biPhone\b|\biPod\b/.test(userAgent);
+}
+
+/**
+ * How WebGPU skins: the vertex shader of each pass that draws a character, unless ?skinning= names
+ * a mode. A phone that runs Apple's WebKit measured the skinning pass faster on one page, but the
+ * pass draws each skinned unit on its own, and that draw count cost more than it saved on Battle's
+ * twelve pages (D-20). So the vertex shaders stay the default everywhere.
+ */
+export function skinningSwitch(wanted: SkinningSwitch | undefined): SkinningSwitch {
+	return wanted ?? 'vertex';
+}
+
+/**
+ * The sun's shadow filter on a device, in texels each side: the preset's square, or the smaller one
+ * on a phone that runs Apple's WebKit, whose WebGPU samples the shadow map slower than a desktop
+ * GPU does (D-169). A sketch's own `quality.set` still wins, as it runs after the start.
+ */
+export function phoneShadowFilter(tier: Tier, preset: 3 | 5, userAgent: string): 3 | 5 {
+	if (tier === 'webgl2' || !phoneWebKit(userAgent)) return preset;
+	return preset === 5 ? 3 : preset;
+}
 
 /** The core's code of each skinning mode that ?skinning= picks. */
 const SKINNING_CODES: Record<SkinningSwitch, number> = {
@@ -436,7 +465,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
-		skinning: SKINNING_CODES[options.skinning],
+		skinning: SKINNING_CODES[skinningSwitch(options.skinning)],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
 		expectedObjects: options.expectedObjects,

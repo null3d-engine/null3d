@@ -49,3 +49,21 @@ M2-R25 closes with no engine change. The task's rule allows either a measured sa
 - The plane's cost on the owner's iPad stays as accepted on 6 October 2026 ([D-83](D-83-gate-rulings-2026-10-06.md), ruling 13).
 - The levers stay open for a later scene that shows the cost again. A uniform that precomputes the cascades' light axes is the only one that keeps the images; it needs a measured saving first, as design principle 1 asks. Turning the plane off at Low alone trades the flat-caster acne, which the owner rejected.
 - The breakdown's M2-R25 entry is closed. Its "Done when" is met by this record.
+
+## Addendum, 2026-10-19: the smaller square on a phone
+
+The iPhone 17's Safari ran Battle's comparison on 19 October 2026, at 100 units on a 603 x 1009 canvas at a pixel ratio of 1.5, on the direct path. The sun's shadow filter costs far more there than on a desktop GPU:
+
+| Page | Presented fps | GPU time | Draws |
+| --- | --- | --- | --- |
+| Battle, the square of 5 | 24.4 | 32.01 ms | 304 |
+| Battle, the square of 3 | 30.3 | 24.11 ms | 267 |
+| Factory | 45.6 | 15.86 ms | 152 |
+
+The smaller square saves 7.9 ms of the phone's frame, 25%. On the Mac's Safari at 1,000 units the same change saves about 1.1 ms of 14.2, and 1.4 ms with the other effects off. So the cost is the shadow map's samples on this GPU, and the phone is where the square's size decides the frame.
+
+What was tried and rejected: one read of each 2 x 2 block through the comparison sampler's own filter, with the block's weights and the plane at the sample's place. It keeps the shares and the anti-acne plane's place, but WebGPU refuses it: the cascades bind as a float texture, so that compatibility mode can read four texels at once, and a comparison sample needs a depth texture. The shader build refused all 45 affected variants.
+
+The engine now gives a phone that runs Apple's WebKit the square of 3 for the sun's filter, and keeps the preset's square elsewhere. The flat casters' plane and its per-texel comparison are unchanged; the square is smaller, so the edges are slightly harder. A sketch's own `quality.set({ shadowFilter })` still wins. The page kinds that measure the filter keep the presets' values, so a benchmark can compare them.
+
+The two phone defaults together, and the comparison's twelve pages, are in [Battle's figures on the iPhone](../benchmarks.md#the-sun-shadow-filter-on-a-phone).

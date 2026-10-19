@@ -380,3 +380,21 @@ Battle on the Mac's Chrome 155, WebGPU, on 13 October 2026, before and after the
 The engine's default change landed on main on 2026-10-13 with M2-EX41. The core starts in `SkinningMode::VERTEX` (`9f93d1a19`, merged from `feat/webgpu-vertex-skinning-default`), so no branch carries it any longer. Its Mac S5 figures are in [The new default on the Mac](#the-new-default-on-the-mac) above, and its Battle figures are in [D-121](D-121-comparison-tier.md#battles-gpu-cost-and-memory-12-october-2026).
 
 Still to run, and neither can change the ruling: the Mac's Safari run of the timing page, and S5 on the owner's iPad. The compute pass failed the rule on every device that can decide it, and the rule needs a saving on every device measured.
+
+## Addendum, 2026-10-19: the vertex shaders lose on an iPhone 17
+
+The iPhone 17's Safari ran Battle's comparison on 19 October 2026 through the comparison page's own measure, at 100 units on a 603 x 1009 canvas at a pixel ratio of 1.5. Each page drew on the direct path. The skinning pass was about 6.6 ms faster there, where the Mac's Chrome and Safari showed no difference:
+
+| Page | Presented fps | GPU time | Draws |
+| --- | --- | --- | --- |
+| Battle, the vertex shaders | 24.4 | 32.01 ms | 304 |
+| Battle, `?skinning=compute` | 28.0 | 25.36 ms | 1,238 |
+| Factory, the vertex shaders | 45.6 | 15.86 ms | 152 |
+
+- On that page the pass won even though it draws each skinned unit on its own: 1,238 draws against 304. The vertex shaders' joint texture reads in every pass outweighed the extra draws there.
+- The pass is not a default, because the draw count does not hold up. The same day's twelve-page run, with the pass as the default and the smaller sun filter that [D-169](D-169-anti-acne-plane-cost.md#addendum-2026-10-19-the-smaller-square-on-a-phone) sets, drew 23.7 frames a second in two pages (30.55 and 31.01 ms of GPU time, 1,237 and 1,269 draws). The one page without the pass drew 24.4 at 32.01 ms before the change. On the indirect path the pass fell to 10.4 frames and 79.35 ms, because WebKit charges for each of its 1,246 indexed indirect draws.
+- On the Mac's Safari at 1,000 units the two routes tie on GPU time (15.2 against 14.8 ms), and the pass loses 18 frames a second to the draw count.
+
+So the vertex shaders stay the default on every device, and `?skinning=compute` still picks the pass for a page that measures it. `?skinning=vertex` now also forces the vertex shaders on a device whose default might have changed, and WebGL2 is unchanged. The next step for the phone would be a pass whose skinned copies share one instanced draw, which the pass cannot do today: each copy keeps vertices of its own.
+
+The owner's ruling of 8 October 2026 stands. This phone page explains why the ruling holds: the pass's saving on one page is smaller than the cost of its draws on the next.
