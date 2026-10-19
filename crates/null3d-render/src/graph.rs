@@ -69,7 +69,8 @@
 //! the list, so switching passes on and off never moves them.
 //!
 //! The graph works out each texture's usage from how the passes use it, and each attachment's load
-//! and store operations. A target is cleared at its first write in the frame and loaded after
+//! and store operations. A target is cleared at its first write in the frame, unless its writer
+//! draws every texel that a later pass reads ([`Pass::creates_overwriting`]), and loaded after
 //! that, and a render pass stores it only when a later pass or frame needs it. When a later pass
 //! samples a multisampled color target, each of the target's layers is resolved at the end of the
 //! last render pass that draws into that layer. A resolve pass ([`PassKind::Resolve`]) resolves
@@ -527,6 +528,9 @@ struct Use {
     resource: Cow<'static, str>,
     mode: Mode,
     layer: Option<u32>,
+    /// True when the pass draws every texel that a later pass reads, so the frame's first render
+    /// pass into the resource need not clear it.
+    overwrites: bool,
 }
 
 /// A pass's declaration: its name, kind, size and layer mask, and the resources it uses by name.
@@ -587,6 +591,15 @@ impl Pass {
         self.with(name, Mode::CreateTexture(target), None)
     }
 
+    /// Creates a frame target and draws every texel of it that a later pass reads, so the frame's
+    /// first render pass into it need not clear it. A pass that draws only a corner of a target
+    /// uses this when every read clamps inside that corner: the rest keeps what an earlier frame
+    /// left, which nothing reads. Skipping the clear saves a call that can cost Safari a
+    /// millisecond for a large target on an iPhone.
+    pub fn creates_overwriting(self, name: impl Into<Cow<'static, str>>, target: Target) -> Self {
+        self.with_overwriting(name, Mode::CreateTexture(target), None)
+    }
+
     /// Creates a buffer and fills it, every frame the pass runs.
     pub fn creates_buffer(self, name: impl Into<Cow<'static, str>>) -> Self {
         self.with(name, Mode::CreateBuffer, None)
@@ -620,11 +633,31 @@ impl Pass {
         self.with(name, Mode::ReadSoFar, None)
     }
 
-    fn with(mut self, name: impl Into<Cow<'static, str>>, mode: Mode, layer: Option<u32>) -> Self {
+    fn with(self, name: impl Into<Cow<'static, str>>, mode: Mode, layer: Option<u32>) -> Self {
+        self.push_use(name, mode, layer, false)
+    }
+
+    fn with_overwriting(
+        self,
+        name: impl Into<Cow<'static, str>>,
+        mode: Mode,
+        layer: Option<u32>,
+    ) -> Self {
+        self.push_use(name, mode, layer, true)
+    }
+
+    fn push_use(
+        mut self,
+        name: impl Into<Cow<'static, str>>,
+        mode: Mode,
+        layer: Option<u32>,
+        overwrites: bool,
+    ) -> Self {
         self.uses.push(Use {
             resource: name.into(),
             mode,
             layer,
+            overwrites,
         });
         self
     }
@@ -659,6 +692,9 @@ pub(crate) struct Access {
     pub(crate) resource: u16,
     pub(crate) mode: Mode,
     pub(crate) layer: Option<u32>,
+    /// True when the pass draws every texel that a later pass reads, so the frame's first render
+    /// pass into the resource need not clear it.
+    pub(crate) overwrites: bool,
 }
 
 /// Where a resource comes from.
@@ -767,11 +803,13 @@ impl RenderGraph {
                         earlier.mode = used.mode;
                     }
                     earlier.layer = used.layer.or(earlier.layer);
+                    earlier.overwrites |= used.overwrites;
                 }
                 None => self.accesses.push(Access {
                     resource,
                     mode: used.mode,
                     layer: used.layer,
+                    overwrites: used.overwrites,
                 }),
             }
         }
