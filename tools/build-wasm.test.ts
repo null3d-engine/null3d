@@ -86,6 +86,48 @@ describe('parseOptions', () => {
 		for (const other of ['--check-size', '--prebuilt', '--sizes-only'])
 			expect(() => parseOptions(['--print-base', other])).toThrow('--print-base builds nothing');
 	});
+
+	it('reads a part of a split size check, and the run that judges every part', () => {
+		expect(parseOptions(['--check-size', '--prebuilt', '--part', '2/6'])).toMatchObject({
+			checkSize: true,
+			prebuilt: true,
+			part: { index: 2, count: 6 },
+		});
+		expect(
+			parseOptions([
+				'--check-size',
+				'--prebuilt',
+				'--judge-parts',
+				'target/size-parts',
+				'--base',
+				'HEAD^',
+			]),
+		).toMatchObject({ judgeParts: 'target/size-parts', base: 'HEAD^' });
+		expect(parseOptions(['--check-size', '--prebuilt'])).not.toHaveProperty('part');
+	});
+
+	it('rejects a split size check without its values, outside a check of an earlier build, or mixed', () => {
+		const check = ['--check-size', '--prebuilt'];
+		expect(() => parseOptions([...check, '--part'])).toThrow('--part needs a part as <i>/<n>');
+		expect(() => parseOptions([...check, '--part', '7/6'])).toThrow('a part is <i>/<n>');
+		expect(() => parseOptions([...check, '--judge-parts'])).toThrow(
+			'--judge-parts needs the folder',
+		);
+		for (const options of [['--check-size'], ['--prebuilt'], []])
+			for (const split of [
+				['--part', '1/2'],
+				['--judge-parts', 'parts'],
+			])
+				expect(() => parseOptions([...options, ...split])).toThrow(
+					'each needs --check-size --prebuilt',
+				);
+		expect(() => parseOptions([...check, '--part', '1/2', '--judge-parts', 'parts'])).toThrow(
+			'in separate runs',
+		);
+		expect(() => parseOptions([...check, '--part', '1/2', '--base', 'HEAD^'])).toThrow(
+			'--part judges nothing',
+		);
+	});
 });
 
 describe('lockedVersion', () => {

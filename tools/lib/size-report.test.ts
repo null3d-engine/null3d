@@ -12,12 +12,21 @@ import {
 	findFirstUseFiles,
 	isFirstUseShaderPart,
 	isParagraphTable,
+	isSizePartFile,
 	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
+	measureFiles,
+	measureSizePart,
+	mergeSizeParts,
+	parsePartSpec,
+	partShare,
 	REPORTED_FILES,
+	type ReportFile,
 	type SizeEntry,
+	type SizePart,
 	START_BUDGET,
+	sizePartFile,
 } from './size-report';
 
 /** A size with the same figure in each column, or a figure for each. */
@@ -43,6 +52,81 @@ describe('measure', () => {
 		const measured = measure(Buffer.concat([block, block]));
 		expect(measured.gzip).toBeGreaterThan(70_000);
 		expect(measured.brotli).toBeLessThan(measured.gzip / 1.8);
+	});
+});
+
+describe('a measuring split into parts', () => {
+	/** A small fake build: files of mixed weights, in the report's order, each with its own bytes. */
+	const specs: [name: string, built: string, length: number][] = [
+		['js/early-core.js', 'early-core-AbCd1234.js', 300],
+		['js/page.js', 'page-Ef567890.js', 9_000],
+		['js/render-worker.js', 'render-worker-Gh123456.js', 7_000],
+		['js/shaders-wgsl.js', 'shaders-wgsl-Ij789012.js', 20_000],
+		['js/shaders-bloom-wgsl.js', 'shaders-bloom-wgsl-Kl345678.js', 12_000],
+		['js/shaders-bloom-glsl.js', 'shaders-bloom-glsl-Mn901234.js', 12_000],
+		['js/page-gltf.js', 'page-gltf-Op567890.js', 2_500],
+		['first-use/meshopt_decoder.wasm', 'meshopt_decoder-Qr123456.wasm', 4_000],
+		['first-use/area-light-tables.bin', 'area-light-tables-St789012.bin', 6_000],
+	];
+	const files: ReportFile[] = specs.map(([name, built, length], at) => {
+		const bytes = Buffer.from(Array.from({ length }, (_, i) => (i * (at + 3)) % 251));
+		return { name, built, weight: length, read: () => bytes };
+	});
+	/** Each part's record as the judge reads it back from the part's file. */
+	const records = (count: number): SizePart[] =>
+		Array.from({ length: count }, (_, i) =>
+			JSON.parse(JSON.stringify(measureSizePart(files, { index: i + 1, count }))),
+		);
+
+	it('merges the parts into the sizes, in the order, that one measuring of every file gives', () => {
+		const whole = [...measureFiles(files)];
+		for (const count of [1, 2, 3, 4, files.length, files.length + 3])
+			expect([...mergeSizeParts(records(count))]).toEqual(whole);
+	});
+
+	it('puts each file in exactly one part, and keeps the parts close in weight', () => {
+		const heaviest = Math.max(...files.map(({ weight }) => weight));
+		for (const count of [2, 3, 4]) {
+			const shares = Array.from({ length: count }, (_, i) =>
+				partShare(files, { index: i + 1, count }),
+			);
+			for (const { name } of files)
+				expect(shares.filter((share) => share.has(name))).toHaveLength(1);
+			const loads = shares.map((share) =>
+				files.reduce((sum, file) => sum + (share.has(file.name) ? file.weight : 0), 0),
+			);
+			expect(Math.max(...loads) - Math.min(...loads)).toBeLessThanOrEqual(heaviest);
+		}
+	});
+
+	it('refuses a missing part, a part there twice, parts of other counts or builds, and a stray size', () => {
+		const three = records(3);
+		const [one, two, last] = three as [SizePart, SizePart, SizePart];
+		expect(() => mergeSizeParts([])).toThrow('no part of the size measuring');
+		expect(() => mergeSizeParts([one, two])).toThrow('expected parts 1 to 3, each once');
+		expect(() => mergeSizeParts([one, two, two])).toThrow('expected parts 1 to 3, each once');
+		expect(() => mergeSizeParts([one, two, records(4)[2] as SizePart])).toThrow(
+			'part 3 of 4 cannot merge with parts of 3',
+		);
+		expect(() => mergeSizeParts([one, two, { ...last, build: 'another' }])).toThrow(
+			'part 3 of 3 measured another build than part 1',
+		);
+		const name = Object.keys(one.sizes)[0] as string;
+		expect(() =>
+			mergeSizeParts([one, { ...two, sizes: { ...two.sizes, [name]: one.sizes[name]! } }, last]),
+		).toThrow(`${name} has a size in 2 parts, not in exactly one`);
+		expect(() =>
+			mergeSizeParts([one, two, { ...last, sizes: { ...last.sizes, 'js/stray.js': size(1) } }]),
+		).toThrow('part 3 measured js/stray.js, which no build lists');
+	});
+
+	it('reads a part as <i>/<n> and names its file', () => {
+		expect(parsePartSpec('2/6')).toEqual({ index: 2, count: 6 });
+		for (const text of ['0/6', '7/6', '2', '2/', 'two/6', '-1/6'])
+			expect(() => parsePartSpec(text)).toThrow('a part is <i>/<n>');
+		expect(sizePartFile({ index: 2, count: 6 })).toBe('part-2-of-6.json');
+		expect(isSizePartFile('part-2-of-6.json')).toBe(true);
+		expect(isSizePartFile('size-report.json')).toBe(false);
 	});
 });
 
