@@ -322,6 +322,18 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
+### Battle's low sun (19 October 2026)
+
+The owner reported that the low sun's light hid the battle. The cause was the sky model. Its haze gathered tightly ahead of the sun, and that gathered light reached far past the field's own light. Bloom, which took every value above white, spread it over the whole frame. The fog's glow toward the sun also lifted the far hills and the smoke.
+
+Three settings of `BATTLE_LOOK` changed, and both halves of the comparison read them:
+
+- The haze's forward gather, `mieDirectionalG`, fell from 0.85 to 0.70. The sky beside the sun keeps its warm light but no longer outshines the field.
+- The fog's sun glow, `sunGlow`, fell from 0.35 to 0.22. The far field keeps its shape against the horizon.
+- Bloom's threshold rose from 1 to 4, above the sky's light and the fog's glow. The sun, the fires and the tracer glints still bloom; the sky and the haze do not.
+
+The dusk sky, the sun's light and its long shadows stay. At the held frame the sun is out of view, so the sky does not change there. The difference is at the halos of the tracers and the fires: 5.8% to 6.2% of the pixels for null3D and 8.8% to 10.7% for three.js on the Mac, and 1.9% to 3.7% on SwiftShader. The references were drawn again in both sets: six on the Mac and six on SwiftShader. Each engine and GPU path has one, and null3D's instanced reference stays shared as before.
+
 ### The Battle and Factory upgrades for both comparisons (M2-EX43, 18 October 2026)
 
 Both comparisons took the Rive City study's touches ([D-172](decisions/D-172-rive-city-follow-ups.md)). A comparison draws one description in both engines and holds one frame for each, so every touch draws the same content in both halves. The lens grade and the scorch marks are switches, on in both halves or off in both.

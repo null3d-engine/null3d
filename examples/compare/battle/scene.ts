@@ -1405,7 +1405,9 @@ export const BATTLE_LOOK = {
 		turbidity: 8,
 		rayleigh: 3.2,
 		mieCoefficient: 0.003,
-		mieDirectionalG: 0.85,
+		// How tightly the haze gathers ahead of the sun. A tight gather sets the sky beside the low
+		// sun far above the field's light, where bloom then spreads it over the battle.
+		mieDirectionalG: 0.7,
 		// A broken deck of heavy cloud, low and large, dark against the last light.
 		cloudCoverage: 0.62,
 		cloudDensity: 0.8,
@@ -1434,11 +1436,16 @@ export const BATTLE_LOOK = {
 		density: 0.0014,
 		height: 0,
 		heightFalloff: 0.03,
-		sunGlow: 0.35,
+		// A warm lift toward the sun, kept low so the far hills and the smoke keep their shape.
+		sunGlow: 0.22,
 		sunGlowExponent: 16,
 	},
-	/** Bloom, as UnrealBloomPass's settings; null3D's chain takes the mapped settings below. */
-	bloom: { threshold: 1, strength: 0.45, radius: 0.35 },
+	/**
+	 * Bloom, as UnrealBloomPass's settings; null3D's chain takes the mapped settings below. The
+	 * threshold sits above the sky's light and the fog's glow, so the sun, the fires and the tracer
+	 * glints bloom while the battle below them keeps its contrast.
+	 */
+	bloom: { threshold: 4, strength: 0.45, radius: 0.35 },
 	bloomChain: {
 		intensity: 3.6,
 		knee: 0.01,
