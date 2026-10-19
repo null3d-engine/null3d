@@ -9,12 +9,12 @@ use std::collections::BTreeMap;
 
 use common::{
     SEE_RULES, SHADER, assert_feature, assert_same, build, build_each_in_shader_compiler,
-    build_wgsl, column_of, only_problem, project, wgsl,
+    build_wgsl, column_of, compiler_processes, only_problem, project, wgsl,
 };
 
 use null3d_shaders::{
     ALLOWED_LANGUAGE_FEATURES, Binding, Compiler, GlslTexture, GlslUniformBlock, Inputs, Output,
-    ShaderSource, literals_safari_refuses, typescript,
+    Part, ShaderSource, Shard, ShardPlan, literals_safari_refuses, typescript,
 };
 use precision::{newer_built_in_calls, precision_breaks};
 
@@ -1242,13 +1242,16 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     build_wgsl(&named).unwrap();
 }
 
-/// The entries that the second build of the repository test makes, to check that a build is the
-/// same every time. Between them they make one module of every kind that the build writes: the
-/// main module, through `timer_mark`; the features module, through the first-use features that the
-/// device entries keep; a device module and a combined loader table, through the largest entry's
-/// many builds of several features; a shared-paragraph table, through the twenty or more feature
-/// sets those builds make; and a whole-shader first-use module, through `environment`.
-const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "environment", "pick", "timer_mark"];
+/// The entries that the determinism check builds twice, to check that a build is the same every
+/// time. Between them they make one module of every kind that the build writes: the main module,
+/// through `timer_mark`; the features module, through the first-use features that the device
+/// entries keep; a device module and a combined loader table, through the many builds of several
+/// features of `lit`, the standard material without maps; a shared-paragraph table, through the
+/// twenty or more feature sets those builds make; and a whole-shader first-use module, through
+/// `environment`. `lit` has the feature bits of the textured standard material, less its relief
+/// bits, at about a seventh of its builds. The textured material alone is most of the whole
+/// build, and two builds of it made this check the longest part of CI by far.
+const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
 /// cargo-nextest runs each test in a process of its own, so a test cannot share another test's
@@ -1258,6 +1261,10 @@ const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "environment", "pick", "
 /// building the whole manifest twice doubled the time, and the subset still makes every kind of
 /// module that the build writes. Other tests build only the shaders they read, through the tests'
 /// `subset` module.
+///
+/// CI splits the work across jobs with `NULL3D_SHADER_SHARD` ([`Run::from_env`]). A shard
+/// builds its share of the builds and runs every check that reads them. The determinism check
+/// runs in a job of its own, which builds its entries twice and checks nothing else.
 ///
 /// With `NULL3D_SHADER_COMPILER` set, the shader compiler builds the repository one entry at a
 /// time, and each entry's result must be the native build's. It cannot build the whole manifest in
@@ -1270,49 +1277,61 @@ const DETERMINISM_ENTRIES: &[&str] = &["standard_maps", "environment", "pick", "
 fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let whole = Inputs::read(root).unwrap();
-    // CI splits the work across jobs: `NULL3D_SHADER_SHARD=i/n` builds every nth entry of the
-    // manifest here, and the first shard also builds the entries that the determinism check needs.
-    let (names, shards) = shard_names(&whole);
-    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let inputs = if shards.is_some() {
-        subset::repository_subset(&refs)
-    } else {
-        whole
-    };
-    // A shard builds a share of the entries alone, so a floor that guards against an empty build
+    let run = Run::from_env();
+    // A shard builds a share of the builds alone, so a floor that guards against an empty build
     // must shrink with the share.
-    let divide = shards.unwrap_or(1);
+    let (inputs, divide) = match run {
+        Run::Whole => (whole, 1),
+        Run::Shard(shard) => {
+            let plan = ShardPlan::by_build(&whole, shard.count).unwrap();
+            show(&format!(
+                "This job builds shard {shard} of the shader entries.\n{plan}"
+            ));
+            (plan.inputs(&whole, shard.index), shard.count)
+        }
+        Run::Determinism => {
+            let plan = ShardPlan::by_entry(&whole, 1).unwrap();
+            show(&format!(
+                "This job builds the determinism entries twice, {}, at {:.1}% of the whole build each time.\n",
+                DETERMINISM_ENTRIES.join(", "),
+                plan.percent(plan.cost_of(DETERMINISM_ENTRIES))
+            ));
+            (subset::repository_subset(DETERMINISM_ENTRIES), 1)
+        }
+    };
     let output = null3d_shaders::build(&inputs).unwrap();
-    // The second build runs beside the portability checks, which read only this shard's build. It
-    // runs where every entry of the determinism subset is present, so only the first shard has it.
-    let determinism: Vec<&str> = DETERMINISM_ENTRIES
-        .iter()
-        .copied()
-        .filter(|name| refs.contains(name))
-        .collect();
-    let complete = determinism.len() == DETERMINISM_ENTRIES.len();
-    let narrow = complete.then(|| subset::repository_subset(&determinism));
+    // The second build runs beside the portability checks, which read only this build. A shard
+    // leaves both the second build and the comparison to the determinism job.
+    let narrow =
+        (!matches!(run, Run::Shard(_))).then(|| subset::repository_subset(DETERMINISM_ENTRIES));
+    let checks = run != Run::Determinism;
     let (again, failures) = std::thread::scope(|scope| {
         let again = narrow
             .as_ref()
             .map(|narrow| scope.spawn(|| null3d_shaders::build(narrow).unwrap()));
-        let failures: Vec<String> = [
-            glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output, divide),
-            glsl_declares_no_structure_value(&output),
-            wgsl_has_only_number_literals_that_safari_reads(&output, divide),
-            standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
-        ]
-        .into_iter()
-        .filter_map(Result::err)
-        .collect();
+        let failures: Vec<String> = if checks {
+            [
+                glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output, divide),
+                glsl_declares_no_structure_value(&output),
+                wgsl_has_only_number_literals_that_safari_reads(&output, divide),
+                standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
+            ]
+            .into_iter()
+            .filter_map(Result::err)
+            .collect()
+        } else {
+            Vec::new()
+        };
         (again.map(|again| again.join().unwrap()), failures)
     });
-    the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
+    if checks {
+        the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
+    }
     let mut failures = failures;
     if let Some(again) = again {
         // Rendering every module of a build costs minutes on the larger entries, so each output is
         // rendered once and both checks read the same modules.
-        let written = typescript(&narrowed(output, &again, &determinism));
+        let written = typescript(&narrowed(output, &again, DETERMINISM_ENTRIES));
         let again_written = typescript(&again);
         failures.extend(
             [
@@ -1326,42 +1345,34 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
-/// The manifest's shader names for this process's shard, and how many shards the work is split
-/// into, or none when `NULL3D_SHADER_SHARD` names no shard. With no shard, the names are the whole
-/// manifest's and no subset is built.
-fn shard_names(inputs: &Inputs) -> (Vec<String>, Option<usize>) {
-    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
-    let shaders = manifest["shaders"]
-        .as_table()
-        .expect("the manifest's shaders");
-    let all: Vec<String> = shaders.keys().cloned().collect();
-    let Some((index, count)) = shard() else {
-        return (all, None);
-    };
-    let mut names: Vec<String> = all
-        .iter()
-        .enumerate()
-        .filter(|(at, _)| at % count == index)
-        .map(|(_, name)| name.clone())
-        .collect();
-    if index == 0 {
-        // The first shard carries the entries that the determinism check compares.
-        for name in DETERMINISM_ENTRIES {
-            if !names.iter().any(|kept| kept == name) {
-                names.push((*name).to_owned());
-            }
-        }
-    }
-    (names, Some(count))
+/// The part of the repository test that this process runs, as `NULL3D_SHADER_SHARD` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Run {
+    /// No shard, or a value that names none: the whole manifest, every check and the determinism
+    /// check, as a run on one machine makes them. A typo costs time, not truth.
+    Whole,
+    /// `i/n`: shard `i` of `n`, counted from 0, of a split by build ([`ShardPlan::by_build`]).
+    /// It builds its share of the builds and runs every check that reads them, and never the
+    /// determinism check.
+    Shard(Shard),
+    /// `determinism`: the determinism check alone, which builds its entries twice.
+    Determinism,
 }
 
-/// The shard that `NULL3D_SHADER_SHARD=i/n` asks for, with `i` from 0 and `n` shards in all.
-fn shard() -> Option<(usize, usize)> {
-    let spec = std::env::var("NULL3D_SHADER_SHARD").ok()?;
-    let (index, count) = spec.split_once('/')?;
-    let index: usize = index.parse().ok()?;
-    let count: usize = count.parse().ok()?;
-    (count > 0 && index < count).then_some((index, count))
+impl Run {
+    fn from_env() -> Self {
+        match std::env::var("NULL3D_SHADER_SHARD") {
+            Ok(spec) if spec.trim() == "determinism" => Self::Determinism,
+            Ok(spec) => Shard::parse(&spec).map_or(Self::Whole, Self::Shard),
+            Err(_) => Self::Whole,
+        }
+    }
+}
+
+/// Writes a line for the job's log. It goes to the stream itself, past the test harness's capture
+/// of `eprintln!`, so a passing run under `cargo test` shows it too.
+fn show(text: &str) {
+    let _ = std::io::Write::write_all(&mut std::io::stderr(), text.as_bytes());
 }
 
 /// The whole build's entries for the determinism subset, with the subset build's own records of
@@ -1429,45 +1440,69 @@ fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
 }
 
 /// Builds each entry of the manifest alone through the shader compiler when
-/// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of the
-/// whole repository for that entry. Comparing with that build is what keeps the entry built once:
-/// the reference `output` is the build the test's other checks read. An entry that builds nothing
-/// of its own, such as the template of custom materials, has no such build and is skipped.
+/// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of
+/// these inputs for that entry. Comparing with that build is what keeps the entry built once: the
+/// reference `output` is the build the test's other checks read. An entry that builds nothing of
+/// its own, such as the template of custom materials, has no such build and is skipped. An entry
+/// that costs more than an even share of the compiler processes goes to them in pieces, each a
+/// part of its builds, so no process spends the run on one entry while the others wait.
 fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, output: &Output) {
     if std::env::var_os("NULL3D_SHADER_COMPILER").is_none() {
         return;
     }
-    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
-    let shaders = manifest["shaders"]
-        .as_table()
-        .expect("the manifest's shaders");
-    assert!(!shaders.is_empty(), "the manifest names no shader");
-    let names: Vec<&String> = shaders
-        .keys()
-        .filter(|name| output.shaders.contains_key(*name))
-        .collect();
-    let subsets: Vec<Inputs> = names
-        .iter()
-        .map(|name| subset::repository_subset(&[name.as_str()]))
-        .collect();
-    build_each_in_shader_compiler(&subsets, |index, compiled| {
-        let name = names[index];
-        assert_same(name, &compiled, &one_entry(name, output));
+    let costs = null3d_shaders::entry_costs(inputs).expect("the shader manifest");
+    assert!(!costs.is_empty(), "the manifest names no shader");
+    let total: u64 = costs.iter().map(|(_, cost)| cost).sum();
+    let processes = compiler_processes() as u64;
+    let mut pieces: Vec<(&str, Inputs)> = Vec::new();
+    for (name, cost) in &costs {
+        if !output.shaders.contains_key(name) {
+            continue;
+        }
+        let alone = null3d_shaders::narrowed(inputs, &[name]);
+        let part = alone.parts.get(name).copied().unwrap_or(Part::WHOLE);
+        let count = (cost * processes)
+            .div_ceil(total.max(1))
+            .clamp(1, (*cost).max(1));
+        let count = usize::try_from(count).expect("a count of pieces");
+        for piece in 0..count {
+            let mut one = alone.clone();
+            if count > 1 {
+                one.parts.insert(name.clone(), part.piece(piece, count));
+            }
+            pieces.push((name, one));
+        }
+    }
+    let requests: Vec<Inputs> = pieces.iter().map(|(_, piece)| piece.clone()).collect();
+    build_each_in_shader_compiler(&requests, |index, compiled| {
+        let (name, piece) = &pieces[index];
+        let builds = &null3d_shaders::build_names(piece).expect("the piece's manifest")[*name];
+        assert_same(name, &compiled, &one_entry(name, output, builds));
     });
 }
 
-/// The result that the native build of the whole repository gives for one entry, in the shape of a
-/// response to a build of that entry alone.
-fn one_entry(name: &str, output: &Output) -> serde_json::Value {
+/// The result that the native build of the shard gives for one entry, with the named builds alone,
+/// in the shape of a response to a build of those builds alone.
+fn one_entry(name: &str, output: &Output, builds: &[String]) -> serde_json::Value {
     let entry = |built: serde_json::Value| {
         let mut one = serde_json::Map::new();
         one.insert(name.to_owned(), built);
         serde_json::Value::Object(one)
     };
+    let wanted: std::collections::BTreeSet<&String> = builds.iter().collect();
+    let kept: BTreeMap<&String, &null3d_shaders::VariantOutput> = output.shaders[name]
+        .iter()
+        .filter(|(build, _)| wanted.contains(build))
+        .collect();
+    assert_eq!(
+        kept.len(),
+        builds.len(),
+        "the native build of {name} lacks some of the builds that the piece makes"
+    );
     let mut built = serde_json::Map::new();
     built.insert(
         "shaders".to_owned(),
-        entry(serde_json::to_value(&output.shaders[name]).expect("the entry's builds")),
+        entry(serde_json::to_value(kept).expect("the entry's builds")),
     );
     built.insert(
         "pipelines".to_owned(),
@@ -1820,8 +1855,8 @@ fn standard_material_samples_each_map_without_a_switch_on_webgpu(
     // A switch that picked each map's texture by its slot, though the slot was a constant at each
     // call, made every textured draw many times slower in Chrome on Apple GPUs with a multisampled
     // target (decision record D-89). Only the WebGL2 builds pick a shared unit with a switch.
-    // A shard builds a share of the manifest, and this entry is not in every share; the first
-    // shard always carries it, so the check still runs in a sharded build.
+    // A shard builds a share of the builds, so it may hold this entry, a part of it or none of
+    // it. Each shard checks the builds it holds, and together the shards check every build.
     let Some(entry) = output.shaders.get("standard_maps") else {
         return Ok(());
     };

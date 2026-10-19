@@ -1,12 +1,13 @@
-//! The per-entry shader cache: a change to one shader compiles only that shader, and a change to
-//! a library module compiles only the entries that import it.
+//! The per-entry shader cache: a change to one shader compiles only that shader, a change to a
+//! library module compiles only the entries that import it, and a whole build reuses the entries
+//! that shards of the manifest stored.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use null3d_shaders::{Cache, CacheStats, Inputs, Output};
+use null3d_shaders::{Cache, CacheStats, Inputs, Output, Part, ShardPlan};
 
 /// The repository's `null3d::math` module, which `a` imports.
 fn math() -> String {
@@ -47,6 +48,7 @@ variants.plain = { targets = ["wgsl"] }
     Inputs {
         manifest: manifest.to_owned(),
         files,
+        parts: BTreeMap::new(),
     }
 }
 
@@ -222,6 +224,62 @@ fn a_warm_cache_gives_the_same_output_as_a_cold_build() {
         }
     );
     assert_eq!(warm, uncached);
+}
+
+#[test]
+fn a_whole_build_reuses_every_entry_that_the_shards_stored() {
+    let scratch = Scratch::new();
+    let inputs = project(A, B);
+    // Each shard of whole entries fills the cache with its own entries, as CI's jobs do, each on a
+    // machine of its own. The whole build then finds every entry under the key it looks for.
+    let plan = ShardPlan::by_entry(&inputs, 2).unwrap();
+    for index in 0..2 {
+        let shard = plan.inputs(&inputs, index);
+        let (_, stats) = null3d_shaders::build_with_cache(&shard, &scratch.cache()).unwrap();
+        assert_eq!(
+            stats,
+            CacheStats {
+                compiled: 1,
+                reused: 0
+            }
+        );
+    }
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, null3d_shaders::build(&inputs).unwrap());
+}
+
+#[test]
+fn an_entry_that_builds_one_part_never_enters_the_cache() {
+    let scratch = Scratch::new();
+    let mut inputs = project(A, B);
+    // The key covers the whole entry, so a part of its builds must never answer for it.
+    inputs
+        .parts
+        .insert("a".to_owned(), Part { index: 0, count: 2 });
+    build(&scratch, &inputs);
+    let (_, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 1
+        }
+    );
+    let (_, stats) = null3d_shaders::build_with_cache(&project(A, B), &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 1
+        }
+    );
 }
 
 #[test]

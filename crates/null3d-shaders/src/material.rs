@@ -372,8 +372,8 @@ pub struct Share {
 
 impl Share {
     /// True when the share holds the build at `place` in the build order, of `variant`.
-    pub(crate) fn holds(self, place: u32, variant: &Variant, permutation: u32) -> bool {
-        place % self.count == self.index
+    pub(crate) fn holds(self, place: usize, variant: &Variant, permutation: u32) -> bool {
+        place % self.count as usize == self.index as usize
             || (permutation == 0 && variant.targets.contains(&Target::Wgsl))
     }
 
