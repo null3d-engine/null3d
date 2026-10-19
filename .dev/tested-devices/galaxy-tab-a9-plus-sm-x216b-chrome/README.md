@@ -10,6 +10,10 @@
 ## Known issues
 
 The WebGL2 shader library page failed: the library's square function returned about 6e-41 on the Adreno 619.
+
+The shaders page's base set, part 1 (`shaders-1`), hangs in the 22-page trimmed smoke. The runner's
+status read timed out nine times over 37 minutes, and each retry restarted the page. The capability
+report and isolation passed before it. See the [run](20261019-142542-smoke.md).
 Not fixed yet The WebGL2 shader library page keeps only the low 16 bits of each result (0x40CEB112 read as 0x0000B112), though a probe of the same 32-bit target keeps every bit.
 The debug lines differ by one pixel along slanted edges, as on the S24+.
 The shaders page, which compiles every shader, went back to its start for 30 minutes without a result.
