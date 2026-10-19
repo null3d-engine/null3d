@@ -14,6 +14,7 @@ function staged() {
 		environment?: unknown;
 		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
 		dir?: readonly number[];
+		exposure?: number;
 	} = {};
 	const scene = {
 		setBackground: (background: unknown) => {
@@ -33,7 +34,15 @@ function staged() {
 		setColor() {},
 		setIntensity() {},
 	};
-	const context = { scene, post: { set() {} }, time: { now: 0 } };
+	const context = {
+		scene,
+		post: {
+			set(settings: { exposure?: number }) {
+				last.exposure = settings.exposure;
+			},
+		},
+		time: { now: 0 },
+	};
 	const stage = createMoods(context as never, sun as never, SKY as never, ROOM as never, {
 		heading: 0,
 		fogDensity: 0.01,
@@ -142,6 +151,30 @@ test("the stage's lamps are out at midday, full at night, and full in the studio
 	expect(stage.lamps).toBeCloseTo(1, 3);
 	stage.set('Studio');
 	expect(stage.lamps).toBe(1);
+});
+
+test('the daylight hours hold midday’s exposure, and a low sun opens it up', () => {
+	const { stage, last, frames } = staged();
+	stage.set('Midday');
+	frames(240);
+	const midday = last.exposure as number;
+	// Morning and afternoon hold the same exposure, so the sun's own height sets how bright each
+	// hour reads. The exposure must not even them out, or every hour reads as bright as the next.
+	for (const mood of ['Morning', 'Afternoon'] as const) {
+		stage.set(mood);
+		frames(240);
+		expect(last.exposure).toBeCloseTo(midday, 4);
+	}
+	// A camera opens up for a low sun, at dawn and at golden hour.
+	for (const mood of ['Dawn', 'Golden'] as const) {
+		stage.set(mood);
+		frames(240);
+		expect(last.exposure as number).toBeGreaterThan(midday);
+	}
+	// Night takes the physical model's own exposure, which lights the moonlit scene.
+	stage.set('Night');
+	frames(240);
+	expect(last.exposure as number).toBeGreaterThan(midday);
 });
 
 test('the fixed mood nearest an hour carries the look of the moment', () => {

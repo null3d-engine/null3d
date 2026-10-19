@@ -80,6 +80,13 @@ const LAMPS_OUT = 0.26;
 const LAMPS_FULL = -0.42;
 /** The share of a town's lamps' light at the moment the sun crosses the horizon. */
 const LAMPS_DUSK = 0.32;
+/** How far the exposure opens up for a sun near the horizon, such as at dawn and golden hour. */
+const LOW_SUN_OPEN = 0.5;
+
+/** Rises from 0 at `b` to 1 at `a`, smoothly, for either order of the two. */
+function blend(a: number, b: number, t: number): number {
+	return a + (b - a) * t;
+}
 
 /** Rises from 0 at `a` to 1 at `b`, smoothly, for either order of `a` and `b`. */
 function smoothstep(a: number, b: number, x: number): number {
@@ -175,6 +182,11 @@ export function createMoods(
 		lamps: 0,
 	};
 	const target = structuredClone(current);
+	/**
+	 * The exposure that midday asks for. The daylight hours hold it, so the sun's own height sets how
+	 * bright the picture reads; the physical model's own exposure would even every hour out instead.
+	 */
+	const noonExposure = timeOfDay(12, { heading, model: 'physical' }).exposure;
 	const clouds = { cloudCoverage, time: 0 };
 	let mood: Mood = 'Afternoon';
 	let wasAuto = false;
@@ -234,7 +246,14 @@ export function createMoods(
 		target.skyIntensity = day.skyIntensity;
 		target.density = fogDensity * (haze[at as Exclude<Mood, 'Auto' | 'Studio'>] ?? 1);
 		target.glow = day.fog.sunGlow;
-		target.exposure = day.exposure;
+		// The exposure holds the one that midday asks for while the sun is up, so the day's own light
+		// makes midday the brightest hour. It opens up a little as the sun nears the horizon, where a
+		// camera would, and rises to the physical night exposure as the sun sinks, which lights the
+		// moonlit scene without brightening the dusk.
+		const sunHeight = day.atmosphere.sunPosition[1] as number;
+		const lowSun = smoothstep(0.45, 0.08, sunHeight) * smoothstep(-0.08, 0.02, sunHeight);
+		const daylight = noonExposure * (1 + LOW_SUN_OPEN * lowSun);
+		target.exposure = blend(daylight, day.exposure, smoothstep(-0.05, -0.35, sunHeight));
 		target.sunLight = day.atmosphere.sunIntensity;
 		target.moonLight = day.atmosphere.moonIntensity;
 		target.stars = day.atmosphere.stars;
