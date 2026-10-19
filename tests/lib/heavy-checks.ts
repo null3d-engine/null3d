@@ -19,10 +19,12 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 6144 },
 	// The WebGPU pipeline layouts, read for every build the build wrote.
 	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7168 },
-	// Two bundles of the engine, built to read which math helpers a sketch keeps.
-	{ file: 'packages/engine/src/math/tree-shaking.test.ts', ceilingMiB: 10240 },
-	// The release build, built to read which debug helpers it drops.
-	{ file: 'packages/engine/src/debug/release.test.ts', ceilingMiB: 7168 },
+	// One bundle of the engine for each tree-shaking check, each in a process of its own.
+	{ file: 'packages/engine/src/math/tree-shaking-vec3.test.ts', ceilingMiB: 12288 },
+	{ file: 'packages/engine/src/math/tree-shaking-quat.test.ts', ceilingMiB: 12288 },
+	// One release build for each check, each in a process of its own.
+	{ file: 'packages/engine/src/debug/release-runner.test.ts', ceilingMiB: 4096 },
+	{ file: 'packages/engine/src/debug/release-draw.test.ts', ceilingMiB: 12288 },
 	// Changed texture files through the WebAssembly transcoder: its heap grows on the hostile ones
 	// and does not shrink, so the checks hold every growth they have made.
 	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
