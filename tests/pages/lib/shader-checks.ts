@@ -88,6 +88,7 @@ async function finished(
 	gl: WebGL2RenderingContext,
 	parallel: KHR_parallel_shader_compile,
 	pending: readonly PendingProgram[],
+	onCompiled?: (count: number) => void,
 ): Promise<void> {
 	let next = 0;
 	while (next < pending.length) {
@@ -96,6 +97,7 @@ async function finished(
 			await new Promise((resolve) => setTimeout(resolve, POLL_MS));
 		} else {
 			next++;
+			onCompiled?.(next);
 		}
 	}
 }
@@ -170,6 +172,13 @@ const BATCH = 32;
 const AFTER_GLSL_SECONDS = 30;
 
 /**
+ * The least time between two notes of the programs compiled inside a batch. A batch of the largest
+ * programs took Safari on CI's Mac longer than the page's whole limit, so the page notes its pace
+ * within a batch too, and the runner page's deadline follows it.
+ */
+const NOTE_EVERY_MS = 3_000;
+
+/**
  * Compiles and links GLSL programs, each with its name, a batch at a time. Programs that read the
  * draw index are skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and
  * link of a batch starts before its first status read, so a driver that compiles in the background
@@ -198,15 +207,24 @@ export async function checkGlslPrograms(
 	});
 	const relinked: ShaderFailure[] = [];
 	const start = performance.now();
+	let noted = start;
+	// Notes the programs done so far and the end their pace gives, at most once in a while.
+	const notePace = (done: number) => {
+		const now = performance.now();
+		if (now - noted < NOTE_EVERY_MS) return;
+		noted = now;
+		progress(`GLSL: ${done} of ${compiled.length} programs compiled`);
+		expectEnd(expectedEndSeconds(now, start, done, compiled.length, AFTER_GLSL_SECONDS));
+	};
 	for (let first = 0; first < compiled.length; first += BATCH) {
 		checkContext(gl, first, compiled.length);
 		const pending = compiled
 			.slice(first, first + BATCH)
 			.map(([name, program]) => startProgram(gl, name, program));
-		if (parallel) await finished(gl, parallel, pending);
+		if (parallel) await finished(gl, parallel, pending, (count) => notePace(first + count));
 		checkContext(gl, first, compiled.length);
 		const retries: PendingProgram[] = [];
-		for (const p of pending) {
+		for (const [at, p] of pending.entries()) {
 			if (metalFault(gl, p)) {
 				relinked.push({ shader: p.name, stage: 'link', log: gl.getProgramInfoLog(p.linked) ?? '' });
 				retries.push(startProgram(gl, p.name, p.program, RELINK_TAIL));
@@ -214,6 +232,8 @@ export async function checkGlslPrograms(
 				checkProgram(gl, p, failures, removed);
 			}
 			release(gl, p);
+			// Without the parallel extension, a status read waits for the compile, so the pace shows here.
+			if (!parallel) notePace(first + at + 1);
 		}
 		if (parallel) await finished(gl, parallel, retries);
 		checkContext(gl, first, compiled.length);

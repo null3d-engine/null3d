@@ -1959,12 +1959,13 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
  * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard,
  * and a coat sample part took about 200. A shard holds three or four parts, so each one compiles
- * first or second, and counts at that time. A sample part holds about half a base part's programs,
- * and counts at half its time. The WebGPU pages of the same names skip there.
+ * first or second, and counts at that time. In run 39306888159 the coat and first-use sample parts
+ * each ran out of their 205 s before they noted a step, so their programs, the largest builds,
+ * count at more than that. The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
-	[/^shaders-coat-sample-/, 60],
-	[/^shaders-first-use-sample-/, 60],
+	[/^shaders-coat-sample-/, 240],
+	[/^shaders-first-use-sample-/, 240],
 	[/^shaders-/, 120],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
