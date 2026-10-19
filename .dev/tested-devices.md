@@ -28,3 +28,10 @@ The Where fact names the place of each run: the owner's phone, tablet or Mac, Te
 `bun run docs:check` and the commit hook refuse a file that breaks these rules. A folder's name is lowercase words joined by hyphens. A run file's name starts with the run's date as eight digits. Each folder has a README with all six facts and a "Known issues" section, and at least one run. Each run file has a `Plans:` paragraph, then the `Result:`, which may take several paragraphs to the end of the file.
 
 A branch from before the split edited the old single table. [Branches and parallel work](pull-requests.md#a-branch-that-edited-the-old-table-of-tested-devices) says how to move its edits into run files.
+
+## iPad Pro 11-inch, iPadOS 26.7, 19 October 2026
+
+- Brave on iOS is WebKit, so this run measures the same engine as Safari. Two-step upscaler probe, canvas 1920x1080, render scale 0.5, FXAA on, timer wall clock with `gl.finish`, seven samples of twenty rounds. Head 5949e07cf.
+- Mip bias 0: today's pass 2.184 ms, GSR 0.537 ms, so GSR is 1.647 ms faster. Image scores at the engine's setting favour GSR: SSIM 0.9552 against 0.9532, MAE 1.48 against 1.49.
+- Mip bias -1: today's pass 2.434 ms, GSR 0.732 ms, so GSR is 1.702 ms faster. GSR scores slightly lower there: SSIM 0.9586 against 0.9655, MAE 1.34 against 1.20.
+- The rule that decides the upscaler asks for a cost inside 0.2 ms. GSR is faster by more than eight times that on this iPad, and better at the engine's mip bias, so the iPad keeps GSR 1.
