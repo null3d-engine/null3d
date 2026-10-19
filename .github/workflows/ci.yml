@@ -32,10 +32,11 @@ env:
   BUN_VERSION: "1.4.3"
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
-  # Only main's runs save caches, and every run restores main's. A pull request's or a merge queue
-  # run's cache serves only that pull request or queue branch, and their saves filled GitHub's cache
-  # limit for the repository, so that GitHub dropped main's caches.
-  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
+  # Every run saves its caches, and every run restores its own branch's first, then main's. A pull
+  # request's cache serves only that pull request, so its next push reuses what this one built. The
+  # repository's cache limit leaves room for those beside main's, which an older, smaller limit did
+  # not ([CI's jobs](.dev/pull-requests.md#cis-jobs)).
+  SAVE_CACHES: true
   # The commit that main pointed to before this push, empty on other events. The size check compares
   # with it, and the commit check reads the commits after it: after a merge and a push, the commit
   # before (HEAD^) is the branch's own, not main's.
@@ -219,10 +220,11 @@ jobs:
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
-    # The one test that builds every shader, twice, takes longer than all the others together, so
-    # it runs in a job of its own beside them. The test that prepares every shader module through
-    # the WebAssembly compiler builds the whole shader set as well, so it has a third job. The
-    # profiles in .config/nextest.toml split the tests.
+    # The test that builds every shader takes longer than all the others together, and the test
+    # that prepares every shader module through the WebAssembly compiler builds the whole shader set
+    # as well, so each runs in shards of its own beside the other tests. The profiles in
+    # .config/nextest.toml split the tests. The shader crates build optimized here, as the build
+    # job's shader tool does.
     # --no-fail-fast runs every test after a failure, so a run reports every failing test.
     name: rust-tests (${{ matrix.part }})
     env:
@@ -231,9 +233,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Every CI job should take at most 15 minutes. The other tests stop at 35, the shader module
-    # exports at 90, and the whole shader build at 135, until the shader build runs on every core.
-    # The M2 feature families multiply the builds, and the determinism test builds them twice.
+    # Every CI job should take at most 15 minutes. Each part's limit sits in the matrix.
     timeout-minutes: ${{ matrix.limit }}
     strategy:
       fail-fast: false
@@ -261,71 +261,180 @@ jobs:
             tests: --workspace --profile ci
             partition: count:4/4
             limit: 35
-          # A shard builds every nth entry of the shader manifest, so four jobs share the work
-          # that one job took. The first shard also builds the determinism entries.
+          # The whole shader build's shards split the manifest by each entry's build cost, and
+          # split the costliest entries' builds across shards too, so the shards take about equal
+          # time. The determinism check builds a few entries twice and compares the two builds, in a
+          # job of its own.
           - part: the whole shader build (1 of 4)
             id: whole-shader-build-1
             tests: -p null3d-shaders --test build --profile whole-shader-build
             shard: 0/4
-            limit: 60
+            limit: 25
           - part: the whole shader build (2 of 4)
             id: whole-shader-build-2
             tests: -p null3d-shaders --test build --profile whole-shader-build
             shard: 1/4
-            limit: 60
+            limit: 25
           - part: the whole shader build (3 of 4)
             id: whole-shader-build-3
             tests: -p null3d-shaders --test build --profile whole-shader-build
             shard: 2/4
-            limit: 60
+            limit: 25
           - part: the whole shader build (4 of 4)
             id: whole-shader-build-4
             tests: -p null3d-shaders --test build --profile whole-shader-build
             shard: 3/4
-            limit: 60
-          # Three jobs share the build of every shader module through the WebAssembly compiler,
-          # each on every third shader of the manifest.
-          - part: the shader module exports (1 of 3)
+            limit: 25
+          - part: the shader build's determinism
+            id: shader-determinism
+            tests: -p null3d-shaders --test build --profile whole-shader-build
+            shard: determinism
+            limit: 25
+          # The module exports test prepares whole entries, so the costliest entry sets the longest
+          # shard's time, and a third shard would not shorten it.
+          - part: the shader module exports (1 of 2)
             id: shader-module-exports-1
             tests: -p null3d-shaders-wasm --profile shader-module-exports
-            shard: 0/3
-            limit: 60
-          - part: the shader module exports (2 of 3)
+            shard: 0/2
+            limit: 45
+          - part: the shader module exports (2 of 2)
             id: shader-module-exports-2
             tests: -p null3d-shaders-wasm --profile shader-module-exports
-            shard: 1/3
-            limit: 60
-          - part: the shader module exports (3 of 3)
-            id: shader-module-exports-3
-            tests: -p null3d-shaders-wasm --profile shader-module-exports
-            shard: 2/3
-            limit: 60
+            shard: 1/2
+            limit: 45
     steps:
       - uses: actions/checkout@v5
+      # A shader part reads only the shader crates, the crate they depend on, the Cargo files, the
+      # toolchain and nextest's settings. When an earlier run passed this part with the same files,
+      # the part passes again without building anything: the key below hashes exactly those files.
+      - name: The key of this part's inputs
+        id: inputs
+        if: matrix.shard
+        run: echo "key=passed-v1-${{ matrix.id }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
+      - name: Find an earlier pass with the same inputs
+        id: passed
+        if: matrix.shard
+        uses: actions/cache/restore@v4
+        with:
+          path: target/passed
+          key: ${{ steps.inputs.outputs.key }}
+          lookup-only: true
       - name: Install the pinned Rust toolchain
+        if: steps.passed.outputs.cache-hit != 'true'
         run: rustup toolchain install
+      - uses: ./.github/actions/optimized-shader-crates
+        if: steps.passed.outputs.cache-hit != 'true'
       - uses: Swatinem/rust-cache@v2
+        if: steps.passed.outputs.cache-hit != 'true'
         with:
           key: ${{ hashFiles('Cargo.toml') }}-${{ matrix.id }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: taiki-e/install-action@v2
+        if: steps.passed.outputs.cache-hit != 'true'
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --no-fail-fast ${{ matrix.tests }} ${{ matrix.partition && format('--partition {0}', matrix.partition) || '' }}
+      - if: steps.passed.outputs.cache-hit != 'true'
+        run: cargo nextest run --no-fail-fast ${{ matrix.tests }} ${{ matrix.partition && format('--partition {0}', matrix.partition) || '' }}
       # nextest runs no documentation tests. One job splits the tests, so the doc tests run in it.
       - if: matrix.id == 'ci-1'
         run: cargo test --workspace --doc --no-fail-fast
+      - name: Record this part's pass of these inputs
+        if: matrix.shard && steps.passed.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p target/passed
+          echo "$GITHUB_SHA" > target/passed/commit
+      - if: matrix.shard && steps.passed.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target/passed
+          key: ${{ steps.inputs.outputs.key }}
+      - name: Name the earlier pass
+        if: steps.passed.outputs.cache-hit == 'true'
+        run: echo "These inputs passed this part in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
+
+  shader-entries:
+    # The shader build's entries, compiled in shards at once into the per-entry cache, so that the
+    # build job compiles none of them itself. Each shard takes a share of the manifest's entries by
+    # build cost. A run whose module set the Actions cache already holds has nothing to compile, so
+    # each shard stops after one cache lookup. Each shard uploads only the entries it compiled, and
+    # never saves the Actions cache: the build job saves the whole set. The textured standard
+    # material makes most of the builds, and a cache entry holds a whole entry, so its shard sets
+    # this job's time, and more shards would not shorten it.
+    name: shader-entries (${{ matrix.shard }} of ${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      # The same keys and branch scope as .github/actions/shaders reads and writes.
+      - id: keys
+        run: |
+          bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "scope=" >> "$GITHUB_OUTPUT"
+          else
+            echo "scope=branch-${{ github.ref_name }}-" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Find the whole module set of these inputs
+        id: whole
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ steps.keys.outputs.modules-dir }}
+            ${{ steps.keys.outputs.entries-dir }}
+          key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}
+          lookup-only: true
+      - name: Restore the entries that earlier runs compiled
+        if: steps.whole.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ steps.keys.outputs.modules-dir }}
+            ${{ steps.keys.outputs.entries-dir }}
+          key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}
+          restore-keys: |
+            shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}
+            shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
+      - name: Install the pinned Rust toolchain
+        if: steps.whole.outputs.cache-hit != 'true'
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        if: steps.whole.outputs.cache-hit != 'true'
+        with:
+          shared-key: shader-build-${{ hashFiles('Cargo.toml') }}
+          save-if: false
+      - name: Compile this shard's shader entries into the per-entry cache
+        if: steps.whole.outputs.cache-hit != 'true'
+        run: bun tools/shaders.ts --entries-shard $(( ${{ matrix.shard }} - 1 ))/${{ strategy.job-total }} --entries-out target/shader-entries
+      - uses: actions/upload-artifact@v4
+        if: steps.whole.outputs.cache-hit != 'true'
+        with:
+          name: shader-entries-${{ matrix.shard }}
+          path: target/shader-entries/
+          if-no-files-found: ignore
+          retention-days: 1
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
     # the shader compiler that the dev server runs on the WGSL in the test sketches, the asset
-    # tool's formats that the unit tests load, and the shader modules, which git does not keep, with the record of the inputs they were built from. The
-    # files are the same on every platform, so each job below downloads them instead of spending
-    # about 2 minutes to build them again.
+    # tool's formats that the unit tests load, and the shader modules, which git does not keep,
+    # with the record of the inputs they were built from. The files are the same on every platform,
+    # so each job below downloads them instead of spending about 2 minutes to build them again.
+    # The shader-entries jobs compile the shader entries that the caches lack, so the build reuses
+    # every entry and only writes the modules.
+    needs: shader-entries
     runs-on: ubuntu-latest
-    # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
-    # comes down when the shader build runs on every core.
-    timeout-minutes: 90
+    # A cold shader build takes most of the limit when an entry's shard has not run.
+    timeout-minutes: 60
     env:
       HUSKY: "0"
     steps:
@@ -333,15 +442,26 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       # The cache saves only when its key finds no full match. The key names the native shader
-      # build, which this job compiles too, so the saved cache holds it.
+      # build, which this job compiles too, so the saved cache holds it. The shader-entries jobs
+      # restore the same cache.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ hashFiles('Cargo.toml') }}-shader-build
+          shared-key: shader-build-${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      - id: entry-keys
+        run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
+      # The entries that the shader-entries jobs compiled, into the per-entry cache under the
+      # compiler's stamp. A run whose caches held every entry has none to download.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: shader-entries-*
+          merge-multiple: true
+          path: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
       # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
         uses: ./.github/actions/shaders
@@ -442,18 +562,51 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  wasm-checks:
-    # The size check: the files of the build job, and the engine test page built here, against the
-    # base's sizes from the size-base job. The build job builds the same files with the same flags,
-    # so the check builds no WebAssembly. A run on main then keeps its commit's sizes, as the base of
-    # the runs that build on it.
-    needs: [build, size-base, changes]
+  size-parts:
+    # The engine test page's sizes, measured in parts at once. The page builds in under a minute,
+    # and compressing its files at the highest gzip and Brotli levels is the size check's work: the
+    # first-use shader files hold almost all of the build's bytes. Each part builds the same page
+    # and measures its share of the files, on every core of its machine, and the wasm-checks job
+    # judges them together ([Benchmarks](.dev/benchmarks.md#download-size)).
+    name: size-parts (${{ matrix.part }} of ${{ strategy.job-total }})
+    needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Bundling the engine test page for each thread mode takes about 19 minutes once the
-    # shader set has the translucency builds, so the limit leaves room for a slower runner
-    # rather than cutting a check that is still measuring.
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - name: Measure this part of the engine test page's files
+        run: bun tools/build-wasm.ts --check-size --prebuilt --part ${{ matrix.part }}/${{ strategy.job-total }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: size-part-${{ matrix.part }}
+          path: target/size-parts/
+          if-no-files-found: error
+          retention-days: 1
+
+  wasm-checks:
+    # The size check: the files of the build job, and the engine test page's sizes from the
+    # size-parts jobs, against the base's sizes from the size-base job. The build job builds the
+    # same files with the same flags, so the check builds no WebAssembly. A run on main then keeps
+    # its commit's sizes, as the base of the runs that build on it.
+    needs: [build, size-base, size-parts, changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -473,8 +626,13 @@ jobs:
         with:
           name: size-base
           path: target/.size-base
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: size-part-*
+          path: target/size-parts
+          merge-multiple: true
       - name: Check the sizes of the build job's files against the base's build
-        run: bun tools/build-wasm.ts --check-size --prebuilt
+        run: bun tools/build-wasm.ts --check-size --prebuilt --judge-parts target/size-parts
       # The check writes the sizes before it judges them, so main keeps them also after a failure.
       - name: Keep the sizes of this commit of main
         if: "!cancelled() && github.event_name == 'push' && hashFiles('target/size-report.json') != ''"
@@ -490,31 +648,80 @@ jobs:
   shader-compiler:
     # The shader crate's build tests again through the build job's shader compiler, which must give
     # the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests.
+    # The repository's shader test splits into shards by build cost, as the whole shader build's
+    # does, and the first shard also runs the other tests. A shard whose inputs passed in an earlier
+    # run passes again without building, as the shader parts of rust-tests do.
+    name: shader-compiler (${{ matrix.part }} of ${{ strategy.job-total }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Its repository-wide shader test builds every shader, which takes longer than 35 minutes on one
-    # core. The limit comes down when the shader build runs on every core.
-    timeout-minutes: 90
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: 1, shard: 0/4 }
+          - { part: 2, shard: 1/4 }
+          - { part: 3, shard: 2/4 }
+          - { part: 4, shard: 3/4 }
     env:
       HUSKY: "0"
+      NULL3D_SHADER_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
+      # The shader compiler comes from the shader crates and the build tool, and the first shard's
+      # other tests read the Vite plugin and the packages' install as well.
+      - name: The key of this shard's inputs
+        id: inputs
+        run: echo "key=passed-v1-shader-compiler-${{ matrix.part }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/**', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+      - name: Find an earlier pass with the same inputs
+        id: passed
+        uses: actions/cache/restore@v4
+        with:
+          path: target/passed
+          key: ${{ steps.inputs.outputs.key }}
+          lookup-only: true
       - name: Install the pinned Rust toolchain
+        if: steps.passed.outputs.cache-hit != 'true'
         run: rustup toolchain install
+      - uses: ./.github/actions/optimized-shader-crates
+        if: steps.passed.outputs.cache-hit != 'true'
       - uses: Swatinem/rust-cache@v2
+        if: steps.passed.outputs.cache-hit != 'true'
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: oven-sh/setup-bun@v2
+        if: steps.passed.outputs.cache-hit != 'true'
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
+      - if: steps.passed.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
+        if: steps.passed.outputs.cache-hit != 'true'
         with:
           name: page-wasm
       - name: The shader compiler gives the native shader build's results
+        if: steps.passed.outputs.cache-hit != 'true' && matrix.part == 1
         run: bun run test:shader-compiler
+      - name: The shader compiler gives the native shader build's results, for this shard's entries
+        if: steps.passed.outputs.cache-hit != 'true' && matrix.part != 1
+        env:
+          NULL3D_SHADER_COMPILER: "1"
+        run: cargo test -p null3d-shaders --test build -- --exact the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule
+      - name: Record this shard's pass of these inputs
+        if: steps.passed.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p target/passed
+          echo "$GITHUB_SHA" > target/passed/commit
+      - if: steps.passed.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target/passed
+          key: ${{ steps.inputs.outputs.key }}
+      - name: Name the earlier pass
+        if: steps.passed.outputs.cache-hit == 'true'
+        run: echo "These inputs passed this shard in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
 
   packages:
     # The npm packages as a developer installs them: each public package packed as the publish job
@@ -551,41 +758,24 @@ jobs:
         run: bun run test:packages
 
   browser:
-    # The browser tests, the image test manifest among them. Most run in shards at once. Playwright
-    # splits them by count, in its order of the tests, and the weights below give each shard its
-    # share, so that the shards take about the same time. The tests that run alone check frame
-    # rates, times and allocations, which a heavy test beside them can upset, so they run one at a
-    # time in a job of their own (tests/lib/alone.ts). `bun run test:browser-weights` works out the
-    # weights, and .dev/image-tests.md says when to retune them and when to add a shard.
-    name: browser (${{ matrix.part }})
+    # The browser tests, the image test manifest among them, in shards at once. Playwright splits
+    # them by count, in its order of the tests, and the weights below give each shard its share, so
+    # that the shards take about the same time. `bun run test:browser-weights` works out the
+    # weights, and .dev/image-tests.md says when to retune them and when to add a shard. The tests
+    # that run alone and S6's image tests have jobs of their own below.
+    name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, changes]
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    # A shard's tests take about 12 minutes, with the median times that the weights come from, and
+    # A shard's tests take about 6 minutes, with the median times that the weights come from, and
     # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
     # the median, so the limit leaves room for that rather than for a hang.
-    timeout-minutes: 25
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { part: shard 1 of 15, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/15 }
-          - { part: shard 2 of 15, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/15 }
-          - { part: shard 3 of 15, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/15 }
-          - { part: shard 4 of 15, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/15 }
-          - { part: shard 5 of 15, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/15 }
-          - { part: shard 6 of 15, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/15 }
-          - { part: shard 7 of 15, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/15 }
-          - { part: shard 8 of 15, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/15 }
-          - { part: shard 9 of 15, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/15 }
-          - { part: shard 10 of 15, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/15 }
-          - { part: shard 11 of 15, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/15 }
-          - { part: shard 12 of 15, id: 12, tests: --grep-invert "@alone|$CITY_TESTS" --shard=12/15 }
-          - { part: shard 13 of 15, id: 13, tests: --grep-invert "@alone|$CITY_TESTS" --shard=13/15 }
-          - { part: shard 14 of 15, id: 14, tests: --grep-invert "@alone|$CITY_TESTS" --shard=14/15 }
-          - { part: shard 15 of 15, id: 15, tests: --grep-invert "@alone|$CITY_TESTS" --shard=15/15 }
-          - { part: tests that run alone, id: alone, tests: --grep @alone --grep-invert "the showcase HUD" --workers=1 }
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -606,14 +796,50 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "118:154:283:511:209:143:80:47:193:199:24:28:28:138:308"
-        run: bun run test:browser ${{ matrix.tests }}
+          PWTEST_SHARD_WEIGHTS: "59:59:77:77:141:142:255:256:104:105:71:72:40:40:23:24:96:97:99:100:12:12:14:14:14:14:69:69:154:154"
+        run: bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results-${{ matrix.id }}
+          name: browser-test-results-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  browser-alone:
+    # The tests that run alone check frame rates, times and allocations, which a heavy test beside
+    # them can upset (tests/lib/alone.ts). Each runs one at a time on a machine of its own shard, and
+    # the shards split them by count. The showcase HUD test has a job of its own below.
+    name: browser (tests that run alone, ${{ matrix.shard }} of ${{ strategy.job-total }})
+    needs: [build, changes]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/samples
+      - name: The tests that run alone, on SwiftShader, WebGPU and WebGL2
+        run: bun run test:browser --grep @alone --grep-invert "the showcase HUD" --workers=1 --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-alone-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
 
@@ -678,16 +904,24 @@ jobs:
           if-no-files-found: ignore
 
   showcase:
-    # The showcase HUD test builds the night town in the page, waits for its first frame on the
-    # software GPU, then reads the canvas many times between switches. That took 16.4 minutes on a
-    # passing run, inside the alone job whose budget is 18. A slower machine ran out. The test has a
-    # job of its own, with room for a machine that runs it slowly, as the alone job has for the
-    # others.
-    name: browser (the showcase HUD)
+    # The showcase HUD tests build the night town in the page, wait for its first frame on the
+    # software GPU, then read the canvas many times between switches. As one test that took 16.4
+    # minutes on a passing run, and a slower machine ran past 18. The file holds three tests, each on
+    # a fresh page: the toasts, the sky and the fog, and the environment light. Each runs on a
+    # machine of its own, with room under the limit for a machine that runs it slowly, above the
+    # tests' own budget, so a page that stops drawing fails by the test's name.
+    name: browser (the showcase HUD, ${{ matrix.part }})
     needs: [build, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: toasts, id: toasts, grep: the showcase HUD shows its toasts }
+          - { part: sky and fog, id: sky-fog, grep: the showcase HUD keeps the sky and the fog }
+          - { part: environment, id: environment, grep: the showcase HUD keeps the environment light }
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -703,11 +937,11 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       - name: The showcase HUD test on SwiftShader
-        run: bun run test:browser image/showcase-hud.spec.ts --workers=1
+        run: bun run test:browser image/showcase-hud.spec.ts --grep "${{ matrix.grep }}" --workers=1
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results-showcase
+          name: browser-test-results-showcase-${{ matrix.id }}
           path: test-results/
           if-no-files-found: ignore
 
@@ -745,21 +979,22 @@ jobs:
           if-no-files-found: ignore
 
   bench:
-    # The benchmark pages' tests on SwiftShader, in two shards of about equal measured time.
+    # The benchmark pages' tests on SwiftShader, in shards of about equal measured time.
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
-    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, and
-    # shard 2 every other test, so each test runs in exactly one shard.
+    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, the
+    # parity shards the tests against three.js, and shard 2 every other test, so each test runs in
+    # exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
-    # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
-    # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
-    # Shard 2 takes every parity test. Each scene's tests run in order in one worker, and the
-    # scenes spread over both workers. In main's run 38176334909 (11 October 2026), the parity
-    # tests took 13.2 minutes one after another, and shard 2's other tests 3.1 minutes, so shard
-    # 2's tests should take about 8.2 minutes on two workers. Shard 1's page tests ended at 7.2.
-    # .dev/benchmarks.md holds the figures.
+    # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader. The engine's limit
+    # of frames in flight failed open then (.dev/implementation-notes.md).
+    # Each parity scene's tests run in order in one worker, and Playwright's --shard keeps such a
+    # group together, so the parity shards split the scenes by count. In main's run 38176334909
+    # (11 October 2026), the parity tests took 13.2 minutes one after another, and the other tests
+    # beside them 3.1 minutes. Shard 1's page tests ended at 7.2. .dev/benchmarks.md holds the
+    # figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
-    # Every build of the pages holds S6's, so both shards need the city's files.
+    # Every build of the pages holds S6's, so every shard needs the city's files.
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
@@ -771,13 +1006,21 @@ jobs:
       matrix:
         include:
           - shard: 1
-            select: --grep
+            tests: --grep "$BENCH_SHARD_1"
           - shard: 2
-            select: --grep-invert
+            tests: --grep-invert "$BENCH_SHARD_1|$PARITY_TESTS"
+          - shard: 3
+            tests: parity.spec.ts --shard=1/3
+          - shard: 4
+            tests: parity.spec.ts --shard=2/3
+          - shard: 5
+            tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
+      # The parity tests, by the title of each scene's group in bench/tests/parity.spec.ts.
+      PARITY_TESTS: 'against three\.js'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -794,7 +1037,7 @@ jobs:
         with:
           mode: download
       - name: The benchmark pages on SwiftShader
-        run: bun run test:bench ${{ matrix.select }} "$BENCH_SHARD_1"
+        run: bun run test:bench ${{ matrix.tests }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -849,7 +1092,7 @@ jobs:
     # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
     # a missing adapter is reported as a skip. The shards split the plan by each page's expected
-    # time in Safari, and a unit test fails when a shard's pages would pass 10 minutes there.
+    # time in Safari, and a unit test fails when a shard's pages would pass 5 minutes there.
     # Safari compiles the shader builds without the coat and sheen bit and a sample of those with
     # it, and Firefox compiles every build (D-147).
     # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
@@ -875,8 +1118,8 @@ jobs:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        shards: [10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        shards: [20]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -949,17 +1192,20 @@ jobs:
     needs:
       - changes
       - commits
+      - shader-entries
       - docs-and-tools
       - heavy-checks
       - rust-lint
       - rust-tests
       - build
       - size-base
+      - size-parts
       - wasm-checks
       - shader-compiler
       - packages
       - city
       - browser
+      - browser-alone
       - browser-city
       - showcase
       - skill-sketches
@@ -995,9 +1241,10 @@ jobs:
         run: |
           jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
           jq -e '.changes.outputs as $run | {
-              "rust-lint": "code", "rust-tests": "code", "size-base": "code", "wasm-checks": "code",
+              "rust-lint": "code", "rust-tests": "code", "size-base": "code", "size-parts": "code",
+              "wasm-checks": "code",
               "shader-compiler": "code", "packages": "code", "heavy-checks": "code",
-              "city": "full", "browser": "full",
+              "city": "full", "browser": "full", "browser-alone": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"

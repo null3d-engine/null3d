@@ -1,0 +1,18 @@
+name: Build the shader crates optimized
+description: >-
+  Writes a Cargo setting, for this job alone, that builds the shader crates optimized in the dev
+  profile, which the tests use. The workspace's dev profile optimizes only the dependencies, so the
+  crates' own code ran unoptimized in their tests, and a test of every shader took about four times
+  as long as the build job's optimized shader tool. Debug assertions stay on. Local builds keep the
+  workspace's profile.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p .cargo
+        printf '%s\n' \
+          '[profile.dev.package.null3d-shaders]' 'opt-level = 3' \
+          '[profile.dev.package.null3d-shaders-wasm]' 'opt-level = 3' >> .cargo/config.toml
+        cat .cargo/config.toml

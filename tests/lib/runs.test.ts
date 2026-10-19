@@ -913,23 +913,31 @@ describe('the checks plan', () => {
 		expect(reloads.map((shard) => shard.at(-1)?.id)).toEqual(['capabilities-reload']);
 	});
 
-	// CI runs the plan in each browser in the shards that its workflow names. A job should take at
-	// most about 12 minutes, and about 2 of them go to its setup, the dev server's start and the
-	// judging. .dev/devices.md says what to do when the pages need more. Safari compiles the sampled
-	// set of the shaders page, which this model counts.
-	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
+	// CI runs the plan in each browser in the shards that its workflow names. The shards run at the
+	// same time, so a run waits for the longest one: each holds at most about 5 minutes of pages,
+	// and about 2 more go to its setup, the dev server's start and the judging. Firefox compiles every
+	// shader build, so its shards take longer than this model of Safari's. .dev/devices.md says what
+	// to do when the pages need more. Safari compiles the sampled set of the shaders page, which this
+	// model counts.
+	it("keeps each of CI's shards at or under 5 minutes of pages in Safari", () => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
-		expect(workflow).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
-		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
+		// The real-browser job's own lines, from its name to the next job: other jobs have shard
+		// lists of their own.
+		const start = workflow.indexOf('\n  real-browsers:\n');
+		expect(start).toBeGreaterThan(0);
+		const end = workflow.slice(start + 1).search(/\n {2}[\w-]+:\n/);
+		const job = end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
+		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
 		expect(count).toBeGreaterThan(0);
 		// The matrix must list every shard from 1 to the count, or a shard never runs.
-		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflow)?.[1]?.split(',').map(Number);
+		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
-		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
+		expect(Math.max(...minutes)).toBeLessThanOrEqual(5);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {

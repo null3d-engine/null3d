@@ -73,15 +73,18 @@ describe('a measuring split into parts', () => {
 		return { name, built, weight: length, read: () => bytes };
 	});
 	/** Each part's record as the judge reads it back from the part's file. */
-	const records = (count: number): SizePart[] =>
-		Array.from({ length: count }, (_, i) =>
-			JSON.parse(JSON.stringify(measureSizePart(files, { index: i + 1, count }))),
+	const records = (count: number): Promise<SizePart[]> =>
+		Promise.all(
+			Array.from({ length: count }, async (_, i) =>
+				JSON.parse(JSON.stringify(await measureSizePart(files, { index: i + 1, count }))),
+			),
 		);
 
-	it('merges the parts into the sizes, in the order, that one measuring of every file gives', () => {
-		const whole = [...measureFiles(files)];
+	it('merges the parts into the sizes, in the order, that one measuring of every file gives', async () => {
+		const whole = [...(await measureFiles(files))];
+		expect(whole).toEqual(files.map(({ name, read }) => [name, measure(read())]));
 		for (const count of [1, 2, 3, 4, files.length, files.length + 3])
-			expect([...mergeSizeParts(records(count))]).toEqual(whole);
+			expect([...mergeSizeParts(await records(count))]).toEqual(whole);
 	});
 
 	it('puts each file in exactly one part, and keeps the parts close in weight', () => {
@@ -99,13 +102,14 @@ describe('a measuring split into parts', () => {
 		}
 	});
 
-	it('refuses a missing part, a part there twice, parts of other counts or builds, and a stray size', () => {
-		const three = records(3);
+	it('refuses a missing part, a part there twice, parts of other counts or builds, and a stray size', async () => {
+		const three = await records(3);
 		const [one, two, last] = three as [SizePart, SizePart, SizePart];
 		expect(() => mergeSizeParts([])).toThrow('no part of the size measuring');
 		expect(() => mergeSizeParts([one, two])).toThrow('expected parts 1 to 3, each once');
 		expect(() => mergeSizeParts([one, two, two])).toThrow('expected parts 1 to 3, each once');
-		expect(() => mergeSizeParts([one, two, records(4)[2] as SizePart])).toThrow(
+		const fourth = (await records(4))[2] as SizePart;
+		expect(() => mergeSizeParts([one, two, fourth])).toThrow(
 			'part 3 of 4 cannot merge with parts of 3',
 		);
 		expect(() => mergeSizeParts([one, two, { ...last, build: 'another' }])).toThrow(

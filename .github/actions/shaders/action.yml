@@ -28,8 +28,9 @@ runs:
       run: |
         bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
         echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
-        # A branch keeps its own shader entries, so the next push to it restores what the last one
-        # built. Main keeps the shared cache that every run restores.
+        # Each branch keeps its own shader entries, so the next push to it restores what the last
+        # one built, and restores main's when it has none. A pull request's run keeps its entries
+        # under the pull request's merge ref, which the next push to it shares.
         if [ "${{ github.ref_name }}" = "main" ]; then
           echo "scope=" >> "$GITHUB_OUTPUT"
         else
@@ -93,8 +94,9 @@ runs:
         find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$INPUTS" -exec rm -rf {} +
         find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$STAMP" -exec rm -rf {} +
         du -sh "$MODULES" "$ENTRIES"
-    # Main saves the module set and the entries together. A branch saves its entries alone: they are
-    # the expensive part, and the shared cache keeps the repository's room for main's own.
+    # A workflow whose SAVE_CACHES is true saves the module set and the entries together. A branch
+    # run of a workflow that saves only on main still saves its entries alone: they are the
+    # expensive part.
     - uses: actions/cache/save@v4
       if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
       with:

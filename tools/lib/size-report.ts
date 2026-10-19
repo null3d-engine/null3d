@@ -11,8 +11,10 @@
 // CI can split the measuring into parts that run at the same time: each part builds the same page
 // and measures its own share of the files, and one step merges the parts' sizes and judges them.
 import { createHash } from 'node:crypto';
+import { availableParallelism } from 'node:os';
 import { posix } from 'node:path';
-import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { brotliCompress, brotliCompressSync, constants, gzip, gzipSync } from 'node:zlib';
 
 /**
  * The ways a host can send a file, as the report's columns: as it is, with gzip, or with Brotli.
@@ -33,11 +35,23 @@ export type Budget = Readonly<Record<Column, number>>;
  * as a host that compresses its files once, when it deploys them, sends them.
  */
 export function measure(bytes: Buffer): SizeEntry {
-	const gzip = gzipSync(bytes, { level: 9 }).length;
-	const brotli = brotliCompressSync(bytes, {
-		params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
-	}).length;
-	return { raw: bytes.length, gzip, brotli };
+	const gzipped = gzipSync(bytes, GZIP_OPTIONS).length;
+	const brotli = brotliCompressSync(bytes, BROTLI_OPTIONS).length;
+	return { raw: bytes.length, gzip: gzipped, brotli };
+}
+
+const GZIP_OPTIONS = { level: 9 };
+const BROTLI_OPTIONS = { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } };
+const gzipAsync = promisify(gzip);
+const brotliAsync = promisify(brotliCompress);
+
+/** [`measure`]'s sizes, with both compressions on the runtime's worker threads. */
+async function measureAsync(bytes: Buffer): Promise<SizeEntry> {
+	const [gzipped, brotli] = await Promise.all([
+		gzipAsync(bytes, GZIP_OPTIONS),
+		brotliAsync(bytes, BROTLI_OPTIONS),
+	]);
+	return { raw: bytes.length, gzip: gzipped.length, brotli: brotli.length };
 }
 
 /** A file of a page's build that the size report measures. */
@@ -52,17 +66,26 @@ export interface ReportFile {
 	read: () => Buffer;
 }
 
-/** The size of each of `files`, by name, in their order. `onMeasured` follows each file. */
-export function measureFiles(
+/**
+ * The size of each of `files`, by name, in their order. `onMeasured` follows each file as it ends.
+ * The files compress on every core at once: as many at a time as the machine has cores, each read
+ * only when its turn comes, so the memory held stays a few files.
+ */
+export async function measureFiles(
 	files: readonly ReportFile[],
 	onMeasured?: (file: ReportFile) => void,
-): Map<string, SizeEntry> {
-	const sizes = new Map<string, SizeEntry>();
-	for (const file of files) {
-		sizes.set(file.name, measure(file.read()));
-		onMeasured?.(file);
-	}
-	return sizes;
+): Promise<Map<string, SizeEntry>> {
+	const measured = new Array<SizeEntry>(files.length);
+	let next = 0;
+	const worker = async () => {
+		for (let at = next++; at < files.length; at = next++) {
+			const file = files[at] as ReportFile;
+			measured[at] = await measureAsync(file.read());
+			onMeasured?.(file);
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(availableParallelism(), files.length) }, worker));
+	return new Map(files.map(({ name }, at) => [name, measured[at] as SizeEntry]));
 }
 
 /** One part of a measuring split into `count` parts: `index` runs from 1 to `count`. */
@@ -131,11 +154,11 @@ function buildHash(files: readonly Pick<ReportFile, 'name' | 'built'>[]): string
 }
 
 /** Measures the share of `files` that `spec` names, and returns the record that the part writes. */
-export function measureSizePart(
+export async function measureSizePart(
 	files: readonly ReportFile[],
 	spec: PartSpec,
 	onMeasured?: (file: ReportFile) => void,
-): SizePart {
+): Promise<SizePart> {
 	const share = partShare(files, spec);
 	const own = files.filter(({ name }) => share.has(name));
 	return {
@@ -143,7 +166,7 @@ export function measureSizePart(
 		of: spec.count,
 		build: buildHash(files),
 		files: files.map(({ name }) => name),
-		sizes: Object.fromEntries(measureFiles(own, onMeasured)),
+		sizes: Object.fromEntries(await measureFiles(own, onMeasured)),
 	};
 }
 

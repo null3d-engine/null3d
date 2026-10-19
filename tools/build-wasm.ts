@@ -897,7 +897,7 @@ const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
  * sizes to the part's file for the run that judges every part. It prints its progress, since the
  * compression takes minutes, and judges nothing.
  */
-function writeSizePart(spec: PartSpec): void {
+async function writeSizePart(spec: PartSpec): Promise<void> {
 	const files = engineTestPageFiles();
 	const share = partShare(files, spec);
 	const total = files.reduce((sum, file) => sum + (share.has(file.name) ? file.weight : 0), 0);
@@ -907,7 +907,7 @@ function writeSizePart(spec: PartSpec): void {
 	const started = performance.now();
 	let done = 0;
 	let tenths = 0;
-	const record = measureSizePart(files, spec, ({ weight }) => {
+	const record = await measureSizePart(files, spec, ({ weight }) => {
 		done += weight;
 		const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
 		if (reached <= tenths) return;
@@ -1138,7 +1138,7 @@ async function main(): Promise<void> {
 	// a build here otherwise: the same sizes in the same order either way.
 	const page =
 		options.judgeParts === undefined
-			? measureFiles(engineTestPageFiles())
+			? await measureFiles(engineTestPageFiles())
 			: readSizeParts(options.judgeParts);
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
