@@ -104,7 +104,9 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
-		shadow: { distance: 40, normalBias: 0.04 },
+		// Two cascades over a wider distance: one box fitted to the camera dropped casters at its
+		// edge as the camera moved, which made the shadows under the trees change.
+		shadow: { distance: 60, normalBias: 0.04, cascades: 2 },
 	});
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 	// occlusion starts on, so the scene's shadows read.
