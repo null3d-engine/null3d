@@ -319,4 +319,25 @@ describe('listedFiles', () => {
 			},
 		]);
 	});
+
+	it('gives a copied module every shared table that it loads', () => {
+		const bundle = {
+			'assets/shaders-skinning-wgsl-d.js': asset(
+				'assets/shaders-skinning-wgsl-d.js',
+				'const PART_0 = 1;',
+				['node_modules/@null3d/engine/lib/generated/shaders-skinning-wgsl.js'],
+			),
+		} as Rollup.OutputBundle;
+		const tables = new Map([
+			[
+				'assets/shaders-skinning-wgsl-d.js',
+				['assets/shader-paragraphs-wgsl.js', 'assets/shader-paragraphs-wgsl-skinning.js'],
+			],
+		]);
+		const [file] = listedFiles(bundle, new Map(), null3dPackages(), root, tables);
+		expect(file?.loads).toEqual([
+			'assets/shader-paragraphs-wgsl.js',
+			'assets/shader-paragraphs-wgsl-skinning.js',
+		]);
+	});
 });
