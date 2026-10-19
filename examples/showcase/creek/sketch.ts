@@ -209,6 +209,10 @@ export default defineSketch(async (ctx) => {
 				case 'fireflies':
 					air.setFireflies(on);
 					break;
+				case 'fog':
+					// The mist over the water is haze too, so the fog switch hides it with the fog.
+					air.setMist(on);
+					break;
 				case 'ao':
 					post.set({ ao: on ? { radius: 0.5 } : false });
 					break;

@@ -96,7 +96,8 @@ describe('createShowcaseEffects', () => {
 		effects.set('fog', false);
 		effects.set('shadows', false);
 		expect(shown).toEqual(['sky false', 'fog false']);
-		expect(seen).toEqual(['shadows false']);
+		// A scene may tie its own haze to the fog switch, so it sees the fog and sky picks too.
+		expect(seen).toEqual(['sky false', 'fog false', 'shadows false']);
 	});
 
 	it('turns the lens on and off through the camera and the post pass', () => {
@@ -148,7 +149,7 @@ describe('createShowcaseEffects', () => {
 		expect(calls).toEqual(['select Manual', 'refresh']);
 		// A toggle posts its id: the router flips the state the scene holds.
 		send('atmosphere', 'sky');
-		expect(seen).toEqual(['mood Dawn']);
+		expect(seen).toEqual(['mood Dawn', 'sky false']);
 		expect(effects.on.sky).toBe(false);
 		expect(calls).toEqual(['select Manual', 'refresh', 'refresh']);
 		send('post', 'dof');
@@ -158,6 +159,6 @@ describe('createShowcaseEffects', () => {
 		expect(calls).toEqual(['select Manual', 'refresh', 'refresh', 'refresh', 'refresh']);
 		// A mood that the scene does not know changes nothing.
 		send('mood', 'Noon');
-		expect(seen).toEqual(['mood Dawn', 'focal 50', 'preset medium']);
+		expect(seen).toEqual(['mood Dawn', 'sky false', 'focal 50', 'preset medium']);
 	});
 });

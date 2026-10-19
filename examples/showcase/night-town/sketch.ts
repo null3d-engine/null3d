@@ -146,6 +146,10 @@ export default defineSketch(async (ctx) => {
 				case 'snow':
 					air.setSnow(on);
 					break;
+				case 'fog':
+					// The mist that lies over the square is haze too, so the fog switch hides it.
+					air.setMist(on);
+					break;
 				case 'contact':
 					sun.setShadow({ contactDistance: on ? 0.25 : 0 });
 					break;

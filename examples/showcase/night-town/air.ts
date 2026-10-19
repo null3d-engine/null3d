@@ -35,6 +35,8 @@ export async function createAir(
 	update(t: number): void;
 	fit(preset: QualityPreset): void;
 	setSnow(on: boolean): void;
+	/** Shows or hides the mist over the square, which the fog switch owns. */
+	setMist(on: boolean): void;
 }> {
 	const { scene } = ctx;
 	const next = random(191);
@@ -78,6 +80,9 @@ export async function createAir(
 		},
 		setSnow(on) {
 			snow.setActiveCount(on ? snowCount : 0);
+		},
+		setMist(on) {
+			mist.setActiveCount(on ? MIST : 0);
 		},
 		update(t) {
 			const { positions: sp, sizes: ss, colors: sc } = snow;

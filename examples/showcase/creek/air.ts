@@ -140,6 +140,8 @@ export async function createAir(
 	update(t: number): void;
 	setMood(mood: Mood): void;
 	setFireflies(on: boolean): void;
+	/** Shows or hides the mist over the water, which the fog switch owns. */
+	setMist(on: boolean): void;
 }> {
 	const { scene } = ctx;
 	const next = random(71);
@@ -180,6 +182,8 @@ export async function createAir(
 	for (let k = 0; k < LEAVES; k++) leaves.frames[k] = k % 4;
 	let glow: Rgb = LOOK.Afternoon.motes;
 	let fireflies = false;
+	/** False while the fog is off, which hides the mist with it. */
+	let mistShown = true;
 	return {
 		setMood(mood) {
 			const look = LOOK[mood];
@@ -188,12 +192,16 @@ export async function createAir(
 			// goes into each row's color.
 			glow = look.motes;
 			motes.setActiveCount(glow[0] === 0 && !fireflies ? 0 : MOTES);
-			mist.setActiveCount(look.mistOpacity === 0 ? 0 : MIST);
+			mist.setActiveCount(!mistShown || look.mistOpacity === 0 ? 0 : MIST);
 			mist.material.set({ color: look.mist, opacity: look.mistOpacity });
 		},
 		setFireflies(on) {
 			fireflies = on;
 			motes.setActiveCount(on || glow[0] !== 0 ? MOTES : 0);
+		},
+		setMist(on) {
+			mistShown = on;
+			mist.setActiveCount(on ? MIST : 0);
 		},
 		update(t) {
 			// Leaves: each falls from a crown over its own time, swaying and spinning, carried on the

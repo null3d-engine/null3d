@@ -87,7 +87,10 @@ export function createShowcaseEffects(
 	// The stage starts with every part on, so a part that the scene starts with off must be turned
 	// off now; the HUD state and the scene then agree, and the button reads the scene's real state.
 	for (const part of ['sky', 'fog', 'environment'] as const)
-		if (start[part] === false) stage.show(part, false);
+		if (start[part] === false) {
+			stage.show(part, false);
+			apply(part, false);
+		}
 	const settings = { dof: { ...DSLR_LENS, focusPoint: focus } };
 
 	/** Turns the lens on or off: a long lens wide open, or the scene's own fov. */
@@ -104,8 +107,10 @@ export function createShowcaseEffects(
 			case 'sky':
 			case 'fog':
 			case 'environment':
-				// The stage writes the look every frame, so it owns these three switches.
+				// The stage writes the look every frame, so it owns these three switches. A scene may
+				// hang its own haze on the fog switch, such as the mist over its water.
 				stage.show(id, lit);
+				apply(id, lit);
 				break;
 			case 'shadows':
 				sun.setCastShadows(lit);
