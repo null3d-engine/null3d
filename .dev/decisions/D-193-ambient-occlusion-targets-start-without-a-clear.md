@@ -4,9 +4,10 @@ Status: decided. 19 October 2026. Task: M2-R33.
 
 Summary: Each of ambient occlusion's three steps draws every texel of its target that a later pass
 reads. Every read clamps inside the drawn corner. On WebGL2 those targets therefore start from what
-the texture holds, not from a clear. A Safari 27 iPhone spent about 0.95 ms on each clear. A clear
-covers the whole target at any render scale, so the cost was 3.6 ms a frame at render scales 1 and
-0.5 alike.
+the texture holds, not from a clear. A Safari 27 iPhone spent about 0.95 ms on each clear, and a
+clear covers the whole target at any render scale. The clears turned out not to own the 3.6 ms that
+ambient occlusion adds on that phone (see the addendum), so the decision rests on the whole-target
+cost alone.
 
 ## Question
 
@@ -73,3 +74,15 @@ Every read of these targets clamps inside the drawn corner. The horizon and deno
 - The WebGL2 image tests of ambient occlusion must match their references unchanged.
 - The engine's docs for the render graph name the exception. A target is cleared at its first write
   only when its writer leaves a texel that a later pass reads.
+
+## Addendum, 20 October 2026
+
+The cloud run that this decision asked for measured the same cost after the change. On an iPhone 18
+Pro in Safari 27.0 the render worker went from 0.78 to 4.44 ms at render scale 1, and from 0.88 to
+4.44 ms at 0.5, at `7c69473f9`, which holds the change. The clears were therefore not the 3.6 ms
+that ambient occlusion adds on that phone. The cost is flat across render scales and the frame holds
+60 frames a second, so it is a wait at the frame's end, not slow frames. The horizon search and the
+denoise draws, or the frame's fence, own what is left. The change stays: a clear still costs the
+whole target, and the targets read only what their steps write. Two device measurements decide
+what is left: a call profile of the frame, and a run that forces contact shadows, which skip the
+horizon search. The records of both land in the tested-device pages with their figures.
