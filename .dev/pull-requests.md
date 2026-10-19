@@ -124,6 +124,17 @@ entries that import it, through `null3d::lighting` and `null3d::area_lights`, an
 [D-56](decisions/D-56-first-use-shader-files.md) gives the reasons and the key. CI keeps the same two
 shader folders in the Actions cache, under the same keys ([CI's jobs](#cis-jobs)).
 
+`bun tools/shaders.ts --entries-shard i/n` compiles shard `i` of `n`, counted from 0, of the
+manifest's entries. It stores them in the same per-entry cache and writes no module. It splits
+whole entries by build cost, as the shader tests do. An entry's key reads only its own source, its
+manifest table and the stamp, and a shard keeps every library module. So an entry that a shard
+stored is the entry that a whole build looks for. `--entries-out <folder>` copies the entries that the run stored into
+the folder, and none that the cache held before. Several machines can then each fill a share of the
+cache. A build that first copies their folders into `<entries-dir>/<stamp>`, the folder that
+`bun tools/shaders.ts --cache-keys` names, compiles none of their entries. One entry,
+`standard_maps`, makes 77.8% of the builds, so its shard still takes about three quarters of a whole
+build. A cache entry per part of an entry would remove that limit.
+
 ### A clash on a generated file
 
 Never merge a generated file by hand. Take main's side, run the file's generator, and commit what the generator writes.
