@@ -649,7 +649,8 @@ jobs:
     # The shader crate's build tests again through the build job's shader compiler, which must give
     # the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests.
     # The repository's shader test splits into shards by build cost, as the whole shader build's
-    # does, and the first shard also runs the other tests. A shard whose inputs passed in an earlier
+    # does, and the first shard also runs the other tests. The compiler builds through WebAssembly
+    # on one thread for each process, so it needs twice the shards of the native build's test. A shard whose inputs passed in an earlier
     # run passes again without building, as the shader parts of rust-tests do.
     name: shader-compiler (${{ matrix.part }} of ${{ strategy.job-total }})
     needs: [build, changes]
@@ -660,10 +661,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: 1, shard: 0/4 }
-          - { part: 2, shard: 1/4 }
-          - { part: 3, shard: 2/4 }
-          - { part: 4, shard: 3/4 }
+          - { part: 1, shard: 0/8 }
+          - { part: 2, shard: 1/8 }
+          - { part: 3, shard: 2/8 }
+          - { part: 4, shard: 3/8 }
+          - { part: 5, shard: 4/8 }
+          - { part: 6, shard: 5/8 }
+          - { part: 7, shard: 6/8 }
+          - { part: 8, shard: 7/8 }
     env:
       HUSKY: "0"
       NULL3D_SHADER_SHARD: ${{ matrix.shard }}
@@ -768,7 +773,7 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    # A shard's tests take about 6 minutes, with the median times that the weights come from, and
+    # A shard's tests take about 11 minutes, with the median times that the weights come from, and
     # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
     # the median, so the limit leaves room for that rather than for a hang.
     timeout-minutes: 20
@@ -796,7 +801,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "59:59:77:77:141:142:255:256:104:105:71:72:40:40:23:24:96:97:99:100:12:12:14:14:14:14:69:69:154:154"
+          PWTEST_SHARD_WEIGHTS: "74:68:228:211:478:263:194:56:74:100:155:211:61:22:20:16:19:20:20:20:20:24:22:20:18:22:26:22:101:378"
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -1092,7 +1097,7 @@ jobs:
     # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
     # a missing adapter is reported as a skip. The shards split the plan by each page's expected
-    # time in Safari, and a unit test fails when a shard's pages would pass 5 minutes there.
+    # time in Safari, and a unit test fails when a shard's pages would pass 10 minutes there.
     # Safari compiles the shader builds without the coat and sheen bit and a sample of those with
     # it, and Firefox compiles every build (D-147).
     # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
@@ -1102,8 +1107,9 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
-    # Each shard should take at most about 12 minutes, setup included, which leaves room under the
-    # limit for a runner page that goes quiet: each one costs about a minute more.
+    # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
+    # runner page went quiet for 90 to 235 s on some shards, and a new runner page then ran the rest,
+    # so the limit leaves room for one such stop on top of a slow shard.
     #
     # The limit is NOT what fails this job, so it is left alone. Measured on run 38824482127: ten of
     # the fourteen shards hold an engine-production load item and every one of them failed, while the
@@ -1111,15 +1117,14 @@ jobs:
     # build before the browser opened, which cost 13.6 to 16.1 minutes of silence, and each shard was
     # then drawing a page when the limit killed it. That preparation is gone: the server compresses a
     # file when a load first asks for it, names a large file while it compresses it, and prints the
-    # builds it serves and the files they hold. The limit stays at 20 until a run's own item times
-    # say what a shard needs.
-    timeout-minutes: 20
+    # builds it serves and the files they hold.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-        shards: [20]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+        shards: [22]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -1139,8 +1144,10 @@ jobs:
           mode: download
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
         run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+      # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
+      # failed shard's candidates beside them.
       - uses: actions/upload-artifact@v4
-        if: failure() || cancelled()
+        if: always()
         with:
           name: real-browser-runs-${{ matrix.browser }}-${{ matrix.shard }}
           path: |

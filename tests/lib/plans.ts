@@ -1956,25 +1956,28 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
- * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
- * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
- * counts at their mean. A part with a set's own share of the programs counts by that share: the
- * sampled coat page compiles about 190 programs against a base part's 380, and it runs after the
- * base parts, so it counts at about 15 seconds, half a later part's time. The WebGPU pages of the
- * same names skip there.
+ * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
+ * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard,
+ * and a coat sample part took about 200. A shard holds three or four parts, so each one compiles
+ * first or second, and counts at that time. A sample part holds about half a base part's programs,
+ * and counts at half its time. The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
-	[/^shaders-coat-sample-/, 15],
-	[/^shaders-first-use-sample-/, 15],
-	[/^shaders-/, 48],
+	[/^shaders-coat-sample-/, 60],
+	[/^shaders-first-use-sample-/, 60],
+	[/^shaders-/, 120],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
 	[/^image-demo-creek-webgl2-/, 22],
 	[/restarts/, 20],
 ];
 
-/** The mean time of every other page of the plan there, the skipped pages among them. */
-const PAGE_SECONDS = 1.5;
+/**
+ * The mean time of every other page of the plan there, the skipped pages among them. In run
+ * 39291513923 the shards held about 80 other pages each and took 8 to 16 minutes, about twice what
+ * a mean of 1.5 seconds gave.
+ */
+const PAGE_SECONDS = 2.5;
 
 /** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
 export function expectedSeconds({ id }: { id: string }): number {

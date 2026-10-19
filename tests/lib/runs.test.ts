@@ -274,6 +274,26 @@ describe('waitForRunners', () => {
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
 	});
 
+	it('runs a page once more in a new runner page, in any browser, when a worker did not load its files', () => {
+		const module =
+			'E1405: the sketch worker did not start: error loading dynamically imported module: http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js. Read the message: it names the worker that did not start, and why.';
+		const script =
+			'E1405: the render worker did not start: its script or a file it imports did not load. Read the message: it names the worker that did not start, and why.';
+		for (const browser of ['Firefox', 'Chrome', 'Safari'])
+			for (const problem of [module, script])
+				expect(rerunsInNewTab(browser, ['another problem', problem])).toBe(true);
+		// A worker that started and then failed in the sketch's own setup is the sketch's fault.
+		expect(
+			rerunsInNewTab('Firefox', [
+				'E1405: the sketch worker did not start: TypeError: setup is not a function',
+			]),
+		).toBe(false);
+		expect(unloadedModule([module])).toBe(
+			'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js',
+		);
+		expect(unloadedModule([script])).toBeUndefined();
+	});
+
 	it('runs a page once more in a new runner page on iOS, whatever the browser is called', () => {
 		// Chromium on iOS names itself Chrome, but its memory is WebKit's.
 		const iphone = {
@@ -914,12 +934,11 @@ describe('the checks plan', () => {
 	});
 
 	// CI runs the plan in each browser in the shards that its workflow names. The shards run at the
-	// same time, so a run waits for the longest one: each holds at most about 5 minutes of pages,
-	// and about 2 more go to its setup, the dev server's start and the judging. Firefox compiles every
-	// shader build, so its shards take longer than this model of Safari's. .dev/devices.md says what
-	// to do when the pages need more. Safari compiles the sampled set of the shaders page, which this
-	// model counts.
-	it("keeps each of CI's shards at or under 5 minutes of pages in Safari", () => {
+	// same time, so a run waits for the longest one: each holds at most about 10 minutes of pages,
+	// and about 2 more go to its setup, the dev server's start and the judging. .dev/devices.md says
+	// what to do when the pages need more. Safari compiles the sampled set of the shaders page, which
+	// this model counts.
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
@@ -937,7 +956,7 @@ describe('the checks plan', () => {
 		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
-		expect(Math.max(...minutes)).toBeLessThanOrEqual(5);
+		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
