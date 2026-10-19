@@ -168,6 +168,12 @@ function checkProgram(
  */
 const BATCH = 32;
 
+/**
+ * The programs of the first batch. A small first batch shows the page's pace early, so the runner
+ * page's deadline follows it before a full batch of the largest builds can outlast the limit.
+ */
+const FIRST_BATCH = 4;
+
 /** The seconds that the page expects for its WGSL modules, after its GLSL programs. */
 const AFTER_GLSL_SECONDS = 30;
 
@@ -216,10 +222,10 @@ export async function checkGlslPrograms(
 		progress(`GLSL: ${done} of ${compiled.length} programs compiled`);
 		expectEnd(expectedEndSeconds(now, start, done, compiled.length, AFTER_GLSL_SECONDS));
 	};
-	for (let first = 0; first < compiled.length; first += BATCH) {
+	for (let first = 0; first < compiled.length; first += first === 0 ? FIRST_BATCH : BATCH) {
 		checkContext(gl, first, compiled.length);
 		const pending = compiled
-			.slice(first, first + BATCH)
+			.slice(first, first + (first === 0 ? FIRST_BATCH : BATCH))
 			.map(([name, program]) => startProgram(gl, name, program));
 		if (parallel) await finished(gl, parallel, pending, (count) => notePace(first + count));
 		checkContext(gl, first, compiled.length);
