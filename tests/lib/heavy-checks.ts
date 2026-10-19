@@ -24,7 +24,8 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'packages/engine/src/math/tree-shaking-quat.test.ts', ceilingMiB: 12288 },
 	// One release build for each check, each in a process of its own.
 	{ file: 'packages/engine/src/debug/release-runner.test.ts', ceilingMiB: 4096 },
-	{ file: 'packages/engine/src/debug/release-draw.test.ts', ceilingMiB: 12288 },
+	{ file: 'packages/engine/src/debug/release-draw-release.test.ts', ceilingMiB: 12288 },
+	{ file: 'packages/engine/src/debug/release-draw-development.test.ts', ceilingMiB: 12288 },
 	// Changed texture files through the WebAssembly transcoder: its heap grows on the hostile ones
 	// and does not shrink, so the checks hold every growth they have made.
 	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
