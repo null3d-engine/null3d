@@ -44,7 +44,7 @@ The owner chose Enterprise for one seat on 19 October 2026, and declined Blacksm
 
 With the queue gone, CI splits its slow jobs:
 
-- The browser tests run in 30 shards, and the tests that run alone in 3. The showcase HUD test splits into three tests, each in a job of its own.
+- The browser tests run in 40 shards, and the tests that run alone in 3. The showcase HUD test splits into three tests, each in a job of its own.
 - The real-browser jobs run 22 shards for each browser. Each Safari shard holds at most 9.1 minutes of pages in the model, from the times run 39291513923 measured.
 - The benchmark page tests run in 5 shards. Three of them split the parity tests.
 - The size check measures the engine test page in 4 parts at once, and each part compresses on every core.
@@ -62,7 +62,7 @@ The shader work also got smaller:
 
 - `.github/workflows/ci.yml` holds the new jobs and shard lists. `tools/lib/ci-workflow.test.ts` checks that every job gates `ci-passed`, and that a job skips only on the answer `ci-passed` expects. It also checks that each shard list runs each shard once.
 - `tests/lib/runs.test.ts` holds each real-browser shard to 10 minutes of pages in Safari. The job's limit is 30 minutes, which leaves room for a runner page that goes quiet.
-- The first 30 browser weights halved the 15 earlier ones, since GitHub's jobs API failed during an incident on 19 October 2026. Those shards took up to 17.7 minutes in run 39291513923. The weights from that run's times give the slowest shard 11.3 minutes in the model.
+- The first 30 browser weights halved the 15 earlier ones, since GitHub's jobs API failed during an incident on 19 October 2026. Those shards took up to 17.7 minutes in run 39291513923. Weights from the median times of runs 39291513923 and 39306888159 give 40 shards a slowest shard of 10.0 minutes in the model, under a 25-minute limit.
 - During GitHub's Actions incident of 19 October 2026, from about 15:00 UTC, the enterprise ran only 5 to 14 jobs at once. Check the first runs after it for jobs that wait.
 - One limit stays. A per-entry cache entry holds a whole entry, and the module exports test renders whole modules. So the `shader-entries` shard and the module exports shard with `standard_maps` each hold about 78% of a whole build. The next step stores a cache entry for each part of an entry, under the whole entry's key and the part. A build that misses the whole entry then merges a complete set of parts. The `shader-entries` jobs can then split by build, as the test shards do. A larger runner for that one shard is the other option, with the owner's approval of its cost.
 - [Branches and parallel work](../pull-requests.md#cis-jobs), [Image tests](../image-tests.md#ci), [Benchmarks](../benchmarks.md) and [Device sessions](../devices.md#browser-apps-on-the-mac) describe the jobs.
