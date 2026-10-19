@@ -377,6 +377,27 @@ A run folder holds every page's full result, with frames and images, and stays o
 - `?far=<n>` on S4's null3D pages sets `farCascadeInterval`, from 1 to 8. `--switches far=1` draws every cascade in every frame. Its difference from the preset's run is what drawing the far cascades in turn saves. S4's cars drive through every cascade. Since [D-16](decisions/D-16-moving-casters-and-bias.md), its far cascades therefore draw in every frame anyway, and both runs draw the same passes.
 - `?shadowCascadeBlend=<share>` on S4's null3D pages sets the band where each cascade blends into the next, from 0 to 0.5. The page kinds that end in `-blend-off` start S4 with the band at 0. A bench run then takes turns between a page and its twin in one browser session: `bun run bench:run --scenes s4 --pages null3d-webgpu,null3d-webgpu-blend-off --switches "preset=low&governor=off"`. [D-73](decisions/D-73-cascade-blend.md) gives the results.
 
+### Battle's iPhone WebGPU figure and the cold first page
+
+- Battle's comparison on the iPhone 17's Safari, measured on 19 October 2026, put null3D at 24.7 frames a second on WebGPU against three.js's 32, which read as a GPU fault of about 8 frames. It was not: the first page of a cloud session is about 5 ms slower than every page after it with the same settings.
+- The same Battle page, at 100 units on a 603 x 1009 canvas at a pixel ratio of 1.5, taken eight times in one session:
+
+| Page | Presented fps | GPU time | Draws |
+| --- | --- | --- | --- |
+| The default page, first page of the session | 25.1 | 29.90 ms | 298 |
+| The default page | 30.0 | 23.81 ms | 266 |
+| The default page | 29.8 | 24.06 ms | 266 |
+| The default page | 28.5 | 25.63 ms | 265 |
+| The same page with the square of 5 | 29.7 | 24.32 ms | 267 |
+| The same page with the square of 5 | 29.5 | 24.67 ms | 265 |
+| The same page with the skinning pass | 27.1 | 25.36 ms | 1,238 |
+| The same page with the skinning pass | 27.3 | 26.04 ms | 1,238 |
+
+- Warm, null3D holds 28.5 to 30.0 frames a second against three.js's 30.8 to 31.4 on the same device, a gap of about one to three frames rather than eight. Part of that gap is the same first-page effect in the three.js figures.
+- Neither engine lever closed it: the smaller sun filter is neutral warm ([D-169](decisions/D-169-anti-acne-plane-cost.md#addendum-2026-10-19-the-filters-square-on-an-iphone-17-and-a-cold-first-page)), and the skinning pass is slower while drawing four times as many draws ([D-20](decisions/D-20-webgpu-skinning.md#addendum-2026-10-19-the-pass-measured-on-an-iphone-17-and-why-it-is-not-a-default)). No default changed.
+- Across sessions the same page moved further than the cold page alone explains: 23.6 to 23.9 frames in the twelve-page sessions, 28.5 to 30.0 warm in the interleaved session. three.js held 30.8 to 32.0 in the same sessions. A single page, or two pages from different sessions, cannot settle an engine gap; alternate the engines and drop or warm the first page.
+- A cloud run that judges an engine should therefore warm the device before its first measured page, or drop that page. The twelve pages of [the run](tested-devices/iphone-17-safari/20261019-050200-battle-webgpu-twelve.md) keep the figures as measured.
+
 ## The depth prepass
 
 - The page switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, whatever the preset says. Both GPU paths draw it ([Depth on WebGL2](implementation-notes.md#depth-on-webgl2)). `?prepass=on` on a benchmark page, with `measure`'s `gpuPassMs`, gives the prepass's GPU cost in the scene's render pass.
