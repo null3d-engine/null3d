@@ -2,9 +2,10 @@
 // files where three.js keeps it, and its lookup must give each entry at the entry's center.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { DFG_HALVES, DFG_SIZE, dfgLut, halfToFloat } from '../pages/lib/dfg-table';
+import { DFG_COLUMN, DFG_HALVES, DFG_SIZE, dfgLut, halfToFloat } from '../pages/lib/dfg-table';
 
 const THREE = new URL('../../bench/node_modules/three/src/', import.meta.url);
+const TABLES = new URL('../../crates/null3d-shaders/wgsl/lib/tables.wgsl', import.meta.url);
 
 /** The half floats of the `Uint16Array` in one of three.js's source files. */
 function threeHalves(path: string): number[] {
@@ -19,6 +20,11 @@ describe('the table of specular terms', () => {
 		expect(copy).toHaveLength(2 * DFG_SIZE * DFG_SIZE);
 		expect(threeHalves('nodes/functions/BSDF/DFGLUT.js')).toEqual(copy);
 		expect(threeHalves('renderers/shaders/DFGLUTData.js')).toEqual(copy);
+	});
+
+	test('the shader library test puts the table where the engine does', () => {
+		const source = readFileSync(TABLES, 'utf8');
+		expect(source).toContain(`const DFG_COLUMN: u32 = ${DFG_COLUMN}u;`);
 	});
 
 	test('the lookup gives each entry at its center, and clamps at the edges', () => {
