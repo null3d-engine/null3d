@@ -4,20 +4,29 @@
 //!
 //! ```text
 //! cargo run --profile shader -p null3d-shaders --bin shader-build [-- --root <repository>]
-//!     [--cache <folder>] [--stamp <stamp>] [--no-cache]
+//!     [--cache <folder>] [--stamp <stamp>] [--no-cache] [--entries-shard <i>/<n>]
 //! ```
 //!
 //! `--cache` keeps each entry's compiled output in the folder, under the key that `--stamp` names:
 //! the fingerprint of the compiler. A later run reuses an entry when its own source, its manifest
 //! table and the library modules it imports are unchanged. `--no-cache`, or setting
 //! `NULL3D_NO_SHADER_CACHE=1`, compiles every entry again.
+//!
+//! `--entries-shard i/n` compiles only shard `i` of `n`, counted from 0, of the manifest's
+//! entries, split by estimated build cost into whole entries (`ShardPlan::by_entry`), into the
+//! cache, and writes no module. An entry keeps its key in a shard: the key reads only the entry's
+//! own source, its manifest table and the compiler's stamp, and the narrowed inputs keep the
+//! library modules whole. So several machines can each fill the cache with one shard, and a later
+//! build that finds every entry in the cache compiles none.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use null3d_shaders::{COMMAND, Cache, CacheStats, OUTPUT_DIR, Written};
+use null3d_shaders::{
+    BuildError, COMMAND, Cache, CacheStats, Inputs, OUTPUT_DIR, Shard, ShardPlan, Written,
+};
 
-const USAGE: &str = "usage: shader-build [--root <repository root>] [--cache <folder> [--stamp <stamp>]] [--no-cache]";
+const USAGE: &str = "usage: shader-build [--root <repository root>] [--cache <folder> [--stamp <stamp>]] [--no-cache] [--entries-shard <i>/<n>]";
 
 /// The environment variable that turns the cache off, as the Vite plugin's cache names it.
 const NO_CACHE_ENV: &str = "NULL3D_NO_SHADER_CACHE";
@@ -27,6 +36,7 @@ fn main() -> ExitCode {
     let mut cache_folder: Option<PathBuf> = None;
     let mut stamp = String::new();
     let mut no_cache = cache_off();
+    let mut entries_shard: Option<Shard> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -43,6 +53,14 @@ fn main() -> ExitCode {
                 None => return usage("--stamp needs a value"),
             },
             "--no-cache" => no_cache = true,
+            "--entries-shard" => match args.next().as_deref().map(Shard::parse) {
+                Some(Some(shard)) => entries_shard = Some(shard),
+                _ => {
+                    return usage(
+                        "--entries-shard needs a shard as <i>/<n>, with i from 0 and below n",
+                    );
+                }
+            },
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
@@ -55,6 +73,12 @@ fn main() -> ExitCode {
         (false, Some(folder)) => Cache::at(&folder, &stamp),
         _ => Cache::disabled(),
     };
+    if let Some(shard) = entries_shard {
+        if !cache.is_on() {
+            return usage("--entries-shard fills the cache, so it needs --cache and no --no-cache");
+        }
+        return build_entries_shard(&root, &cache, shard);
+    }
 
     // The progress line ends before the result is printed, so the result starts on its own line.
     let outcome = {
@@ -72,16 +96,42 @@ fn main() -> ExitCode {
             println!("The shader modules in {OUTPUT_DIR} were already up to date.");
             report(&stats);
         }
-        Err(error) => {
-            eprintln!("{error}\n");
-            eprintln!(
-                "The shader build failed with {} problem(s). Fix them, then run `{COMMAND}` again.",
-                error.problems.len()
-            );
-            return ExitCode::FAILURE;
-        }
+        Err(error) => return failed(&error),
     }
     ExitCode::SUCCESS
+}
+
+/// Compiles the entries of one shard into the cache, and writes no module.
+fn build_entries_shard(root: &std::path::Path, cache: &Cache, shard: Shard) -> ExitCode {
+    let outcome = Inputs::read(root).and_then(|inputs| {
+        let plan = ShardPlan::by_entry(&inputs, shard.count)?;
+        print!("This run fills the cache with shard {shard} of the shader entries.\n{plan}");
+        let progress = Progress::new();
+        null3d_shaders::build_with_cache_reporting(
+            &plan.inputs(&inputs, shard.index),
+            cache,
+            &|done, total| progress.report(done, total),
+        )
+        .map(|(_, stats)| stats)
+    });
+    match outcome {
+        Ok(stats) => {
+            println!("Stored shard {shard} of the shader entries in the cache.");
+            report(&stats);
+            ExitCode::SUCCESS
+        }
+        Err(error) => failed(&error),
+    }
+}
+
+/// Prints the build's problems, and how to run it again once they are fixed.
+fn failed(error: &BuildError) -> ExitCode {
+    eprintln!("{error}\n");
+    eprintln!(
+        "The shader build failed with {} problem(s). Fix them, then run `{COMMAND}` again.",
+        error.problems.len()
+    );
+    ExitCode::FAILURE
 }
 
 /// Shows how much of the build is done, on standard error, so the report on standard output stays

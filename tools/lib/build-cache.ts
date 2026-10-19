@@ -49,12 +49,14 @@ export const CACHE_ROOT = cacheRoot();
 const NO_CACHE = ['NULL3D_NO_CACHE', 'NULL3D_NO_BUILD_CACHE', 'NULL3D_NO_SHADER_CACHE'];
 
 /**
- * The folder of the named cache under the root. `override`, an older per-cache variable, names the
- * whole folder instead; the value `local` keeps it inside the checkout, under `target/<name>`.
+ * The folder of the named cache under the root, which it reads from the environment on each call,
+ * so a caller that moves the root, such as a test, moves every cache with it. `override`, an older
+ * per-cache variable, names the whole folder instead; the value `local` keeps it inside the
+ * checkout, under `target/<name>`.
  */
 export function cacheDir(name: string, override?: string): string {
 	if (override === 'local') return join(process.cwd(), 'target', name);
-	return override ?? join(CACHE_ROOT, name);
+	return override ?? join(cacheRoot(), name);
 }
 
 /** The path of the named program in the folders of `path`, or null when none holds it. */
