@@ -471,7 +471,7 @@ So the iPad shows that the engine works on an iPhone. It does not show that the 
 
 The owner set these rules on 4 October 2026. [D-53](decisions/D-53-technique-defaults.md) records them as ruling 10.
 
-Real-phone tests run on BrowserStack Automate's phones wherever they can do the job: `bun run devices:cloud`, one session at a time. The owner's Galaxy S24+ serves only the checks that need its USB cable, or a run that the owner asks for. Examples are the runs that log the phone's heat, `bench:startup --android` and `bench:profile --android`. So testing no longer waits for someone to connect the phone.
+Real-phone tests run on BrowserStack Automate's phones wherever they can do the job: `bun run devices:cloud`, one session at a time. The queue behind the session is never left empty while checks remain. As one run releases the slot, the next one starts, so no paid minute sits idle (owner, 19 October 2026). The owner's Galaxy S24+ serves only the checks that need its USB cable, or a run that the owner asks for. Examples are the runs that log the phone's heat, `bench:startup --android` and `bench:profile --android`. So testing no longer waits for someone to connect the phone.
 
 Brave is no longer tested on any device. It draws with Chrome's engine, so its results repeat Chrome's. `bun run devices` runs Chrome on the phone and Safari on the iPad only. No command example names Brave. The runner still knows Brave and its Shields, for a run that the owner asks for by name. No plan or gate needs it.
 
