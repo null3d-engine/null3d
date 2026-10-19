@@ -221,6 +221,41 @@ export interface WorkerFile {
 	chunk: boolean;
 }
 
+/**
+ * The files that a worker build made and that a file in the bundle still names, but that the
+ * bundle lacks, each with the source that the worker copied. Vite drops a worker's files when it
+ * reads the worker as dead, even when another file names one of them: a page then fails to
+ * download an engine shader module at run time, although the build succeeded. The caller emits
+ * these back, so a build's files always hold every file that its files name.
+ */
+export function missingWorkerAssets(
+	bundle: Rollup.OutputBundle,
+	workerFiles: ReadonlyMap<string, WorkerFile>,
+): { fileName: string; source: string }[] {
+	const names = [...workerFiles].flatMap(([fileName, file]) =>
+		bundle[fileName] === undefined && !file.chunk ? [fileName] : [],
+	);
+	if (names.length === 0) return [];
+	// Only the files that the bundle lacks are searched for, which costs nothing in a whole build.
+	const pattern = new RegExp(
+		`${names
+			.sort((a, b) => b.length - a.length)
+			.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+			.join('|')}`,
+		'g',
+	);
+	const named = new Set<string>();
+	for (const file of Object.values(bundle)) {
+		const text =
+			file.type === 'chunk' ? file.code : typeof file.source === 'string' ? file.source : '';
+		for (const [name] of text.matchAll(pattern)) named.add(name);
+	}
+	return [...named].flatMap((fileName) => {
+		const source = workerFiles.get(fileName)?.moduleIds[0];
+		return source === undefined ? [] : [{ fileName, source }];
+	});
+}
+
 /** A plugin for each worker build that records what each of its files holds, by file name. */
 export function workerFilesPlugin(record: Map<string, WorkerFile>): Plugin {
 	return {
