@@ -24,6 +24,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
 | `examples/compare/<name>/` | One comparison: `scene.ts`, the description that both engines draw, `sketch.ts`, the null3D half, and `three.ts`, the three.js half |
 | `examples/lib/compare.ts`, `ramp.ts` | `startComparison`, `rampComparison` and the ramp's logic, which any page lays out its own way |
+| `examples/lib/walkthrough.ts` | The guided walkthrough's state machine and its summary, with no engine imports, and the session's copy of each ramp ([The guided walkthrough](#the-guided-walkthrough)) |
 | `examples/lib/compare-scene.ts` | What the comparison scenes share, with no engine imports: the fixed-step clock, meshes, textures made in code and the grading table |
 | `examples/lib/three-worker.ts`, `stats-three.ts` | The three.js half's worker, and its stats meter in the engine's panel |
 | `examples/compare-page.ts` | The comparison panel of the clone's examples page |
@@ -248,6 +249,17 @@ A comparison draws one scene in null3D and in three.js, one engine at a time. It
 - `pose.ts` holds the closed-form poses of the instanced mode, which both halves run: three.js takes them as matrices, and null3D as batch rows. It imports no engine, and a unit test checks both forms against the walk of each arm's tree.
 - `startComparison({ canvas, comparison, engine, mode })` starts one engine on a canvas. It returns the run: `setCount`, `measure`, `collapseStats` and `destroy`. `rampComparison(run)` runs the ramp. The website lays out its own controls over these calls, as the clone's page does.
 - The clone's page runs a comparison at `?compare=<name>&engine=null3d` or `&engine=threejs`, and `&mode=instanced` picks the instanced mode. Its caption holds an engine switch, a mode switch, a count slider, the effect switches, "Run the ramp", and an "about this comparison" panel. Each engine runs on a page of its own, so the switch and the ramp load the page again. The ramp keeps each engine's result in each mode for the session, and shows "null3D held N, three.js held M" once both have run.
+
+### The guided walkthrough
+
+A visitor to a comparison gets a guided walkthrough, and `?walkthrough=off` gives a developer the manual page at once. The walkthrough has four steps (`WalkthroughFlow` in `examples/lib/walkthrough.ts`):
+
+1. **Intro.** The page draws nothing yet. A card shows the comparison's title and summary, the current mode's own text, what will happen, and a note that both engines draw the same scene. "Start the comparison" begins, and "Use the controls" leaves for the manual page.
+2. **null3D's ramp.** The page starts null3D and runs the device class's ramp. The card names the engine, the count and the frames a second at each step, and offers "Skip" and "Stop".
+3. **three.js's ramp.** Each engine draws on a page of its own, so the page keeps the result in session storage and loads again with three.js, on the same GPU path. Its ramp runs on the same counts.
+4. **Summary.** A table gives each count's frames a second for each engine and their ratio, and marks each figure at the display cap. It says which engine drew more frames a second where the display did not set the pace, and where each ramp stopped. The display's rate comes from the first page, before any engine draws.
+
+A skip moves on as a finished ramp does; the summary marks the ramp as partial. A stop destroys the engine and clears the kept results, and the card then offers a new start or the manual controls. The walkthrough state machine and its summary have unit tests. The summary joins the ramps by count, so a count that only one engine measured has a figure for that engine alone.
 
 ### The two modes
 
