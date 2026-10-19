@@ -1345,8 +1345,12 @@ fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
             }),
         ),
         (
+            // The split names each loader table after its feature family, such as
+            // `shaders-wgsl-combos-bump.ts`, so the name holds `-combos` and ends with the family.
             "a combined loader table",
-            names.iter().any(|name| name.ends_with("-combos.ts")),
+            names.iter().any(|name| {
+                name.starts_with("shaders-") && name.contains("-combos") && name.ends_with(".ts")
+            }),
         ),
     ];
     let missing: Vec<&str> = kinds
