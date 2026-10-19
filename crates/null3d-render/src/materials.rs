@@ -239,6 +239,12 @@ impl Shading {
         matches!(self, Shading::Custom(custom) if custom.object_ids)
     }
 
+    /// True when its shader reads the displacement map's values from the material's custom values:
+    /// the standard material's, with or without maps.
+    pub const fn displaces(self) -> bool {
+        matches!(self, Shading::Lit | Shading::StandardMaps)
+    }
+
     /// The template that draws a decal with this shading: the standard material's, with or
     /// without maps, or `None` for shading that has no decal builds.
     pub const fn decal_template(self) -> Option<u32> {
@@ -1418,8 +1424,10 @@ impl MaterialTable {
             }
             // A displacement map's layer goes into the custom values, which the vertex stage reads.
             // Where the fragment stage samples it through a shared unit, the layer names the unit.
+            // Only a shader that reads those values gets them: another shading keeps its own custom
+            // values in that slot.
             let height = self.heights[id as usize];
-            if !matches!(self.shading[id as usize], Shading::Custom(_)) {
+            if self.shading[id as usize].displaces() {
                 let unit = self.height_units[id as usize];
                 let ready = (!height.is_none()).then(|| ready_layer(height)).flatten();
                 let vertex = ready.map_or(NO_MAP, |layer| layer as f32);
@@ -1952,6 +1960,28 @@ mod tests {
         assert_eq!(table.map(plain, MapSlot::Normal), Handle::NONE);
         assert_eq!(flags(&table, plain), 0);
         assert_eq!(table.bounds_margin(plain), 0.0);
+    }
+
+    #[test]
+    fn a_shading_that_reads_no_displacement_keeps_its_custom_values() {
+        let mut table = MaterialTable::with_capacity(2);
+        let line = table.create(Shading::Line, 0, [1.0; 4]).unwrap();
+        let lit = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        // The line material keeps its dash values in the slot where a standard material keeps its
+        // displacement values.
+        let dash = [0.25, 0.12, 1.0, 0.0];
+        table.set_values(line, 0, &dash).unwrap();
+        table.take_values_changed();
+        table
+            .set_displacement_map(lit, Handle::new(1, 0), false)
+            .unwrap();
+        table.update_map_layers(true, |_| Some(5), |_| Premultiplied::No);
+        assert_eq!(
+            &table.values(line..line + 1)[..4],
+            &dash,
+            "the line's values stay"
+        );
+        assert_eq!(table.values(lit..lit + 1)[height::LAYER], 5.0);
     }
 
     #[test]
