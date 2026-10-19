@@ -45,6 +45,8 @@ export interface HudGroup {
 	buttons: readonly HudButton[];
 	/** A slider above the buttons, for a group that sets one continuous value. */
 	slider?: HudSlider;
+	/** Toggles below the buttons, for a group whose row is a choice and which also has switches. */
+	extras?: readonly HudButton[];
 }
 
 /** The whole controls model of a scene. */

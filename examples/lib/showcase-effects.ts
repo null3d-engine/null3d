@@ -89,6 +89,9 @@ export function createShowcaseEffects(
 	const { camera, sun, stage, start, supported, apply, mood, hour, film, fov, focalLength, focus } =
 		options;
 	const on: Record<string, boolean> = { ...start };
+	// The level of detail starts off, so every mesh draws at its fullest until the Quality tab turns
+	// it on; a threshold of 0 picks every mesh's base level.
+	if (quality.settings.lodThreshold > 0) void quality.set({ lodThreshold: 0 });
 	// The stage starts with every part on, so a part that the scene starts with off must be turned
 	// off now; the HUD state and the scene then agree, and the button reads the scene's real state.
 	for (const part of ['sky', 'fog', 'environment'] as const)
@@ -151,7 +154,9 @@ export function createShowcaseEffects(
 			set(picked, !(on[picked] ?? false));
 			film().refresh();
 		} else if (name === 'quality') {
-			void quality.setPreset(picked as QualityPreset);
+			if (picked === 'lod')
+				void quality.set({ lodThreshold: quality.settings.lodThreshold > 0 ? 0 : 1 });
+			else void quality.setPreset(picked as QualityPreset);
 			film().refresh();
 		}
 	});
@@ -189,7 +194,19 @@ export function createShowcaseEffects(
 			),
 			toggleGroup('lighting', 'Lighting', LIGHTING, supported.lighting, (id) => on[id] ?? false),
 			toggleGroup('post', 'Post', POST, supported.post, (id) => on[id] ?? false),
-			radioGroup('quality', 'Quality', QUALITY, quality.preset),
+			{
+				...radioGroup('quality', 'Quality', QUALITY, quality.preset),
+				// The level of detail is a quality setting, and a threshold of 0 draws every mesh at
+				// its fullest, which is what turning it off means.
+				extras: [
+					{
+						id: 'lod',
+						label: 'LOD',
+						tip: 'Draw simpler meshes in the distance. Off draws every mesh at its fullest.',
+						active: quality.settings.lodThreshold > 0,
+					},
+				],
+			},
 		],
 		lens: () => (on.dof ? settings : null),
 		update(t) {

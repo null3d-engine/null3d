@@ -188,7 +188,7 @@ export function createHud(
 		const next = model.groups
 			.map(
 				(group) =>
-					`${group.name}|${group.title}|${group.radio}|${group.slider ? `${group.slider.min}~${group.slider.max}~${group.slider.step}~${group.slider.tip}~${group.slider.marks.map((m) => `${m.at}~${m.label}`).join(',')}` : ''}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}`,
+					`${group.name}|${group.title}|${group.radio}|${group.slider ? `${group.slider.min}~${group.slider.max}~${group.slider.step}~${group.slider.tip}~${group.slider.marks.map((m) => `${m.at}~${m.label}`).join(',')}` : ''}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}|${(group.extras ?? []).map((b) => `${b.id}~${b.label}~${b.tip}`).join(';')}`,
 			)
 			.join('||');
 		if (next !== signature) {
@@ -266,6 +266,21 @@ export function createHud(
 						buttons.append(el);
 						drawn.set(`${group.name}\u0000${button.id}`, el);
 					}
+					if (group.extras?.length) {
+						// A group may also carry switches, such as the level of detail under Quality. They
+						// follow the row's choice after a separator, so the row stays one line.
+						buttons.append(node('span', 'hud__sep'));
+						for (const button of group.extras) {
+							const el = node('button', 'hud__btn hud__btn--toggle');
+							el.type = 'button';
+							el.dataset.tip = button.tip;
+							el.append(document.createTextNode(button.label));
+							el.addEventListener('click', () => post(group.name, button.id));
+							bindTip(el);
+							buttons.append(el);
+							drawn.set(`${group.name}\u0000extra:${button.id}`, el);
+						}
+					}
 					section.append(buttons);
 					tabPanels.set(group.name, section);
 					return section;
@@ -283,8 +298,9 @@ export function createHud(
 				range.setAttribute('aria-valuetext', group.slider.live ? 'Auto' : range.value);
 				range.classList.toggle('hud__range--live', group.slider.live);
 			}
-			for (const button of group.buttons) {
-				const el = drawn.get(`${group.name}\u0000${button.id}`);
+			for (const button of [...group.buttons, ...(group.extras ?? [])]) {
+				const extra = group.extras?.includes(button) ?? false;
+				const el = drawn.get(`${group.name}\u0000${extra ? 'extra:' : ''}${button.id}`);
 				if (!el) continue;
 				el.setAttribute('aria-pressed', String(button.active));
 				el.classList.toggle('hud__btn--on', button.active);
@@ -309,7 +325,7 @@ export function createHud(
 	const toastChanges = (model: HudModel): void => {
 		const next = new Map<string, boolean>();
 		for (const group of model.groups)
-			for (const button of group.buttons) {
+			for (const button of [...group.buttons, ...(group.extras ?? [])]) {
 				const key = `${group.name}\u0000${button.id}`;
 				next.set(key, button.active);
 				const before = shown?.get(key);

@@ -24,6 +24,14 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 	const shown: string[] = [];
 	const quality = {
 		preset: 'high' as string,
+		settings: { lodThreshold: 0 },
+		set: (settings: { lodThreshold?: number }) => {
+			if (settings.lodThreshold !== undefined) {
+				quality.settings.lodThreshold = settings.lodThreshold;
+				seen.push(`lodThreshold ${settings.lodThreshold}`);
+			}
+			return Promise.resolve();
+		},
 		setPreset: (preset: string) => {
 			quality.preset = preset;
 			seen.push(`preset ${preset}`);
@@ -101,6 +109,15 @@ describe('createShowcaseEffects', () => {
 		expect(time?.slider?.max).toBe(24);
 		expect(time?.slider?.live).toBe(false);
 		expect(time?.buttons.map((button) => button.id)).toEqual(['Auto', 'Studio']);
+	});
+
+	it('turns the level of detail off by default, and on and off under Quality', () => {
+		const { effects, scene, seen } = stub();
+		const quality = effects.groups().find((group) => group.name === 'quality');
+		expect(quality?.extras?.map((button) => button.id)).toEqual(['lod']);
+		expect(quality?.extras?.[0]?.active).toBe(false);
+		scene.handler?.('quality', 'lod');
+		expect(seen).toContain('lodThreshold 1');
 	});
 
 	it('sends a slider hour to the scene', () => {
