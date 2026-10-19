@@ -24,6 +24,11 @@ export const MEMORY_REFUSED = 'the browser refused a shared memory';
 
 /** The engine's default maximum of its shared memory, in 64 KiB pages: 1 GiB. */
 export const DEFAULT_MAXIMUM_PAGES = 16_384;
+/**
+ * The initial size in 64 KiB pages of a memory that only takes room: the counts never start the
+ * core in it. A memory that the core starts in takes the size that the core declares, which
+ * `core-memory.ts` reads.
+ */
 const INITIAL_PAGES = 18;
 /**
  * The most memories a count holds at once. A count takes room until the browser frees what it
@@ -53,9 +58,12 @@ export const ROOM_WAIT_SECONDS = (2 * ROOM_PAUSES_MS.reduce((sum, pause) => sum 
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A new shared memory with the given maximum in 64 KiB pages. */
-export function allocateMemory(maximumPages = DEFAULT_MAXIMUM_PAGES): WebAssembly.Memory {
-	return new WebAssembly.Memory({ initial: INITIAL_PAGES, maximum: maximumPages, shared: true });
+/** A new shared memory with the given maximum, and initial size, in 64 KiB pages. */
+export function allocateMemory(
+	maximumPages = DEFAULT_MAXIMUM_PAGES,
+	initialPages = INITIAL_PAGES,
+): WebAssembly.Memory {
+	return new WebAssembly.Memory({ initial: initialPages, maximum: maximumPages, shared: true });
 }
 
 /** A count of the room: the memories held at once, and the error of the refusal that ended it. */
