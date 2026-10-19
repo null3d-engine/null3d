@@ -28,14 +28,23 @@ runs:
       run: |
         bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
         echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+        # A branch keeps its own shader entries, so the next push to it restores what the last one
+        # built. Main keeps the shared cache that every run restores.
+        if [ "${{ github.ref_name }}" = "main" ]; then
+          echo "scope=" >> "$GITHUB_OUTPUT"
+        else
+          echo "scope=branch-${{ github.ref_name }}-" >> "$GITHUB_OUTPUT"
+        fi
     - uses: actions/cache/restore@v4
       id: restore
       with:
         path: |
           ${{ steps.keys.outputs.modules-dir }}
           ${{ steps.keys.outputs.entries-dir }}
-        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}
-        restore-keys: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}
+        restore-keys: |
+          shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}
+          shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
     - id: build
       shell: bash
       # The command may be several lines; the group keeps their output for the record below.
@@ -72,7 +81,7 @@ runs:
           echo "- Module set: $(count "$MODULES") modules, $(size "$MODULES")"
         } | tee -a "$GITHUB_STEP_SUMMARY"
     - name: Keep only this build's module set and compiler stamp
-      if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
+      if: always() && (env.SAVE_CACHES == 'true' || github.ref_name != 'main') && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
         MODULES: ${{ steps.keys.outputs.modules-dir }}
@@ -84,10 +93,17 @@ runs:
         find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$INPUTS" -exec rm -rf {} +
         find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$STAMP" -exec rm -rf {} +
         du -sh "$MODULES" "$ENTRIES"
+    # Main saves the module set and the entries together. A branch saves its entries alone: they are
+    # the expensive part, and the shared cache keeps the repository's room for main's own.
     - uses: actions/cache/save@v4
       if: always() && env.SAVE_CACHES == 'true' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
       with:
         path: |
           ${{ steps.keys.outputs.modules-dir }}
           ${{ steps.keys.outputs.entries-dir }}
-        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) || '' }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) || '' }}
+    - uses: actions/cache/save@v4
+      if: always() && env.SAVE_CACHES != 'true' && github.ref_name != 'main' && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ${{ steps.keys.outputs.entries-dir }}
+        key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) || '' }}
