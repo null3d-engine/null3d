@@ -46,8 +46,12 @@ export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): 
 	const perObject = gpu === 'webgl2' ? 2 : 1;
 	const compute = gpu === 'webgpu' ? WEBGPU_COMPUTE_PIPELINES - (result.directDraws ? 1 : 0) : 0;
 	const expected = SCENE_PIPELINES * perObject + compute + 1;
-	if (result.firstFramePipelines !== expected)
-		problems.push(`the first frame built ${result.firstFramePipelines} pipelines, not ${expected}`);
+	// A slow device can drop the render scale before the first frame ends, which builds the final
+	// pass's 8-bit variant beside its full-precision one: the count may hold one more.
+	if (result.firstFramePipelines !== expected && result.firstFramePipelines !== expected + 1)
+		problems.push(
+			`the first frame built ${result.firstFramePipelines} pipelines, not ${expected} or ${expected + 1}`,
+		);
 	if (result.warmUpMs === null || result.warmUpMs < 0)
 		problems.push('the engine recorded no warm-up time');
 	if (result.playPipelines !== 0) problems.push(`play built ${result.playPipelines} pipelines`);

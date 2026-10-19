@@ -26,11 +26,16 @@ describe('warmUpProblems', () => {
 	});
 
 	it('holds a direct-draw device to the pipelines that its path builds', () => {
-		expect(warmUpProblems(result(true, 15), 'webgpu')).toEqual([
-			'the first frame built 15 pipelines, not 14',
+		expect(warmUpProblems(result(true, 16), 'webgpu')).toEqual([
+			'the first frame built 16 pipelines, not 14 or 15',
 		]);
-		expect(warmUpProblems(result(false, 14), 'webgpu')).toEqual([
-			'the first frame built 14 pipelines, not 15',
+		expect(warmUpProblems(result(false, 13), 'webgpu')).toEqual([
+			'the first frame built 13 pipelines, not 15 or 16',
 		]);
+	});
+
+	it("accepts the final pass's 8-bit variant, which a dropped render scale builds", () => {
+		expect(warmUpProblems(result(false, 16), 'webgpu')).toEqual([]);
+		expect(warmUpProblems(result(true, 15), 'webgpu')).toEqual([]);
 	});
 });
