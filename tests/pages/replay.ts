@@ -19,6 +19,21 @@ const SIZE = 256;
 const SAMPLES = 4;
 const INSTANCE_BYTES = 64;
 const BOX = 0.8;
+/** The texels of one material's custom values: one for each `vec4f` of its row. */
+const MATERIAL_TEXELS = G.SIZE_MATERIAL_BYTES / 16;
+/** Entries along each side of three.js's table of the split-sum terms of specular light. */
+const DFG_SIZE = 16;
+
+/**
+ * The split-sum table that the frame group binds, as 32-bit float texels: every entry holds the
+ * scale and bias of a smooth surface seen head on. A zero entry makes the direct specular light
+ * infinite, so the page never leaves one.
+ */
+function dfgTable(): Float32Array {
+	const texels = new Float32Array(DFG_SIZE * DFG_SIZE * 4);
+	for (let at = 0; at < texels.length; at += 4) texels[at] = 1;
+	return texels;
+}
 
 run('replay', async () => {
 	const adapter = await navigator.gpu?.requestAdapter();
@@ -111,10 +126,10 @@ run('replay', async () => {
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
-		// A one-entry table of the split-sum terms of specular light that the frame group binds:
-		// the scale and bias of a smooth surface seen head on, as the 16-bit halves that the light
-		// tables hold. One is `0x3c00` as a half, and zero is zero.
-		dfg: memory.put(new Uint16Array([0x3c00, 0, 0, 0])),
+		// Three.js's table of the split-sum terms of specular light, which the frame group binds in
+		// the materials' custom values: every entry holds the scale and bias of a smooth surface
+		// seen head on, which keeps the specular light finite at every roughness and view angle.
+		dfg: memory.put(dfgTable()),
 	};
 	const U = {
 		VERTEX: 0x20,
@@ -247,15 +262,15 @@ run('replay', async () => {
 		1,
 		G.VIEW_3D,
 	);
-	// The materials' custom values, whose columns from 13 hold three.js's table of the split-sum
-	// terms of specular light, as the engine keeps it. No material here has custom values, so the
-	// texture reads as zero except the table. Ambient occlusion's texture and the row values of
-	// instance batches bind it too, and nothing here reads them.
+	// The materials' custom values, with three.js's table of the split-sum terms of specular light
+	// in the columns from the materials' own texels, as the engine keeps it. No material here has
+	// custom values, so the texture reads as zero except the table. Ambient occlusion's texture and
+	// the row values of instance batches bind it too, and nothing here reads them.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
-		29,
-		1,
+		MATERIAL_TEXELS + DFG_SIZE,
+		DFG_SIZE,
 		1,
 		G.FORMAT_RGBA32_FLOAT,
 		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -263,8 +278,20 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
-	// The table's one entry: the scale and bias of a smooth surface seen head on.
-	memory.push(G.OP_WRITE_TEXTURE, 5, 0, 13, 0, 0, 1, 1, 1, blobs.dfg, 16);
+	// The table, one entry for each roughness and view angle.
+	memory.push(
+		G.OP_WRITE_TEXTURE,
+		5,
+		0,
+		MATERIAL_TEXELS,
+		0,
+		0,
+		DFG_SIZE,
+		DFG_SIZE,
+		1,
+		blobs.dfg,
+		DFG_SIZE * DFG_SIZE * 16,
+	);
 	// The offset from the camera to each grid cell, which the culling group binds: cell 0 in row 0,
 	// whose offset is zero, as a new texture reads.
 	memory.push(
