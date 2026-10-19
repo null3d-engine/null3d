@@ -153,6 +153,8 @@ export function createHud(
 
 	/** The buttons drawn now, by their group and id, so a render only turns them on and off. */
 	let drawn = new Map<string, HTMLButtonElement>();
+	/** The sliders drawn now, by their group's name, so a render only moves their values. */
+	let sliders = new Map<string, HTMLInputElement>();
 	/** The tab and the panel drawn for each group, by the group's name. */
 	let tabButtons = new Map<string, HTMLButtonElement>();
 	let tabPanels = new Map<string, HTMLElement>();
@@ -186,12 +188,13 @@ export function createHud(
 		const next = model.groups
 			.map(
 				(group) =>
-					`${group.name}|${group.title}|${group.radio}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}`,
+					`${group.name}|${group.title}|${group.radio}|${group.slider ? `${group.slider.min}~${group.slider.max}~${group.slider.step}~${group.slider.tip}~${group.slider.marks.map((m) => `${m.at}~${m.label}`).join(',')}` : ''}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}`,
 			)
 			.join('||');
 		if (next !== signature) {
 			signature = next;
 			drawn = new Map();
+			sliders = new Map();
 			tabButtons = new Map();
 			tabPanels = new Map();
 			const names = model.groups.map((group) => group.name);
@@ -220,6 +223,35 @@ export function createHud(
 					section.id = `hud-panel-${group.name}`;
 					section.setAttribute('role', 'tabpanel');
 					section.setAttribute('aria-labelledby', `hud-tab-${group.name}`);
+					const { slider } = group;
+					if (slider) {
+						// The track sets one continuous value, and its labels name the key points along it.
+						const wrap = node('div', 'hud__slider');
+						const range = document.createElement('input');
+						range.type = 'range';
+						range.className = 'hud__range';
+						range.min = String(slider.min);
+						range.max = String(slider.max);
+						range.step = String(slider.step);
+						range.value = String(slider.value);
+						range.dataset.tip = slider.tip;
+						range.setAttribute('aria-label', group.title);
+						range.addEventListener('input', () => post(group.name, range.value));
+						bindTip(range);
+						const marks = node('div', 'hud__marks');
+						for (const mark of slider.marks) {
+							const label = node('span', 'hud__mark', mark.label);
+							const share = (mark.at - slider.min) / (slider.max - slider.min);
+							// A label near an end is anchored to that end, so it never runs past the track.
+							label.style.left = `${share * 100}%`;
+							if (share < 0.06) label.style.transform = 'translateX(0)';
+							else if (share > 0.94) label.style.transform = 'translateX(-100%)';
+							marks.append(label);
+						}
+						wrap.append(range, marks);
+						section.append(wrap);
+						sliders.set(group.name, range);
+					}
 					const buttons = node('div', 'hud__buttons');
 					for (const button of group.buttons) {
 						const el = node('button', `hud__btn${group.radio ? '' : ' hud__btn--toggle'}`);
@@ -242,13 +274,22 @@ export function createHud(
 			if (!tabButtons.has(active)) active = model.groups[0]?.name ?? '';
 			selectTab(active);
 		}
-		for (const group of model.groups)
+		for (const group of model.groups) {
+			const range = sliders.get(group.name);
+			if (range && group.slider) {
+				// A value that moves by itself, as the hour does in Auto, moves the thumb with it, unless
+				// the user is holding it.
+				if (document.activeElement !== range) range.value = String(group.slider.value);
+				range.setAttribute('aria-valuetext', group.slider.live ? 'Auto' : range.value);
+				range.classList.toggle('hud__range--live', group.slider.live);
+			}
 			for (const button of group.buttons) {
 				const el = drawn.get(`${group.name}\u0000${button.id}`);
 				if (!el) continue;
 				el.setAttribute('aria-pressed', String(button.active));
 				el.classList.toggle('hud__btn--on', button.active);
 			}
+		}
 	};
 	// The toast that names each change, at the top of the view. A new one replaces the old, and it
 	// never takes a click.

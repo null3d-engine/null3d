@@ -162,6 +162,7 @@ export default defineSketch(async (ctx) => {
 			}
 		},
 		mood: (picked) => stage.set(picked),
+		hour: (hours) => stage.setHour(hours),
 		film: () => film,
 		fov: FOV,
 		focalLength: DSLR_FOCAL_LENGTH,
@@ -179,6 +180,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			controls.update(t);
 			// The town's own lights follow the sun: out by day, a little at dusk, all at night.
 			lamps.power(stage.lamps);
 			houses.power(stage.lamps);

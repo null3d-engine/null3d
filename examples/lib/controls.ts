@@ -17,6 +17,22 @@ export interface HudButton {
 	tip: string;
 }
 
+/** A slider of one value, with labels at key points along it. */
+export interface HudSlider {
+	/** The lowest value, the highest value and the step between them. */
+	min: number;
+	max: number;
+	step: number;
+	/** The value now. */
+	value: number;
+	/** True while the value moves by itself, as the hour does in Auto. */
+	live: boolean;
+	/** The labels under the track, each at its own value. */
+	marks: readonly { at: number; label: string }[];
+	/** What the slider sets, alone, with no input device named. */
+	tip: string;
+}
+
 /** One group of the controls, drawn as a card. */
 export interface HudGroup {
 	/** The message name that the group's buttons post. */
@@ -27,6 +43,8 @@ export interface HudGroup {
 	radio: boolean;
 	/** The group's buttons, in the order that they show. */
 	buttons: readonly HudButton[];
+	/** A slider above the buttons, for a group that sets one continuous value. */
+	slider?: HudSlider;
 }
 
 /** The whole controls model of a scene. */
@@ -53,24 +71,27 @@ export const CAMERA_OPTIONS: readonly HudOption[] = [
 	},
 ];
 
+/** The times of day that the HUD labels along its hour slider. */
+export const TIME_MARKS: readonly { at: number; label: string }[] = [
+	{ at: 6.2, label: 'Dawn' },
+	{ at: 9, label: 'Morning' },
+	{ at: 12, label: 'Midday' },
+	{ at: 15, label: 'Afternoon' },
+	{ at: 17.6, label: 'Golden' },
+	{ at: 18.4, label: 'Dusk' },
+	{ at: 23, label: 'Night' },
+];
+
 /**
- * The times of day that the showcase HUD offers, with `Auto` easing through them and looping. The
- * studio is the last entry: it is not an hour, but a backdrop and a key light of its own, and Auto
- * never eases through it.
+ * The buttons beside the hour slider. Auto moves the hour by itself and loops; the studio is not an
+ * hour but a backdrop and a key light of its own, and Auto never passes through it.
  */
-export const TIMES_OF_DAY: readonly HudOption[] = [
+export const TIME_BUTTONS: readonly HudOption[] = [
 	{
 		id: 'Auto',
 		label: 'Auto',
-		tip: 'Ease through the times of day and loop, each cross-fading into the next.',
+		tip: 'Move the hour by itself, across the whole day and round again.',
 	},
-	{ id: 'Dawn', label: 'Dawn', tip: 'First light: a low sun and a warm sky.' },
-	{ id: 'Morning', label: 'Morning', tip: 'A high, clear morning sun.' },
-	{ id: 'Midday', label: 'Midday', tip: 'The sun overhead and the shortest shadows.' },
-	{ id: 'Afternoon', label: 'Afternoon', tip: 'A warm, lowering sun.' },
-	{ id: 'Golden', label: 'Golden', tip: 'The golden hour: a long, amber sun.' },
-	{ id: 'Dusk', label: 'Dusk', tip: 'Blue hour: the sun just below the horizon.' },
-	{ id: 'Night', label: 'Night', tip: 'Moonlight, a navy sky and the moon\u2019s own light.' },
 	{
 		id: 'Studio',
 		label: 'Studio',

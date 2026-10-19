@@ -108,7 +108,10 @@ export default defineSketch(async (ctx) => {
 	});
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 	// occlusion starts on, so the scene's shadows read.
-	post.set({ ao: { radius: 0.5 } });
+	post.set({
+		ao: { radius: 0.5 },
+		bloom: { blend: 'add', intensity: 0.2, threshold: 1 },
+	});
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.05,
@@ -191,7 +194,7 @@ export default defineSketch(async (ctx) => {
 			shadows: true,
 			ao: true,
 			environment: true,
-			bloom: false,
+			bloom: true,
 			dof: false,
 			exposure: false,
 			vignette: false,
@@ -222,6 +225,11 @@ export default defineSketch(async (ctx) => {
 			}
 		},
 		mood: choose,
+		hour(hours) {
+			stage.setHour(hours);
+			// The slider holds any hour, so the scene takes the look of the fixed mood nearest to it.
+			showLook(nearestMood(hours));
+		},
 		film: () => film,
 		fov: FOV,
 		focalLength: DSLR_FOCAL_LENGTH,
@@ -241,6 +249,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
 			// next time of day as the sun does.
 			if (stage.auto) {

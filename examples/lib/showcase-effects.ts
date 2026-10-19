@@ -21,7 +21,8 @@ import {
 	POST,
 	QUALITY,
 	radioGroup,
-	TIMES_OF_DAY,
+	TIME_BUTTONS,
+	TIME_MARKS,
 	toggleGroup,
 } from './controls';
 import { isMood, type Stage } from './stage';
@@ -46,6 +47,8 @@ export interface ShowcaseEffectsOptions {
 	apply(id: string, on: boolean): void;
 	/** The scene's own choice of a mood, such as the look its caustics and its air take. */
 	mood(mood: import('./stage').Mood): void;
+	/** The scene's own answer to a new hour from the slider, such as the look its air takes. */
+	hour(hours: number): void;
 	/** The scene's route player, which the router drives and refreshes. */
 	film(): Cinematic;
 	/** The fov the camera holds with no lens, and the focal length of the lens. */
@@ -67,6 +70,8 @@ export interface ShowcaseEffects {
 	groups(): readonly HudGroup[];
 	/** The post settings of the lens while it is on, or null while it is off. */
 	lens(): Record<string, unknown> | null;
+	/** Sends the controls to the page while Auto moves the hour, so its slider follows. Call each frame. */
+	update(t: number): void;
 }
 
 /** The aperture and blur of the lens, which both scenes share. */
@@ -81,7 +86,7 @@ export function createShowcaseEffects(
 	options: ShowcaseEffectsOptions,
 ): ShowcaseEffects {
 	const { page, post, quality } = ctx;
-	const { camera, sun, stage, start, supported, apply, mood, film, fov, focalLength, focus } =
+	const { camera, sun, stage, start, supported, apply, mood, hour, film, fov, focalLength, focus } =
 		options;
 	const on: Record<string, boolean> = { ...start };
 	// The stage starts with every part on, so a part that the scene starts with off must be turned
@@ -93,6 +98,8 @@ export function createShowcaseEffects(
 		}
 	const settings = { dof: { ...DSLR_LENS, focusPoint: focus } };
 
+	/** The time of the last controls post that Auto asked for. */
+	let postedAt = Number.NEGATIVE_INFINITY;
 	/** Turns the lens on or off: a long lens wide open, or the scene's own fov. */
 	const setLens = (lit: boolean): void => {
 		on.dof = lit;
@@ -134,7 +141,10 @@ export function createShowcaseEffects(
 	page.onMessage((name, value) => {
 		const picked = String(value);
 		if (name === 'camera') film().select(picked);
-		else if (name === 'mood' && isMood(value)) {
+		else if (name === 'hour') {
+			hour(Number(value));
+			film().refresh();
+		} else if (name === 'mood' && isMood(value)) {
 			mood(value);
 			film().refresh();
 		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
@@ -150,7 +160,26 @@ export function createShowcaseEffects(
 		on,
 		set,
 		groups: (): readonly HudGroup[] => [
-			radioGroup('mood', 'Time of day', TIMES_OF_DAY, stage.mood),
+			{
+				name: 'hour',
+				title: 'Time of day',
+				radio: false,
+				buttons: TIME_BUTTONS.map((option) => ({
+					id: option.id,
+					label: option.label,
+					tip: option.tip,
+					active: option.id === 'Auto' ? stage.auto : stage.mood === 'Studio',
+				})),
+				slider: {
+					min: 0,
+					max: 24,
+					step: 0.05,
+					value: stage.hours,
+					live: stage.auto,
+					marks: TIME_MARKS,
+					tip: 'Slide to any hour of the day. Auto moves it by itself and loops.',
+				},
+			},
 			toggleGroup(
 				'atmosphere',
 				'Atmosphere',
@@ -163,5 +192,11 @@ export function createShowcaseEffects(
 			radioGroup('quality', 'Quality', QUALITY, quality.preset),
 		],
 		lens: () => (on.dof ? settings : null),
+		update(t) {
+			// Auto moves the hour, so the page's slider follows it; a fixed hour posts nothing.
+			if (!stage.auto || t - postedAt < 0.15) return;
+			postedAt = t;
+			film().refresh();
+		},
 	};
 }

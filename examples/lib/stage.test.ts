@@ -177,6 +177,18 @@ test('the daylight hours hold midday’s exposure, and a low sun opens it up', (
 	expect(last.exposure as number).toBeGreaterThan(midday);
 });
 
+test('the slider holds any hour, and Auto moves it again', () => {
+	const { stage, frames } = staged();
+	stage.setHour(18.4);
+	frames(240);
+	expect(stage.hours).toBeCloseTo(18.4, 3);
+	expect(stage.auto).toBe(false);
+	stage.set('Auto');
+	frames(60);
+	expect(stage.auto).toBe(true);
+	expect(stage.hours).not.toBeCloseTo(18.4, 3);
+});
+
 test('the fixed mood nearest an hour carries the look of the moment', () => {
 	expect(nearestMood(6.2)).toBe('Dawn');
 	expect(nearestMood(12)).toBe('Midday');

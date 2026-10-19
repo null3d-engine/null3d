@@ -269,6 +269,13 @@
 				box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
 			}
 			.hud__group[hidden] { display: none; }
+			/* A group's slider runs the card's whole width, and its labels sit in two rows, so the
+			   key hours never overlap on a narrow screen. */
+			.hud__slider { width: 100%; margin: 2px 0 10px; }
+			.hud__range { display: block; width: 100%; accent-color: #7fd1ff; }
+			.hud__marks { position: relative; height: 30px; margin-top: 7px; font-size: 10.5px; line-height: 1.25; color: rgb(255 255 255 / 0.7); }
+			.hud__mark { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
+			.hud__mark:nth-child(even) { top: 15px; }
 			.hud__buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 			.hud__btn {
 				display: inline-flex;

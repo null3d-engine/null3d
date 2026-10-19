@@ -131,6 +131,8 @@ export interface StageOptions {
 export interface Stage {
 	/** Sets the target: a fixed time, the studio, or Auto, which moves the sun and the moon. */
 	set(mood: Mood): void;
+	/** Holds any hour of the day, from 0 up to 24, as the slider does. Auto stops. */
+	setHour(hours: number): void;
 	/** The mood now. */
 	readonly mood: Mood;
 	/** True while Auto moves the hour. */
@@ -191,6 +193,8 @@ export function createMoods(
 	let mood: Mood = 'Afternoon';
 	let wasAuto = false;
 	let autoHours = HOURS.Afternoon;
+	/** The hour that the slider holds, or null while a mood or Auto drives the hour. */
+	let manualHours: number | null = null;
 	/** True once the first target is in use, so the first frame does not fade in from nothing. */
 	let started = false;
 	/** The hours that the target was made for, so a fixed mood computes it once. */
@@ -405,6 +409,7 @@ export function createMoods(
 			return wasAuto;
 		},
 		get hours() {
+			if (manualHours !== null) return manualHours;
 			if (wasAuto) return autoHours;
 			return mood === 'Studio' ? 12 : mood === 'Auto' ? autoHours : HOURS[mood];
 		},
@@ -413,6 +418,7 @@ export function createMoods(
 		},
 		set(next) {
 			mood = next;
+			manualHours = null;
 			wasAuto = next === 'Auto';
 			// A mood change writes the whole look, whatever the eased values say.
 			needsLook = true;
@@ -425,9 +431,21 @@ export function createMoods(
 			aimAt(next === 'Auto' ? autoHours : HOURS[next], next);
 			if (!started) snap();
 		},
+		setHour(hours) {
+			manualHours = Math.min(24, Math.max(0, hours));
+			wasAuto = false;
+			mood = nearestMood(manualHours);
+			needsLook = true;
+			still = false;
+			targetHours = Number.NaN;
+			aimAt(manualHours, mood);
+			if (!started) snap();
+		},
 		update(dt) {
 			if (mood === 'Studio') return;
-			if (wasAuto) {
+			if (manualHours !== null) {
+				if (targetHours !== manualHours) aimAt(manualHours, mood);
+			} else if (wasAuto) {
 				autoHours = (autoHours + (dt * 24) / (perDay * 60)) % 24;
 				aimAt(autoHours, 'Auto');
 			} else if (mood !== 'Auto') {

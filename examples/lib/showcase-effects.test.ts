@@ -48,6 +48,8 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 	};
 	const stage = {
 		mood: 'Night',
+		auto: false,
+		hours: 23,
 		show: (part: string, on: boolean) => shown.push(`${part} ${on}`),
 		preset: 'high',
 	};
@@ -75,6 +77,7 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 		},
 		apply: (id, on) => seen.push(`${id} ${on}`),
 		mood: (mood) => seen.push(`mood ${mood}`),
+		hour: (hours) => seen.push(`hour ${hours}`),
 		film: () => film,
 		fov: 45,
 		focalLength: 50,
@@ -88,6 +91,22 @@ describe('createShowcaseEffects', () => {
 	it('turns a part off at the start when the scene starts with it off', () => {
 		const { shown } = stub({ start: { sky: true, fog: false, shadows: true } });
 		expect(shown).toEqual(['fog false']);
+	});
+
+	it('offers the time of day as a slider on the stage’s hour', () => {
+		const { effects } = stub();
+		const time = effects.groups().find((group) => group.name === 'hour');
+		expect(time?.slider?.value).toBe(23);
+		expect(time?.slider?.min).toBe(0);
+		expect(time?.slider?.max).toBe(24);
+		expect(time?.slider?.live).toBe(false);
+		expect(time?.buttons.map((button) => button.id)).toEqual(['Auto', 'Studio']);
+	});
+
+	it('sends a slider hour to the scene', () => {
+		const { scene, seen } = stub();
+		scene.handler?.('hour', '18.4');
+		expect(seen).toContain('hour 18.4');
 	});
 
 	it('sends each shared switch to the part that owns it', () => {
@@ -128,7 +147,7 @@ describe('createShowcaseEffects', () => {
 		const { effects } = stub();
 		const groups = effects.groups();
 		expect(groups.map((group) => group.name)).toEqual([
-			'mood',
+			'hour',
 			'atmosphere',
 			'lighting',
 			'post',
