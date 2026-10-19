@@ -212,3 +212,19 @@ At the held afternoon and night hours no value changes, and no other test sketch
 ### What the fix showed
 
 With the veil gone, Creek at Dusk is dark. The sun is below the horizon, its main light grazes the ground, and the sky's environment is nearly out. The scene's fine detail survives: the spread a one-pixel blur leaves out stayed at 1.3 of 255 in the near band, against 1.3 before. Raising the exposure was tried at 1.6 and 2.2 times. It brightened the fog with the scene and did not add detail, so the exposure band stays as it is. A scene that faces the sunset, as the dawn side of Creek's route does, keeps a lit valley.
+
+### Addendum, 19 October 2026: the mean light at every hour
+
+The owner asked for the rule at every hour: the Creek and Night town items
+wash out at every time of day except night. The fog now takes the sky's mean
+light at every hour, not only as the sun sets, and the exposure follows that
+same mean. The evening-only rule and its golden-hour bound are gone. The unit
+test now holds that the fog's red never exceeds 1.1 times its blue at any
+hour, which is the mean of a clear sky, and the smoothness test holds the
+values between hours.
+
+Measured fog colours, red over blue: dawn 1.03, morning 0.75, midday 0.76,
+afternoon 0.75, golden hour 1.02, blue hour 1.03, night 0.52. Before this
+change, golden hour's fog carried the horizon's warm glow, with red more than
+1.8 times blue, and every daytime hour took the horizon's light rather than
+the mean.

@@ -592,14 +592,12 @@ function physicalDay(
 	// the twilight's fill does not fall away between the two.
 	const sunShare = sunLight * (1 - handover);
 	const moonShare = MOON_SKY_LIGHT * handover;
-	// By day the fog takes the sky's light along the horizon. As the sun drops, only its own side of
-	// the sky glows, and a fog of that glow hides the shaded ground, so the fog turns to the sky's
-	// mean light, as the analytic model's does. It turns over the last degrees of the sun's height,
-	// where the exposure rises fastest, so no evening hour carries a brighter fog than the sky.
-	const dusk = smoothstep(5, -5, elevation);
+	// The fog takes the sky's mean light at every hour, not its light along the horizon. A fog of the
+	// horizon's light carries the brightest band of the sky over the whole scene and washes its shaded
+	// surfaces, while the exposure follows the mean; a low sun makes that band its own glow. The
+	// analytic model's fog takes the mean too.
 	const fogColor = out.fog.color;
-	for (let c = 0; c < 3; c++)
-		fogColor[c] = mix(SET_HORIZON[c] as number, SET_MEAN[c] as number, dusk) * sunShare;
+	scale(fogColor, SET_MEAN, sunShare);
 	add(fogColor, fogColor, scale(MOON_HORIZON, MOON_HORIZON, moonShare));
 	const fogPeak = Math.max(fogColor[0], fogColor[1], fogColor[2]);
 	if (fogPeak > 1) scale(fogColor, fogColor, 1 / fogPeak);
