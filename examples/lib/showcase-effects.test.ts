@@ -3,6 +3,7 @@
 // that the scene supports.
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
+import { TIME_NAMES, TIME_SKY } from './controls';
 import { createShowcaseEffects, shadowStep } from './showcase-effects';
 
 /** A cinematic that records how the page's camera picks reach it. */
@@ -113,7 +114,7 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 		focus: [0, 1, 0],
 		...(options.dslr !== undefined && { dslr: options.dslr }),
 	});
-	return { effects, seen, posts, shown, calls, scene, camera, quality, ranges, place };
+	return { effects, seen, posts, shown, calls, scene, camera, quality, ranges, place, stage };
 }
 
 describe('createShowcaseEffects', () => {
@@ -131,6 +132,50 @@ describe('createShowcaseEffects', () => {
 		expect(time?.slider?.live).toBe(false);
 		expect(time?.buttons.map((button) => button.id)).toEqual(['Auto', 'Studio']);
 		expect(time?.buttons.map((button) => button.name)).toEqual(['mood', 'mood']);
+	});
+
+	it('draws the hour as a dial in the sky’s colors, which names the studio while it is on', () => {
+		const { effects, stage } = stub();
+		const dial = () => effects.groups().find((group) => group.name === 'hour')?.slider?.dial;
+		expect(dial()?.colors).toBe(TIME_SKY);
+		expect(dial()?.names).toBe(TIME_NAMES);
+		expect(dial()?.off).toBeUndefined();
+		stage.mood = 'Studio';
+		expect(dial()?.off).toBe('Studio');
+	});
+
+	it('names midnight, and every hour of the day, on the dial', () => {
+		const nameOf = (hour: number) =>
+			TIME_NAMES.filter(([, from, to]) =>
+				from < to ? hour >= from && hour < to : hour >= from || hour < to,
+			).map(([name]) => name);
+		// Every hour falls in exactly one span, and the half hour either side of midnight is its own.
+		for (let hour = 0; hour < 24; hour += 0.05) expect(nameOf(hour)).toHaveLength(1);
+		expect(nameOf(0)).toEqual(['Midnight']);
+		expect(nameOf(23.75)).toEqual(['Midnight']);
+		expect(nameOf(2)).toEqual(['Night']);
+		expect(nameOf(6.2)).toEqual(['Dawn']);
+	});
+
+	it('turns Auto off with a second press, holding the hour it reached', () => {
+		const { scene, seen, stage } = stub();
+		scene.handler?.('mood', 'Auto');
+		expect(seen.at(-1)).toBe('mood Auto');
+		stage.auto = true;
+		stage.hours = 14.5;
+		scene.handler?.('mood', 'Auto');
+		expect(seen.at(-1)).toBe('hour 14.5');
+	});
+
+	it('turns the studio off with a second press, back to the hour it took the place of', () => {
+		const { scene, seen, stage } = stub();
+		stage.hours = 9.25;
+		scene.handler?.('mood', 'Studio');
+		expect(seen.at(-1)).toBe('mood Studio');
+		stage.mood = 'Studio';
+		stage.hours = 12;
+		scene.handler?.('mood', 'Studio');
+		expect(seen.at(-1)).toBe('hour 9.25');
 	});
 
 	it('turns the level of detail off by default, and on and off under Quality', () => {

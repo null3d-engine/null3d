@@ -25,6 +25,8 @@ import {
 	radioGroup,
 	TIME_BUTTONS,
 	TIME_MARKS,
+	TIME_NAMES,
+	TIME_SKY,
 	toggleGroup,
 } from './controls';
 import { isMood, type Stage } from './stage';
@@ -207,6 +209,8 @@ export function createShowcaseEffects(
 	};
 
 	if (options.dslr) setLens(true);
+	/** The hour the studio took the place of, which a second press on Studio gives back. */
+	let beforeStudio = stage.hours;
 
 	page.onMessage((name, value) => {
 		const picked = String(value);
@@ -215,7 +219,14 @@ export function createShowcaseEffects(
 			hour(Number(value));
 			film().refresh();
 		} else if (name === 'mood' && isMood(value)) {
-			mood(value);
+			// Auto and Studio each turn off with a second press: Auto holds the hour it reached, and
+			// the studio gives back the hour it took the place of.
+			if (value === 'Auto' && stage.auto) hour(stage.hours);
+			else if (value === 'Studio' && stage.mood === 'Studio') hour(beforeStudio);
+			else {
+				if (value === 'Studio') beforeStudio = stage.hours;
+				mood(value);
+			}
 			film().refresh();
 		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
 			set(picked, !(on[picked] ?? false));
@@ -259,7 +270,12 @@ export function createShowcaseEffects(
 					value: stage.hours,
 					live: stage.auto,
 					marks: TIME_MARKS,
-					tip: 'Slide to any hour of the day. Auto moves it by itself and loops.',
+					tip: 'Turn the dial to any hour of the day, round past midnight. Auto moves it by itself and loops.',
+					dial: {
+						colors: TIME_SKY,
+						names: TIME_NAMES,
+						...(stage.mood === 'Studio' && { off: 'Studio' }),
+					},
 				},
 			},
 			toggleGroup(

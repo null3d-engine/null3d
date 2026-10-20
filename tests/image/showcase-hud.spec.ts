@@ -259,13 +259,34 @@ test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page
 	).toBeLessThan(3);
 	expect(toast?.y ?? 0).toBeLessThan(80);
 
-	// Time of day is an hour slider with Auto and Studio beside it. The slider sets any hour; the
-	// two buttons pick a mood, and each names its new state.
+	// Time of day is an hour dial with a readout, and Auto and Studio beside it. A tap on the ring
+	// sets the hour there: midnight sits at the bottom and the hours run clockwise, so 18:24 is a
+	// little below the right-hand side. The readout names the hour.
 	await page.getByRole('tab', { name: 'Time of day' }).click();
-	await panel(page, 'hour').locator('input.hud__range').fill('18.4');
+	const dial = panel(page, 'hour').getByRole('slider', { name: 'Time of day' });
+	const box = await dial.boundingBox();
+	expect(box).not.toBeNull();
+	const turn = (18.4 / 24) * Math.PI * 2;
+	const reach = (box?.width ?? 0) * 0.445;
+	await page.mouse.click(
+		(box?.x ?? 0) + (box?.width ?? 0) / 2 - Math.sin(turn) * reach,
+		(box?.y ?? 0) + (box?.height ?? 0) / 2 + Math.cos(turn) * reach,
+	);
+	const readout = panel(page, 'hour').locator('.hud__name');
+	await expect(readout).toHaveText('Dusk');
+	// The dial wraps round: six hours on from 18:24 is past midnight, which the readout names.
+	await dial.focus();
+	for (let k = 0; k < 6; k++) await dial.press('PageUp');
+	await expect(readout).toHaveText('Midnight');
+	await expect(panel(page, 'hour').locator('.hud__time')).toHaveText(/^00:2\d$/);
+	// Auto and Studio each turn on with a press and off with the next, and name each change.
 	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
+	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: off');
 	await pick(page, 'Time of day', 'hour', 'Studio', 'Studio: on');
-	// Back to Auto, which leaves the studio backdrop for the sky again.
+	await expect(readout).toHaveText('Studio');
+	await pick(page, 'Time of day', 'hour', 'Studio', 'Studio: off');
+	await pick(page, 'Time of day', 'hour', 'Studio', 'Studio: on');
+	// Auto from the studio leaves the studio backdrop for the sky again.
 	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
 	// Lighting and Post are toggles: each names the effect, with its label's own case, and its
 	// new state.

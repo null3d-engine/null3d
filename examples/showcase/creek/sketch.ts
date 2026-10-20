@@ -12,7 +12,7 @@
 import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
-import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
 import { createMoods, isMood, type Mood, nearestMood } from '../../lib/stage';
@@ -139,6 +139,7 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
+		layers: SUN_LAYERS,
 		// Two cascades over a wider distance: one box fitted to the camera dropped casters at its
 		// edge as the camera moved, which made the shadows under the trees change.
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.04, cascades: 2 },

@@ -189,6 +189,23 @@ test('the slider holds any hour, and Auto moves it again', () => {
 	expect(stage.hours).not.toBeCloseTo(18.4, 3);
 });
 
+test('Auto carries on from the hour on show, so turning it on never jumps the sky', () => {
+	const { stage, frames } = staged();
+	stage.setHour(7.05);
+	frames(30);
+	stage.set('Auto');
+	expect(stage.hours).toBeCloseTo(7.05, 3);
+	frames(60);
+	// A whole day takes four minutes of Auto, so a second moves the hour on about six minutes from
+	// where it started, never hours away.
+	expect(stage.hours).toBeGreaterThan(7.05);
+	expect(stage.hours).toBeLessThan(8);
+	// From a fixed mood, it starts at that mood's hour.
+	stage.set('Dusk');
+	stage.set('Auto');
+	expect(stage.hours).toBeCloseTo(18.4, 3);
+});
+
 test('the fixed mood nearest an hour carries the look of the moment', () => {
 	expect(nearestMood(6.2)).toBe('Dawn');
 	expect(nearestMood(12)).toBe('Midday');

@@ -425,6 +425,10 @@ export function createMoods(
 			return current.fog;
 		},
 		set(next) {
+			// Auto carries on from the hour on show, so turning it on never jumps the sky; from the
+			// studio it carries on from where it last stood.
+			if (next === 'Auto' && mood !== 'Studio' && mood !== 'Auto')
+				autoHours = manualHours ?? HOURS[mood as Exclude<Mood, 'Auto' | 'Studio'>];
 			mood = next;
 			manualHours = null;
 			wasAuto = next === 'Auto';

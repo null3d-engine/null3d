@@ -11,7 +11,7 @@
 // mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
-import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
 import { createAir } from './air';
@@ -115,6 +115,7 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
+		layers: SUN_LAYERS,
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.05, contactDistance: 0.25 },
 	});
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient

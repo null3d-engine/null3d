@@ -13,6 +13,12 @@ export const INTERIOR_LAYER = 1 << 30;
  * draws this layer; the clearance guard never tests it, since a sprite is not a wall.
  */
 export const EFFECT_LAYER = 1 << 29;
+/**
+ * The layers of a showcase scene's sun. A light's layers pick the objects that cast its shadows, so
+ * an object with an inside, such as a cave's rock, casts too and the sun never shines through it.
+ * What fills the air casts none.
+ */
+export const SUN_LAYERS = 1 | INTERIOR_LAYER;
 /** The layers that the clearance guard tests: every layer except the interiors' and the effects'. */
 export const SOLID_LAYERS = EFFECT_LAYER - 1;
 /** The layers a showcase scene's camera draws: the default, the unreflected and both markers. */
