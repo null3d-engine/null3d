@@ -281,7 +281,9 @@ export function engineProblems(
 	const timestamps = tier === 'webgpu' && result.capabilities.features.includes('timestamp-query');
 	const sampled = Math.floor(stats.frames / SAMPLED_EVERY);
 	const gpuTimes = stats.gpuMs?.count ?? 0;
-	if (timestamps && gpuTimes < Math.max(1, sampled / 2))
+	// A window too short for one sampled frame cannot judge the GPU timer: on 20 October 2026 a
+	// software GPU measured six frames, none of them a sampled one, and reported no GPU times.
+	if (timestamps && sampled >= 1 && gpuTimes < Math.max(1, sampled / 2))
 		problems.push(
 			`GPU times for ${gpuTimes} of about ${sampled} sampled frames, although the device has timestamp queries`,
 		);
@@ -302,7 +304,9 @@ export function engineProblems(
 	// With the sketch and the drawing in workers, the page's thread must stay free (design
 	// principle 6).
 	const pageFree = mode.renderThread !== 'main' && mode.sketchThread !== 'main';
-	if (pageFree && (stats.mainThread?.longTasks ?? 0) > 0)
+	// A software GPU draws on the CPU, so the page's thread shares it with the renderer: one long
+	// task there says nothing about which thread the engine works on.
+	if (pageFree && !softwareGpu && (stats.mainThread?.longTasks ?? 0) > 0)
 		problems.push(
 			`the page's thread ran ${stats.mainThread?.longTasks} long tasks, up to ${stats.mainThread?.longestTaskMs} ms`,
 		);

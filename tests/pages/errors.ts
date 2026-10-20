@@ -74,7 +74,11 @@ run('errors', async () => {
 	await engine.destroy();
 	const again = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
 	await again.firstFrame;
-	const stats = await again.measure(0.5);
+	// A slow GPU draws a frame in more than half a second, so the window repeats until one draws.
+	let stats = await again.measure(0.5);
+	for (let window = 1; window < 10 && stats.frames === 0; window++) {
+		stats = await again.measure(0.5);
+	}
 	await again.destroy();
 	return {
 		mode: again.mode,
