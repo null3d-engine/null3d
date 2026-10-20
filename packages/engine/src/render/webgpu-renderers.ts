@@ -272,7 +272,7 @@ class WebGPUSceneRenderer implements Renderer {
 		const pixels = await captureWebGPU(this.device, width, height, this.format, (texture) => {
 			this.backend.canvasTarget = texture;
 			try {
-				this.frames.replay(frame);
+				this.frames.replayForCapture(frame);
 			} finally {
 				this.backend.endCapture();
 				this.backend.resetCounts();
