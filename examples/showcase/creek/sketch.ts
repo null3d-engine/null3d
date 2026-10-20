@@ -77,7 +77,8 @@ export const SHADOW_REACH: ShadowReach = { distance: 60, center: [0, 4, 0], radi
 export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 	center: [0, 0],
 	focus: 30,
-	focusHeight: [0, 6],
+	// The point it turns around may sink under the water too, as the route's dip along the bed does.
+	focusHeight: [-0.5, 6],
 	distance: 45,
 	// The stream's bed is the ground under the water, so the camera may dip under the surface but
 	// never through the bed.
@@ -109,9 +110,13 @@ export const SHOTS: readonly Shot[] = [
 	{ position: [6, 5, 14.5], target: [10, 1, -6], seconds: 6 },
 	// The end of the near tree line: it turns to face back down the valley here.
 	{ position: [26, 5, 15.5], target: [28, 1, -4], seconds: 7 },
-	// Down to the water, tracing the stream's own winding line back down the valley.
-	{ position: [26, 2.4, streamZ(26)], target: [10, 0.5, streamZ(10)], seconds: 8 },
-	{ position: [6, 2.2, streamZ(6)], target: [-8, 0.5, streamZ(-8)], seconds: 7 },
+	// Down to the water, tracing the stream's own winding line back down the valley. The camera
+	// sinks under the surface and glides along the bed for about six seconds, between the stones,
+	// then rises out of the water again. The dip passes through the surface on purpose.
+	{ position: [26, 1, streamZ(26)], target: [14, -0.1, streamZ(14)], seconds: 4, through: true },
+	{ position: [17, -0.15, streamZ(17)], target: [5, -0.2, streamZ(5)], seconds: 5, through: true },
+	{ position: [8, -0.16, streamZ(8)], target: [-4, -0.16, streamZ(-4)], seconds: 4, through: true },
+	{ position: [1.5, 1.8, streamZ(1.5)], target: [-10.5, 0.5, streamZ(-10.5)], seconds: 6 },
 	{ position: [-12.5, 2.2, streamZ(-12.5)], target: [-22, 0.6, streamZ(-22)], seconds: 7 },
 	// Right to the far bank, behind its trees and facing back over the water.
 	{ position: [-12.5, 4.5, -18], target: [-6, 1, 6], seconds: 7 },
@@ -305,7 +310,6 @@ export default defineSketch(async (ctx) => {
 			const t = time.now;
 			stage.update(dt);
 			for (const haze of hazes) haze.setColor(stage.airColor);
-			underwater.update(t, stage.airColor, CAUSTICS[current]);
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
 			// next time of day as the sun does.
@@ -314,6 +318,8 @@ export default defineSketch(async (ctx) => {
 				if (at !== current) showLook(at);
 			}
 			film.update(dt);
+			// After the camera moves, so the view under the water turns the frame the camera dips.
+			underwater.update(t, stage.airColor, CAUSTICS[current]);
 			const lens = controls.lens();
 			if (lens) post.set(lens);
 			flora.update(t);

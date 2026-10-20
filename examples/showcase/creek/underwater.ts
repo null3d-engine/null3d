@@ -1,8 +1,10 @@
-// The view from under the creek's water. While the camera is under the surface, a full-screen effect
-// makes the picture read as seen through flowing water: the current bends the light in a slow
-// wobble that runs downstream, caustics play over the bed and the stones under the surface, and the
-// water swallows the light with distance, into its own green. Above the water the effect is gone,
-// so it costs nothing there.
+// The view from under the creek's water. Each pixel whose line of sight starts under the waving
+// surface reads as seen through flowing water: the current bends the light in a slow wobble that
+// runs downstream, caustics play over the bed and the stones under the surface, and the water
+// swallows the light with distance, into its own green. The test is per pixel, from the point where
+// the pixel's line of sight leaves the camera's near plane, so a camera half under the water splits
+// the picture at the waterline, as a real one does. The effect is added only while the camera is
+// near or under the water, so it costs nothing elsewhere.
 import {
 	type Effect,
 	type PerspectiveCamera,
@@ -25,6 +27,7 @@ struct Uniforms {
     right: vec3f,
     lens: f32,
     up: vec3f,
+    near: f32,
     back: vec3f,
 }
 
@@ -39,8 +42,41 @@ fn caustics(p: vec2f, t: f32, flow: f32) -> f32 {
     return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
 
+/// The height of the water's surface at a point and time, from the long waves that move its
+/// vertices. The water's surface shader holds the same three waves first in its list.
+fn surface_height(p: vec2f, t: f32) -> f32 {
+    let list = array<vec4f, 3>(
+        vec4f(1.0, 0.15, 2.3, 0.9),
+        vec4f(0.8, -0.6, 3.7, 0.7),
+        vec4f(0.6, 0.8, 5.9, 0.5),
+    );
+    var h = uniforms.level;
+    for (var k = 0u; k < 3u; k++) {
+        let w = list[k];
+        let dir = normalize(w.xy);
+        let phase = w.z * (dot(dir, p) - uniforms.flow * t * dir.x) - w.w * t;
+        h += 0.05 / w.z * sin(phase);
+    }
+    return h;
+}
+
+/// The direction in the world of the line of sight through a place uv, and its share along the view.
+fn sight(uv: vec2f, aspect: f32) -> vec4f {
+    let ahead = normalize(vec3f((uv.x * 2.0 - 1.0) * uniforms.lens * aspect, (1.0 - uv.y * 2.0) * uniforms.lens, -1.0));
+    return vec4f(uniforms.right * ahead.x + uniforms.up * ahead.y + uniforms.back * ahead.z, -ahead.z);
+}
+
 fn effect(input: EffectInput) -> vec4f {
     let t = input.time;
+    let aspect = input.size.x / input.size.y;
+    // Where this pixel's line of sight leaves the near plane: above the waving surface there, the
+    // pixel sees the world from the air and keeps its color.
+    let own = sight(input.uv, aspect);
+    let start = uniforms.eye + own.xyz * (uniforms.near / own.w);
+    let gap = surface_height(start.xz, t) - start.y;
+    if gap <= 0.0 {
+        return input.color;
+    }
     // The current bends the light: a slow wobble whose waves run downstream across the picture.
     let wobble = vec2f(
         sin(input.uv.y * 23.0 + t * 1.7) + 0.6 * sin(input.uv.y * 41.0 + input.uv.x * 9.0 - t * 2.3),
@@ -48,13 +84,12 @@ fn effect(input: EffectInput) -> vec4f {
     ) * 0.0022;
     let uv = input.uv + wobble;
     var color = effectColor(uv);
-    // The ray from the eye through the pixel, in the world.
-    let aspect = input.size.x / input.size.y;
-    let ahead = normalize(vec3f((uv.x * 2.0 - 1.0) * uniforms.lens * aspect, (1.0 - uv.y * 2.0) * uniforms.lens, -1.0));
-    let ray = uniforms.right * ahead.x + uniforms.up * ahead.y + uniforms.back * ahead.z;
+    // The ray from the eye through the wobbled place, in the world.
+    let line = sight(uv, aspect);
+    let ray = line.xyz;
     // How far the ray runs to what it shows, which is infinite where it shows the sky.
     let depth = effectDistance(uv);
-    let reach = select(1e6, depth / -ahead.z, depth < 1e6);
+    let reach = select(1e6, depth / line.w, depth < 1e6);
     if reach < 1e6 {
         // Caustics on what lies under the surface, fading with depth below it.
         let world = uniforms.eye + ray * reach;
@@ -70,7 +105,9 @@ fn effect(input: EffectInput) -> vec4f {
     let wet = min(reach, surface);
     let fade = 1.0 - exp(-min(wet, 1e4) * uniforms.density);
     let filtered = color.rgb * vec3f(0.86, 0.97, 0.95);
-    return vec4f(mix(filtered, uniforms.tint * color.a, fade), color.a);
+    // A thin dark line where the waterline crosses the lens.
+    let meniscus = 1.0 - 0.45 * (1.0 - smoothstep(0.0, 0.004, gap));
+    return vec4f(mix(filtered, uniforms.tint * color.a, fade) * meniscus, color.a);
 }
 `;
 
@@ -87,8 +124,14 @@ export interface Underwater {
 	): void;
 }
 
-/** How far under the surface, as its waves move it, the camera must be before the view turns, in meters. */
-const DIP = 0.005;
+/**
+ * How near above the surface the camera comes before the effect is added, and how far above it the
+ * camera goes before the effect is removed, in meters. An effect takes a few frames to start
+ * drawing after it is added, so it is added before the camera reaches the water, and the first pixel
+ * that dips under the surface already reads as under the water.
+ */
+const READY = 0.6;
+const RELEASE = 1;
 /** How much of the light the water swallows per meter. */
 const DENSITY = 0.07;
 /** The water's own color, as a share of the air's color at the horizon in each channel. */
@@ -111,8 +154,8 @@ export function createUnderwater(
 	return {
 		update(t, air, light) {
 			camera.getPosition(eye);
-			const under = (eye[1] as number) < surfaceHeight(eye[0] as number, eye[2] as number, t) - DIP;
-			if (!under) {
+			const above = (eye[1] as number) - surfaceHeight(eye[0] as number, eye[2] as number, t);
+			if (above > (effect ? RELEASE : READY)) {
 				if (effect) post.removeEffect(effect);
 				effect = null;
 				return;
@@ -125,7 +168,9 @@ export function createUnderwater(
 				tint[c] = (air[c] as number) * (GREEN[c] as number);
 				caustics[c] = light[c] as number;
 			}
-			if (!effect)
+			// The lens changes with the depth of field's focal length.
+			const lens = Math.tan((camera.fov * Math.PI) / 360);
+			if (!effect) {
 				effect = post.addEffect({
 					wgsl,
 					uniforms: {
@@ -136,19 +181,21 @@ export function createUnderwater(
 						eye,
 						flow: FLOW,
 						right,
-						lens: Math.tan((camera.fov * Math.PI) / 360),
+						lens,
 						up,
+						near: camera.near,
 						back,
 					},
 				});
+				return;
+			}
 			post.setEffectUniform(effect, 'tint', tint);
 			post.setEffectUniform(effect, 'caustics', caustics);
 			post.setEffectUniform(effect, 'eye', eye);
 			post.setEffectUniform(effect, 'right', right);
 			post.setEffectUniform(effect, 'up', up);
 			post.setEffectUniform(effect, 'back', back);
-			// The lens changes with the depth of field's focal length.
-			post.setEffectUniform(effect, 'lens', Math.tan((camera.fov * Math.PI) / 360));
+			post.setEffectUniform(effect, 'lens', lens);
 		},
 	};
 }

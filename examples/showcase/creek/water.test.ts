@@ -32,6 +32,10 @@ describe('the creek’s water', () => {
 		expect(source).toContain(
 			'[1.0, 0.15, 2.3, 0.9],\n\t[0.8, -0.6, 3.7, 0.7],\n\t[0.6, 0.8, 5.9, 0.5],',
 		);
+		// The view from under the water finds the waterline from the same waves, per pixel.
+		const under = wgslFunction(read('underwater.ts'), 'surface_height');
+		for (const wave of ['1.0, 0.15, 2.3, 0.9', '0.8, -0.6, 3.7, 0.7', '0.6, 0.8, 5.9, 0.5'])
+			expect(under).toContain(`vec4f(${wave})`);
 	});
 
 	it('moves its surface a few centimeters about the water level', () => {

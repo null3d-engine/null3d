@@ -70,7 +70,7 @@ function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 
 /** Where rocks stand: a few in the stream, a line along each edge, and some on the banks. */
-function rockPlaces(): { x: number; z: number; size: number }[] {
+export function rockPlaces(): { x: number; z: number; size: number }[] {
 	const next = random(41);
 	const places: { x: number; z: number; size: number }[] = [];
 	for (let k = 0; k < 70; k++) {
