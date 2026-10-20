@@ -1835,8 +1835,8 @@ export const BATTLE_CAMERA: CameraLoop = {
 /** Ramps of each device class: the units of both armies. Each row is a first guess. */
 export const BATTLE_RAMPS = {
 	desktop: { start: 200, factor: 1.2, max: 20_000 },
-	tablet: { start: 100, factor: 1.2, max: 8_000 },
-	phone: { start: 100, factor: 1.2, max: 4_000 },
+	tablet: { start: 200, factor: 1.2, max: 8_000 },
+	phone: { start: 200, factor: 1.2, max: 4_000 },
 } as const satisfies Record<DeviceClass, RampPlan>;
 
 /** The frame that the image tests hold: the lines have met and the guns fire. */

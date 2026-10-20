@@ -1,10 +1,10 @@
 // The comparison panel of the clone's examples page: `?compare=<name>` runs a comparison with one
-// engine, which `?engine=null3d` or `?engine=threejs` names, in the mode that `?mode=scene-graph` or
-// `?mode=instanced` names. A caption over the canvas holds the controls: the engine and mode
-// switches, the count slider, the effect switches, "Run the ramp", and the "about this comparison"
-// panel. Each engine runs on a page of its own, so the switch loads the
-// page again, and the ramp does too: it runs on the engine that runs, keeps the result for the
-// session, loads the page with the other engine, runs there, and shows both results.
+// engine, which `?engine=null3d` or `?engine=threejs` names, on the scene graph route: the usual
+// tree of objects that both engines build. A caption over the canvas holds the title, a button to
+// the scene's details, the engine switch, the count slider and "Run the ramp". Each engine runs on
+// a page of its own, so the switch loads the page again, and the ramp does too: it runs on the
+// engine that runs, keeps the result for the session, loads the page with the other engine, runs
+// there, and shows both results.
 //
 // A visitor gets the guided walkthrough: an intro before anything draws, null3D's ramp, three.js's
 // ramp on the same counts, and a summary of both. `?walkthrough=off` keeps the manual controls for
@@ -22,7 +22,7 @@ import {
 	startComparison,
 	thisDeviceClass,
 } from './lib/compare';
-import { type CompareMode, effectsFromText, modeFromText } from './lib/compare-scene';
+import { type CompareMode, effectsFromText } from './lib/compare-scene';
 import {
 	countToSlider,
 	FLOOR_FPS,
@@ -194,7 +194,8 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const params = new URLSearchParams(location.search);
 	const engine: EngineName = params.get('engine') === 'threejs' ? 'threejs' : 'null3d';
 	const effects = effectsFromText(params.get('effects'));
-	const mode = modeFromText(params.get('mode'));
+	// Both engines draw the usual tree of objects: the canonical route of each engine.
+	const mode: CompareMode = 'scene-graph';
 	const named = params.get('renderer');
 	const threeRenderer = named === 'webgpu' || named === 'webgl' ? named : undefined;
 	// A developer's page: no intro, and the controls start the engine at once.
@@ -319,10 +320,9 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const sheetBody = element('div');
 	sheetBody.className = 'sheet-body';
 	// The route this page measures, so the sheet never claims a route the page is not drawing.
-	const route = mode === 'instanced' ? 'The instanced route' : 'The scene graph route';
 	sheetBody.append(
 		element('p', comparison.summary),
-		element('p', `${route}: ${comparison.modes[mode]}`),
+		element('p', `The scene graph route: ${comparison.modes[mode]}`),
 		element('h3', 'How each engine draws it'),
 	);
 	const table = element('div');
