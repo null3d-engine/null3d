@@ -94,11 +94,6 @@ export class FrameReplay {
 	private complete = false;
 	/** The first frame of the last hold that a prepared frame reached. */
 	private held = 0;
-	/**
-	 * The range of the last list that held commands, and the frame it belongs to. A view that rests
-	 * records no list, so a capture replays this one rather than an empty range.
-	 */
-	private last: { frame: number; from: number; end: number } | null = null;
 
 	constructor(
 		private readonly backend: SceneBackend,
@@ -131,28 +126,29 @@ export class FrameReplay {
 			while (performance.now() < until);
 		}
 		const from = this.restOf(frame);
-		if (this.end > from) this.last = { frame, from, end: this.end };
 		const words = this.views.heap(Uint32Array);
 		this.backend.replay(words, this.views.heap(Float32Array), from, this.end, words.buffer);
 		if (!this.backend.building) this.complete = true;
 	}
 
 	/**
-	 * Replays `frame`'s list for a capture. A view that rests records no list for a frame, and its
-	 * memory still holds the last one that drew: a capture shows that one, as the last frame that
-	 * reached the screen. With nothing drawn yet, the capture replays the frame's own empty list.
+	 * Replays the frame taken last for a capture. A view that rests records no list for a frame,
+	 * so the frame's own slot holds no words: the other frame's slot then holds the list that drew
+	 * last, which is the frame the screen shows. With nothing drawn since the frames in the slots,
+	 * the capture replays the frame's own empty list, and the backend reports it.
 	 */
 	replayForCapture(frame: number): void {
 		const from = this.restOf(frame);
-		if (this.end > from) {
-			this.replay(frame);
-			return;
-		}
 		const words = this.views.heap(Uint32Array);
 		const floats = this.views.heap(Float32Array);
-		const last = this.last;
-		if (last && last.frame !== frame)
-			this.backend.replay(words, floats, last.from, last.end, words.buffer);
+		if (this.end > from) {
+			this.backend.replay(words, floats, from, this.end, words.buffer);
+			return;
+		}
+		const parity = (frame & 1) ^ 1;
+		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
+		const end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
+		if (end > start) this.backend.replay(words, floats, start, end, words.buffer);
 		else this.backend.replay(words, floats, from, this.end, words.buffer);
 	}
 
@@ -161,7 +157,9 @@ export class FrameReplay {
 	 * those of that frame's list. Frames go on while it waits, and the sketch thread records into a
 	 * taken frame's list again once the next frame is taken, so the caller replays the frame at
 	 * once, before this thread can take another. It fails when the renderer is destroyed during the
-	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit.
+	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit. A renderer
+	 * that a GPU loss replaced takes no frame yet, so the capture waits for one: its list for frame
+	 * zero is the empty one that the failed frame left.
 	 */
 	async builtTaken(): Promise<number> {
 		const deadline = performance.now() + BUILD_WAIT_LIMIT_MS;
@@ -170,7 +168,7 @@ export class FrameReplay {
 				throw new Error('the GPU was lost or the engine stopped during the capture');
 			const frame = Atomics.load(this.slots, Slot.FramesTaken);
 			this.restOf(frame);
-			if (!this.backend.building) return frame;
+			if (!this.backend.building && frame > 0) return frame;
 			if (performance.now() >= deadline)
 				throw new Error(
 					`the frame's pipelines were still building after ${BUILD_WAIT_LIMIT_MS / 1000} s`,

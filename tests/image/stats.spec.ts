@@ -272,8 +272,13 @@ test("the stats overlay shows the target once where it is the display's full rat
 	);
 });
 
-/** True on CI's software GPU, whose frames are too slow for a display-rate window. */
-const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftshader');
+/**
+ * True on CI's software GPU, whose frames are too slow for a display-rate window. CI draws with
+ * SwiftShader in every Chrome project, the production build among them; only the plain project
+ * says so in its name.
+ */
+const softwareGpu = () =>
+	Boolean(process.env.CI) || test.info().project.name.startsWith('chromium-swiftshader');
 
 for (const gpu of ['webgpu', 'webgl2'])
 	test(`the collapsed stats overlay makes the GPU time and read back nothing, on ${gpu}`, async ({

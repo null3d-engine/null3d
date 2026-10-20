@@ -272,6 +272,20 @@ export class FrameRecorder {
 		floats[at] = (floats[at] as number) + ms;
 	}
 
+	/**
+	 * The record's float view and the place of a phase's time in the record being written. A frame
+	 * ends eight phases, and a time handed to a call can cost an allocation that the allocation
+	 * check counts, so the caller that ends a phase adds it here instead.
+	 */
+	phaseFloats(): Float32Array {
+		return this.views.floats;
+	}
+
+	/** The float index of a phase's time in the record being written. */
+	phaseIndex(phase: number): number {
+		return this.at + PHASES + phase;
+	}
+
 	count(counter: number, value: number): void {
 		this.views.words[this.at + COUNTERS + counter] = value;
 	}
