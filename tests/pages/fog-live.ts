@@ -37,10 +37,18 @@ run('fog-live', async () => {
 	await engine.firstFrame;
 	// The blend settles per frame, not per second, so wait for a count of frames. A software
 	// renderer draws only a few frames a second, and a fixed time would capture too few.
+	// Each window counts the frames that finish inside it, so a window shorter than one frame
+	// misses most of them: on 20 October 2026 a software GPU whose frames took seconds was counted
+	// at 19 frames in the whole cap. A window that counted none doubles until it holds whole
+	// frames, so the count follows the device's pace and still stops at the cap.
 	const started = performance.now();
 	let frames = 0;
-	while (frames < SETTLE_FRAMES && performance.now() - started < SETTLE_LIMIT_SECONDS * 1000)
-		frames += (await engine.measure(WINDOW_SECONDS)).frames;
+	let window = WINDOW_SECONDS;
+	while (frames < SETTLE_FRAMES && performance.now() - started < SETTLE_LIMIT_SECONDS * 1000) {
+		const slice = await engine.measure(window);
+		frames += slice.frames;
+		if (slice.frames === 0) window = Math.min(window * 2, 10);
+	}
 	const frame = await engine.captureFrame();
 	await engine.destroy();
 	return {
