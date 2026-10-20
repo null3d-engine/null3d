@@ -26,6 +26,7 @@ import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
@@ -354,12 +355,16 @@ describe('Material.set', () => {
 		materials.standard({ fog: true });
 		materials.standard({ fog: false });
 		materials.standard();
+		materials.standard({ contactShadows: true });
+		materials.standard({ contactShadows: false, doubleSided: true });
 		expect(features).toEqual([
 			MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING,
 			MATERIAL_FEATURE_VERTEX_COLORS | MATERIAL_FEATURE_NO_FOG,
 			0,
 			MATERIAL_FEATURE_NO_FOG,
 			0,
+			0,
+			MATERIAL_FEATURE_NO_CONTACT_SHADOWS | MATERIAL_FEATURE_DOUBLE_SIDED,
 		]);
 	});
 

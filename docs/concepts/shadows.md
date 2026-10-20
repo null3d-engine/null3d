@@ -331,11 +331,28 @@ They follow these rules:
 - Only the first directional light draws them, and only while it casts shadows. Spot and point lights draw none.
 - The quality setting `contactShadowSteps` sets the steps of each ray: 8 on High and 16 on Ultra. Low draws none. Medium draws 4 on WebGL2 and none on WebGPU. `quality.set({ contactShadowSteps: 4 })` turns them on for any preset.
 - They darken the light's direct light only, on surfaces that receive shadows. Ambient and environment light stay as they are.
+- They darken only a face that the camera sees from the light's side. The ray starts from the face that the camera sees, so on a face that looks away from the light it would run through the surface itself.
+- A material with `contactShadows: false` takes none of them, and keeps the shadow map's shadows. Its surfaces still block rays, so the surfaces under them keep their contact shadows.
 - Every opaque object in the depth can block a ray, whether it casts shadows or not. Blended objects, sprites and particles block none.
 - They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.
 - A longer `contactDistance` finds larger contacts, with the same steps further apart. Keep it short, under a meter, and use the cascades for long shadows.
 
 The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+
+### Grass and other thin surfaces
+
+A ray cannot tell a thin blade from a solid wall. A step that lies behind a blade counts as blocked, up to half of `contactDistance` behind it. So in dense grass, most blades take a contact shadow from the blades in front of them, and the grass turns dark and grainy. As the blades sway, the steps that land on a blade change from frame to frame, and the grass shimmers. Leaf cards, petals and other thin surfaces that crowd together do the same.
+
+Give such materials `contactShadows: false`. They keep the shadow map's shadows, and the ground under them keeps the short shadows at their roots.
+
+```ts
+const grass = materials.standard({
+  color: '#5f9a2a',
+  doubleSided: true,
+  // Thin blades that sway: no contact shadows on them.
+  contactShadows: false,
+});
+```
 
 ## Which objects cast and receive
 

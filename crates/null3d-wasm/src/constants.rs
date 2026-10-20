@@ -1009,6 +1009,7 @@ pub fn typescript() -> String {
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
                 ("NO_FOG", feature::NO_FOG),
+                ("NO_CONTACT_SHADOWS", feature::NO_CONTACT_SHADOWS),
                 ("ALPHA_TO_COVERAGE", feature::ALPHA_TO_COVERAGE),
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),

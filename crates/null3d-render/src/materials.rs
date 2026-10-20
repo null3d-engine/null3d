@@ -293,6 +293,11 @@ pub mod feature {
     /// color where the main directional light's shadows fall, and nothing where the light reaches
     /// it. It takes the lit template, whose `shade` branches on the material's flag.
     pub const SHADOW_CATCHER: u32 = 2_097_152;
+    /// The main directional light's contact shadows leave the surface alone: it keeps the shadow
+    /// map's shadows, and its row's flag sets the contact shadows' share of the sun to all of it.
+    /// For thin surfaces that crowd together or move, such as grass blades, which the march takes
+    /// for solid walls.
+    pub const NO_CONTACT_SHADOWS: u32 = 4_194_304;
     /// A double-sided surface that blends draws in one draw, both faces in the mesh's order, as
     /// three.js's `forceSinglePass` does. Without it the transparent pass draws such a surface's
     /// back faces first, then its front faces.
@@ -353,6 +358,7 @@ pub mod feature {
         | MULTIPLY
         | ALPHA_TO_COVERAGE
         | NO_FOG
+        | NO_CONTACT_SHADOWS
         | ALPHA_HASH
         | SINGLE_PASS
         | TRANSMISSION
@@ -427,6 +433,8 @@ pub mod flag {
     pub const SHEEN_COLOR_MAP: u32 = 1 << 18;
     /// In a layered material, the alpha of the sheen map multiplies the sheen's roughness.
     pub const SHEEN_ROUGHNESS_MAP: u32 = 1 << 19;
+    /// The shader takes none of the main directional light's contact shadows.
+    pub const NO_CONTACT_SHADOWS: u32 = 1 << 20;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
@@ -444,6 +452,9 @@ const fn row_flags(features: u32) -> u32 {
     }
     if features & feature::SHADOW_CATCHER != 0 {
         flags |= flag::SHADOW_CATCHER;
+    }
+    if features & feature::NO_CONTACT_SHADOWS != 0 {
+        flags |= flag::NO_CONTACT_SHADOWS;
     }
     flags
 }
@@ -1752,6 +1763,23 @@ mod tests {
         assert_eq!(row(&table, 2)[param::FLAGS], flag::NO_FOG as f32);
         let both = flag::FLAT_SHADING | flag::NO_FOG;
         assert_eq!(row(&table, 3)[param::FLAGS], both as f32);
+    }
+
+    #[test]
+    fn a_material_without_contact_shadows_flags_its_row_and_keeps_its_builds() {
+        let mut table = MaterialTable::with_capacity(2);
+        let plain = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let bare = feature::NO_CONTACT_SHADOWS | feature::DOUBLE_SIDED;
+        let without = table.create(Shading::Lit, bare, [1.0; 4]).unwrap();
+        assert_eq!(table.features(without), bare);
+        assert_eq!(row(&table, plain)[param::FLAGS], 0.0);
+        assert_eq!(
+            row(&table, without)[param::FLAGS],
+            flag::NO_CONTACT_SHADOWS as f32
+        );
+        // The flag must stay exact in the row's float, and clear of the map slots' bits.
+        const { assert!(flag::NO_CONTACT_SHADOWS < 1 << 24) };
+        const { assert!(flag::NO_CONTACT_SHADOWS > flag::SHEEN_ROUGHNESS_MAP) };
     }
 
     #[test]

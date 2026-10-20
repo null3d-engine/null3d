@@ -31,6 +31,7 @@ import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
@@ -1305,6 +1306,14 @@ export interface StandardBaseOptions extends StandardValues, MaterialFeatures {
 	 * is fixed when the material is created. The default is false.
 	 */
 	flatShading?: boolean;
+	/**
+	 * Takes the main directional light's contact shadows. False leaves them off this surface,
+	 * which keeps the shadow map's shadows. Set it on thin surfaces that crowd together or sway,
+	 * such as grass blades and leaf cards: the contact shadows take each blade for a solid wall,
+	 * so they darken such surfaces and flicker as they move. The surfaces under them keep their
+	 * contact shadows. It is fixed when the material is created. The default is true.
+	 */
+	contactShadows?: boolean;
 }
 
 /**
@@ -2224,11 +2233,11 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 	}
 }
 
-/** The core's feature bits of `options`. */
 /** True when a standard material's bump map draws: no normal map or wireframe takes its place. */
 const bumps = (options: StandardOptions): boolean =>
 	!!options.bumpMap && !options.normalMap && !options.wireframe;
 
+/** The core's feature bits of `options`. */
 function featureBits(options: StandardOptions): number {
 	return (
 		(options.doubleSided ? MATERIAL_FEATURE_DOUBLE_SIDED : 0) |
@@ -2239,6 +2248,7 @@ function featureBits(options: StandardOptions): number {
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
 		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0) |
+		(options.contactShadows === false ? MATERIAL_FEATURE_NO_CONTACT_SHADOWS : 0) |
 		(options.alphaMode === 'mask' && options.alphaToCoverage !== false
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
 			: 0) |

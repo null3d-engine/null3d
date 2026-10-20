@@ -4,7 +4,9 @@
 // tuft's traits: its phase in the wind, its tint, and its turn about y, which the vertex offset
 // undoes for the wind, so the wind blows one way over every tuft. The shadow passes run the same
 // vertex offset, so the shadows sway with the grass. Only the tufts near the water cast shadows and
-// show in its reflection.
+// show in its reflection. The blades take no contact shadows: the march would take each thin blade
+// for a solid wall, darken the grass and make it shimmer as it sways. The ground keeps the blades'
+// contact shadows at their roots.
 import {
 	type InstanceBatch,
 	type MeshArrays,
@@ -167,6 +169,7 @@ export function createGrass(
 		roughness: 0.75,
 		specularIntensity: 0.4,
 		doubleSided: true,
+		contactShadows: false,
 		uniforms: { wind: [0.8, 0.6], sway: 0.12 },
 	});
 	const next = random(23);

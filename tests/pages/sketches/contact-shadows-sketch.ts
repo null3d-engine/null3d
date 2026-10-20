@@ -5,7 +5,8 @@
 //
 // ?off turns contact shadows off for the light, ?ao turns ambient occlusion on as well, so its last
 // step marches them, and ?steps= sets the steps of each march: 8 by default, as on High. ?reach=
-// sets how far they reach, in meters.
+// sets how far they reach, in meters. ?opted-out gives every material `contactShadows: false`, so no
+// surface takes the contact shadows that the light still draws, and the frame matches ?off.
 //
 // The effect cost page passes ?fixed and ?scale=: the scene then draws at that render scale alone,
 // with the governor off, and starts with contact shadows off. On the page's 'contact' message it
@@ -24,6 +25,8 @@ const STEPS = Number(params.get('steps') ?? 8);
 const REACH = Number(params.get('reach') ?? 0.3);
 const FIXED = params.has('fixed');
 const SCALE = Number(params.get('scale') ?? 1);
+/** The materials' own switch for contact shadows. */
+const OWN = { contactShadows: !params.has('opted-out') };
 
 /** The pebbles: their place on the ground, their radius and how flat they are, in meters. */
 const PEBBLES: readonly (readonly [number, number, number, number])[] = [
@@ -66,7 +69,7 @@ export default defineSketch(({ scene, materials, geometry, quality, post, page }
 	});
 	scene.createAmbientLight({ color: '#c8d8ff', intensity: 0.5 });
 
-	const ground = materials.standard({ color: '#c9b79a', roughness: 0.95 });
+	const ground = materials.standard({ color: '#c9b79a', roughness: 0.95, ...OWN });
 	scene.createMesh({
 		mesh: geometry.box({ width: 20, height: 0.2, depth: 20 }),
 		material: ground,
@@ -74,7 +77,7 @@ export default defineSketch(({ scene, materials, geometry, quality, post, page }
 		receiveShadows: true,
 	});
 	const solid = { castShadows: true, receiveShadows: true };
-	const stone = materials.standard({ color: '#8a8580', roughness: 0.8 });
+	const stone = materials.standard({ color: '#8a8580', roughness: 0.8, ...OWN });
 	const sphere = geometry.sphere({ radius: 1, widthSegments: 16, heightSegments: 12 });
 	for (const [x, z, radius, flat] of PEBBLES)
 		scene.createMesh({
@@ -87,20 +90,20 @@ export default defineSketch(({ scene, materials, geometry, quality, post, page }
 	// A thin pole, a crate and an upright tyre.
 	scene.createMesh({
 		mesh: geometry.cylinder({ radiusTop: 0.02, radiusBottom: 0.02, height: 1.2 }),
-		material: materials.standard({ color: '#d0d0d0', metalness: 1, roughness: 0.4 }),
+		material: materials.standard({ color: '#d0d0d0', metalness: 1, roughness: 0.4, ...OWN }),
 		position: [0.3, 0.6, -0.3],
 		...solid,
 	});
 	scene.createMesh({
 		mesh: geometry.box({ width: 0.4, height: 0.4, depth: 0.4 }),
-		material: materials.standard({ color: '#a8743f', roughness: 0.7 }),
+		material: materials.standard({ color: '#a8743f', roughness: 0.7, ...OWN }),
 		position: [0.55, 0.2, 0.55],
 		rotation: [0, 0.2588, 0, 0.9659],
 		...solid,
 	});
 	scene.createMesh({
 		mesh: geometry.torus({ radius: 0.25, tube: 0.09 }),
-		material: materials.standard({ color: '#222222', roughness: 0.6 }),
+		material: materials.standard({ color: '#222222', roughness: 0.6, ...OWN }),
 		position: [-0.2, 0.34, -0.5],
 		rotation: [0, 0.3827, 0, 0.9239],
 		...solid,

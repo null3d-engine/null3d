@@ -262,6 +262,9 @@ const FLAT_SHADING: u32 = 1u;
 /// The bit of a material's flags that draws only the shadows that fall on the surface, as three.js's
 /// `ShadowMaterial` (`flag::SHADOW_CATCHER` in the core).
 const SHADOW_CATCHER_FLAG: u32 = 128u;
+/// The bit of a material's flags that leaves the surface out of the sun's contact shadows
+/// (`flag::NO_CONTACT_SHADOWS` in the core).
+const NO_CONTACT_SHADOWS_FLAG: u32 = 1048576u;
 #ifdef MAPS
 /// The bit of a material's flags that says its normal map's slot holds a bump map.
 const BUMP_MAP: u32 = 32u;
@@ -1586,6 +1589,14 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let kernel = specular_aa_kernel(dpdx(input.normal), dpdy(input.normal));
 #endif
+    // The face that the camera sees, which the contact shadows' march starts from: a decal's normal
+    // comes from the depths around it, and other surfaces take it from how their position changes
+    // between pixels.
+#ifdef DECAL
+    let face = input.normal;
+#else
+    let face = cross(dpdx(input.relativePosition), dpdy(input.relativePosition));
+#endif
     // The alpha tests' derivatives come here too, before the shadow-catcher branch: a derivative
     // must run in uniform control flow, and everything after the branch depends on it.
 #ifdef ALPHA_HASH
@@ -1670,6 +1681,14 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let reflection = mirrored;
 #endif
+    // The march toward the sun starts from the face that the camera sees. Where that face looks
+    // away from the sun, the march runs through the surface itself and always finds it in the way,
+    // as on grass that lights both faces as an upper face, seen against the light. Such a face, and
+    // a material that leaves contact shadows out, keep all of the sun past them.
+    let seen_face = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    let toward_sun = dot(seen_face, engine_frame.sun_direction.xyz) < 0.0;
+    let takes_contact = (u32(material_row.strengths.z) & NO_CONTACT_SHADOWS_FLAG) == 0u;
+    let contact = select(1.0, screen.values.w, toward_sun && takes_contact);
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -1679,7 +1698,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         dfg,
         s.irradiance * engine_frame.output.exposure,
         s.occlusion * screen_occlusion(screen.values),
-        screen.values.w,
+        contact,
         reflection,
     );
 #ifdef TRANSMISSION

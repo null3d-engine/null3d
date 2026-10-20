@@ -1458,6 +1458,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
+	// The same scene with contact shadows on, and every material leaving them out: it must match
+	// the frame with contact shadows off.
+	{
+		name: 'contact-shadows-opted-out',
+		sketch: 'tests/pages/sketches/contact-shadows-sketch.ts?opted-out',
+		reference: 'contact-shadows-off',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// A shadow-catcher plane: it shows the main directional light's shadow in its color, and draws
 	// nothing where the light reaches it, so the background shows through. The shadow edges take the
 	// tolerance of the other shadow tests. The parity test compares it with three.js's ShadowMaterial.

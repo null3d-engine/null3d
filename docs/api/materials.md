@@ -470,6 +470,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `subsurfaceRadius` | Standard | None | Given at all, even as 0, spreads the surface's light under it, and `set` can then change its value. See "Light under the surface" |
 | The layer values and maps | Standard | None | Any of them, even a coat of 0, gives the material a clear coat and a sheen, and `set` can then change their values. See "Clear coat and sheen" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
+| `contactShadows` | Standard | true | Takes the main directional light's contact shadows. With `false`, the surface takes none and keeps the shadow map's shadows. Use it on grass, leaf cards and other thin surfaces that crowd together or sway, where contact shadows make them dark and grainy and flicker as they move. [Shadows](../concepts/shadows.md#grass-and-other-thin-surfaces) explains why |
 | `wireframe` | Both | false | Draws the edges of each triangle as lines one pixel wide, with the material's own shading, as three.js's `wireframe` does. See "Wireframe" |
 | `parallax` | Standard | false | With a `displacementMap`, adds parallax occlusion mapping. See "Relief" |
 

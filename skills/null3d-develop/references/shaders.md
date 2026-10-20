@@ -179,6 +179,7 @@ const dissolve = materials.shader({
 - No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.
 - Per-instance data (0.2): `createInstances(mesh, count, { material, values: true })` gives each row four floats in `batch.values`, which the WGSL reads as `object.values` in `vertexOffset` and `surface`. Objects and rows without values read zeros. `colors: true` tints each row through `input.vertexColor`, with no WGSL. (`concepts/instances`, Per-row values)
 - A material with a `vertexOffset` casts shadows that follow the offset (0.2), so swaying grass casts swaying shadows. Its shadows draw again in every frame, as moving objects' do.
+- Give swaying grass and other thin, crowded blades `contactShadows: false` (0.2). Contact shadows take each blade for a solid wall, so the blades turn dark and grainy and shimmer as they sway. They keep the shadow map's shadows, and the ground keeps the short shadows at their roots. (`concepts/shadows`, Contact shadows)
 
 Textures (0.2): declare each one as `var name: texture_2d<f32>;`, with no `@group` or `@binding`, and pass it by name in the `textures` option. The engine declares its sampler as `nameSampler`, with the texture's `wrap` and `filter` options:
 
