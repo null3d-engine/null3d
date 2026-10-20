@@ -799,9 +799,8 @@ pub mod layout {
     /// [`FINAL_EFFECTS`] with a multisampled scene depth, whose sample 0 the effects read. Only
     /// WebGPU has it.
     pub const FINAL_EFFECTS_DEPTH_MS: u32 = 24;
-    /// Group 0 of the copy of a view's image into its target, and of the copy of the camera's
-    /// opaque color for transmission: the image, which it reads with `textureLoad`, as plain
-    /// floats.
+    /// Group 0 of the copy of a view's image into its target: the image, which it reads with
+    /// `textureLoad`, as plain floats.
     pub const VIEW_COPY: u32 = 25;
     /// Group 0 of the still-camera accumulation's blend: its values, then the scene color that it
     /// reads with `textureLoad`, as plain floats.
@@ -819,11 +818,15 @@ pub mod layout {
     /// copy and the pyramid's six levels above it, which it reads with `textureLoad`.
     pub const SSR_TRACE: u32 = 31;
     /// The weighted layer's blend: the weighted color sum and the coverage, both read with
-    /// `textureLoad` as unfilterable floats.
+    /// `textureLoad` as unfilterable floats. The copy of the camera's opaque color for
+    /// transmission binds its scene color and depth the same way.
     pub const WEIGHTED_COMPOSITE: u32 = 41;
     /// The copy of a multisampled scene depth for the weighted layer: the depth, read with
     /// `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
     pub const WEIGHTED_DEPTH_MS: u32 = 42;
+    /// [`WEIGHTED_COMPOSITE`] for the copy of the camera's opaque color from a multisampled scene
+    /// depth, whose sample 0 it reads. Only WebGPU has it.
+    pub const TRANSMISSION_COPY_MS: u32 = 49;
     /// Group 0 of the subsurface blur's across step: its block at binding 0 and the skin pass's
     /// target at binding 1, which it reads with `textureLoad` as plain floats.
     pub const SUBSURFACE_BLUR: u32 = 43;
@@ -1855,8 +1858,11 @@ pub mod template {
     pub const DOF_COMPOSITE_MS: u32 = 46;
     /// The copy of the camera's opaque color that surfaces which let light through sample: one
     /// triangle over the first level of its target, which reads one texel of the scene color per
-    /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
-    /// does.
+    /// pixel, and writes the code of the scene depth's distance in its alpha. Its TONE_MAP build
+    /// decodes display color, and its DEPTH_MULTISAMPLED builds read sample 0 of a multisampled
+    /// depth. It binds as [`layout::WEIGHTED_COMPOSITE`](super::layout::WEIGHTED_COMPOSITE), or
+    /// [`layout::TRANSMISSION_COPY_MS`](super::layout::TRANSMISSION_COPY_MS) from a multisampled
+    /// depth.
     pub const TRANSMISSION_COPY: u32 = 47;
     /// The motion of moving objects, from the motion view: each vertex placed in this frame and in
     /// the last, and the difference of the two places on the screen, beyond what the camera's
@@ -2185,7 +2191,10 @@ pub mod groups {
         (template::DOF_FILTER, own!(layout::BLOOM)),
         (template::DOF_COMPOSITE, own!(layout::DOF_COMPOSITE)),
         (template::DOF_COMPOSITE_MS, own!(layout::DOF_COMPOSITE_MS)),
-        (template::TRANSMISSION_COPY, own!(layout::VIEW_COPY)),
+        (
+            template::TRANSMISSION_COPY,
+            own!(layout::WEIGHTED_COMPOSITE, layout::TRANSMISSION_COPY_MS),
+        ),
         (template::SSR_REDUCE, own!(layout::SSR_REDUCE)),
         (template::SSR_TRACE, own!(layout::SSR_TRACE)),
         (template::PARTICLE, PARTICLE_MESH),
@@ -2546,6 +2555,7 @@ pub fn typescript_constants() -> String {
                 ("SSR_TRACE", layout::SSR_TRACE),
                 ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
+                ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
                 ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
                 ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
                 ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),

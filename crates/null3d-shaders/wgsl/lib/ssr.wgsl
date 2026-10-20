@@ -1,7 +1,7 @@
 #define_import_path null3d::ssr
 #import null3d::tables::{environment_sampler}
 #import null3d::mesh::{frame}
-#import null3d::refraction::{transmission_map}
+#import null3d::refraction::{copy_uv, transmission_map}
 
 // Screen-space reflections in the camera's opaque pass. The steps before the pass (ssr.wgsl) march
 // each texel's mirror ray through a depth pyramid, and leave the ray's length to its hit or to the
@@ -62,10 +62,7 @@ fn screen_reflection(
     }
     let full = vec2f(textureDimensions(transmission_map, 0));
     let drawn = frame.reflection_corner.xy;
-    var uv = clamp(screen * drawn, vec2f(0.5), drawn - 0.5) / full;
-#ifdef WEBGL2
-    uv.y = 1.0 - uv.y;
-#endif
+    let uv = copy_uv(screen * drawn, drawn, full);
     // The cone of the roughness over the ray's length, in pixels of last frame's view, picks the
     // level whose texels are as wide.
     let radius = hit.x * roughness * roughness * CONE;

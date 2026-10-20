@@ -1680,6 +1680,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let share = saturate(s.transmission);
     let fresnel = pbr.specular_blended * dfg.x + pbr.specular_grazing * dfg.y;
     let through = transmitted_light(
+        pixel.xyz,
         input.relativePosition,
         normal,
         input.viewDirection,

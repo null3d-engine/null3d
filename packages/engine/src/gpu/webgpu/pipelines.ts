@@ -45,6 +45,7 @@ import {
 	LAYOUT_SUBSURFACE_COMPOSITE,
 	LAYOUT_SUBSURFACE_COMPOSITE_MS,
 	LAYOUT_TEXTURES,
+	LAYOUT_TRANSMISSION_COPY_MS,
 	LAYOUT_VIEW_COPY,
 	LAYOUT_WEIGHTED_COMPOSITE,
 	LAYOUT_WEIGHTED_DEPTH_MS,
@@ -882,12 +883,17 @@ export class Pipelines {
 			unfiltered(1),
 		]);
 		// The weighted layer's composite reads its two sums, and its depth copy a multisampled scene
-		// depth, with textureLoad.
+		// depth, with textureLoad. The copy of the opaque color for transmission reads the scene
+		// color and depth as the composite reads its sums, or with a multisampled depth.
 		this.defineLayout(LAYOUT_WEIGHTED_COMPOSITE, 'weighted composite', [
 			unfiltered(0),
 			unfiltered(1),
 		]);
 		this.defineLayout(LAYOUT_WEIGHTED_DEPTH_MS, 'weighted depth ms', [unfiltered(0, true)]);
+		this.defineLayout(LAYOUT_TRANSMISSION_COPY_MS, 'transmission copy ms', [
+			unfiltered(0),
+			unfiltered(1, true),
+		]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -1201,7 +1207,8 @@ export class Pipelines {
 			label: 'transmission copy',
 			shader: shaders.transmission_copy,
 			pipeline: 'main',
-			layouts: [LAYOUT_VIEW_COPY],
+			layouts: [LAYOUT_WEIGHTED_COMPOSITE],
+			multisampledLayouts: [LAYOUT_TRANSMISSION_COPY_MS],
 			vertexBuffers: [],
 		});
 		this.defineTemplate(TEMPLATE_WEIGHTED_COMPOSITE, {

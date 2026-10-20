@@ -2376,6 +2376,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// A post in front of thick clear water, where the water's bent rays land on the post: the post's
+	// color must not show in the water beyond it.
+	{
+		name: 'transmission-in-front',
+		sketch: 'tests/pages/sketches/transmission-in-front-sketch.ts',
+		hold: 0,
+	},
 	// Four panels with a low sun behind them let 0, 1/3, 2/3 and all of their diffuse light through
 	// to the camera's side (glTF's diffuse transmission). A box's shadow shows through the last
 	// panel, and an orange lamp lights the second from behind. The translucency spec measures each.

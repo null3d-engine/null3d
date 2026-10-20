@@ -672,14 +672,15 @@ variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 shaders = ["view_copy"]
 
 # The copy of the camera's opaque color into the first level of the target with a mip chain that
-# surfaces which let light through sample, one texel per pixel. The TONE_MAP build decodes the
-# 8-bit path's display color into an sRGB target. Both paths copy: the target keeps the scene
-# color's rows in their order.
+# surfaces which let light through sample, one texel per pixel, with the opaque depth's distance
+# code in its alpha. The TONE_MAP build decodes the 8-bit path's display color into an sRGB target.
+# The DEPTH_MULTISAMPLED builds read sample 0 of a multisampled depth, on WebGPU. Both paths copy:
+# the target keeps the scene color's rows in their order.
 [shaders.transmission_copy]
 file = "transmission_copy.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "DEPTH_MULTISAMPLED"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # A page downloads the copy and the builds of the mesh templates that let light through when its

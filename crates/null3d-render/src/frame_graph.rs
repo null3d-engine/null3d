@@ -966,8 +966,9 @@ pub(crate) struct FrameGraph {
     transmission_built: bool,
     /// True when the declared passes hold the copy.
     transmission_declared: bool,
-    /// The textures that the copy reads and draws into, found once for each compile of the graph.
-    transmission_target: CompileCache<(u32, u32)>,
+    /// The textures that the copy reads, the scene color and depth, and the one it draws into,
+    /// found once for each compile of the graph.
+    transmission_target: CompileCache<(u32, u32, u32)>,
     /// Whether the device draws the motion target with one sample, and with MSAA's samples.
     motion_allowed: (bool, bool),
     /// True while the motion debug view shows.
@@ -2476,7 +2477,7 @@ impl FrameGraph {
         }
         if self.ssr_draws() && !views.is_empty() {
             // Screen-space reflections read the color copy that the frame before made.
-            let target = Target::color(self.view_target_format()).mipmapped();
+            let target = Target::color(self.copy_format()).mipmapped();
             let size = view_size(&views[ViewId::CAMERA.index()]);
             self.graph.keep(TRANSMISSION_COLOR, target, size);
         }
@@ -2658,14 +2659,16 @@ impl FrameGraph {
         self.transmission_declared =
             (self.transmission_draws() || self.ssr_draws()) && !views.is_empty();
         if self.transmission_declared {
-            // The copy reads the scene color as the opaque pass and the debug lines leave it,
-            // before the transparent pass draws into it. For screen-space reflections, which the
-            // next frame's opaque pass reads from it, it is kept from frame to frame.
-            let target = Target::color(self.view_target_format()).mipmapped();
+            // The copy reads the scene color and depth as the opaque pass and the debug lines
+            // leave them, before the transparent pass draws into them. For screen-space
+            // reflections, which the next frame's opaque pass reads from it, it is kept from frame
+            // to frame.
+            let target = Target::color(self.copy_format()).mipmapped();
             let size = view_size(&views[ViewId::CAMERA.index()]);
             let copy = Pass::new(TRANSMISSION_PASS, PassKind::Fullscreen)
                 .size(size)
-                .reads_so_far(SCENE_COLOR);
+                .reads_so_far(SCENE_COLOR)
+                .reads_so_far(SCENE_DEPTH);
             let copy = if self.ssr_draws() {
                 copy.writes(TRANSMISSION_COLOR)
             } else {
@@ -3674,9 +3677,14 @@ impl FrameGraph {
         self.note_built(BuiltGroup::Bloom, built, FrameGraph::enable_outputs);
         let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
         let transmission_built = self.copy_wanted() && {
-            let id = self
-                .transmission
-                .request_pipeline(pipelines, format, permutation);
+            // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
+            let multisampled = self.gpu_culling && self.samples > 1;
+            let id = self.transmission.request_pipeline(
+                pipelines,
+                self.copy_format(),
+                permutation,
+                multisampled,
+            );
             pipelines.built(id, pipelines_built)
         };
         self.note_built(
@@ -3751,6 +3759,16 @@ impl FrameGraph {
     /// materials which sample a view's texture read linear color on both paths.
     fn view_target_format(&self) -> u32 {
         view_target_format(self.scene_color)
+    }
+
+    /// The format of the copy of the camera's opaque color, which keeps the opaque depth's code in
+    /// its alpha: the format of views' targets, or 16-bit floats where the scene color's packed
+    /// small floats have no alpha.
+    fn copy_format(&self) -> u32 {
+        match self.view_target_format() {
+            format::RG11B10_UFLOAT => format::RGBA16_FLOAT,
+            other => other,
+        }
     }
 
     /// Asks `pipelines` for the pipeline of each full-screen pass of `views`. A builder asks with
@@ -4282,22 +4300,24 @@ impl FrameGraph {
             .prepare(list, arena, frame_size, &frame, sources, made)
     }
 
-    /// Binds the copy of the camera's opaque color to the scene color that it reads while it is
-    /// declared, and finds the texture of its target, once for each compile of the graph.
+    /// Binds the copy of the camera's opaque color to the scene color and depth that it reads
+    /// while it is declared, and finds the texture of its target, once for each compile of the
+    /// graph.
     fn bind_transmission(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         if !self.transmission_declared {
             return Ok(());
         }
         let mut found = self.transmission_target;
-        let (source, _) = found.get_or(self.graph.compiles(), || {
+        let (color, depth, _) = found.get_or(self.graph.compiles(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("the transmission copy reads and writes planned textures")
             };
-            (id(SCENE_COLOR), id(TRANSMISSION_COLOR))
+            (id(SCENE_COLOR), id(SCENE_DEPTH), id(TRANSMISSION_COLOR))
         });
         self.transmission_target = found;
-        self.transmission.prepare(list, source, self.textures_made)
+        self.transmission
+            .prepare(list, color, depth, self.textures_made)
     }
 
     /// Binds the composite of the camera's weighted layer to its two sums, and the depth copy to
@@ -4360,7 +4380,7 @@ impl FrameGraph {
         let copied = passes
             .iter()
             .any(|&pass| self.roles[pass.index()] == Role::TransmissionCopy);
-        if let (true, Some((_, target))) = (copied, self.transmission_target.last()) {
+        if let (true, Some((.., target))) = (copied, self.transmission_target.last()) {
             list.push(Op::GenerateMipmaps, &[target, 0])?;
         }
         Ok(())
@@ -5163,7 +5183,7 @@ mod tests {
         }
     }
     use null3d_gpu::drawlist::template::{self, CUSTOM_FIRST as CUSTOM};
-    use null3d_gpu::drawlist::{layout as bind_layout, permutation};
+    use null3d_gpu::drawlist::{layout as bind_layout, permutation, resource_kind};
 
     #[test]
     fn a_mirror_view_fills_its_texture_at_a_share_of_the_render_size_and_culls_once() {
@@ -7916,9 +7936,11 @@ mod tests {
             );
             // Other views keep one render pass for their opaque and transparent passes.
             assert!(with.contains(&vec!["Opaque1".to_owned(), "Transparent1".to_owned()]));
-            // The copy's target has a whole chain of mip levels, and frame groups bind it.
+            // The copy's target has a whole chain of mip levels, and frame groups bind it. The
+            // camera's depth, which the copy samples, no longer shares a texture with the other
+            // view's depth, which nothing samples.
             let plan = frames.graph().plan().unwrap();
-            assert_eq!(plan.textures().len(), textures + 1);
+            assert_eq!(plan.textures().len(), textures + 2);
             let copy = frames.transmission_texture();
             assert_ne!(copy, IDS.transmission.blank);
             let mut arena = UploadArena::default();
@@ -7931,7 +7953,7 @@ mod tests {
                 operands(&list, Op::CreateBindGroup)
                     .iter()
                     .any(|group| group[0] == IDS.transmission.group
-                        && group[1] == bind_layout::VIEW_COPY)
+                        && group[1] == bind_layout::TRANSMISSION_COPY_MS)
             );
 
             // The opaque pass resolves the multisampled scene color, the copy draws it into the
@@ -7985,6 +8007,93 @@ mod tests {
             assert_eq!(steps(&frames), without);
             assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
             assert_eq!(frames.transmission_texture(), IDS.transmission.blank);
+        }
+    }
+
+    #[test]
+    fn the_transmission_copy_reads_the_opaque_depth_into_a_target_with_alpha() {
+        // The copy keeps a code of the opaque depth's distance in its alpha. It binds the scene
+        // depth beside the scene color: sample 0 of a multisampled depth on WebGPU, and the copy of
+        // one sample that WebGL2's backend keeps. Its target has alpha where the scene color's
+        // packed floats have none.
+        let (ms, one) = (
+            bind_layout::TRANSMISSION_COPY_MS,
+            bind_layout::WEIGHTED_COMPOSITE,
+        );
+        let (half, srgb) = (format::RGBA16_FLOAT, format::RGBA8_UNORM_SRGB);
+        for (scene, antialias, gpu_culling, target, layout) in [
+            (format::RG11B10_UFLOAT, Antialias::Msaa, true, half, ms),
+            (format::RGBA16_FLOAT, Antialias::Fxaa, true, half, one),
+            (format::CANVAS, Antialias::Msaa, false, srgb, one),
+        ] {
+            let canvas = (320, 180);
+            let mut frames = frame_graph(scene, antialias, gpu_culling, false);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            frames.sync(&[View::default()]);
+            frames.set_transparent(true);
+            build_transmission(&mut frames, &mut pipelines);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let key = pipelines
+                .keys()
+                .iter()
+                .find(|key| key.template == template::TRANSMISSION_COPY)
+                .expect("the copy has a pipeline");
+            assert_eq!(key.color_format, target);
+            assert_eq!(
+                key.permutation & permutation::DEPTH_MULTISAMPLED != 0,
+                layout == ms
+            );
+            let plan = frames.graph().plan().unwrap();
+            let copy = frames.graph().find_resource(TRANSMISSION_COLOR).unwrap();
+            let Some(Surface::Texture(index)) = plan.sampled_texture_of(copy) else {
+                panic!("the copy's target is a texture");
+            };
+            assert_eq!(plan.textures()[usize::from(index)].target.format, target);
+            let depth = frames.graph().find_resource(SCENE_DEPTH).unwrap();
+            let Some(Surface::Texture(index)) = plan.sampled_texture_of(depth) else {
+                panic!("the scene depth is a texture");
+            };
+            assert_ne!(
+                plan.textures()[usize::from(index)].usage & texture_usage::TEXTURE_BINDING,
+                0,
+                "the copy samples the scene depth"
+            );
+
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let groups = operands(&list, Op::CreateBindGroup);
+            let group = groups
+                .iter()
+                .find(|group| group[0] == IDS.transmission.group)
+                .expect("the copy has a bind group");
+            let color = frames.sampled_id(SCENE_COLOR).unwrap();
+            let depth = frames.sampled_id(SCENE_DEPTH).unwrap();
+            assert_eq!(
+                group.as_slice(),
+                [
+                    IDS.transmission.group,
+                    layout,
+                    2,
+                    0,
+                    resource_kind::TEXTURE,
+                    color,
+                    0,
+                    0,
+                    1,
+                    resource_kind::TEXTURE,
+                    depth,
+                    0,
+                    0
+                ]
+            );
         }
     }
 

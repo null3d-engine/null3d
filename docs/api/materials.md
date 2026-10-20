@@ -148,6 +148,7 @@ Give `transmission` when you create the material, even as 0, to change it later 
 After the camera's view draws its opaque objects, the engine copies their colors into a texture with a chain of smaller, blurred copies. Surfaces that let light through then draw with the blended objects, farthest first. Each one samples the copy where its bent light ray leaves the volume, at a blur that its roughness picks. three.js draws its transmission the same way.
 
 - Only opaque objects show through. Another surface that lets light through, or a blended one, does not show through glass in front of it.
+- The copy keeps the opaque objects' depth too. A bent ray can land on an opaque object in front of the surface, such as a flower on the bank of a stream. The surface then shows what lies straight behind it instead. three.js shows the flower's color in the water there.
 - The volume is a model, not a ray through the real shape. A ball with `thickness` set to its diameter looks right through its middle. three.js uses the same model.
 - `thickness` is in the mesh's own units, and the object's scale multiplies it.
 - Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
