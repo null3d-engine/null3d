@@ -2,6 +2,7 @@
 // slopes that rise to the valley's sides. Everything that stands on the ground asks this module for
 // its height, so the grass, the stones and the water meet the ground where it is.
 import { math, type SketchContext } from '@null3d/engine';
+import { type MountainRing, type MountainRingOptions, mountainRing } from '../../lib/mountains';
 import { Noise, type TexelSample, terrain, textureSet } from '../../lib/procedural';
 
 /** The height of the water's surface. */
@@ -109,4 +110,65 @@ export function createLand(
 		receiveShadows: true,
 		castShadows: true,
 	});
+}
+
+/**
+ * The mountains around the valley: forested slopes, bare rock above them and snow on the highest
+ * peaks. The stream's valley cuts through them at both ends as a gorge and runs on into the haze
+ * (`GORGE`). Elsewhere the lowest crest stands above the highest that the Manual camera can climb
+ * (`MOUNTAINS.heights` against the camera's bounds in the sketch), so the view never passes over the
+ * ring.
+ */
+export const MOUNTAINS = {
+	crest: [230, 300],
+	heights: [65, 140],
+} as const;
+
+/**
+ * The gorges where the stream runs on out of the valley, along x both ways: the floor's half width,
+ * the walls' climb beside it, where the land and the water end, and where the haze starts and stops.
+ */
+export const GORGE = { width: 25, walls: 70, end: 720, haze: [330, 700] } as const;
+
+/** The ring's settings, with `segments` bearings and `rows` rows. */
+export const mountainSettings = (segments: number, rows: number): MountainRingOptions => ({
+	half: LAND / 2,
+	land: groundHeight,
+	crest: MOUNTAINS.crest,
+	heights: MOUNTAINS.heights,
+	// The stream's valley runs along x, so it cuts through the mountains at both ends.
+	gorges: [0, Math.PI].map((bearing) => ({
+		bearing,
+		floor: groundHeight,
+		width: GORGE.width,
+		walls: GORGE.walls,
+		end: GORGE.end,
+	})),
+	segments,
+	rows,
+	seed: 29,
+	palette: {
+		forest: [0.025, 0.055, 0.02],
+		rock: [0.15, 0.14, 0.12],
+		snow: [0.75, 0.78, 0.85],
+		treeLine: 55,
+		snowLine: 105,
+		frost: 0,
+	},
+});
+
+/** Makes the ring of mountains around the land, with `segments` bearings and `rows` rows. */
+export function createMountains(
+	{ scene, geometry, materials }: SketchContext,
+	segments: number,
+	rows: number,
+): MountainRing {
+	const ring = mountainRing(mountainSettings(segments, rows));
+	scene.createMesh({
+		mesh: geometry.fromArrays(ring.arrays),
+		material: materials.standard({ vertexColors: true, roughness: 1 }),
+		castShadows: false,
+		receiveShadows: false,
+	});
+	return ring;
 }

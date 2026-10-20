@@ -20,7 +20,13 @@
 // in the route's first shot and holds it still. Consecutive shots must differ: two shots at the same
 // pose would stand the camera still for both, which reads as a stall.
 import { createOrbitControls } from '@null3d/controls';
-import { type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
+import {
+	type PerspectiveCamera,
+	quat,
+	type SketchContext,
+	type Vec3Like,
+	vec3,
+} from '@null3d/engine';
 import { createClearance } from './clearance';
 import { CAMERA_OPTIONS, type HudGroup, radioGroup } from './controls';
 
@@ -214,6 +220,110 @@ export interface CinematicOptions {
 	speed?: number;
 	/** The scene's own keys. A key that the table already holds throws. */
 	keys?: readonly SceneAction[];
+	/** Where the Manual camera may go. Without bounds it goes anywhere. */
+	bounds?: CameraBounds;
+}
+
+/**
+ * Where the Manual camera may go: inside a scene's ring of mountains, below their lowest crest and
+ * above the ground, so the view never reaches the plain background. The camera's height stays under
+ * the highest that its focus may stand plus its farthest distance, and its reach across the ground
+ * under the focus's reach plus that distance.
+ */
+export interface CameraBounds {
+	/** The middle of the scene, x and z, around which the point the camera turns around stays. */
+	center: readonly [number, number];
+	/** How far that point may move from the middle, in meters. */
+	focus: number;
+	/** The lowest and highest that point may stand, in meters above y = 0. */
+	focusHeight: readonly [number, number];
+	/** The farthest the camera goes from that point, in meters. */
+	distance: number;
+	/** The ground's height at a point, which the camera and the point it turns around keep above. */
+	ground: (x: number, z: number) => number;
+	/**
+	 * How far above the ground the camera keeps, in meters. A stream's bed is ground too, so a small
+	 * clearance lets the camera dip under the water. The default is `GROUND_CLEARANCE`.
+	 */
+	clearance?: number;
+}
+
+/** How far above the ground the bounded camera keeps by default, in meters. */
+export const GROUND_CLEARANCE = 1.5;
+
+/**
+ * The farthest that a bounded camera swings below the level of the point it turns around, as the
+ * orbit's angle from straight up, in radians: a little past level, so a shot that looks up at a
+ * tower is still in reach, while the ground stops anything lower.
+ */
+export const BOUNDED_POLAR_ANGLE = 1.85;
+
+/**
+ * Keeps a Manual camera at `position`, turning around `target`, inside `bounds`. The point it turns
+ * around goes back into its disc and its heights, and the camera moves with it, so a pan stops at
+ * the edge without turning the view. A camera under the ground rises along its orbit: it keeps its
+ * distance and its bearing, so pushing against the ground never draws it closer. Returns true when
+ * anything moved.
+ */
+export function keepInside(bounds: CameraBounds, target: Vec3Like, position: Vec3Like): boolean {
+	const { center, focus, focusHeight, ground, clearance = GROUND_CLEARANCE } = bounds;
+	let tx = target[0] as number;
+	let ty = target[1] as number;
+	let tz = target[2] as number;
+	let px = position[0] as number;
+	let py = position[1] as number;
+	let pz = position[2] as number;
+	let moved = false;
+	const dx = tx - center[0];
+	const dz = tz - center[1];
+	const reach = Math.hypot(dx, dz);
+	const pull = reach > focus ? focus / reach - 1 : 0;
+	const lowest = Math.max(focusHeight[0], ground(tx + dx * pull, tz + dz * pull));
+	const shift = [
+		dx * pull,
+		Math.max(lowest, Math.min(focusHeight[1], ty)) - ty,
+		dz * pull,
+	] as const;
+	if (shift[0] !== 0 || shift[1] !== 0 || shift[2] !== 0) {
+		tx += shift[0];
+		ty += shift[1];
+		tz += shift[2];
+		px += shift[0];
+		py += shift[1];
+		pz += shift[2];
+		moved = true;
+	}
+	let floor = ground(px, pz) + clearance;
+	if (py < floor) {
+		const ox = px - tx;
+		const oz = pz - tz;
+		const distance = Math.hypot(ox, py - ty, oz);
+		const across = Math.hypot(ox, oz);
+		const ux = across > 1e-6 ? ox / across : 1;
+		const uz = across > 1e-6 ? oz / across : 0;
+		// Lifting the camera along its orbit draws it in across the ground, where the ground may
+		// stand higher, so the lift settles over a few steps.
+		for (let step = 0; step < 3; step++) {
+			const rise = Math.min(distance, Math.max(-distance, floor - ty));
+			const out = Math.sqrt(Math.max(0, distance * distance - rise * rise));
+			px = tx + ux * out;
+			py = ty + rise;
+			pz = tz + uz * out;
+			const next = ground(px, pz) + clearance;
+			if (next <= floor) break;
+			floor = next;
+		}
+		moved = true;
+	}
+	if (moved) {
+		target[0] = tx;
+		target[1] = ty;
+		target[2] = tz;
+		position[0] = px;
+		position[1] = py;
+		position[2] = pz;
+	}
+	return moved;
 }
 
 /** The cinematic camera of a showcase scene. */
@@ -300,18 +410,22 @@ export function createCinematic(
 	// around its target, the wheel or a pinch zooms, and a right drag or two fingers pan. The keys
 	// pan as well.
 	const held = vec3.create();
+	/** The Manual camera's position as its bounds keep it. */
+	const inside = vec3.create();
 	const heldRotation = quat.create();
 	camera.getPosition(held);
 	camera.getRotation(heldRotation);
+	const { bounds } = options;
 	const controls = createOrbitControls(ctx, camera, {
 		// The Orbit preset: left turns, the middle zooms and the right pans; one finger turns and
-		// two fingers dolly and pan. The limits are wide, so a user can dolly well out and swing
-		// below the horizon; the clearance guard is what keeps the camera out of geometry.
+		// two fingers dolly and pan. A scene's bounds keep the camera inside its mountains and above
+		// its ground; without them the limits are wide.
 		enableDamping: true,
 		screenSpacePanning: false,
 		minDistance: 0.5,
+		maxDistance: bounds ? bounds.distance : Number.POSITIVE_INFINITY,
 		minPolarAngle: 0.05,
-		maxPolarAngle: 3,
+		maxPolarAngle: bounds ? BOUNDED_POLAR_ANGLE : 3,
 	});
 	controls.enabled = false;
 	// The controls turn the camera toward their target as they start: put it back where the route
@@ -505,6 +619,13 @@ export function createCinematic(
 					camera.setPosition(from[0] as number, (from[1] as number) + rise, from[2] as number);
 				}
 				controls.update(dt);
+				if (bounds) {
+					camera.getPosition(inside);
+					if (keepInside(bounds, controls.target, inside)) {
+						camera.setPosition(inside[0] as number, inside[1] as number, inside[2] as number);
+						camera.lookAt(controls.target[0], controls.target[1], controls.target[2]);
+					}
+				}
 				// The lens focuses on the point that the camera turns around.
 				options.target[0] = controls.target[0] as number;
 				options.target[1] = controls.target[1] as number;

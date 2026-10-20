@@ -10,29 +10,39 @@
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
-import { createCinematic, type Shot } from '../../lib/cinematic';
+import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
+import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
-import { createShowcaseEffects } from '../../lib/showcase-effects';
+import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
 import { createMoods, isMood, type Mood, nearestMood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
-import { createLand, streamZ, UNREFLECTED_LAYER } from './land';
+import {
+	createLand,
+	createMountains,
+	GORGE,
+	groundHeight,
+	streamZ,
+	UNREFLECTED_LAYER,
+	WATER,
+} from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
+import { createUnderwater } from './underwater';
 import { createWater } from './water';
 
 /** The detail that each preset builds at the start: the land's quads, texture sizes and more. */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; water: number }
+	{ land: number; texture: number; rock: number; water: number; ring: readonly [number, number] }
 > = {
-	low: { land: 192, texture: 256, rock: 2, water: 200 },
-	medium: { land: 256, texture: 512, rock: 3, water: 300 },
-	high: { land: 320, texture: 512, rock: 3, water: 400 },
-	ultra: { land: 384, texture: 1024, rock: 3, water: 400 },
+	low: { land: 192, texture: 256, rock: 2, water: 200, ring: [160, 32] },
+	medium: { land: 256, texture: 512, rock: 3, water: 300, ring: [224, 40] },
+	high: { land: 320, texture: 512, rock: 3, water: 400, ring: [288, 48] },
+	ultra: { land: 384, texture: 1024, rock: 3, water: 400, ring: [320, 56] },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -53,6 +63,26 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 };
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
+/**
+ * The creek's core: the sphere around the stream, its banks and their trees, which keeps its
+ * shadows wherever the camera stands. The sun's shadows reach this far close up, and further as
+ * the camera draws back.
+ */
+export const SHADOW_REACH: ShadowReach = { distance: 60, center: [0, 4, 0], radius: 34 };
+/**
+ * Where the Manual camera may go: around the creek, a little farther back than the opening view
+ * stands, and above the ground and the mountains' slopes. Its highest reach, the focus's top plus
+ * the distance, stays under the mountains' lowest crest.
+ */
+export const BOUNDS: Omit<CameraBounds, 'ground'> = {
+	center: [0, 0],
+	focus: 30,
+	focusHeight: [0, 6],
+	distance: 45,
+	// The stream's bed is the ground under the water, so the camera may dip under the surface but
+	// never through the bed.
+	clearance: 0.15,
+};
 /**
  * The cinematic route. It opens high over the whole valley, showing the stream, both banks and the
  * trees at once. It glides down behind the near bank's trees and runs along them to the end of the
@@ -106,7 +136,7 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		// Two cascades over a wider distance: one box fitted to the camera dropped casters at its
 		// edge as the camera moved, which made the shadows under the trees change.
-		shadow: { distance: 60, normalBias: 0.04, cascades: 2 },
+		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.04, cascades: 2 },
 	});
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 	// occlusion starts on, so the scene's shadows read.
@@ -128,10 +158,24 @@ export default defineSketch(async (ctx) => {
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
+	const mountains = createMountains(ctx, detail.ring[0], detail.ring[1]);
+	// Haze fills the far ends of the gorges, where the land and the stream run out.
+	const hazes = [0, Math.PI].map((bearing) =>
+		createHaze(ctx, {
+			bearing,
+			from: GORGE.haze[0],
+			to: GORGE.haze[1],
+			halfWidth: 160,
+			solid: 60,
+			fade: 120,
+			sheets: 10,
+		}),
+	);
 	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
-	const water = createWater(ctx, detail.water, stones.obstacles);
+	const water = createWater(ctx, detail.water, stones.obstacles, GORGE.end);
+	const underwater = createUnderwater(ctx, camera, WATER);
 	const flora = await createFlora(ctx, models);
 	const air = await createAir(ctx, flora.crowns);
 	const shafts = createShafts(ctx, camera);
@@ -187,6 +231,7 @@ export default defineSketch(async (ctx) => {
 	const controls = createShowcaseEffects(ctx, {
 		camera,
 		sun,
+		shadowReach: SHADOW_REACH,
 		stage,
 		start: {
 			sky: true,
@@ -240,17 +285,27 @@ export default defineSketch(async (ctx) => {
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
+	// The haze takes the air's color now too, since a held frame runs no update.
+	for (const haze of hazes) haze.setColor(stage.airColor);
 
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
 		groups: controls.groups,
+		bounds: {
+			...BOUNDS,
+			ground: (x, z) => Math.max(groundHeight(x, z), mountains.heightAt(x, z)),
+		},
 	});
+	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
+	controls.fitShadows();
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			for (const haze of hazes) haze.setColor(stage.airColor);
+			underwater.update(stage.airColor, CAUSTICS[current]);
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
 			// next time of day as the sun does.

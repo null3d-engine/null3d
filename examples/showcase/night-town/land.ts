@@ -4,6 +4,7 @@
 // asks this module for its height, and for whether a point is on a road, so the houses, the lamps
 // and the props meet the ground where it is.
 import { math, type SketchContext } from '@null3d/engine';
+import { type MountainRing, type MountainRingOptions, mountainRing } from '../../lib/mountains';
 import { Noise, type TexelSample, terrain, textureSet } from '../../lib/procedural';
 
 /** The width and depth of the land, in meters, centered on the origin. */
@@ -154,4 +155,50 @@ export function createLand(
 		receiveShadows: true,
 		castShadows: false,
 	});
+}
+
+/**
+ * The mountains around the clearing: snowy peaks behind a dark band of forest. The lowest crest
+ * stands above the highest that the Manual camera can climb (`MOUNTAINS.heights` against the
+ * camera's bounds in the sketch), so the view never passes over the ring.
+ */
+export const MOUNTAINS = {
+	crest: [260, 340],
+	heights: [85, 165],
+} as const;
+
+/** The ring's settings, with `segments` bearings and `rows` rows. */
+export const mountainSettings = (segments: number, rows: number): MountainRingOptions => ({
+	half: LAND / 2,
+	land: groundHeight,
+	crest: MOUNTAINS.crest,
+	heights: MOUNTAINS.heights,
+	segments,
+	rows,
+	seed: 23,
+	palette: {
+		forest: [0.02, 0.035, 0.03],
+		rock: [0.075, 0.075, 0.085],
+		snow: SNOW,
+		treeLine: 45,
+		// Snow lies on every gentle slope, from the foot up.
+		snowLine: -1000,
+		frost: 0.3,
+	},
+});
+
+/** Makes the ring of mountains around the land, with `segments` bearings and `rows` rows. */
+export function createMountains(
+	{ scene, geometry, materials }: SketchContext,
+	segments: number,
+	rows: number,
+): MountainRing {
+	const ring = mountainRing(mountainSettings(segments, rows));
+	scene.createMesh({
+		mesh: geometry.fromArrays(ring.arrays),
+		material: materials.standard({ vertexColors: true, roughness: 1 }),
+		castShadows: false,
+		receiveShadows: false,
+	});
+	return ring;
 }

@@ -3,7 +3,7 @@
 // that the scene supports.
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
-import { createShowcaseEffects } from './showcase-effects';
+import { createShowcaseEffects, shadowStep } from './showcase-effects';
 
 /** A cinematic that records how the page's camera picks reach it. */
 function stubFilm() {
@@ -64,14 +64,32 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 		show: (part: string, on: boolean) => shown.push(`${part} ${on}`),
 		preset: 'high',
 	};
-	const sun = { setCastShadows: (on: boolean) => seen.push(`shadows ${on}`) };
+	const ranges: number[] = [];
+	const sun = {
+		setCastShadows: (on: boolean) => seen.push(`shadows ${on}`),
+		setShadow: (shadow: { distance: number }) => ranges.push(shadow.distance),
+	};
+	// The camera looks down -z from `place`, which a test moves.
+	const place = [0, 5, 20];
 	const camera = {
 		setFocalLength: (length: number) => seen.push(`focal ${length}`),
 		setFov: (fov: number) => seen.push(`fov ${fov}`),
+		getPosition: (out: number[]) => {
+			out[0] = place[0] as number;
+			out[1] = place[1] as number;
+			out[2] = place[2] as number;
+		},
+		getRotation: (out: number[]) => {
+			out[0] = 0;
+			out[1] = 0;
+			out[2] = 0;
+			out[3] = 1;
+		},
 	};
 	const effects = createShowcaseEffects(scene.context, {
 		camera: camera as never,
 		sun: sun as never,
+		shadowReach: { distance: 70, center: [0, 5, 0], radius: 30 },
 		stage: stage as never,
 		start: options.start ?? {
 			sky: true,
@@ -95,7 +113,7 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 		focus: [0, 1, 0],
 		...(options.dslr !== undefined && { dslr: options.dslr }),
 	});
-	return { effects, seen, posts, shown, calls, scene, camera, quality };
+	return { effects, seen, posts, shown, calls, scene, camera, quality, ranges, place };
 }
 
 describe('createShowcaseEffects', () => {
@@ -225,5 +243,44 @@ describe('createShowcaseEffects', () => {
 		// A mood that the scene does not know changes nothing.
 		send('mood', 'Noon');
 		expect(seen).toEqual(['mood Dawn', 'sky false', 'focal 50', 'preset medium', 'lodThreshold 0']);
+	});
+});
+
+describe('the shadow range', () => {
+	it('rises at once to the step that reaches the need', () => {
+		expect(shadowStep(60, 70, 70)).toBe(70);
+		expect(shadowStep(71, 70, 70)).toBeCloseTo(87.5, 6);
+		expect(shadowStep(100, 70, 70)).toBeCloseTo(109.375, 6);
+	});
+
+	it('holds while the need hovers at a step, and falls once it is a whole step lower', () => {
+		let held = shadowStep(90, 70, 70);
+		expect(held).toBeCloseTo(109.375, 6);
+		// The need crosses the step under the held range back and forth: the range holds still.
+		for (let k = 0; k < 100; k++) {
+			held = shadowStep(k % 2 === 0 ? 87 : 88, held, 70);
+			expect(held).toBeCloseTo(109.375, 6);
+		}
+		// A need a whole step under the held range lets it fall, to the step that reaches the need.
+		held = shadowStep(69, held, 70);
+		expect(held).toBe(70);
+	});
+
+	it('follows the camera as it draws back from the core and comes in again', () => {
+		const { effects, ranges, place } = stub();
+		expect(ranges).toEqual([70]);
+		// The core's far side lies the camera's distance from its middle plus its radius away.
+		for (const back of [20, 60, 120, 240]) {
+			place[2] = back;
+			effects.update(0);
+			expect(ranges.at(-1) as number).toBeGreaterThanOrEqual(back + 30);
+		}
+		place[2] = 20;
+		effects.update(0);
+		expect(ranges.at(-1)).toBe(70);
+		// A range that does not change is not written again.
+		const writes = ranges.length;
+		effects.update(0);
+		expect(ranges.length).toBe(writes);
 	});
 });

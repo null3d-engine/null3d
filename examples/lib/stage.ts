@@ -143,6 +143,11 @@ export interface Stage {
 	 * The share of a town's own lights, from 0 by day to 1 at night. The studio lights them fully.
 	 */
 	readonly lamps: number;
+	/**
+	 * The linear color of the air at the horizon now, which the fog takes: a scene's own haze takes
+	 * it too, so it matches the sky.
+	 */
+	readonly airColor: readonly [number, number, number];
 	/** Eases toward the target and applies it. Call once per frame with the frame's step. */
 	update(dt: number): void;
 	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
@@ -415,6 +420,9 @@ export function createMoods(
 		},
 		get lamps() {
 			return mood === 'Studio' ? 1 : current.lamps;
+		},
+		get airColor() {
+			return current.fog;
 		},
 		set(next) {
 			mood = next;
