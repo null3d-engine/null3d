@@ -132,6 +132,27 @@ export class FrameReplay {
 	}
 
 	/**
+	 * Replays the frame taken last for a capture. A view that rests records no list for a frame,
+	 * so the frame's own slot holds no words: the other frame's slot then holds the list that drew
+	 * last, which is the frame the screen shows. With nothing drawn since the frames in the slots,
+	 * the capture replays the frame's own empty list, and the backend reports it.
+	 */
+	replayForCapture(frame: number): void {
+		const from = this.restOf(frame);
+		const words = this.views.heap(Uint32Array);
+		const floats = this.views.heap(Float32Array);
+		if (this.end > from) {
+			this.backend.replay(words, floats, from, this.end, words.buffer);
+			return;
+		}
+		const parity = (frame & 1) ^ 1;
+		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
+		const end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
+		if (end > start) this.backend.replay(words, floats, start, end, words.buffer);
+		else this.backend.replay(words, floats, from, this.end, words.buffer);
+	}
+
+	/**
 	 * Resolves with the frame that this thread took last, once every pipeline is built, including
 	 * those of that frame's list. Frames go on while it waits, and the sketch thread records into a
 	 * taken frame's list again once the next frame is taken, so the caller replays the frame at

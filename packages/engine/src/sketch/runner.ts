@@ -740,10 +740,16 @@ export class SketchRunner {
 		this.sketch.glue.setPixelRatio();
 	}
 
-	/** Records the time since the previous phase ended as a phase of the frame. */
+	/**
+	 * Records the time since the previous phase ended as a phase of the frame. The time is added
+	 * here rather than passed to the recorder: a double handed to a call costs an allocation that
+	 * the allocation check counts, and a frame ends eight phases.
+	 */
 	private endPhase(phase: number): void {
 		const now = performance.now();
-		this.record.addPhase(phase, now - this.phaseStart);
+		const floats = this.record.phaseFloats();
+		const at = this.record.phaseIndex(phase);
+		floats[at] = (floats[at] as number) + (now - this.phaseStart);
 		this.phaseStart = now;
 	}
 
