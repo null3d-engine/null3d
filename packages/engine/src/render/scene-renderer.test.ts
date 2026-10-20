@@ -90,6 +90,11 @@ describe('FrameReplay', () => {
 
 	it('waits for the builds, then gives the frame taken last, whose list the sketch has not reused', async () => {
 		const { slots, backend, replay } = setup();
+		// The sketch thread records a list for the frame the loop takes.
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
 		Atomics.store(slots, Slot.FramesTaken, 3);
 		backend.building = true;
 		const taken = replay.builtTaken();
@@ -120,14 +125,17 @@ describe('FrameReplay', () => {
 		expect(backend.replayedFrom).toEqual([101, 101, 201]);
 	});
 
-	it('waits for the first frame of a renderer that a GPU loss replaced', async () => {
+	it('waits for a frame whose list recorded, after a GPU loss', async () => {
 		const { slots, replay } = setup();
-		// A replaced renderer has taken no frame, and frame zero's list is the empty one the
-		// failed frame left, so the capture must not replay it.
-		Atomics.store(slots, Slot.FramesTaken, 0);
+		// Frame zero's list is the empty one the failed frame left, and the next frame records one.
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 0);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
+		Atomics.store(slots, Slot.FramesTaken, 2);
 		const taken = replay.builtTaken();
-		Atomics.store(slots, Slot.FramesTaken, 1);
-		await expect(taken).resolves.toBe(1);
+		Atomics.store(slots, Slot.FramesTaken, 3);
+		await expect(taken).resolves.toBe(3);
 	});
 
 	it('stops a capture that waits for builds when the renderer is destroyed', async () => {
