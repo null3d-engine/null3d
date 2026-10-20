@@ -120,6 +120,16 @@ describe('FrameReplay', () => {
 		expect(backend.replayedFrom).toEqual([101, 101, 201]);
 	});
 
+	it('waits for the first frame of a renderer that a GPU loss replaced', async () => {
+		const { slots, replay } = setup();
+		// A replaced renderer has taken no frame, and frame zero's list is the empty one the
+		// failed frame left, so the capture must not replay it.
+		Atomics.store(slots, Slot.FramesTaken, 0);
+		const taken = replay.builtTaken();
+		Atomics.store(slots, Slot.FramesTaken, 1);
+		await expect(taken).resolves.toBe(1);
+	});
+
 	it('stops a capture that waits for builds when the renderer is destroyed', async () => {
 		const { slots, backend, replay } = setup();
 		Atomics.store(slots, Slot.FramesTaken, 1);

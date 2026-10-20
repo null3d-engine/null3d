@@ -157,7 +157,9 @@ export class FrameReplay {
 	 * those of that frame's list. Frames go on while it waits, and the sketch thread records into a
 	 * taken frame's list again once the next frame is taken, so the caller replays the frame at
 	 * once, before this thread can take another. It fails when the renderer is destroyed during the
-	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit.
+	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit. A renderer
+	 * that a GPU loss replaced takes no frame yet, so the capture waits for one: its list for frame
+	 * zero is the empty one that the failed frame left.
 	 */
 	async builtTaken(): Promise<number> {
 		const deadline = performance.now() + BUILD_WAIT_LIMIT_MS;
@@ -166,7 +168,7 @@ export class FrameReplay {
 				throw new Error('the GPU was lost or the engine stopped during the capture');
 			const frame = Atomics.load(this.slots, Slot.FramesTaken);
 			this.restOf(frame);
-			if (!this.backend.building) return frame;
+			if (!this.backend.building && frame > 0) return frame;
 			if (performance.now() >= deadline)
 				throw new Error(
 					`the frame's pipelines were still building after ${BUILD_WAIT_LIMIT_MS / 1000} s`,
