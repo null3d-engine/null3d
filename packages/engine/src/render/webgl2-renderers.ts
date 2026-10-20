@@ -239,7 +239,7 @@ class WebGL2SceneRenderer implements Renderer {
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
 		this.backend.canvasTarget = { framebuffer, width, height };
 		try {
-			this.frames.replayForCapture(frame);
+			this.frames.replay(frame);
 		} catch (error) {
 			this.lostDuring(error);
 			throw new Error('the browser took the WebGL2 context away during the capture');
