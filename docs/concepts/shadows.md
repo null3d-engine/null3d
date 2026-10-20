@@ -331,7 +331,7 @@ They follow these rules:
 - Only the first directional light draws them, and only while it casts shadows. Spot and point lights draw none.
 - The quality setting `contactShadowSteps` sets the steps of each ray: 8 on High and 16 on Ultra. Low draws none. Medium draws 4 on WebGL2 and none on WebGPU. `quality.set({ contactShadowSteps: 4 })` turns them on for any preset.
 - They darken the light's direct light only, on surfaces that receive shadows. Ambient and environment light stay as they are.
-- They darken only a face that the camera sees from the light's side. The ray starts from the face that the camera sees, so on a face that looks away from the light it would run through the surface itself.
+- They darken only a face that the camera sees from the light's side. The ray starts from the face that the camera sees. On a face that looks away from the light, it would run through the surface itself.
 - A material with `contactShadows: false` takes none of them, and keeps the shadow map's shadows. Its surfaces still block rays, so the surfaces under them keep their contact shadows.
 - Every opaque object in the depth can block a ray, whether it casts shadows or not. Blended objects, sprites and particles block none.
 - They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.

@@ -16,8 +16,12 @@ const SKETCH = 'tests/pages/sketches/contact-faces-sketch.ts';
 const CARD_SHARE = 0.01;
 /** A change of a pixel's mean channel, out of 255, that counts as a difference. */
 const STEP = 8;
-/** The fewest pixels of the ground that contact shadows must darken, so the check is not empty. */
-const GROUND_PIXELS = 200;
+/**
+ * The fewest pixels of the ground away from the cards that contact shadows must darken, so the
+ * check is not empty: about 100 at the test's size on every tier, where a frame without them
+ * darkens none.
+ */
+const GROUND_PIXELS = 40;
 
 interface Frame {
 	error?: string;
@@ -26,11 +30,11 @@ interface Frame {
 	pixels: string;
 }
 
-async function pixelsOf(page: Page, path: string): Promise<Uint8Array> {
+async function imageOf(page: Page, path: string): Promise<{ width: number; pixels: Uint8Array }> {
 	await page.goto(path);
 	const frame = await pageResult<Frame>(page, 60_000);
 	expect(frame.error).toBeUndefined();
-	return new Uint8Array(Buffer.from(frame.pixels, 'base64'));
+	return { width: frame.width, pixels: new Uint8Array(Buffer.from(frame.pixels, 'base64')) };
 }
 
 const pathOf = (query: string, tier: string) => {
@@ -45,22 +49,30 @@ for (const tier of ['webgpu', 'compat', 'webgl2'])
 		page,
 	}) => {
 		test.setTimeout(180_000);
-		const off = await pixelsOf(page, pathOf('?off', tier));
-		const on = await pixelsOf(page, pathOf('', tier));
+		const { width, pixels: off } = await imageOf(page, pathOf('?off', tier));
+		const { pixels: on } = await imageOf(page, pathOf('', tier));
+		const at = (x: number, y: number) => 4 * (y * width + x);
+		// The cards are green; the ground and the sky are not.
+		const green = (i: number) =>
+			(off[i + 1] ?? 0) > 1.2 * (off[i] ?? 0) && (off[i + 1] ?? 0) > 1.2 * (off[i + 2] ?? 0);
+		const light = (pixels: Uint8Array, i: number) =>
+			((pixels[i] ?? 0) + (pixels[i + 1] ?? 0) + (pixels[i + 2] ?? 0)) / 3;
+		const height = off.length / 4 / width;
 		let cards = 0;
 		let changedCards = 0;
 		let darkerGround = 0;
-		for (let i = 0; i < off.length; i += 4) {
-			const [r, g, b] = [off[i] ?? 0, off[i + 1] ?? 0, off[i + 2] ?? 0];
-			const light = (pixels: Uint8Array) =>
-				((pixels[i] ?? 0) + (pixels[i + 1] ?? 0) + (pixels[i + 2] ?? 0)) / 3;
-			const change = light(on) - light(off);
-			// The cards are green; the ground and the sky are not.
-			if (g > 1.2 * r && g > 1.2 * b) {
-				cards++;
-				if (Math.abs(change) > STEP) changedCards++;
-			} else if (change < -STEP) darkerGround++;
-		}
+		// Pixels at a card's edge blend the card with the ground behind it, whose contact shadows
+		// change, so only pixels whose neighbours share their kind count.
+		for (let y = 1; y < height - 1; y++)
+			for (let x = 1; x < width - 1; x++) {
+				const i = at(x, y);
+				const kinds = [i, at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)].map(green);
+				const change = light(on, i) - light(off, i);
+				if (kinds.every(Boolean)) {
+					cards++;
+					if (Math.abs(change) > STEP) changedCards++;
+				} else if (!kinds.some(Boolean) && change < -STEP) darkerGround++;
+			}
 		expect(cards).toBeGreaterThan(1000);
 		expect(changedCards / cards).toBeLessThan(CARD_SHARE);
 		expect(darkerGround).toBeGreaterThan(GROUND_PIXELS);
