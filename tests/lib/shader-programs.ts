@@ -7,7 +7,7 @@
 // source of these modules holds those lines, so the lines name the builds and count their programs.
 // The check that holds the modules beside them needs the whole set, so it runs in a process of its
 // own ([Test memory](../../.dev/tests.md)).
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { SHADERS } from '../../packages/engine/src/generated/shaders.ts';
 import {
@@ -60,6 +60,19 @@ function programsOfModule(text: string): Map<string, number> {
 		else if (VERTEX_STAGE.test(line)) programs.set(build, (programs.get(build) ?? 0) + 1);
 	}
 	return programs;
+}
+
+/** The generated files that hold shaders: the main module, its tables and every device module. */
+const SHADER_FILE = /^shaders.*\.(js|ts)$/;
+
+/**
+ * The bytes of every generated file that holds shaders. A part of the shaders page downloads its
+ * share of them, whatever its set holds.
+ */
+export function shaderFileBytes(): number {
+	return readdirSync(MODULE_DIR)
+		.filter((name) => SHADER_FILE.test(name))
+		.reduce((sum, name) => sum + statSync(join(MODULE_DIR, name)).size, 0);
 }
 
 /** The modules' text, read once: the generated modules do not change while a process runs. */

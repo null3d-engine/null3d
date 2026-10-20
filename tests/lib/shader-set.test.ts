@@ -15,7 +15,7 @@ import {
 	shaderOf,
 	variantOf,
 } from '../pages/lib/shader-list.ts';
-import { SHADER_PROGRAMS_PER_PART } from './plans.ts';
+import { PLANNED_SHADER_SETS, SHADER_PROGRAMS_PER_PART } from './plans.ts';
 import {
 	glslProgramCount,
 	glslProgramCountOf,
@@ -30,8 +30,6 @@ const MODULE_DIR = join(import.meta.dirname, '../../packages/engine/src/generate
 const MODULE = /^shaders-.*\.(js|ts)$/;
 /** The main module, which the tests read as the engine's own build rather than as a file. */
 const MAIN_MODULE = 'shaders.ts';
-/** The sets of builds that the shaders page compiles, each in parts of its own. */
-const SETS: readonly ShaderSet[] = ['base', 'coat', 'coat-sample', 'first-use', 'first-use-sample'];
 /** The most GLSL programs that one page compiles: more than a part's share holds, with room. */
 const MOST_PROGRAMS_PER_PART = 600;
 /** Loading every module takes seconds on a busy machine, which the tests may have. */
@@ -112,7 +110,7 @@ describe('the generated shader set', () => {
 	it(
 		'loads every build of a set in its parts, none of them over the page limit',
 		async () => {
-			for (const set of SETS) {
+			for (const set of PLANNED_SHADER_SETS) {
 				const { loaded, most } = await partsOfSet(set);
 				expect([set, most <= MOST_PROGRAMS_PER_PART]).toEqual([set, true]);
 				// The parts together load every build that the modules hold: a module that no part

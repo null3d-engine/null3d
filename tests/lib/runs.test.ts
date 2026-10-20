@@ -77,6 +77,7 @@ import {
 	glslProgramCountOf,
 	glslProgramsByName,
 	glslProgramsByVariant,
+	shaderFileBytes,
 } from './shader-programs.ts';
 import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
@@ -1087,19 +1088,25 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
+	/** The most bytes of shader modules that one part of the shaders page downloads. */
+	const MOST_BYTES_PER_PART = 200_000_000;
+
 	it('splits the shaders page into parts that share every program, each with time for its share', () => {
 		const all = glslProgramCount();
 		expect(all).toBeGreaterThan(100);
 		const inSet = (set: ShaderSet) => glslProgramCountOf(set);
-		const [base, firstUse, coat, sample, firstUseSample] = [
+		const [base, firstUse, coat, sample, firstUseSample, sampledSet] = [
 			inSet('base'),
 			inSet('first-use'),
 			inSet('coat'),
 			inSet('coat-sample'),
 			inSet('first-use-sample'),
+			inSet('sampled'),
 		];
-		// The base, first-use and coat sets split every program; each sample is some of its set's.
+		// The base, first-use and coat sets split every program; each sample is some of its set's,
+		// and the sampled set holds the base set with both samples.
 		expect(base + firstUse + coat).toBe(all);
+		expect(sampledSet).toBe(base + sample + firstUseSample);
 		expect(sample).toBeGreaterThan(0);
 		expect(sample).toBeLessThanOrEqual(400);
 		expect(firstUseSample).toBeGreaterThan(0);
@@ -1127,7 +1134,7 @@ describe('the checks plan', () => {
 		const sampled = checksPlan({ shaders: 'sampled' });
 		for (const [plan, sets] of [
 			[items, { base, 'first-use': firstUse, coat }],
-			[sampled, { base, 'first-use-sample': firstUseSample, 'coat-sample': sample }],
+			[sampled, { sampled: sampledSet }],
 		] as const) {
 			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
 				Object.values(sets).reduce(
@@ -1149,6 +1156,10 @@ describe('the checks plan', () => {
 				// hundred programs in one WebGL2 context. Holding the parts beside the builds they load
 				// needs the whole set: that check runs in a process of its own
 				// (`bun run test:heavy`, [Test memory](../../.dev/tests.md)).
+				// A part downloads its share of every module whatever its set holds, so a set of few
+				// programs in one part downloaded every module: 2.5 GB, which Safari on CI's Mac had not
+				// loaded after 205 s (20 October 2026).
+				expect([set, shaderFileBytes() / parts.length < MOST_BYTES_PER_PART]).toEqual([set, true]);
 				for (const part of parts) {
 					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
 					expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / parts.length / 4);

@@ -10,7 +10,7 @@
 // builds without the coat and sheen bit, a sample of those with it, the builds of the features that
 // load on first use, or a sample of those.
 import { everyShader } from '@null3d/engine/internal';
-import { run } from './lib/result';
+import { progress, run } from './lib/result';
 import { checkGlslPrograms, checkWgslModules, type ShaderFailure } from './lib/shader-checks';
 import {
 	glslProgramsOf,
@@ -31,8 +31,10 @@ run('shaders', async () => {
 	if (!SHADER_SETS.includes(set)) throw new Error(`no set of shaders named ${set}`);
 	const inSet = ([name]: readonly [string, unknown]) => inShaderSet(name, set);
 	// This part's share of the shaders of the main module and of the device modules, kept to the
-	// set that the page checks.
+	// set that the page checks. The trail notes the download, which can outlast the compiles.
+	progress(`downloading part ${part} of ${parts} of the shader modules`);
 	const shaders = await everyShader(part, parts);
+	progress('downloaded the shader modules');
 	const failures: ShaderFailure[] = [];
 	const glslStart = performance.now();
 	const glsl = await checkGlslPrograms(glslProgramsOf(shaders).filter(inSet), failures);

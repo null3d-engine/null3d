@@ -1,6 +1,6 @@
 # D-189: Safari samples the first-use shader builds too
 
-Status: decided. Date: 2026-10-18. Task: M2-EX36.
+Status: decided. Date: 2026-10-18. Task: M2-EX36. Changed on 20 October 2026: the samples share the base set's parts (last section).
 
 Summary: The shaders page's Safari plan compiles the base builds, a sample of the coat builds and a sample of the builds of features that load on first use. Every other browser still compiles every build. The busiest Safari shard's modelled time falls from 11.4 to 9.49 minutes, under the 10-minute limit, with every combination that the shader manifest designs kept.
 
@@ -42,3 +42,11 @@ The sample allows the device's bits with shadows, row values, tone mapping, the 
 - `tests/lib/shader-programs.ts` counts programs by `shader.variant`, since a set that leaves out a feature needs the shader's name, which the variant alone does not give. The variant-only map remains for the checks that read variants.
 - The shaders page takes `?set=first-use` and `?set=first-use-sample` like the other sets.
 - Safari no longer compiles every first-use build in CI: it compiles one sample part of each kind. The other browsers, and the local `bun run test:browser` runs that do not sample, still compile every build.
+
+## Change on 20 October 2026: the samples share the base parts
+
+- Each sample ran as a part of its own. A part downloads its share of every shader module, so a set in one part downloads all of them.
+- By 20 October 2026 the shader build wrote 5,566 modules, about 2.5 GB. In CI's Safari, neither sample page noted a step within its 205 seconds. Runs 39291513923, 39306888159 and 39325388478 show it.
+- On the Mac, Safari compiles one of the largest programs in about 0.3 s. The download used the time, not the compiler.
+- Safari's plan now compiles one set, `sampled`: the base builds and both samples, in one set of parts. Each part compiles a few more programs and downloads nothing more.
+- A unit test fails when one part of a plan would download more than 200 MB of shader modules.

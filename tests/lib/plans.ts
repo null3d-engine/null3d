@@ -476,7 +476,9 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
  * sheen bit in their parts, the builds of the features that load on first use in theirs, then those
  * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
  * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
- * short (D-147, D-189).
+ * short (D-147, D-189). Its samples share the parts of the other builds, since a part downloads its
+ * share of every module: a sample with a part of its own downloaded every module, about 2.5 GB on
+ * 20 October 2026, and Safari had not compiled one program of it after 205 s.
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
@@ -484,8 +486,13 @@ export type ShaderPlan = (typeof SHADER_PLANS)[number];
 /** The sets of the shaders page that each kind of plan compiles, each in its parts. */
 const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
 	all: ['base', 'first-use', 'coat'],
-	sampled: ['base', 'first-use-sample', 'coat-sample'],
+	sampled: ['sampled'],
 };
+
+/** Every set of the shaders page that a plan compiles. */
+export const PLANNED_SHADER_SETS: readonly ShaderSet[] = [
+	...new Set(Object.values(SHADER_PLAN_SETS).flat()),
+];
 
 /**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
@@ -497,9 +504,7 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 	SHADERS_BASE_SECONDS +
 		SHADERS_SECONDS_PER_PROGRAM *
 			Math.max(
-				...(['base', 'coat', 'coat-sample', 'first-use', 'first-use-sample'] as const).map((set) =>
-					Math.ceil(glslProgramCountOf(set) / partsOf(set)),
-				),
+				...PLANNED_SHADER_SETS.map((set) => Math.ceil(glslProgramCountOf(set) / partsOf(set))),
 			),
 );
 
@@ -1957,15 +1962,11 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
  * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
- * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard,
- * and a coat sample part took about 200. A shard holds three or four parts, so each one compiles
- * first or second, and counts at that time. In run 39306888159 the coat and first-use sample parts
- * each ran out of their 205 s before they noted a step, so their programs, the largest builds,
- * count at more than that. The WebGPU pages of the same names skip there.
+ * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard. A
+ * shard holds three or four parts, so each one compiles first or second, and counts at that time.
+ * The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
-	[/^shaders-coat-sample-/, 240],
-	[/^shaders-first-use-sample-/, 240],
 	[/^shaders-/, 120],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],

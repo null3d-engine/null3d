@@ -41,6 +41,10 @@ export function wgslModulesOf(shaders: Shaders): (readonly [string, string])[] {
  * most materials draw with: shadows, row values, masks, normal maps' tangents, tone mapping, the
  * draw index and half precision. Safari cannot compile every first-use build inside its shard's
  * time, so it compiles a sample of those too (D-189).
+ *
+ * The sampled set holds the builds without the coat with both samples, so that the samples share
+ * the parts of those builds. A part downloads its share of every module, so a sample in one part
+ * of its own downloaded every module, which Safari on CI's Mac could not do inside the page's time.
  */
 export const SHADER_SETS = [
 	'all',
@@ -49,6 +53,7 @@ export const SHADER_SETS = [
 	'coat-sample',
 	'first-use',
 	'first-use-sample',
+	'sampled',
 ] as const;
 export type ShaderSet = (typeof SHADER_SETS)[number];
 
@@ -135,6 +140,9 @@ const sampledVariant = (
 		.reduce((rest, bit) => rest.replace(`_${bit}_`, '_'), `_${variant}_`)
 		.replace(/_+/g, '') === '';
 
+/** The sets whose builds the sampled set holds. */
+const SAMPLED_SETS: readonly ShaderSet[] = ['base', 'coat-sample', 'first-use-sample'];
+
 /** True when the build named `variant` is in `set`; a set that needs the shader's name takes one. */
 export function variantInShaderSet(variant: string, set: ShaderSet, name = ''): boolean {
 	const bits = `_${variant}_`;
@@ -156,6 +164,8 @@ export function variantInShaderSet(variant: string, set: ShaderSet, name = ''): 
 				firstUseBuild(name) &&
 				sampledVariant(variant, FIRST_USE_BITS, FIRST_USE_SAMPLE_BITS)
 			);
+		case 'sampled':
+			return SAMPLED_SETS.some((part) => variantInShaderSet(variant, part, name));
 	}
 }
 

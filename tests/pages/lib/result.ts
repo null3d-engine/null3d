@@ -19,6 +19,14 @@ declare global {
 const trail: string[] = [];
 window.__null3dProgress = trail;
 
+/**
+ * The files that the page's timeline keeps. The runner page reads them to name the page's last load
+ * and to give it time for its loads. A browser keeps 250 by default and drops the rest, so a page
+ * that downloads thousands of modules would read as one that stopped loading at the 250th.
+ */
+const TIMELINE_FILES = 100_000;
+performance.setResourceTimingBufferSize(TIMELINE_FILES);
+
 // Test pages draw every frame, as the sketch drew it: a view that holds still would otherwise blend
 // its frames and then rest, which changes the images, frame counts and timings that the tests read.
 // A page that tests the still-camera accumulation asks for it with ?still-camera=on.
