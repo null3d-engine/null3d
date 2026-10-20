@@ -127,8 +127,16 @@ export const MOUNTAINS = {
 /**
  * The gorges where the stream runs on out of the valley, along x both ways: the floor's half width,
  * the walls' climb beside it, where the land and the water end, and where the haze starts and stops.
+ * Over the floor the haze lies low, so the sun rising and setting down the gorge shows almost to the
+ * water. It climbs with the walls, which it must hide where they end.
  */
-export const GORGE = { width: 25, walls: 70, end: 720, haze: [330, 700] } as const;
+export const GORGE = {
+	width: 25,
+	walls: 70,
+	end: 720,
+	haze: [330, 700],
+	floorHaze: { halfWidth: 15, rise: 60, solid: 6, fade: 20 },
+} as const;
 
 /** The ring's settings, with `segments` bearings and `rows` rows. */
 export const mountainSettings = (segments: number, rows: number): MountainRingOptions => ({

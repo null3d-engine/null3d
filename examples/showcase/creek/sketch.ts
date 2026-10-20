@@ -9,13 +9,13 @@
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
-import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
+import { defineSketch, math, type QualityPreset, timeOfDay } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
-import { createMoods, isMood, type Mood, nearestMood } from '../../lib/stage';
+import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
@@ -47,8 +47,11 @@ const DETAIL: Record<
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
-/** The turn of the sun's path, so that it sets low over the stream, ahead of the camera. */
-const HEADING = Math.PI + 0.5;
+/**
+ * The turn of the sun's path, so that it rises out of the gorge at one end of the stream and sets
+ * into the gorge at the other, over the water.
+ */
+const HEADING = Math.PI;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -61,6 +64,10 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Night: [0, 0, 0],
 	Studio: [0.08, 0.08, 0.08],
 };
+/** The color of the shafts of light at golden hour. */
+const SHAFT_TINT = [1.0, 0.62, 0.3] as const;
+/** The least change of a look's share that Auto writes to the scene. */
+const LOOK_STEP = 0.005;
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
 /**
@@ -174,6 +181,7 @@ export default defineSketch(async (ctx) => {
 			halfWidth: 160,
 			solid: 60,
 			fade: 120,
+			floor: GORGE.floorHaze,
 			sheets: 10,
 		}),
 	);
@@ -203,33 +211,48 @@ export default defineSketch(async (ctx) => {
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
-	/** The mood whose look the scene shows. In Auto it is the fixed mood nearest to the hour. */
-	let current: Mood = 'Afternoon';
-	// Shafts of light at golden hour, at High and above: below, their march costs too much.
+	/**
+	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
+	 * the moods on either side, so the fireflies, the air and the caustics change with the light.
+	 */
+	const look: MoodMix = { from: 'Afternoon', to: 'Afternoon', share: 0 };
+	/** The hour's look, which Auto works out in each frame before it compares it with the one shown. */
+	const next: MoodMix = { ...look };
+	/** The studio's own look. */
+	const STUDIO: MoodMix = { from: 'Studio', to: 'Studio', share: 0 };
+	/** The light of the caustics on the stream's bed, blended between the look's moods. */
+	const caustics: [number, number, number] = [0, 0, 0];
+	// Shafts of light at golden hour, at High and above: below, their march costs too much. They
+	// fade with golden hour's share of the look.
+	const shaftTint: [number, number, number] = [0, 0, 0];
 	const light = () => {
+		const share = moodShare(look, 'Golden');
 		const on =
-			controls.on.shafts &&
-			current === 'Golden' &&
-			(quality.preset === 'high' || quality.preset === 'ultra');
-		shafts.set(on ? golden.light.direction : undefined, [1.0, 0.62, 0.3]);
+			controls.on.shafts && share > 0 && (quality.preset === 'high' || quality.preset === 'ultra');
+		for (let c = 0; c < 3; c++) shaftTint[c] = (SHAFT_TINT[c] as number) * share;
+		shafts.set(on ? golden.light.direction : undefined, shaftTint);
 	};
 	quality.onChange(() => {
 		fit();
 		light();
 	});
-	/** Gives the scene the look of a mood: its fireflies, its air and its water. */
-	const showLook = (mood: Mood): void => {
-		current = mood;
-		flora.nightLights(mood === 'Night' || mood === 'Dusk');
-		air.setMood(mood);
-		water.setCaustics(CAUSTICS[mood]);
+	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
+	const showLook = (mix: MoodMix): void => {
+		look.from = mix.from;
+		look.to = mix.to;
+		look.share = mix.share;
+		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
+		air.setLook(look);
+		const a = CAUSTICS[look.from];
+		const b = CAUSTICS[look.to];
+		for (let c = 0; c < 3; c++) caustics[c] = math.lerp(a[c] as number, b[c] as number, look.share);
+		water.setCaustics(caustics);
 		light();
 	};
 	const choose = (mood: Mood) => {
 		stage.set(mood);
-		// Auto moves the hour through the day, so it takes the look of the hour rather than one look
-		// that then sits under a moonlit sky.
-		showLook(mood === 'Auto' ? nearestMood(stage.hours) : mood);
+		// A fixed mood shows its own look, and Auto the look of the hour it starts from.
+		showLook(mood === 'Studio' ? STUDIO : moodMix(stage.hours, next));
 	};
 	// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
 	// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
@@ -280,8 +303,8 @@ export default defineSketch(async (ctx) => {
 		mood: choose,
 		hour(hours) {
 			stage.setHour(hours);
-			// The slider holds any hour, so the scene takes the look of the fixed mood nearest to it.
-			showLook(nearestMood(hours));
+			// The slider holds any hour, so the scene takes the look of that hour.
+			showLook(moodMix(hours, next));
 		},
 		film: () => film,
 		fov: FOV,
@@ -292,7 +315,7 @@ export default defineSketch(async (ctx) => {
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
 	// The haze takes the air's color now too, since a held frame runs no update.
-	for (const haze of hazes) haze.setColor(stage.airColor);
+	for (const haze of hazes) haze.update(stage.airColor, stage.light);
 
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
@@ -310,17 +333,22 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
-			for (const haze of hazes) haze.setColor(stage.airColor);
+			for (const haze of hazes) haze.update(stage.airColor, stage.light);
 			controls.update(t);
-			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
-			// next time of day as the sun does.
+			// In Auto the look follows the hour: the fireflies, the mist and the caustics move to the
+			// next time of day as the light does. A change too small to see is not written.
 			if (stage.auto) {
-				const at = nearestMood(stage.hours);
-				if (at !== current) showLook(at);
+				moodMix(stage.hours, next);
+				if (
+					next.from !== look.from ||
+					next.to !== look.to ||
+					Math.abs(next.share - look.share) > LOOK_STEP
+				)
+					showLook(next);
 			}
 			film.update(dt);
 			// After the camera moves, so the view under the water turns the frame the camera dips.
-			underwater.update(t, stage.airColor, CAUSTICS[current]);
+			underwater.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
 			if (lens) post.set(lens);
 			flora.update(t);

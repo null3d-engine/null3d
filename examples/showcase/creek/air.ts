@@ -5,10 +5,10 @@
 //
 // The particles add-on will take these over when it ships: emitters with their own update on the
 // GPU. Until then, sprite batches carry them.
-import type { SketchContext, Texture } from '@null3d/engine';
+import { math, type SketchContext, type Texture } from '@null3d/engine';
 import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
-import type { Mood } from '../../lib/stage';
+import type { Mood, MoodMix } from '../../lib/stage';
 import { groundHeight, streamZ, WATER } from './land';
 
 /** Falling leaves, dust motes and puffs of mist. */
@@ -138,7 +138,8 @@ export async function createAir(
 	crowns: readonly Crown[],
 ): Promise<{
 	update(t: number): void;
-	setMood(mood: Mood): void;
+	/** Shows the look of a mix of moods, each value blended between the two moods' own. */
+	setLook(mix: MoodMix): void;
 	setFireflies(on: boolean): void;
 	/** Shows or hides the mist over the water, which the fog switch owns. */
 	setMist(on: boolean): void;
@@ -180,20 +181,28 @@ export async function createAir(
 	const moteSeed = seeds(MOTES);
 	const mistSeed = seeds(MIST);
 	for (let k = 0; k < LEAVES; k++) leaves.frames[k] = k % 4;
-	let glow: Rgb = LOOK.Afternoon.motes;
+	const glow: Rgb = [...LOOK.Afternoon.motes];
+	const tint: Rgb = [...LOOK.Afternoon.leaves];
+	const haze: Rgb = [...LOOK.Afternoon.mist];
 	let fireflies = false;
 	/** False while the fog is off, which hides the mist with it. */
 	let mistShown = true;
 	return {
-		setMood(mood) {
-			const look = LOOK[mood];
-			leaves.material.set({ color: look.leaves });
-			// A material's color stops at white, so the motes' glow, which bloom needs above white,
-			// goes into each row's color.
-			glow = look.motes;
+		setLook({ from, to, share }) {
+			const a = LOOK[from];
+			const b = LOOK[to];
+			for (let c = 0; c < 3; c++) {
+				tint[c] = math.lerp(a.leaves[c] as number, b.leaves[c] as number, share);
+				// A material's color stops at white, so the motes' glow, which bloom needs above white,
+				// goes into each row's color.
+				glow[c] = math.lerp(a.motes[c] as number, b.motes[c] as number, share);
+				haze[c] = math.lerp(a.mist[c] as number, b.mist[c] as number, share);
+			}
+			const opacity = math.lerp(a.mistOpacity, b.mistOpacity, share);
+			leaves.material.set({ color: tint });
 			motes.setActiveCount(glow[0] === 0 && !fireflies ? 0 : MOTES);
-			mist.setActiveCount(!mistShown || look.mistOpacity === 0 ? 0 : MIST);
-			mist.material.set({ color: look.mist, opacity: look.mistOpacity });
+			mist.setActiveCount(!mistShown || opacity === 0 ? 0 : MIST);
+			mist.material.set({ color: haze, opacity });
 		},
 		setFireflies(on) {
 			fireflies = on;

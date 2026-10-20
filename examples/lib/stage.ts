@@ -30,8 +30,11 @@ export const MOODS = [
 ] as const;
 export type Mood = (typeof MOODS)[number];
 
+/** A fixed outdoor mood: one with an hour of its own. */
+export type FixedMood = Exclude<Mood, 'Auto' | 'Studio'>;
+
 /** The hour of each fixed outdoor mood. Auto moves the hour itself. */
-export const HOURS: Record<Exclude<Mood, 'Auto' | 'Studio'>, number> = {
+export const HOURS: Record<FixedMood, number> = {
 	Dawn: 6.2,
 	Morning: 9,
 	Midday: 12,
@@ -45,14 +48,13 @@ export const HOURS: Record<Exclude<Mood, 'Auto' | 'Studio'>, number> = {
 export type StagePart = 'sky' | 'fog' | 'environment';
 
 /**
- * The fixed mood whose hour is nearest to `hours`, around the clock. A scene in Auto uses it to carry
- * the look of the moment, such as its fireflies and its caustics, rather than the look that Auto was
- * chosen with.
+ * The fixed mood whose hour is nearest to `hours`, around the clock: the mood the stage names while
+ * the slider holds an hour. A scene's look blends between moods instead, through `moodMix`.
  */
-export function nearestMood(hours: number): Exclude<Mood, 'Auto' | 'Studio'> {
-	let best: Exclude<Mood, 'Auto' | 'Studio'> = 'Afternoon';
+export function nearestMood(hours: number): FixedMood {
+	let best: FixedMood = 'Afternoon';
 	let gap = Infinity;
-	for (const [mood, at] of Object.entries(HOURS) as [Exclude<Mood, 'Auto' | 'Studio'>, number][]) {
+	for (const [mood, at] of Object.entries(HOURS) as [FixedMood, number][]) {
 		const around = Math.min(Math.abs(hours - at), 24 - Math.abs(hours - at));
 		if (around < gap) {
 			gap = around;
@@ -60,6 +62,71 @@ export function nearestMood(hours: number): Exclude<Mood, 'Auto' | 'Studio'> {
 		}
 	}
 	return best;
+}
+
+/** Two moods and how far a look has gone from the first to the second, from 0 to 1. */
+export interface MoodMix {
+	from: Mood;
+	to: Mood;
+	share: number;
+}
+
+/** How far under the horizon the sun stands, in degrees, once its light has left the sky. */
+const NIGHT_DEPTH = 18;
+
+/** The hour between `from` and `to` at which the sun sinks or rises past the night's depth. */
+function nightEdge(from: number, to: number): number {
+	const limit = Math.sin((-NIGHT_DEPTH * Math.PI) / 180);
+	const dark = (hours: number) =>
+		(timeOfDay(hours, { model: 'physical' }).atmosphere.sunPosition[1] as number) < limit;
+	const darkFirst = dark(from);
+	let a = from;
+	let b = to;
+	for (let k = 0; k < 30; k++) {
+		const middle = (a + b) / 2;
+		if (dark(middle) === darkFirst) a = middle;
+		else b = middle;
+	}
+	return (a + b) / 2;
+}
+
+/** The hours at which the night begins, after dusk, and ends, before dawn. */
+const NIGHT = { start: nightEdge(HOURS.Dusk, 24), end: nightEdge(0, HOURS.Dawn) };
+/** The fixed moods of the lit hours, in the order of their hours. */
+const LIT_MOODS = (Object.entries(HOURS) as [FixedMood, number][])
+	.filter(([mood]) => mood !== 'Night')
+	.sort((a, b) => a[1] - b[1]);
+
+/**
+ * The look of an hour, as two fixed moods and the share of the second, written into `out`. The look
+ * follows the sky's light rather than the clock. Through the dark hours it holds Night, and only
+ * while the sky has light does it move from each mood to the next. So the dawn's look comes in
+ * through the morning twilight and is whole at Dawn's hour, and the night's comes in as the dusk
+ * deepens. No hour switches a look at once.
+ */
+export function moodMix(hours: number, out: MoodMix = { from: 'Night', to: 'Night', share: 0 }) {
+	const h = ((hours % 24) + 24) % 24;
+	out.from = 'Night';
+	out.to = 'Night';
+	out.share = 0;
+	if (h >= NIGHT.start || h <= NIGHT.end) return out;
+	let at = NIGHT.end;
+	for (const [mood, hour] of LIT_MOODS) {
+		if (h < hour) {
+			out.to = mood;
+			out.share = smoothstep(at, hour, h);
+			return out;
+		}
+		out.from = mood;
+		at = hour;
+	}
+	out.share = smoothstep(at, NIGHT.start, h);
+	return out;
+}
+
+/** The share of `mood` in a mix, from 0 to 1. */
+export function moodShare(mix: MoodMix, mood: Mood): number {
+	return (mix.from === mood ? 1 - mix.share : 0) + (mix.to === mood ? mix.share : 0);
 }
 
 /** The studio's key light, from the front left and high. */
@@ -83,7 +150,7 @@ const LAMPS_DUSK = 0.32;
 /** How far the exposure opens up for a sun near the horizon, such as at dawn and golden hour. */
 const LOW_SUN_OPEN = 0.5;
 
-/** Rises from 0 at `b` to 1 at `a`, smoothly, for either order of the two. */
+/** The value a share `t` of the way from `a` to `b`. */
 function blend(a: number, b: number, t: number): number {
 	return a + (b - a) * t;
 }
@@ -120,7 +187,7 @@ export interface StageOptions {
 	/** The share of the sky that clouds cover, from 0 to 1. */
 	cloudCoverage: number;
 	/** A factor of the fog's density in some moods, such as a haze at golden hour. */
-	haze?: Partial<Record<Exclude<Mood, 'Auto' | 'Studio'>, number>>;
+	haze?: Partial<Record<FixedMood, number>>;
 	/** The minutes a whole day takes in Auto. The default is 4. */
 	minutesPerDay?: number;
 	/** The plain background color, in linear RGB, that shows while the sky is off. */
@@ -148,6 +215,14 @@ export interface Stage {
 	 * it too, so it matches the sky.
 	 */
 	readonly airColor: readonly [number, number, number];
+	/**
+	 * The main light now: the unit direction toward it, and its linear color times its intensity. A
+	 * scene's own haze glows toward it. The studio's key is not the sun, so it gives none.
+	 */
+	readonly light: {
+		readonly toward: readonly [number, number, number];
+		readonly color: readonly [number, number, number];
+	};
 	/** Eases toward the target and applies it. Call once per frame with the frame's step. */
 	update(dt: number): void;
 	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
@@ -189,6 +264,10 @@ export function createMoods(
 		lamps: 0,
 	};
 	const target = structuredClone(current);
+	/** The main light that `light` gives, written in place. */
+	const shining = { toward: [0, 1, 0] as Vec3, color: [0, 0, 0] as Vec3 };
+	/** The two moods whose looks the target's hour lies between, written in place. */
+	const mix = moodMix(HOURS.Afternoon);
 	/**
 	 * The exposure that midday asks for. The daylight hours hold it, so the sun's own height sets how
 	 * bright the picture reads; the physical model's own exposure would even every hour out instead.
@@ -241,7 +320,7 @@ export function createMoods(
 	let needsLook = false;
 
 	/** Works out the target from an hour, with the physical sky. */
-	const aimAt = (hours: number, at: Mood): void => {
+	const aimAt = (hours: number): void => {
 		const day = timeOfDay(hours, { heading, model: 'physical' });
 		// The target's own arrays are written, never replaced: Auto aims again every frame.
 		for (let k = 0; k < 3; k++) {
@@ -253,7 +332,10 @@ export function createMoods(
 		}
 		target.intensity = day.light.intensity;
 		target.skyIntensity = day.skyIntensity;
-		target.density = fogDensity * (haze[at as Exclude<Mood, 'Auto' | 'Studio'>] ?? 1);
+		// The fog's factor follows the look of the hour, so it moves between moods with the light.
+		moodMix(hours, mix);
+		const factor = (mood: Mood) => haze[mood as FixedMood] ?? 1;
+		target.density = fogDensity * blend(factor(mix.from), factor(mix.to), mix.share);
 		target.glow = day.fog.sunGlow;
 		// The exposure holds the one that midday asks for while the sun is up, so the day's own light
 		// makes midday the brightest hour. It opens up a little as the sun nears the horizon, where a
@@ -424,11 +506,20 @@ export function createMoods(
 		get airColor() {
 			return current.fog;
 		},
+		get light() {
+			const length = Math.hypot(...current.dir) || 1;
+			const strength = mood === 'Studio' ? 0 : current.intensity;
+			for (let k = 0; k < 3; k++) {
+				shining.toward[k] = -(current.dir[k] as number) / length;
+				shining.color[k] = (current.color[k] as number) * strength;
+			}
+			return shining;
+		},
 		set(next) {
 			// Auto carries on from the hour on show, so turning it on never jumps the sky; from the
 			// studio it carries on from where it last stood.
 			if (next === 'Auto' && mood !== 'Studio' && mood !== 'Auto')
-				autoHours = manualHours ?? HOURS[mood as Exclude<Mood, 'Auto' | 'Studio'>];
+				autoHours = manualHours ?? HOURS[mood as FixedMood];
 			mood = next;
 			manualHours = null;
 			wasAuto = next === 'Auto';
@@ -440,7 +531,7 @@ export function createMoods(
 				toStudio();
 				return;
 			}
-			aimAt(next === 'Auto' ? autoHours : HOURS[next], next);
+			aimAt(next === 'Auto' ? autoHours : HOURS[next]);
 			if (!started) snap();
 		},
 		setHour(hours) {
@@ -452,19 +543,19 @@ export function createMoods(
 			needsLook = true;
 			still = false;
 			targetHours = Number.NaN;
-			aimAt(manualHours, mood);
+			aimAt(manualHours);
 			if (!started) snap();
 		},
 		update(dt) {
 			if (mood === 'Studio') return;
 			if (manualHours !== null) {
-				if (targetHours !== manualHours) aimAt(manualHours, mood);
+				if (targetHours !== manualHours) aimAt(manualHours);
 			} else if (wasAuto) {
 				autoHours = (autoHours + (dt * 24) / (perDay * 60)) % 24;
-				aimAt(autoHours, 'Auto');
+				aimAt(autoHours);
 			} else if (mood !== 'Auto') {
 				const hours = HOURS[mood];
-				if (targetHours !== hours) aimAt(hours, mood);
+				if (targetHours !== hours) aimAt(hours);
 			}
 			ease(dt);
 			apply();

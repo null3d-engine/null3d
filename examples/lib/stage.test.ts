@@ -1,7 +1,16 @@
 // The stage writes the sky, the fog and the environment light every frame, so a part that the HUD
 // turns off must stay off in every later frame and mood, and come back when it turns on again.
 import { expect, test } from 'bun:test';
-import { createMoods, lampShare, type Mood, nearestMood, type StagePart } from './stage';
+import {
+	createMoods,
+	HOURS,
+	lampShare,
+	type Mood,
+	moodMix,
+	moodShare,
+	nearestMood,
+	type StagePart,
+} from './stage';
 
 const SKY = { name: 'sky' };
 const ROOM = { name: 'room' };
@@ -206,7 +215,7 @@ test('Auto carries on from the hour on show, so turning it on never jumps the sk
 	expect(stage.hours).toBeCloseTo(18.4, 3);
 });
 
-test('the fixed mood nearest an hour carries the look of the moment', () => {
+test('the fixed mood nearest an hour is the one the stage names', () => {
 	expect(nearestMood(6.2)).toBe('Dawn');
 	expect(nearestMood(12)).toBe('Midday');
 	expect(nearestMood(17.6)).toBe('Golden');
@@ -214,4 +223,28 @@ test('the fixed mood nearest an hour carries the look of the moment', () => {
 	expect(nearestMood(23.5)).toBe('Night');
 	expect(nearestMood(0.5)).toBe('Night');
 	expect(nearestMood(8)).toBe('Morning');
+});
+
+test('a look moves between the moods with the light, never at once', () => {
+	// At each fixed mood's own hour, the look is that mood's alone.
+	for (const [mood, hours] of Object.entries(HOURS))
+		expect(moodShare(moodMix(hours), mood as Mood)).toBe(1);
+	// Through the dark hours the look holds the night, so nothing of the dawn shows after midnight.
+	for (const hours of [20, 23, 0, 2.6, 4]) expect(moodShare(moodMix(hours), 'Night')).toBe(1);
+	// The dawn's look comes in through the morning twilight, a little at first and whole at Dawn.
+	const dawn = (hours: number) => moodShare(moodMix(hours), 'Dawn');
+	expect(dawn(5)).toBeGreaterThan(0);
+	expect(dawn(5)).toBeLessThan(0.25);
+	expect(dawn(5.5)).toBeGreaterThan(dawn(5));
+	expect(dawn(6)).toBeGreaterThan(dawn(5.5));
+	// No mood's share steps between samples a minute apart, around the whole clock. The shortest
+	// blend, golden hour's 48 minutes into dusk, moves at most 3 percent a minute.
+	const moods: Mood[] = ['Dawn', 'Morning', 'Midday', 'Afternoon', 'Golden', 'Dusk', 'Night'];
+	let before = moodMix(0);
+	for (let hours = 1 / 60; hours <= 24.0001; hours += 1 / 60) {
+		const now = moodMix(hours);
+		for (const mood of moods)
+			expect(Math.abs(moodShare(now, mood) - moodShare(before, mood))).toBeLessThan(0.035);
+		before = now;
+	}
 });
