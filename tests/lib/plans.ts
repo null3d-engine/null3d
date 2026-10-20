@@ -1238,13 +1238,19 @@ export function effectPlan(
 	// The engine's own occlusion shaders in a small stand-alone page, for a browser report.
 	const repro: PlanItem<Check>[] =
 		effect === 'ao'
-			? ['ao', 'ao-quarter', 'copy'].map((variant) => {
+			? ['ao', 'ao-quarter', 'copy', 'opaque', 'msaa', 'high'].map((variant) => {
 					const switches =
 						variant === 'copy'
 							? '?mode=copy&aoscale=0.5'
 							: variant === 'ao-quarter'
 								? '?mode=ao&aoscale=0.25'
-								: '?mode=ao&aoscale=0.5';
+								: variant === 'opaque'
+									? '?mode=ao&aoscale=0.5&opaque=400'
+									: variant === 'msaa'
+										? '?mode=ao&aoscale=0.5&msaa=on'
+										: variant === 'high'
+											? '?mode=ao&aoscale=0.5&power=high'
+											: '?mode=ao&aoscale=0.5';
 					return {
 						id: `ao-fixed-cost-webgl2-${variant}`,
 						path: `/bench/probes/ao-fixed-cost/index.html${switches}`,

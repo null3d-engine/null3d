@@ -189,7 +189,13 @@ run('effect-cost', async () => {
 		off,
 		on,
 		...(glTiming && {
-			glTiming: { frames: glFrames, off: glSummary('off'), on: glSummary('on') },
+			glTiming: {
+				frames: glFrames,
+				off: glSummary('off'),
+				on: glSummary('on'),
+				// The measured frame's calls in order, which a stand-alone page can replay.
+				slowestFrame: glLast?.slowestFrame,
+			},
 		}),
 		failures,
 	};
