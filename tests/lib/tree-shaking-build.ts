@@ -1,5 +1,6 @@
 // The helpers that the tree-shaking checks share. Each check builds one small sketch in a process
-// of its own, because a build holds the whole engine and its shader text until the process ends.
+// of its own, because a build holds the whole engine until the process ends. The build leaves the
+// shader modules out, so it holds about 1.5 GB rather than the 12 GB that the shader text took.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,13 @@ import { build, type Rollup } from 'vite';
 const ENGINE = join(import.meta.dirname, '../../packages/engine/src/index.ts');
 /** The first line of the bundle's region for a public math module, which names its source file. */
 const MATH_REGION = /^\S*\/math\/(vec3|quat|mat4|math|color)\.ts\n/;
+/**
+ * The engine's shader modules, which the engine loads on first use or links by address. The checks
+ * read only the math helpers' code, and these modules are most of what a build of the engine holds:
+ * gigabytes, which put a single check past its memory ceiling. So the build takes an empty module
+ * in their place, in the page's build and in the workers' builds alike.
+ */
+const SHADER_MODULE = /^(?:\.\.\/generated\/|\.\/)shaders-[\w.-]+$/;
 
 /**
  * Builds a sketch module for production and returns its code, unminified so names stay. A sketch
@@ -20,11 +28,14 @@ export async function bundle(sketch: string): Promise<string> {
 	const folder = mkdtempSync(join(tmpdir(), 'null3d-math-'));
 	const entry = join(folder, 'sketch.ts');
 	writeFileSync(entry, sketch.replace('@null3d/engine', ENGINE));
+	const noShaders = join(folder, 'no-shaders.js');
+	writeFileSync(noShaders, 'export const SHADERS = {};\n');
 	const built = await build({
 		configFile: false,
 		logLevel: 'silent',
 		mode: 'production',
 		plugins: [null3d()],
+		resolve: { alias: [{ find: SHADER_MODULE, replacement: noShaders }] },
 		build: { write: false, minify: false, rollupOptions: { input: entry } },
 	});
 	const output = (Array.isArray(built) ? built : [built]) as Rollup.RollupOutput[];

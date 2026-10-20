@@ -19,9 +19,10 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 6144 },
 	// The WebGPU pipeline layouts, read for every build the build wrote.
 	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7168 },
-	// One bundle of the engine for each tree-shaking check, each in a process of its own.
-	{ file: 'packages/engine/src/math/tree-shaking-vec3.test.ts', ceilingMiB: 12288 },
-	{ file: 'packages/engine/src/math/tree-shaking-quat.test.ts', ceilingMiB: 12288 },
+	// One bundle of the engine for each tree-shaking check, each in a process of its own, with an
+	// empty module in place of the shader modules: about 1.5 GB each.
+	{ file: 'packages/engine/src/math/tree-shaking-vec3.test.ts', ceilingMiB: 3072 },
+	{ file: 'packages/engine/src/math/tree-shaking-quat.test.ts', ceilingMiB: 3072 },
 	// One release build for each check, each in a process of its own.
 	{ file: 'packages/engine/src/debug/release-runner.test.ts', ceilingMiB: 4096 },
 	{ file: 'packages/engine/src/debug/release-draw-release.test.ts', ceilingMiB: 12288 },
