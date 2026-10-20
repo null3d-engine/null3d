@@ -108,45 +108,43 @@ const IN_FRONT: f32 = 1.5 / 255.0;
 const IN_FRONT: f32 = 0.5 / 255.0 + 1.0 / 2048.0;
 #endif
 
-/// The texture coordinates of the copy at `at`, a place in pixels down from the drawn corner's
-/// top-left, kept inside the part of the copy that the frame drew, which `drawn` sizes in the copy
-/// of size `full`.
-fn copy_uv(at: vec2f, drawn: vec2f, full: vec2f) -> vec2f {
-    var uv = clamp(at, vec2f(0.5), drawn - 0.5) / full;
+/// The nearest distance code that the copy keeps at `code_place`, a place in pixels down from the
+/// drawn corner's top-left that `code_drawn` sizes in the copy of size `code_full`, and at the four
+/// pixels beside it, which the copy's filter reads too. An opaque edge's pixel can hold the color
+/// of the surface in front with the depth of the one behind. Its names appear in no other code of
+/// the builds that hold it: a shared name would renumber the other code's names in those builds,
+/// and the builds would share less of their text.
+fn nearest_code(code_place: vec2f, code_drawn: vec2f, code_full: vec2f) -> f32 {
+    var code_nearest = 1.0;
+    for (var code_tap = 0; code_tap < 5; code_tap++) {
+        let tap_side = select(-1.0, 1.0, (code_tap & 1) == 1) * select(0.0, 1.0, code_tap > 0);
+        let tap_offset = select(vec2f(0.0, tap_side), vec2f(tap_side, 0.0), code_tap < 3);
+        var code_texel = vec2i(clamp(code_place + tap_offset, vec2f(0.5), code_drawn - 0.5));
 #ifdef WEBGL2
-    uv.y = 1.0 - uv.y;
+        code_texel.y = i32(code_full.y) - 1 - code_texel.y;
 #endif
-    return uv;
-}
-
-/// The nearest distance code that the copy keeps at `at`, as `copy_uv` places it, and at the four
-/// pixels beside it, which its filter reads too. An opaque edge's pixel can hold the color of the
-/// surface in front with the depth of the one behind.
-fn nearest_code(at: vec2f, drawn: vec2f, full: vec2f) -> f32 {
-    var nearest = 1.0;
-    for (var k = 0; k < 5; k++) {
-        let side = select(-1.0, 1.0, (k & 1) == 1) * select(0.0, 1.0, k > 0);
-        let beside = select(vec2f(0.0, side), vec2f(side, 0.0), k < 3);
-        let texel = vec2i(copy_uv(at + beside, drawn, full) * full);
-        nearest = min(nearest, textureLoad(transmission_map, texel, 0, 0).a);
+        code_nearest = min(code_nearest, textureLoad(transmission_map, code_texel, 0, 0).a);
     }
-    return nearest;
+    return code_nearest;
 }
 
 /// The copy's light at the point that `clip`, a position in clip space, projects to, blurred by
 /// `roughness` of a surface with index of refraction `ior`. The point stays inside the part of the
 /// copy that the frame drew. Where the copy's opaque surface there stands in front of the surface
-/// at `pixel`, its fragment position, the light comes from that pixel instead.
-fn copied_light(clip: vec4f, pixel: vec3f, roughness: f32, ior: f32) -> vec3f {
+/// at `surface_at`, its fragment position, the light comes from that pixel instead.
+fn copied_light(clip: vec4f, surface_at: vec3f, roughness: f32, ior: f32) -> vec3f {
     let full = vec2f(textureDimensions(transmission_map, 0));
     let drawn = frame.target_size.xy;
     // Down from the drawn corner's top-left, in its pixels.
     let ndc = clip.xy / clip.w;
-    let bent = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * drawn;
-    var uv = copy_uv(bent, drawn, full);
-    if nearest_code(bent, drawn, full) < distance_code(pixel.z) - IN_FRONT {
+    let pixel = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * drawn;
+    var uv = clamp(pixel, vec2f(0.5), drawn - 0.5) / full;
+#ifdef WEBGL2
+    uv.y = 1.0 - uv.y;
+#endif
+    if nearest_code(pixel, drawn, full) < distance_code(surface_at.z) - IN_FRONT {
         // A fragment's position counts rows as the copy keeps them on each GPU path.
-        uv = pixel.xy / full;
+        uv = surface_at.xy / full;
     }
     let last = floor(log2(max(full.x, full.y)));
     let level = min(log2(drawn.x) * refraction_roughness(roughness, ior), last);
@@ -172,11 +170,11 @@ fn surrounding_light(env: EnvironmentLight, d: vec3f, roughness: f32) -> vec3f {
 /// unit `normal`, toward the camera along `to_view`, before the surface's own Fresnel term and
 /// color take their share: the copy's light where the refracted ray leaves the volume, or the
 /// environment's along the ray without a copy, times what the volume lets through over the ray.
-/// `pixel` is the fragment's position, `thickness` and `ior` the volume's thickness and index of
-/// refraction, `attenuation` its color and distance, and `scale` the object's scale along each
+/// `surface_at` is the fragment's position, `thickness` and `ior` the volume's thickness and index
+/// of refraction, `attenuation` its color and distance, and `scale` the object's scale along each
 /// axis.
 fn transmitted_light(
-    pixel: vec3f,
+    surface_at: vec3f,
     relative: vec3f,
     normal: vec3f,
     to_view: vec3f,
@@ -189,7 +187,7 @@ fn transmitted_light(
     let ray = volume_ray(normal, to_view, thickness, ior, scale);
     var light: vec3f;
     if has_copy() {
-        light = copied_light(frame.view_proj * vec4f(relative + ray, 1.0), pixel, roughness, ior);
+        light = copied_light(frame.view_proj * vec4f(relative + ray, 1.0), surface_at, roughness, ior);
     } else {
         let d = normalize(refract(-to_view, normal, 1.0 / ior));
         let blurred = refraction_roughness(roughness, ior);

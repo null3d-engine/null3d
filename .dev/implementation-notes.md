@@ -1066,6 +1066,32 @@ That change, like the tables, changes the output of the shader build, which chan
 stamp that the cache is keyed by. Either one means a full rebuild on every checkout and a cold
 shader build in CI.
 
+### New shader code keeps the shared paragraphs shared
+
+The paragraphs share only text that matches exactly. naga's writers give each name in a build one
+spelling. When two places use one name, they number it: `at`, `at_1`, `at_2`. A new function can take
+a name that the build already uses, such as `at`, `uv` or `pixel`, for a parameter or a local. That
+renumbers every later use of the name in the build. A build that holds the function then shares
+almost no paragraph with one that does not. And a branch on a build's bits inside a long function
+makes the whole paragraph of that function differ between the builds.
+
+On 20 October 2026 the depth check of surfaces that let light through and the masked-surface rule
+for ambient occlusion did both. Against the commit before them, 454 shader files grew by more than
+the size check's 2%. All the shader files grew by 0.95 MB after Brotli. Glass's own files grew 4 to
+10%, and families without glass 2 to 4%. Three changes brought it down to 13 files: the twelve
+tables of glass's paragraphs and one file at 2.1%.
+
+- The new functions take names that no other code of those builds uses (`code_place`, `surface_at`).
+- The masked-surface rule reads a constant that the build's bits set (`NEAREST_SPEAKS`). The
+  function that reads the screen texture then has the same text in every build, and only the
+  constant's line differs.
+- No library module gains a module constant that every build would carry. A constant of an imported
+  module lands in every build, whether it reads it or not, while unused functions do not.
+
+Check a shader change's cost with `bun tools/build-wasm.ts --check-size --base <commit before it>`.
+To see why a file grew, load one build's text from the old module and from the new one, from each
+module's `SHADERS` export. Then compare the two texts.
+
 ### What would not help
 
 - **Shipping the text compressed.** The whole set is about 40 MB on the wire. It saves nothing on
