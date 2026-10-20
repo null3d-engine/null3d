@@ -10,7 +10,7 @@ import {
 	type SketchContext,
 	vec3,
 } from '@null3d/engine';
-import { FLOW } from './water';
+import { FLOW, surfaceHeight } from './water';
 
 const wgsl = /* wgsl */ `
 #import null3d::noise::{value2}
@@ -23,6 +23,7 @@ struct Uniforms {
     eye: vec3f,
     flow: f32,
     right: vec3f,
+    lens: f32,
     up: vec3f,
     back: vec3f,
 }
@@ -47,20 +48,27 @@ fn effect(input: EffectInput) -> vec4f {
     ) * 0.0022;
     let uv = input.uv + wobble;
     var color = effectColor(uv);
-    let distance = effectDistance(uv);
-    if distance < 1e6 {
+    // The ray from the eye through the pixel, in the world.
+    let aspect = input.size.x / input.size.y;
+    let ahead = normalize(vec3f((uv.x * 2.0 - 1.0) * uniforms.lens * aspect, (1.0 - uv.y * 2.0) * uniforms.lens, -1.0));
+    let ray = uniforms.right * ahead.x + uniforms.up * ahead.y + uniforms.back * ahead.z;
+    // How far the ray runs to what it shows, which is infinite where it shows the sky.
+    let depth = effectDistance(uv);
+    let reach = select(1e6, depth / -ahead.z, depth < 1e6);
+    if reach < 1e6 {
         // Caustics on what lies under the surface, fading with depth below it.
-        let view = effectViewPosition(uv);
-        let world = uniforms.eye + uniforms.right * view.x + uniforms.up * view.y + uniforms.back * view.z;
+        let world = uniforms.eye + ray * reach;
         let below = uniforms.level - world.y;
         if below > 0.0 {
             let light = caustics(world.xz, t, uniforms.flow) * exp(-below * 0.8);
             color = vec4f(color.rgb * (vec3f(1.0) + uniforms.caustics * light * 6.0), color.a);
         }
     }
-    // The water swallows the light with distance and scatters its own green into the view. The
-    // surface overhead lies at a finite distance, so the world above it keeps its share.
-    let fade = 1.0 - exp(-min(distance, 1e4) * uniforms.density);
+    // The water swallows the light only along the part of the ray under the surface: what lies above
+    // it, the trees, the banks and the sky, shows through as clear as the water between allows.
+    let surface = select(1e6, (uniforms.level - uniforms.eye.y) / ray.y, ray.y > 1e-4);
+    let wet = min(reach, surface);
+    let fade = 1.0 - exp(-min(wet, 1e4) * uniforms.density);
     let filtered = color.rgb * vec3f(0.86, 0.97, 0.95);
     return vec4f(mix(filtered, uniforms.tint * color.a, fade), color.a);
 }
@@ -68,12 +76,19 @@ fn effect(input: EffectInput) -> vec4f {
 
 /** The view from under the water, which the scene drives each frame. */
 export interface Underwater {
-	/** Turns the effect on while the camera is under the surface, and fits it to the frame's light. */
-	update(air: readonly [number, number, number], caustics: readonly [number, number, number]): void;
+	/**
+	 * Turns the effect on while the camera is under the surface, which waves at the sketch time `t`,
+	 * and fits it to the frame's light.
+	 */
+	update(
+		t: number,
+		air: readonly [number, number, number],
+		caustics: readonly [number, number, number],
+	): void;
 }
 
-/** How far under the surface the camera must be before the view turns, in meters. */
-const DIP = 0.02;
+/** How far under the surface, as its waves move it, the camera must be before the view turns, in meters. */
+const DIP = 0.005;
 /** How much of the light the water swallows per meter. */
 const DENSITY = 0.07;
 /** The water's own color, as a share of the air's color at the horizon in each channel. */
@@ -94,9 +109,9 @@ export function createUnderwater(
 	const caustics: [number, number, number] = [0, 0, 0];
 	let effect: Effect | null = null;
 	return {
-		update(air, light) {
+		update(t, air, light) {
 			camera.getPosition(eye);
-			const under = (eye[1] as number) < level - DIP;
+			const under = (eye[1] as number) < surfaceHeight(eye[0] as number, eye[2] as number, t) - DIP;
 			if (!under) {
 				if (effect) post.removeEffect(effect);
 				effect = null;
@@ -113,7 +128,18 @@ export function createUnderwater(
 			if (!effect)
 				effect = post.addEffect({
 					wgsl,
-					uniforms: { tint, density: DENSITY, caustics, level, eye, flow: FLOW, right, up, back },
+					uniforms: {
+						tint,
+						density: DENSITY,
+						caustics,
+						level,
+						eye,
+						flow: FLOW,
+						right,
+						lens: Math.tan((camera.fov * Math.PI) / 360),
+						up,
+						back,
+					},
 				});
 			post.setEffectUniform(effect, 'tint', tint);
 			post.setEffectUniform(effect, 'caustics', caustics);
@@ -121,6 +147,8 @@ export function createUnderwater(
 			post.setEffectUniform(effect, 'right', right);
 			post.setEffectUniform(effect, 'up', up);
 			post.setEffectUniform(effect, 'back', back);
+			// The lens changes with the depth of field's focal length.
+			post.setEffectUniform(effect, 'lens', Math.tan((camera.fov * Math.PI) / 360));
 		},
 	};
 }

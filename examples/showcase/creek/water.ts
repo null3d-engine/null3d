@@ -24,6 +24,29 @@ const REFLECT_EVERY: Record<QualityPreset, number> = { low: 2, medium: 2, high: 
 
 /** How fast the current carries the ripples and the caustics downstream, toward +x. */
 export const FLOW = 0.35;
+/** How tall the water's waves stand, as a factor of their base height. */
+const RIPPLE = 1;
+/**
+ * The long waves that move the water's vertices: each one's direction, wave number, and how fast it
+ * runs against the current. The WGSL's `waves` holds the same three first in its list.
+ */
+const LONG_WAVES = [
+	[1.0, 0.15, 2.3, 0.9],
+	[0.8, -0.6, 3.7, 0.7],
+	[0.6, 0.8, 5.9, 0.5],
+] as const;
+
+/** The height of the water's surface at a point and sketch time, as its long waves move it. */
+export function surfaceHeight(x: number, z: number, t: number): number {
+	let h = WATER;
+	for (const [dx, dz, k, speed] of LONG_WAVES) {
+		const length = Math.hypot(dx, dz);
+		const along = (dx * x + dz * z) / length;
+		const phase = k * (along - FLOW * t * (dx / length)) - speed * t;
+		h += ((RIPPLE * 0.05) / k) * Math.sin(phase);
+	}
+	return h;
+}
 
 const wgsl = /* wgsl */ `
 #import null3d::noise::{value2}
@@ -114,15 +137,16 @@ fn surface(input: SurfaceInput) -> Surface {
     s.baseColor = mix(s.baseColor, vec3f(0.8), foam);
     s.roughness = mix(s.roughness, 0.6, foam);
     if !input.frontFacing {
-        // Seen from under the water: the world above shows through a window overhead, bent by the
-        // ripples, and past its edge the surface mirrors the dark water below it. The planar
-        // reflection holds the world above the water, so it takes no part here.
+        // Seen from under the water: the world above shows through, bent by the ripples, clearest in
+        // a window overhead and dimmer past its edge, where the surface turns some of the light back
+        // down as a faint mirror of the water. The planar reflection holds the world above the
+        // water, so it takes no part here.
         s.normal = -s.normal;
         let overhead = max(input.viewDirection.y * -1.0, 0.0);
         let window = smoothstep(WINDOW - 0.05, WINDOW + 0.05, overhead);
         s.reflection = vec4f(0.0);
         s.thickness = 0.05;
-        s.transmission = window * (1.0 - 0.7 * foam);
+        s.transmission = mix(0.8, 1.0, window) * (1.0 - 0.7 * foam);
         s.baseColor = mix(vec3f(0.08, 0.16, 0.15), s.baseColor, window);
         return s;
     }
@@ -235,7 +259,7 @@ export function createWater(
 		attenuationColor: '#93b59a',
 		attenuationDistance: 0.9,
 		textures: { mirror, foamMap: foamMap(ctx, obstacles) },
-		uniforms: { flow: FLOW, ripple: 1, caustics: [0, 0, 0] },
+		uniforms: { flow: FLOW, ripple: RIPPLE, caustics: [0, 0, 0] },
 	});
 	const width = 2 * STREAM_REACH + 2;
 	// The middle: finer toward the middle of the land, where the camera looks.

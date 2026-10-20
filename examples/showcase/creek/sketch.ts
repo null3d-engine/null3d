@@ -305,7 +305,7 @@ export default defineSketch(async (ctx) => {
 			const t = time.now;
 			stage.update(dt);
 			for (const haze of hazes) haze.setColor(stage.airColor);
-			underwater.update(stage.airColor, CAUSTICS[current]);
+			underwater.update(t, stage.airColor, CAUSTICS[current]);
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
 			// next time of day as the sun does.
