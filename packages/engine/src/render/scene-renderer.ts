@@ -96,13 +96,9 @@ export class FrameReplay {
 	private held = 0;
 	/**
 	 * The range of the last list that held commands, and the frame it belongs to. A view that rests
-	 * records no list, so a capture replays this one rather than an empty range. The three values
-	 * stay plain numbers: a frame that draws records them, and an object there would allocate once
-	 * a frame, which the allocation check refuses.
+	 * records no list, so a capture replays this one rather than an empty range.
 	 */
-	private lastFrame = -1;
-	private lastFrom = 0;
-	private lastEnd = 0;
+	private last: { frame: number; from: number; end: number } | null = null;
 
 	constructor(
 		private readonly backend: SceneBackend,
@@ -135,11 +131,7 @@ export class FrameReplay {
 			while (performance.now() < until);
 		}
 		const from = this.restOf(frame);
-		if (this.end > from) {
-			this.lastFrame = frame;
-			this.lastFrom = from;
-			this.lastEnd = this.end;
-		}
+		if (this.end > from) this.last = { frame, from, end: this.end };
 		const words = this.views.heap(Uint32Array);
 		this.backend.replay(words, this.views.heap(Float32Array), from, this.end, words.buffer);
 		if (!this.backend.building) this.complete = true;
@@ -158,8 +150,9 @@ export class FrameReplay {
 		}
 		const words = this.views.heap(Uint32Array);
 		const floats = this.views.heap(Float32Array);
-		if (this.lastFrame !== frame && this.lastEnd > this.lastFrom)
-			this.backend.replay(words, floats, this.lastFrom, this.lastEnd, words.buffer);
+		const last = this.last;
+		if (last && last.frame !== frame)
+			this.backend.replay(words, floats, last.from, last.end, words.buffer);
 		else this.backend.replay(words, floats, from, this.end, words.buffer);
 	}
 
