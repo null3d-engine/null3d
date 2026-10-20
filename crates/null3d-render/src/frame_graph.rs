@@ -3761,12 +3761,13 @@ impl FrameGraph {
         view_target_format(self.scene_color)
     }
 
-    /// The format of the copy of the camera's opaque color, which keeps the opaque depth's code in
-    /// its alpha: the format of views' targets, or 16-bit floats where the scene color's packed
-    /// small floats have no alpha.
+    /// The format of the copy of the camera's opaque color: the format of views' targets, or
+    /// 16-bit floats while surfaces that let light through want the copy and the scene color's
+    /// packed small floats have no alpha for the opaque depth's code. A copy that only screen-space
+    /// reflections read keeps the packed format, as they read its color alone.
     fn copy_format(&self) -> u32 {
         match self.view_target_format() {
-            format::RG11B10_UFLOAT => format::RGBA16_FLOAT,
+            format::RG11B10_UFLOAT if self.transmission_wanted => format::RGBA16_FLOAT,
             other => other,
         }
     }
@@ -8095,6 +8096,43 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[test]
+    fn a_copy_for_screen_reflections_alone_keeps_the_packed_scene_format() {
+        // Screen-space reflections read the copy's color alone, so the copy widens to 16-bit
+        // floats for the opaque depth's code only while a surface that lets light through wants it.
+        let canvas = (320, 180);
+        let mut frames = frame_graph(format::RG11B10_UFLOAT, Antialias::Msaa, true, false);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.sync(&[View::default()]);
+        frames.set_ssr(Some(trace_frame()), 0.5);
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.ssr_draws());
+        let copy_format = |frames: &FrameGraph| {
+            let plan = frames.graph().plan().unwrap();
+            let copy = frames.graph().find_resource(TRANSMISSION_COLOR).unwrap();
+            let Some(Surface::Texture(index)) = plan.sampled_texture_of(copy) else {
+                panic!("the copy's target is a texture");
+            };
+            plan.textures()[usize::from(index)].target.format
+        };
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(copy_format(&frames), format::RG11B10_UFLOAT);
+
+        frames.set_transparent(true);
+        build_transmission(&mut frames, &mut pipelines);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(copy_format(&frames), format::RGBA16_FLOAT);
     }
 
     #[test]

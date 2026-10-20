@@ -2,7 +2,7 @@
 
 Status: decided by the engine helper of M2-EX8 on 20 October 2026, for the owner's review. Built: the depth code in the copy of the opaque color, the check in the surfaces that let light through, and the `transmission-in-front` image test. Date: 2026-10-20. Task: M2-EX8.
 
-Summary: The copy of the camera's opaque color keeps a code of the opaque depth's distance in its alpha. Where a bent ray lands on an opaque surface in front of the see-through surface, the surface samples its own pixel instead. The Creek's near-bank flowers no longer leave dim copies in the stream. Where the HDR scene color has no alpha, the copy takes 16-bit floats: 8 bytes a pixel instead of 4.
+Summary: The copy of the camera's opaque color keeps a code of the opaque depth's distance in its alpha. Where a bent ray lands on an opaque surface in front of the see-through surface, the surface samples its own pixel instead. The Creek's near-bank flowers no longer leave dim copies in the stream. Where the HDR scene color has no alpha, the copy takes 16-bit floats while such surfaces draw. That costs 19.66 MB more at a 2,560 x 1,440 canvas.
 
 ## Question
 
@@ -50,9 +50,16 @@ Where the nearest code stands in front, the surface samples its own pixel, unben
 
 ### The copy's format
 
-On the HDR path the copy had the scene color's format. WebGPU's default HDR scene color is `rg11b10ufloat`, which has no alpha. With that scene color, the copy is now `rgba16float`. That doubles the copy's memory on that path, only while a surface that lets light through or the screen reflections draw. At a canvas of 2,560 x 1,440 it adds about 20 MB, with the mip levels. The 8-bit path's sRGB copy and an `rgba16float` scene color keep their formats.
+On the HDR path the copy had the scene color's format. WebGPU's default HDR scene color is `rg11b10ufloat`, which has no alpha. With that scene color, the copy is now `rgba16float` while some surface that lets light through wants the copy. A copy that only screen-space reflections read keeps `rg11b10ufloat`, as they read its color alone. The 8-bit path's sRGB copy and an `rgba16float` scene color have alpha already, so they cost nothing more. The copy has the canvas's size at every render scale, with its whole chain of mip levels. The wider copy takes 4 more bytes for each texel of the chain:
 
-The copy samples the scene depth. The frame's plan can then no longer share one texture between the camera's depth and another view's depth.
+| Canvas | Copy in `rg11b10ufloat` | Copy in `rgba16float` | More |
+| --- | --- | --- | --- |
+| 1,920 x 1,080 | 11.06 MB | 22.12 MB | 11.06 MB |
+| 2,560 x 1,440 | 19.66 MB | 39.32 MB | 19.66 MB |
+
+A depth texture of its own, one channel at half size, would take about 2 MB at 2,560 x 1,440. It would be a seventeenth sampled texture in every lit build with maps. Their frame group holds eight, and their maps eight more. That passes WebGPU's default limit of 16, so the copy's alpha holds the code instead.
+
+The copy samples the scene depth. Ambient occlusion, contact shadows, screen-space reflections, soft particles and decals sample it already. In a frame with none of them, the camera's depth can no longer share a texture with another view's depth of the same shape.
 
 ## Data
 
