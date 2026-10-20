@@ -81,6 +81,17 @@ describe('emitParagraphTables', () => {
 		expect(emitted).toEqual([{ fileName: 'assets/shader-paragraphs-wgsl.js', source: TABLE }]);
 	});
 
+	it('finds a table beside a module that the build names relative to its root', () => {
+		const emitted: { fileName: string; source: string }[] = [];
+		const relative = asset('assets/shaders-skinning-wgsl-a1.js', MODULE, [
+			'engine/generated/shaders-skinning-wgsl.js',
+		]);
+		expect([...emitParagraphTables.call(context(emitted), bundleOf(relative), root)]).toEqual([
+			['assets/shaders-skinning-wgsl-a1.js', ['assets/shader-paragraphs-wgsl.js']],
+		]);
+		expect(emitted).toEqual([{ fileName: 'assets/shader-paragraphs-wgsl.js', source: TABLE }]);
+	});
+
 	it('emits every table that a module of a feature family names', () => {
 		const emitted: { fileName: string; source: string }[] = [];
 		const family = moduleOf('assets/shaders-skinning-wgsl-morph-a1.js', {

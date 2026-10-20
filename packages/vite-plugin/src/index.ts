@@ -713,7 +713,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		generateBundle: {
 			order: 'post',
 			handler(_options, bundle) {
-				const tables = emitParagraphTables.call(this, bundle);
+				const tables = emitParagraphTables.call(this, bundle, root);
 				if (buildingPages) {
 					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root, tables));
 					this.emitFile({

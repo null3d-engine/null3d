@@ -9,7 +9,7 @@
 // in, at the names the imports use. The tables then sit beside every module that imports them,
 // whatever the project's assets folder and asset naming pattern are.
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, posix } from 'node:path';
+import { dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import type { Plugin, Rollup } from 'vite';
 
 /** An import of a table of shared paragraphs, at the top of a device module of its kind. */
@@ -54,9 +54,12 @@ function tableStems(source: string | Uint8Array): string[] {
  * it: a table the build did not write, which would otherwise fail as a load in a browser and never
  * in the build.
  */
-function tablePath(file: Rollup.OutputAsset, stem: string): string | undefined {
+function tablePath(file: Rollup.OutputAsset, stem: string, root: string): string | undefined {
 	for (const name of file.originalFileNames) {
-		const path = join(dirname(name), `${stem}.js`);
+		// A build names a copied file as the page's root sees it, relative or absolute; the table
+		// sits beside the file it came from.
+		const folder = isAbsolute(name) ? dirname(name) : resolve(root, dirname(name));
+		const path = join(folder, `${stem}.js`);
 		if (existsSync(path)) return path;
 	}
 	return undefined;
@@ -70,6 +73,7 @@ function tablePath(file: Rollup.OutputAsset, stem: string): string | undefined {
 export function emitParagraphTables(
 	this: Rollup.PluginContext,
 	bundle: Rollup.OutputBundle,
+	root = process.cwd(),
 ): Map<string, string[]> {
 	const tables = new Map<string, string[]>();
 	const emitted = new Set<string>();
@@ -82,7 +86,7 @@ export function emitParagraphTables(
 			if (emitted.has(table)) continue;
 			emitted.add(table);
 			const stem = posix.basename(table, '.js');
-			const path = tablePath(file, stem);
+			const path = tablePath(file, stem, root);
 			if (!path)
 				return this.error(
 					`null3D: ${file.fileName} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
@@ -101,10 +105,14 @@ export function emitParagraphTables(
  * through `emitParagraphTables`, and no build emits a table twice.
  */
 export function shaderParagraphsPlugin(): Plugin {
+	let root = process.cwd();
 	return {
 		name: 'null3d:shader-paragraphs',
+		configResolved(config) {
+			root = config.root;
+		},
 		generateBundle(_options, bundle) {
-			emitParagraphTables.call(this, bundle);
+			emitParagraphTables.call(this, bundle, root);
 		},
 	};
 }
