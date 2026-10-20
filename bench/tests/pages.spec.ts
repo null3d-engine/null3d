@@ -229,8 +229,10 @@ async function runShortBenchmark(
 	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
 	if (first.frames > 0) return first;
 	test.slow();
-	const second = await run(seconds * 4);
-	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it ran again for ${seconds * 4} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
+	// Five whole frames at the slowest pace that CI's software GPU draws these pages: a slower
+	// shard can spend four seconds on a frame that another does in two.
+	const second = await run(seconds * 8);
+	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it ran again for ${seconds * 8} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
 	console.log(`::warning title=A second try on SwiftShader::${message}`);
 	test.info().annotations.push({ type: 'second try on SwiftShader', description: message });
 	expectUsualSpeed(`${name}'s first try`, first);
