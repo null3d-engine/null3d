@@ -17,6 +17,16 @@ Record the reasons for the change in `.dev/`, in the same branch, as [AGENTS.md]
 
 The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
 
+### Guidance from demos and showcase scenes
+
+The owner set this rule on 20 October 2026, for every demo in `examples/` and every showcase scene. Developers copy these scenes as the model of good visuals for their own projects. Work on any one's look or behavior may show a better way to use the engine, or a pitfall that users will hit too. The same change then adds that guidance to the user docs and to the agent skills. It is part of done for that work, not a follow-up. A fault in the engine itself is fixed in the engine, not worked around in the scene.
+
+- Put it on the docs page of the feature that it concerns, and in the skill reference that covers that feature. A pitfall also gets a row in the troubleshooting table of `skills/null3d-develop/references/testing-and-debugging.md`.
+- Say what happens, why, and what to do, with a short code example where it helps. Write for a developer who never saw the demo.
+- Extend the text that a page already has, rather than adding a second place for one fact.
+
+For example, the creek showcase's cave rock sat on a layer that the sun lacked, so the sun shone through the rock. The fix gave the sun that layer. [Render layers](../docs/concepts/render-layers.md#layers-and-shadows) and the develop skill now say that a light's mask picks its shadow casters. They also say what happens when the mask lacks a caster's layer.
+
 ## Generated files
 
 Never commit a generated file, unless [D-105](decisions/D-105-generated-files-out-of-git.md) gives the reason to keep it. A generated file changes in every branch that changes its source, so it clashes between them. Git can also merge its text cleanly into a result that no generator makes. So git ignores each generated file, and these steps build it.
