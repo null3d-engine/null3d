@@ -17,20 +17,12 @@ import {
 	type EngineName,
 	FAIRNESS_RULES,
 	type GpuChoice,
-	MODE_TITLES,
 	measureDisplayHz,
 	rampComparison,
 	startComparison,
 	thisDeviceClass,
 } from './lib/compare';
-import {
-	COMPARE_MODES,
-	type CompareMode,
-	type Effects,
-	effectsFromText,
-	effectsToText,
-	modeFromText,
-} from './lib/compare-scene';
+import { type CompareMode, effectsFromText, modeFromText } from './lib/compare-scene';
 import {
 	countToSlider,
 	FLOOR_FPS,
@@ -43,6 +35,7 @@ import {
 	startCount,
 	stopText,
 } from './lib/ramp';
+import { createLoader, type Loader } from './lib/run';
 import { sourceUrl } from './lib/source';
 import {
 	clearWalkthrough,
@@ -137,6 +130,48 @@ function rampLine(comparison: Comparison, ramps: KeptRamp[]): string {
 const countText = (comparison: Comparison, count: number) =>
 	`${count.toLocaleString('en-US')} ${comparison.countUnit}`;
 
+/** An inline SVG icon, sized for a control's glyph. */
+function icon(size: number): SVGSVGElement {
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('viewBox', '0 0 24 24');
+	svg.setAttribute('width', String(size));
+	svg.setAttribute('height', String(size));
+	svg.setAttribute('fill', 'none');
+	svg.setAttribute('aria-hidden', 'true');
+	return svg;
+}
+
+/** A stroked path of an icon. */
+function stroked(svg: SVGSVGElement, d: string, width = 1.7): void {
+	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	path.setAttribute('d', d);
+	path.setAttribute('stroke', 'currentColor');
+	path.setAttribute('stroke-width', String(width));
+	path.setAttribute('stroke-linecap', 'round');
+	svg.append(path);
+}
+
+/** The small "scene and comparison details" glyph beside the title. */
+function infoIcon(): SVGSVGElement {
+	const svg = icon(17);
+	stroked(svg, 'M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0', 1.6);
+	stroked(svg, 'M12 10.6v5.6', 1.8);
+	const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+	dot.setAttribute('cx', '12');
+	dot.setAttribute('cy', '7.6');
+	dot.setAttribute('r', '1.15');
+	dot.setAttribute('fill', 'currentColor');
+	svg.append(dot);
+	return svg;
+}
+
+/** The sheet's close glyph. */
+function closeIcon(): SVGSVGElement {
+	const svg = icon(14);
+	stroked(svg, 'M6 6l12 12M18 6L6 18', 2);
+	return svg;
+}
+
 /** Waits, and returns at once when the signal aborts. */
 function abortableWait(seconds: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
@@ -164,6 +199,8 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const threeRenderer = named === 'webgpu' || named === 'webgl' ? named : undefined;
 	// A developer's page: no intro, and the controls start the engine at once.
 	const manual = params.get('walkthrough') === 'off' || params.has('ramp');
+	// A device run measures the running engine for this many seconds and publishes the figures.
+	const measureSeconds = Number(params.get('measure') ?? '0');
 	const devicePlan = comparison.ramps[thisDeviceClass()];
 	document.title = `${comparison.title}, null3D and three.js: null3D demos`;
 	const address = (changes: Record<string, string | null>) => {
@@ -176,16 +213,51 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	};
 
 	const canvas = element('canvas');
-	const caption = element('details');
+	const caption = element('section');
 	caption.className = 'caption compare';
-	caption.open = matchMedia('(min-width: 768px)').matches;
-	const captionSummary = element('summary');
-	captionSummary.append(element('h1', `${comparison.title}: ${ENGINE_TITLES[engine]}`));
-	caption.append(captionSummary, element('p', comparison.summary));
+	caption.setAttribute('aria-label', 'Comparison controls');
+
+	// The title, with the scene's details behind one small button beside it.
+	const head = element('div');
+	head.className = 'caption-head';
+	const title = element('h1', comparison.title);
+	const infoWrap = element('span');
+	infoWrap.className = 'info-wrap';
+	const infoButton = element('button');
+	infoButton.type = 'button';
+	infoButton.className = 'info-button';
+	infoButton.setAttribute('aria-label', 'Scene and comparison details');
+	infoButton.setAttribute('aria-haspopup', 'dialog');
+	infoButton.setAttribute('aria-expanded', 'false');
+	infoButton.append(infoIcon());
+	infoWrap.append(infoButton);
+	head.append(title, infoWrap);
+	caption.append(head);
+
+	// The tip floats over the stage, outside the panel, so no edge of the panel can clip it.
+	const tip = element('div', 'Scene and comparison details');
+	tip.className = 'compare-tip';
+	tip.setAttribute('role', 'tooltip');
+	tip.hidden = true;
+	stage.append(tip);
+	const showTip = (): void => {
+		const box = infoButton.getBoundingClientRect();
+		const stageBox = stage.getBoundingClientRect();
+		tip.style.left = `${box.left - stageBox.left + box.width / 2}px`;
+		tip.style.top = `${box.bottom - stageBox.top + 6}px`;
+		tip.hidden = false;
+	};
+	const hideTip = (): void => {
+		tip.hidden = true;
+	};
+	infoButton.addEventListener('pointerenter', showTip);
+	infoButton.addEventListener('pointerleave', hideTip);
+	infoButton.addEventListener('focus', showTip);
+	infoButton.addEventListener('blur', hideTip);
 
 	// The engine switch: each engine on a page of its own, with the manual controls.
 	const switcher = element('p');
-	switcher.className = 'switch';
+	switcher.className = 'switch engines';
 	for (const name of ['null3d', 'threejs'] as const) {
 		const link = element(
 			'a',
@@ -196,25 +268,6 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		switcher.append(link);
 	}
 	caption.append(switcher);
-
-	// The mode switch: both engines build the scene the same way in each mode. The walkthrough
-	// begins again in the new mode, unless the developer has taken the manual controls.
-	const modes = element('p');
-	modes.className = 'switch';
-	const fillModes = (keepManual: boolean): void => {
-		modes.replaceChildren();
-		for (const name of COMPARE_MODES) {
-			const link = element(
-				'a',
-				MODE_TITLES[name],
-				address({ mode: name, ramp: null, walkthrough: keepManual ? 'off' : null }),
-			);
-			if (name === mode) link.setAttribute('aria-current', 'page');
-			modes.append(link);
-		}
-	};
-	fillModes(manual);
-	caption.append(modes);
 
 	// The count slider, on a log scale.
 	const slider = element('input');
@@ -228,43 +281,12 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	counter.append(slider, countLabel);
 	caption.append(counter);
 
-	// The effect switches load the page again with the new set, with the manual controls.
-	const switches = element('p');
-	switches.className = 'effects';
-	for (const name of comparison.effects) {
-		const box = element('input');
-		box.type = 'checkbox';
-		box.checked = effects[name];
-		box.addEventListener('change', () => {
-			const next: Effects = { ...effects, [name]: box.checked };
-			location.search = address({
-				effects: effectsToText(next),
-				ramp: null,
-				walkthrough: 'off',
-			});
-		});
-		const label = element('label');
-		label.append(box, ` ${name}`);
-		switches.append(label);
-	}
-	caption.append(switches);
-
 	const rampButton = element('button', 'Run the ramp');
 	rampButton.type = 'button';
 	const result = element('p');
 	result.className = 'result';
 	result.setAttribute('aria-live', 'polite');
 	caption.append(rampButton, result);
-
-	const about = element('details');
-	about.className = 'about';
-	about.append(element('summary', 'About this comparison'));
-	const rules = element('ul');
-	const modeNotes = COMPARE_MODES.map((name) => comparison.modes[name]);
-	for (const rule of [...modeNotes, ...FAIRNESS_RULES, ...comparison.notes])
-		rules.append(element('li', rule));
-	about.append(rules);
-	caption.append(about);
 
 	const code = element('a', 'View code', sourceUrl(comparison));
 	code.target = '_blank';
@@ -274,6 +296,80 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	links.append(code);
 	caption.append(links);
 
+	// The details sheet: the scene's description, how each engine draws it, and what both share.
+	const backdrop = element('div');
+	backdrop.className = 'sheet-backdrop';
+	backdrop.hidden = true;
+	const sheet = element('section');
+	sheet.className = 'sheet';
+	sheet.hidden = true;
+	sheet.setAttribute('role', 'dialog');
+	sheet.setAttribute('aria-modal', 'true');
+	sheet.setAttribute('aria-labelledby', 'sheet-title');
+	const sheetHead = element('div');
+	sheetHead.className = 'sheet-head';
+	const sheetTitle = element('h2', comparison.title);
+	sheetTitle.id = 'sheet-title';
+	const closeButton = element('button');
+	closeButton.type = 'button';
+	closeButton.className = 'sheet-close';
+	closeButton.setAttribute('aria-label', 'Close details');
+	closeButton.append(closeIcon());
+	sheetHead.append(sheetTitle, closeButton);
+	const sheetBody = element('div');
+	sheetBody.className = 'sheet-body';
+	// The route this page measures, so the sheet never claims a route the page is not drawing.
+	const route = mode === 'instanced' ? 'The instanced route' : 'The scene graph route';
+	sheetBody.append(
+		element('p', comparison.summary),
+		element('p', `${route}: ${comparison.modes[mode]}`),
+		element('h3', 'How each engine draws it'),
+	);
+	const table = element('div');
+	table.className = 'compare-table';
+	const header = element('div');
+	header.className = 'compare-row compare-head';
+	const blank = element('span');
+	const nullColumn = element('span', 'null3D');
+	nullColumn.className = 'null3d';
+	const threeColumn = element('span', 'three.js');
+	threeColumn.className = 'three';
+	header.append(blank, nullColumn, threeColumn);
+	table.append(header);
+	for (const difference of comparison.differences) {
+		const row = element('div');
+		row.className = 'compare-row';
+		const topic = element('span', difference.topic);
+		topic.className = 'topic';
+		row.append(topic, element('span', difference.null3d), element('span', difference.threejs));
+		table.append(row);
+	}
+	sheetBody.append(table, element('h3', 'Same in both engines'));
+	const shared = element('ul');
+	shared.className = 'shared';
+	for (const rule of FAIRNESS_RULES) shared.append(element('li', rule));
+	sheetBody.append(shared, element('h3', 'More about this comparison'));
+	const more = element('ul');
+	more.className = 'shared';
+	for (const note of comparison.notes) more.append(element('li', note));
+	sheetBody.append(more);
+	sheet.append(sheetHead, sheetBody);
+
+	const openSheet = (open: boolean): void => {
+		sheet.hidden = !open;
+		backdrop.hidden = !open;
+		stage.classList.toggle('sheet-open', open);
+		infoButton.setAttribute('aria-expanded', String(open));
+		if (open) closeButton.focus();
+		else infoButton.focus();
+	};
+	infoButton.addEventListener('click', () => openSheet(sheet.hidden === true));
+	closeButton.addEventListener('click', () => openSheet(false));
+	backdrop.addEventListener('click', () => openSheet(false));
+	addEventListener('keydown', (event) => {
+		if (event.key === 'Escape' && !sheet.hidden) openSheet(false);
+	});
+
 	// The walkthrough's card, over the canvas.
 	const card = element('section');
 	card.className = 'walkthrough';
@@ -281,7 +377,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	card.setAttribute('aria-label', 'Guided comparison');
 	card.setAttribute('aria-live', 'polite');
 
-	stage.append(canvas, caption, card);
+	stage.append(canvas, caption, backdrop, sheet, card);
 
 	// The walkthrough's state, kept in the address and the session between the engines' pages.
 	const keptRun: WalkthroughRun = readWalkthrough(comparison.name, mode);
@@ -289,6 +385,9 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const flow = manual
 		? null
 		: new WalkthroughFlow(engine, startingStep(params.get('walkthrough'), engine, hasFirstRamp));
+	// The guided walkthrough runs the engine itself, so the panel shows only the scene's title and
+	// the button to its details, not controls that would compete with the walkthrough's card.
+	caption.classList.toggle('guided', flow !== null);
 	let run: ComparisonRun | null = null;
 	let manualMode = manual;
 	/** A stop is final: an engine that starts after it is destroyed at once. */
@@ -303,13 +402,19 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const showCount = (count: number) => {
 		countLabel.textContent = countText(comparison, count);
 	};
-	slider.value = String(countToSlider(devicePlan.start, devicePlan));
-	showCount(devicePlan.start);
+	// The address's count shows at once, before the engine loads, so a reload keeps the slider.
+	const initialCount = startCount(params.get('count'), devicePlan);
+	slider.value = String(countToSlider(initialCount, devicePlan));
+	showCount(initialCount);
+
+	/** The loading overlay, while an engine builds its scene and its programs. */
+	let loader: Loader | null = null;
 
 	/** Starts the engine that this page's address names, once. */
 	const startRun = async (): Promise<ComparisonRun | null> => {
 		if (run) return run;
 		if (destroyed || startError !== null) return null;
+		loader ??= createLoader(canvas);
 		try {
 			const next = await startComparison({
 				canvas,
@@ -323,23 +428,24 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 				stats:
 					params.get('stats') === 'off' ? false : params.get('stats') === 'open' ? 'open' : true,
 			});
+			loader.hide();
 			// A stop while the engine started leaves nothing running.
 			if (stopping) {
 				await next.destroy().catch(() => {});
 				return null;
 			}
 			run = next;
-			captionSummary.title = next.label;
+			title.title = next.label;
 			slider.value = String(countToSlider(next.count, next.plan));
 			showCount(next.count);
 			slider.disabled = !manualMode;
 			return next;
 		} catch (error) {
 			startError = error instanceof Error ? error.message : String(error);
+			loader?.fail(startError);
 			const message = element('p', startError);
 			message.className = 'error';
 			caption.append(message);
-			caption.open = true;
 			if (flow) showProblem('The comparison did not start', startError);
 			return null;
 		}
@@ -430,7 +536,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const useControls = (): void => {
 		flow?.act('stop');
 		manualMode = true;
-		fillModes(true);
+		caption.classList.remove('guided');
 		card.hidden = true;
 		slider.disabled = false;
 		rampButton.hidden = false;
@@ -715,13 +821,15 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 			found = await rampComparison(next, {
 				signal,
 				wait: (seconds) => abortableWait(seconds, signal),
-				onStep: ({ step, count, fps, noFrame }) => {
+				onStep: ({ step, count, noFrame }) => {
 					slider.value = String(countToSlider(count, next.plan));
 					showCount(count);
 					if (rampStatus) {
+						// The walkthrough's line names the count alone: the rate moves as the ramp
+						// changes it, and a changing figure on a card that is not a result confuses.
 						rampStatus.textContent = noFrame
 							? `${ENGINE_TITLES[name]} drew no frame at ${countText(comparison, count)}.`
-							: `${ENGINE_TITLES[name]} is drawing ${countText(comparison, count)} at ${fps.toFixed(0)} frames a second.`;
+							: `${ENGINE_TITLES[name]} is drawing ${countText(comparison, count)}.`;
 					}
 					if (rampProgress) rampProgress.value = step + 1;
 				},
@@ -767,11 +875,43 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		void destroyRun();
 	});
 
+	/** Measures the running engine for a device run and publishes it where the runner reads it. */
+	const reportMeasurement = async (current: ComparisonRun, seconds: number): Promise<void> => {
+		// The scene's first frames build its shaders and settle its counts; the measurement starts
+		// once the page has run for a while, as the ramp's first step does.
+		await new Promise((resolve) => setTimeout(resolve, 5000));
+		const measured = await current.measure(seconds);
+		const figures = {
+			page: 'compare-bench',
+			ok: true,
+			engine: current.engine,
+			engineLabel: current.label,
+			mode: current.mode,
+			gpu: current.gpu,
+			count: current.count,
+			pixelRatio: current.pixelRatio,
+			measureSeconds: seconds,
+			fps: measured.fps,
+			cpuMs: measured.cpuMs,
+			updateErrors: measured.updateErrors,
+			detail: measured.detail,
+			userAgent: navigator.userAgent,
+			url: location.href,
+			off: { intervalMs: 1000 / (measured.fps || 1) },
+			on: {
+				intervalMs: 1000 / (measured.fps || 1),
+				cpuMs: measured.cpuMs ?? 0,
+			},
+		};
+		(window as unknown as { __null3dResult?: unknown }).__null3dResult = figures;
+	};
+
 	if (!flow) {
 		// The manual controls: the engine draws at once, as it always has.
 		slider.disabled = true;
-		await startRun();
+		const started = await startRun();
 		slider.disabled = false;
+		if (started && measureSeconds > 0) void reportMeasurement(started, measureSeconds);
 		return;
 	}
 	rampButton.hidden = true;

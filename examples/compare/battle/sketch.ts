@@ -363,13 +363,16 @@ export default defineSketch(
 		scene.setEnvironment(await assets.skyEnvironment(), { intensity: look.environmentIntensity });
 		if (effects.fog) scene.setFog({ curve: 'exponential', ...look.fog });
 		const { sun } = look;
+		// A developer's switch for the cascades, to measure what each one costs on a device.
+		const asked = Number(params.get('cascades') ?? '0');
+		const cascades = asked >= 1 && asked <= 4 ? asked : sun.cascades;
 		scene.createDirectionalLight({
 			direction: sun.direction,
 			color: sun.color,
 			intensity: sun.intensity,
 			castShadows: effects.shadows,
 			shadow: {
-				cascades: sun.cascades,
+				cascades,
 				distance: sun.distance,
 				mapSize: sun.mapSize,
 				bias: sun.bias,

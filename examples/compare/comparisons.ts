@@ -67,6 +67,11 @@ export interface Comparison {
 	 * each such device, as the guide to image tests (.dev/image-tests.md) says.
 	 */
 	imageDevices?: readonly string[];
+	/**
+	 * What the scene draws, and how the two engines draw each part of it, for the details sheet:
+	 * one row per topic, null3D's way and three.js's.
+	 */
+	differences: readonly { topic: string; null3d: string; threejs: string }[];
 	/** The effects that the scene draws, each a switch on the page. */
 	effects: readonly EffectName[];
 	/** Why the comparison loads files, when it does: the same files in both engines. */
@@ -124,6 +129,44 @@ export const COMPARISONS: readonly Comparison[] = [
 		assets:
 			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
 		threeRenderers: { instanced: 'webgpu' },
+		differences: [
+			{
+				topic: 'Characters',
+				null3d: 'Copies animate on job workers; every copy of one model draws in one batch.',
+				threejs:
+					'Scene graph draws each copy on its own; instanced skins every unit of a model in one draw, from a bone table.',
+			},
+			{
+				topic: 'Sky and light',
+				null3d: 'Generated sky, and its light as an environment.',
+				threejs: 'Sky through PMREMGenerator, with the environment from it.',
+			},
+			{
+				topic: 'Sun shadows',
+				null3d: 'Cascaded sun shadows.',
+				threejs: 'The CSM add-on, or the CSM shadow node.',
+			},
+			{
+				topic: 'Fog, bloom, AO',
+				null3d: 'Height fog, a bloom chain, GTAO and a grading table.',
+				threejs: 'The same fog in a shader, UnrealBloomPass, GTAOPass and LUTPass.',
+			},
+			{
+				topic: 'Smoke and fire',
+				null3d: 'One sprite batch, sorted from back to front.',
+				threejs: 'Instanced quads that face the camera, unsorted.',
+			},
+			{
+				topic: 'Materials',
+				null3d: 'WGSL surface and vertex functions.',
+				threejs: 'GLSL on MeshStandardMaterial, node materials on WebGPURenderer.',
+			},
+			{
+				topic: 'Decals',
+				null3d: 'Projected by the decal material.',
+				threejs: 'DecalGeometry.',
+			},
+		],
 		effects: [...LENS_EFFECTS, 'decals'],
 	},
 	{
@@ -158,6 +201,45 @@ export const COMPARISONS: readonly Comparison[] = [
 			'The hall powers up in a wave from its middle. The spot lights, lenses, cones of haze, floor lines, warning lamps and status screens follow one shared function in both engines.',
 			'The status screens under the spot lights show one texture drawn in code, as an emissive map in both engines.',
 			'Each spot light shows a cone of haze: one vertex-colored mesh drawn with additive blending in both engines. Three pooled point lights flash where the arms grip and release; three.js shades them in every pixel, and null3D clusters them.',
+		],
+		differences: [
+			{
+				topic: 'Arms and parts',
+				null3d:
+					'Job workers work out the transforms; parts that share a mesh and material draw together.',
+				threejs:
+					'Scene graph walks each arm and draws each part; instanced uses one batch per part kind.',
+			},
+			{
+				topic: 'Spot shadows',
+				null3d: 'One shadow atlas holds every spot light.',
+				threejs: 'One shadow map per spot light.',
+			},
+			{
+				topic: 'Haze cones',
+				null3d: 'One vertex-colored cone per light, additive.',
+				threejs: 'The same cone mesh, additive.',
+			},
+			{
+				topic: 'Bloom',
+				null3d: 'Its bloom chain, with the mapped settings.',
+				threejs: 'UnrealBloomPass, or the bloom node at three times the strength.',
+			},
+			{
+				topic: 'Ambient occlusion',
+				null3d: 'Darkens only the ambient light.',
+				threejs: 'The GTAO node darkens ambient; GTAOPass darkens the whole image.',
+			},
+			{
+				topic: 'Grade',
+				null3d: 'Grading table on the light before bloom.',
+				threejs: 'LUTPass on the light before bloom.',
+			},
+			{
+				topic: 'Screens',
+				null3d: 'One texture drawn in code, as an emissive map.',
+				threejs: 'The same texture and emissive map.',
+			},
 		],
 		effects: LENS_EFFECTS,
 	},
@@ -195,6 +277,39 @@ export const COMPARISONS: readonly Comparison[] = [
 			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
 			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. Both engines draw it in the facade shade, from the same window boxes and the same room depth.",
 			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines and modes. Their lights are emissive strips, so they add no lights to the count.',
+		],
+		differences: [
+			{
+				topic: 'Lights',
+				null3d: 'Clusters the point and spot lights near each part of the view.',
+				threejs:
+					'WebGPURenderer clusters point lights; WebGLRenderer shades every light in every pixel.',
+			},
+			{
+				topic: 'Mirrors',
+				null3d: 'The reflection pass lists only the lights it sees.',
+				threejs: 'Reflector draws the scene again with every light.',
+			},
+			{
+				topic: 'Shadows',
+				null3d: 'Shadow cascades.',
+				threejs: 'CSM, or the CSM shadow node.',
+			},
+			{
+				topic: 'Fog, bloom, AO',
+				null3d: 'Height fog, a bloom chain, GTAO and a grading table.',
+				threejs: 'The same fog in a shader, UnrealBloomPass, GTAOPass and LUTPass.',
+			},
+			{
+				topic: 'Sprites',
+				null3d: 'Sprite batches.',
+				threejs: 'An instanced quad that faces the camera.',
+			},
+			{
+				topic: 'Windows',
+				null3d: 'Window boxes and room depth, drawn in the facade shade.',
+				threejs: 'The same boxes and room depth.',
+			},
 		],
 		effects: NIGHT_EFFECTS,
 	},

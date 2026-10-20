@@ -286,6 +286,9 @@ async function startNull3d(
 	sketch.searchParams.set('count', String(count));
 	sketch.searchParams.set('mode', mode);
 	sketch.searchParams.set('effects', effectsToText(effects));
+	// A developer's switch for the sun's shadow cascades, which the sketch reads.
+	const cascades = new URLSearchParams(location.search).get('cascades');
+	if (cascades !== null) sketch.searchParams.set('cascades', cascades);
 	const stats = options.stats ?? true;
 	// The last error that the sketch's own code threw, which a step whose update failed reports.
 	let sketchError: string | undefined;
