@@ -554,9 +554,9 @@ With `{ model: 'physical' }`, the values match the physical sky instead, from a 
 | --- | --- |
 | `atmosphere` | `scene.setBackground({ atmosphere })`: the real sun, its light above the air, and at night the moon and the stars. Add your scene's clouds and haze: `{ ...day.atmosphere, aerialPerspective: 2 }` |
 | `skyIntensity` | 1: the physical sky dims by itself after sunset |
-| `light` | The sun through the air, which reddens as it sets. As night falls the light sweeps to the moon and turns cool, while the sun's own light fades |
+| `light` | The sun through the air, which reddens as it sets. Its light goes out as its disc sets, and the glowing sky lights the scene through the ambient light and the sky's environment. The light turns to the moon's place while it gives none, then the moon's light rises as night falls: no light sweeps across the scene. The moon stands opposite the sun, so it is highest at midnight. Its light and its sky are brightest then, and fade as it sinks toward dawn |
 | `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
-| `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.1 once night has fallen |
+| `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.1 once night has fallen. It holds at 1.1 until dawn, so the night is brightest under the midnight moon |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 

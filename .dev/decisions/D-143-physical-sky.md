@@ -228,3 +228,62 @@ afternoon 0.75, golden hour 1.02, blue hour 1.03, night 0.52. Before this
 change, golden hour's fog carried the horizon's warm glow, with red more than
 1.8 times blue, and every daytime hour took the horizon's light rather than
 the mean.
+
+## Fourth addendum: the moon is brightest at midnight
+
+Status: fixed on 20 October 2026, for the owner's review. Date: 2026-10-20. Task: M2-EX8.
+
+The owner watched Night town run from midnight to dawn and asked for the night to peak at midnight. The moon's light should be brightest then, and the moonlight and the dark should both fade slowly toward dawn. The owner found three faults. The scene brightened toward dawn. The low moon glowed like a sun. The sky went dark for a moment just before the dawn's light came.
+
+### The cause
+
+- The physical moon stands opposite the sun, so it is highest at midnight and on the horizon at dusk and dawn. Its light and its sky had the same strength at every height above the horizon.
+- The exposure moved from the dusk's to the night's over the moon's first 58 degrees of height (`MOON_EXPOSURE_RISE`). At midnight it was 1.1. As the moon sank toward dawn, the exposure rose again: 1.6 at 03:00, 2.3 at 04:00 and 3.4 at 05:00. The scene brightened as the moon set, and the moon on the horizon took more than three times its midnight exposure, so its disc and its glow read as a sun's.
+- At 05:20 the moon's sky began its hand-over to the sun's, which halved it while the exposure stayed high. The sun's sky was still too dim to make up for it, so the sky went dark for a moment before dawn.
+
+### The fix
+
+- The moon's light, its sky's light, and its share of the ambient light and the fog fall with its height: the sine of its height over the sine of 60 degrees, raised to the power 0.35, and at most 1 (`moonShareAt`). The fall is gentle near midnight and quickens near the horizon, where moonlight crosses the most air.
+- The exposure follows the sun alone. It moves from the dusk's to the night's as the sun sinks from 6 to 14 degrees under the horizon (`NIGHT_EXPOSURE_DEPTH`), then holds at 1.1 until dawn. It no longer rises as the moon sinks.
+- The analytic model is unchanged: its moon keeps D-118's floor of 25 degrees.
+
+### The measured curve
+
+`Total light` is the key plus the ambient, each times the exposure, for a flat surface, as in the second addendum.
+
+| Hour | Moon height | Exposure, before | After | Total light, before | After |
+| --- | --- | --- | --- | --- | --- |
+| 19 | 13.0 | 3.39 | 1.17 | 0.398 | 0.114 |
+| 21 | 37.8 | 1.58 | 1.10 | 0.339 | 0.209 |
+| 23 | 56.8 | 1.10 | 1.10 | 0.319 | 0.314 |
+| 0 | 60.0 | 1.10 | 1.10 | 0.330 | 0.330 |
+| 3 | 37.8 | 1.58 | 1.10 | 0.339 | 0.209 |
+| 4 | 25.7 | 2.34 | 1.10 | 0.377 | 0.139 |
+| 4.5 | 19.4 | 2.86 | 1.10 | 0.373 | 0.102 |
+| 5 | 13.0 | 3.39 | 1.17 | 0.398 | 0.114 |
+| 5.3 | 9.1 | 3.67 | 2.61 | 0.555 | 0.382 |
+| 5.6 | 0 | 3.89 | 4.00 | 0.694 | 0.715 |
+
+The night is now brightest at midnight. From midnight it fades without a step to its least light at about 04:30, under a third of midnight's. The dawn's light then rises. The moon's sky, times the exposure, falls from 0.13 at midnight to 0.09 at 05:00 and holds there until the sun's sky takes over, so the sky never goes dark before dawn. The moon on the horizon at 05:00 shows 0.09 against 0.41 before, a fifth of its old glow. The evening is the same curve in reverse: the night deepens after dusk and brightens as the moon climbs.
+
+The showcase moods are unchanged: Dawn (06:12) and Dusk (18:24) lie before the moon's part of the night, and Night (23:00) moves by under 2 percent. Two unit tests hold the curve. The first holds that the scene is brightest at midnight, falls without rising from midnight to 04:30, and keeps a quarter of midnight's light. The second holds that the moon's light dims as it sinks while the exposure holds at 1.1.
+
+## Fifth addendum: the main light goes out with the sun's disc
+
+Status: fixed on 20 October 2026, for the owner's review. Date: 2026-10-20. Task: M2-EX8.
+
+The owner watched Creek at dusk. About 40 minutes after sunset, a red glitter path ran up the stream toward the camera and lit one mountain slope red, then went away. The owner asked what it was.
+
+### The cause
+
+The second addendum kept the main light on through the whole hand-over, so that the light never fell to zero. The sun's own light faded over the sun's first 18 degrees under the horizon, and the moon's rose from 5 degrees under. Their direction swept about the horizon, from the sun's bearing to the moon's, at a height of about 1 to 5 degrees. So for an hour after sunset a red light grazed the scene from bearings where neither the sun nor the moon stood. At 18:40 its bearing crossed Creek's stream, which runs down its gorge. The water's ripples then caught it as a sunset glint path, and the slope that faced it lit up.
+
+The dip that the second addendum feared came from the ambient light, which fell to nothing below the horizon. The ambient light and the fog have held the twilight's sky since then (`SUN_SKY_HOLD`), so a main light that goes out no longer darkens the scene.
+
+### The fix
+
+- The sun's light goes out as its disc sets: full on the horizon, gone 1 degree under it (`SUN_SET`). Once the disc is down, the glowing sky lights the scene through the ambient light and the sky's environment.
+- The moon's light rises from 5 degrees under the horizon, as before.
+- Between the two, the light gives none, and only then does its direction turn from the sun's place to the moon's. Whenever the light is on, it comes from the sun's place, held 1 degree up as the sun sets, or from the moon's.
+
+The total light that a flat surface takes, the key and the ambient times the exposure, holds at 0.70 through the turn, against 0.68 at sunset. A grazing light gave a flat surface almost nothing. Walls that face the sunset lose their red light within four minutes of sunset, as they do outdoors. Blue hour, the showcase's Dusk mood, is lit by the sky alone. Four unit tests changed with the rule. The light comes only from the sun's or the moon's place while it is on. Its direction moves with no step while it gives light. It never shines up from under the ground. At blue hour it is out. The analytic model is unchanged.

@@ -175,16 +175,18 @@ const MOON_INTENSITY = 0.4;
  */
 const MOON_FLOOR = 25;
 /**
- * The sun heights, in degrees, over which the main light hands over from the sun to the moon: the
- * moon takes no part above the first, and all of it below the second. The sun is down by the first,
- * so the moon never lights the scene while the sun stands up.
+ * The sun heights, in degrees, over which the physical model hands over from the sun to the moon:
+ * the moon's light and its sky take no part above the first, and all of it below the second. The
+ * sun is down by the first, so the moon never lights the scene while the sun stands up.
  */
 const MOON_LIGHT = [-5, -18] as const;
 /**
- * The sun heights, in degrees, over which the sun's own light fades after it sets: full at the
- * horizon, and gone below the second. The twilight keeps a low warm light until the moon rises.
+ * The sun heights, in degrees, over which the physical model's sun light goes out as its disc sets:
+ * full at the first, and gone at the second. Once the disc is down, the glowing sky lights the scene
+ * through the ambient light and the sky's environment, and no light comes from the sun's own place.
+ * A key held on at the horizon would lay a glint across water long after sunset.
  */
-const SUN_TWILIGHT = [0, -18] as const;
+const SUN_SET = [0, -1] as const;
 
 /** The exposure as the sun sinks: sun heights in degrees and exposures, linear between them. */
 const EXPOSURE: readonly (readonly [number, number])[] = [
@@ -428,8 +430,8 @@ const SUN_ABOVE_AIR = 3.6;
 
 /**
  * The lowest height, in degrees, of the physical model's main light. The sun's place sinks below
- * the horizon while its light is still on, so the light is held here as it sets: it sweeps the
- * horizon instead of rising from under the ground.
+ * the horizon while its light goes out, so the light is held here as it sets, and turns from here
+ * to the moon's place, instead of shining up from under the ground.
  */
 const LIGHT_FLOOR = 1;
 
@@ -492,17 +494,34 @@ const PHYSICAL_ADAPTATION = 0.6;
 /** The physical model's moon light, below the analytic model's 0.4: the physical night is brighter otherwise. */
 const PHYSICAL_MOON = 0.3;
 /**
- * The moon height, in degrees, over which the physical exposure moves from the dusk's to the
- * night's. It holds the dusk's exposure while the moon is low, so the light does not dip before the
- * moon has risen to light the scene.
+ * The sun depths, in degrees below the horizon, over which the physical exposure moves from the
+ * dusk's to the night's. The exposure follows the sun alone, so it holds steady through the night
+ * and never rises as the moon sinks toward dawn.
  */
-const MOON_EXPOSURE_RISE = 58;
+const NIGHT_EXPOSURE_DEPTH = [6, 14] as const;
 /**
  * The physical model's exposure once night has fallen. It is below the analytic model's 3.5: the
- * physical night sky is brighter, and the moon's own light rises through the night, so a lower
- * exposure keeps dusk at or above the night.
+ * physical night sky is brighter.
  */
 const NIGHT_EXPOSURE = 1.1;
+/**
+ * How the moon's light and its sky fade as it sinks. The moon stands opposite the sun, so it is
+ * highest at midnight and on the horizon at dusk and dawn. Its share is the sine of its height over
+ * the sine of `MOON_FULL_HEIGHT`, raised to this power: a gentle fall from midnight that quickens
+ * near the horizon, where its light crosses the most air.
+ */
+const MOON_FADE = 0.35;
+/** The moon's height, in degrees, from which it gives its full light: the default noon height. */
+const MOON_FULL_HEIGHT = 60;
+
+/** The share of its full light that the moon gives at `degrees` above the horizon, from 0 to 1. */
+function moonShareAt(degrees: number): number {
+	if (degrees <= 0) return 0;
+	return Math.min(
+		1,
+		(Math.sin(degrees * DEGREE) / Math.sin(MOON_FULL_HEIGHT * DEGREE)) ** MOON_FADE,
+	);
+}
 
 /** The physical table's light at a light's height in `degrees`, into `through`, `mean` and `horizon`. */
 function physicalAt(through: Vec3, mean: Vec3, horizon: Vec3, degrees: number): void {
@@ -561,59 +580,65 @@ function physicalDay(
 	const moonHeight = Math.max(-elevation, 0);
 	scale(OPPOSITE, sun, -1);
 	atElevation(atmosphere.moonPosition, OPPOSITE, moonHeight);
+	// The moon's light and its sky are brightest at midnight, where it stands highest, and fade as
+	// it sinks toward dusk and dawn, so a low moon never glows like a sun.
+	const moonShare = moonShareAt(moonHeight);
+	atmosphere.moonIntensity *= moonShare;
 	const sunLight = atmosphere.sunIntensity;
-	// The main light is the sun while it stands up, and the moon as night falls. The sun's own
-	// light fades over the twilight once it sets, and the moon's rises over the same stretch. The
-	// two stand opposite, so the direction sweeps about the horizon and its height passes between
-	// them, and neither the direction nor the light jumps or falls to zero.
+	// The main light is the sun while it stands up, and the moon as night falls. The sun's light goes
+	// out as its disc sets, and the moon's rises only once the sun is further down. In between, the
+	// light gives none, and its direction turns from the sun's place to the moon's: a light that
+	// swept the horizon while still on would light slopes and glint on water from where neither
+	// stands.
 	const handover = 1 - smoothstep(MOON_LIGHT[1], MOON_LIGHT[0], elevation);
+	const turn = 1 - smoothstep(MOON_LIGHT[0], SUN_SET[1], elevation);
 	physicalAt(SET_THROUGH, JUNK_A, JUNK_B, Math.max(elevation, 0));
 	const sunPeak = Math.max(SET_THROUGH[0], SET_THROUGH[1], SET_THROUGH[2]);
-	const sunIntensity = sunLight * sunPeak * smoothstep(SUN_TWILIGHT[1], SUN_TWILIGHT[0], elevation);
-	const moonIntensity = PHYSICAL_MOON * handover;
+	const sunIntensity = sunLight * sunPeak * smoothstep(SUN_SET[1], SUN_SET[0], elevation);
+	const moonIntensity = PHYSICAL_MOON * handover * moonShare;
 	scale(SUN_COLOR, SET_THROUGH, 1 / Math.max(sunPeak, 1e-9));
-	const bearing = Math.atan2(sun[2] as number, sun[0] as number) + Math.PI * handover;
-	// The main light's height, which the sun's own place and the moon's blend between. The sun's
-	// own place is held just above the horizon once it sinks to it, so the light grazes the ground
-	// instead of shining up from under it through the handover.
+	const bearing = Math.atan2(sun[2] as number, sun[0] as number) + Math.PI * turn;
+	// The main light's height, which the sun's own place and the moon's blend between as it turns.
+	// The sun's own place is held just above the horizon once it sinks to it, so the light grazes
+	// the ground instead of shining up from under it.
 	const sunHeight = Math.max(elevation, LIGHT_FLOOR) * DEGREE;
-	const height = mix(sunHeight, moonHeight * DEGREE, handover);
+	const height = mix(sunHeight, moonHeight * DEGREE, turn);
 	const across = Math.cos(height);
 	const light = out.light;
 	light.direction[0] = -across * Math.cos(bearing);
 	light.direction[1] = -Math.sin(height);
 	light.direction[2] = -across * Math.sin(bearing);
 	for (let c = 0; c < 3; c++)
-		light.color[c] = mix(SUN_COLOR[c] as number, MOON_COLOR[c] as number, handover);
+		light.color[c] = mix(SUN_COLOR[c] as number, MOON_COLOR[c] as number, turn);
 	light.intensity = sunIntensity + moonIntensity;
 	physicalAt(JUNK_A, SET_MEAN, SET_HORIZON, Math.max(elevation, SUN_SKY_HOLD));
 	physicalAt(JUNK_A, MOON_MEAN, MOON_HORIZON, Math.max(moonHeight, MOON_SKY_FLOOR));
 	// The sky's horizon and mean light, where the sun's sky cross-fades to the moon's night sky, so
 	// the twilight's fill does not fall away between the two.
 	const sunShare = sunLight * (1 - handover);
-	const moonShare = MOON_SKY_LIGHT * handover;
+	const moonSkyShare = MOON_SKY_LIGHT * handover * moonShare;
 	// The fog takes the sky's mean light at every hour, not its light along the horizon. A fog of the
 	// horizon's light carries the brightest band of the sky over the whole scene and washes its shaded
 	// surfaces, while the exposure follows the mean; a low sun makes that band its own glow. The
 	// analytic model's fog takes the mean too.
 	const fogColor = out.fog.color;
 	scale(fogColor, SET_MEAN, sunShare);
-	add(fogColor, fogColor, scale(MOON_HORIZON, MOON_HORIZON, moonShare));
+	add(fogColor, fogColor, scale(MOON_HORIZON, MOON_HORIZON, moonSkyShare));
 	const fogPeak = Math.max(fogColor[0], fogColor[1], fogColor[2]);
 	if (fogPeak > 1) scale(fogColor, fogColor, 1 / fogPeak);
 	// The mean over the sphere takes the dark ground below the horizon, so the sky above holds
 	// about twice it. An ambient light of intensity 1 and color L lights as a whole sky of L / π.
 	scale(SKY_MEAN, SET_MEAN, sunShare);
-	add(SKY_MEAN, SKY_MEAN, scale(MOON_MEAN, MOON_MEAN, moonShare));
+	add(SKY_MEAN, SKY_MEAN, scale(MOON_MEAN, MOON_MEAN, moonSkyShare));
 	scale(AMBIENT, SKY_MEAN, 2);
 	const brightest = Math.max(AMBIENT[0], AMBIENT[1], AMBIENT[2], 1e-9);
-	// The exposure makes up for the sun's sky as it dims, as an eye adapts, then moves to the night
-	// exposure as the moon rises. It holds the dusk's exposure while the moon is low, so the key
-	// it cannot yet give is not paid for with a dark moment before the moon is up.
+	// The exposure makes up for the sun's sky as it dims, as an eye adapts, then settles on the night
+	// exposure as the sun sinks deeper. It follows the sun alone, so it holds through the night and
+	// the moonlit scene is brightest at midnight, under the highest moon.
 	physicalAt(JUNK_A, DAY_MEAN, JUNK_B, 15);
 	const ratio = luminance(DAY_MEAN) / Math.max(luminance(MEAN), 1e-12);
 	const adapted = Math.min(ratio ** PHYSICAL_ADAPTATION, PHYSICAL_EXPOSURE_LIMIT);
-	const nightShare = smoothstep(0, MOON_EXPOSURE_RISE, moonHeight);
+	const nightShare = smoothstep(NIGHT_EXPOSURE_DEPTH[0], NIGHT_EXPOSURE_DEPTH[1], -elevation);
 	const exposure = Math.exp(mix(Math.log(adapted), Math.log(NIGHT_EXPOSURE), nightShare));
 	scale(out.ambient.color, AMBIENT, 1 / brightest);
 	out.hours = hours;

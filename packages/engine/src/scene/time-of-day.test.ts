@@ -71,6 +71,16 @@ describe('timeOfDay', () => {
 		expect(afternoon.fog.color[2]).toBeGreaterThan(afternoon.fog.color[0]);
 	});
 
+	test('dims the physical moon and its sky as it sinks, so a low moon never glows like a sun', () => {
+		const at = (hours: number) => timeOfDay(hours, { model: 'physical' });
+		// The moon's sky light is fullest at midnight and fades toward dawn.
+		expect(at(0).atmosphere.moonIntensity).toBeGreaterThan(at(3).atmosphere.moonIntensity);
+		expect(at(3).atmosphere.moonIntensity).toBeGreaterThan(at(4.5).atmosphere.moonIntensity);
+		expect(at(4.5).atmosphere.moonIntensity).toBeGreaterThan(at(5).atmosphere.moonIntensity);
+		// The night's exposure holds steady while the moon sinks, so the scene does not brighten.
+		for (const hours of [0, 1, 2, 3, 4, 4.5]) expect(at(hours).exposure).toBeCloseTo(1.1, 2);
+	});
+
 	test('lights the night sky from the moon, with blue light', () => {
 		for (const hours of ['night', 20, 2, 4.5] as const) {
 			const day = timeOfDay(hours, { heading: 2.2 });
@@ -246,18 +256,28 @@ describe('timeOfDay', () => {
 		}
 	});
 
-	test('hands the physical main light from the sun to the moon with no zero dip', () => {
-		// The sun's direct light is extinguished at the horizon and the moon's rises, but the two
-		// overlap, so the main light never falls to zero and the scene never goes unlit.
-		let least = Number.POSITIVE_INFINITY;
-		for (let hours = 0; hours <= 24.0001; hours += 0.1)
-			least = Math.min(least, timeOfDay(hours, { model: 'physical' }).light.intensity);
-		expect(least).toBeGreaterThan(0.05);
+	test('turns the physical main light from the sun to the moon only while it gives no light', () => {
+		// Whenever the main light is on, it comes from the sun's place, held just above the horizon
+		// as the sun sets, or from the moon's. A light that swept the horizon while on would glint on
+		// water and light slopes from where neither stands.
+		const floor = Math.sin((1 * Math.PI) / 180);
+		for (let hours = 0; hours <= 24.0001; hours += 0.01) {
+			const day = timeOfDay(hours, { model: 'physical' });
+			if (day.light.intensity < 1e-4) continue;
+			const [sx, sy, sz] = day.atmosphere.sunPosition;
+			const up = Math.max(sy, floor);
+			const across = Math.sqrt(1 - up * up) / Math.hypot(sx, sz);
+			const sun = [sx * across, up, sz * across];
+			const from = day.light.direction.map((c) => -c);
+			const gap = (place: readonly number[]) =>
+				Math.hypot(...from.map((c, k) => c - (place[k] as number)));
+			expect(Math.min(gap(sun), gap(day.atmosphere.moonPosition))).toBeLessThan(1e-6);
+		}
 	});
 
 	test('moves the physical main light with no jump through the day', () => {
-		// The direction sweeps from the sun to the moon and its intensity cross-fades, with no step
-		// like the old jump to a moon 25 degrees up at the horizon.
+		// The light's intensity changes with no step, and its direction moves with no step while it
+		// gives light: it turns from the sun's place to the moon's only while it is out.
 		let before = timeOfDay(0, { model: 'physical' }).light;
 		for (let hours = 0.05; hours <= 24.0001; hours += 0.05) {
 			const light = timeOfDay(hours, { model: 'physical' }).light;
@@ -266,7 +286,7 @@ describe('timeOfDay', () => {
 				light.direction[1] - before.direction[1],
 				light.direction[2] - before.direction[2],
 			);
-			expect(step).toBeLessThan(0.3);
+			if (Math.min(light.intensity, before.intensity) > 0.01) expect(step).toBeLessThan(0.3);
 			expect(Math.abs(light.intensity - before.intensity)).toBeLessThan(0.5);
 			before = light;
 		}
@@ -292,30 +312,26 @@ describe('timeOfDay', () => {
 		expect(sunHeight('goldenHour')).toBeCloseTo(5, 0);
 		expect(sunHeight('blueHour')).toBeCloseTo(-5, 0);
 		expect(sunHeight('night')).toBeLessThan(-12);
-		// Blue hour is still the setting sun, so the moon has not taken the main light yet, and the
-		// light grazes the horizon from just above it rather than shining up from below.
-		const blue = timeOfDay('blueHour', { model: 'physical' });
-		const blueLight = (Math.asin(-blue.light.direction[1]) * 180) / Math.PI;
-		expect(blueLight).toBeGreaterThan(0);
-		expect(blueLight).toBeLessThan(2);
+		// At blue hour the sun's light has gone out with its disc, and the moon's has not yet begun:
+		// the glowing sky lights the scene.
+		expect(timeOfDay('blueHour', { model: 'physical' }).light.intensity).toBeLessThan(0.01);
 		// Once night has fallen, the main light is the moon, from the moon's place.
 		const night = timeOfDay('night', { model: 'physical' });
 		expect((Math.asin(-night.light.direction[1]) * 180) / Math.PI).toBeGreaterThan(25);
 	});
 
 	test('keeps the physical main light above the horizon through the handover', () => {
-		// The main light's height passes from the sun's own place to the moon's as the sun sets, and
-		// its intensity is still on through that stretch, so the light must not shine up from under
-		// the ground at any hour of it.
+		// The main light's height passes from the sun's own place to the moon's as the sun sets, so
+		// the light must not shine up from under the ground at any hour of it.
 		for (const model of ['analytic', 'physical'] as const)
 			for (let hours = 17; hours <= 21.0001; hours += 0.1) {
 				const day = timeOfDay(hours, { model });
-				expect(day.light.intensity).toBeGreaterThan(0);
+				expect(day.light.intensity).toBeGreaterThanOrEqual(0);
 				expect(day.light.direction[1]).toBeLessThanOrEqual(0);
 			}
 	});
 
-	test('keeps the physical light continuous, with the crossing no darker than night', () => {
+	test('keeps the physical light continuous, brightest at midnight under the highest moon', () => {
 		// The total light that a flat surface would take: the key's share and the ambient's, each
 		// times the exposure.
 		const total = (hours: number) => {
@@ -327,14 +343,25 @@ describe('timeOfDay', () => {
 		// The sun on the horizon, at dawn and at dusk, is not darker than the deep night.
 		const night = total(23);
 		for (const hours of [5.5, 6, 6.5, 17.5, 18, 18.5]) expect(total(hours)).toBeGreaterThan(night);
-		// From sunset to midnight, no hour falls more than a tenth below the night's value, so the
-		// route through dusk never goes darker than midnight.
-		for (let hours = 18; hours <= 24.0001; hours += 0.25)
-			expect(total(hours)).toBeGreaterThan(night * 0.9);
+		// The moon stands highest at midnight, so the moonlit night is brightest then and dims
+		// steadily as the moon sinks toward dawn, and rises the same way from dusk: it never
+		// brightens toward dawn (owner, 20 October 2026). That holds while the sun is more than 14
+		// degrees down, where the night's exposure is steady.
+		const midnight = total(0);
+		let before = midnight;
+		for (let hours = 0.25; hours <= 4.5001; hours += 0.25) {
+			const now = total(hours);
+			expect(now).toBeLessThanOrEqual(before + 1e-9);
+			expect(total(24 - hours)).toBeCloseTo(now, 9);
+			before = now;
+		}
+		// No black gap between the moon and the dawn: no hour falls below a quarter of midnight.
+		for (let hours = 0; hours <= 24.0001; hours += 0.05)
+			expect(total(hours)).toBeGreaterThan(midnight * 0.25);
 		// The day outshines the crossing.
 		expect(total(12)).toBeGreaterThan(total(18));
 		// The total light is continuous: no step of 0.05 hours changes it by more than 1.25 times.
-		let before = total(0);
+		before = total(0);
 		for (let hours = 0.05; hours <= 24.0001; hours += 0.05) {
 			const now = total(hours);
 			expect(Math.max(now / before, before / now)).toBeLessThan(1.25);
