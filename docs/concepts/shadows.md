@@ -335,7 +335,7 @@ They follow these rules:
 - They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.
 - A longer `contactDistance` finds larger contacts, with the same steps further apart. Keep it short, under a meter, and use the cascades for long shadows.
 
-The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
 
 ## Which objects cast and receive
 

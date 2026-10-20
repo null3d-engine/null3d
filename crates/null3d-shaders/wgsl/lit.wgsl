@@ -1636,9 +1636,17 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
 #endif
+    // The depth prepass leaves out surfaces that discard by their alpha or a fading level's dither.
+#ifdef ALPHA_MASK
+    let in_prepass = false;
+#else ifdef LOD_FADE
+    let in_prepass = false;
+#else
+    let in_prepass = true;
+#endif
     // The screen texture's values, then what the screen showed along the mirror direction, with a
     // planar reflection over it: the planar reflection's share wins on its plane.
-    let screen = screen_read(pixel.xyz, blended);
+    let screen = screen_read(pixel.xyz, blended, in_prepass);
     // A parallax build reads no screen reflection: the copy it samples is one texture more than
     // WebGPU's default count of sampled textures in a fragment shader allows beside the parallax
     // map. Such a surface reflects the environment, the probes and a planar reflection alone.

@@ -2209,6 +2209,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
 	},
+	// A masked card 0.3 m in front of thin blades, with ambient occlusion and contact shadows on.
+	// The depth prepass leaves the card out, so the screen texture holds the blades behind it, and
+	// the card must take none of their darkening: no blocks on it.
+	{ name: 'alpha-mask-ao', sketch: 'tests/pages/sketches/alpha-mask-screen-sketch.ts', hold: 0 },
 	// Wide lines: widths in pixels and in world units, round joins, colors at each point, dashes, a
 	// loop and a blended line, over a floor and in front of a wall. The parity test compares it with
 	// three.js's Line2 and LineSegments2 with a LineMaterial.

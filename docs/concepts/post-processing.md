@@ -242,6 +242,7 @@ post.set({ ao: { radius: 0.5, intensity: 1 } });
 - The settings mean what `GTAOPass`'s settings mean, with the same search and blur. In the engine's parity tests, with `GTAOPass`'s defaults, null3D's image differs from three.js's in under 0.1% of the pixels on every GPU path. With a wider, darker search, under 1% differ, along the soft edges of the darkened areas.
 - `GTAOPass` darkens the whole image, direct light and highlights included. null3D darkens only the ambient light, and the light that light maps add. A surface in the sun keeps its sunlight in a corner, as it would in the real world. In a scene that only ambient light lights, the two give the same image.
 - Blended objects draw over the surfaces that ambient occlusion saw, so they take none.
+- The depth prepass leaves out masked surfaces and levels of detail while they fade, so ambient occlusion may see only what lies behind them. Such a surface takes the occlusion only where ambient occlusion saw a surface at its own depth, such as a leaf on the ground. A petal in front of grass takes none of the grass's occlusion.
 - `post.set({ ao: false })` turns ambient occlusion off. The settings keep their values, so `post.set({ ao: {} })` turns it on again with them.
 
 ### Where ambient occlusion draws
