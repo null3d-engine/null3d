@@ -1,14 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	effectsFromText,
-	effectsToText,
-	gradeTable,
-	quatMultiply,
-	rotateVector,
-	stepsUntil,
-	surfaceMaps,
-	triangleCount,
-} from '../../lib/compare-scene';
+import { quatMultiply, rotateVector, stepsUntil, triangleCount } from '../../lib/compare-scene';
 import {
 	ARM_PARENT,
 	ARM_PART,

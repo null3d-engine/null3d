@@ -984,7 +984,7 @@ export default defineSketch(
 );
 
 /** Writes a turn about +Y into row `row` of a rotations array. */
-function writeYaw(rotations: Float32Array, row: number, angle: number): void {
+function _writeYaw(rotations: Float32Array, row: number, angle: number): void {
 	rotations[row * 4] = 0;
 	rotations[row * 4 + 1] = Math.sin(angle / 2);
 	rotations[row * 4 + 2] = 0;

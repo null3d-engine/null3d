@@ -40,7 +40,6 @@ import {
 	CAR_PAINTS,
 	CARS_PER_BLOCK,
 	carPose,
-	carToWorld,
 	createNightTown,
 	drawNightSprites,
 	FACADE_KINDS,
@@ -380,7 +379,6 @@ export async function buildNightTown({
 		emissiveIntensity: look.lamp.lens,
 	});
 	const paints = CAR_PAINTS.map((color) => standard({ color, roughness: 0.28, metalness: 0.55 }));
-	const whitePaint = standard({ color: '#ffffff', roughness: 0.28, metalness: 0.55 });
 	const cabin = standard({ color: '#0b0d10', roughness: 0.12, metalness: 0.2 });
 	const headlamp = standard({
 		color: '#000000',

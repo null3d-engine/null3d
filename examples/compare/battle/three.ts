@@ -50,7 +50,6 @@ import {
 	GRASS,
 	GROUND_LOOK,
 	LIGHT_COUNT,
-	linearColor,
 	MODELS,
 	type ModelName,
 	PINES,

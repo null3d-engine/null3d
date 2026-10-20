@@ -127,7 +127,6 @@ export function routeTimeline(shots: readonly Shot[]): Route {
 	// centripetal power. A step never reaches zero, so two shots at the same pose, such as a hold,
 	// still have a tangent, and the curve passes through every shot.
 	const steps: number[] = [];
-	let loop = 0;
 	for (let i = 0; i < shots.length; i++) {
 		const from = shots[i] as Shot;
 		const to = shots[(i + 1) % shots.length] as Shot;
@@ -138,7 +137,6 @@ export function routeTimeline(shots: readonly Shot[]): Route {
 		);
 		const step = Math.max(KNOT_FLOOR, distance ** SPLINE_ALPHA);
 		steps.push(step);
-		loop += step;
 	}
 	const knots: number[] = [0];
 	for (let i = 0; i < shots.length; i++) knots.push((knots[i] as number) + (steps[i] as number));

@@ -15,7 +15,6 @@
 // most cells and the cells that move; the page's `count` message changes the cells that move.
 import {
 	defineSketch,
-	type InstanceBatch,
 	type Material,
 	type Mesh,
 	type MeshGeometry,

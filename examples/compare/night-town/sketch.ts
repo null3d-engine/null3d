@@ -13,7 +13,6 @@
 // custom materials (shaders.ts).
 import {
 	defineSketch,
-	type InstanceBatch,
 	type Material,
 	type Mesh,
 	type MeshGeometry,
@@ -37,7 +36,6 @@ import {
 	CAR_PAINTS,
 	CARS_PER_BLOCK,
 	carPose,
-	carToWorld,
 	createNightTown,
 	drawNightSprites,
 	FACADE_KINDS,
@@ -91,7 +89,7 @@ function yawQuat(yaw: number): [number, number, number, number] {
 }
 
 /** Writes a place on the ground and a turn about +Y into a batch's rows at row i. */
-function writeRow(
+function _writeRow(
 	positions: Float32Array,
 	rotations: Float32Array,
 	i: number,
@@ -290,7 +288,7 @@ export default defineSketch(
 		const paints = CAR_PAINTS.map((color) =>
 			materials.standard({ color, roughness: 0.28, metalness: 0.55 }),
 		);
-		const whitePaint = materials.standard({ color: '#ffffff', roughness: 0.28, metalness: 0.55 });
+		const _whitePaint = materials.standard({ color: '#ffffff', roughness: 0.28, metalness: 0.55 });
 		const flyerPaint = materials.standard({ color: '#363c46', roughness: 0.3, metalness: 0.7 });
 		const cabin = materials.standard({ color: '#0b0d10', roughness: 0.12, metalness: 0.2 });
 		const headlamp = materials.standard({
