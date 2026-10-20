@@ -29,12 +29,16 @@ const TIERS = [
 
 for (const { tier, query } of TIERS)
 	test(`a looping custom effect folds into the final pass on ${tier}`, async ({ page }) => {
+		// The page waits up to half a minute for the fold's build, and a loaded software GPU starts
+		// the engine slowly besides: on 20 October 2026 a shard's run reached the test's limit
+		// before the page reported. Give the page room to say what it found.
+		test.setTimeout(150_000);
 		const warnings: string[] = [];
 		page.on('console', (message) => {
 			if (message.text().includes('joined custom effects failed')) warnings.push(message.text());
 		});
 		await page.goto(`effect-fold.html?${query}`);
-		const result = await pageResult<EffectFoldResult>(page, 60_000);
+		const result = await pageResult<EffectFoldResult>(page, 120_000);
 		console.log(`effect fold on ${tier}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(tier);

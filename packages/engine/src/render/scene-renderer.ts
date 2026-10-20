@@ -94,6 +94,11 @@ export class FrameReplay {
 	private complete = false;
 	/** The first frame of the last hold that a prepared frame reached. */
 	private held = 0;
+	/**
+	 * The range of the last list that held commands, and the frame it belongs to. A view that rests
+	 * records no list, so a capture replays this one rather than an empty range.
+	 */
+	private last: { frame: number; from: number; end: number } | null = null;
 
 	constructor(
 		private readonly backend: SceneBackend,
@@ -126,9 +131,29 @@ export class FrameReplay {
 			while (performance.now() < until);
 		}
 		const from = this.restOf(frame);
+		if (this.end > from) this.last = { frame, from, end: this.end };
 		const words = this.views.heap(Uint32Array);
 		this.backend.replay(words, this.views.heap(Float32Array), from, this.end, words.buffer);
 		if (!this.backend.building) this.complete = true;
+	}
+
+	/**
+	 * Replays `frame`'s list for a capture. A view that rests records no list for a frame, and its
+	 * memory still holds the last one that drew: a capture shows that one, as the last frame that
+	 * reached the screen. With nothing drawn yet, the capture replays the frame's own empty list.
+	 */
+	replayForCapture(frame: number): void {
+		const from = this.restOf(frame);
+		if (this.end > from) {
+			this.replay(frame);
+			return;
+		}
+		const words = this.views.heap(Uint32Array);
+		const floats = this.views.heap(Float32Array);
+		const last = this.last;
+		if (last && last.frame !== frame)
+			this.backend.replay(words, floats, last.from, last.end, words.buffer);
+		else this.backend.replay(words, floats, from, this.end, words.buffer);
 	}
 
 	/**

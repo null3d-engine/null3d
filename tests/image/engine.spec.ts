@@ -574,8 +574,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		page,
 	}) => {
 		const mode = { ...pipelined, query: 'jobs=3', jobWorkers: 3 };
-		// Asks for 2 job workers after the first 30 busy frames, and for the third after 30 more.
-		await page.goto(`engine.html?gpu=${gpu}&seconds=4&${mode.query}&sketch=busy`);
+		// Asks for 2 job workers after the first 30 busy frames, and for the third after 30 more. A
+		// software GPU draws so few frames a second that its window must be longer than four.
+		const seconds = test.info().project.name.startsWith('chromium-swiftshader') ? 30 : 4;
+		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);

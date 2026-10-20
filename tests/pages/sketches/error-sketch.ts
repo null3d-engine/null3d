@@ -22,8 +22,16 @@ const TRIANGLE = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], computeNormals: true 
 /** The errors that the sketch caught, which a later read reports with the fixes that arrived. */
 const caught: unknown[] = [];
 
-/** How long the sketch waits before it reports the caught errors again. */
+/** How long the sketch first waits before it reports the caught errors again. */
 const FIX_WAIT_MS = 250;
+/**
+ * The most the sketch waits for the fixes' text. A thread's first error fetches the text, and a
+ * loaded machine or a production build can take longer than a second over it: on 20 October 2026
+ * a run reported the short messages after the fixed wait.
+ */
+const FIX_LIMIT_MS = 15_000;
+/** A phrase that every message holds only once the fixes' text has arrived. */
+const FIXED_PHRASE = 'Pass a hex string';
 
 /** The error that a call throws, as the page can receive it. */
 function raised(call: () => void): ErrorFields {
@@ -89,7 +97,16 @@ export default defineSketch(({ scene, materials, geometry, page, render }) => {
 				}),
 			),
 		]);
-		setTimeout(() => page.post('patched', caught.map(errorFields)), FIX_WAIT_MS);
+		const deadline = performance.now() + FIX_LIMIT_MS;
+		const reportFixed = () => {
+			const text = (caught[0] as Error | undefined)?.message ?? '';
+			if (!text.includes(FIXED_PHRASE) && performance.now() < deadline) {
+				setTimeout(reportFixed, 100);
+				return;
+			}
+			page.post('patched', caught.map(errorFields));
+		};
+		setTimeout(reportFixed, FIX_WAIT_MS);
 	});
 	return {};
 });

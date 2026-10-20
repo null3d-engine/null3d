@@ -120,6 +120,21 @@ describe('FrameReplay', () => {
 		expect(backend.replayedFrom).toEqual([101, 101, 201]);
 	});
 
+	it('captures the last list that drew when a resting frame records none', async () => {
+		const { slots, backend, replay } = setup();
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
+		replay.replay(4);
+		// Frame 5 rests, so its list holds no words and its memory holds frame 4's list.
+		Atomics.store(slots, Slot.DrawListWords1, 0);
+		Atomics.store(slots, Slot.FramesTaken, 5);
+		const frame = await replay.builtTaken();
+		replay.replayForCapture(frame);
+		expect(backend.replayedFrom).toEqual([101, 101]);
+	});
+
 	it('stops a capture that waits for builds when the renderer is destroyed', async () => {
 		const { slots, backend, replay } = setup();
 		Atomics.store(slots, Slot.FramesTaken, 1);

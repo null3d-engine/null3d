@@ -136,6 +136,8 @@ export function totalSize(node: ProfileNode): number {
 export interface Sample {
 	places: Map<string, Place>;
 	frames: number;
+	/** The browser's calls into the worker during the sample, when the worker counted them. */
+	calls?: number;
 }
 
 /** A place's bytes per frame across the samples. */

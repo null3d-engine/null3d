@@ -17,6 +17,13 @@ import { FramePacer } from './pacer';
 import { RefreshMeter, snapMeanInterval } from './refresh';
 import type { FrameInput, Renderer } from './renderer';
 
+/**
+ * The browser's calls into the render loop, one at each display frame: the allocation check reads it
+ * to judge the browser's own per-call allocations apart from the engine's per-frame work.
+ */
+let browserCalls = 0;
+(globalThis as { __null3dBrowserCalls?: () => number }).__null3dBrowserCalls = () => browserCalls;
+
 export interface RenderLoop {
 	stop(): void;
 	/** Hold mode's loop: draws the held frame when first asked, and resolves once it has. */
@@ -510,6 +517,7 @@ export function runRenderLoop(
 	let stopped = false;
 
 	const frame = guardFrame((timestamp) => {
+		browserCalls++;
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
 		presenter.tick(timestamp);
 		presenter.wakeBeforeNextFrame();

@@ -45,9 +45,10 @@ async function openPage(page: Page, query: string): Promise<number> {
 
 /**
  * How long a new size may take to reach the drawing buffer. Each new size makes the frame's HDR
- * targets again, which SwiftShader on CI's machines takes a second or two to do.
+ * targets again, which SwiftShader on CI's machines takes a second or two to do. On 20 October 2026
+ * a high-density shard held the old size for the whole wait, so the wait doubles.
  */
-const RESIZE_TIMEOUT_MS = 15_000;
+const RESIZE_TIMEOUT_MS = 30_000;
 
 /** Sets each window size, and waits until the drawing buffer is the canvas's CSS size times `ratio`. */
 async function expectBuffers(page: Page, ratio: number): Promise<void> {

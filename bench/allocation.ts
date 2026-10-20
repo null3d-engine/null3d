@@ -175,7 +175,7 @@ import {
 	steadyPlaces,
 	totalSize,
 } from './lib/allocation';
-import { attachWorkers, DevTools, pagesAt, sleep, within } from './lib/devtools';
+import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
@@ -412,8 +412,10 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
 export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': {
-		'(IDLE)': 512,
-		'(JS)': 256,
+		// The fallback when a worker gives no call count: the figures that two slow runners read,
+		// with room above them.
+		'(IDLE)': 1024,
+		'(JS)': 640,
 		'giveUpStalled gpu/completion.ts': 256,
 		// The frame's own work is paid at each call of the render worker, which the browser makes at
 		// the display's rate, while the check counts the frames that S1 steps. A slower runner
@@ -426,6 +428,18 @@ export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string
 
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
+
+/**
+ * Places whose allocation follows the browser's calls into the worker rather than the engine's
+ * frames, and the bytes each may allocate per call. The browser calls the render worker at the
+ * display's rate, so a slow GPU steps fewer frames per call: on SwiftShader a frame that takes a
+ * second takes about 50 calls, and the browser's own per-call objects then weigh about 50 times as
+ * much per frame. On 20 October 2026 two runs read 865 and 965 bytes per frame at (IDLE) and 470
+ * and 560 at (JS), while a run of the same code whose warm-up was 2.6 times faster read 698 in all.
+ * Judging these two per call removes the runner's speed from the figure. The budgets equal the
+ * per-frame budgets of a real GPU, where each call draws one frame.
+ */
+const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 24 };
 
 /**
  * The budget of `place` in `worker` for a run: the tables' figure, SwiftShader's own where it has
@@ -813,6 +827,20 @@ async function main(): Promise<void> {
 				STEP_MS,
 				'reading the frame count',
 			);
+		/**
+		 * The render worker's count of the browser's calls into it so far, or null where the engine
+		 * gives none. The check judges the browser's own places per call, so a runner's speed does
+		 * not change their bytes.
+		 */
+		const callsSoFar = async (): Promise<number | null> => {
+			const session = sessions.get('render-worker');
+			if (!session) return null;
+			return evaluate<number | null>(
+				devtools,
+				session,
+				'globalThis.__null3dBrowserCalls?.() ?? null',
+			).catch(() => null);
+		};
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		const [target] = await pagesAt(devtools, url);
 		if (!target) throw new Error(`no page target for ${url}`);
@@ -865,6 +893,7 @@ async function main(): Promise<void> {
 				);
 			}
 			const startFrames = await framesSoFar();
+			const startCalls = await callsSoFar();
 			await sleep(seconds * 1000);
 			const profiles = new Map<string, HeapProfile>();
 			for (const [name, sessionId] of sessions) {
@@ -877,11 +906,17 @@ async function main(): Promise<void> {
 				profiles.set(name, profile);
 			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
+			const endCalls = await callsSoFar();
 			frames += sampleFrames;
+			const calls = startCalls === null || endCalls === null ? undefined : endCalls - startCalls;
 			for (const [name, profile] of profiles) {
 				samples.set(name, [
 					...(samples.get(name) ?? []),
-					{ places: profilePlaces(profile), frames: sampleFrames },
+					{
+						places: profilePlaces(profile),
+						frames: sampleFrames,
+						...(calls !== undefined && { calls }),
+					},
 				]);
 				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
 			}
@@ -913,6 +948,12 @@ async function main(): Promise<void> {
 		for (const [worker, workerSamples] of samples) {
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
+			// The fewest calls the browser made for a frame in any sample: the strictest per-call
+			// figure, on the same sample that each place's least per-frame figure comes from.
+			const counted = workerSamples
+				.filter((sample) => sample.calls !== undefined)
+				.map((sample) => (sample.calls as number) / Math.max(1, sample.frames));
+			const callsPerFrame = counted.length > 0 ? Math.max(1, Math.min(...counted)) : null;
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
 			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
 			if (!bytes.get(worker)) unsampled.push(worker);
@@ -924,6 +965,16 @@ async function main(): Promise<void> {
 						0,
 					) +
 					(sceneBudgets[name] ?? 0);
+				// Only the render worker counts the browser's calls, so only its places are judged so.
+				const callBudget = worker === 'render-worker' ? CALL_BUDGETS[name] : undefined;
+				if (callBudget !== undefined && callsPerFrame !== null) {
+					const perCall = perFrame / callsPerFrame;
+					if (perCall > callBudget) over.push(`${worker}: ${name}`);
+					console.log(
+						`  ${perCall.toFixed(1).padStart(6)} of ${String(callBudget).padStart(3)} per call, ${callsPerFrame.toFixed(1)} a frame (${perFrame.toFixed(1).padStart(6)} a frame)  ${name}${callers ? ` < ${callers}` : ''}`,
+					);
+					continue;
+				}
 				const budget = placeBudget(worker, name, { swiftShader, extra });
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
