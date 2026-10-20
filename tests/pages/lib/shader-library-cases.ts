@@ -1226,6 +1226,18 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return floats([p[0]! / p[3]!, p[1]! / p[3]!, p[2]! / p[3]!]);
 		},
 	},
+	{
+		name: 'depth::distance_code',
+		// The near plane, whole octaves, past the code's span, the far plane, and depths between.
+		cases: (random) => [
+			...[1, 0.5, 2 ** -8, 2 ** -16, 2 ** -20, 0].map((depth) => new Inputs().setF(0, [depth])),
+			...samples((r) => new Inputs().setF(0, [between(r, 0, 1)]))(random),
+		],
+		expected: (i) => {
+			const depth = Math.max(i.f(0)[0]!, 1e-20);
+			return scalar(Math.min(Math.max(-Math.log2(depth) / 16, 0), 1));
+		},
+	},
 	// null3d::sdf
 	{
 		name: 'sdf::sphere',
