@@ -71,6 +71,28 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 Neither change rebuilds the engine's tables of what it draws, so a sketch can change layers or visibility in every frame. [Scene](../api/scene.md#when-changes-take-effect) says when a change takes effect.
 
+## Layers and shadows
+
+A light's mask does two jobs:
+
+- It picks the views that the light lights. A light lights a camera's view when their masks share a bit. It then lights every object in that view, whatever the object's own mask.
+- It picks the objects that cast the light's shadows. An object with `castShadows` casts only when its mask shares a bit with the light's.
+
+So an object on a layer that the light lacks takes the light but casts no shadow, and the engine gives no warning. A cave's rock on a layer of its own then lets the sun through onto the cave's floor. Give the light every layer whose objects must cast:
+
+```ts
+const INTERIOR = 1 << 30;
+
+const camera = scene.createPerspectiveCamera({ position: [0, 4, 10], target: [0, 0, 0], layers: 1 | INTERIOR });
+// The sun lights the camera's view, and both layers cast its shadows.
+const sun = scene.createDirectionalLight({
+  direction: [-1, -2, -1], intensity: 3, castShadows: true, layers: 1 | INTERIOR,
+});
+scene.createMesh({ mesh: caveRock, material: rock, layers: INTERIOR, castShadows: true });
+```
+
+The rule holds for spot and point lights too. To keep an object's shadow out of one light, leave that object's layer out of the light's mask.
+
 ## How the engine tests layers
 
 The engine tests each mask while it culls the scene, beside the test against the camera's view. [Culling](culling.md) describes that test.
@@ -91,6 +113,8 @@ A new mask rebuilds none of the engine's tables of what it draws. On WebGPU it r
 | `instancedMesh.layers` | `batch.setLayers(mask)`, for every row |
 
 The rule is the same as three.js's: an object draws when its mask and the camera's share a bit. Lights follow the rule too: a light lights the camera's view only when its mask and the camera's share a bit.
+
+Shadows differ. three.js tests each caster against the camera's mask, so every object that the camera draws casts. null3D tests each caster against the light's mask. In a port that puts objects on extra layers, give each light that casts shadows those layers too, as [Layers and shadows](#layers-and-shadows) shows.
 
 ## Related pages
 

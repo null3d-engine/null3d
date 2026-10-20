@@ -95,7 +95,7 @@ In this version:
 - Every hemisphere light that is visible and shares a layer with the camera adds its light. [Hemisphere lights](#hemisphere-lights) says how.
 - Without lights, standard materials draw black.
 
-To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit, as in three.js. [Render layers](../concepts/render-layers.md) explains masks.
+To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit, as in three.js. [Render layers](../concepts/render-layers.md) explains masks. The light's mask also picks the objects that cast its shadows: an object on a layer that the light lacks casts none ([Layers and shadows](../concepts/render-layers.md#layers-and-shadows)).
 
 ## Area lights
 

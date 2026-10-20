@@ -396,7 +396,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "obj.setLayers(mask), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
-      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n). For enable and disable, keep the mask in your code and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2.",
+      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n). For enable and disable, keep the mask in your code and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
       "docs": "concepts/render-layers",
       "detect": "\\.layers\\.(set|enable|disable|toggle|enableAll|disableAll|mask)\\b"
     },

@@ -130,6 +130,8 @@ The plugin puts the compiled shader where the literal was. Your code therefore r
 
 - The comment comes directly before the literal. Spaces and line breaks may come between them.
 - The literal cannot hold `${...}`. The plugin compiles the WGSL before any of your code runs, so write each value in the WGSL itself.
+- Each literal compiles on its own. It cannot call a function from another literal, and code that joins strings cannot add one. `#import` reaches only the engine's [shader library](../shaders/library.md). So two shaders that share a function, such as a water surface and an effect that finds the same waterline, each hold a copy. Add a test that reads both copies from your source files and fails when they differ.
+- A backquote ends the literal, in a WGSL comment too. Write names in WGSL comments without backquotes.
 - The plugin compiles every tagged literal in your own files, and leaves the packages in `node_modules` alone. Remove the tag from WGSL that null3D does not draw, such as WGSL for another library.
 
 ## What the plugin compiles
@@ -240,6 +242,8 @@ banded.set({ width: 0.3, roughness: 0.4 });
 banded.set({ widht: 0.3 }); // Type error: widht is not a uniform. Did you mean width?
 banded.set({ offset: [0, 1, 2] }); // Type error: a vec2f takes two numbers.
 ```
+
+`set()` takes the standard values too, such as `color` and `roughness`. So a material's uniform cannot have the name of a standard value, and `materials.shader` throws [E1216](../errors/E1216.md) for one. Name a color uniform `tint` or `glow`, never `color`.
 
 | Uniform type | Value in TypeScript |
 | --- | --- |

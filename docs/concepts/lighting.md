@@ -401,6 +401,68 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
 - three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 
+### Where the land ends
+
+The background takes no fog. So where an outdoor scene's land ends, the camera sees the plain background below the horizon, with no haze to blend it in. Fog cannot hide that edge. Hide it with geometry, and keep the camera where the geometry hides it:
+
+- Put a ring of hills or mountains around the land. Make its lowest crest stand above the highest point that the camera can reach. Then every line of sight below the horizon meets ground.
+- Limit the camera. With [orbit controls](../api/controls.md), set `maxDistance` and `maxPolarAngle`, and keep `controls.target` inside the land.
+- Keep the camera above the ground. Lift it along its orbit, at the same distance from the target, so a push against the ground does not pull it closer.
+- Where a valley must run out of the scene, fade its far end into haze. Stand a row of thin sheets across the valley, each unlit and blended in the air's color, such as the fog's. Each sheet hides a little more than the one before, and the last hides everything.
+
+This keeps the camera above the ground after the controls move it:
+
+```ts
+const eye = vec3.create();
+
+// In onUpdate, after controls.update(dt):
+camera.getPosition(eye);
+const tx = controls.target[0];
+const ty = controls.target[1];
+const tz = controls.target[2];
+const floor = groundHeight(eye[0], eye[2]) + 1.5;
+if (eye[1] < floor) {
+  // Rise along the orbit: keep the distance to the target and the bearing around it.
+  const distance = vec3.distance(eye, controls.target);
+  const rise = Math.min(distance, floor - ty);
+  const out = Math.sqrt(distance * distance - rise * rise);
+  const across = Math.hypot(eye[0] - tx, eye[2] - tz) || 1;
+  camera.setPosition(tx + ((eye[0] - tx) / across) * out, ty + rise, tz + ((eye[2] - tz) / across) * out);
+  camera.lookAt(tx, ty, tz);
+}
+```
+
+A haze sheet thins over its upper half, so the sky shows above the haze with no hard line. Its WGSL gives the air's color as emitted light and hides what lies behind by its share:
+
+```ts
+const haze = /* wgsl */ `
+struct Uniforms { air: vec3f, share: f32, top: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = vec3f(0.0);
+    s.roughness = 1.0;
+    s.emissive = material.air;
+    s.alpha = material.share * (1.0 - smoothstep(0.5 * material.top, material.top, input.worldPosition.y));
+    return s;
+}
+`;
+
+// Sheets across a valley that runs out along -z, from 300 m to 500 m away.
+const sheet = geometry.plane({ width: 200, height: 40 });
+const SHEETS = 6;
+for (let k = 0; k < SHEETS; k++) {
+  const t = k / (SHEETS - 1);
+  const material = materials.shader({
+    wgsl: haze, fog: false, doubleSided: true, alphaMode: 'blend', depthWrite: false,
+    uniforms: { air: '#b8c4d0', share: k === SHEETS - 1 ? 1 : 0.06 + 0.22 * t * t, top: 40 },
+  });
+  scene.createMesh({ mesh: sheet, material, position: [0, 20, -(300 + 200 * t)] });
+}
+```
+
+Give the sheets the fog's color, and change it with `material.set({ air })` when the sky's color changes, such as at each hour of a day cycle.
+
 ### The physical sky
 
 The physical sky models the earth's air: a layer 100 km deep over a planet of the earth's size. Its molecules scatter blue light more than red (Rayleigh scattering), its haze scatters every color and mostly forward (Mie scattering), and its ozone absorbs some orange. The engine follows Hillaire's method of 2020, which Unreal Engine and Bevy use. Three small tables hold what each pixel would otherwise work out along its ray:

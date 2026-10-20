@@ -240,6 +240,32 @@ const water = materials.shader({
 - The engine bends the light by the surface's normal, so ripples move what shows through.
 - The light from behind takes the place of that share of the diffuse light, times the base color, and the reflections stay.
 
+### Water seen from below
+
+A camera that dips under the water sees the back faces of its surface. Give the material `doubleSided: true`, or the surface does not draw from below. Then branch on `input.frontFacing`:
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz;
+    let slope = vec2f(cos(p.x * 3.1 + frame.time), cos(p.y * 4.7 + frame.time * 1.3)) * 0.1;
+    s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
+    s.transmission = 1.0;
+    if !input.frontFacing {
+        // From below: the normal faces down, toward the camera, and the volume is thin.
+        s.normal = -s.normal;
+        s.thickness = 0.05;
+        s.transmission = 0.9;
+    }
+    return s;
+}
+```
+
+- Turn around a normal that the function builds, as above. On a back face, `input.normal` already faces the camera, but a normal made from the ripples points up.
+- Use a thin `thickness` from below. A thick volume bends the view of the world above too far.
+- Leave out the [reflection](#reflections) from below. A reflection pass mirrors the world above the water, which a camera under the water does not see in its surface. A function that reads such a pass sets `s.reflection` back to zero on the back face.
+- A [custom effect](../guides/custom-passes.md#example-under-the-water) gives the view under the water its color, its wobble and its caustics.
+
 ## Light through thin surfaces
 
 A leaf, a petal or a blade of grass lets the light behind it through to its front, as [Light through thin surfaces](../api/materials.md#light-through-thin-surfaces) on the Materials page describes. A surface function sets how much passes with the surface's `diffuseTransmission`, and its tint with `diffuseTransmissionColor`. Grass whose tips let more of the sun through than its roots:

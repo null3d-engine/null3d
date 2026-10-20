@@ -31,6 +31,12 @@ Choose the first row that works. Surface functions keep working when the engine'
 
 A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset` or both), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
 
+The tagged literal has three traps:
+
+- No `${...}`: the plugin compiles the WGSL before any code runs. Write each value in the WGSL, or pass it as a uniform.
+- No shared functions: each literal compiles alone, and `#import` reaches only the engine's library. Two shaders that need one function, such as a water surface and an underwater effect that finds the same waterline, each hold a copy. Add a unit test that reads both copies from the source files and compares them.
+- No backquotes in WGSL comments: a backquote ends the literal.
+
 ## 2. Surface functions
 
 The engine calls your function once per pixel and lights the result.
@@ -285,6 +291,8 @@ post.removeEffect(vignette);
 - A full-screen pass reads and writes 8 bytes per pixel. An effect that reads only its own pixel joins the pass of the effect before it. With bloom and FXAA off, the last pass folds into the final pass. An effect that calls `effectPixel` or `effectColor` starts a pass of its own, so put neighbor reads first in a chain. Add effects before the first frame. On WebGL2 in Chrome on Android, which cannot compile shaders in the background, effects added later draw a pass each.
 - Effects need HDR color, as bloom does. In compatibility mode with MSAA, the first effect moves the engine to HDR with FXAA. On a WebGL2 device with no float target they stay off, with a warning in development builds.
 - Return premultiplied color: keep `input.color.a`, and multiply colors you mix in by it, as `mix(c.rgb, fogColor * c.a, t)` does.
+- A new effect starts to draw a few frames after `addEffect`, once its pipeline builds. An effect that must show at a moment, such as when the camera dips under water, is added a little before. For example, add it when the camera comes within 0.6 m of the water, and remove it once the camera is 1 m above.
+- An effect that depends on where the camera is, such as under water, decides per pixel. Find where the pixel's line of sight leaves the near plane, from the camera's position, axes, `fov` and `near` passed as uniforms, and test that point. A test of the camera's own height leaves a strip at the waterline without the effect. The full example: `guides/custom-passes`, "Example: under the water".
 
 A custom tone curve replaces the built-in curves in the final pass:
 
@@ -334,6 +342,8 @@ fn surface(input: SurfaceInput) -> Surface {
 Grass and leaves lit from behind (0.2): give the custom material `diffuseTransmission` at creation and `doubleSided: true`, and set `s.diffuseTransmission` and `s.diffuseTransmissionColor` in the surface function, such as more at the blade's tip and the base color brightened. Shadows fall on that light. Docs: `api/materials` (Light through thin surfaces), `shaders/surface-functions`.
 
 Water that shows its bed (0.2): give the custom material `transmission: 1`, `thickness` (the water's depth), `ior: 1.33` and an `attenuationColor`, and set `s.transmission = 1.0` with a rippled `s.normal` in the surface function. The ripples bend the bed that shows through. Only opaque objects show through. Docs: `api/materials` (Transmission), `shaders/surface-functions`.
+
+Water that the camera can go under (0.2): give the material `doubleSided: true`, or the surface does not draw from below. Branch on `input.frontFacing`. On the back face, turn a ripple normal that the function built so it faces down. Set `s.reflection` to zero, since a reflection pass holds the world above. Use a thin `s.thickness`, such as 0.05, with `s.transmission` near 1. A custom effect gives the view under the water its tint (section 6). Docs: `shaders/surface-functions` (Water seen from below), `guides/custom-passes` (Example: under the water).
 
 ## 8. Portable WGSL rules
 

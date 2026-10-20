@@ -146,7 +146,7 @@ Read the current render scale in `quality.renderScale`, and the shadow settings 
 
 ### The depth prepass
 
-With the depth prepass, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. Both GPU paths draw it, with the same image as without it. Blended objects and alpha-cutoff materials stay out of the prepass. Custom materials and sprites join it with their own vertex shader, so their vertex offsets keep their depth.
+With the depth prepass, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. Both GPU paths draw it, with the same image as without it. Blended objects and alpha-cutoff materials stay out of the prepass. Custom materials and sprites join it with their own vertex shader, so their vertex offsets keep their depth. Ambient occlusion and contact shadows read the prepass. So a masked surface, such as foliage, takes them only where the prepass holds a surface at its own depth. A leaf on the ground takes them, and a petal in front of open grass does not (`concepts/post-processing`).
 
 On WebGL2, every preset turns it on. On Apple GPUs, a depth prepass restores early rejection of hidden pixels in WebGL2. In the S4 benchmark on an iPad, the prepass took WebGL2 from 38 to 60 frames per second on Low. On Medium it went from 17 to 37. Android phones kept their frame rates with it. Do not turn it off on WebGL2 unless you measure the scene on an iPhone or iPad.
 

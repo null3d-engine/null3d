@@ -151,6 +151,32 @@ The quality preset gives the default cascade count and map size: the lighter pre
 
 A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene. The default, `'auto'`, does this for you. The engine finds the farthest surface that receives shadows in the camera's view each frame. It rounds that distance up on a ladder of 1.25 times per step. Shadows in a small scene then get much finer texels than a fixed 200 m. The distance holds for one step before it falls, so a raw distance that moves across a step does not flicker. A light that names a number keeps it, as a port of a scene with a fixed shadow distance does.
 
+`'auto'` grows with the farthest receiver in view. It measures to the far side of each receiver's bounding sphere. So one large ground mesh sets a long distance, even when the camera sees only a small part of it. Where the ground stretches far, such as a valley seen end to end, the shadows near the camera then turn coarse. Give far scenery that needs no shadows, such as distant hills, `receiveShadows: false`. Split a large ground into tiles, so that only the tiles in view count.
+
+### A fixed distance and a camera that zooms
+
+A fixed `distance` suits a camera that stays near its subject. An orbit camera that zooms out carries the whole subject past the distance at once. Its shadows then vanish, and they come back when the camera zooms in again. Use `'auto'` for such a camera, or set the distance in every frame from the camera's distance to the subject. Round it up on a ladder of steps, and let it fall only a whole step later, as `'auto'` does. Then a camera that hovers at a step does not flicker between two distances:
+
+```ts
+const BASE = 30; // The distance close up, in meters.
+const STEP = 1.25;
+let held = BASE;
+
+/** The shortest step up from the base that reaches `need`; it falls only a whole step below the held step. */
+function shadowStep(need: number): number {
+  const steps = Math.max(0, Math.ceil(Math.log(need / BASE) / Math.log(STEP) - 1e-9));
+  const up = BASE * STEP ** steps;
+  return up > held || need < held / STEP ** 2 ? up : held;
+}
+
+// In onUpdate: the distance along the view to the subject's far side.
+const next = shadowStep(alongView + subjectRadius);
+if (next !== held) {
+  held = next;
+  sun.setShadow({ distance: held });
+}
+```
+
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
 The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
@@ -316,7 +342,7 @@ The rays run at half the render size each way, in the same full-screen step as [
 - The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
 - Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
-- The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. [Render layers](render-layers.md) explains masks.
+- The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
 - A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
 - A custom material casts its mesh's whole shape: its alpha comes from its own WGSL, which the shadow pass does not run.

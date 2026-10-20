@@ -161,6 +161,53 @@ fn effect(input: EffectInput) -> vec4f {
 post.addEffect({ wgsl: split, uniforms: { shift: 3 } });
 ```
 
+### Example: under the water
+
+This effect tints the view from under flat water at a height `level`. The water takes the light only along the part of each line of sight under its surface. So the banks and the sky above stay clear.
+
+```ts
+const underwater = /* wgsl */ `
+struct Uniforms {
+    tint: vec3f,
+    density: f32,
+    eye: vec3f,
+    level: f32,
+    right: vec3f,
+    lens: f32,
+    up: vec3f,
+    near: f32,
+    back: vec3f,
+}
+
+/// The line of sight through uv as a direction in the world, and its share along the view in w.
+fn sight(uv: vec2f, aspect: f32) -> vec4f {
+    let v = normalize(vec3f((uv.x * 2.0 - 1.0) * uniforms.lens * aspect, (1.0 - uv.y * 2.0) * uniforms.lens, -1.0));
+    return vec4f(uniforms.right * v.x + uniforms.up * v.y + uniforms.back * v.z, -v.z);
+}
+
+fn effect(input: EffectInput) -> vec4f {
+    let line = sight(input.uv, input.size.x / input.size.y);
+    // Where this line of sight leaves the near plane. Above the water, the pixel keeps its color.
+    let start = uniforms.eye + line.xyz * (uniforms.near / line.w);
+    if start.y >= uniforms.level {
+        return input.color;
+    }
+    let reach = effectDistance(input.uv) / line.w;
+    let surface = select(1e6, (uniforms.level - uniforms.eye.y) / line.y, line.y > 1e-4);
+    let fade = 1.0 - exp(-min(min(reach, surface), 1e4) * uniforms.density);
+    return vec4f(mix(input.color.rgb, uniforms.tint * input.color.a, fade), input.color.a);
+}
+`;
+```
+
+Each frame, the sketch passes the camera's position as `eye`, and its turned axes as `right`, `up` and `back`. `lens` is `Math.tan((camera.fov * Math.PI) / 360)`, and `near` is `camera.near`. Three points make the effect look right:
+
+- Decide for each pixel, from where its line of sight leaves the near plane, not from the camera's height. A camera half under the water then splits the picture at the waterline. A test of the camera's height leaves a strip along the waterline without the effect.
+- Add the effect while the camera is still a little above the water, such as 0.6 m. Remove it only once the camera is higher, such as 1 m. A new effect starts to draw a few frames after `addEffect`, so the first pixel under the water already has it. The gap between the two heights keeps the effect from coming and going at one height.
+- Water that waves needs the same waves in the effect, so the waterline in the effect follows the drawn surface. Each WGSL literal compiles on its own, so the effect holds a copy of the surface's wave function ([Custom shaders](custom-shaders.md#wgsl-in-sketch-code)).
+
+For caustics on the bed, find each pixel's point in the world as `eye + line.xyz * reach`, and brighten the points under the surface with a moving pattern. A wobble of `input.uv`, read through `effectColor`, bends the view as a current does. The water's surface needs its own look from below too: [Water seen from below](../shaders/surface-functions.md#water-seen-from-below).
+
 ### Cost
 
 - A full-screen pass reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame. One pass at full size costs about 0.05 ms of GPU time on a MacBook Pro, 0.1 ms on an iPad Pro with the A12X, and 0.25 to 0.31 ms on a Pixel 10.
@@ -172,7 +219,7 @@ post.addEffect({ wgsl: split, uniforms: { shift: 3 } });
 - Between joined effects the color keeps 32-bit precision instead of the 16 bits of a target. So the image can differ from separate passes in the last bits.
 - The effects share two targets, whatever their number. They follow the render scale, so a new scale makes no new target.
 - A depth read costs one texture read per call. The scene's render pass then keeps its depth in memory.
-- Adding or removing an effect changes the frame's passes. A new effect's pipeline builds while the last image stays on screen, as a custom material's does.
+- Adding or removing an effect changes the frame's passes. A new effect's pipeline builds while the last image stays on screen, as a custom material's does. So a new effect shows a few frames after `addEffect`. To show it at a set moment, add it a little before.
 
 ### Devices without HDR color
 
