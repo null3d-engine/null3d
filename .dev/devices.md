@@ -39,6 +39,13 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 
 The runner watches each browser's results while a run goes on. Three guards keep a tired device from wasting a run, or from giving figures that look true but are not.
 
+### A device that does not answer
+
+- When an attached phone or tablet does not answer, run the same plan on the closest cloud device at once. Do not wait for the device or its control helper to recover. The device may not start Safari, its helper may time out, or the runner page may never come up.
+- The owner ruled this on 21 October 2026, during the M2 gate, after the control helper for the owner's iPad stopped answering mid-run.
+- Use `bun run devices:cloud --only <runner> --plan <plan>` with the cloud device of the same model. A cloud device of the same model draws with the same engine, so its pictures and its runs stand in. Its heat and refresh rate are still not controlled, as [BrowserStack Live](#browserstack-live) says.
+- Record that a run used the cloud stand-in, and why. A later gate can then tell a device's own result from a cloud substitute.
+
 ### A page that gets no animation frames
 
 - A browser gives a page no animation frames while it reports the page hidden. Every test page then waits for frames until its time limit. On 4 October 2026, Samsung Internet on BrowserStack's Galaxy S25 opened the runner page hidden in 2 of 3 Automate sessions. The runner page then waited forever on its first step, the measure of the refresh rate. The runner ended the turn only when the page went quiet.
