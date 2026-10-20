@@ -1235,7 +1235,25 @@ export function effectPlan(
 			),
 		),
 	);
-	return [...pages, ...twin];
+	// The engine's own occlusion shaders in a small stand-alone page, for a browser report.
+	const repro: PlanItem<Check>[] =
+		effect === 'ao'
+			? ['ao', 'ao-quarter', 'copy'].map((variant) => {
+					const switches =
+						variant === 'copy'
+							? '?mode=copy&aoscale=0.5'
+							: variant === 'ao-quarter'
+								? '?mode=ao&aoscale=0.25'
+								: '?mode=ao&aoscale=0.5';
+					return {
+						id: `ao-fixed-cost-webgl2-${variant}`,
+						path: `/bench/probes/ao-fixed-cost/index.html${switches}`,
+						timeoutSeconds: 180,
+						check: { kind: 'effect' as const, effect, tier: 'webgl2' as const, scale: 1 },
+					};
+				})
+			: [];
+	return [...pages, ...twin, ...repro];
 }
 
 /**
@@ -1865,7 +1883,100 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	governor: governorPlan,
 	'texture-cache': textureCachePlan,
 	'object-growth': objectGrowthPlan,
+	'compare-bench': compareBenchPlan,
+	'compare-effects': compareEffectsPlan,
 };
+
+/**
+ * A device run of the comparisons against three.js: one engine per page, measured for a while at a
+ * fixed count. Every page runs twice, so the session's first, cold page does not decide a pair.
+ */
+function compareBenchPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const scene of ['battle', 'factory']) {
+		for (const gpu of ['webgpu', 'webgl2'] as const) {
+			for (const engine of ['null3d', 'threejs'] as const) {
+				items.push({
+					id: `compare-${scene}-${engine}-${gpu}`,
+					path: `/examples/index.html?compare=${scene}&engine=${engine}&gpu=${gpu}&walkthrough=off&count=100&measure=8&stats=off`,
+					timeoutSeconds: 120,
+					check: { kind: 'effect', effect: 'ao', tier: gpu, scale: 1 },
+				});
+			}
+		}
+	}
+	// The pair at the ramp's new first step.
+	for (const engine of ['null3d', 'threejs'] as const) {
+		items.push({
+			id: `compare-battle-${engine}-webgpu-200`,
+			path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=200&measure=8&stats=off`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	// The pair at the phone ramp's heavier end, where the crossing between the engines shows.
+	for (const engine of ['null3d', 'threejs'] as const) {
+		items.push({
+			id: `compare-battle-${engine}-webgpu-1000`,
+			path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=1000&measure=8&stats=off`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	// One cascade count at a time on the null3D page, to measure what each shadow cascade costs.
+	for (const cascades of [1, 2]) {
+		items.push({
+			id: `compare-battle-null3d-webgpu-500-cascades${cascades}`,
+			path: `/examples/index.html?compare=battle&engine=null3d&gpu=webgpu&walkthrough=off&count=500&measure=8&stats=off&cascades=${cascades}`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	// The same pair at a count that pushes the phone below the display cap, where a gap shows.
+	for (const engine of ['null3d', 'threejs'] as const) {
+		items.push({
+			id: `compare-battle-${engine}-webgpu-500`,
+			path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=500&measure=8&stats=off`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	const first = items.map((item) => ({ ...item }));
+	const warm = items.map((item) => ({ ...item, id: `${item.id}-warm` }));
+	return [...first, ...warm];
+}
+
+/**
+ * A device run that turns the Battle scene's effects off one at a time, to name the pass that
+ * costs the most on this device.
+ */
+function compareEffectsPlan(): PlanItem<Check>[] {
+	const all = ['shadows', 'fog', 'bloom', 'ao', 'grade', 'lens', 'decals'];
+	const variants: [string, string[]][] = [
+		['all', all],
+		['no-shadows', all.filter((effect) => effect !== 'shadows')],
+		['no-ao', all.filter((effect) => effect !== 'ao')],
+		['no-fog', all.filter((effect) => effect !== 'fog')],
+		['no-bloom', all.filter((effect) => effect !== 'bloom')],
+		['plain', ['shadows', 'fog', 'bloom', 'ao']],
+	];
+	const pages = variants.map(([suffix, effects]) => ({ suffix, engine: 'null3d', effects }));
+	// three.js with its shadows on and off, to compare what its own shadow path costs it.
+	pages.push(
+		{ suffix: 'threejs-all', engine: 'threejs', effects: all },
+		{
+			suffix: 'threejs-no-shadows',
+			engine: 'threejs',
+			effects: all.filter((effect) => effect !== 'shadows'),
+		},
+	);
+	return pages.map(({ suffix, engine, effects }) => ({
+		id: `compare-effects-${suffix}`,
+		path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=100&measure=8&stats=off&effects=${effects.join(',')}`,
+		timeoutSeconds: 120,
+		check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+	}));
+}
 
 /**
  * What is wrong with a room light page's result: a failure, an environment that never resolved, or
@@ -1971,8 +2082,7 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],
-	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
-	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
+	[/^image-compare-battle-(null3d|threejs)-webgl2$/, 25],
 	[/^image-demo-creek-webgl2-/, 22],
 	[/restarts/, 20],
 ];

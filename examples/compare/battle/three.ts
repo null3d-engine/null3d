@@ -77,7 +77,6 @@ import {
 	writeParticles,
 } from './scene';
 import type { TreeParts } from './shapes';
-import { DrawCrowd } from './three-crowd';
 import { type ClipPoser, poseUnitMixer, unitActions } from './three-pose';
 import { battleShaders, type DetailMaps, GRASS_PHASE, grassPhase } from './three-shaders';
 
@@ -102,35 +101,6 @@ function uploadCopies(batch: ThreeModule.InstancedMesh, count: number): void {
 	matrices.clearUpdateRanges();
 	matrices.addUpdateRange(0, Math.max(1, count) * 16);
 	matrices.needsUpdate = true;
-}
-
-/** Writes a world matrix of a turn about +Y and a place, column-major, at `offset`. */
-function writeYawMatrix(
-	out: Float32Array,
-	offset: number,
-	yaw: number,
-	x: number,
-	y: number,
-	z: number,
-) {
-	const c = Math.cos(yaw);
-	const s = Math.sin(yaw);
-	out[offset] = c;
-	out[offset + 1] = 0;
-	out[offset + 2] = -s;
-	out[offset + 3] = 0;
-	out[offset + 4] = 0;
-	out[offset + 5] = 1;
-	out[offset + 6] = 0;
-	out[offset + 7] = 0;
-	out[offset + 8] = s;
-	out[offset + 9] = 0;
-	out[offset + 10] = c;
-	out[offset + 11] = 0;
-	out[offset + 12] = x;
-	out[offset + 13] = y;
-	out[offset + 14] = z;
-	out[offset + 15] = 1;
 }
 
 /** The units: shows a count of them and poses them each frame. */
@@ -443,8 +413,8 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 	};
 	const rifleMaterial = shaders.unit(U.rifle, '#ffffff', detail(U.rifle.detail));
 
-	/** The scene-graph mode: a copy of the model per unit, with its own mixer. */
-	const sceneGraphUnits = (): Units => {
+	/** A copy of the model per unit, with its own mixer. */
+	const buildUnits = (): Units => {
 		interface Unit {
 			root: ThreeModule.Object3D;
 			mixer: ThreeModule.AnimationMixer;
@@ -502,39 +472,9 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 		};
 	};
 
-	/** The instanced mode: three.js's crowd route, one draw per model. */
-	const instancedUnits = async (): Promise<Units> => {
-		const crowds = await Promise.all(
-			(['soldier', 'mech'] as const).map((name) =>
-				DrawCrowd.create(three, models[name], {
-					name,
-					capacity: capacity,
-					tints: ARMIES.map((army) => linearColor(army.tint)),
-					surface: (tint, feet) => {
-						if (!shaders.unitNodes) throw new Error('The crowd needs WebGPURenderer.');
-						return shaders.unitNodes(U[name], detail(U[name].detail), tint, feet);
-					},
-					rifle: rifleMaterial,
-					shadows: effects.shadows,
-					textures: options.forceWebGL === true,
-				}),
-			),
-		);
-		for (const crowd of crowds) scene.add(crowd.object);
-		let shown = 0;
-		return {
-			show(count) {
-				shown = count;
-			},
-			pose() {
-				for (const crowd of crowds) crowd.pose(state, shown);
-			},
-		};
-	};
+	const units = buildUnits();
 
-	const units = options.mode === 'instanced' ? await instancedUnits() : sceneGraphUnits();
-
-	// Tanks: a tree per tank, or a batch per part in closed form.
+	// Tanks: a tree per tank.
 	const paint = ARMIES.map((army) => material({ color: army.tank, surface: 'camo', repeat: 0.5 }));
 	const tankGeometry = {
 		hull: toGeometry(three, data.single.hull),
@@ -543,91 +483,38 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 	};
 	const tankCapacity = state.tankCapacity * 2;
 	const tankShadows = <T extends ThreeModule.Object3D>(object: T) => withShadows(object, M.trap);
-	let poseTanks: () => void;
-	if (options.mode === 'instanced') {
-		const batches = ARMIES.map((_, army) => {
-			const make = (geometry: ThreeModule.BufferGeometry) => {
-				const batch = new three.InstancedMesh(geometry, paint[army], Math.ceil(tankCapacity / 2));
-				batch.instanceMatrix.setUsage(three.DynamicDrawUsage);
-				batch.frustumCulled = false;
-				scene.add(tankShadows(batch));
-				return batch;
-			};
-			return {
-				hull: make(tankGeometry.hull),
-				turret: make(tankGeometry.turret),
-				barrel: make(tankGeometry.barrel),
-			};
-		});
-		const [px, py, pz] = TANK_BARREL_PIVOT;
-		poseTanks = () => {
-			const tanks = activeTanks(state) * 2;
-			for (let army = 0; army < 2; army++) {
-				const { hull, turret, barrel } = batches[army] as (typeof batches)[number];
-				const hm = hull.instanceMatrix.array as Float32Array;
-				const tm = turret.instanceMatrix.array as Float32Array;
-				const bm = barrel.instanceMatrix.array as Float32Array;
-				let row = 0;
-				for (let t = army; t < tanks; t += 2, row++) {
-					const x = state.tankX[t] as number;
-					const y = state.tankY[t] as number;
-					const z = state.tankZ[t] as number;
-					const heading = state.tankHeading[t] as number;
-					const aim = heading + (state.tankTurret[t] as number);
-					const along = pz + barrelRecoil(state, t);
-					const c = Math.cos(aim);
-					const s = Math.sin(aim);
-					writeYawMatrix(hm, row * 16, heading, x, y, z);
-					writeYawMatrix(tm, row * 16, aim, x, y + TANK_TURRET_HEIGHT, z);
-					writeYawMatrix(
-						bm,
-						row * 16,
-						aim,
-						x + c * px + s * along,
-						y + TANK_TURRET_HEIGHT + py,
-						z - s * px + c * along,
-					);
-				}
-				for (const batch of [hull, turret, barrel]) {
-					batch.count = row;
-					uploadCopies(batch, row);
-				}
-			}
-		};
-	} else {
-		const hulls: ThreeModule.Mesh[] = [];
-		const turrets: ThreeModule.Mesh[] = [];
-		const barrels: ThreeModule.Mesh[] = [];
-		for (let t = 0; t < tankCapacity; t++) {
-			const hull = tankShadows(new three.Mesh(tankGeometry.hull, paint[t & 1]));
-			const turret = tankShadows(new three.Mesh(tankGeometry.turret, paint[t & 1]));
-			const barrel = tankShadows(new three.Mesh(tankGeometry.barrel, paint[t & 1]));
-			turret.position.y = TANK_TURRET_HEIGHT;
-			barrel.position.set(...TANK_BARREL_PIVOT);
-			hull.add(turret);
-			turret.add(barrel);
-			scene.add(hull);
-			hulls.push(hull);
-			turrets.push(turret);
-			barrels.push(barrel);
-		}
-		poseTanks = () => {
-			const tanks = activeTanks(state) * 2;
-			for (let t = 0; t < tankCapacity; t++) {
-				const hull = hulls[t] as ThreeModule.Mesh;
-				hull.visible = t < tanks;
-				if (!hull.visible) continue;
-				hull.position.set(
-					state.tankX[t] as number,
-					state.tankY[t] as number,
-					state.tankZ[t] as number,
-				);
-				hull.rotation.y = state.tankHeading[t] as number;
-				(turrets[t] as ThreeModule.Mesh).rotation.y = state.tankTurret[t] as number;
-				(barrels[t] as ThreeModule.Mesh).position.z = TANK_BARREL_PIVOT[2] + barrelRecoil(state, t);
-			}
-		};
+	const hulls: ThreeModule.Mesh[] = [];
+	const turrets: ThreeModule.Mesh[] = [];
+	const barrels: ThreeModule.Mesh[] = [];
+	for (let t = 0; t < tankCapacity; t++) {
+		const hull = tankShadows(new three.Mesh(tankGeometry.hull, paint[t & 1]));
+		const turret = tankShadows(new three.Mesh(tankGeometry.turret, paint[t & 1]));
+		const barrel = tankShadows(new three.Mesh(tankGeometry.barrel, paint[t & 1]));
+		turret.position.y = TANK_TURRET_HEIGHT;
+		barrel.position.set(...TANK_BARREL_PIVOT);
+		hull.add(turret);
+		turret.add(barrel);
+		scene.add(hull);
+		hulls.push(hull);
+		turrets.push(turret);
+		barrels.push(barrel);
 	}
+	const poseTanks = () => {
+		const tanks = activeTanks(state) * 2;
+		for (let t = 0; t < tankCapacity; t++) {
+			const hull = hulls[t] as ThreeModule.Mesh;
+			hull.visible = t < tanks;
+			if (!hull.visible) continue;
+			hull.position.set(
+				state.tankX[t] as number,
+				state.tankY[t] as number,
+				state.tankZ[t] as number,
+			);
+			hull.rotation.y = state.tankHeading[t] as number;
+			(turrets[t] as ThreeModule.Mesh).rotation.y = state.tankTurret[t] as number;
+			(barrels[t] as ThreeModule.Mesh).position.z = TANK_BARREL_PIVOT[2] + barrelRecoil(state, t);
+		}
+	};
 
 	// Tracers and shells: the flights in use, packed to the front of their batches each frame.
 	const flightBatch = (mesh: MeshData, spec: BattleMaterial) => {

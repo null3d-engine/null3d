@@ -1,17 +1,11 @@
 // Battle, the null3D half. Both armies' soldiers and mechs are copies of two models from files:
 // each copy is a group with its skinned body and its rifle, and an animator that the engine runs on
 // its job workers. The sketch writes each unit's place and turn, and starts a clip when the
-// simulation changes it. The page's mode picks how the tanks are built:
-//
-// - The scene graph, the default: each tank is a tree of three objects, the hull, the turret on it
-//   and the barrel on the turret. The sketch writes the hull's place and each joint's turn, and the
-//   engine works out the world transforms on its job workers.
-// - Instanced: each tank part is one instance batch, posed by the same closed-form loop as
-//   three.js's InstancedMesh half.
-//
-// null3D has one way to draw animated characters, an object per character, which it draws in
-// batches by itself, so both modes build the soldiers and mechs the same way. Tracers, shells and
-// particles are batches in both modes, as games draw effects.
+// simulation changes it. Each tank is a tree of three objects, the hull, the turret on it and the
+// barrel on the turret: the sketch writes the hull's place and each joint's turn, and the engine
+// works out the world transforms on its job workers. null3D draws the soldiers and mechs as objects
+// too, and batches them by itself. Tracers, shells and particles are instance batches, as games
+// draw effects.
 //
 // The look is null3D's own technique for each part of the shared description: the generated sky
 // and its environment light, a sun with cascaded shadows, height fog that glows toward the sun,
@@ -36,7 +30,6 @@ import {
 	gradeTable,
 	type Hex,
 	type MeshData,
-	modeFromText,
 	SIM_STEP,
 	type SurfaceKind,
 	sampleCameraLoop,
@@ -331,7 +324,6 @@ export default defineSketch(
 		const params = new URL(import.meta.url).searchParams;
 		const capacity = battleUnits(Number(params.get('capacity') ?? BATTLE_HOLD.count));
 		const effects = effectsFromText(params.get('effects'));
-		const mode = modeFromText(params.get('mode'));
 		const state = createBattle(capacity);
 		setActiveUnits(state, Number(params.get('count') ?? capacity));
 
@@ -799,7 +791,7 @@ export default defineSketch(
 		};
 		fit();
 
-		// Tanks: a tree of three objects each, or a batch per part.
+		// Tanks: a tree of three objects each.
 		const armyPaint = ARMIES.map((army) =>
 			material({ color: army.tank, surface: 'camo', repeat: 0.5 }),
 		);
@@ -811,129 +803,71 @@ export default defineSketch(
 		const tankCapacity = state.tankCapacity * 2;
 		const position = new Float64Array(3);
 		const turnQ = quat.create();
-		/** Places the tanks in use: the tree's joints, or the batches' rows in closed form. */
-		let poseTanks: () => void;
-		if (mode === 'instanced') {
-			const batches = ARMIES.map((_, army) => {
-				const make = (mesh: MeshGeometry) =>
-					scene.createInstances(mesh, Math.ceil(tankCapacity / 2), {
-						material: armyPaint[army] as Material,
-						dynamic: true,
-						castShadows: effects.shadows,
-						receiveShadows: effects.shadows,
-					});
-				return {
-					hull: make(tankMeshes.hull),
-					turret: make(tankMeshes.turret),
-					barrel: make(tankMeshes.barrel),
-				};
+		/** Places the tanks in use: the hull's place, and the turret's and barrel's turns. */
+		const hulls: Mesh[] = [];
+		const turrets: Mesh[] = [];
+		const barrels: Mesh[] = [];
+		for (let t = 0; t < tankCapacity; t++) {
+			const paint = armyPaint[t & 1] as Material;
+			const hull = scene.createMesh({
+				mesh: tankMeshes.hull,
+				material: paint,
+				dynamic: true,
+				...shadows(M.trap),
 			});
-			const [px, py, pz] = TANK_BARREL_PIVOT;
-			poseTanks = () => {
-				const tanks = activeTanks(state) * 2;
-				for (let army = 0; army < 2; army++) {
-					const { hull, turret, barrel } = batches[army] as (typeof batches)[number];
-					const hp = hull.positions;
-					const hr = hull.rotations;
-					const tp = turret.positions;
-					const tr = turret.rotations;
-					const bp = barrel.positions;
-					const br = barrel.rotations;
-					let row = 0;
-					for (let t = army; t < tanks; t += 2, row++) {
-						const x = state.tankX[t] as number;
-						const y = state.tankY[t] as number;
-						const z = state.tankZ[t] as number;
-						const heading = state.tankHeading[t] as number;
-						const aim = heading + (state.tankTurret[t] as number);
-						const recoil = barrelRecoil(state, t);
-						const c = Math.cos(aim);
-						const s = Math.sin(aim);
-						hp[row * 3] = x;
-						hp[row * 3 + 1] = y;
-						hp[row * 3 + 2] = z;
-						writeYaw(hr, row, heading);
-						tp[row * 3] = x;
-						tp[row * 3 + 1] = y + TANK_TURRET_HEIGHT;
-						tp[row * 3 + 2] = z;
-						writeYaw(tr, row, aim);
-						const along = pz + recoil;
-						bp[row * 3] = x + c * px + s * along;
-						bp[row * 3 + 1] = y + TANK_TURRET_HEIGHT + py;
-						bp[row * 3 + 2] = z - s * px + c * along;
-						writeYaw(br, row, aim);
-					}
-					hull.setActiveCount(row);
-					turret.setActiveCount(row);
-					barrel.setActiveCount(row);
-				}
-			};
-		} else {
-			const hulls: Mesh[] = [];
-			const turrets: Mesh[] = [];
-			const barrels: Mesh[] = [];
-			for (let t = 0; t < tankCapacity; t++) {
-				const paint = armyPaint[t & 1] as Material;
-				const hull = scene.createMesh({
-					mesh: tankMeshes.hull,
-					material: paint,
-					dynamic: true,
-					...shadows(M.trap),
-				});
-				const turret = scene.createMesh({
-					mesh: tankMeshes.turret,
-					material: paint,
-					parent: hull,
-					position: [0, TANK_TURRET_HEIGHT, 0],
-					dynamic: true,
-					...shadows(M.trap),
-				});
-				const barrel = scene.createMesh({
-					mesh: tankMeshes.barrel,
-					material: paint,
-					parent: turret,
-					position: [...TANK_BARREL_PIVOT],
-					dynamic: true,
-					...shadows(M.trap),
-				});
-				hulls.push(hull);
-				turrets.push(turret);
-				barrels.push(barrel);
-			}
-			poseTanks = () => {
-				const tanks = activeTanks(state) * 2;
-				for (let t = 0; t < tankCapacity; t++) {
-					const hull = hulls[t] as Mesh;
-					const inUse = t < tanks;
-					hull.setVisible(inUse);
-					if (!inUse) continue;
-					hull.setPosition(
-						state.tankX[t] as number,
-						state.tankY[t] as number,
-						state.tankZ[t] as number,
-					);
-					quat.fromEuler(turnQ, 0, state.tankHeading[t] as number, 0);
-					hull.setRotation(
-						turnQ[0] as number,
-						turnQ[1] as number,
-						turnQ[2] as number,
-						turnQ[3] as number,
-					);
-					quat.fromEuler(turnQ, 0, state.tankTurret[t] as number, 0);
-					(turrets[t] as Mesh).setRotation(
-						turnQ[0] as number,
-						turnQ[1] as number,
-						turnQ[2] as number,
-						turnQ[3] as number,
-					);
-					(barrels[t] as Mesh).setPosition(
-						TANK_BARREL_PIVOT[0],
-						TANK_BARREL_PIVOT[1],
-						TANK_BARREL_PIVOT[2] + barrelRecoil(state, t),
-					);
-				}
-			};
+			const turret = scene.createMesh({
+				mesh: tankMeshes.turret,
+				material: paint,
+				parent: hull,
+				position: [0, TANK_TURRET_HEIGHT, 0],
+				dynamic: true,
+				...shadows(M.trap),
+			});
+			const barrel = scene.createMesh({
+				mesh: tankMeshes.barrel,
+				material: paint,
+				parent: turret,
+				position: [...TANK_BARREL_PIVOT],
+				dynamic: true,
+				...shadows(M.trap),
+			});
+			hulls.push(hull);
+			turrets.push(turret);
+			barrels.push(barrel);
 		}
+		const poseTanks = () => {
+			const tanks = activeTanks(state) * 2;
+			for (let t = 0; t < tankCapacity; t++) {
+				const hull = hulls[t] as Mesh;
+				const inUse = t < tanks;
+				hull.setVisible(inUse);
+				if (!inUse) continue;
+				hull.setPosition(
+					state.tankX[t] as number,
+					state.tankY[t] as number,
+					state.tankZ[t] as number,
+				);
+				quat.fromEuler(turnQ, 0, state.tankHeading[t] as number, 0);
+				hull.setRotation(
+					turnQ[0] as number,
+					turnQ[1] as number,
+					turnQ[2] as number,
+					turnQ[3] as number,
+				);
+				quat.fromEuler(turnQ, 0, state.tankTurret[t] as number, 0);
+				(turrets[t] as Mesh).setRotation(
+					turnQ[0] as number,
+					turnQ[1] as number,
+					turnQ[2] as number,
+					turnQ[3] as number,
+				);
+				(barrels[t] as Mesh).setPosition(
+					TANK_BARREL_PIVOT[0],
+					TANK_BARREL_PIVOT[1],
+					TANK_BARREL_PIVOT[2] + barrelRecoil(state, t),
+				);
+			}
+		};
 
 		// Tracers and shells: the flights in use, packed to the front of their batches each frame.
 		const flightBatch = (mesh: MeshData, spec: BattleMaterial) =>

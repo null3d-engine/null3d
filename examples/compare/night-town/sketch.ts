@@ -1,15 +1,9 @@
-// Night town, the null3D half. It builds the town one of two ways, which the page's mode picks:
-//
-// - The scene graph, the default. Each block's parts are objects of their own: the slab, each
-//   building's walls and trim, each lamp's post and lens, each shop's sign and awning, and each
-//   car as a tree. A moving car's body is a dynamic object, and its cabin, lamps, two headlights
-//   and tail light hang under it, so the sketch writes one position and one rotation per car and
-//   the engine moves the rest. The scene holds only the blocks that show: it makes blocks as the
-//   count rises, and destroys them as it falls.
-// - Instanced. Each kind of part is one instance batch for the whole town, with the rows of each
-//   block in order, so each batch's active count shows the blocks in use. The cars' rows and their
-//   lights take their places from the same closed form in every frame. The signs and awnings stay
-//   objects, as there are two of each a block.
+// Night town, the null3D half. Each block's parts are objects of their own: the slab, each
+// building's walls and trim, each lamp's post and lens, each shop's sign and awning, and each car
+// as a tree. A moving car's body is a dynamic object, and its cabin, lamps, two headlights and tail
+// light hang under it, so the sketch writes one position and one rotation per car and the engine
+// moves the rest. Only the blocks that show are in the scene: it makes blocks as the count rises,
+// and destroys them as it falls.
 //
 // Every effect is null3D's own technique for the look that the scene describes: the moonlit sky
 // and its environment, the moon's cascaded shadows, clustered point and spot lights, height fog
@@ -31,7 +25,6 @@ import {
 	effectsFromText,
 	gradeTable,
 	type MeshData,
-	modeFromText,
 	SIM_STEP,
 	sampleCameraLoop,
 	type TextureData,
@@ -132,7 +125,6 @@ export default defineSketch(
 		const params = new URL(import.meta.url).searchParams;
 		const capacity = nightBlocks(Number(params.get('capacity') ?? NIGHT_HOLD.count));
 		const effects = effectsFromText(params.get('effects'));
-		const mode = modeFromText(params.get('mode'));
 		const town = createNightTown(capacity);
 		const startBlocks = Math.min(
 			capacity,
@@ -347,7 +339,7 @@ export default defineSketch(
 			return [x / length, y / length, z / length] as [number, number, number];
 		})();
 
-		// The lights of every block, which both modes make and destroy with the blocks.
+		// The lights of every block, which the sketch makes and destroys with the blocks.
 		interface BlockLights {
 			lamps: PointLight[];
 			signs: PointLight[];
@@ -388,7 +380,7 @@ export default defineSketch(
 			return { lamps, signs, signLots };
 		};
 
-		/** The shops' signs and awnings, which stay objects in both modes. */
+		/** The shops' signs and awnings, two of each a block. */
 		const makeShops = (b: number): Mesh[] => {
 			const made: Mesh[] = [];
 			for (let s = 0; s < SIGNS_PER_BLOCK; s++) {
@@ -467,8 +459,8 @@ export default defineSketch(
 			}));
 		};
 
-		/** The scene-graph mode: objects per part, made and destroyed with the blocks. */
-		const sceneGraph = (): Blocks => {
+		/** A tree of objects per part, made and destroyed with the blocks. */
+		const buildBlocks = (): Blocks => {
 			interface Block {
 				objects: { destroy(): void }[];
 				cars: Mesh[];
@@ -608,174 +600,10 @@ export default defineSketch(
 				},
 			};
 		};
+		const blocks = buildBlocks();
 
-		/** The instanced mode: a batch per part kind, rows in block order. */
-		const instanced = (): Blocks => {
-			const batches: { batch: InstanceBatch; rowsAt: (blocks: number) => number }[] = [];
-			const perBlock = (
-				name: NightMesh,
-				material: Material,
-				rows: number,
-				dynamic: boolean,
-				options: object = {},
-			) => {
-				const batch = scene.createInstances(mesh(name), capacity * rows, {
-					material,
-					dynamic,
-					...options,
-				});
-				batches.push({ batch, rowsAt: (blocks) => blocks * rows });
-				return batch;
-			};
-			// The buildings: one batch per design and material, its rows in block order.
-			for (let d = 0; d < town.designs.length; d++) {
-				const rowsBefore = new Uint32Array(capacity + 1);
-				const places: number[] = [];
-				for (let b = 0; b < capacity; b++) {
-					rowsBefore[b] = places.length / 3;
-					for (let l = 0; l < LOTS_PER_BLOCK; l++)
-						if (town.lotDesign[b * LOTS_PER_BLOCK + l] === d) {
-							lotPlace(town, b, l, position);
-							places.push(position[0] as number, position[1] as number, position[2] as number);
-						}
-				}
-				rowsBefore[capacity] = places.length / 3;
-				const count = places.length / 3;
-				if (count === 0) continue;
-				const kind = FACADE_KINDS.indexOf(town.designs[d]?.facade ?? 'brick');
-				for (const [name, material] of [
-					[`facade${d}`, facades[kind]],
-					[`trim${d}`, trim],
-				] as const) {
-					const batch = scene.createInstances(mesh(name as NightMesh), count, {
-						material: material as Material,
-						...casts,
-					});
-					for (let i = 0; i < count; i++) {
-						batch.positions[i * 3] = places[i * 3] as number;
-						batch.positions[i * 3 + 1] = SLAB_HEIGHT;
-						batch.positions[i * 3 + 2] = places[i * 3 + 1] as number;
-						writeYaw(batch.rotations, i, places[i * 3 + 2] as number);
-					}
-					batch.markDirty();
-					batches.push({ batch, rowsAt: (blocks) => rowsBefore[blocks] as number });
-				}
-			}
-			const slabs = perBlock('slab', slab, 1, false, casts);
-			const posts = perBlock('lampPost', darkMetal, LAMPS_PER_BLOCK, false, casts);
-			const lenses = perBlock('lampLens', lens, LAMPS_PER_BLOCK, false);
-			for (let b = 0; b < capacity; b++) {
-				slabs.positions[b * 3] = town.center[b * 2] as number;
-				slabs.positions[b * 3 + 2] = town.center[b * 2 + 1] as number;
-				for (let k = 0; k < LAMPS_PER_BLOCK; k++) {
-					lampPlace(town, b, k, position);
-					const i = b * LAMPS_PER_BLOCK + k;
-					for (const batch of [posts, lenses]) {
-						batch.positions[i * 3] = position[0] as number;
-						batch.positions[i * 3 + 1] = SLAB_HEIGHT;
-						batch.positions[i * 3 + 2] = position[1] as number;
-						writeYaw(batch.rotations, i, position[2] as number);
-					}
-				}
-			}
-			for (const batch of [slabs, posts, lenses]) batch.markDirty();
-			// The cars: moving cars first in each block's rows of the bodies and cabins, then parked.
-			const carRows = CARS_PER_BLOCK + PARKED_PER_BLOCK;
-			const bodies = perBlock('carBody', whitePaint, carRows, true, { ...casts, colors: true });
-			const cabins = perBlock('carCabin', cabin, carRows, true, casts);
-			const heads = perBlock('headlamps', headlamp, CARS_PER_BLOCK, true);
-			const tails = perBlock('tailLamps', tailLamp, CARS_PER_BLOCK, true);
-			const paintRgba = CAR_PAINTS.map((hex) => {
-				const n = Number.parseInt(hex.slice(1), 16);
-				const lin = (c: number) =>
-					c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4;
-				return [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255), 1];
-			});
-			for (let b = 0; b < capacity; b++)
-				for (let k = 0; k < carRows; k++) {
-					const paint =
-						k < CARS_PER_BLOCK
-							? town.carPaint[b * CARS_PER_BLOCK + k]
-							: town.parkedPaint[b * PARKED_PER_BLOCK + k - CARS_PER_BLOCK];
-					bodies.colors?.set(paintRgba[paint as number] as number[], (b * carRows + k) * 4);
-				}
-			// Each block's car lights: world-placed lights that the closed form moves.
-			const lights: { heads: SpotLight[]; tail: PointLight }[][] = [];
-			const blockLights: BlockLights[] = [];
-			let shown = 0;
-			const shops: Mesh[][] = [];
-			const show = (blocks: number) => {
-				while (shown < blocks) {
-					blockLights[shown] = makeLights(shown);
-					keepSignLights(shown, blockLights[shown] as BlockLights);
-					lights[shown] = Array.from({ length: CARS_PER_BLOCK }, () => carLights(null));
-					shops[shown] = makeShops(shown);
-					shown++;
-				}
-				while (shown > blocks) {
-					shown--;
-					const own = blockLights[shown] as BlockLights;
-					for (const light of [...own.lamps, ...own.signs]) light.destroy();
-					for (const car of lights[shown] ?? [])
-						for (const light of [...car.heads, car.tail]) light.destroy();
-					for (const object of shops[shown] ?? []) object.destroy();
-				}
-				for (const { batch, rowsAt } of batches) batch.setActiveCount(rowsAt(blocks));
-			};
-			show(startBlocks);
-			const lamp = new Float64Array(3);
-			return {
-				show,
-				pose(seconds) {
-					const bp = bodies.positions;
-					const br = bodies.rotations;
-					const cp = cabins.positions;
-					const cr = cabins.rotations;
-					const hp = heads.positions;
-					const hr = heads.rotations;
-					const tp = tails.positions;
-					const tr = tails.rotations;
-					for (let b = 0; b < shown; b++) {
-						for (let k = 0; k < carRows; k++) {
-							if (k < CARS_PER_BLOCK) carPose(town, b, k, seconds, carAt);
-							else parkedPose(town, b, k - CARS_PER_BLOCK, carAt);
-							const i = b * carRows + k;
-							const x = carAt[0] as number;
-							const z = carAt[1] as number;
-							const yaw = carAt[2] as number;
-							writeRow(bp, br, i, x, z, yaw);
-							writeRow(cp, cr, i, x, z, yaw);
-							if (k >= CARS_PER_BLOCK) continue;
-							const j = b * CARS_PER_BLOCK + k;
-							writeRow(hp, hr, j, x, z, yaw);
-							writeRow(tp, tr, j, x, z, yaw);
-							const car = lights[b]?.[k];
-							if (!car) continue;
-							const c = Math.cos(yaw);
-							const s = Math.sin(yaw);
-							for (let h = 0; h < HEADLAMPS.length; h++) {
-								const [x, y, z] = HEADLAMPS[h] as readonly [number, number, number];
-								carToWorld(carAt, x, y, z, lamp);
-								const light = car.heads[h] as SpotLight;
-								light.setPosition(lamp[0] as number, lamp[1] as number, lamp[2] as number);
-								light.setDirection(
-									c * headDirection[0] + s * headDirection[2],
-									headDirection[1],
-									-s * headDirection[0] + c * headDirection[2],
-								);
-							}
-							carToWorld(carAt, TAIL_LIGHT[0], TAIL_LIGHT[1], TAIL_LIGHT[2], lamp);
-							car.tail.setPosition(lamp[0] as number, lamp[1] as number, lamp[2] as number);
-						}
-					}
-				},
-			};
-		};
-
-		const blocks = mode === 'instanced' ? instanced() : sceneGraph();
-
-		// The flying cars cross the town's sky in both modes, as scenery of its own: their batches
-		// keep the measured scene graph to the town's blocks.
+		// The flying cars cross the town's sky as scenery of its own: their batches keep the measured
+		// scene graph to the town's blocks.
 		const flyers = (
 			[
 				['flyerBody', flyerPaint],

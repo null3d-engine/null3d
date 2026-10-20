@@ -5,7 +5,7 @@
 // comparison with `startComparison` from examples/lib/compare.ts.
 
 import type { DemoGroup } from '../demos';
-import type { CompareMode, EffectName } from '../lib/compare-scene';
+import type { EffectName } from '../lib/compare-scene';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
 import { BATTLE_HOLD, BATTLE_RAMPS, battleObjects } from './battle/scene';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
@@ -49,17 +49,16 @@ export interface Comparison {
 	 * longer than the default limit to build and draw on SwiftShader.
 	 */
 	holdTimeoutSeconds?: number;
-	/** Objects in the null3D scene at a count in a mode, which the engine makes room for at its start. */
-	objectsAt(count: number, mode: CompareMode): number;
+	/** Objects in the null3D scene at a count, which the engine makes room for at its start. */
+	objectsAt(count: number): number;
 	/** Spot and point light shadow tiles that the scene needs in null3D. */
 	shadowTiles: number;
-	/** What each mode measures, for the "about this comparison" panel. */
-	modes: Readonly<Record<CompareMode, string>>;
-	/** How each engine draws the scene, for the "about this comparison" panel. */
+	/** What the scene measures, for the details sheet and the walkthrough. */
+	route: string;
+	/** How each engine draws the scene, for the details sheet. */
 	notes: readonly string[];
 	/**
-	 * The comparison whose scene this one draws, whose image references its held frames share. It
-	 * holds no mode of its own, so the image tests draw its scene graph only.
+	 * The comparison whose scene this one draws, whose image references its held frames share.
 	 */
 	sameSceneAs?: string;
 	/**
@@ -77,7 +76,6 @@ export interface Comparison {
 	/** Why the comparison loads files, when it does: the same files in both engines. */
 	assets?: string;
 	/** three.js's renderer in a mode that only it can draw, on both GPU paths. */
-	threeRenderers?: Partial<Record<CompareMode, 'webgl' | 'webgpu'>>;
 }
 
 /** The effects of a scene with no reflections, particles, lens grade or decals. */
@@ -111,12 +109,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		holdTimeoutSeconds: 600,
 		objectsAt: battleObjects,
 		shadowTiles: 0,
-		modes: {
-			'scene-graph':
-				"Scene graph measures characters built the usual way: each soldier and mech is its own copy of the model, with its own skeleton and animation, as each engine's examples load characters. null3D animates the copies on its job workers and draws those of one model together. three.js gives each copy its own AnimationMixer, poses its bones on the worker's thread and draws each copy on its own. Each tank is a tree of three parts.",
-			instanced:
-				'Instanced measures the most tuned build. three.js takes the route of its crowd example: one AnimationMixer per model poses each unit in turn, and one draw per model skins every unit from a table of bone matrices. That route needs WebGPURenderer, which runs in its WebGL2 mode on the WebGL2 path. null3D has one way to draw animated characters, the copies of the scene graph mode, which it already draws in batches. Each tank part is one batch of copies in both engines.',
-		},
+		route:
+			"The scene graph route measures characters built the usual way: each soldier and mech is its own copy of the model, with its own skeleton and animation, as each engine's examples load characters. null3D animates the copies on its job workers and draws those of one model together. three.js gives each copy its own AnimationMixer, poses its bones on the worker's thread and draws each copy on its own. Each tank is a tree of three parts.",
 		notes: [
 			"Both engines load the same soldier and mech files. The rifle is a mesh of its own on the soldier's right hand, and follows its joint in both engines.",
 			"Each engine draws each effect its own way: null3D's generated sky and its environment light, cascaded sun shadows, height fog, bloom chain, ambient occlusion and grading table; three.js's Sky with its light through PMREMGenerator, the CSM add-on or the CSM shadow node, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
@@ -128,13 +122,11 @@ export const COMPARISONS: readonly Comparison[] = [
 		],
 		assets:
 			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
-		threeRenderers: { instanced: 'webgpu' },
 		differences: [
 			{
 				topic: 'Characters',
 				null3d: 'Copies animate on job workers; every copy of one model draws in one batch.',
-				threejs:
-					'Scene graph draws each copy on its own; instanced skins every unit of a model in one draw, from a bone table.',
+				threejs: 'Scene graph draws each copy on its own, with its own mixer.',
 			},
 			{
 				topic: 'Sky and light',
@@ -187,12 +179,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		holdTimeoutSeconds: 600,
 		objectsAt: factoryObjects,
 		shadowTiles: SPOT_COUNT,
-		modes: {
-			'scene-graph':
-				"Scene graph measures a scene built the usual way: each arm is a tree of objects, one per part, as each engine's own examples build jointed models. The code writes each joint that moved, and each engine works out the world transforms of the trees. null3D does it on its job workers and draws parts that share a mesh and a material together. three.js walks its scene graph and draws each part on its own.",
-			instanced:
-				'Instanced measures the most tuned build: each kind of part is one batch of copies, and one loop of code works out every moving part in closed form, with no tree. null3D uses its instance batches, and three.js its InstancedMesh. Both upload the copies in use.',
-		},
+		route:
+			"The scene graph route measures a scene built the usual way: each arm is a tree of objects, one per part, as each engine's own examples build jointed models. The code writes each joint that moved, and each engine works out the world transforms of the trees. null3D does it on its job workers and draws parts that share a mesh and a material together. three.js walks its scene graph and draws each part on its own.",
 		notes: [
 			"Each engine draws each effect its own way: null3D's shadow atlas, height fog, bloom chain, ambient occlusion and grading table, and three.js's spot light shadow maps, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
 			"Bloom is set once, as UnrealBloomPass's settings. The bloom node takes three times the strength, and null3D's bloom chain takes the mapped settings for the same glow.",
@@ -207,8 +195,7 @@ export const COMPARISONS: readonly Comparison[] = [
 				topic: 'Arms and parts',
 				null3d:
 					'Job workers work out the transforms; parts that share a mesh and material draw together.',
-				threejs:
-					'Scene graph walks each arm and draws each part; instanced uses one batch per part kind.',
+				threejs: 'Scene graph walks each arm and draws each part.',
 			},
 			{
 				topic: 'Spot shadows',
@@ -264,19 +251,15 @@ export const COMPARISONS: readonly Comparison[] = [
 		imageDevices: ['linux'],
 		objectsAt: nightObjects,
 		shadowTiles: 0,
-		modes: {
-			'scene-graph':
-				"Scene graph measures a town built the usual way: each building, lamp, sign and car is an object of its own, and each moving car is a tree whose cabin, lamps and lights follow its body. The code moves each car's body, and each engine moves the rest.",
-			instanced:
-				'Instanced measures the most tuned build: each kind of part is one batch of copies for the whole town, and one loop of code places every car and its lights. The lights stay lights in both engines.',
-		},
+		route:
+			"The scene graph route measures a town built the usual way: each building, lamp, sign and car is an object of its own, and each moving car is a tree whose cabin, lamps and lights follow its body. The code moves each car's body, and each engine moves the rest.",
 		notes: [
 			"null3D lists the point and spot lights near each part of the view in clusters, on WebGPU and WebGL2. three.js's WebGPURenderer does the same for point lights with its ClusteredLighting add-on, and shades every spot light in every pixel. three.js's WebGLRenderer shades every light in every pixel, in one shader, which holds only so many lights.",
 			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
 			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
 			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
 			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. Both engines draw it in the facade shade, from the same window boxes and the same room depth.",
-			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines and modes. Their lights are emissive strips, so they add no lights to the count.',
+			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines. Their lights are emissive strips, so they add no lights to the count.',
 		],
 		differences: [
 			{

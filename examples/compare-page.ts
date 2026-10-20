@@ -22,7 +22,7 @@ import {
 	startComparison,
 	thisDeviceClass,
 } from './lib/compare';
-import { type CompareMode, effectsFromText } from './lib/compare-scene';
+import { effectsFromText } from './lib/compare-scene';
 import {
 	countToSlider,
 	FLOOR_FPS,
@@ -73,20 +73,19 @@ interface KeptRamp {
 	result: RampResult;
 }
 
-const rampKey = (comparison: Comparison, mode: CompareMode) =>
-	`null3d-compare-ramp:${comparison.name}:${mode}`;
+const rampKey = (comparison: Comparison) => `null3d-compare-ramp:${comparison.name}`;
 
-function keptRamps(comparison: Comparison, mode: CompareMode): KeptRamp[] {
+function keptRamps(comparison: Comparison): KeptRamp[] {
 	try {
-		return JSON.parse(sessionStorage.getItem(rampKey(comparison, mode)) ?? '[]') as KeptRamp[];
+		return JSON.parse(sessionStorage.getItem(rampKey(comparison)) ?? '[]') as KeptRamp[];
 	} catch {
 		return [];
 	}
 }
 
-function keepRamps(comparison: Comparison, mode: CompareMode, ramps: KeptRamp[]): void {
+function keepRamps(comparison: Comparison, ramps: KeptRamp[]): void {
 	try {
-		sessionStorage.setItem(rampKey(comparison, mode), JSON.stringify(ramps));
+		sessionStorage.setItem(rampKey(comparison), JSON.stringify(ramps));
 	} catch {
 		// Without session storage, the page shows each engine's result on its own.
 	}
@@ -194,8 +193,6 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const params = new URLSearchParams(location.search);
 	const engine: EngineName = params.get('engine') === 'threejs' ? 'threejs' : 'null3d';
 	const effects = effectsFromText(params.get('effects'));
-	// Both engines draw the usual tree of objects: the canonical route of each engine.
-	const mode: CompareMode = 'scene-graph';
 	const named = params.get('renderer');
 	const threeRenderer = named === 'webgpu' || named === 'webgl' ? named : undefined;
 	// A developer's page: no intro, and the controls start the engine at once.
@@ -322,7 +319,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	// The route this page measures, so the sheet never claims a route the page is not drawing.
 	sheetBody.append(
 		element('p', comparison.summary),
-		element('p', `The scene graph route: ${comparison.modes[mode]}`),
+		element('p', `The scene graph route: ${comparison.route}`),
 		element('h3', 'How each engine draws it'),
 	);
 	const table = element('div');
@@ -380,7 +377,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	stage.append(canvas, caption, backdrop, sheet, card);
 
 	// The walkthrough's state, kept in the address and the session between the engines' pages.
-	const keptRun: WalkthroughRun = readWalkthrough(comparison.name, mode);
+	const keptRun: WalkthroughRun = readWalkthrough(comparison.name);
 	const hasFirstRamp = keptRun.ramps.some((ramp) => ramp.engine === 'null3d');
 	const flow = manual
 		? null
@@ -420,7 +417,6 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 				canvas,
 				comparison,
 				engine,
-				mode,
 				count: startCount(params.get('count'), devicePlan),
 				effects,
 				gpu: (params.get('gpu') as GpuChoice | null) ?? 'auto',
@@ -482,9 +478,9 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 				result.textContent = `${ENGINE_TITLES[engine]}: ${countText(comparison, count)} at ${fps.toFixed(0)} fps`;
 			},
 		});
-		const ramps = keptRamps(comparison, mode).filter((kept) => kept.engine !== engine);
+		const ramps = keptRamps(comparison).filter((kept) => kept.engine !== engine);
 		ramps.push({ engine, label: current.label, result: found });
-		keepRamps(comparison, mode, ramps);
+		keepRamps(comparison, ramps);
 		// The other engine's turn, on a page of its own, unless it has run already.
 		if (!ramps.some((kept) => kept.engine === other(engine))) {
 			location.search = address({
@@ -500,12 +496,12 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		slider.disabled = false;
 	};
 	rampButton.addEventListener('click', () => {
-		keepRamps(comparison, mode, []);
+		keepRamps(comparison, []);
 		void ramp();
 	});
 
-	if (keptRamps(comparison, mode).length > 0 && !flow)
-		result.textContent = rampLine(comparison, keptRamps(comparison, mode));
+	if (keptRamps(comparison).length > 0 && !flow)
+		result.textContent = rampLine(comparison, keptRamps(comparison));
 
 	// The walkthrough's screens.
 
@@ -553,7 +549,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 
 	const startAgain = (): void => {
 		flow?.act('restart');
-		clearWalkthrough(comparison.name, mode);
+		clearWalkthrough(comparison.name);
 		rampAbort?.abort();
 		void destroyRun().then(() => {
 			location.search = address({
@@ -581,14 +577,14 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 					return;
 				}
 				// A fresh run measures the display again and keeps no old figures.
-				clearWalkthrough(comparison.name, mode);
+				clearWalkthrough(comparison.name);
 				keptRun.hz = 0;
 				keptRun.ramps = [];
 				void beginRamp(move.engine);
 			},
 			true,
 		);
-		const modeText = element('p', comparison.modes[mode]);
+		const modeText = element('p', comparison.route);
 		modeText.className = 'walkthrough__mode';
 		const modeDetails = element('details');
 		modeDetails.className = 'walkthrough__detail';
@@ -632,12 +628,12 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	};
 
 	const showRampStarting = (name: EngineName): void => {
-		rampStatus = element('p', `${ENGINE_TITLES[name]} is starting.`);
+		rampStatus = element('p', 'Starting.');
 		rampStatus.className = 'walkthrough__status';
 		rampProgress = null;
-		const title = heading(`${ENGINE_TITLES[name]} draws the scene`);
+		const title = heading(ENGINE_TITLES[name]);
 		showCard(
-			eyebrow(name === 'null3d' ? 'Ramp 1 of 2: null3D' : 'Ramp 2 of 2: three.js'),
+			eyebrow(name === 'null3d' ? 'Ramp 1 of 2' : 'Ramp 2 of 2'),
 			title,
 			rampStatus,
 			actions(button('Stop', stopWalkthrough)),
@@ -649,7 +645,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		const title = ENGINE_TITLES[name];
 		rampStatus = element(
 			'p',
-			`${title} is drawing ${countText(comparison, plan.start)}. The count rises step by step.`,
+			`${countText(comparison, plan.start)}. The count rises step by step.`,
 		);
 		rampStatus.className = 'walkthrough__status';
 		rampProgress = element('progress');
@@ -657,8 +653,8 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		rampProgress.value = 0;
 		rampProgress.setAttribute('aria-label', `${title}'s ramp`);
 		showCard(
-			eyebrow(name === 'null3d' ? 'Ramp 1 of 2: null3D' : 'Ramp 2 of 2: three.js'),
-			heading(`${title} draws the scene`),
+			eyebrow(name === 'null3d' ? 'Ramp 1 of 2' : 'Ramp 2 of 2'),
+			heading(title),
 			rampStatus,
 			rampProgress,
 			actions(button('Skip', skipRamp), button('Stop', stopWalkthrough)),
@@ -788,7 +784,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		flow.act('stop');
 		stopping = true;
 		rampAbort?.abort();
-		clearWalkthrough(comparison.name, mode);
+		clearWalkthrough(comparison.name);
 		rampStatus = null;
 		rampProgress = null;
 		showCard(
@@ -811,7 +807,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 			hz = await measureDisplayHz();
 			if (stopping) return;
 			keptRun.hz = hz;
-			writeWalkthrough(comparison.name, mode, keptRun);
+			writeWalkthrough(comparison.name, keptRun);
 		}
 		const next = await startRun();
 		if (!next || stopping) return;
@@ -828,8 +824,8 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 						// The walkthrough's line names the count alone: the rate moves as the ramp
 						// changes it, and a changing figure on a card that is not a result confuses.
 						rampStatus.textContent = noFrame
-							? `${ENGINE_TITLES[name]} drew no frame at ${countText(comparison, count)}.`
-							: `${ENGINE_TITLES[name]} is drawing ${countText(comparison, count)}.`;
+							? `No frame at ${countText(comparison, count)}.`
+							: `${countText(comparison, count)}.`;
 					}
 					if (rampProgress) rampProgress.value = step + 1;
 				},
@@ -852,7 +848,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 			skipped: signal.aborted,
 			result: found,
 		});
-		writeWalkthrough(comparison.name, mode, keptRun);
+		writeWalkthrough(comparison.name, keptRun);
 		const move = flow?.act(signal.aborted ? 'skip' : 'done');
 		if (!move) return;
 		if (move.reload) {
@@ -886,7 +882,6 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 			ok: true,
 			engine: current.engine,
 			engineLabel: current.label,
-			mode: current.mode,
 			gpu: current.gpu,
 			count: current.count,
 			pixelRatio: current.pixelRatio,

@@ -421,11 +421,8 @@ class ThreeRuntime {
 				antialias: true,
 				powerPreference: 'high-performance',
 				trackTimestamp: options.gpuTimer,
-				forceWebGL: options.forceWebGL === true,
 			}) as unknown as AnyRenderer;
 			await renderer.init?.();
-			if (options.forceWebGL)
-				return { three: webgpu as unknown as Three, renderer, name: 'WebGPURenderer (WebGL2)' };
 			// WebGPURenderer falls back to WebGL 2 when WebGPU fails to start. A WebGPU run must never
 			// measure WebGL by mistake, so that counts as an error.
 			if (!renderer.backend?.isWebGPUBackend)

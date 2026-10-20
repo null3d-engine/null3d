@@ -1,24 +1,18 @@
-// Factory, the null3D half. It builds the scene one of two ways, which the page's mode picks:
-//
-// - The scene graph, the default. Each cell's arm is a tree of scene objects: the base stands still,
-//   and the turntable, the upper arm, the forearm, the wrist and the two fingers each turn or slide
+// Factory, the null3D half. Each cell's arm is a tree of scene objects: the base stands still, and
+//   the turntable, the upper arm, the forearm, the wrist and the two fingers each turn or slide
 //   under their parent. The sketch writes only each joint's local value, and the engine works out
 //   the world transforms of the whole tree on its job workers. The joints that turn in most frames
 //   are dynamic objects. The fingers, which close only at a grip, and the crates are static ones,
 //   which the engine recomputes only in a frame that moves them. The belt, the pallet, the floor
 //   line, the lamp and the crates hang under the base. A held crate follows the wrist: after the
 //   engine moves the trees, the sketch reads the wrist's world transform and places the crate in the
-//   same frame. Reparenting the crate at each grip would rebuild the draw tables. The scene holds
-//   only the cells that show: it makes cells as the count rises, and destroys them as it falls.
-// - Instanced. Each part kind is one instance batch, as three.js's InstancedMesh half has. The
-//   closed-form loop that three.js's half runs writes every moving row, and each batch's active
-//   count shows the cells in use.
+//   same frame. Reparenting the crate at each grip would rebuild the draw tables. Only the cells
+//   that show are in the scene: it makes cells as the count rises, and destroys them as it falls.
 //
 // Every effect is null3D's own technique for the look that the scene describes: spot light shadows
 // in the shared shadow atlas, height fog, the mip-chain bloom, ambient occlusion, the AgX curve and
-// a grading table, under the built-in room environment. The page's address picks the mode, the
-// effects, the most cells and the cells that move; the page's `count` message changes the cells
-// that move.
+// a grading table, under the built-in room environment. The page's address picks the effects, the
+// most cells and the cells that move; the page's `count` message changes the cells that move.
 import {
 	defineSketch,
 	type InstanceBatch,
@@ -35,7 +29,6 @@ import {
 	effectsFromText,
 	gradeTable,
 	type MeshData,
-	modeFromText,
 	SIM_STEP,
 	type SurfaceKind,
 	sampleCameraLoop,
@@ -45,7 +38,6 @@ import { LENS_WGSL } from '../../lib/lens';
 import { SIGNATURE_MESSAGE } from '../scene-signature';
 import { CONE_STRENGTH, CONE_WGSL } from './cone';
 import { panelTexture } from './panels';
-import { type FactoryRows, poseFactoryRows } from './pose';
 import {
 	ARM_PARENT,
 	ARM_PART,
@@ -102,7 +94,7 @@ const ARM_MESHES: readonly FactoryMesh[] = [
 	'finger',
 	'finger',
 ];
-/** Arm parts below the base: the scene-graph mode keeps six objects per cell for them. */
+/** Arm parts below the base: six objects per cell hang under it. */
 const ARM_CHILDREN = ARM_MESHES.length - 1;
 /** The still parts that hang under each base, with their places in the shared description. */
 const STILL_MESHES = [
@@ -132,7 +124,6 @@ export default defineSketch(
 		const params = new URL(import.meta.url).searchParams;
 		const capacity = factoryCells(Number(params.get('capacity') ?? FACTORY_HOLD.count));
 		const effects = effectsFromText(params.get('effects'));
-		const mode = modeFromText(params.get('mode'));
 		const state = createFactory(capacity);
 		const startCells = Math.min(
 			capacity,
@@ -351,8 +342,8 @@ export default defineSketch(
 			}),
 		);
 
-		/** The scene-graph mode: a tree of objects per cell, made and destroyed with the count. */
-		const sceneGraph = (): Cells => {
+		/** A tree of objects per cell, made and destroyed with the count. */
+		const buildCells = (): Cells => {
 			// Each part kind keeps its objects in one array, cell by cell.
 			const bases: Mesh[] = [];
 			const arms: Mesh[] = [];
@@ -538,69 +529,7 @@ export default defineSketch(
 				},
 			};
 		};
-
-		/** The instanced mode: a batch per part kind, with a row per cell's part. */
-		const instanced = (): Cells => {
-			const batch = (name: FactoryMesh, perCell: number, dynamic: boolean) => {
-				const made = scene.createInstances(part(name).mesh, capacity * perCell, {
-					material: part(name).material,
-					dynamic,
-					...shadows(name),
-				});
-				batches.push({ batch: made, perCell });
-				return made;
-			};
-			const batches: { batch: InstanceBatch; perCell: number }[] = [];
-			// The still parts' rows, written once for every cell.
-			const base = batch('base', 1, false);
-			for (let c = 0; c < capacity; c++) {
-				base.positions[c * 3] = state.origin[c * 2] as number;
-				base.positions[c * 3 + 2] = state.origin[c * 2 + 1] as number;
-			}
-			for (const [name, kind] of STILL_MESHES) {
-				const p = batch(name, 1, false).positions;
-				stillPartLocal(kind, position);
-				for (let c = 0; c < capacity; c++) {
-					p[c * 3] = (state.origin[c * 2] as number) + (position[0] as number);
-					p[c * 3 + 1] = position[1] as number;
-					p[c * 3 + 2] = (state.origin[c * 2 + 1] as number) + (position[2] as number);
-				}
-			}
-			const moving: Record<keyof FactoryRows, InstanceBatch> = {
-				turntable: batch('turntable', 1, true),
-				upperArm: batch('upperArm', 1, true),
-				forearm: batch('forearm', 1, true),
-				wrist: batch('wrist', 1, true),
-				finger: batch('finger', 2, true),
-				crate: batch('crate', CRATES_PER_CELL, true),
-			};
-			const names = Object.keys(moving) as (keyof FactoryRows)[];
-			// The row arrays, read from each batch in every frame, as the engine's memory can grow.
-			const rows = Object.fromEntries(
-				names.map((name) => [
-					name,
-					{ positions: new Float32Array(0), rotations: new Float32Array(0) },
-				]),
-			) as unknown as FactoryRows;
-			let cells = startCells;
-			const show = (next: number) => {
-				cells = next;
-				for (const { batch, perCell } of batches) batch.setActiveCount(cells * perCell);
-			};
-			show(cells);
-			return {
-				show,
-				pose() {
-					for (const name of names) {
-						rows[name].positions = moving[name].positions;
-						rows[name].rotations = moving[name].rotations;
-					}
-					poseFactoryRows(state, cells, rows);
-				},
-			};
-		};
-
-		const cells = mode === 'instanced' ? instanced() : sceneGraph();
+		const cells = buildCells();
 		const sparks = scene.createInstances(part('spark').mesh, SPARK_COUNT, {
 			material: part('spark').material,
 			dynamic: true,

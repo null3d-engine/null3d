@@ -1,6 +1,5 @@
 // Runs a comparison with three.js through the shared shell, with one engine: `?compare=` names the
-// comparison, `?engine=` the engine, `?mode=` the mode, the scene graph by default, and `?effects=`
-// the effects, every one by default. With `?hold=<seconds>`, the engine draws the comparison's
+// comparison, `?engine=` the engine, and `?effects=` the effects, every one by default. With `?hold=<seconds>`, the engine draws the comparison's
 // held frame at its hold count, or at `?count=`, and the page publishes the frame, as the image
 // tests read it. Without
 // it, the engine runs live, and the page runs a short ramp and publishes its steps; `?ramp=full`
@@ -17,7 +16,7 @@ import { measurePageMemory } from '@null3d/engine/stats';
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import type { SceneSignature } from '../../examples/compare/scene-signature';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
-import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
+import { effectsFromText } from '../../examples/lib/compare-scene';
 import { run, toBase64 } from './lib/result';
 
 /** A ramp of three steps, which shows that the shell raises the count and measures each step. */
@@ -68,7 +67,6 @@ run('compare', async () => {
 		canvas,
 		comparison,
 		engine,
-		mode: modeFromText(params.get('mode')),
 		effects: effectsFromText(params.get('effects')),
 		gpu,
 		count:
@@ -84,7 +82,6 @@ run('compare', async () => {
 		engine,
 		label: started.label,
 		tier: started.gpu,
-		build: started.mode,
 		limit: started.limit ?? null,
 		mode: { hold: hold ?? null },
 	};

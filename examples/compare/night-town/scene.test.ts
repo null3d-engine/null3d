@@ -63,8 +63,7 @@ describe('Night town', () => {
 		expect(nightBlocks(13)).toBe(2);
 		expect(nightBlocks(1_020)).toBe(85);
 		expect(nightBlocks(1e9)).toBe(MAX_BLOCKS);
-		expect(nightObjects(120, 'scene-graph')).toBeGreaterThan(nightObjects(12, 'scene-graph'));
-		expect(nightObjects(120, 'instanced')).toBeLessThan(nightObjects(120, 'scene-graph'));
+		expect(nightObjects(120)).toBeGreaterThan(nightObjects(12));
 	});
 
 	test('the flying cars keep their lanes, move with the clock and wrap at the lane ends', () => {

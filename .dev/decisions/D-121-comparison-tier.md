@@ -1,8 +1,8 @@
 # D-121: The comparison tier with three.js, and Factory
 
-Status: built, 2026-10-09, from the owner's decisions of 8 October 2026 ([Examples](../examples.md#decisions-of-8-october-2026)). Two modes added 2026-10-10, from the owner's decision that day, with the Mac's figures. Task: M2-EX5. Factory does not go on the page until a device sitting shows that null3D holds the higher count on every device class.
+Status: built, 2026-10-09, from the owner's decisions of 8 October 2026 ([Examples](../examples.md#decisions-of-8-october-2026)). Two modes added 2026-10-10, from the owner's decision that day, with the Mac's figures. The batched mode dropped 2026-10-20, from the owner's decision of that day (M2-R34): the comparisons keep the scene graph route alone. Task: M2-EX5. Factory does not go on the page until a device sitting shows that null3D holds the higher count on every device class.
 
-Summary: The comparisons with three.js live in `examples/compare/`, one folder per scene, with one shared description that both engines draw. A shell in `examples/lib/` starts either engine on a canvas with the same settings, sets the count, measures and runs the ramp, so the website can draw its own controls. `@null3d/engine/stats` now exports the overlay's panel, so the three.js half shows its figures in the engine's own card. Factory is the first comparison. Each comparison builds its scene in two modes, the same way in both engines: a scene graph of one object per part, the default, and batches of copies posed in closed form. The first Factory build set a null3D tree against three.js's batches, which was not a fair test.
+Summary: The comparisons with three.js live in `examples/compare/`, one folder per scene, with one shared description that both engines draw. A shell in `examples/lib/` starts either engine on a canvas with the same settings, sets the count, measures and runs the ramp, so the website can draw its own controls. `@null3d/engine/stats` now exports the overlay's panel, so the three.js half shows its figures in the engine's own card. Factory is the first comparison. Each comparison builds its scene one way, the same way in both engines: a scene graph of one object per part. Batches of copies, posed in closed form, were a second mode from 10 October 2026 until 20 October 2026, when the owner dropped them. The first Factory build set a null3D tree against three.js's batches, which was not a fair test.
 
 ## Question
 
@@ -28,8 +28,20 @@ The rules of each mode:
 - three.js turns off `matrixAutoUpdate` on every node and calls `updateMatrix` after a write, as its docs advise for objects that do not move in every frame. Its renderer's walk of the scene graph works out the world matrices, and it draws each part on its own. A held crate hangs under the wrist, since reparenting is cheap in three.js.
 - In the instanced mode, both engines make their batches for the ramp's maximum and draw the copies in use.
 - Both modes draw the same frame, so the instanced image tests borrow the scene graph's references.
-- The page's mode switch loads the page again, as the engine switch does, and the ramp keeps each engine's result per mode. `startComparison` takes `mode`, so the website can switch it too.
+- The page's mode switch loads the page again, as the engine switch does, and the ramp keeps each engine's result per mode. `startComparison` takes `mode`, so the website can switch it too. The switch and the mode went with the batched mode on 20 October 2026.
 - Figures come from production builds only. The development server keeps the engine's development checks in every setter, which three.js does not have.
+
+### The batched mode dropped, 20 October 2026
+
+The owner's question was which route a comparison should measure, and his decision was the canonical one: each engine builds the scene the way its own users build it, one object per part in a tree. Batches exist for scenes of many copies of a few meshes, and the comparisons are not that scene. So the mode switch went, and both engines run the scene graph route alone.
+
+What the runs showed before the removal (M2-R34, iPhone 18 Pro, WebGPU, 200 to 1,000 units):
+
+- On the scene graph route, null3D led three.js at every count: 35.2 against 32.7 frames a second at 200 units, 30.2 against 14.3 at 500, and 24.8 against 7.3 at 1,000.
+- three.js's batched route was the only place it led, at 63 and 49.8 frames a second at 100 and 500 units. That route drew 49 to 63 draws against the scene graph's 163 to 298.
+- null3D's shadow cascades cost about 1.1 ms each, and about 45 draws each. The batched route could not show that cost at all.
+
+The batched route's code went with it: `three-crowd.ts`, the closed-form pose module, its mode branches in both engines' halves, and its image references.
 
 ## Decision
 

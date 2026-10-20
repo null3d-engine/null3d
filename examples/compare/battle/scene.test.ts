@@ -302,10 +302,9 @@ describe('the field', () => {
 		expect(FLAGS.length).toBe(8);
 	});
 
-	test('the triangles and objects grow with the count, and the instanced mode has fewer objects', () => {
+	test('the triangles and objects grow with the count', () => {
 		expect(battleTriangles(2000, meshes)).toBeGreaterThan(battleTriangles(200, meshes));
 		expect(battleObjects(2000)).toBeGreaterThan(battleObjects(200));
-		expect(battleObjects(2000, 'instanced')).toBeLessThan(battleObjects(2000));
 	});
 
 	test('the surfaces of the field are made in code', () => {

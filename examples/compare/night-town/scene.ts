@@ -14,7 +14,6 @@ import {
 	boxGeometry,
 	byte,
 	type CameraLoop,
-	type CompareMode,
 	cylinderGeometry,
 	fbm,
 	type GradeLook,
@@ -98,17 +97,9 @@ export const TOWN_OBJECTS = 3;
 /** The flying cars' batches: the body, the nose strip and the tail strips. */
 const FLYER_OBJECTS = 3;
 
-/** The kinds of mesh, each one batch per material in the instanced mode, and the lights. */
-const INSTANCED_KINDS = 40;
-
-/**
- * Objects in the scene for a count of lights: an object per part in the scene graph mode, and a
- * batch per part kind plus the lights in the instanced mode.
- */
-export function nightObjects(lights: number, mode: CompareMode = 'scene-graph'): number {
+/** Objects in the scene for a count of lights: one per part, its lights included. */
+export function nightObjects(lights: number): number {
 	const blocks = nightBlocks(lights);
-	if (mode === 'instanced')
-		return INSTANCED_KINDS + blocks * LIGHTS_PER_BLOCK + TOWN_OBJECTS + FLYER_OBJECTS;
 	return blocks * OBJECTS_PER_BLOCK + TOWN_OBJECTS + FLYER_OBJECTS;
 }
 

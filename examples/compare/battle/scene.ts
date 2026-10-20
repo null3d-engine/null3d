@@ -13,7 +13,6 @@
 
 import {
 	type CameraLoop,
-	type CompareMode,
 	clamp,
 	cylinderGeometry,
 	type GradeLook,
@@ -1107,12 +1106,12 @@ export function barrelRecoil(s: BattleState, t: number): number {
 }
 
 /** Objects in the null3D scene at a count: one per unit and its rifle, three per tank, and the rest. */
-export function battleObjects(count: number, mode: CompareMode = 'scene-graph'): number {
+export function battleObjects(count: number): number {
 	const units = battleUnits(count);
 	const tanks = tanksPerArmy(units / 2) * 2;
 	const perUnit = units * 3;
 	const fixed = STILL_OBJECTS + FLAGS.length * 2;
-	return perUnit + (mode === 'instanced' ? 0 : tanks * TANK_PARTS) + fixed;
+	return perUnit + tanks * TANK_PARTS + fixed;
 }
 
 /** Objects that stand still whatever the count: the terrain, the ruins, the tower and the wrecks. */
@@ -1832,9 +1831,13 @@ export const BATTLE_CAMERA: CameraLoop = {
 	targets: [0, 2, -10, 10, 3, 0, -10, 3, -6, 0, 4, -10, -20, 2, 0, 0, 2, 0],
 };
 
-/** Ramps of each device class: the units of both armies. Each row is a first guess. */
+/**
+ * Ramps of each device class: the units of both armies. Each row is a first guess. The desktop ramp
+ * stops below the engine's animation table, which holds about a million joints: a unit of either
+ * army takes about eighty, so the table fills just past thirteen thousand units.
+ */
 export const BATTLE_RAMPS = {
-	desktop: { start: 200, factor: 1.2, max: 20_000 },
+	desktop: { start: 200, factor: 1.2, max: 10_000 },
 	tablet: { start: 200, factor: 1.2, max: 8_000 },
 	phone: { start: 200, factor: 1.2, max: 4_000 },
 } as const satisfies Record<DeviceClass, RampPlan>;

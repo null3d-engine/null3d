@@ -2531,15 +2531,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		}),
 	),
-	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
-	// draws its own references: the owner reviews the two frames side by side, as each draws each
-	// effect with its own technique for the same look. The instanced mode builds the same scene with
-	// batches of copies, so it borrows the scene graph's references, unless three.js draws that mode
-	// with another renderer, whose effects differ: then it keeps references of its own.
+	// Each comparison with three.js, held at its time and count, in each engine. Each engine draws its
+	// own references: the owner reviews the two frames side by side, as each draws each effect with
+	// its own technique for the same look.
 	...COMPARISONS.flatMap((comparison) =>
-		(['null3d', 'threejs'] as const).flatMap((engine): ImageTest[] => {
-			const ownRenderer =
-				engine === 'threejs' && comparison.threeRenderers?.instanced !== undefined;
+		(['null3d', 'threejs'] as const).map((engine): ImageTest => {
 			const name = `compare-${comparison.name}-${engine}`;
 			const test: ImageTest = {
 				name,
@@ -2555,18 +2551,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.imageDevices && { devices: comparison.imageDevices }),
 			};
 			// A comparison that draws another's scene holds the same frame: its test shares that
-			// comparison's references, in the scene graph mode only.
+			// comparison's references.
 			if (comparison.sameSceneAs)
-				return [{ ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` }];
-			return [
-				test,
-				{
-					...test,
-					name: `${name}-instanced`,
-					switches: [...(test.switches ?? []), 'mode=instanced'],
-					...(!ownRenderer && { reference: name }),
-				},
-			];
+				return { ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` };
+			return test;
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once

@@ -112,14 +112,13 @@ export interface WalkthroughRun {
 	ramps: WalkthroughRamp[];
 }
 
-const storageKey = (comparison: string, mode: string) =>
-	`null3d-compare-walkthrough:${comparison}:${mode}`;
+const storageKey = (comparison: string) => `null3d-compare-walkthrough:${comparison}`;
 
-/** The run that the session keeps for a comparison in a mode, or an empty one. */
-export function readWalkthrough(comparison: string, mode: string): WalkthroughRun {
+/** The run that the session keeps for a comparison, or an empty one. */
+export function readWalkthrough(comparison: string): WalkthroughRun {
 	try {
 		const kept = JSON.parse(
-			sessionStorage.getItem(storageKey(comparison, mode)) ?? '{}',
+			sessionStorage.getItem(storageKey(comparison)) ?? '{}',
 		) as Partial<WalkthroughRun>;
 		return {
 			hz: typeof kept.hz === 'number' && Number.isFinite(kept.hz) ? kept.hz : 0,
@@ -131,18 +130,18 @@ export function readWalkthrough(comparison: string, mode: string): WalkthroughRu
 }
 
 /** Keeps the run for the session, so the other engine's page and a reload can read it. */
-export function writeWalkthrough(comparison: string, mode: string, run: WalkthroughRun): void {
+export function writeWalkthrough(comparison: string, run: WalkthroughRun): void {
 	try {
-		sessionStorage.setItem(storageKey(comparison, mode), JSON.stringify(run));
+		sessionStorage.setItem(storageKey(comparison), JSON.stringify(run));
 	} catch {
 		// Without session storage, each page shows the engine that ran on it alone.
 	}
 }
 
 /** Forgets the run, as a stop or a fresh start asks. */
-export function clearWalkthrough(comparison: string, mode: string): void {
+export function clearWalkthrough(comparison: string): void {
 	try {
-		sessionStorage.removeItem(storageKey(comparison, mode));
+		sessionStorage.removeItem(storageKey(comparison));
 	} catch {
 		// Nothing is kept when the browser refuses storage.
 	}
