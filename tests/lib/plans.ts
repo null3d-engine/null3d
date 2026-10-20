@@ -1173,6 +1173,9 @@ export function effectPlan(
 		ao: [
 			['', []],
 			['-prepass', ['prepass=on']],
+			// A quarter of the drawn area at the same allocation, which tells a fixed cost from one
+			// that follows the pixels.
+			['-quarter', ['aoscale=0.25']],
 		],
 		dof: [
 			['-16', ['taps=16']],

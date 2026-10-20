@@ -73,6 +73,7 @@ const fill = params.get('fill');
 const background = params.get('background');
 const steps = params.get('steps');
 const moving = params.has('moving');
+const aoScale = params.get('aoscale');
 const base = params.get('base');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
@@ -96,7 +97,7 @@ run('effect-cost', async () => {
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
