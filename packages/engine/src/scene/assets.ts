@@ -12,6 +12,7 @@ import { reasonOf } from '../errors/message';
 import { Cubemap, writeSkyDefaults } from './background';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
+import { GltfExtensions } from './gltf-extensions';
 import { Lut, type LutData } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
@@ -217,8 +218,6 @@ export class Assets {
 	private readonly preloaded = new Map<string, Promise<Blob>>();
 	/** Downloads under way, by address, which loads at the same time share. */
 	private readonly pending = new Map<string, Promise<Blob>>();
-	/** The glTF extension handler of each extension name, which the loader hands its primitives. */
-	private readonly gltfExtensions = new Map<string, GltfExtensionHandler>();
 	private readonly handlers = new Set<ProgressHandler>();
 	private loaded = 0;
 	private total = 0;
@@ -229,6 +228,11 @@ export class Assets {
 		/** The page's address, which relative addresses resolve against. */
 		base: string,
 		private readonly makers?: ModelMakers,
+		/**
+		 * The handlers of glTF extensions that a sketch registered. They live outside the loader so
+		 * that a registration answers at once, before the loader has loaded.
+		 */
+		private readonly extensions = new GltfExtensions(),
 	) {
 		this.base = base;
 	}
@@ -304,35 +308,7 @@ export class Assets {
 	 * that reads an extension which another handler reads.
 	 */
 	registerGltfExtension(handler: GltfExtensionHandler): () => void {
-		const call = 'assets.registerGltfExtension';
-		const names = handler?.extensions;
-		if (
-			!Array.isArray(names) ||
-			names.length === 0 ||
-			!names.every((name) => typeof name === 'string' && name.length > 0)
-		)
-			throw new EngineError(
-				'E1213',
-				`${call}() got a handler whose extensions is not a list of names. Name at least one extension, such as 'KHR_gaussian_splatting'.`,
-			);
-		if (typeof handler.load !== 'function')
-			throw new EngineError(
-				'E1213',
-				`${call}() got a handler without a load() function, which makes the parts of a primitive that carries its extensions.`,
-			);
-		for (const name of names) {
-			const held = this.gltfExtensions.get(name);
-			if (held && held !== handler)
-				throw new EngineError(
-					'E1213',
-					`${call}() got a handler for ${name}, and another handler reads it already.`,
-				);
-		}
-		for (const name of names) this.gltfExtensions.set(name, handler);
-		return () => {
-			for (const name of names)
-				if (this.gltfExtensions.get(name) === handler) this.gltfExtensions.delete(name);
-		};
+		return this.extensions.register(handler);
 	}
 
 	/**
@@ -373,7 +349,7 @@ export class Assets {
 					);
 				},
 				error: (code, message) => new EngineError(code, message),
-				extensionHandlers: [...new Set(this.gltfExtensions.values())],
+				extensionHandlers: this.extensions.all(),
 			},
 			file,
 			address,
