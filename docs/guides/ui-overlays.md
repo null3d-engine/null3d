@@ -98,6 +98,33 @@ Keep label elements light. The engine writes only their `transform` and `visibil
 
 The engine holds 4,096 labels at once by default. For more, set `createEngine`'s `maxLabels` option. With many labels, bind elements only for the ones the player can see, and untrack the rest.
 
+## Labels that are planes of the scene
+
+A label can also be a plane of the scene. It then scales with the distance, and it leans as its object or the camera turns. Give `ui.trackLabel` a `transform`:
+
+- `'world'` turns and scales the element with the object, as three.js's `CSS3DObject` does.
+- `'billboard'` keeps the element facing the camera, as three.js's `CSS3DSprite` does. Its `rotation` turns the content in the element's own plane.
+
+```ts
+// sketch.ts
+ui.trackLabel(panel, 'card-3', { transform: 'world', offset: [0, 1.4, 0] });
+ui.trackLabel(crown, 'title', { transform: 'billboard', rotation: 0.1 });
+```
+
+The page binds the element as for any label. The engine moves it into a container of its own inside the element's parent, and turns it with the camera's perspective. So the parent must cover the canvas.
+
+```ts
+// page.ts
+const card = document.createElement('div');
+card.className = 'card';
+layer.append(card);
+engine.labels.bind('card-3', card);
+```
+
+An element's CSS pixels are the scene's units for these labels, as they are for three.js's `CSS3DRenderer`. An element 200 pixels wide is 200 units wide. Size the scene around it to match, and the browser keeps the text sharp at any distance.
+
+The engine holds 256 planes by default, which take 40 KB of the memory that its threads share. Set `createEngine`'s `maxLabels3d` option for more, or to 0 on a page that shows no plane.
+
 ## GUI panels
 
 A settings panel, such as one made with lil-gui, lives on the page like any other HTML. Each change goes to the sketch as a message, and the sketch applies it in its next frame.
@@ -122,6 +149,7 @@ page.onMessage((type, data) => {
 ## Related pages
 
 - [UI overlays and labels](../api/ui.md): `ui.trackLabel` and `engine.labels.bind`.
+- [The 3D labels demo](https://github.com/null3d-engine/null3d/tree/main/examples/css3d-labels): cards that turn with a ring.
 - [Messages between sketch and page](../api/page.md): `page.post`, `page.onMessage` and `engine.postToSketch`.
 - [Cameras](../api/cameras.md): `worldToScreen` places a single point on the canvas.
 - [Accessibility](accessibility.md): meaning in HTML around the canvas.

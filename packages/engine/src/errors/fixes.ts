@@ -51,7 +51,7 @@ export const ERROR_FIXES = {
 	E1218:
 		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
-		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option.",
+		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Give transform one of 'screen', 'world' or 'billboard', and a rotation only to a billboard label. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option, or maxLabels3d for labels that are planes of the scene.",
 	E1220:
 		"Give render.addPass the options of its kind, such as { kind: 'scene', camera, writes: 'minimap', size: [256, 256] }. Give each pass a name and a texture name of its own. Remove passes that no longer draw before you add more.",
 	E1221:
