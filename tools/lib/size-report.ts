@@ -880,8 +880,14 @@ export function downloadSizes(
  * draw probe back in its worker's script: the branch measured 170,517 bytes against 169,984 and the
  * reflection probes still to land add about 1.4 KB. The raise comes with the reclaim the owner asked
  * for: the frame figures behind `measure()` and the error-fix table load on their first use.
+ *
+ * The owner raised it to 178 KB on 22 October 2026, for the level bias, the canvas textures and the
+ * sharpening value, which took the largest start to 181,238 bytes against the old 176 KB line. The
+ * trim that pays it back is in hand: the fog write, the picks and the pointer events move to files
+ * that load on first use and save about 2.6 KB, which needs the size report to follow the chunks the
+ * bundler splits out.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 176 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 178 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
