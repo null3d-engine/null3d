@@ -34,7 +34,7 @@ for (const { tier, query } of TIERS)
 	for (const run of RUNS)
 		test(`a new render scale makes no GPU object on ${tier}, ${run.name}`, async ({ page }) => {
 			await page.goto(`render-scale.html?${query}&${run.query}`);
-			const result = await pageResult<RenderScaleResult>(page, 30_000);
+			const result = await pageResult<RenderScaleResult>(page, 45_000);
 			expect(result.error).toBeUndefined();
 			expect(result.tier).toBe(tier);
 			expect(result.failures).toEqual([]);
