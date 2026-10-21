@@ -408,6 +408,10 @@ textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: '
 textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
 // fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
 textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
+// An OffscreenCanvas drawn in the sketch: refresh only the rectangle that changed, at most 30 times a second
+const context = canvas.getContext('2d', { willReadFrequently: true })!;
+const screen = textures.fromCanvas(canvas, { refreshHz: 30 });  // the canvas stands upright on a plane
+screen.refresh({ x, y, width, height });  // uploads only that rectangle; screen.refresh() reads all of it
 tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
 tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.droppedLevels;         // (0.2) largest mip levels the memory budget dropped, 0 to 3; width and height stay
@@ -419,6 +423,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - Textures return at once and upload over the next frames, within each frame's upload budget.
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
 - `textures.fromPass(pass)` (0.2) gives the texture of a scene or reflection pass from `render.addPass` (section 16).
+- `textures.fromCanvas(canvas, { refreshHz })` (0.2) follows an `OffscreenCanvas`. Give the rectangle of the refresh in the canvas's coordinates. A 256 x 256 rectangle is 256 KiB, so a 30 Hz screen stays within the upload budget. The rectangle must lie inside the canvas.
 - Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
@@ -610,7 +615,7 @@ post.addEffect({ wgsl: addBlur, textures: { blur: textures.fromPass(blur) } }); 
 ```
 
 - A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light and fog. They draw the point and spot lights their view sees, and the scene's background; a scene pass with `clearColor` shows that color instead. A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
-- A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
+- A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 20).
 - A full-screen pass's `input.uv` is (0, 0) at its top left. Pass textures hold their bottom row first: sample one at `effectPassUv(input.uv)`. `effectInputSize()` is the input image's size. A pass that reads the scene (input or depth) runs after the camera: materials showing it see the frame before; effects see the same frame.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.

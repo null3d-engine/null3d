@@ -497,6 +497,14 @@ export interface CoreGlue extends CoreErrors {
 	 * layer, and level after level for a texture whose data brings its mip levels.
 	 */
 	setTextureData(texture: number, width: number, height: number): number;
+	/**
+	 * Gives a rectangle of a texture new texels: `width` x `height` at (`x`, `y`) in its first
+	 * layer's level 0, and returns the address that TypeScript writes them at: tightly packed rows,
+	 * the rectangle's bottom row first. Returns 0 while the texture still waits for all its texels,
+	 * because a rectangle cannot fill the rest. The rectangle uploads within the frame's budget and
+	 * makes its mip levels again.
+	 */
+	setTextureRegion(texture: number, x: number, y: number, width: number, height: number): number;
 	destroyTexture(texture: number, frame: number): number;
 	/**
 	 * Tells the texture store what the thread that draws has: images received, and frames taken.
@@ -1090,6 +1098,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'probesWaiting',
 	'probeGenerator',
 	'setTextureData',
+	'setTextureRegion',
 	'destroyTexture',
 	'syncTextures',
 	'setTextureReloadable',

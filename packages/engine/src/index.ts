@@ -287,6 +287,8 @@ export type {
 	SpriteValues,
 } from './scene/sprites';
 export type {
+	CanvasRect,
+	CanvasTextureOptions,
 	CompressedTextureFormat,
 	Texture,
 	TextureColorSpace,

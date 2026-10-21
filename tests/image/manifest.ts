@@ -1153,6 +1153,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
 	},
+	// A screen that follows a 1024 x 1024 OffscreenCanvas in the sketch and refreshes a 256 x 256
+	// rectangle of it at most 30 times a second. A refresh uploads only the rectangle, so every
+	// measured frame keeps within the preset's upload budget, and the screen shows the canvas
+	// upright: each corner has its own color.
+	{
+		name: 'canvas-texture',
+		page: 'tests/pages/canvas-texture.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: { withinBudget: true, partial: true, rateKept: true, refreshed: true },
+		timeoutSeconds: 120,
+	},
 	// Two 512 x 512 textures and a small one past a texture memory budget of 1 MiB in a live engine.
 	// The large ones drop their largest mip level, so each quarter draws one flat color where the
 	// full texture holds a checker. Then the levels load again from the file once room returns, and
