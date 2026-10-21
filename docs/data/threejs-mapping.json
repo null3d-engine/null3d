@@ -1273,9 +1273,9 @@
       "category": "Textures",
       "three": "CanvasTexture (a 2D canvas redrawn at run time)",
       "status": "changed",
-      "since": "0.1",
-      "target": "Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap)",
-      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. Decode with createImageBitmap(canvas, { imageOrientation: 'flipY' }) so the drawing stands upright, as three.js flips it.",
+      "since": "0.2",
+      "target": "Draw on an OffscreenCanvas in the sketch, then textures.fromCanvas(canvas, { refreshHz }) and texture.refresh(rect)",
+      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. The canvas's last row goes to v = 0, so it stands upright on a plane, as three.js shows a CanvasTexture. In three.js, setting texture.needsUpdate uploads the whole canvas; here refresh uploads only the rectangle. Ask for the 2D context with willReadFrequently: true, so the browser keeps the pixels where the engine reads them.",
       "docs": "api/textures",
       "detect": "\\bCanvasTexture\\b"
     },

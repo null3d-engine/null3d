@@ -2501,6 +2501,25 @@ pub fn set_texture_data(texture: u32, width: u32, height: u32) -> u32 {
     })
 }
 
+// Gives a rectangle of a texture new texels: `width` x `height` at (`x`, `y`) in its first layer's
+// level 0, and returns the address of the memory that TypeScript fills with them at once: tightly
+// packed rows, the rectangle's bottom row first. The rest of the texture keeps its texels. The
+// rectangle uploads in the texture's turn, within the frame's budget, and makes its mip levels
+// again. Returns 0 while the texture still waits for all its texels, because a rectangle cannot
+// fill the rest: the caller fills the whole texture instead.
+/// Gives a rectangle of a texture new texels and returns the address to write them at.
+#[wasm_bindgen(js_name = setTextureRegion)]
+pub fn set_texture_region(texture: u32, x: u32, y: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match textures.set_region(Handle::from_raw(texture), x, y, width, height) {
+            Ok(Some(words)) => Ok(address(words)),
+            Ok(None) => Ok(0),
+            Err(error) => Err(texture_failure(error)),
+        }
+    })
+}
+
 // Destroys a texture. Materials that map it draw with their colors alone, which changes the draw
 // tables.
 /// Destroys a texture.
@@ -2608,6 +2627,10 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::RELOAD_TEXTURE => textures
                 .reload_of(handle)
                 .map_or(0.0, |r| f64::from(r.1.raw())),
+            texture_stat::UPLOADING => match textures.pending(handle) {
+                Ok(pending) => f64::from(u32::from(pending)),
+                Err(error) => return texture_failure(error),
+            },
             _ => f64::from(textures.max_size()),
         };
         0

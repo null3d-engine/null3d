@@ -415,7 +415,7 @@ export class SketchRunner {
 		const textures = new Textures(
 			this.core,
 			sketch.sendImage,
-			this.recorded,
+			this.time,
 			device.capabilities,
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
