@@ -727,3 +727,17 @@ move, and the setters could not.
 `budgetWarnings` in `tools/lib/size-report.ts` now prints a warning for each start past 97% of the
 budget, so a start that is about to pass it is named while the build still passes. M3-T1 asked for
 that guard.
+
+### What a first-use file costs the report, 22 October 2026
+
+Moving the file loader out of the start showed that a deferral is not free for the size report. The
+bundler put the loader's dependencies in files of their own and kept second copies of three shared
+modules that the start still needs. The report names one built file for each part. It finds the
+file that a part loads by reading the text of the part that loads it, one level deep. So a loader
+whose dependencies load from the loader's own file needs a part for each of them. Each part must
+come after it in the list, and each copy needs a part of its own.
+
+The measurement of that attempt: the sketch worker's file fell from 212,171 to 195,829 bytes. The
+page's fell from 93,189 to 90,546, about 4.7 KB and 0.8 KB after Brotli. The change waits until the
+report can follow a chunk graph, so that the copies and the nested loaders need no part of their
+own. The guard and every other finding of this section stand.
