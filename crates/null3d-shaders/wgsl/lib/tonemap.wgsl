@@ -99,13 +99,15 @@ fn vignette(pixel: vec2f, size: vec2f, shape: vec4f) -> f32 {
 /// The color that a scene shader writes for exposed linear color `c` at framebuffer position
 /// `pixel` of a target of `size` pixels: `c` itself into the HDR scene color, which the final pass
 /// tone maps, or on the 8-bit path (the TONE_MAP builds), `c` darkened by the vignette of `shape`
-/// and after the output transform that `settings` sets, encoded for the canvas. The HDR scene
-/// color takes `c` no brighter than the 16-bit float target holds.
+/// and after the output transform that `settings` sets, encoded for the canvas. Both paths take `c`
+/// no brighter than the 16-bit float target holds, with a NaN as black, so the tone curves never
+/// meet infinity or NaN.
 fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -> vec4f {
+    let limited = limit_hdr(c);
 #ifdef TONE_MAP
-    return vec4f(encode(tone_map(c * vignette(pixel, size, shape), settings), pixel), 1.0);
+    return vec4f(encode(tone_map(limited * vignette(pixel, size, shape), settings), pixel), 1.0);
 #else
-    return vec4f(limit_hdr(c), 1.0);
+    return vec4f(limited, 1.0);
 #endif
 }
 

@@ -390,6 +390,19 @@ function hdrLimitTests(): ImageTest[] {
 	return [
 		{ name: 'hdr-limit', sketch: HDR_LIMIT_SKETCH, hold: 0 },
 		{ name: 'hdr-limit-bloom', sketch: `${HDR_LIMIT_SKETCH}?bloom`, hold: 0 },
+		{ name: 'hdr-limit-nan', sketch: `${HDR_LIMIT_SKETCH}?nan`, hold: 0 },
+		{ name: 'hdr-limit-nan-bloom', sketch: `${HDR_LIMIT_SKETCH}?nan&bloom`, hold: 0 },
+		{
+			name: 'hdr-limit-nan-8-bit',
+			sketch: `${HDR_LIMIT_SKETCH}?nan`,
+			hold: 0,
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'hdr-limit-nan',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
 	];
 }
 
