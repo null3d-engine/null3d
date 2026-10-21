@@ -60,4 +60,5 @@ A self-built add-on takes the same command: its `peerDependencies` and `devDepen
 - The engine's start code gains one exported function of a few hundred bytes. A sketch that imports no add-on reaches none of it after tree shaking.
 - The release writes one more copy per add-on: `src/version.ts`. `tools/lib/release.ts` finds each such file by name, so a new add-on's constant needs no edit there either.
 - `docs/api/engine.md` describes the check for add-on authors, `docs/cli/null3d.md` documents the command, and the develop skill's command table and troubleshooting table name both.
+- The fresh-project run shows the packaged command moving a manifest's null3D package to the engine's version, and its dry run writing nothing. The check skips with a message when the checkout has no built asset tool.
 - The marketplace after 1.0 needs ranges rather than exact pins for add-ons from other sellers ([D-173](D-173-addon-hooks.md)). That ruling changes this check's comparison, and only this function.
