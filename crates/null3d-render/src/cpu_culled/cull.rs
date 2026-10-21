@@ -74,6 +74,8 @@ pub(super) struct Occlusion<'a> {
     pub(super) occluders: &'a mut Occluders,
     pub(super) meshes: &'a MeshStorage,
     pub(super) materials: &'a MaterialTable,
+    /// The material that every mesh of the main pass draws with, or 0 for none.
+    pub(super) override_material: u32,
 }
 
 /// The culling sets: the scene's slots in place, the still scene objects through the scene's cell
@@ -420,7 +422,14 @@ impl Culling {
             let buffer = match (&mut occlusion, &view.frame) {
                 (Some(o), Some(frame)) if k == 0 => o
                     .occluders
-                    .draw(input, frame, view.offsets.as_slice(), o.meshes, o.materials)?
+                    .draw(
+                        input,
+                        frame,
+                        view.offsets.as_slice(),
+                        o.meshes,
+                        o.materials,
+                        o.override_material,
+                    )?
                     .is_some(),
                 _ => false,
             };

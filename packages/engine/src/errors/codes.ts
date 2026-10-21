@@ -219,6 +219,14 @@ const DOCS = {
 			"E1222: setLightProbeGrid() got a texture that is not a 3D texture. Make the grid's texture with LightProbeGridData.toTexture().",
 		since: '0.2',
 	},
+	E1223: {
+		title: 'Material cannot draw a mesh',
+		cause:
+			'scene.overrideMaterial received a sprite, point or line material. Such a material draws the rows of its batch, or a sprite or line of its own, rather than the surface of a mesh, so it cannot stand in for every mesh of the pass.',
+		example:
+			'E1223: scene.overrideMaterial got a sprite material. It takes a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal().',
+		since: '0.3',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

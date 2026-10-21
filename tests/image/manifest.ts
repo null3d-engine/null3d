@@ -1377,6 +1377,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// A small scene of lit, unlit and blended objects and an instance batch, drawn with each object's
+	// own materials and with one material over every mesh and batch row of the main pass: the
+	// override shades the unlit sphere, makes the blended box opaque and keeps the batch's rows.
+	{
+		name: 'override-material-off',
+		sketch: 'tests/pages/sketches/override-material-sketch.ts',
+		hold: 0,
+	},
+	{
+		name: 'override-material',
+		sketch: 'tests/pages/sketches/override-material-sketch.ts?override=1',
+		hold: 0,
+	},
 	// The motion debug view (D-140) of a scene where most things move: a drifting camera, a sliding
 	// box, a spinning box, a dynamic batch, grass that a custom material sways, a skinned tube, a
 	// morphed sphere and a masked pane. The motion spec checks exact cases pixel by pixel.
@@ -2552,6 +2565,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		}),
 	),
+	// The objects demo's Look button, which a held frame cannot press: the same stage and time with
+	// one material over every mesh of the main pass, so each crate keeps its shape and its place.
+	{
+		name: 'demo-objects-one-material',
+		sketch: 'examples/objects/sketch.ts?look=one',
+		hold: 2.5,
+		timeoutSeconds: 60,
+	},
 	// Each comparison with three.js, held at its time and count, in each engine. Each engine draws its
 	// own references: the owner reviews the two frames side by side, as each draws each effect with
 	// its own technique for the same look.

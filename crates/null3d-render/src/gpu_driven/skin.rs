@@ -587,7 +587,7 @@ impl Skinning {
                 continue;
             };
             let vertex_skins = || {
-                let material = scene.materials()[slot];
+                let material = settings.drawn_material(scene.materials()[slot]);
                 let shading = settings.materials().shading(material.wrapping_sub(1));
                 !shading.is_ok_and(Shading::is_full_shader)
                     && settings

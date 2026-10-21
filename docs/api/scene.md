@@ -3,7 +3,7 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; the light probe grid; warmUp."
+summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; the light probe grid; the material override; warmUp."
 ---
 
 # Scene
@@ -464,6 +464,14 @@ Each light is an object, so a scene can hold many, and each call creates another
 ## Decals
 
 A decal is a mesh of `geometry.box()` with a `materials.decal` material, which projects its look onto the opaque surfaces in the box ([Decals](materials.md#decals)). `scene.setDecalLayers(mask)` sets the layers whose objects decals mark, and objects on other layers show none. The default is every layer.
+
+## Drawing every mesh with one material
+
+`scene.overrideMaterial = material` draws every mesh and instance batch of the main pass with that material, in place of each object's own. This matches three.js's `scene.overrideMaterial`. Each object keeps its mesh, its place and its instances. A batch draws all of its rows with the override. Set the property to `null` to draw each object with its own material again.
+
+Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, as three.js's shadow maps do, so a masked object still cuts its shadow. A sprite, point or line material throws E1223.
+
+The change reaches the frame after the call, and that frame rebuilds the engine's draw tables. After that the override adds no draw call and no pipeline beyond the materials it replaces. For the built-in debug views, use `debug.view` instead.
 
 ## When changes take effect
 

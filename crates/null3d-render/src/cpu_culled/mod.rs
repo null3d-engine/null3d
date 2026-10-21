@@ -2615,6 +2615,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     occluders: &mut self.occluders,
                     meshes: settings.meshes(),
                     materials: settings.materials(),
+                    override_material: settings.override_material(),
                 }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
