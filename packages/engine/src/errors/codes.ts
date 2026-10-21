@@ -219,6 +219,14 @@ const DOCS = {
 			"E1222: setLightProbeGrid() got a texture that is not a 3D texture. Make the grid's texture with LightProbeGridData.toTexture().",
 		since: '0.2',
 	},
+	E1223: {
+		title: 'Invalid feature description',
+		cause:
+			'defineFeature() or FeatureRegistry.add() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, or a lighting slot that another feature provides.',
+		example:
+			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
+		since: '0.3',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

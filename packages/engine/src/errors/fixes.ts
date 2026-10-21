@@ -58,6 +58,8 @@ export const ERROR_FIXES = {
 		'List the levels from the most detailed down, each with a larger error or distance than the one before, at most 7 of them. Make each level from the same kind of arrays as the base mesh, with the same attributes, such as the same texture coordinates and tangents.',
 	E1222:
 		"Make the grid's texture with LightProbeGridData.toTexture(), which a 3D texture alone holds, or with textures.fromVolumeData(). An image texture, or one made with textures.fromData() and a depth, is a texture array, which the probe grid cannot bind.",
+	E1223:
+		"Give each feature and output a name of its own. Give a frame point and a kind that go together, such as 'opaque' with 'draw' or 'post' with 'fullscreen'. Keep an order inside its band. Name resources, lighting slots and views from the lists. Give every output a neutral default: 'black', 'white' or 'transparent'. One feature provides each lighting slot.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:
