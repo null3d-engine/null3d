@@ -3,7 +3,7 @@ id: concepts/lod
 title: Levels of detail
 status: experimental
 since: "0.2"
-summary: "LOD groups; generated LODs; per-instance selection."
+summary: "LOD groups; generated LODs; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
@@ -17,6 +17,7 @@ flowchart LR
     l2 --> l3["Level 3<br/>error e3"]
     pick["Each frame, each object<br/>and each instance row"] --> rule{"error × scale × k<br/>under the threshold<br/>× distance?"}
     rule -->|"coarsest level<br/>that passes"| draw["Draws that level"]
+    rule -->|"the bound covers<br/>under a pixel"| hide["Draws nothing"]
 ```
 
 An object far from the camera covers few pixels. Its full mesh then costs vertex work that no one sees. A level of detail is a simpler copy of the mesh with fewer triangles. The copy differs from the full mesh by a small distance, its error. Where that distance covers less than about a pixel on the screen, the copy looks the same as the full mesh.
@@ -59,6 +60,8 @@ pixels = error × scale × render height / (2 × distance × tan(field of view /
 
 Each object and each instance row draws the coarsest level whose error covers fewer pixels than the `lodThreshold` quality setting. The setting is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, each level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles the threshold, twice at most. An orthographic camera's pixels do not shrink with distance. So its levels follow the object's scale and the camera's zoom alone.
 
+The same threshold hides an object of a mesh with levels that has nothing left to show. A bound that covers fewer pixels than the threshold draws nothing, and the mesh's last level holds no geometry. [Small objects](#small-objects) gives the distance and the fade.
+
 The distance runs from the camera to the center of the object's bounding sphere, so turning the camera never changes a level. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
 
 ## Fading between levels
@@ -66,6 +69,22 @@ The distance runs from the camera to the center of the object's bounding sphere,
 A level that switches in at once can pop. Past each switch distance lies a short band, 8% of the distance long, where the old level and the new one both draw. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. No pixel draws twice, and nothing sorts.
 
 `setLevels(levels, { fade: false })` switches a mesh's levels at once. The `lodFade` quality setting turns every band off on Low. The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade.
+
+## Small objects
+
+An object far away can cover less than a pixel. Its levels then save vertex work, but the object still draws a fragment or two that no one sees. The engine hides it: the mesh's last level holds no geometry. Only a mesh with levels has that last level, so a mesh without levels draws at every distance.
+
+The rule reads the object's bounding sphere. The number of pixels that its world diameter covers follows from the same factor as every level's switch distance:
+
+```text
+pixels = diameter × factor × threshold / distance
+```
+
+The object hides where that diameter covers fewer pixels than the `lodThreshold` setting. The render height, the render scale and the governor's doubled threshold all feed the factor, so they move the hide distance too. An orthographic camera hides an object by its diameter and the camera's zoom alone.
+
+The object draws nothing past the band that follows the hide distance. That band, 8% of the hide distance long, thins the coarsest level out with the same dither. A shrinking object then fades away instead of popping. The band needs a fading build, as every band does. On Low, and with `setLevels(levels, { fade: false })`, the object disappears at the hide distance.
+
+The shadow maps hide a caster at their own threshold, which is the camera's times `lodShadowFactor`. So a caster's shadow goes before the object itself, while the object covers a few pixels on the screen. The shadow passes draw no band.
 
 ## Shadows
 

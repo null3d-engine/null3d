@@ -297,10 +297,11 @@ export class MeshGeometry {
 	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
 	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
 	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
-	 * `lodThreshold` quality setting. The shadow maps pick a coarser level still. An empty list takes the levels
-	 * away. Skinned and morphed objects, and materials that blend or let light through, draw the
-	 * base mesh. Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
-	 * cannot take, and E1101 for a destroyed mesh.
+	 * `lodThreshold` quality setting. A bound that covers fewer pixels than the threshold draws
+	 * nothing, so the mesh's last level holds no geometry. The shadow maps pick a coarser level
+	 * still. An empty list takes the levels away. Skinned and morphed objects, and materials that
+	 * blend or let light through, draw the base mesh. Destroying a level's mesh takes every level
+	 * away. Throws E1221 for levels the mesh cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
 		const call = 'mesh.setLevels';

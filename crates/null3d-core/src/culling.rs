@@ -818,11 +818,13 @@ impl LevelChoice<'_> {
             rows.spheres.zs[r] + offset[2],
         ];
         let distance = self.rule.distance(center);
-        self.rule.pick(self.links, home, radius / local, distance)
+        self.rule
+            .pick(self.links, home, radius / local, radius, distance)
     }
 }
 
-/// Counts a row's picked buckets in a run's histogram: one entry, or a pair in each fade bucket.
+/// Counts a row's picked buckets in a run's histogram: one entry, two in a fade bucket that lists
+/// pairs, and none for a row that hides.
 #[inline]
 fn count_picked(histogram: &mut [u32], picked: Picked) {
     match picked {
@@ -831,6 +833,8 @@ fn count_picked(histogram: &mut [u32], picked: Picked) {
             histogram[new as usize] += 2;
             histogram[old as usize] += 2;
         }
+        Picked::FadeOut { old, .. } => histogram[old as usize] += 2,
+        Picked::Hidden => {}
     }
 }
 
@@ -1186,6 +1190,11 @@ pub fn cull_into_buckets<'a>(
                         put(old, entry(row));
                         put(old, fade_old.to_bits());
                     }
+                    Picked::FadeOut { old, t } => {
+                        put(old, entry(row));
+                        put(old, (-t).to_bits());
+                    }
+                    Picked::Hidden => {}
                 }
             }
         } else {

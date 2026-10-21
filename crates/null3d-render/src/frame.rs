@@ -1026,8 +1026,8 @@ pub struct SceneSettings {
 /// How objects and batches pick their meshes' levels of detail.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LevelQuality {
-    /// The error in pixels under which a coarser level draws, in the views of cameras. 0 draws
-    /// every mesh's base level.
+    /// The error in pixels under which a coarser level draws, in the views of cameras, and the
+    /// size below which a bound draws nothing. 0 draws every mesh's base level.
     pub threshold: f32,
     /// What the threshold is multiplied by in the shadow maps' views, so that casters draw a
     /// coarser level.

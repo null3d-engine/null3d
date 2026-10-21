@@ -6,14 +6,14 @@
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
 // `?mask` draws with a mask smoothed by alpha to coverage, as foliage does, which passes every
-// pixel, and `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser
-// level than the copy itself.
+// pixel, `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser level
+// than the copy itself, and `?hide` raises the threshold and places copies around the hide distance.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
-/** The threshold in pixels, and the camera's vertical field of view in degrees. */
-const THRESHOLD = 2;
+/** The vertical field of view in degrees, and the threshold in pixels: the largest a setting takes. */
 const FOV = 40;
+const THRESHOLD = params.has('hide') ? 16 : 2;
 /** Each lower level's error, in the units of the base sphere, whose radius is 1. */
 const ERRORS = [0.05, 0.1, 0.2];
 /** The segments around each level, and its color, from the base level down. */
@@ -25,6 +25,8 @@ const LEVELS: [number, Vec3][] = [
 ];
 /** Each copy's distance as a share of its switch distance: before and after. */
 const SIDES = [0.95, 1.03];
+/** Each copy's distance as a share of its hide distance: before the band, in it, and past it. */
+const HIDE_SIDES = [0.95, 1.03, 1.09];
 /** Each row's height on the screen, from -1 at the bottom to 1 at the top. */
 const ROWS = [0.55, -0.1, -0.6];
 
@@ -107,16 +109,23 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		return;
 	}
 
-	// Where each copy stands: its row and side on the screen, at its share of its switch distance.
+	// Where each copy stands: its row's switch distance, or the distance where its bound covers
+	// fewer pixels than the threshold, times the side's share. The hide copies stand in one row:
+	// the first draws the last level, the second lies in the band that thins it out, and the third
+	// past the band, where nothing draws.
+	const hide = params.has('hide');
 	const places = (out: Vec3[]) => {
 		const f = factor();
-		for (let k = 0; k < ROWS.length * SIDES.length; k++) {
-			const row = Math.floor(k / SIDES.length);
-			const side = k % SIDES.length;
-			const distance = (SIDES[side] as number) * (ERRORS[row] as number) * f;
-			const x = (side === 0 ? -0.35 : 0.35) * distance * tan * aspect();
-			const y = (ROWS[row] as number) * distance * tan;
-			out[k] = [x, y, -distance];
+		const sides = hide ? HIDE_SIDES : SIDES;
+		const rows = hide ? 1 : ROWS.length;
+		for (let k = 0; k < rows * sides.length; k++) {
+			const row = Math.floor(k / sides.length);
+			const side = k % sides.length;
+			const base = hide ? 2 : (ERRORS[row] as number);
+			const distance = (sides[side] as number) * base * f;
+			const across = hide ? (side - 1) * 0.6 : side === 0 ? -0.35 : 0.35;
+			const y = hide ? 0 : (ROWS[row] as number) * distance * tan;
+			out[k] = [across * distance * tan * aspect(), y, -distance];
 		}
 		return out;
 	};

@@ -199,3 +199,28 @@ Cluster levels (M3-L3) serve large static meshes that do not bend, such as scans
 - Multi-draw indirect and 64-bit atomics wait for browsers, as [D-179](D-179-technique-rulings-2026-10-15.md) ruling 27 says. Cluster levels need neither.
 
 Follow-ups 1, 4 and 5 come in M3, in M3-L2. Follow-ups 2 and 3 stay open. Live simplification of meshes while the program runs is not planned: it costs CPU time and uploads every frame, and cluster levels give its result.
+
+## Addendum: a bound under a pixel draws nothing (21 October 2026)
+
+M3-L1 gives every level set a last level that holds no geometry. An object or instance row hides
+when the world diameter of its bounding sphere covers fewer pixels than `lodThreshold`:
+
+```text
+diameter × factor < distance,  factor = render height × P[1][1] / (2 × threshold)
+```
+
+This is the factor that picks every level, so the render height, the render scale and the
+governor's doubled threshold all move the hide distance. The diameter, not the radius, measures the
+object: a bound that covers half a pixel each way is a pixel across, and other engines cull at that
+size. At Medium and above an object goes when its diameter is under a pixel, and on Low under two.
+
+Past the hide distance lies the same 8% band as a level switch. There the level that the object
+would draw goes into its fade bucket with a negative fade value, so the dither drops a growing
+share of its pixels until none remain. Without a band, or without a fading build, the object hides
+at the hide distance. A mesh without levels never hides, so a scene without levels still pays
+nothing. Both paths compare the same values: the job workers and the direct-draw culling read
+`levels.rs`, and the GPU's culling shader reads `cull.wgsl`.
+
+The shadow views use their own threshold, times `lodShadowFactor`, as their level choice does. A
+caster's shadow therefore goes at a nearer distance than the object itself. It draws no band, as
+the shadow maps already pick without one.

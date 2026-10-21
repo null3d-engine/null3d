@@ -619,9 +619,35 @@ fn rows_pick_the_level_their_distance_and_scale_give() {
             "rows nearer than 5 m draw the base level"
         );
         assert_eq!(buckets[1], [2, 3], "rows from 5 m to 20 m draw level 1");
-        assert_eq!(buckets[2], [4, 5], "rows past 20 m draw level 2");
+        // The last row's bound of radius 1 covers half a pixel past 200 m, so it draws nothing.
+        assert_eq!(buckets[2], [4], "rows past 20 m draw level 2");
         assert!(buckets[3..].iter().all(Vec::is_empty), "no band, no fade");
     }
+}
+
+#[test]
+fn rows_that_cover_less_than_a_pixel_hide_and_fade_out() {
+    // A bound of world radius 1 covers a pixel until 200 m. Row 0 stands just short of it, row 1
+    // lies a quarter into the band past it, and row 2 past the band.
+    let distances = [196.0, 208.0, 240.0];
+    let buckets = cull_levels(&distances, true, 0.15);
+    let bits = |word: u32| f32::from_bits(word);
+    assert_eq!(buckets[2], [0], "the nearest row draws the last level");
+    // The dying row lists a pair in the last level's fade bucket, with a negative fade value.
+    assert_eq!(buckets[5].len(), 2);
+    assert_eq!(buckets[5][0], 1);
+    assert!(
+        (bits(buckets[5][1]) + 0.2667).abs() < 1e-3,
+        "{}",
+        bits(buckets[5][1])
+    );
+    // A row past the band, and the nearer rows, list nothing.
+    assert!(
+        buckets[0].is_empty()
+            && buckets[1].is_empty()
+            && buckets[3].is_empty()
+            && buckets[4].is_empty()
+    );
 }
 
 #[test]
