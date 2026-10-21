@@ -1,4 +1,4 @@
-# D-208: Gizmos in the controls add-on
+# D-210: Gizmos in the controls add-on
 
 Status: decided. Date: 2026-10-21. Task: M3-K2.
 
