@@ -309,6 +309,7 @@ pub(super) fn record_bundle(
         hidden,
         counts: None,
         motion,
+        scene: ids::MATERIAL_SCENE_GROUPS,
     };
     match kind {
         Bundle::Opaque | Bundle::Subsurface => {
@@ -364,6 +365,7 @@ pub(super) fn record_direct(
         first_draw: 0,
         hidden,
         counts: Some(counts),
+        scene: ids::MATERIAL_SCENE_GROUPS,
         motion: match kind {
             Bundle::Motion(parity) => Some(parity),
             _ => None,
@@ -410,6 +412,8 @@ pub(super) fn record_pick(
         hidden,
         counts,
         motion: None,
+        // A pick build shades no surface, so its pipeline takes no scene group.
+        scene: 0,
     };
     draws.record(
         list,
@@ -439,6 +443,9 @@ struct Draws<'a> {
     counts: Option<&'a [u32]>,
     /// The frame parity whose last frame's data a motion bundle reads, or `None` for any other.
     motion: Option<usize>,
+    /// The group that a bucket whose material reads the scene's depth binds: the blank texel, or
+    /// 0 for a pass whose buckets bind none.
+    scene: u32,
 }
 
 impl Draws<'_> {
@@ -464,6 +471,7 @@ impl Draws<'_> {
             hidden,
             counts,
             motion,
+            scene,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut last_vertices = None;
@@ -504,7 +512,9 @@ impl Draws<'_> {
             } else {
                 (layout.copy_stride(), 0)
             };
-            groups.set(list, maps, bucket.skins, index)?;
+            // A bucket whose material reads the scene's depth binds the group after its maps.
+            let scene = if own && bucket.scene_depth { scene } else { 0 };
+            groups.set(list, maps, scene, bucket.skins, index)?;
             list.push(
                 Op::SetVertexBuffer,
                 &[

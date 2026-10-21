@@ -158,6 +158,8 @@ export interface CompiledMaterial<
 	readonly baseColor: boolean;
 	/** True when the WGSL reads an instance's index or an object's id. */
 	readonly objectIds: boolean;
+	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
+	readonly sceneDepth: boolean;
 	/**
 	 * On the dev server, the key that the plugin sends this WGSL's hot updates under. The engine
 	 * swaps the shader of each material made from it when an update comes.

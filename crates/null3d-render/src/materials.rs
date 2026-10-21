@@ -351,6 +351,11 @@ pub mod feature {
     /// tone maps the whole image in its final pass, which has no per-pixel flag of this kind yet,
     /// so there the curve still maps the surface.
     pub const NO_TONE_MAP: u32 = 8_388_608;
+    /// The material's surface function reads the copy of the camera's opaque depth, which the
+    /// frame makes while a material with this feature draws. It lies above the flags that a
+    /// material's row stores, as no shader reads it from the row: the frame reads it to bind the
+    /// copy and to keep it from drawing before the copy exists.
+    pub const SCENE_DEPTH: u32 = 1 << 24;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -375,7 +380,8 @@ pub mod feature {
         | SUBSURFACE
         | WIREFRAME
         | PARALLAX
-        | NO_TONE_MAP;
+        | NO_TONE_MAP
+        | SCENE_DEPTH;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -1037,6 +1043,17 @@ impl MaterialTable {
     /// subsurface blur's layout.
     pub fn any_scatters(&self) -> bool {
         self.scattering > 0
+    }
+
+    /// True when the material, by id, reads the copy of the camera's opaque depth.
+    pub fn reads_scene_depth(&self, id: u32) -> bool {
+        self.is_live(id) && self.features(id) & feature::SCENE_DEPTH != 0
+    }
+
+    /// True while some live material reads the copy of the camera's opaque depth, so the frame
+    /// makes that copy whatever the quality preset says.
+    pub fn any_reads_scene_depth(&self) -> bool {
+        (0..self.len()).any(|id| self.reads_scene_depth(id))
     }
 
     /// True when a live material's shader reads the table of object ranges, which the frame

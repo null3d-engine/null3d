@@ -1173,6 +1173,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// A water sheet whose custom material reads the copy of the opaque scene's depth: shallow
+	// edges stay pale, deep water darkens, and foam shows where a box nearly touches the sheet.
+	// Both GPU paths and every thread mode must bind the copy the same way.
+	{
+		name: 'scene-depth',
+		page: 'tests/pages/scene-depth.html',
+		size: [320, 180],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		modes: ALL_MODES,
+	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
 	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
 	{

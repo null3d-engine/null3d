@@ -129,6 +129,9 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
+#ifdef SCENE_DEPTH
+#import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
+#endif
 #import null3d::gtao::{screen_occlusion, screen_read}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #ifdef PROBE_GRID
@@ -531,6 +534,62 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
     return textureSampleGrad(specular_color_map, specular_color_sampler, at.uv, l, at.dx, at.dy);
 }
 #endif
+#endif
+
+// The copy of the camera's opaque depth, which a surface function reads with `sceneDepth`. The
+// template binds it outside its maps' builds, since a material that reads it takes no maps.
+#ifdef SCENE_DEPTH
+// The group after the frame's on WebGPU, or after the maps' on a material that has them, and the
+// group after the draw records and the data textures on WebGL2.
+#ifdef WEBGL2
+@group(4) @binding(0) var scene_depth_copy: texture_2d<f32>;
+#else ifdef CUSTOM_TEXTURES
+@group(2) @binding(0) var scene_depth_copy: texture_2d<f32>;
+#else
+@group(1) @binding(0) var scene_depth_copy: texture_2d<f32>;
+#endif
+
+/// The texel of the copy of the scene's depth that holds the image's place `uv`, counted from the
+/// top left. A place outside the image reads the nearest texel inside it.
+fn scene_depth_texel(uv: vec2f) -> vec2u {
+    let size = textureDimensions(scene_depth_copy);
+    let pixel = vec2u(clamp(uv * vec2f(size), vec2f(0.0), vec2f(size) - 1.0));
+#ifdef WEBGL2
+    return vec2u(pixel.x, size.y - 1u - pixel.y);
+#else
+    return pixel;
+#endif
+}
+
+/// The scene's depth at `uv`, counted from the top left: 1 at the camera's near plane and 0 at its
+/// far plane, as `null3d::depth` describes, and 0 where nothing drew or no copy exists yet.
+fn sceneDepth(uv: vec2f) -> f32 {
+    return textureLoad(scene_depth_copy, scene_depth_texel(uv), 0).x;
+}
+
+/// The distance in front of the camera of the surface that the scene's depth at `uv` shows, in
+/// world units. A perspective camera's distance follows the depth's hyperbola, and an orthographic
+/// camera's rises evenly from its near plane.
+fn sceneDistance(uv: vec2f) -> f32 {
+    let depth = sceneDepth(uv);
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return linear_depth(depth, near, far);
+    }
+    return -orthographic_depth_to_view_z(depth, near, far);
+}
+#else ifdef SCENE_DEPTH_STUB
+// A custom material's functions join every build of this template, and its shadow caster, motion
+// and pick builds read no surface and bind no depth. These stand-ins let the functions build there;
+// the builds that shade a surface bind the copy and get the functions above.
+fn sceneDepth(uv: vec2f) -> f32 {
+    return 0.0;
+}
+
+fn sceneDistance(uv: vec2f) -> f32 {
+    return engine_frame.camera_range.y;
+}
 #endif
 
 #ifdef MAPS

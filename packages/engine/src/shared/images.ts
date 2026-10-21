@@ -103,6 +103,11 @@ export interface CustomShader {
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
 	readonly textures: number;
 	/**
+	 * True for a custom material whose surface function reads the copy of the scene's depth, so its
+	 * pipelines bind the depth after the maps' group.
+	 */
+	readonly sceneDepth?: boolean;
+	/**
 	 * True for a custom material whose builds load on first use, in sets that the sketch thread
 	 * sends: its variants hold the sets that arrived.
 	 */

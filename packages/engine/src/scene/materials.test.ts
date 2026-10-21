@@ -32,6 +32,7 @@ import {
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_NO_TONE_MAP,
 	MATERIAL_FEATURE_PARALLAX,
+	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
@@ -244,6 +245,7 @@ function compiledMaterial(
 		locations: [0, 1, 2],
 		attributes: VERTEX_UV0,
 		baseColor: true,
+		sceneDepth: false,
 	} as const;
 }
 
@@ -1016,6 +1018,58 @@ describe('materials.shader', () => {
 			(standardCustom(SHADING_CUSTOM_FIRST) | SHADING_CUSTOM_OBJECT_IDS) >>> 0,
 			standardCustom(SHADING_CUSTOM_FIRST + 1),
 		]);
+	});
+
+	test('marks WGSL that reads the scene depth, and checks its declaration', () => {
+		const { features, materials } = fakeCore();
+		const depth = { ...compiledMaterial(), sceneDepth: true };
+		materials.shader({ wgsl: depth, sceneInputs: ['sceneDepth'] });
+		expect(features).toEqual([MATERIAL_FEATURE_SCENE_DEPTH]);
+		const undeclared = thrown(() => materials.shader({ wgsl: depth, sceneInputs: [] }));
+		expect(undeclared.code).toBe('E1217');
+		expect(undeclared.message).toStartWith(
+			"E1217: materials.shader() got WGSL that reads the scene's depth, but sceneInputs does not declare it.",
+		);
+		const unused = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), sceneInputs: ['sceneDepth'] }),
+		);
+		expect(unused.message).toStartWith(
+			"E1217: materials.shader() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance.",
+		);
+		// The depth group and the maps' group would pass WebGPU's sampled textures in the
+		// fragment stage together.
+		const textured = thrown(() =>
+			materials.shader({
+				wgsl: { ...compiledMaterial([], [{ name: 'detail', offset: 0 }]), sceneDepth: true },
+				sceneInputs: ['sceneDepth'],
+				textures: { detail: texture(1) },
+			}),
+		);
+		expect(textured.message).toStartWith(
+			"E1217: materials.shader() got WGSL that reads the scene's depth and declares textures of its own.",
+		);
+	});
+
+	test('refuses the scene inputs that a custom material does not read yet', () => {
+		const { materials } = fakeCore();
+		for (const input of ['sceneColor', 'normals', 'motionVectors'] as const) {
+			const error = thrown(() =>
+				materials.shader({ wgsl: compiledMaterial(), sceneInputs: [input] }),
+			);
+			expect(error.code).toBe('E1217');
+			expect(error.message).toStartWith(
+				`E1217: materials.shader() got the scene input '${input}', which custom materials do not read yet.`,
+			);
+		}
+		const twice = thrown(() =>
+			materials.shader({
+				wgsl: { ...compiledMaterial(), sceneDepth: true },
+				sceneInputs: ['sceneDepth', 'sceneDepth'],
+			}),
+		);
+		expect(twice.message).toStartWith(
+			"E1217: materials.shader() got the scene input 'sceneDepth' twice in sceneInputs;",
+		);
 	});
 
 	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {

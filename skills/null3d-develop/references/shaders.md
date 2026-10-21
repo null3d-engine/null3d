@@ -344,6 +344,8 @@ Grass and leaves lit from behind (0.2): give the custom material `diffuseTransmi
 
 Water that shows its bed (0.2): give the custom material `transmission: 1`, `thickness` (the water's depth), `ior: 1.33` and an `attenuationColor`, and set `s.transmission = 1.0` with a rippled `s.normal` in the surface function. The ripples bend the bed that shows through. Only opaque objects show through. Docs: `api/materials` (Transmission), `shaders/surface-functions`.
 
+Depth behind a blended sheet (0.3): declare `sceneInputs: ['sceneDepth']` and read `sceneDistance(uv)` or `sceneDepth(uv)` in the surface function, with `uv = input.fragCoord.xy / frame.resolution`. The shallows near the bed stay pale and foam shows where an opaque surface nearly touches the sheet. A sheet in the opaque pass, or in a scene or reflection pass, reads 0, the far plane. The material declares no textures of its own. Docs: `api/materials` (The scene behind a surface), `shaders/surface-functions` (The scene's depth).
+
 Water that the camera can go under (0.2): give the material `doubleSided: true`, or the surface does not draw from below. Branch on `input.frontFacing`. On the back face, turn a ripple normal that the function built so it faces down. Set `s.reflection` to zero, since a reflection pass holds the world above. Use a thin `s.thickness`, such as 0.05, with `s.transmission` near 1. A custom effect gives the view under the water its tint (section 6). Docs: `shaders/surface-functions` (Water seen from below), `guides/custom-passes` (Example: under the water).
 
 ## 8. Portable WGSL rules
