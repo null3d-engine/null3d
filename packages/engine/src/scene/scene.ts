@@ -46,6 +46,8 @@ import {
 } from './background';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
+import type { FeatureDraw, FeatureDrawOptions } from './feature-draws';
+import type { FeatureDescription } from './features';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
@@ -103,7 +105,7 @@ import {
 	type RaycastOptions,
 	SceneQueries,
 } from './queries';
-import type { AlphaMode, Material, MeshGeometry } from './resources';
+import type { AlphaMode, CompiledWgsl, Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
 import type {
 	PointBatch,
@@ -2570,6 +2572,18 @@ async function loadLines(call: string): Promise<typeof import('./lines')> {
 	}
 }
 
+/** Imports the draw adapter, which a page downloads with its first feature draw, or throws E1406. */
+async function loadFeatureDraws(call: string): Promise<typeof import('./feature-draws')> {
+	try {
+		return await import('./feature-draws');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the feature draw code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
 /** The segments that each line mode makes of a number of points. */
 const LINE_SEGMENTS: Readonly<Record<LineMode, (points: number) => number>> = {
 	segments: (points) => Math.floor(points / 2),
@@ -3793,6 +3807,44 @@ export class Scene implements ViewHolder {
 		const points = sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
 		instances.face = points;
 		return points;
+	}
+
+	/**
+	 * An add-on's own kind of draw, declared by a feature description with the kind `'draw'`: its
+	 * WGSL, its vertex data, its uniforms and the description's frame point, band and order. The
+	 * engine draws the object on every GPU path and in every thread mode, as it draws the scene's
+	 * other objects, and sorts a blended draw among the transparent pass's objects. The first call
+	 * downloads the draw adapter.
+	 *
+	 * The description names the frame point: `'opaque'` with an opaque or masked material, or
+	 * `'transparent'` with a blended one. The band and order place a blended draw among the pass's
+	 * objects. The adapter records in the main view alone, so a description with another view
+	 * throws E1223. The description's `reads`, `writes`, `outputs` and `provides` stay with the
+	 * feature registry: this draw draws no scene resource.
+	 *
+	 * Throws E1223 for a description that is not a draw the adapter can place, E1215, E1216 and
+	 * E1217 for WGSL and values that `materials.shader` refuses, E1206 for vertex data that makes no
+	 * mesh, and E1406 when the adapter does not download.
+	 */
+	async addFeatureDraw<const Wgsl extends string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: FeatureDrawOptions<Wgsl>,
+	): Promise<FeatureDraw<Wgsl>> {
+		const call = 'addFeatureDraw';
+		const { makers } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureDraws(call);
+		return draws.createFeatureDraw(
+			description,
+			options,
+			{
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
 	}
 
 	/**

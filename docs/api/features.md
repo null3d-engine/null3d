@@ -8,14 +8,16 @@ summary: "One description for an add-on's render work: the frame point, the read
 
 # Add-on feature descriptions
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the engine does not place a registered feature in the frame. Each hook that does this arrives with the add-on that first uses it. Until then, a registration checks the shape and changes nothing that draws.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). The other kinds do not reach the frame yet: each arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws.
 
 ```mermaid
 flowchart LR
     description["defineFeature<br/>frame point, reads, writes"] --> registry["FeatureRegistry<br/>one owner for each name"]
     registry --> outputs[("published outputs<br/>a neutral value for readers")]
     registry --> slots["lighting slots<br/>one provider each"]
-    registry -.-> graph["The render graph<br/>its hook is not built yet"]
+    registry --> draw["scene.addFeatureDraw<br/>a draw feature"]
+    draw --> frame["The frame's draw list"]
+    registry -.-> graph["The render graph<br/>other hooks are not built yet"]
 ```
 
 A feature description is one object that describes an add-on's part of a frame. It names the point where the feature records and the scene resources that it reads and writes. It also names the textures that it publishes, the lighting slot that it provides, and the callbacks that keep it in step with the engine. Every add-on hook that records frame work uses this one shape. An add-on learns one API, and the engine documents and versions one shape.
@@ -149,6 +151,21 @@ The default is `['main']`.
 - `resize` gives the render size in device pixels. Make targets of the new size.
 - `reset` names why the feature must drop its history. The reasons are a new render size, a camera cut to another place, and an exposure change that makes stored values stale.
 - `destroy` frees the feature's own objects. The registry does not call it: stop the feature before you remove it.
+
+## Adapters
+
+An adapter turns a checked description into work in the frame. One adapter exists:
+
+- **Draws:** [`scene.addFeatureDraw(description, options)`](feature-draws.md) draws the add-on's WGSL over its own vertices, with its uniforms, at the description's frame point. The band and order place a blended draw among the transparent pass's objects. The adapter places the main view alone.
+
+The other hooks still need their own payload, and they arrive with the add-on that uses them first:
+
+| Hook | What the description does not yet give it |
+| --- | --- |
+| Compute passes whose storage output other work reads in the same frame | The binding and ordering of the storage read. A feature has one kind, so the WebGL2 fragment-pass fallback needs a second description. |
+| Draws whose count and instances the GPU writes | The indirect buffer and the CPU-filled fallback. The description says where the draw sorts, not how its count is made. |
+| Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
+| Scene inputs, sky layers, presets and stats | Each needs its own declaration: a depth input behind a material, the background's CPU light, or a GPU timing scope. |
 
 ## Checks
 

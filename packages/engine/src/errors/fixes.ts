@@ -59,7 +59,7 @@ export const ERROR_FIXES = {
 	E1222:
 		"Make the grid's texture with LightProbeGridData.toTexture(), which a 3D texture alone holds, or with textures.fromVolumeData(). An image texture, or one made with textures.fromData() and a depth, is a texture array, which the probe grid cannot bind.",
 	E1223:
-		"Give each feature and output a name of its own. Give a frame point and a kind that go together, such as 'opaque' with 'draw' or 'post' with 'fullscreen'. Keep an order inside its band. Name resources, lighting slots and views from the lists. Give every output a neutral default: 'black', 'white' or 'transparent'. One feature provides each lighting slot.",
+		"Give each feature and output a name of its own. Give a frame point and a kind that go together, such as 'opaque' with 'draw' or 'post' with 'fullscreen'. Keep an order inside its band. Name resources, lighting slots and views from the lists. Give every output a neutral default: 'black', 'white' or 'transparent'. One feature provides each lighting slot. A draw records at 'opaque' or 'transparent', in the main view, with an alpha mode that draws in its frame's pass.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:
