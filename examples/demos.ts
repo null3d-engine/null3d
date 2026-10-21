@@ -558,6 +558,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'gizmos',
+		group: 'Motion and interaction',
+		sketch: new URL('./gizmos/sketch.ts', import.meta.url),
+		title: 'Drag, rotate and scale gizmos',
+		scene: 'Gallery plinth',
+		summary:
+			'Three pieces stand on a plinth in a dim gallery, and a click selects one. The handles turn a drag of the mouse or a finger into a move, a turn or a scale about the handle that it holds, and the buttons pick which. The handles draw over the scene and take the pointer first, so a drag of one never turns the view.',
+		hold: 2,
+		timeoutSeconds: 60,
+		choices: [{ name: 'mode', label: 'Mode', options: ['Translate', 'Rotate', 'Scale'] }],
+	},
+	{
 		name: 'math',
 		group: 'Motion and interaction',
 		sketch: new URL('./math/sketch.ts', import.meta.url),

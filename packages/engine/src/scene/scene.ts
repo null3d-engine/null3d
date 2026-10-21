@@ -1250,6 +1250,15 @@ export class Object3D implements Described {
 		this.attachTo(parent);
 	}
 
+	/**
+	 * The object's parent, or null for a root object. A destroyed parent leaves the object a
+	 * root object.
+	 */
+	getParent(): Object3D | null {
+		if (DEV) checkLive('getParent', this);
+		return this.liveParent;
+	}
+
 	/** @internal Records `parent` as the object's parent, in both objects. */
 	attachTo(parent: Object3D | null): void {
 		this.parentObject?.childObjects?.delete(this);
@@ -1299,6 +1308,15 @@ export class Object3D implements Described {
 		}
 		this.scene.command(C.COMMAND_SET_LAYERS, this.handle, mask >>> 0, 0, 'setLayers');
 		this.layerMask = mask >>> 0;
+	}
+
+	/**
+	 * The object's layer mask, as `setLayers` or its create options set it: bit n puts it on layer
+	 * n.
+	 */
+	getLayers(): number {
+		if (DEV) checkLive('getLayers', this);
+		return this.layerMask;
 	}
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
