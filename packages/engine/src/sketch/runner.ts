@@ -1136,10 +1136,18 @@ export class SketchRunner {
 	 */
 	private animate(stepUs: number): void {
 		const { scene } = this.context;
-		if (scene.animations === undefined && !scene.morphed) return;
+		const properties = scene.properties;
+		if (scene.animations === undefined && !scene.morphed && properties === undefined) return;
 		try {
-			const step = this.sketch.glue.updateAnimations(stepUs);
-			this.core.check(step, 'the animation step', undefined, true);
+			// The property tracks follow the clips' times and weights, so they sample after the
+			// job workers advanced them.
+			if (scene.animations !== undefined || scene.morphed) {
+				const step = this.sketch.glue.updateAnimations(stepUs);
+				this.core.check(step, 'the animation step', undefined, true);
+			}
+			// The sketch's own step, which hold mode also gives, so a held frame shows each track
+			// at the held time.
+			properties?.step(this.clock.dt);
 		} catch (error) {
 			this.report(error);
 		}

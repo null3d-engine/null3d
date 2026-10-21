@@ -3,7 +3,7 @@ id: api/animation
 title: Animation
 status: experimental
 since: "0.2"
-summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, joint overrides and look-at, events; morph weights."
+summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, joint overrides and look-at, events; property animation of lights, cameras and materials, glTF's KHR_animation_pointer; morph weights."
 ---
 
 # Animation
@@ -120,6 +120,67 @@ for (const [k, knight] of knights.entries()) {
 `stop(name, { fade })` fades a clip out on every layer. `stop()` with no name stops every clip. A clip that stops at once, or fades out fully, leaves the pose. With no clip playing, the object holds its rest pose.
 
 `setTimeScale(scale)` sets the rate of every clip of the object. Set it to 0 to pause the object's animation.
+
+## Property animation
+
+A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`.
+
+```ts
+const pulse = scene.animateProperty(lamp, 'light.intensity', {
+  times: [0, 1, 2], values: [0, 5, 0], loop: true,
+});
+
+return {
+  onUpdate() {
+    pulse.setSpeed(2);
+  },
+};
+```
+
+`animateProperty(target, path, keyframes)` takes a light, a camera, a material or an object, and returns the animation that it starts. The path names the value:
+
+| Target | Paths |
+| --- | --- |
+| Light | `light.intensity`, `light.color`, `light.range`, `light.decay`, `light.angle` and `light.penumbra` |
+| Camera | `camera.fov` in degrees, `camera.near`, `camera.far`, and `camera.height` for an orthographic camera |
+| Material | The values that `setUniform` takes, such as `material.opacity`, `material.color` or `material.roughness` |
+| Object | `position`, `rotation` as a quaternion `[x, y, z, w]`, `scale` and `visible` |
+
+The prefix is optional, so `'intensity'` names a light's intensity too. A directional light has no range or cone, and a perspective camera has no view height.
+
+`keyframes` holds the time of each key in seconds, and the value of each key. One key holds one number for an intensity, three for a color, a position or a scale, and four for a rotation. The values of the keys follow one another. A cubic key holds three times as many numbers: an in-tangent, the value and an out-tangent.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `interpolation` | `'linear'` | Moves the value between keys along a straight line, holds it with `'step'`, or follows glTF's cubic spline with `'cubic'` |
+| `loop` | `true` | `false` plays the animation once and holds its last key |
+| `speed` | 1 | The rate of the animation's time. A negative rate plays it backward |
+| `time` | the first key | The time at which it starts |
+| `paused` | `false` | `true` starts it paused |
+
+The returned animation has these calls and values:
+
+| Call or value | What it does |
+| --- | --- |
+| `setTime(seconds)` | Places the animation at a time, as three.js's `action.time` does |
+| `setSpeed(rate)` | Sets the rate of its time |
+| `setPaused(paused)` | Starts or stops its time, and leaves the target as it is |
+| `setLoop(loop)` | Repeats the animation, or makes it hold its last key |
+| `stop()` | Stops the animation, and leaves the target at its last value |
+| `time`, `playing`, `speed`, `loop` | What it holds |
+
+An animation of a material changes every object that uses the material, as a change through `set` does. A value that an animation writes costs nothing per frame. The engine samples the tracks on the sketch's thread, after the job workers advanced the clips, so a sketch has no update call to make.
+
+### Files with KHR_animation_pointer
+
+The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
+
+```ts
+const copy = scene.instantiate(await assets.loadGltf(url));
+copy.animator().play('Cube Animation');
+```
+
+A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. They are a camera's values, because the loader reads no cameras from files. They are a texture's transform, a light's inner cone angle, and the values of extensions that the engine does not draw.
 
 ## Clip weights
 
@@ -430,6 +491,8 @@ A morphed object culls with a sphere that its weights grow: each target's longes
 | `bone.quaternion.copy(q)` after `mixer.update(dt)` | `anim.setJointRotation('Head', q)`, which holds until `clearJoint` |
 | `bone.quaternion.multiply(q)` after `mixer.update(dt)` | `anim.addJointRotation('Spine', q)` |
 | `bone.lookAt(point)`, or a look-at chain that your code works out | `anim.lookAt(point, { joints: ['Spine', 'Neck', 'Head'] })` |
+| `AnimationClip` and `NumberKeyframeTrack` built in code, then `mixer.clipAction(clip).play()` | `scene.animateProperty(lamp, 'light.intensity', { times, values })` |
+| `KHR_animation_pointer` through a registered GLTFLoader plugin | The loader reads the pointer itself, and the clip's animator plays it |
 | `mesh.morphTargetInfluences[k] = w` | `mesh.setMorphWeight(k, w)`, or with the target's name |
 | `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; the mesh geometry's `morphTargetNames`, such as `prefab.find('Face')?.mesh?.morphTargetNames`, lists the names in order |
 | `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
@@ -449,6 +512,7 @@ Where three.js and null3D differ:
 - three.js's `setEffectiveWeight` stops a fade. null3D's `setWeight` leaves a fade running, which multiplies the weight.
 - three.js has no blend by a value. A three.js blend of walk and run keeps each clip's own rate, so their steps drift apart. A null3D blend keeps them in step.
 - `action.startAt(time)`, which delays a start, has no counterpart. Call `play` at that time in `onUpdate`.
+- three.js reads `KHR_animation_pointer` with a plugin that registers on the loader. null3D's loader reads the pointers of lights, materials and node visibility itself. A pointer that it does not read leaves its value as the file has it, and development builds warn.
 
 | | three.js | null3D |
 | --- | --- | --- |
@@ -461,7 +525,7 @@ Where three.js and null3D differ:
 
 | Code | When |
 | --- | --- |
-| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight or an update interval outside 1 to 64; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have; a joint rotation past the 8 that an object holds; a look-at chain of no joints or more than 4, or whose joints are not one chain parents first; a first `lookAt` without options |
+| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight or an update interval outside 1 to 64; a path that `animateProperty` does not take, or keyframes with the wrong number of values for it; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have; a joint rotation past the 8 that an object holds; a look-at chain of no joints or more than 4, or whose joints are not one chain parents first; a first `lookAt` without options |
 | [E1203](../errors/E1203.md) | A fade, speed, start time, weight, blend point, blend value, phase, morph weight, time scale, joint rotation, look-at target, limit or share that is NaN or infinite |
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
