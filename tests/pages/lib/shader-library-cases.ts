@@ -1435,15 +1435,19 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		tolerance: 0,
 	},
 	// null3d::color, the limit of HDR color: each channel no brighter than one step below the
-	// largest 16-bit float, infinity included, and every value below it kept.
+	// largest 16-bit float, infinity included, every value below it kept, and a NaN of either sign
+	// and any payload as 0.
 	{
 		name: 'color::limit_hdr',
 		cases: (random) => [
 			new Inputs().setF(0, [65472, 65473, 1e30]),
 			new Inputs().setF(0, [Number.POSITIVE_INFINITY, 0.5, -2]),
+			new Inputs().setU(0, [0x7fc00000, 0xffc00000, 0x7f800001]),
+			new Inputs().setU(0, [0x7fffffff, 0x40000000, 0x7f800000]),
 			...uniform(3, 0, 70000)(random),
 		],
-		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
+		expected: (i) =>
+			floats(map3(xyz(i.f(0)), (value) => (Number.isNaN(value) ? 0 : Math.min(value, 65472)))),
 		tolerance: 0,
 	},
 	{
