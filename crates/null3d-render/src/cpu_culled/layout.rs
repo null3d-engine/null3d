@@ -65,6 +65,14 @@ pub(super) enum Drawn {
     Subsurface,
 }
 
+impl Drawn {
+    /// True for the passes that draw the scene's surfaces, where the scene's material override
+    /// applies: the camera's views and the subsurface view.
+    fn overrides(self) -> bool {
+        matches!(self, Drawn::Scene | Drawn::Subsurface)
+    }
+}
+
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
 /// object's place in the outline mask depends on its material, so the objects of one mesh share a
 /// bucket.
@@ -394,16 +402,22 @@ impl Layout {
         };
         let any_key = |slot: usize| {
             let object = scene.flags()[slot];
+            let own = scene.materials()[slot];
+            let material = if drawn.overrides() {
+                settings.drawn_material(own)
+            } else {
+                own
+            };
             let left_out = match drawn {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
-                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
+                Drawn::Subsurface => !settings.scatters(material),
             };
             if left_out {
                 return None;
             }
-            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
+            let mesh = scene.meshes()[slot];
             key_of(
                 settings.pipeline_of(mesh, material),
                 mesh,
@@ -427,9 +441,19 @@ impl Layout {
             match drawn {
                 Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
                 Drawn::Scene | Drawn::Casters => {
-                    let pipeline = settings.batch_pipeline_of(batch);
-                    let (mesh, material) = (batch.mesh(), batch.material());
-                    key_of(pipeline, mesh, material, group_of(batch), bits, None)
+                    let (material, pipeline) = if drawn.overrides() {
+                        settings.drawn_batch_pipeline_of(batch)
+                    } else {
+                        (batch.material(), settings.batch_pipeline_of(batch))
+                    };
+                    key_of(
+                        pipeline,
+                        batch.mesh(),
+                        material,
+                        group_of(batch),
+                        bits,
+                        None,
+                    )
                 }
                 Drawn::Outlined | Drawn::Subsurface => None,
             }

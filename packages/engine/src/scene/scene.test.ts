@@ -80,6 +80,7 @@ function fakeCore(largeWorld = false) {
 		[C.RING_FIELD_READ_INDEX]: AT.read,
 	};
 	const backgrounds: (number | number[])[] = [];
+	const overrides: number[] = [];
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => fields[field],
@@ -104,6 +105,7 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
+		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -144,6 +146,8 @@ function fakeCore(largeWorld = false) {
 		box,
 		ball,
 		paint,
+		/** The override material ids that the core received, in order, with 0 for none. */
+		overrides,
 		/** Sets the world matrix that the core gives an object, from a three.js matrix. */
 		setWorld(object: Object3D, matrix: Matrix4) {
 			const e = matrix.elements;
@@ -1207,5 +1211,46 @@ describe('labels', () => {
 			expect(thrown(() => labelCapacity(bad)).message).toStartWith(
 				`E1213: createEngine() got ${bad} for maxLabels`,
 			);
+	});
+});
+
+describe('overrideMaterial', () => {
+	test('sets and clears the material that every mesh of the main pass draws with', () => {
+		const { scene, paint, overrides } = fakeCore();
+		expect(scene.overrideMaterial).toBeNull();
+		scene.overrideMaterial = paint;
+		expect(scene.overrideMaterial).toBe(paint);
+		expect(overrides).toEqual([1]);
+		// The same material again reaches no core call.
+		scene.overrideMaterial = paint;
+		expect(overrides).toEqual([1]);
+		scene.overrideMaterial = null;
+		expect(scene.overrideMaterial).toBeNull();
+		expect(overrides).toEqual([1, 0]);
+	});
+
+	test('refuses a sprite, point or line material with E1224 and keeps the override as it was', () => {
+		const { scene, paint, core, overrides } = fakeCore();
+		scene.overrideMaterial = paint;
+		for (const [shading, kind] of [
+			[C.SHADING_SPRITE, 'sprite'],
+			[C.SHADING_PARTICLE, 'particle'],
+			[C.SHADING_LINE, 'line'],
+			[C.SHADING_LINE_LIT, 'line'],
+		] as const) {
+			const material = new Material(2, core, 'materials.standard.set', shading);
+			expect(thrown(() => (scene.overrideMaterial = material)).message).toStartWith(
+				`E1224: scene.overrideMaterial got a ${kind} material.`,
+			);
+			expect(scene.overrideMaterial).toBe(paint);
+		}
+		expect(overrides).toEqual([1]);
+	});
+
+	test('refuses a material of another engine with E1103', () => {
+		const { scene } = fakeCore();
+		const foreign = new Material(2, {} as unknown as CoreMemory, 'materials.standard.set');
+		expect(thrown(() => (scene.overrideMaterial = foreign)).code).toBe('E1103');
+		expect(scene.overrideMaterial).toBeNull();
 	});
 });

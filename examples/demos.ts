@@ -158,9 +158,10 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Objects and parents',
 		scene: 'Turntable stage',
 		summary:
-			'Crates of six materials ride a turntable on a studio stage and step off in turn. setParent with keepWorld moves each crate between the table and the stage without moving it in the world.',
+			'Crates of six materials ride a turntable on a studio stage and step off in turn. setParent with keepWorld moves each crate between the table and the stage without moving it in the world. The Look button draws the whole stage in one material, and every crate keeps its shape and its place.',
 		hold: 2.5,
 		timeoutSeconds: 60,
+		choices: [{ name: 'look', label: 'Look', options: ['Materials', 'One material'] }],
 	},
 	{
 		name: 'layers',

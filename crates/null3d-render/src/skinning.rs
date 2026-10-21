@@ -45,7 +45,7 @@ use null3d_core::scene::SceneStorage;
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, texture_usage, vertex, view};
 
-use crate::frame::{RecordError, address, floats_as_bytes};
+use crate::frame::{RecordError, address, drawn_material, floats_as_bytes};
 use crate::materials::MaterialTable;
 use crate::meshes::{MeshSlot, MeshStorage};
 use crate::morph::{morph_of, posed_weights, reach};
@@ -240,6 +240,7 @@ pub fn update_bounds(
     morphs: &MorphWeights,
     meshes: &MeshStorage,
     materials: &MaterialTable,
+    override_material: u32,
 ) {
     // Without clips or morph weights, no object is posed.
     if animations.is_none() && morphs.values().is_empty() {
@@ -257,7 +258,7 @@ pub fn update_bounds(
         else {
             continue;
         };
-        let displaced = scene.materials()[slot]
+        let displaced = drawn_material(materials, override_material, scene.materials()[slot])
             .checked_sub(1)
             .map_or(0.0, |material| materials.bounds_margin(material));
         let extra = displaced
@@ -757,6 +758,7 @@ mod tests {
             &MorphWeights::new(),
             &meshes,
             &materials,
+            0,
         );
         assert_eq!(
             &scene.local_centers()[slot * 3..slot * 3 + 3],

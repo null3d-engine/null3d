@@ -433,7 +433,8 @@ impl SortedLayout {
         };
         // A skinned object draws from a bucket of its own, with the pipeline that `skin` gives.
         let pair_key = |slot: usize| {
-            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
+            let mesh = scene.meshes()[slot];
+            let material = settings.drawn_material(scene.materials()[slot]);
             let pipeline = settings.pipeline_of(mesh, material);
             key_of(pipeline, mesh, material, resident, scene.flags()[slot])
         };
@@ -461,10 +462,11 @@ impl SortedLayout {
         };
         // Instance batches receive shadows as their shadow bits say.
         let batch_key = |index: usize, batch: &InstanceBatch| {
+            let (material, pipeline) = settings.drawn_batch_pipeline_of(batch);
             key_of(
-                settings.batch_pipeline_of(batch),
+                pipeline,
                 batch.mesh(),
-                batch.material(),
+                material,
                 place(index, batch).1,
                 batch.shadows(),
             )

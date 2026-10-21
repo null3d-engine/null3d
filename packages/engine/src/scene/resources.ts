@@ -2482,6 +2482,8 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		/** @internal */ readonly core: CoreMemory,
 		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
 		protected readonly call: string,
+		/** @internal The engine core's shading code, which decides what the material draws. */
+		readonly shading: number = SHADING_LIT,
 	) {
 		this.liveId = id;
 		this.oneCall = setUniformCall(call);
@@ -2629,8 +2631,9 @@ class ShaderMaterial extends Material<ShaderValues> {
 		call: string,
 		/** The uniforms that the material's WGSL declares, by name. */
 		private readonly uniforms: ReadonlyMap<string, CompiledUniform>,
+		shading: number,
 	) {
-		super(id, core, call);
+		super(id, core, call, shading);
 	}
 
 	/**
@@ -2701,6 +2704,7 @@ export class Materials {
 			this.createId(shading, options, call, hasLayers(options), features),
 			this.core,
 			`${call}.set`,
+			shading,
 		);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
 		return material;
@@ -2907,7 +2911,7 @@ export class Materials {
 			call,
 			layered,
 		);
-		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
+		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);
 		textures.forEach((texture, slot) => {

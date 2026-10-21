@@ -82,6 +82,27 @@ use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 pub const NO_MESH: u32 = 0;
 /// Engine material ids count from 1 too: material table index plus one.
 pub const NO_MATERIAL: u32 = 0;
+
+/// The material that a mesh draws with: the scene's override material while it sets one, else the
+/// mesh's own. A sprite, line or particle material keeps its own, because it draws the rows of its
+/// batch rather than a mesh.
+pub fn drawn_material(materials: &MaterialTable, override_material: u32, own: u32) -> u32 {
+    if override_material == NO_MATERIAL || own == NO_MATERIAL {
+        return own;
+    }
+    match materials.shading(own.wrapping_sub(1)) {
+        Ok(
+            Shading::Sprite
+            | Shading::SpriteMap
+            | Shading::Line
+            | Shading::LineLit
+            | Shading::Particle
+            | Shading::ParticleMap,
+        ) => own,
+        _ => override_material,
+    }
+}
+
 /// The bucket of a source that draws nowhere.
 pub const HIDDEN: u32 = u32::MAX;
 /// Bytes of one cell's offset from the camera, as the shaders read it: a `vec4f`.
@@ -981,6 +1002,9 @@ pub struct SceneSettings {
     tiles: TileSettings,
     /// The materials' shading, or a debug view in its place.
     debug_view: DebugView,
+    /// The material that every mesh of the main pass draws with in place of its own, or
+    /// [`NO_MATERIAL`] for none.
+    override_material: u32,
     /// True when materials with parallax draw it, as the quality preset says.
     parallax: bool,
     /// True when a material moved its casters' vertices since the last frame, so every shadow
@@ -1121,6 +1145,7 @@ impl SceneSettings {
             pixel_ratio: 1.0,
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
+            override_material: NO_MATERIAL,
             parallax: true,
             casters_moved: false,
             tiles_stale: false,
@@ -1254,6 +1279,25 @@ impl SceneSettings {
             && features & feature::PARALLAX != 0
             && features & unfit == 0
             && self.displaces(id)
+    }
+
+    /// The material that every mesh of the main pass draws with in place of its own, as an engine
+    /// id, or [`NO_MATERIAL`] for none.
+    pub fn override_material(&self) -> u32 {
+        self.override_material
+    }
+
+    /// Draws every mesh of the main pass with `material` in place of its own, or with its own
+    /// materials with [`NO_MATERIAL`], from the next rebuild of the draw tables on. Returns true
+    /// when the choice changed, so the caller rebuilds the draw tables.
+    pub fn set_override_material(&mut self, material: u32) -> bool {
+        std::mem::replace(&mut self.override_material, material) != material
+    }
+
+    /// The material that a mesh draws with in the main pass: the override material while the scene
+    /// sets one, else `own` (see [`drawn_material`]).
+    pub fn drawn_material(&self, own: u32) -> u32 {
+        drawn_material(&self.materials, self.override_material, own)
     }
 
     /// Draws the scene with a debug view, or with its materials with `DebugView::Lit`, from the
@@ -2266,8 +2310,13 @@ impl SceneSettings {
         if self.textures.needs_estimate()
             && let Some(view) = self.need_view(input)
         {
-            self.textures
-                .estimate_needs(input.scene, input.batches, &self.materials, &view);
+            self.textures.estimate_needs(
+                input.scene,
+                input.batches,
+                &self.materials,
+                self.override_material,
+                &view,
+            );
         }
         let remade = self.textures.record(list, frame)?;
         // A map of the physical sky starts a fill from the panorama of the sky as it is now, which
@@ -2395,7 +2444,8 @@ impl SceneSettings {
                 .materials()
                 .iter()
                 .copied()
-                .chain(batches.iter().map(|(_, batch)| batch.material()));
+                .chain(batches.iter().map(|(_, batch)| batch.material()))
+                .chain([self.override_material]);
             for material in named {
                 if let Some(mark) = material
                     .checked_sub(1)
@@ -3159,6 +3209,14 @@ impl SceneSettings {
     /// alpha hash, and a pair that lets light through draws its rows without their values.
     pub fn batch_pipeline_of(&self, batch: &InstanceBatch) -> Option<DrawKey> {
         self.rows_pipeline_of(batch.mesh(), batch.material(), batch.has_row_values())
+    }
+
+    /// The material that an instance batch draws with in the main pass, and what its mesh and that
+    /// material ask of the pipeline that draws its rows, as [`Self::batch_pipeline_of`] does.
+    pub fn drawn_batch_pipeline_of(&self, batch: &InstanceBatch) -> (u32, Option<DrawKey>) {
+        let material = self.drawn_material(batch.material());
+        let pipeline = self.rows_pipeline_of(batch.mesh(), material, batch.has_row_values());
+        (material, pipeline)
     }
 
     /// As [`Self::pipeline_of`], with the builds that read row values when `row_values` is set.

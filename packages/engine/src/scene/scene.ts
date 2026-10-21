@@ -1480,6 +1480,14 @@ function checkSameEngine(
 		throw new EngineError('E1103', `${call}() got a ${kind} that is not from this engine.`);
 }
 
+/** What a material's shading draws besides a mesh, or undefined for a material that draws meshes. */
+function batchOnlyShading(shading: number): string | undefined {
+	if (shading === C.SHADING_SPRITE) return 'sprite';
+	if (shading === C.SHADING_LINE || shading === C.SHADING_LINE_LIT) return 'line';
+	if (shading === C.SHADING_PARTICLE) return 'particle';
+	return undefined;
+}
+
 /**
  * An object that the scene can be drawn from. `scene.setActiveCamera` picks the camera that the
  * canvas shows. A camera is a `PerspectiveCamera` or an `OrthographicCamera`, and
@@ -4172,6 +4180,48 @@ export class Scene implements ViewHolder {
 	setDecalLayers(mask: number): void {
 		if (DEV) checkLayers('setDecalLayers', mask);
 		this.core.glue.setDecalLayers(mask >>> 0);
+	}
+
+	/** The material that every mesh of the main pass draws with, or null while each uses its own. */
+	private overrideMaterialValue: Material | null = null;
+
+	/**
+	 * Draws every mesh and instance batch of the main pass with this material in place of its own,
+	 * as three.js's `scene.overrideMaterial` does, or with their own materials with null. Each
+	 * object keeps its mesh, its place and its instances, so a batch draws every row with it, and
+	 * every camera view draws with it, the scene passes among them. Sprites, points, lines and
+	 * particle systems keep their own materials, and the shadow maps keep each object's material,
+	 * as three.js's shadow maps do. A change rebuilds the engine's draw tables in the next frame;
+	 * after that it adds no draw call and builds no pipeline. Throws E1224 for a sprite, point or
+	 * line material, E1101 for a material that is destroyed, and E1103 for a material of another
+	 * engine.
+	 */
+	get overrideMaterial(): Material | null {
+		return this.overrideMaterialValue;
+	}
+
+	set overrideMaterial(material: Material | null) {
+		if (material === this.overrideMaterialValue) return;
+		const { glue } = this.core;
+		if (material === null) {
+			this.core.check(glue.setOverrideMaterial(0), 'scene.overrideMaterial', undefined, true);
+			this.overrideMaterialValue = null;
+			return;
+		}
+		if (DEV) checkSameEngine('overrideMaterial', 'material', material.core, this);
+		const batchOnly = batchOnlyShading(material.shading);
+		if (batchOnly !== undefined)
+			throw new EngineError(
+				'E1224',
+				`scene.overrideMaterial got a ${batchOnly} material. It takes a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal().`,
+			);
+		this.core.check(
+			glue.setOverrideMaterial(material.id),
+			'scene.overrideMaterial',
+			undefined,
+			true,
+		);
+		this.overrideMaterialValue = material;
 	}
 
 	/**

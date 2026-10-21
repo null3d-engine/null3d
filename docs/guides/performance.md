@@ -124,6 +124,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `material.set` | The material's row of 144 bytes, and a custom material's row of uniforms. Changes to several materials in one frame upload every row from the first to the last |
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
+| `scene.overrideMaterial`, set or cleared | A rebuild. Every mesh of the main pass then shares the override's buckets, so the draw calls fall |
 | `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
 | `setOutlined`, and `post.set` with `outline` turned on or off | A rebuild |
 | `setMorphWeight` | The object's weights. On WebGPU, the skinning pass morphs the mesh again |

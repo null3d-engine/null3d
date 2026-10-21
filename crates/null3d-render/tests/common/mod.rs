@@ -349,6 +349,7 @@ impl<B: FrameBuilder> World<B> {
             &self.morphs,
             settings.meshes(),
             settings.materials(),
+            settings.override_material(),
         );
         self.scene.update_transforms(&self.jobs);
         self.batches
