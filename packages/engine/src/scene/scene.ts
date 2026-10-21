@@ -1458,6 +1458,8 @@ export class Mesh extends Object3D {
 	material: Material | undefined;
 	/** @internal The render order, as `setRenderOrder` gave it. */
 	renderOrder = 0;
+	/** @internal The bias of the threshold that picks the levels, as `setLevelBias` gave it. */
+	levelBias = 1;
 	/** @internal The mesh's block of morph weights in the engine core, plus one, or 0 for none. */
 	morphBlock = 0;
 	/** @internal The place of the block's first weight in the core's table of morph weights. */
@@ -1485,6 +1487,7 @@ export class Mesh extends Object3D {
 		twin.mesh = this.mesh;
 		twin.material = this.material;
 		twin.renderOrder = this.renderOrder;
+		twin.levelBias = this.levelBias;
 		twin.morphJoint = this.morphJoint;
 		return twin;
 	}
@@ -1643,6 +1646,30 @@ export class Mesh extends Object3D {
 		const bits = this.scene.floatBits(order);
 		this.scene.command(C.COMMAND_SET_RENDER_ORDER, this.handle, bits, 0, 'setRenderOrder');
 		this.renderOrder = order;
+	}
+
+	/**
+	 * Raises or lowers the threshold that picks this mesh's levels of detail, as Godot's
+	 * `lod_bias` does. A bias above 1 makes every switch happen farther away, so the object draws
+	 * coarser levels. A bias below 1 keeps its detail, which a hero object wants. The bias
+	 * multiplies the threshold of the level switches and of the distance at which the object
+	 * hides, so both move by the same factor. The default is 1. The object's mesh needs levels
+	 * (`setLevels`). A change rebuilds the engine's tables of what it draws, as a new material
+	 * does. Throws E1108 for a bias that is not a number above 0.
+	 */
+	setLevelBias(bias: number): void {
+		if (DEV) {
+			checkLive('setLevelBias', this);
+			checkNumber('setLevelBias', 'bias', bias, this);
+			if (bias <= 0)
+				throw new EngineError(
+					'E1108',
+					`setLevelBias() got ${bias} on ${this.describe()}, not a number above 0.`,
+				);
+		}
+		const bits = this.scene.floatBits(bias);
+		this.scene.command(C.COMMAND_SET_LEVEL_BIAS, this.handle, bits, 0, 'setLevelBias');
+		this.levelBias = bias;
 	}
 
 	/**
@@ -4013,6 +4040,7 @@ export class Scene implements ViewHolder {
 				flags: each.flags,
 				layers: each.layerMask,
 				renderOrder: mesh?.renderOrder ?? 0,
+				levelBias: mesh?.levelBias ?? 1,
 				bounds,
 				source: each,
 			};
@@ -4038,10 +4066,11 @@ export class Scene implements ViewHolder {
 		const node = (k: number) => (k === 0 && root ? root : (nodes[k] as TemplateNode));
 		let records = 0;
 		for (let k = 0; k < count; k++) {
-			const { mesh, layers, renderOrder } = node(k);
+			const { mesh, layers, renderOrder, levelBias } = node(k);
 			records += 1 + (mesh ? 1 : 0) + (layers !== C.LAYERS_DEFAULT ? 1 : 0);
 			if (mesh && mesh.morphTargets > 0) records++;
 			if (renderOrder !== 0) records++;
+			if (levelBias !== 1) records++;
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
@@ -4074,6 +4103,10 @@ export class Scene implements ViewHolder {
 			if (n.renderOrder !== 0) {
 				const bits = this.floatBits(n.renderOrder);
 				this.writeCommand(write++, C.COMMAND_SET_RENDER_ORDER, handle, bits, 0);
+			}
+			if (n.levelBias !== 1) {
+				const bits = this.floatBits(n.levelBias);
+				this.writeCommand(write++, C.COMMAND_SET_LEVEL_BIAS, handle, bits, 0);
 			}
 			const object = this.makeObject(n, handle, call);
 			if (n.mesh && n.mesh.morphTargets > 0) {
@@ -4121,6 +4154,7 @@ export class Scene implements ViewHolder {
 		mesh.mesh = node.mesh;
 		mesh.material = node.material;
 		mesh.renderOrder = node.renderOrder;
+		mesh.levelBias = node.levelBias;
 		return mesh;
 	}
 

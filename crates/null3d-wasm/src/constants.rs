@@ -737,6 +737,7 @@ pub fn typescript() -> String {
                 ("SET_RENDER_ORDER", op::SET_RENDER_ORDER),
                 ("SET_SKIN", op::SET_SKIN),
                 ("SET_MORPH", op::SET_MORPH),
+                ("SET_LEVEL_BIAS", op::SET_LEVEL_BIAS),
                 ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],

@@ -36,6 +36,8 @@ export interface TemplateNode {
 	flags: number;
 	layers: number;
 	renderOrder: number;
+	/** The bias of the threshold that picks the mesh's levels of detail, 1 for none. */
+	levelBias: number;
 	/** The center and radius of the object's own bounds, which `FLAG_CUSTOM_BOUNDS` turns on. */
 	bounds?: ArrayLike<number>;
 	light?: LightTemplate;

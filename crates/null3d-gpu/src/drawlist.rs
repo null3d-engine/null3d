@@ -1623,9 +1623,10 @@ pub mod sizes {
     /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
     /// local sphere's radius, its first draw and draw count, the sphere's centre, the first joint
     /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
-    /// instead of copies of the matrices, and for a mesh with levels of detail, the level's error,
-    /// the bucket of the next coarser level plus one, and the level's fade bucket plus one.
-    pub const BUCKET_WORDS: u32 = 13;
+    /// instead of copies of the matrices, for a mesh with levels of detail the level's error, the
+    /// bucket of the next coarser level plus one and the level's fade bucket plus one, and the
+    /// threshold bias that picks the levels, 1 for none.
+    pub const BUCKET_WORDS: u32 = 14;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.

@@ -759,8 +759,26 @@ pub enum RowRadii<'a> {
     Rows(&'a [f32]),
 }
 
+/// The centre of row `row`'s bounding sphere, relative to the view's camera: the sphere's centre
+/// moved by its cell's offset from the camera. A cell without an offset, which every cell in use
+/// has, counts as its own origin, as the culling shader reads it.
+#[inline(always)]
+pub fn row_center(
+    spheres: &SphereArrays<'_>,
+    cell: u32,
+    offsets: &[[f32; 4]],
+    row: usize,
+) -> [f32; 3] {
+    let offset = offsets.get(cell as usize).copied().unwrap_or([0.0; 4]);
+    [
+        spheres.xs[row] + offset[0],
+        spheres.ys[row] + offset[1],
+        spheres.zs[row] + offset[2],
+    ]
+}
+
 /// A set's rows as the choice of levels reads them, by row: their world spheres, relative to
-/// their cells' centres, their cells and their local radii.
+/// their cells' centres, their cells, their local radii and their threshold biases.
 #[derive(Clone, Copy, Debug)]
 pub struct LevelRows<'a> {
     /// The world spheres, by row.
@@ -769,6 +787,18 @@ pub struct LevelRows<'a> {
     pub cells: RowCells<'a>,
     /// The rows' local radii.
     pub radii: RowRadii<'a>,
+    /// The rows' threshold biases.
+    pub biases: RowBiases<'a>,
+}
+
+/// The threshold bias that picks the levels of a set's rows, by row: 1 for a row that draws the
+/// levels that the quality settings give.
+#[derive(Clone, Copy, Debug)]
+pub enum RowBiases<'a> {
+    /// Every row has this bias.
+    One(f32),
+    /// Row `i` has the bias at `i`.
+    Rows(&'a [f32]),
 }
 
 /// What [`cull_into_buckets`] reads to pick levels of detail: the view's rule, each bucket's link,
@@ -811,15 +841,14 @@ impl LevelChoice<'_> {
             RowCells::One(cell) => cell,
             RowCells::Rows(cells) => cells[r],
         };
-        let offset = offsets[cell as usize];
-        let center = [
-            rows.spheres.xs[r] + offset[0],
-            rows.spheres.ys[r] + offset[1],
-            rows.spheres.zs[r] + offset[2],
-        ];
+        let center = row_center(&rows.spheres, cell, offsets, r);
+        let bias = match rows.biases {
+            RowBiases::One(bias) => bias,
+            RowBiases::Rows(biases) => biases[r],
+        };
         let distance = self.rule.distance(center, radius);
         self.rule
-            .pick(self.links, home, radius / local, radius, distance)
+            .pick(self.links, home, radius / local, radius, distance, bias)
     }
 }
 

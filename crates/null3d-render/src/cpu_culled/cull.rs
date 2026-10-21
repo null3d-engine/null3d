@@ -51,7 +51,7 @@ use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
     self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows,
-    NO_BUCKET, RowRadii, SetLayers, SetOrder,
+    NO_BUCKET, RowBiases, RowRadii, SetLayers, SetOrder,
 };
 use null3d_core::levels::{LevelLink, LevelRule};
 use null3d_gpu::drawlist::DrawList;
@@ -537,6 +537,7 @@ impl Culling {
                     spheres: scene.world(parity).spheres(),
                     cells: core_culling::RowCells::Rows(scene.cells()),
                     radii: RowRadii::Rows(scene.local_radii()),
+                    biases: RowBiases::Rows(scene.level_biases()),
                 };
             }
             let k = (set - FIRST_BATCH_SET) as usize;
@@ -549,6 +550,7 @@ impl Culling {
                     core_culling::RowCells::One,
                 ),
                 radii: RowRadii::One(batch.local_radius()),
+                biases: RowBiases::One(1.0),
             }
         };
         let links = &layout.level_links;

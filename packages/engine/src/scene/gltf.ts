@@ -492,6 +492,7 @@ async function buildPrefab(
 			flags: FLAG_VISIBLE,
 			layers: LAYERS_DEFAULT,
 			renderOrder: 0,
+			levelBias: 1,
 			root: true,
 		},
 	];
@@ -513,6 +514,7 @@ async function buildPrefab(
 				flags: FLAG_VISIBLE,
 				layers: LAYERS_DEFAULT,
 				renderOrder: 0,
+				levelBias: 1,
 				...rest,
 				...(visible ? {} : { flags: 0 }),
 			}) - 1

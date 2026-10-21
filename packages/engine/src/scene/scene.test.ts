@@ -429,6 +429,12 @@ describe('structural changes', () => {
 		const bits = new Uint32Array(new Float32Array([-2.5]).buffer)[0];
 		expect(take()).toEqual([[C.COMMAND_SET_RENDER_ORDER, rock.handle, bits as number, 0]]);
 
+		// The bias of the threshold that picks the levels travels the same way.
+		rock.setLevelBias(0.5);
+		expect(take()).toEqual([[C.COMMAND_SET_LEVEL_BIAS, rock.handle, 0x3f000000, 0]]);
+		expect(rock.levelBias).toBe(0.5);
+		expect(() => rock.setLevelBias(0)).toThrow(/above 0/);
+
 		rock.setBounds([0, 1.5, -1], 4);
 		expect(row(rock, 'centers')).toEqual([0, 1.5, -1]);
 		expect(row(rock, 'radii')).toEqual([4]);

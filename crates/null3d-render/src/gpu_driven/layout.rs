@@ -114,7 +114,9 @@ fn bounds_of(scene: &SceneStorage, skinning: &Skinning, slot: usize) -> u32 {
         UNCULLED_BOUNDS
     } else if skinning.skins_in_vertex_shader(slot as u32) {
         SHARED_SKIN_BOUNDS
-    } else if object_flags & flags::CUSTOM_BOUNDS != 0 {
+    } else if object_flags & flags::CUSTOM_BOUNDS != 0 || scene.level_biases()[slot] != 1.0 {
+        // A bucket holds one threshold bias, so an object whose bias differs from the quality
+        // settings' draws from a bucket of its own.
         OWN_BOUNDS + slot as u32
     } else {
         MESH_BOUNDS
@@ -196,6 +198,9 @@ pub(super) struct Bucket {
     pub(super) scene_depth: bool,
     /// True when that pipeline binds the material's maps, as a custom material's pick build does.
     pub(super) pick_maps: bool,
+    /// The threshold bias that picks its sources' levels of detail: 1 for the quality settings'
+    /// threshold, and above or below 1 for a coarser or a finer level.
+    pub(super) bias: f32,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -421,10 +426,11 @@ pub(super) struct Layout {
 
 impl Layout {
     /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
-    /// buckets that read copies, then an index entry for each slot of those that read indices.
+    /// buckets that read copies, then an index entry for each slot of those that read indices. One
+    /// copy more keeps the binding of a bucket whose slice holds none inside the buffer.
     pub(super) fn compacted_bytes(&self) -> u32 {
         let stride = self.copy_stride();
-        (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride)
+        (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride) + stride
     }
 
     /// Bytes of each copy in a view's compacted instance buffer: the motion layout's copies hold the
@@ -1043,6 +1049,9 @@ impl Layout {
                 pairs: is_fade_key(&key),
                 pick,
                 pick_maps,
+                // A bucket of a scene object whose bias differs from the quality settings' holds
+                // that object's bias; every other bucket takes the threshold as it is.
+                bias: object.map_or(1.0, |slot| scene.level_biases()[slot as usize]),
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -1189,6 +1198,7 @@ impl Layout {
                 bucket.levels.error.to_bits(),
                 bucket.levels.next.map_or(0, |bucket| bucket + 1),
                 bucket.levels.fade.map_or(0, |bucket| bucket + 1),
+                bucket.bias.to_bits(),
             ]);
         }
         self.built = true;
@@ -1652,6 +1662,80 @@ mod tests {
         let words = BUCKET_WORDS as usize;
         let record = &layout.bucket_records[2 * words..3 * words];
         assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
-        assert_eq!(record[8..], [0; 5]);
+        assert_eq!(record[8..13], [0; 5]);
+        // The bucket takes the quality settings' threshold, as it holds no bias of its own.
+        assert_eq!(record[13], 1.0f32.to_bits());
+    }
+
+    #[test]
+    fn an_object_with_a_bias_of_its_own_culls_in_a_bucket_of_its_own() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mesh = settings
+            .meshes_mut()
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap()
+            + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let mut slots = Vec::new();
+        for _ in 0..3 {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+            commands.push(Command::set_material(object, material));
+            slots.push(object);
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        // One object keeps its detail: its bucket takes the bias of its threshold, and the other
+        // two keep the bucket they share.
+        let keen = slots[2];
+        scene
+            .apply_commands(&[Command::set_level_bias(keen, 0.5)], 1)
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let parity = scene.parity();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                parity,
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        let biases: Vec<(u32, f32)> = layout
+            .buckets
+            .iter()
+            .map(|bucket| (bucket.capacity, bucket.bias))
+            .collect();
+        assert_eq!(biases, [(2, 1.0), (1, 0.5)]);
+        // The record holds the bias after the level's links, where the culling shader reads it.
+        let words = BUCKET_WORDS as usize;
+        assert_eq!(layout.bucket_records[words + 13], 0.5f32.to_bits());
+        assert_eq!(layout.bucket_records[13], 1.0f32.to_bits());
     }
 }

@@ -276,10 +276,39 @@ levels runs no count.
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
 | 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists.
+`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists. A
+band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
+buckets.
 
 The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
 buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0
 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame.
 The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has
 the same sizing problem (M3-L3). Its count can read this one.
+
+## Addendum: an object may bias its threshold (22 October 2026)
+
+Godot gives each geometry instance a `lod_bias`, which moves the levels of that object alone: a
+hero object keeps its detail while its neighbours turn coarse. null3D now has the same, as
+`object.setLevelBias(bias)`.
+
+The bias divides the factor of the level rule. A bias above 1 raises the object's threshold, so
+every switch happens at a nearer distance, and a bias below 1 keeps its detail. The same factor
+divides the rule that hides a bound under the threshold. A detailed hero object therefore also
+stays visible farther out. A bias of 1 leaves both rules as they were, and a scene without levels
+pays nothing.
+
+The bias belongs to the object, and it reaches the culling shader in the object's bucket record. A
+bucket holds one bias. So an object whose bias differs from 1 draws from a bucket of its own, which
+the layout's bounds code gives it. Objects that share a bias share a bucket. Instance rows have no
+bias of their own yet, so a batch keeps the threshold of the quality settings.
+
+| The rule that picks a level | At a bias of 1 | At a bias of 2 |
+| --- | --- | --- |
+| A level switches in at | `error × scale × factor` | half that distance |
+| A bound hides at | `diameter × factor` | half that distance |
+
+The core keeps one float for each object, which raises an object's row from 263 bytes to 267. The
+job workers read it beside each row's sphere. `cull.wgsl` reads it from the bucket record, which
+takes 14 words in place of 13. A record that holds 0 keeps the quality settings' threshold, so a
+test needs no bias.
