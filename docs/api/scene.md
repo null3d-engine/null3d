@@ -3,7 +3,7 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; the light probe grid; warmUp."
+summary: "Creating objects; models and copies; find; multiple views of one scene; background, environment, reflection probes, fog, sky; the light probe grid; warmUp."
 ---
 
 # Scene
@@ -233,6 +233,33 @@ The sky lights nothing by itself. [`assets.skyEnvironment()`](assets.md#environm
 The first background of each kind downloads its shaders, `'background'`, `'sky'` or `'physical_sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. `bun run bench:allocation --sky` and `--atmosphere` check it. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
 
 Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
+
+## Multiple views
+
+`scene.createView({ camera, rect })` draws the scene again from another camera, into a rectangle of the canvas, after the camera's view and in the same frame. Use it for a split screen or a picture in picture. `rect` is `[x, y, width, height]` as fractions of the canvas's width and height from its top-left corner, so `[0.5, 0, 0.5, 1]` is the right half.
+
+```ts
+export default defineSketch(({ scene }) => {
+  const main = scene.createPerspectiveCamera({ fov: 55, position: [6, 5, 9], target: [0, 1, 0] });
+  scene.setActiveCamera(main);
+  const close = scene.createPerspectiveCamera({ fov: 70, position: [0, 1.4, 2.5], target: [1, 1.4, 0] });
+  // A picture in picture in the canvas's top-right corner.
+  const inset = scene.createView({ camera: close, rect: [0.69, 0.02, 0.29, 0.32] });
+  // setRect changes the rectangle from the next frame on, and allocates nothing.
+  inset.setRect([0.5, 0, 0.5, 1]);
+  return {};
+});
+```
+
+The view's camera gives its layer mask, as the active camera's does, and the view follows the camera's layers when they change. The rectangle's shape sets the camera's aspect ratio, so objects keep their proportions in a half-width view. `setCamera` changes the view's camera, `setRect` changes its rectangle, and `destroy` removes the view.
+
+Each view culls the scene on its own, and draws it at its rectangle's pixels with its own depth. The sun's and the spot lights' shadows, the environment's light and the fog cost nothing more than the camera's view. On every GPU path and in every thread mode the view draws in the same frame as the camera's view, and the final image takes the tone mapping, the effects and bloom once. On the 8-bit path the view writes display color into the camera's image, and the resolve pass or the final pass draws it to the canvas.
+
+A view costs one more cull and one more scene draw. The camera's view still draws the whole canvas first, with the canvas's aspect ratio, so a split screen of two half-width views draws the scene three times: once across the canvas underneath and once for each half. A picture in picture draws it twice. The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost too. A small rectangle costs little on a phone. Bloom's threshold and the tone curve see the whole image once.
+
+A view's objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle. An object whose material shows a render pass's texture does not draw in a view, as it does not draw in another pass. `screenToRay` and `worldToScreen` map the whole canvas, so they do not follow a view's rectangle. A scene and its passes share 32 views, the camera's included; `scene.createView` throws E1501 when none is free. Development builds throw E1213 for a camera or a rectangle that a view does not take, and E1203 for a number that is not finite.
+
+[Multiple views](../guides/multiple-views.md) covers split screens, picture in picture and their cost.
 
 ## The environment
 

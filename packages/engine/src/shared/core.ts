@@ -590,6 +590,21 @@ export interface CoreGlue extends CoreErrors {
 		source: number,
 	): number;
 	/**
+	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
+	 * values name: its left and top, then its width and height, as fractions of the canvas. The
+	 * view's lens goes to it through `setPerspectiveCamera` or `setOrthographicCamera` with
+	 * `CAMERA_TARGET_PASS_VIEWS` plus its place. Returns the view's place from 1, or 0 when the
+	 * frame draws the most views already.
+	 */
+	addSceneView(): number;
+	/**
+	 * Sets the rectangle of the view at `place` from the first four call values, as `addSceneView`
+	 * gives them.
+	 */
+	setSceneViewRect(place: number): number;
+	/** Removes the view at `place`, from the next frame on. */
+	removeSceneView(place: number): number;
+	/**
 	 * Gives the full-screen pass of a view place the uniforms at `effectValues` and the textures at
 	 * `effectTextures`, from the next frame on, or fails with the render graph's error.
 	 */
@@ -1083,6 +1098,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'addFullscreenPass',
+	'addSceneView',
+	'setSceneViewRect',
+	'removeSceneView',
 	'setPassValues',
 	'setReflectionScale',
 	'setAreaLightCap',

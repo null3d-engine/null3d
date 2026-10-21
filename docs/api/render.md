@@ -262,6 +262,8 @@ The core checks the whole graph when `render.addPass`, `render.removePass` or `t
 ## Related pages
 
 - [Custom passes and render targets](../guides/custom-passes.md): render-to-texture with examples, reflections, a water recipe, full-screen passes and custom effects.
+- [Multiple views](../guides/multiple-views.md): a second camera drawn into a rectangle of the canvas, for split screens and picture in picture.
+- [Scene](../api/scene.md#multiple-views): `scene.createView`.
 - [Surface functions](../shaders/surface-functions.md#reflections): the surface's `reflection`.
 - [The render graph](../concepts/render-graph.md): how the graph orders passes and plans their memory.
 - [Textures](textures.md): `textures.fromPass`.

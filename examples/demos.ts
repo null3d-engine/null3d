@@ -271,6 +271,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'multiple-views',
+		group: 'Light, materials and effects',
+		sketch: new URL('./multiple-views/sketch.ts', import.meta.url),
+		title: 'Multiple views',
+		scene: 'Courtyard on two cameras',
+		summary:
+			"One scene drawn from two cameras in the same frame: a high, wide camera and a low one among a ring of standing stones, split across the canvas. Each view culls the scene and draws it for its own rectangle, at that rectangle's shape. The Layout button or the V key switches to a picture in picture, with the wide camera over the canvas and the low one in an inset.",
+		choices: [{ name: 'layout', label: 'Layout', options: ['Split', 'Inset'] }],
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'time-of-day',
 		group: 'Light, materials and effects',
 		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),
@@ -453,7 +465,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Joint overrides',
 		scene: 'Knights watch a wisp',
 		summary:
-			'Seven KayKit Knights stand in a ring in a castle courtyard at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit.',
+			"Seven KayKit Knights stand in a ring in a castle courtyard at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit. A second view in the canvas's corner shows one knight's face close up, where the turned head shows.",
 		assets:
 			'Shows joint overrides on a skinned character and its clips, which load from a glTF file.',
 		hold: 3,

@@ -80,8 +80,25 @@ function fakeCore(largeWorld = false) {
 		[C.RING_FIELD_READ_INDEX]: AT.read,
 	};
 	const backgrounds: (number | number[])[] = [];
+	/** The calls that make and change views: the rectangle's numbers, by call. */
+	const viewCalls = { added: [] as number[][], rects: [] as number[][], removed: [] as number[] };
+	/** The lens that each camera sent: its target, its handle, its layers, then its values. */
+	const lenses: number[][] = [];
+	let nextView = 1;
 	const glue = {
 		sceneCapacity: () => CAPACITY,
+		addSceneView: (...values: number[]) => {
+			viewCalls.added.push(values);
+			return nextView++;
+		},
+		setSceneViewRect: (place: number, ...values: number[]) => {
+			viewCalls.rects.push([place, ...values]);
+			return 0;
+		},
+		removeSceneView: (place: number) => {
+			viewCalls.removed.push(place);
+			return 0;
+		},
 		sceneArrays: (field: number) => fields[field],
 		commandRing: (field: number) => ring[field],
 		worldMatrixAddress: () => AT.matrix,
@@ -95,8 +112,10 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [handle & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
-		setPerspectiveCamera: () => 0,
-		setOrthographicCamera: () => 0,
+		setPerspectiveCamera: (handle: number, layers: number, target: number, ...values: number[]) =>
+			lenses.push([target, handle, layers, ...values]) - 1,
+		setOrthographicCamera: (handle: number, layers: number, target: number, ...values: number[]) =>
+			lenses.push([target, handle, layers, ...values]) - 1,
 		setBackground: (r: number, g: number, b: number) => backgrounds.push([r, g, b]) && 0,
 		backgroundValues: () => AT.background,
 		setBackgroundSource: (kind: number, texture: number) => {
@@ -141,6 +160,10 @@ function fakeCore(largeWorld = false) {
 		backgrounds,
 		/** The block of the background's values. */
 		backgroundValues: () => [...f32(AT.background, C.BACKGROUND_VALUE_COUNT)],
+		/** The calls that make and change views. */
+		viewCalls,
+		/** The lens that each camera sent: its target, handle, layers, then its values. */
+		lenses,
 		box,
 		ball,
 		paint,
@@ -415,6 +438,84 @@ describe('scene.find', () => {
 		expect(scene.find('lamp')).toBeUndefined();
 		const third = scene.createGroup({ name: 'crate' });
 		expect(scene.find('crate')).toBe(third);
+	});
+});
+
+describe('scene.createView', () => {
+	/** A camera of the scene, from the fake core. */
+	const camera = (scene: Scene) => scene.createPerspectiveCamera({ fov: 60 });
+
+	test('makes a view with a camera and a rectangle, and gives the core the rectangle', () => {
+		const { scene, viewCalls, lenses } = fakeCore();
+		const view = camera(scene);
+		const made = scene.createView({ camera: view, rect: [0.5, 0, 0.5, 1] });
+		expect(made.live).toBe(true);
+		expect(made.camera).toBe(view);
+		expect(made.rect).toEqual([0.5, 0, 0.5, 1]);
+		expect(viewCalls.added).toEqual([[0.5, 0, 0.5, 1]]);
+		// The view's lens goes to the engine's pass view at its place, with the camera's layers.
+		expect(lenses.at(-1)?.slice(0, 4)).toEqual([
+			C.CAMERA_TARGET_PASS_VIEWS + made.place,
+			view.handle,
+			view.layers,
+			60,
+		]);
+	});
+
+	test('setCamera and setRect change the view, and a lens change reaches its place', () => {
+		const { scene, viewCalls, lenses } = fakeCore();
+		const first = camera(scene);
+		const second = scene.createOrthographicCamera({ height: 4 });
+		const made = scene.createView({ camera: first, rect: [0, 0, 0.5, 1] });
+		made.setCamera(second);
+		expect(made.camera).toBe(second);
+		expect(lenses.at(-1)?.slice(0, 4)).toEqual([
+			C.CAMERA_TARGET_PASS_VIEWS + made.place,
+			second.handle,
+			second.layers,
+			4,
+		]);
+		second.setOrthoHeight(8);
+		expect(lenses.at(-1)?.slice(0, 4)).toEqual([
+			C.CAMERA_TARGET_PASS_VIEWS + made.place,
+			second.handle,
+			second.layers,
+			8,
+		]);
+		made.setRect([0.25, 0.25, 0.5, 0.5]);
+		expect(made.rect).toEqual([0.25, 0.25, 0.5, 0.5]);
+		expect(viewCalls.rects).toEqual([[made.place, 0.25, 0.25, 0.5, 0.5]]);
+	});
+
+	test('destroy removes the view, and its calls then throw', () => {
+		const { scene, viewCalls } = fakeCore();
+		const made = scene.createView({ camera: camera(scene), rect: [0, 0, 1, 1] });
+		const place = made.place;
+		made.destroy();
+		expect(made.live).toBe(false);
+		expect(viewCalls.removed).toEqual([place]);
+		expect(thrown(() => made.destroy()).message).toStartWith('E1101: destroy()');
+		expect(thrown(() => made.setRect([0, 0, 1, 1])).message).toStartWith('E1101: setRect()');
+	});
+
+	test('refuses a rectangle outside the canvas, a missing camera and a number that is not finite', () => {
+		const { scene } = fakeCore();
+		const view = camera(scene);
+		for (const rect of [
+			[-0.1, 0, 0.5, 1],
+			[0, 0, 0, 1],
+			[0.5, 0, 0.6, 1],
+			[0, 0.75, 1, 0.5],
+		] as const)
+			expect(thrown(() => scene.createView({ camera: view, rect })).message).toStartWith(
+				'E1213: createView() got the rect',
+			);
+		expect(
+			thrown(() => scene.createView({ camera: view, rect: [0, 0, Number.NaN, 1] })).message,
+		).toStartWith('E1203: createView() got NaN');
+		expect(
+			thrown(() => scene.createView({ camera: {} as never, rect: [0, 0, 1, 1] })).message,
+		).toStartWith('E1213: createView() got no camera');
 	});
 });
 

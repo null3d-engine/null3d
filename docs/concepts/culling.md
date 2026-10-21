@@ -29,7 +29,7 @@ flowchart LR
     occlude --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips the objects that marked occluders hide. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera. A view is the camera's, a shadow cascade's, a shadow tile's or a [scene pass](../api/render.md)'s.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips the objects that marked occluders hide. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera. A view is the camera's, a shadow cascade's, a shadow tile's, a [scene pass](../api/render.md)'s, or one that [`scene.createView`](../api/scene.md#multiple-views) draws into a rectangle of the canvas.
 
 ## How each path culls
 

@@ -175,8 +175,8 @@
       "three": "renderer.setViewport / setScissor (split screens, picture in picture)",
       "status": "changed",
       "since": "0.3",
-      "target": "A scene pass whose texture (textures.fromPass) a mesh or sprites show, for minimaps and picture in picture (0.2)",
-      "notes": "Several full views (scene.createView), such as split screens, come in 0.3.",
+      "target": "scene.createView({ camera, rect }): one scene drawn again from another camera, into a rectangle of the canvas, after the camera's view",
+      "notes": "rect is [x, y, width, height] as fractions of the canvas from its top-left corner, so [0.5, 0, 0.5, 1] is its right half. Give each view its own camera; setRect changes the rectangle and allocates nothing, and destroy removes the view. The camera's view draws the whole canvas first, so a split screen that covers the canvas draws the scene once for the camera and once for each view. Each view costs one cull and one scene draw at its rectangle's pixels; the sun's shadows and the lights cost nothing more. A view's objects take no ambient occlusion or screen-space reflections; the camera's volumetric fog and outline reach the whole image, a view's rectangle included. For a minimap that a material shows in the world, a scene pass into a texture (textures.fromPass) is cheaper than a view.",
       "docs": "guides/multiple-views",
       "detect": "\\.set(Scissor|Viewport)(Test)?\\s*\\("
     },
@@ -560,7 +560,7 @@
       "three": "ArrayCamera / StereoCamera",
       "status": "unsupported",
       "since": null,
-      "target": "None; split screens come in 0.3 with multiple views",
+      "target": "None; split screens use scene.createView with one camera for each view",
       "notes": "Stereo rendering belongs to XR, which is out of scope.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\b(Array|Stereo)Camera\\b"

@@ -76,7 +76,7 @@ use crate::ssr::{self, Ssr, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
-use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
+use crate::view::{CanvasRect, MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
 pub const NO_MESH: u32 = 0;
@@ -2529,6 +2529,13 @@ impl SceneSettings {
         }
     }
 
+    /// Sets the rectangle of the canvas that a view draws into, from the next frame on.
+    pub fn set_view_rect(&mut self, view: ViewId, rect: CanvasRect) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.set_canvas_rect(rect);
+        }
+    }
+
     /// Sets how many times the targets of mirror views without a size of their own halve the
     /// render size, from the next frame on.
     pub fn set_mirror_halvings(&mut self, halvings: u8) {
@@ -2660,9 +2667,10 @@ impl SceneSettings {
         }
     }
 
-    /// True when a view may draw in the next frame: the camera's view, and any other view that is
-    /// switched on while a texture shows its target, or another view or a custom effect reads it.
-    /// The render graph culls the rest, so a builder need not cull them.
+    /// True when a view may draw in the next frame: the camera's view, a view that draws into a
+    /// rectangle of the canvas, and any other view that is switched on while a texture shows its
+    /// target, or another view or a custom effect reads it. The render graph culls the rest, so a
+    /// builder need not cull them.
     pub fn view_draws(&self, view: ViewId) -> bool {
         if view == ViewId::CAMERA {
             return true;
@@ -2678,7 +2686,10 @@ impl SceneSettings {
                 .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
             && drawn.target().draws()
-            && (self.textures.shown_views() & bit != 0 || read || drawn.captured_face().is_some())
+            && (drawn.canvas_rect().is_some()
+                || self.textures.shown_views() & bit != 0
+                || read
+                || drawn.captured_face().is_some())
     }
 
     /// The views whose targets each view may not show, as a mask of view places, by view: for a
@@ -3289,8 +3300,9 @@ impl SceneSettings {
         let view = self.views.get(view.index())?;
         let own_target = view_id != ViewId::CAMERA;
         let (width, height) = view.draw_size(canvas, scale);
-        let (pixels, pixel_ratio) = match view.target().size {
-            Some(size) if own_target => (size, 1.0),
+        let (pixels, pixel_ratio) = match (view.canvas_rect(), view.target().size) {
+            (Some(_), _) => (view.draw_size(canvas, scale), 1.0),
+            (None, Some(size)) if own_target => (size, 1.0),
             _ => (canvas, self.pixel_ratio),
         };
         let aspect = pixels.0 as f32 / pixels.1.max(1) as f32;

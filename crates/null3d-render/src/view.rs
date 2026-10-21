@@ -9,6 +9,11 @@
 //! A further view runs only while some running pass reads its target: the camera's passes read
 //! the target of each view that a texture shows, and a view reads the targets that it lists.
 //!
+//! A view can draw into a rectangle of the canvas instead, after the camera's view: it draws into
+//! the camera's scene color and a depth target of its own, through the viewport and the scissor.
+//! Such a view always runs, and its rectangle covers the camera's image there, as a split screen
+//! or a picture in picture does.
+//!
 //! A view never draws an object whose material shows the target of a view that it does not read,
 //! its own included, since a pass cannot sample a texture that it draws into.
 //!
@@ -147,6 +152,9 @@ pub struct ViewTarget {
     /// The views whose targets this view reads, as a mask of view places: the objects it draws
     /// may show them.
     pub reads: u32,
+    /// The rectangle of the canvas that the view draws into, in place of a target of its own: it
+    /// draws into the camera's scene color there, with a depth target of its own.
+    pub rect: Option<CanvasRect>,
 }
 
 impl Default for ViewTarget {
@@ -165,7 +173,37 @@ impl Default for ViewTarget {
             made: (0, 0),
             shown: false,
             reads: 0,
+            rect: None,
         }
+    }
+}
+
+/// The rectangle of the canvas that a view draws into, as fractions of the canvas's width and
+/// height from its top-left corner: `x` and `y` place it, and `width` and `height` size it. A
+/// rectangle covers part of the canvas, so `x + width` and `y + height` are at most 1, and each
+/// of `width` and `height` is above 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CanvasRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl CanvasRect {
+    /// The rectangle in texels of a canvas of `canvas` pixels: its place from the top-left
+    /// corner, then its size. Each side is rounded to a whole texel, and the rectangle lies
+    /// inside the canvas and covers at least one texel each way.
+    pub fn area(self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32, u32, u32) {
+        let width = scale.of(canvas.0.max(1));
+        let height = scale.of(canvas.1.max(1));
+        let texels =
+            |fraction: f32, side: u32| (fraction.clamp(0.0, 1.0) * side as f32).round() as u32;
+        let x = texels(self.x, width).min(width - 1);
+        let y = texels(self.y, height).min(height - 1);
+        let x_end = texels(self.x + self.width, width).max(x + 1).min(width);
+        let y_end = texels(self.y + self.height, height).max(y + 1).min(height);
+        (x, y, x_end - x, y_end - y)
     }
 }
 
@@ -190,8 +228,13 @@ impl ViewTarget {
     }
 
     /// The size of the render graph's target: its own size, or the render size halved, which a
-    /// target that the view fills whole takes as its texture's size.
+    /// target that the view fills whole takes as its texture's size. A view that draws into a
+    /// rectangle of the canvas writes the camera's scene color and its own depth, which take the
+    /// render size.
     pub fn graph_size(&self) -> Size {
+        if self.rect.is_some() {
+            return Size::Full;
+        }
         match (self.size, self.halvings) {
             (Some((width, height)), _) => Size::Fixed { width, height },
             (None, halvings) if self.whole => Size::Scaled(halvings),
@@ -339,6 +382,29 @@ impl View {
         }
     }
 
+    /// A view that draws the scene into `rect`, a rectangle of the canvas, on top of the
+    /// camera's image, into the camera's scene color and a depth target of its own.
+    pub fn canvas(rect: CanvasRect) -> Self {
+        Self {
+            target: ViewTarget {
+                rect: Some(rect),
+                ..ViewTarget::default()
+            },
+            ..Self::default()
+        }
+    }
+
+    /// The rectangle of the canvas that the view draws into, or `None` for a view that draws
+    /// into a target of its own.
+    pub fn canvas_rect(&self) -> Option<CanvasRect> {
+        self.target.rect
+    }
+
+    /// Sets the rectangle of the canvas that the view draws into, from the next frame on.
+    pub fn set_canvas_rect(&mut self, rect: CanvasRect) {
+        self.target.rect = Some(rect);
+    }
+
     /// A full-screen pass, which draws `fullscreen` over the whole of `target`: of its own size, or
     /// of the render size halved as many times as it says.
     pub fn fullscreen(fullscreen: Fullscreen, target: ViewTarget) -> Self {
@@ -402,8 +468,13 @@ impl View {
     }
 
     /// The size the view draws at in texels, for a canvas of `canvas` pixels at render scale
-    /// `scale`: its target's own size, or the render size or a share of it.
+    /// `scale`: the rectangle of the canvas that it draws into at that scale, its target's own
+    /// size, or the render size or a share of it.
     pub fn draw_size(&self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
+        if let Some(rect) = self.target.rect {
+            let (_, _, width, height) = rect.area(canvas, scale);
+            return (width, height);
+        }
         match self.target.size {
             Some(size) => size,
             None => self.target.graph_size().viewport(canvas, scale),
@@ -578,6 +649,48 @@ mod tests {
         let view = View::default().with_target(half);
         let canvas = (1001, 600);
         assert_eq!(view.draw_size(canvas, RenderScale::FULL), (501, 300));
+    }
+
+    #[test]
+    fn a_canvas_view_draws_at_a_rectangle_of_the_canvas_at_the_render_size() {
+        let rect = CanvasRect {
+            x: 0.5,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        };
+        let view = View::canvas(rect);
+        assert_eq!(view.canvas_rect(), Some(rect));
+        assert_eq!(
+            view.target().graph_size(),
+            Size::Full,
+            "the view writes the camera's scene color and a depth at the render size"
+        );
+        assert_eq!(view.draw_size((1001, 600), RenderScale::FULL), (500, 600));
+        let canvas = (1001, 600);
+        assert_eq!(
+            rect.area(canvas, RenderScale::FULL),
+            (501, 0, 500, 600),
+            "the rectangle reaches the canvas's right edge"
+        );
+        assert_eq!(
+            rect.area(canvas, RenderScale::from_thousandths(500)),
+            (251, 0, 250, 300),
+            "the area follows the render scale"
+        );
+        assert_eq!(
+            view.draw_size(canvas, RenderScale::from_thousandths(500)),
+            (250, 300),
+            "the view draws at the rectangle's size at the render scale"
+        );
+        // A rectangle at the far edge still covers a texel and stays inside the canvas.
+        let edge = CanvasRect {
+            x: 1.0,
+            y: 1.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        assert_eq!(edge.area(canvas, RenderScale::FULL), (1000, 599, 1, 1));
     }
 
     #[test]

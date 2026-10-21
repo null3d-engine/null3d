@@ -129,6 +129,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees. Cameras are dynamic by default |
 | `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
 | `scene.setActiveCamera(camera)` | | The camera the canvas shows |
+| `scene.createView({ camera, rect })` (0.3) | SceneView | Draws the scene again from `camera` into a rectangle of the canvas, after the camera's view and in the same frame: a split screen or a picture in picture. `rect` is `[x, y, width, height]` as fractions from the canvas's top-left. `view.setCamera`, `view.setRect` (a layout change, not every frame), `view.destroy()` |
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |

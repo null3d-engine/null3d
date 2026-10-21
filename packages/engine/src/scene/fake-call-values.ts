@@ -14,6 +14,8 @@ const READS: Readonly<Record<string, number>> = {
 	setMaterialValues: 4,
 	setPerspectiveCamera: 3,
 	setOrthographicCamera: 6,
+	addSceneView: 4,
+	setSceneViewRect: 4,
 	setLightColor: 3,
 	setLightValue: 1,
 	setLightDefault: 1,

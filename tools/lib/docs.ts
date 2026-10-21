@@ -138,7 +138,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/video-textures', title: 'Video textures', since: '0.3', summary: 'engine.registerVideo and textures.fromVideo; until then, the page sends ImageBitmap frames to the sketch; browser limits.' },
 	{ id: 'guides/audio', title: 'Audio with Web Audio', since: '0.1', summary: 'Why audio stays on the page; sending positions from the sketch.' },
 	{ id: 'guides/physics', title: 'Using a physics library', since: '0.1', summary: 'Running Rapier or cannon-es in the sketch worker; copying transforms.' },
-	{ id: 'guides/multiple-views', title: 'Multiple views', since: '0.3', summary: 'Split screens with scene.createView, in 0.3; minimaps work from 0.2 through render-to-texture passes.' },
+	{ id: 'guides/multiple-views', title: 'Multiple views', since: '0.3', summary: 'Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera\'s view in the same frame; per-view culling; the cost of each view.' },
 	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },

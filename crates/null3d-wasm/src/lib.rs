@@ -83,7 +83,9 @@ use null3d_render::sky_maps::MapSky;
 use null3d_render::ssr::Ssr;
 use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
-use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
+use null3d_render::view::{
+    CanvasRect, Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget,
+};
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -2955,10 +2957,78 @@ fn halvings_of(scale: f32) -> u8 {
     (1.0 / scale.clamp(1.0 / 128.0, 1.0)).log2().round() as u8
 }
 
+/// Adds a view that draws the scene into the rectangle of the canvas that the call values name:
+/// its left and top, then its width and height, as fractions of the canvas's width and height
+/// from its top-left corner. Its lens is set through `setPerspectiveCamera` or
+/// `setOrthographicCamera` with `constants::camera_target::PASS_VIEWS` plus its place. Returns the
+/// view's place, from 1, or 0 when the builder draws the most views already.
+#[wasm_bindgen(js_name = addSceneView)]
+pub fn add_scene_view() -> u32 {
+    value_with_engine(|e| {
+        let [x, y, width, height] = e.call_values();
+        let rect = CanvasRect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let settings = e.renderer.settings_mut();
+        let Some(id) = settings.add_view(View::canvas(rect)) else {
+            return Err(render_failure(
+                render_detail::TOO_MANY_VIEWS,
+                MAX_VIEWS as u32,
+            ));
+        };
+        if let Err(error) = e.renderer.check_graph() {
+            e.renderer.settings_mut().remove_view(id);
+            let code = graph_failure(e, error);
+            let _ = e.renderer.check_graph();
+            return Err(code);
+        }
+        e.structure_changed = true;
+        Ok(id.index() as u32)
+    })
+}
+
+/// Sets the rectangle of the canvas that the view of place `place`, from 1, draws into, from the
+/// next frame on, from the call values as [`addSceneView`] gives them.
+#[wasm_bindgen(js_name = setSceneViewRect)]
+pub fn set_scene_view_rect(place: u32) -> u32 {
+    with_engine(|e| {
+        let [x, y, width, height] = e.call_values();
+        let view = ViewId::from_place(place as usize);
+        if place == 0 || place as usize >= MAX_VIEWS {
+            return 0;
+        }
+        e.renderer.settings_mut().set_view_rect(
+            view,
+            CanvasRect {
+                x,
+                y,
+                width,
+                height,
+            },
+        );
+        0
+    })
+}
+
 /// Removes the scene pass of view place `place`, from 1. Fails with the render graph's error
 /// (E1502 to E1505) when another running pass reads its target, and keeps the pass.
 #[wasm_bindgen(js_name = removeScenePass)]
 pub fn remove_scene_pass(place: u32) -> u32 {
+    remove_pass_view(place)
+}
+
+/// Removes the view of place `place`, from 1: a scene pass, a reflection pass or a view that
+/// draws into a rectangle of the canvas.
+#[wasm_bindgen(js_name = removeSceneView)]
+pub fn remove_scene_view(place: u32) -> u32 {
+    remove_pass_view(place)
+}
+
+/// Removes the view of place `place`, or keeps it when the render graph fails without it.
+fn remove_pass_view(place: u32) -> u32 {
     with_engine(|e| {
         let view = ViewId::from_place(place as usize);
         let settings = e.renderer.settings_mut();

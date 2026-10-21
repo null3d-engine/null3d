@@ -262,6 +262,167 @@ export interface OrthographicCameraOptions extends CameraOptions {
 }
 
 /**
+ * A rectangle of the canvas as `[x, y, width, height]`, in fractions of the canvas's width and
+ * height from its top-left corner: `[0, 0, 0.5, 1]` is its left half.
+ *
+ * @category api/cameras
+ */
+export type SceneViewRect = readonly [x: number, y: number, width: number, height: number];
+
+/**
+ * Options for `scene.createView`.
+ *
+ * @category api/cameras
+ */
+export interface SceneViewOptions {
+	/** The camera that the view draws from. */
+	readonly camera: Camera;
+	/**
+	 * The rectangle of the canvas that the view draws into, from its top-left corner. Its width
+	 * and height are above 0, and its right and bottom edges lie within the canvas.
+	 */
+	readonly rect: SceneViewRect;
+}
+
+/**
+ * A view of the scene from its own camera, drawn into a rectangle of the canvas after the
+ * camera's view: a split screen or a picture in picture. `scene.createView` makes it.
+ * `scene.activeCamera` still draws the whole canvas first, and the view's image covers its
+ * rectangle. The engine culls the scene for the view on its own, and draws it once more, at the
+ * rectangle's pixels.
+ *
+ * @category api/cameras
+ */
+export class SceneView {
+	/** @internal Its place in the engine core's list of views, or 0 once removed. */
+	place: number;
+	private cameraValue: Camera;
+	private rectValue: [number, number, number, number];
+
+	/** @internal */
+	constructor(
+		private readonly scene: Scene,
+		place: number,
+		camera: Camera,
+		rect: SceneViewRect,
+	) {
+		this.place = place;
+		this.cameraValue = camera;
+		this.rectValue = [rect[0], rect[1], rect[2], rect[3]];
+	}
+
+	/** True until `destroy` removes the view. */
+	get live(): boolean {
+		return this.place > 0;
+	}
+
+	/** The camera that the view draws from. */
+	get camera(): Camera {
+		return this.cameraValue;
+	}
+
+	/** The rectangle of the canvas that the view draws into. */
+	get rect(): SceneViewRect {
+		return this.rectValue;
+	}
+
+	/**
+	 * Draws the view from `camera` from the next frame on. It takes the camera's layers, and
+	 * follows them when they change.
+	 */
+	setCamera(camera: Camera): void {
+		const call = 'setCamera';
+		if (DEV) {
+			checkViewCamera(call, camera);
+			checkViewLive(call, this);
+		}
+		this.cameraValue = camera;
+		this.scene.setPassCamera(this.place, camera, undefined);
+	}
+
+	/**
+	 * Draws the view into `rect` from the next frame on. It allocates nothing, so a sketch can
+	 * change the rectangle in any frame. Development builds throw E1203 for a number that is not
+	 * finite, and E1213 for a rectangle outside the canvas.
+	 */
+	setRect(rect: SceneViewRect): void {
+		const call = 'setRect';
+		if (DEV) {
+			checkViewLive(call, this);
+			checkViewRect(call, rect);
+		}
+		const values = this.scene.core.callValues();
+		const own = this.rectValue;
+		own[0] = values[0] = rect[0];
+		own[1] = values[1] = rect[1];
+		own[2] = values[2] = rect[2];
+		own[3] = values[3] = rect[3];
+		this.scene.core.check(this.scene.core.glue.setSceneViewRect(this.place), call, undefined, true);
+	}
+
+	/**
+	 * Removes the view from the next frame on. The camera's view draws the canvas alone again.
+	 * Development builds throw E1101 for a view that was removed.
+	 */
+	destroy(): void {
+		const call = 'destroy';
+		if (DEV) checkViewLive(call, this);
+		this.scene.core.check(this.scene.core.glue.removeSceneView(this.place), call, undefined, true);
+		this.scene.setPassCamera(this.place, undefined, undefined);
+		this.place = 0;
+	}
+}
+
+/** Throws E1203 or E1213 for a camera or a rectangle that `scene.createView` does not take. */
+function checkViewOptions(options: SceneViewOptions, call: string): void {
+	if (typeof options !== 'object' || options === null)
+		throw new EngineError('E1213', `${call}() got ${String(options)}, which is not options.`);
+	checkViewCamera(call, options.camera);
+	if (options.rect === undefined) throw new EngineError('E1213', `${call}() got no rect.`);
+	checkViewRect(call, options.rect);
+}
+
+/** Throws E1213 for a value that is not a live camera of the engine. */
+function checkViewCamera(call: string, camera: unknown): void {
+	if (typeof (camera as Camera | undefined)?.sendLens !== 'function')
+		throw new EngineError(
+			'E1213',
+			`${call}() got no camera. Give the camera that the view draws from.`,
+		);
+	checkLive(call, camera as Camera, true);
+}
+
+/** Throws E1203 or E1213 for a rectangle that a view does not take. */
+function checkViewRect(call: string, rect: unknown): void {
+	const outside = (values: readonly unknown[]) =>
+		new EngineError(
+			'E1213',
+			`${call}() got the rect [${values.join(', ')}]; it takes [x, y, width, height] as fractions of the canvas from 0 to 1, with a width and a height above 0, inside the canvas.`,
+		);
+	if (!Array.isArray(rect) || rect.length !== 4) throw outside(Array.isArray(rect) ? rect : [rect]);
+	const [x, y, width, height] = rect as number[];
+	for (const value of [x, y, width, height])
+		if (!Number.isFinite(value))
+			throw new EngineError(
+				'E1203',
+				`${call}() got ${String(value)} in the rect. Its numbers must be finite.`,
+			);
+	if ((x as number) < 0 || (y as number) < 0) throw outside(rect as number[]);
+	if (!((width as number) > 0) || !((height as number) > 0)) throw outside(rect as number[]);
+	if ((x as number) + (width as number) > 1 || (y as number) + (height as number) > 1)
+		throw outside(rect as number[]);
+}
+
+/** Throws E1101 for a view that `destroy` removed. */
+function checkViewLive(call: string, view: SceneView): void {
+	if (!view.live)
+		throw new EngineError(
+			'E1101',
+			`${call}() was called on a view that was removed. Make a new view with scene.createView().`,
+		);
+}
+
+/**
  * Options for `scene.createInstances`.
  *
  * @category api/scene
@@ -3971,6 +4132,38 @@ export class Scene implements ViewHolder {
 	setActiveCamera(camera: Camera): void {
 		this.activeCamera = camera;
 		this.lensChanged(camera);
+	}
+
+	/**
+	 * Draws the scene again from `camera`, into the rectangle of the canvas that `rect` gives,
+	 * after the camera's view and in the same frame: a split screen or a picture in picture. The
+	 * view draws the scene once more at the rectangle's pixels, with its own culling, so its cost
+	 * follows the rectangle's area. It draws the sun and its shadows as the camera's view does,
+	 * which costs nothing more, the background and the fog. Its objects take no ambient occlusion
+	 * or screen-space reflections, which shade the camera's view; the camera's volumetric fog and
+	 * outline reach the whole image, a view's rectangle included. An object whose material shows a
+	 * render pass's texture does not draw in a view.
+	 *
+	 * The camera's view still draws the whole canvas first, so a split screen that covers the
+	 * canvas draws the scene one more time than it needs for its two halves. The scene and its
+	 * passes share 32 views, the camera's included.
+	 *
+	 * Throws E1501 when the 32 views are in use. Development builds throw E1213 for a camera or a
+	 * rectangle that a view does not take, and E1203 for a number that is not finite.
+	 */
+	createView(options: SceneViewOptions): SceneView {
+		const call = 'createView';
+		if (DEV) checkViewOptions(options, call);
+		const { camera, rect } = options;
+		const values = this.core.callValues();
+		values[0] = rect[0];
+		values[1] = rect[1];
+		values[2] = rect[2];
+		values[3] = rect[3];
+		const place = this.core.check(this.core.glue.addSceneView(), call);
+		const view = new SceneView(this, place, camera, rect);
+		this.setPassCamera(place, camera, undefined);
+		return view;
 	}
 
 	/**
