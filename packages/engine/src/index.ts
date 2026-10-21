@@ -351,6 +351,6 @@ export type {
 	QualityBudgetOptions,
 	QualityGovernor,
 } from './sketch/quality';
-export type { LabelOptions, Ui } from './sketch/ui';
+export type { LabelOptions, LabelTransform, Ui } from './sketch/ui';
 export type { WorkerProbe } from './workers/probe-worker';
 export type { TaskModule, TaskResult, TaskStage } from './workers/tasks';

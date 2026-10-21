@@ -13,8 +13,8 @@ import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
-import { LabelLoop } from '../page/label-loop';
-import { LabelSlots, labelCapacity, PageLabels } from '../page/labels';
+import { cameraTransform, LabelLoop } from '../page/label-loop';
+import { LabelSlots, labelCapacity, labelCapacity3d, PageLabels } from '../page/labels';
 import { controlLabels, controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
@@ -1025,21 +1025,27 @@ describe('labels', () => {
 	 * A sketch's labels and a page's, joined as the engine joins them: the sketch's slots reach the
 	 * page at once, and `show` presents a frame as the thread that draws does.
 	 */
-	const setup = (capacity = 8, drawsHere = true) => {
+	const setup = (capacity = 8, capacity3d = 8, drawsHere = true) => {
 		const fake = fakeCore();
 		fake.setCanvas(DEVICE[0], DEVICE[1], CSS[0], CSS[1]);
-		const buffer = createControlBuffer(false, capacity);
+		const buffer = createControlBuffer(false, capacity, capacity3d);
 		const views = controlViews(buffer);
 		views.slots[Slot.Running] = 1;
 		views.slotFloats[Slot.CanvasCssWidth] = CSS[0];
 		views.slotFloats[Slot.CanvasCssHeight] = CSS[1];
 		const region = controlLabels(buffer) as LabelRegion;
 		const page = new LabelLoop(views, drawsHere, new LabelSlots());
-		const sent: [string, number, number][] = [];
-		const ui = new Ui(region, fake.scene, fake.core, fake.scene.frameCameras, (id, slot, gen) => {
-			sent.push([id, slot, gen]);
-			page.setSlot(id, slot, gen);
-		});
+		const sent: [string, number, number, number][] = [];
+		const ui = new Ui(
+			region,
+			fake.scene,
+			fake.core,
+			fake.scene.frameCameras,
+			(id, table, slot, gen) => {
+				sent.push([id, table, slot, gen]);
+				page.setSlot(id, table, slot, gen);
+			},
+		);
 		return {
 			...fake,
 			ui,
@@ -1200,9 +1206,10 @@ describe('labels', () => {
 		ui.untrackLabel('a');
 		ui.trackLabel(second, 'b');
 		expect(sent).toEqual([
-			['a', 0, 0],
-			['a', -1, 0],
-			['b', 0, 1],
+			['a', 0, 0, 0],
+			['a', 0, -1, 0],
+			// The freed slot passes to 'b' under a new generation.
+			['b', 0, 0, 1],
 		]);
 		// The page still binds 'a', which now has no slot, while 'b' takes slot 0.
 		const b = element();
@@ -1215,7 +1222,7 @@ describe('labels', () => {
 		second.destroy();
 		record(3);
 		show(3);
-		expect(sent.at(-1)).toEqual(['b', -1, 0]);
+		expect(sent.at(-1)).toEqual(['b', 0, -1, 0]);
 		expect(placeOf(b)).toBeNull();
 	});
 
@@ -1239,7 +1246,7 @@ describe('labels', () => {
 	});
 
 	test('the page runs a frame loop only while an element is bound, where a worker draws', () => {
-		const { scene, ui, page } = setup(8, false);
+		const { scene, ui, page } = setup(8, 0, false);
 		ui.trackLabel(scene.createGroup(), 'a');
 		expect(callbacks).toHaveLength(0);
 		const a = element();
@@ -1291,7 +1298,7 @@ describe('labels', () => {
 		const buffer = createControlBuffer(false, 4);
 		const views = controlViews(buffer);
 		const page = new PageLabels(views, true);
-		page.setSlot('a', 2, 5);
+		page.setSlot('a', 0, 2, 5);
 		const a = element();
 		const b = element();
 		page.bind('a', a);
@@ -1303,6 +1310,246 @@ describe('labels', () => {
 			await new Promise((resolve) => setTimeout(resolve, 5));
 		expect(a.style.position).toBe('absolute');
 		expect(b.style.position).toBeUndefined();
+	});
+
+	/** The numbers of a CSS matrix3d, in the order that CSS takes them. */
+	const matrixOf = (transform: string) => {
+		const match = /matrix3d\(([^)]+)\)/.exec(transform);
+		if (!match) throw new Error(`unexpected transform ${transform}`);
+		return (match[1] as string).split(',').map(Number);
+	};
+	/** The numbers that three.js's CSS3DRenderer writes for an object's world matrix. */
+	const css3dObject = (matrix: Matrix4) => {
+		const e = matrix.elements;
+		return [
+			e[0],
+			e[1],
+			e[2],
+			e[3],
+			-(e[4] as number),
+			-(e[5] as number),
+			-(e[6] as number),
+			-(e[7] as number),
+			e[8],
+			e[9],
+			e[10],
+			e[11],
+			e[12],
+			e[13],
+			e[14],
+			e[15],
+		] as number[];
+	};
+	/** The numbers that three.js's CSS3DRenderer writes for a camera's view matrix. */
+	const css3dCamera = (inverse: Matrix4) => {
+		const e = inverse.elements;
+		return [
+			e[0],
+			-(e[1] as number),
+			e[2],
+			e[3],
+			e[4],
+			-(e[5] as number),
+			e[6],
+			e[7],
+			e[8],
+			-(e[9] as number),
+			e[10],
+			e[11],
+			e[12],
+			-(e[13] as number),
+			e[14],
+			e[15],
+		] as number[];
+	};
+
+	test("a 3D label's element takes the matrix that three.js's CSS3DRenderer gives it", () => {
+		const { scene, setWorld, ui, page, record, show } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const perspective = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const half = (8 * CSS[0]) / CSS[1] / 2;
+		const orthographic = scene.createOrthographicCamera({ height: 8, near: 0.5, far: 30 });
+		setWorld(perspective, cameraMatrix);
+		setWorld(orthographic, cameraMatrix);
+		const pairs = [
+			[perspective, new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30)],
+			[orthographic, new ThreeOrthographicCamera(-half, half, 4, -4, 0.5, 30)],
+		] as const;
+		// A turned and scaled object, whose offset turns and scales with it.
+		const objectMatrix = world([1, 2, 3], [0.4, -0.7, 0.2], 1.5);
+		const object = scene.createGroup();
+		setWorld(object, objectMatrix);
+		const offset: [number, number, number] = [0, 2, 0.5];
+		ui.trackLabel(object, 'plate', { transform: 'world', offset });
+		const plate = element();
+		page.bind('plate', plate);
+		let frame = 0;
+		for (const [mine, theirs] of pairs) {
+			theirs.matrixWorld.copy(cameraMatrix);
+			theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+			theirs.updateProjectionMatrix();
+			scene.setActiveCamera(mine);
+			record(++frame);
+			show(frame);
+			// The element's center sits at the label's anchor, and it turns with the object.
+			const expected = new Matrix4().copy(objectMatrix);
+			const anchor = new Vector3(...offset).applyMatrix4(objectMatrix);
+			expected.setPosition(anchor);
+			expectClose(matrixOf(plate.style.transform as string), css3dObject(expected), 4);
+		}
+	});
+
+	test("a billboard label's element faces the camera, as three.js's CSS3DSprite does", () => {
+		const { scene, setWorld, ui, page, record, show } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const theirs = new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30);
+		setWorld(camera, cameraMatrix);
+		theirs.matrixWorld.copy(cameraMatrix);
+		theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+		theirs.updateProjectionMatrix();
+		scene.setActiveCamera(camera);
+		const objectMatrix = world([1, 2, 3], [0.4, -0.7, 0.2], 1.5);
+		const object = scene.createGroup();
+		setWorld(object, objectMatrix);
+		const offset: [number, number, number] = [0.5, 1, 0];
+		const turn = 0.4;
+		ui.trackLabel(object, 'face', { transform: 'billboard', rotation: turn, offset });
+		const face = element();
+		page.bind('face', face);
+		record(1);
+		show(1);
+		// three.js's CSS3DSprite takes the camera's own turn, turns it in the element's plane, and
+		// places and scales it as the object is.
+		const expected = new Matrix4().copy(theirs.matrixWorldInverse).transpose();
+		expected.multiply(new Matrix4().makeRotationZ(turn));
+		const scale = new Vector3();
+		objectMatrix.decompose(new Vector3(), new Quaternion(), scale);
+		expected.setPosition(new Vector3(...offset).applyMatrix4(objectMatrix));
+		expected.scale(scale);
+		// three.js clears the view's turn from the element's last row, which makes the matrix affine.
+		for (const k of [3, 7, 11]) expected.elements[k] = 0;
+		expected.elements[15] = 1;
+		expectClose(matrixOf(face.style.transform as string), css3dObject(expected), 4);
+	});
+
+	test('a 3D label hides with its object, the layers the camera draws and beyond the far plane', () => {
+		const { scene, setWorld, ui, page, record, show, take } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.5, far: 30 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'plate', { transform: 'world' });
+		const plate = element();
+		page.bind('plate', plate);
+		let frame = 0;
+		const placed = () => {
+			take();
+			record(++frame);
+			show(frame);
+			return plate.style.visibility === 'hidden' ? null : plate.style.transform;
+		};
+		expect(placed()).toContain('matrix3d(');
+		object.setVisible(false);
+		expect(placed()).toBeNull();
+		object.setVisible(true);
+		object.setLayers(1 << 3);
+		expect(placed()).toBeNull();
+		object.setLayers(1);
+		setWorld(object, world([0, 0, -40], [0, 0, 0]));
+		expect(placed()).toBeNull();
+		setWorld(object, world([1, 0, 0], [0, 0, 0]));
+		expect(placed()).toContain('matrix3d(');
+	});
+
+	test("the containers take the frame's camera, as three.js's CSS3DRenderer builds it", () => {
+		const { scene, setWorld, ui, record, region, page } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const half = (8 * CSS[0]) / CSS[1] / 2;
+		const orthographic = scene.createOrthographicCamera({ height: 8, near: 0.5, far: 30 });
+		// A view whose centre is off the camera's axis, as three.js's edges give it.
+		const offset = scene.createOrthographicCamera({
+			left: -3,
+			right: 5,
+			top: 2,
+			bottom: -4,
+			near: 0.5,
+			far: 30,
+		});
+		setWorld(camera, cameraMatrix);
+		setWorld(orthographic, cameraMatrix);
+		setWorld(offset, cameraMatrix);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'plate', { transform: 'world' });
+		page.bind('plate', element());
+		const pairs = [
+			[camera, new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30), undefined],
+			[orthographic, new ThreeOrthographicCamera(-half, half, 4, -4, 0.5, 30), undefined],
+			// three.js puts the view's centre back before its turn, as (-1, -1) for these edges.
+			[offset, new ThreeOrthographicCamera(-3, 5, 2, -4, 0.5, 30), [-1, -1]],
+		] as const;
+		let frame = 0;
+		for (const [mine, theirs, center] of pairs) {
+			theirs.matrixWorld.copy(cameraMatrix);
+			theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+			theirs.updateProjectionMatrix();
+			scene.setActiveCamera(mine);
+			record(++frame);
+			presentLabels(region, frame);
+			const text = cameraTransform(region.presentedCamera, CSS[0], CSS[1]);
+			// The focal length is the projection matrix's scale across half the view's height.
+			const focal = (theirs.projectionMatrix.elements[5] as number) * (CSS[1] / 2);
+			const focalText = /^(?:perspective|scale)\(([-\d.e+]+)/.exec(text)?.[1];
+			expect(Number(focalText)).toBeCloseTo(focal, 3);
+			expectClose(matrixOf(text), css3dCamera(theirs.matrixWorldInverse), 4);
+			// An orthographic view's centre comes before the turn.
+			if (center) expect(text).toContain(`translate(${center[0]}px,${center[1]}px)`);
+			// The view's center on the canvas comes last.
+			expect(text).toEndWith(`translate(${CSS[0] / 2}px,${CSS[1] / 2}px)`);
+		}
+	});
+
+	test('a label that becomes a plane of the scene takes a slot in the other table', () => {
+		const { scene, setWorld, ui, sent } = setup(4, 2);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'a');
+		ui.trackLabel(object, 'a', { transform: 'world' });
+		expect(sent).toEqual([
+			['a', 0, 0, 0],
+			['a', 0, -1, 0],
+			['a', 1, 0, 0],
+		]);
+		ui.trackLabel(object, 'a');
+		expect(sent.at(-2)).toEqual(['a', 1, -1, 0]);
+		expect(sent.at(-1)).toEqual(['a', 0, 0, 1]);
+	});
+
+	test('a full table of 3D labels fails with E1219, which names maxLabels3d', () => {
+		const { scene, ui } = setup(4, 2);
+		const object = scene.createGroup();
+		ui.trackLabel(object, 'one', { transform: 'world' });
+		ui.trackLabel(object, 'two', { transform: 'billboard' });
+		expect(
+			thrown(() => ui.trackLabel(object, 'three', { transform: 'world' })).message,
+		).toStartWith(
+			'E1219: trackLabel() could not track "three": the engine already tracks 2 labels of the scene. Raise createEngine()\'s maxLabels3d option for more.',
+		);
+		ui.untrackLabel('two');
+		ui.trackLabel(object, 'three', { transform: 'world' });
+	});
+
+	test('createEngine takes from 0 to 65,536 3D labels, 256 by default', () => {
+		expect(labelCapacity3d(undefined)).toBe(256);
+		expect(labelCapacity3d(0)).toBe(0);
+		expect(labelCapacity3d(65_536)).toBe(65_536);
+		for (const bad of [-1, 1.5, 65_537, Number.NaN])
+			expect(thrown(() => labelCapacity3d(bad)).message).toStartWith(
+				`E1213: createEngine() got ${bad} for maxLabels3d`,
+			);
 	});
 
 	test('createEngine takes from 1 to 65,536 labels, 4,096 by default', () => {
