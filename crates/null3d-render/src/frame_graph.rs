@@ -5693,7 +5693,7 @@ mod tests {
         weighted: WeightedIds { first_group: 140 },
         particle_depth: 121,
         material_scene: 122,
-        blank_scene_depth: 902,
+        blank_scene_depth: 912,
     };
 
     /// One run of ids of a test graph's table: what the first one names, its id, and how many ids
