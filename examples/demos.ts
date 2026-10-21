@@ -43,6 +43,11 @@ export interface Demo {
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
+	 * False starts the engine on the 8-bit path, where a material with `toneMapped: false` keeps its
+	 * color as the display shows it. The image test adds the page's switch that takes the same path.
+	 */
+	hdr?: boolean;
+	/**
 	 * True for a demo whose mouse look wants the pointer lock: a click on the canvas asks the
 	 * browser for it, and Esc gives the pointer back.
 	 */
@@ -363,6 +368,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A walk from a sunny courtyard into a dark stone hall and back. The hall starts almost black, then the eye opens and its lamps and golden sphere come out of the dark. Turned toward the door, the courtyard blazes white until the eye closes again, faster, as eyes do.',
 		hold: 6,
+	},
+	{
+		name: 'tone-mapped',
+		group: 'Light, materials and effects',
+		sketch: new URL('./tone-mapped/sketch.ts', import.meta.url),
+		title: 'Tone mapping opt-out',
+		scene: 'Display color chart',
+		summary:
+			"Two rows of the same seven bright colors on a display in a dark gallery. The top row keeps each color exactly as the display shows it, with toneMapped: false. The bottom row takes AgX's punchy curve, which darkens and desaturates it. The demo draws on the 8-bit path, where the flag works.",
+		hdr: false,
+		hold: 0.5,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'light-shafts',
