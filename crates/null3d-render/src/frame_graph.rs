@@ -196,7 +196,7 @@ use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, SubsurfaceSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
-use crate::view::{Fullscreen, PassSource, View, ViewId, ViewNames};
+use crate::view::{CanvasRect, Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
 use crate::weighted::{self, WeightedIds, WeightedLayer};
 
@@ -2152,7 +2152,13 @@ impl FrameGraph {
         let declares = |view: &View| {
             let target = view.target();
             let size = (target.size, target.halvings);
-            (view.is_removed(), size, target.shown, target.reads)
+            (
+                view.is_removed(),
+                size,
+                target.shown,
+                target.reads,
+                target.rect.is_some(),
+            )
         };
         let same = self.declared
             && views.len() == self.declared_views.len()
@@ -2389,10 +2395,13 @@ impl FrameGraph {
     }
 
     /// True when a view culls in two phases against its depth pyramid: with occlusion culling,
-    /// for a view that draws at the render size. A view with a target size of its own, or a
-    /// mirror view, culls once.
+    /// for a view that draws at the render size. A view with a target size of its own, a mirror
+    /// view, or a view that draws into a rectangle of the canvas culls once, since its depth
+    /// covers part of a target only.
     fn view_occludes(&self, view: &View, index: usize) -> bool {
-        let full = view.target().graph_size() == Size::Full && view.mirrored().is_none();
+        let full = view.target().graph_size() == Size::Full
+            && view.mirrored().is_none()
+            && view.canvas_rect().is_none();
         self.occlusion() && (index == ViewId::CAMERA.index() || full)
     }
 
@@ -2421,10 +2430,7 @@ impl FrameGraph {
     fn view_of(&self, passes: &[PassId]) -> ViewId {
         passes
             .iter()
-            .find_map(|&pass| match self.roles[pass.index()] {
-                Role::Opaque(view) | Role::Prepass(view) | Role::Transparent(view) => Some(view),
-                _ => None,
-            })
+            .find_map(|&pass| role_view(self.roles[pass.index()]))
             .unwrap_or(ViewId::CAMERA)
     }
 
@@ -2505,6 +2511,11 @@ impl FrameGraph {
             let size = view_size(view);
             let fullscreen = view.fullscreen_pass().is_some() && !view.is_removed();
             self.fullscreen_views |= u32::from(fullscreen) << index;
+            if view.canvas_rect().is_some() {
+                // The view draws into the camera's scene color, so it has no target to sample.
+                self.view_colors.push(None);
+                continue;
+            }
             let shape = if fullscreen { one_sample } else { kept };
             let target = self.graph.keep(named[index].color.clone(), shape, size);
             self.view_colors.push(Some(target));
@@ -2545,6 +2556,9 @@ impl FrameGraph {
         if let Some(tiles) = self.tiles {
             self.declare_tiles(tiles);
         }
+        // The opaque passes of views that draw into rectangles of the canvas, added after the
+        // camera's passes so that each image lies over the camera's.
+        let mut canvas_views = Vec::new();
         for (index, view) in views.iter().enumerate() {
             let id = ViewId::from_index(index);
             let names = &named[index];
@@ -2558,11 +2572,14 @@ impl FrameGraph {
                 self.declare_fullscreen(view, fullscreen, names, index);
                 continue;
             }
+            let canvas = view.canvas_rect().is_some() && !view.is_removed();
             let mut pass = Pass::new(names.opaque.clone(), PassKind::Scene)
                 .size(size)
                 .layers(view.layers());
             pass = if camera {
                 pass.creates(SCENE_COLOR, color)
+            } else if canvas {
+                pass.writes(SCENE_COLOR)
             } else if copies {
                 pass.creates(names.image.clone(), color)
             } else {
@@ -2591,7 +2608,11 @@ impl FrameGraph {
                     };
                 }
                 prepass = reads_targets(prepass, views, &named, index);
-                let prepass = optional_beyond_camera(prepass, index);
+                let prepass = if canvas {
+                    prepass
+                } else {
+                    optional_beyond_camera(prepass, index)
+                };
                 let prepass = self.add(prepass, Role::Prepass(id));
                 self.prepasses.push((index as u16, prepass));
                 self.view_passes.push((index as u16, prepass));
@@ -2625,6 +2646,10 @@ impl FrameGraph {
                 pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
             }
             pass = reads_targets(pass, views, &named, index);
+            if canvas {
+                canvas_views.push((index, pass));
+                continue;
+            }
             let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Opaque(id));
             self.opaque.push((index as u16, pass));
@@ -2687,7 +2712,7 @@ impl FrameGraph {
             self.add(copy, Role::ParticleDepthCopy);
         }
         for (index, view) in views.iter().enumerate() {
-            if self.fullscreen_views & (1 << index) != 0 {
+            if self.fullscreen_views & (1 << index) != 0 || view.canvas_rect().is_some() {
                 continue;
             }
             let names = &named[index];
@@ -2717,7 +2742,7 @@ impl FrameGraph {
         }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
-                if self.fullscreen_views & (1 << index) != 0 {
+                if self.fullscreen_views & (1 << index) != 0 || view.canvas_rect().is_some() {
                     self.view_images.push(None);
                     continue;
                 }
@@ -2735,6 +2760,23 @@ impl FrameGraph {
                     .expect("the view's opaque pass creates its image");
                 self.view_images.push(Some((image, pass)));
             }
+        }
+        // Each view that draws into a rectangle of the canvas draws after the camera's passes,
+        // into the camera's scene color and a depth of its own. The rectangle's viewport limits
+        // its image to the rectangle, which covers the camera's there.
+        for (index, opaque) in canvas_views.drain(..) {
+            let id = ViewId::from_index(index);
+            let names = &named[index];
+            let opaque = self.add(opaque, Role::Opaque(id));
+            self.opaque.push((index as u16, opaque));
+            self.view_passes.push((index as u16, opaque));
+            let mut pass = Pass::new(names.transparent.clone(), PassKind::Scene)
+                .size(Size::Full)
+                .writes(SCENE_COLOR)
+                .writes(names.depth.clone());
+            pass = reads_targets(pass, views, &named, index);
+            let pass = self.add(pass, Role::Transparent(id));
+            self.transparent.push((index as u16, pass));
         }
         self.motion_declared = self.motion_view_draws() && !views.is_empty();
         if self.motion_declared {
@@ -4652,7 +4694,7 @@ impl FrameGraph {
                         clear(self.view_of(passes))
                     };
                     self.begin_render_pass(list, plan, step, clear)?;
-                    self.set_render_area(list, size)?;
+                    self.set_render_area(list, size, self.step_rect(plan, step))?;
                     for &pass in plan.passes(step) {
                         let role = self.roles[pass.index()];
                         // Where the final pass and its still build share a step with other passes,
@@ -4846,10 +4888,34 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Limits the render pass to the corner of its targets that a step of `size` draws into at the
-    /// frame's render scale. A render pass starts with its whole targets, so a step that draws
-    /// into all of them records nothing.
-    fn set_render_area(&self, list: &mut DrawList, size: Size) -> Result<(), RecordError> {
+    /// The rectangle of the canvas that a step draws into, for a step of a view that draws into
+    /// one: its passes all belong to that view. `None` for any other step.
+    fn step_rect(&self, plan: &Plan, step: &Step) -> Option<CanvasRect> {
+        plan.passes(step)
+            .iter()
+            .find_map(|&pass| role_view(self.roles[pass.index()]))
+            .and_then(|view| self.declared_views.get(view.index())?.canvas_rect())
+    }
+
+    /// Limits the render pass to the rectangle of the canvas that a view draws into, or to the
+    /// corner of its targets that a step of `size` draws into at the frame's render scale. A
+    /// render pass starts with its whole targets, so a step that draws into all of them records
+    /// nothing.
+    fn set_render_area(
+        &self,
+        list: &mut DrawList,
+        size: Size,
+        rect: Option<CanvasRect>,
+    ) -> Result<(), RecordError> {
+        if let Some(rect) = rect {
+            let (x, y, width, height) = rect.area(self.canvas, self.scale);
+            list.push(
+                Op::SetViewport,
+                &[x, y, width, height, 0f32.to_bits(), 1f32.to_bits()],
+            )?;
+            list.push(Op::SetScissor, &[x, y, width, height])?;
+            return Ok(());
+        }
         let (width, height) = size.viewport(self.canvas, self.scale);
         if (width, height) == size.made(self.canvas, self.scale) {
             return Ok(());
@@ -5094,6 +5160,14 @@ fn view_target_format(scene_color: SceneColor) -> u32 {
 /// times as its target says.
 fn view_size(view: &View) -> Size {
     view.target().graph_size()
+}
+
+/// The view of a pass that draws a scene's objects, or `None` for a pass of another kind.
+fn role_view(role: Role) -> Option<ViewId> {
+    match role {
+        Role::Opaque(view) | Role::Prepass(view) | Role::Transparent(view) => Some(view),
+        _ => None,
+    }
 }
 
 /// The pass, optional when it belongs to a view other than the camera's, so it runs only while a
