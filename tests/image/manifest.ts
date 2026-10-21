@@ -2099,6 +2099,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
+	// geometry. Three copies stand at 95%, 103% and 109% of that distance, the second inside the
+	// band that thins the last level out with the dither. Every GPU path must draw the first's
+	// image, so both pickers hide at the same distance.
+	{
+		name: 'lod-hide',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?hide',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a
