@@ -19,8 +19,8 @@ use std::collections::TryReserveError;
 
 use null3d_core::cells::{CELL_SHIFT, ORIGIN_CELL};
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows, NO_BUCKET, RowCells,
-    RowRadii, SetLayers, SetOrder, cull_into_buckets,
+    BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows, NO_BUCKET, RowBiases,
+    RowCells, RowRadii, SetLayers, SetOrder, cull_into_buckets,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -166,6 +166,7 @@ impl Direct {
                     spheres: scene.world(parity).spheres(),
                     cells: RowCells::Rows(scene.cells()),
                     radii: RowRadii::Rows(scene.local_radii()),
+                    biases: RowBiases::Rows(scene.level_biases()),
                 };
             }
             let batch = batches
@@ -179,6 +180,7 @@ impl Direct {
                     .common_cell()
                     .map_or(RowCells::Rows(batch.cells()), RowCells::One),
                 radii: RowRadii::One(batch.local_radius()),
+                biases: RowBiases::One(1.0),
             }
         };
         let choice = LevelChoice {

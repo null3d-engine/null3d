@@ -539,7 +539,7 @@ fn a_short_output_panics() {
 /// are the levels, 3 to 5 their fade buckets. The rule measures to each sphere's nearest point, 1 m
 /// nearer the camera. Returns each bucket's words.
 fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
-    use null3d_core::culling::{LevelChoice, LevelRows, RowCells, RowRadii};
+    use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii};
     use null3d_core::levels::{LevelLink, LevelRule, NO_LINK};
     let n = distances.len();
     let (xs, ys) = (vec![0.0; n], vec![0.0; n]);
@@ -567,6 +567,7 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
         spheres,
         cells: RowCells::One(0),
         radii: RowRadii::One(1.0),
+        biases: RowBiases::One(1.0),
     };
     let choice = LevelChoice {
         rule: LevelRule {

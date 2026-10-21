@@ -307,7 +307,7 @@ export interface EngineOptions {
 	 * for that many, so it never grows during play. Without it, the scene starts with room for
 	 * 1,023 objects. A scene grows on its own when it needs more: it doubles its room at the start
 	 * of a frame once it is three quarters full. A create call that finds it full doubles it at once.
-	 * Each growth copies the scene's tables, about 263 bytes per object, in one short pause. Set
+	 * Each growth copies the scene's tables, about 267 bytes per object, in one short pause. Set
 	 * this option for a scene that creates many objects during play, so they never wait for one.
 	 */
 	expectedObjects?: number;

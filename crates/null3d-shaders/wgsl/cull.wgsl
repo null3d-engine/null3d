@@ -164,6 +164,10 @@ struct Bucket {
     next: u32,
     /// The fade bucket of the bucket's level plus one, or 0 for none.
     fade: u32,
+    /// The threshold bias that picks the bucket's levels: 1 for the quality settings' threshold,
+    /// above 1 for a coarser level, and below 1 for a finer one. A record that holds no level
+    /// keeps 0, which counts as 1.
+    bias: f32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -297,11 +301,15 @@ struct Level {
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
     var out = Level(s.bucket, s.bucket, 0.0, 0.0, false);
-    let factor = params.levels.x;
+    let whole = params.levels.x;
     var next = buckets[s.bucket].next;
-    if next == 0u || factor <= 0.0 {
+    if next == 0u || whole <= 0.0 {
         return out;
     }
+    // A bucket's bias raises or lowers the bucket's own threshold, for its level choice and for
+    // the hide distance alike. A record without levels holds zeros, so 0 counts as no bias.
+    let bias = select(1.0, buckets[s.bucket].bias, buckets[s.bucket].bias > 0.0);
+    let factor = whole / bias;
     let reach = s.scale * factor;
     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
     let distance = select(nearest, 1.0, params.levels.y > 0.5);
