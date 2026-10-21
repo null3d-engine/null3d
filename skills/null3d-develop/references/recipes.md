@@ -254,6 +254,15 @@ engine.onSketchMessage((type, d) => { if (type === 'hp') document.getElementById
 
 The sketch places each label with each frame's camera. The page moves the element over it in the frame on screen, so labels never run ahead of the image. Only value changes travel as messages. The engine sets `visibility: hidden` while the object is hidden, off the camera's layers, or outside its near and far planes. The offset turns and scales with the object, like a `CSS2DObject` child in three.js. The engine holds 4,096 labels by default (`createEngine({ maxLabels })`); more fail with E1219. Docs: `guides/ui-overlays`, `api/ui`.
 
+For a panel that turns with the scene, or text that always faces the camera, give the label a transform. The element is then a plane of the scene, and the scene's units are its CSS pixels, as with three.js's `CSS3DRenderer`. The page binds it the same way.
+
+```ts
+ui.trackLabel(panel, 'panel-name', { transform: 'world', offset: [0, 1.4, 0] });   // turns with the panel
+ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });           // faces the camera
+```
+
+The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
+
 ## 8. Loading screen with progress and warm-up
 
 ```ts

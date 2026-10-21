@@ -175,8 +175,11 @@ export type WorkerReply =
 	| { type: 'quality'; update: QualityUpdate }
 	/** The sketch asked to show or hide the stats overlay, which the page draws. */
 	| { type: 'stats'; show: StatsRequest }
-	/** The slot in the label table of a label's id and its generation, or -1 once it has none. */
-	| { type: 'label'; id: string; slot: number; generation: number }
+	/**
+	 * The table and slot in the label tables of a label's id, and the slot's generation, or a slot of
+	 * -1 once the id has none.
+	 */
+	| { type: 'label'; id: string; table: number; slot: number; generation: number }
 	/** The sketch worker asks the page to start job workers up to `count`, as its parallel work grew. */
 	| { type: 'jobs-wanted'; count: number }
 	| ({ type: 'captured' } & CapturedFrame)

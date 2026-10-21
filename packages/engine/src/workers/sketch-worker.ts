@@ -98,8 +98,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					threads: message.threads,
 					showStats: (show) => replyToPage({ type: 'stats', show }),
 					wantJobs,
-					sendLabelSlot: (id, slot, generation) =>
-						replyToPage({ type: 'label', id, slot, generation }),
+					sendLabelSlot: (id, table, slot, generation) =>
+						replyToPage({ type: 'label', id, table, slot, generation }),
 					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
 				},
 				message.hold,

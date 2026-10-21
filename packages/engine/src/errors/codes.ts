@@ -190,9 +190,9 @@ const DOCS = {
 	E1219: {
 		title: 'Invalid label',
 		cause:
-			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default.",
+			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or trackLabel() got a transform that is not 'screen', 'world' or 'billboard', or a rotation that is not a number for a label that faces the camera. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default. A label that is a plane of the scene counts against maxLabels3d instead, which holds 256 by default.",
 		example:
-			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels.',
+			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels. Raise createEngine()\'s maxLabels option for more.',
 		since: '0.2',
 	},
 	E1220: {

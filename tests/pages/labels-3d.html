@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>null3d test: 3D labels</title>
+		<style>
+			html { overflow: hidden; }
+			body { margin: 0; }
+			#view { position: relative; width: 320px; height: 180px; }
+			canvas { width: 320px; height: 180px; display: block; }
+			/* The engine's labels and three.js's sit in layers of the same size and place. */
+			#labels, #three { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+		</style>
+	</head>
+	<body>
+		<div id="view">
+			<canvas></canvas>
+			<div id="labels"></div>
+			<div id="three"></div>
+		</div>
+		<pre id="status">running</pre>
+		<script type="module" src="./labels-3d.ts"></script>
+	</body>
+</html>

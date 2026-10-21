@@ -50,7 +50,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `targetFps`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
+| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `targetFps`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass`, `maxLabels` or `maxLabels3d`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1306](../errors/E1306.md) | The browser runs the WebKit engine of a Safari before 18: Safari 17 or older, or any browser on iOS or iPadOS 17 or older. |
@@ -97,6 +97,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
+| `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). Another value fails with [E1213](../errors/E1213.md). |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `onSketchError` | None | Receives each distinct error that the sketch's frame code throws while the engine runs: [The running engine](#the-running-engine) |

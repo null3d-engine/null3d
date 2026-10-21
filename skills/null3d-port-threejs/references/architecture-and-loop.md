@@ -24,7 +24,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | DOM input listeners for the 3D view | `sketch.ts` reads `ctx.input` | The page shim forwards input through shared memory |
 | Camera controls | `sketch.ts` | `@null3d/controls` |
 | HTML UI, menus, HUD, lil-gui panels, stats panels | `page.ts` | Messages to and from the sketch |
-| Labels (CSS2DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) |
+| Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2); `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
 | Audio (Web Audio, three.js Audio) | `page.ts` | Sketch sends events and positions |
 | Video elements | `page.ts` | In 0.3: `engine.registerVideo` and `textures.fromVideo`. Until then, send `ImageBitmap` frames (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
