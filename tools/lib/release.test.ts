@@ -396,7 +396,9 @@ describe('version copies', () => {
 	it('rewrites every kind of copy in place', () => {
 		const root = fixture({
 			'packages/engine/package.json': '{\n\t"name": "e",\n\t"version": "0.0.0"\n}\n',
-			'packages/engine/src/index.ts': "export const VERSION = '0.0.0';\n",
+			'packages/engine/src/shared/version.ts': "export const VERSION = '0.0.0';\n",
+			'packages/controls/package.json': '{\n\t"name": "c",\n\t"version": "0.0.0"\n}\n',
+			'packages/controls/src/version.ts': "export const VERSION = '0.0.0';\n",
 			'Cargo.toml':
 				'[workspace]\nmembers = ["crates/*"]\n\n[workspace.package]\nversion = "0.0.0"\n',
 			'crates/core/Cargo.toml': '[package]\nname = "demo-core"\nversion.workspace = true\n',
@@ -411,7 +413,8 @@ describe('version copies', () => {
 		}
 		const read = (path: string) => readFileSync(join(root, path), 'utf8');
 		expect(read('packages/engine/package.json')).toContain('"version": "0.1.0"');
-		expect(read('packages/engine/src/index.ts')).toBe("export const VERSION = '0.1.0';\n");
+		expect(read('packages/engine/src/shared/version.ts')).toBe("export const VERSION = '0.1.0';\n");
+		expect(read('packages/controls/src/version.ts')).toBe("export const VERSION = '0.1.0';\n");
 		expect(read('Cargo.toml')).toContain('[workspace.package]\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "demo-core"\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "other"\nversion = "0.0.0"');
@@ -429,7 +432,8 @@ describe('version copies', () => {
 		const paths = new Set(copies.map((c) => c.path));
 		for (const path of [
 			'packages/engine/package.json',
-			'packages/engine/src/index.ts',
+			'packages/engine/src/shared/version.ts',
+			'packages/controls/src/version.ts',
 			'Cargo.toml',
 			'Cargo.lock',
 			'.claude-plugin/marketplace.json',

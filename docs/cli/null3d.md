@@ -3,12 +3,12 @@ id: cli/null3d
 title: "The `null3d` command"
 status: experimental
 since: "0.1"
-summary: "create, test, bench, shot, assets, docs, port, skills, mcp, doctor."
+summary: "create, test, bench, shot, upgrade, assets, docs, port, skills, mcp, doctor."
 ---
 
 # The `null3d` command
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`, and step 0.3 adds `upgrade`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 
@@ -331,6 +331,42 @@ bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_
 | `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
 
 Both exit with 1 when an image cannot be read. [The asset pipeline](../guides/assets-pipeline.md#pack-occlusion-roughness-and-metalness) says what each makes.
+
+## upgrade
+
+```mermaid
+flowchart LR
+    upgrade["bunx @null3d/cli upgrade"] --> manifest["package.json"]
+    upgrade --> engine["The installed engine's version"]
+    engine --> changes["Every @null3d package<br/>takes that version"]
+    changes --> manifest
+    manifest --> install["bun install"]
+```
+
+An add-on package and the engine ship in step, and each pins the version of the other. A page that loads two versions of null3D stops with [E1432](../errors/E1432.md) before it draws. `upgrade` moves every null3D package that your `package.json` names to one version. The page then loads one version.
+
+```sh
+bunx @null3d/cli upgrade
+bunx @null3d/cli upgrade --to 0.2.0
+bunx @null3d/cli upgrade --dry-run
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--to <version>` | The version that every null3D package takes | The version of the `@null3d/engine` in `node_modules`, or the version of this tool when the project installs no engine |
+| `--dry-run` | Prints the changes and writes nothing | `package.json` is written |
+
+The command reads and writes `package.json` alone. It edits no code, installs nothing and touches no other file. After it writes the manifest, run `bun install` to install the packages.
+
+```text
+@null3d/controls: ^0.1.0 -> 0.2.0 (dependencies)
+@null3d/terrain: 0.1.0 -> 0.2.0 (devDependencies)
+Moved 2 packages to 0.2.0. Run bun install to install them.
+```
+
+A package that names a file, a workspace or a git address stays as it is, because the command writes no such address. A manifest whose packages already share one version writes nothing, and the command says so.
+
+Run it after you upgrade the engine alone, or when a page stops with [E1432](../errors/E1432.md).
 
 ## Where the commands draw
 

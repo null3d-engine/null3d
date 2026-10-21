@@ -25,6 +25,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
 | `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
+| `bunx @null3d/cli upgrade [--to 0.2.0] [--dry-run]` | Moves every `@null3d` package in `package.json` to one version: the installed engine's, or the one `--to` names. Writes the manifest only, and edits no code; run `bun install` after it |
 | `bunx @null3d/cli doctor` (0.3, not built yet) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3, not built yet) | Prints docs for the installed engine version |
 
@@ -207,6 +208,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Drawing stops with E1424 after a custom material appears | A file of the material's builds (`material-*.js`, which `vite build` writes) did not download, or comes from another build | Deploy every file that `vite build` writes, from one build; let `script-src` allow them | `guides/custom-shaders` |
 | `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
+| E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
 
 ## 9. Before you ship
 

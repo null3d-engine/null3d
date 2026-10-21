@@ -322,6 +322,7 @@ export { TaskFailure } from './shared/task-failure';
 export { TaskLoadError } from './shared/task-load-error';
 export type { Task, WasmFile } from './shared/tasks';
 export type { Tier } from './shared/tier';
+export { checkAddonVersion, VERSION } from './shared/version';
 export type {
 	SketchCallbacks,
 	SketchContext,
@@ -344,10 +345,3 @@ export type {
 export type { LabelOptions, Ui } from './sketch/ui';
 export type { WorkerProbe } from './workers/probe-worker';
 export type { TaskModule, TaskResult, TaskStage } from './workers/tasks';
-
-/**
- * The engine version, which the WebAssembly core and this package always share.
- *
- * @category api/engine
- */
-export const VERSION = '0.0.0';

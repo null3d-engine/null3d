@@ -30,6 +30,10 @@ const COMMANDS = {
 			'Type checks and lints the project, and compares its image tests with their references',
 		load: () => import('./test.js'),
 	},
+	upgrade: {
+		summary: 'Moves every null3D package in the project to one version, so exact pins never mix',
+		load: () => import('./upgrade.js'),
+	},
 };
 
 const HELP = `null3D ${VERSION}: the command-line tool of the null3D engine
