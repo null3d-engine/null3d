@@ -89,7 +89,7 @@ The frame point and the material's blending must agree. With `'opaque'`, the dra
 
 `shader` takes the same compiled WGSL that `materials.shader` takes: a surface function that keeps the engine's lighting, or a full shader with a `@vertex` and a `@fragment` entry point. The plugin compiles it to WGSL and to GLSL ES 3.00, so the draw works on both GPU paths. [Custom shaders](../guides/custom-shaders.md) describes both forms.
 
-A surface function reads the draw's vertex colours as `input.vertexColor` when the vertices have colours. The adapter turns `vertexColors` on for them, so each vertex's colour multiplies the surface's base colour and emissive light.
+A surface function reads the draw's vertex colors as `input.vertexColor` when the vertices have colors. The adapter turns `vertexColors` on for them, so each vertex's color multiplies the surface's base color and emissive light.
 
 ## The vertex format
 
