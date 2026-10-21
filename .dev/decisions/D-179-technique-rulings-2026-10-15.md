@@ -109,3 +109,7 @@ accepted two ordering rules:
 - The API features of ruling 26 (M3-K1 to M3-K6) are built early in M3, not last. They cost little,
   but they add public surface just before the API freezes, and time to use them is what makes that
   surface safe to freeze.
+
+## Addendum, 21 October 2026: M3-A11 refuses the temporal resolve
+
+M3-A11, the temporal resolve's second look, refused the resolve on 21 October 2026 ([D-200](D-200-temporal-resolve.md)). Ruling 24 therefore drops TAA. Ruling 15 drops the many lights' shipping, because their noise has no temporal cleanup. Ruling 16 drops the temporal upscaler. The resolve's prototype did not pass the engine's capture and live-toggle paths, and its WebGL2 cost was too high. The three.js mapping says that TAA, `TRAANode`, `TAAUNode` and `TemporalReprojectNode` have no equivalent.
