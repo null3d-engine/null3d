@@ -153,10 +153,10 @@ export interface MeshLevel {
 	 */
 	error?: number;
 	/**
-	 * The distance from the camera at which the level switches in, for an object of scale 1, on a
-	 * screen 1,080 pixels high, at the field of view of `fov` in the options. The engine turns it
-	 * into an error, so on a taller screen, or at a higher render scale, the level switches in
-	 * farther away.
+	 * The distance from the camera to the nearest point of the object's bounds at which the level
+	 * switches in, for an object of scale 1. It holds on a screen 1,080 pixels high, at the field
+	 * of view of `fov` in the options. The engine turns it into an error, so on a taller screen, or
+	 * at a higher render scale, the level switches in farther away.
 	 */
 	distance?: number;
 }

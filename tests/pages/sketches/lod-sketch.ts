@@ -1,7 +1,7 @@
 // Levels of detail, for their image tests. A sphere has three lower levels, each in a color of its
 // own, so the image shows which level each copy draws: red, then green, blue and yellow. Each row
-// holds two copies of one switch, at 95% and 103% of the distance where its level switches in,
-// so the second copy lies inside the hand-over band at every preset.
+// holds two copies of one switch, at 95% and 103% of the distance from the camera to the sphere's
+// nearest point, so the second copy lies inside the hand-over band at every preset.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
@@ -27,6 +27,8 @@ const LEVELS: [number, Vec3][] = [
 const SIDES = [0.95, 1.03];
 /** Each row's height on the screen, from -1 at the bottom to 1 at the top. */
 const ROWS = [0.55, -0.1, -0.6];
+/** The world radius of the base sphere, whose local radius is 1 at scale 1. */
+const RADIUS = 1;
 
 /** A sphere of radius 1 in one color, with `segments` around and half as many from pole to pole. */
 function sphere(segments: number, color: Vec3): MeshArrays {
@@ -95,28 +97,37 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	const aspect = () => engine.viewport.width / engine.viewport.height;
 
 	if (shadows) {
-		// One copy at half its first switch distance, in front of a wall that takes its shadow.
+		// One copy whose nearest point lies at half its first switch distance, in front of a wall
+		// that takes its shadow.
 		const distance = 0.5 * (ERRORS[0] as number) * factor();
-		scene.createMesh({ mesh: base, material, position: [0, 0, -distance], castShadows: true });
+		const center = distance + RADIUS;
+		scene.createMesh({
+			mesh: base,
+			material,
+			position: [0, 0, -center],
+			castShadows: true,
+		});
 		scene.createMesh({
 			mesh: geometry.plane({ width: 40, height: 40 }),
 			material: materials.standard({ color: '#c8c4bc' }),
-			position: [0, 0, -distance - 2.5],
+			position: [0, 0, -center - 2.5],
 			receiveShadows: true,
 		});
 		return;
 	}
 
-	// Where each copy stands: its row and side on the screen, at its share of its switch distance.
+	// Where each copy stands: its row and side on the screen, with its nearest point at its share of
+	// its switch distance.
 	const places = (out: Vec3[]) => {
 		const f = factor();
 		for (let k = 0; k < ROWS.length * SIDES.length; k++) {
 			const row = Math.floor(k / SIDES.length);
 			const side = k % SIDES.length;
 			const distance = (SIDES[side] as number) * (ERRORS[row] as number) * f;
-			const x = (side === 0 ? -0.35 : 0.35) * distance * tan * aspect();
-			const y = (ROWS[row] as number) * distance * tan;
-			out[k] = [x, y, -distance];
+			const center = distance + RADIUS;
+			const x = (side === 0 ? -0.35 : 0.35) * center * tan * aspect();
+			const y = (ROWS[row] as number) * center * tan;
+			out[k] = [x, y, -center];
 		}
 		return out;
 	};
