@@ -3,6 +3,10 @@
 // the camera, and the copies of a far level of detail merged into one mesh per grid cell. Both
 // build on what the engine has: the impostor cards are sprite batches, and the merged meshes are
 // `geometry.fromArrays`. So both draw on WebGPU and WebGL2 with no extra shaders.
+import { checkAddonVersion } from '@null3d/engine';
+import { VERSION } from './version';
+
+checkAddonVersion('@null3d/impostors', VERSION);
 
 export type { ImpostorOptions } from './batch';
 export { createImpostors, ImpostorBatch } from './batch';

@@ -1,6 +1,10 @@
 // Camera controls for null3D sketches: orbit, map, fly and first-person controls with three.js's
 // option names and behavior. They read the sketch's input once per frame in update(dt), with no DOM
 // listeners.
+import { checkAddonVersion } from '@null3d/engine';
+import { VERSION } from './version';
+
+checkAddonVersion('@null3d/controls', VERSION);
 
 export type {
 	FirstPersonControls,

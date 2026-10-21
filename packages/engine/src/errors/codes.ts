@@ -484,6 +484,14 @@ const DOCS = {
 			"E1431: the area lights' tables did not load from https://example.com/assets/area-light-tables-Zx8c_Vb1.bin: HTTP 404",
 		since: '0.2',
 	},
+	E1432: {
+		title: 'Add-on for another engine version',
+		cause:
+			'An add-on package loaded beside an engine of another version. Each add-on ships in step with the engine and pins the engine version that it was built for, so a page may mix no two versions. The message names the add-on, its version and the engine version.',
+		example:
+			'E1432: @null3d/controls 0.1.0 was built for null3D 0.1.0, and this page runs null3D 0.2.0.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:
