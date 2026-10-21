@@ -15,7 +15,7 @@ import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { Lut, type LutData } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
-import type { Geometry, Materials } from './resources';
+import type { Geometry, Material, Materials, MeshGeometry } from './resources';
 import type { Scene } from './scene';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
@@ -77,6 +77,108 @@ export interface LoadGltfOptions {
 }
 
 /**
+ * A part that a glTF extension handler draws in place of a primitive that it reads.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionPart {
+	/** The mesh to draw at the primitive's node. The model frees it with its other meshes. */
+	readonly mesh: MeshGeometry;
+	/** The material to draw it with. The model frees it with its other materials. */
+	readonly material: Material;
+}
+
+/**
+ * One primitive that carries a glTF extension which an add-on reads, as a handler gets it.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionPrimitive {
+	/**
+	 * Each attribute's values as floats, by the file's name. The loader reads every attribute,
+	 * including names that the engine does not know, such as `KHR_gaussian_splatting:ROTATION`.
+	 */
+	readonly attributes: Readonly<Record<string, Float32Array>>;
+	/** The number of elements in each attribute. */
+	readonly count: number;
+	/** The primitive's indices, which name triangles, or undefined when it gives none. */
+	readonly indices: Uint16Array | Uint32Array | undefined;
+	/** glTF's mode of the primitive: 0 for points, 4 for triangles. */
+	readonly mode: number;
+	/** The material that the file gives the primitive, or undefined when it gives none. */
+	readonly material: Material | undefined;
+}
+
+/**
+ * The node that holds a primitive which an extension handler reads.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionNode {
+	/** The node's name in the file. */
+	readonly name: string;
+	/** The position relative to the node's parent. */
+	readonly position: readonly [number, number, number];
+	/** The rotation relative to the node's parent, as a quaternion (x, y, z, w). */
+	readonly rotation: readonly [number, number, number, number];
+	/** The scale relative to the node's parent. */
+	readonly scale: readonly [number, number, number];
+}
+
+/**
+ * What the loader hands a glTF extension handler for one primitive.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionData {
+	/** The extension's name, one of the handler's `extensions`. */
+	readonly extension: string;
+	/** The extension's JSON, as the file gives it. */
+	readonly json: Readonly<Record<string, unknown>>;
+	/** The node that holds the primitive. */
+	readonly node: GltfExtensionNode;
+	/** The primitive that carries the extension. */
+	readonly primitive: GltfExtensionPrimitive;
+}
+
+/**
+ * The engine's makers, which an extension handler uses to make the parts that it returns.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionContext {
+	/** Makes the meshes that the handler returns, as the loader makes the file's own meshes. */
+	readonly geometry: Geometry;
+	/** Makes the materials that the handler returns. */
+	readonly materials: Materials;
+}
+
+/**
+ * A handler for the glTF extensions that an add-on reads, as three.js's `GLTFLoader.register()`
+ * takes one. Register it with `assets.registerGltfExtension` before the first load of a model that
+ * carries the extension.
+ *
+ * @category api/assets
+ */
+export interface GltfExtensionHandler {
+	/** The extension names that the handler reads, such as `'KHR_gaussian_splatting'`. */
+	readonly extensions: readonly string[];
+	/**
+	 * Makes the parts that draw one primitive that carries one of `extensions`. The loader calls it
+	 * once for each such primitive, and draws only the parts that it returns for that primitive.
+	 * Return nothing to draw nothing. It may return a promise, for work that takes time.
+	 */
+	load(
+		data: GltfExtensionData,
+		context: GltfExtensionContext,
+	):
+		| GltfExtensionPart
+		| readonly GltfExtensionPart[]
+		| void
+		| Promise<GltfExtensionPart | readonly GltfExtensionPart[] | undefined>;
+}
+
+/**
  * @internal Where a texture's file lies, so the engine can load it again: an address, and for an
  * image inside another file, such as a model's, the bytes it takes there.
  */
@@ -115,6 +217,8 @@ export class Assets {
 	private readonly preloaded = new Map<string, Promise<Blob>>();
 	/** Downloads under way, by address, which loads at the same time share. */
 	private readonly pending = new Map<string, Promise<Blob>>();
+	/** The glTF extension handler of each extension name, which the loader hands its primitives. */
+	private readonly gltfExtensions = new Map<string, GltfExtensionHandler>();
 	private readonly handlers = new Set<ProgressHandler>();
 	private loaded = 0;
 	private total = 0;
@@ -191,6 +295,47 @@ export class Assets {
 	}
 
 	/**
+	 * Registers a handler for glTF extensions that an add-on reads, as three.js's
+	 * `GLTFLoader.register()` does. A file that carries one of the handler's extensions hands each
+	 * primitive that holds one to the handler, and draws the parts that it returns. A file that
+	 * requires such an extension loads with the handler and fails with E1417 without it. Register
+	 * the handler before the first load that needs it. Returns a function that unregisters it.
+	 * Throws E1213 for a handler without a list of extension names or a `load` function, and for one
+	 * that reads an extension which another handler reads.
+	 */
+	registerGltfExtension(handler: GltfExtensionHandler): () => void {
+		const call = 'assets.registerGltfExtension';
+		const names = handler?.extensions;
+		if (
+			!Array.isArray(names) ||
+			names.length === 0 ||
+			!names.every((name) => typeof name === 'string' && name.length > 0)
+		)
+			throw new EngineError(
+				'E1213',
+				`${call}() got a handler whose extensions is not a list of names. Name at least one extension, such as 'KHR_gaussian_splatting'.`,
+			);
+		if (typeof handler.load !== 'function')
+			throw new EngineError(
+				'E1213',
+				`${call}() got a handler without a load() function, which makes the parts of a primitive that carries its extensions.`,
+			);
+		for (const name of names) {
+			const held = this.gltfExtensions.get(name);
+			if (held && held !== handler)
+				throw new EngineError(
+					'E1213',
+					`${call}() got a handler for ${name}, and another handler reads it already.`,
+				);
+		}
+		for (const name of names) this.gltfExtensions.set(name, handler);
+		return () => {
+			for (const name of names)
+				if (this.gltfExtensions.get(name) === handler) this.gltfExtensions.delete(name);
+		};
+	}
+
+	/**
 	 * Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and
 	 * makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which
 	 * `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first
@@ -228,6 +373,7 @@ export class Assets {
 					);
 				},
 				error: (code, message) => new EngineError(code, message),
+				extensionHandlers: [...new Set(this.gltfExtensions.values())],
 			},
 			file,
 			address,

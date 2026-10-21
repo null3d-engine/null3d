@@ -42,6 +42,8 @@ Before you publish a model, run it through `bunx @null3d/cli assets optimize`. T
 
 The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_draco_mesh_compression`, `KHR_texture_basisu`, `EXT_texture_webp`, `EXT_texture_avif`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_materials_specular`, `KHR_materials_ior`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_diffuse_transmission`, `KHR_materials_volume_scatter`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
 
+An add-on can read an extension that the engine leaves out. It registers a handler with `assets.registerGltfExtension`, and the loader draws the primitives that carry the extension through that handler. Without the handler, a file that requires such an extension fails with E1417, and the message names the package to import. [Assets](../api/assets.md#extensions-that-add-ons-read) gives the handler's shape.
+
 ### Compressed meshes
 
 meshopt compression makes a model's vertex and index data several times smaller to download. The loader decodes it in its worker with meshoptimizer's own decoder, so the meshes match what any other meshopt decoder reads from the file. The decoder is about 4 KB after Brotli. It downloads with the first file that holds meshopt data, so a page without such files does not download it. It runs as WebAssembly with SIMD instructions, and the engine compiles it once per page.

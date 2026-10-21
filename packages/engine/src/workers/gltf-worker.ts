@@ -26,7 +26,11 @@ export type GltfDecoder = 'meshopt' | 'draco';
 
 /** A request of the loader: a new file, or the buffers and decoders that a file asked for. */
 export type GltfRequest =
-	| { id: number; file: ArrayBuffer; url: string }
+	/**
+	 * A new file. `extensions` names the glTF extensions that the add-ons' handlers read, which a
+	 * file may require as it requires the engine's own.
+	 */
+	| { id: number; file: ArrayBuffer; url: string; extensions?: string[] }
 	| {
 			id: number;
 			buffers: [number, ArrayBuffer][];
@@ -42,8 +46,8 @@ export type GltfAnswer =
 /** The identifier that starts every KTX2 file. */
 const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
 
-/** Files that wait for their buffers, by request. */
-const waiting = new Map<number, { container: GltfContainer; url: string }>();
+/** Files that wait for their buffers, by request, with the extensions that the handlers read. */
+const waiting = new Map<number, { container: GltfContainer; url: string; extensions: string[] }>();
 
 /** The meshopt decoder, once a file has needed it. A failed start lets the next file try again. */
 let meshopt: Promise<MeshoptDecode> | undefined;
@@ -99,16 +103,17 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 	const { id } = request;
 	try {
 		if ('file' in request) {
-			const container = readContainer(new Uint8Array(request.file), request.url);
+			const extensions = request.extensions ?? [];
+			const container = readContainer(new Uint8Array(request.file), request.url, extensions);
 			const decoders: GltfDecoder[] = [];
 			if (usesMeshopt(container) && !meshopt) decoders.push('meshopt');
 			if (usesDraco(container) && !dracoModule) decoders.push('draco');
 			if (container.external.size > 0 || decoders.length > 0) {
-				waiting.set(id, { container, url: request.url });
+				waiting.set(id, { container, url: request.url, extensions });
 				answer({ id, needs: [...container.external], decoders });
 				return;
 			}
-			void finish(id, container, new Map(), request.url);
+			void finish(id, container, new Map(), request.url, extensions);
 			return;
 		}
 		for (const [name, compiled] of request.decoders ?? [])
@@ -118,7 +123,7 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 		waiting.delete(id);
 		if (!file) return;
 		const buffers = new Map(request.buffers.map(([k, bytes]) => [k, new Uint8Array(bytes)]));
-		void finish(id, file.container, buffers, file.url);
+		void finish(id, file.container, buffers, file.url, file.extensions);
 	} catch (error) {
 		fail(id, error);
 	}
@@ -133,6 +138,7 @@ async function finish(
 	container: GltfContainer,
 	buffers: Map<number, Uint8Array>,
 	url: string,
+	extensions: readonly string[],
 ): Promise<void> {
 	try {
 		const meshoptDecode = usesMeshopt(container)
@@ -140,10 +146,13 @@ async function finish(
 					Promise.reject(new GltfError('E1406', 'the meshopt decoder did not load')))
 			: undefined;
 		const dracoDecode = usesDraco(container) ? (await dracoDecoder()).decode : undefined;
-		const data = parseGltf(container, buffers, url, {
-			meshopt: meshoptDecode,
-			draco: dracoDecode,
-		});
+		const data = parseGltf(
+			container,
+			buffers,
+			url,
+			{ meshopt: meshoptDecode, draco: dracoDecode },
+			extensions,
+		);
 		const bitmaps = await Promise.all(
 			data.textures.map((use) => decode(data, use.image, use.colorSpace)),
 		);
@@ -162,6 +171,11 @@ async function finish(
 					p.weights,
 				])
 					if (array) transfer.add(array.array.buffer as ArrayBuffer);
+		for (const mesh of data.meshes)
+			for (const p of mesh.extensionPrimitives ?? []) {
+				for (const array of Object.values(p.attributes)) transfer.add(array.buffer as ArrayBuffer);
+				if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);
+			}
 		for (const mesh of data.meshes)
 			for (const p of mesh.primitives) {
 				if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);

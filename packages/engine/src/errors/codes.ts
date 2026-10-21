@@ -146,7 +146,7 @@ const DOCS = {
 	E1213: {
 		title: 'Invalid setting',
 		cause:
-			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
+			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have. It also covers a glTF extension handler that names no extension, that another handler reads, or that returns a part without a mesh or a material.',
 		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
 		since: '0.1',
 	},
@@ -385,7 +385,7 @@ const DOCS = {
 	E1417: {
 		title: 'glTF feature not supported',
 		cause:
-			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
+			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. When a foundation add-on reads that extension, the message names the package to import, such as "Import @null3d/splats, which reads it", and that add-on registers the handler that loads the file. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
 		example:
 			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_materials_variants, which the engine does not read.',
 		since: '0.2',

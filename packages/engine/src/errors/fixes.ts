@@ -103,7 +103,7 @@ export const ERROR_FIXES = {
 	E1416:
 		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own. A file that passes a limit on what it decodes to is broken, or holds more than a scene can use. Split it into several files, or simplify its meshes.',
 	E1417:
-		'Export the model again without the extension that the message names. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
+		'Export the model again without the extension that the message names, or import the add-on that the message names and register its handler on assets. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
 	E1418:
 		"Add 'wasm-unsafe-eval' to the script-src of the page's Content-Security-Policy, for example script-src 'self' 'wasm-unsafe-eval'. It allows WebAssembly and no JavaScript eval. The hosting page of the docs gives the whole policy that the engine needs.",
 	E1419:
