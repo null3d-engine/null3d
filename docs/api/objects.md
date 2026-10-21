@@ -66,7 +66,7 @@ The world getters read the engine's last transform update. A change that you mak
 
 ## Parents
 
-An object gets a parent from the `parent` option, or later from `setParent(parent)`. `setParent(null)` makes it a root object.
+An object gets a parent from the `parent` option, or later from `setParent(parent)`. `setParent(null)` makes it a root object. `getParent()` returns the parent, or null for a root object.
 
 By default the object keeps its position, rotation and scale relative to the parent, as three.js's `add` does. Its place in the world then changes with the new parent. `setParent(parent, { keepWorld: true })` keeps its place, rotation and size in the world instead, as three.js's `attach` does. The engine gives the object the position, rotation and scale that do that under the new parent.
 
@@ -100,7 +100,7 @@ In development builds, every call on an object apart from `describe` throws E110
 
 ## Layers
 
-`setLayers(mask)` puts the object on the layers of a 32-bit mask: bit n puts it on layer n. A camera draws the object only when their masks share a bit. New objects are on layer 0, which every new camera draws. The `layers` option sets the mask when you create the object.
+`setLayers(mask)` puts the object on the layers of a 32-bit mask: bit n puts it on layer n. A camera draws the object only when their masks share a bit. New objects are on layer 0, which every new camera draws. The `layers` option sets the mask when you create the object. `getLayers()` returns the mask that the object has now, which a sketch reads before it adds a layer of its own.
 
 The mask belongs to the object alone, so its children keep their own. Like `setVisible`, `setLayers` takes effect when the engine processes the frame, and it rebuilds nothing. In development builds, a mask that is not a whole number of 32 bits throws E1207. [Render layers](../concepts/render-layers.md) explains masks in full.
 
