@@ -186,6 +186,24 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 - After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode. On WebGPU, the message names the cause when the GPU gives one: a lost device with its reason, or too little GPU memory.
 - A capture also fails when the thread that draws gives no answer within the engine's wait. That wait is twice the time that a frame's pipelines may take, and the message names it and the time. The wait counts only the time that the page shows. A page in a hidden tab draws no frames, so it keeps its whole wait until the tab shows again.
 
+## Add-on versions
+
+An add-on package ships in step with the engine and pins the version that it was built for. It reads the engine's `VERSION` as it loads, and a page that mixes two versions stops with [E1432](../errors/E1432.md) before it draws. The message names the add-on, its version and the engine version.
+
+```sh
+bunx @null3d/cli upgrade   # every null3D package takes one version
+```
+
+[The `null3d` command](../cli/null3d.md#upgrade) says what the command reads and writes.
+
+An add-on of your own makes the same check as it loads, so that a page which runs another engine version stops the same way:
+
+```ts
+import { checkAddonVersion } from '@null3d/engine';
+
+checkAddonVersion('my-addon', '0.2.0'); // the engine version this build was made for
+```
+
 ## Related pages
 
 - [Your first scene](../getting-started/first-scene.md): a page and a sketch that run together.
