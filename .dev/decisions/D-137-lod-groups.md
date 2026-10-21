@@ -252,3 +252,34 @@ nothing. Both paths compare the same values: the job workers and the direct-draw
 The shadow views use their own threshold, times `lodShadowFactor`, as their level choice does. A
 caster's shadow therefore goes at a nearer distance than the object itself. It draws no band, as
 the shadow maps already pick without one.
+
+## Addendum: the copy lists follow what draws (22 October 2026)
+
+A view's compacted instance buffer holds one copy of each source that draws, in the slice that the
+bucket's draw reads. The build gave every bucket of a mesh with levels a slice for every source of
+the set, because any source may pick any level. A set of four levels therefore took four times the
+copies that its sources need. With fading bands it took eight times. Each cost 64 bytes per source
+per level per view. The copies of a dense forest passed WebGPU's 128 MiB binding limit near 260,000
+copies.
+
+The frame now sizes each level's slice to the copies that it draws. The slices of one set take the
+room of the set's sources. `Layout::fit_copies`
+(`crates/null3d-render/src/gpu_driven/copies.rs`) counts the copies that each view places in each
+bucket. It uses the same stateless rule that the culling shader runs. It takes the largest count
+over the views that draw the layout. A source near a switch distance counts toward both levels that
+it may pick. So a slice never falls short of the shader's writes, whatever the last bits of a
+shared distance come to. The buckets without levels keep the slices of the build. A scene without
+levels runs no count.
+
+| Copies of four levels, with fading bands | Before | After |
+| --- | --- | --- |
+| 40,000 copies, the main view | 20.5 MB | 2.6 MB |
+| 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
+
+`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists.
+
+The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
+buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0
+(hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame.
+The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has
+the same sizing problem (M3-L3). Its count can read this one.
