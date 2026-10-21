@@ -763,23 +763,6 @@ in bytes after Brotli:
 Every start passes the 176 KB budget, and every WebGPU start passes 160 KB. The WebGL2 starts still
 sit above 160 KB, because of the shader file that this section measured.
 
-That build also held an experiment that moved the sky's write out of the start. It measured about
-860 bytes, and it is not part of the change. Without it, the figure above for each start that loads
-the sketch worker rises by about that much.
-
-### The fog, the picks and the objects' events, 22 October 2026
-
-Three more features moved out of the start, each with its calls still answering at the call:
-
-- The fog's write. `scene.setFog` keeps `fog-check.ts`, which holds the tables. It also holds the
-  fill that gives the numbers their defaults, and the development checks, so a bad option still
-  throws at the call. The write loads with the first call, and it gives the core the numbers and
-  turns the volumetric fog on. About 400 bytes.
-- The picks. `scene.pick` answers with a promise already. So the module that finds the object at a
-  point loads with the first pick, and the control block reaches it when it arrives. About 600
-  bytes.
-- The objects' pointer events. The module that dispatches them loads with the first `on`, and a
-  handler added meanwhile joins once it has arrived. About 1.6 KB.
-
-A held frame waits for each of them, as it waits for pictures and the area lights. So a feature
-that a sketch sets in its setup still draws in the held picture.
+That build also held an experiment that moved the sky's write out of the start, which measured
+about 860 bytes and is not part of the change: without it, the figure above for each start that
+loads the sketch worker rises by about that much.

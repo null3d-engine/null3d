@@ -48,8 +48,7 @@ import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import type { FeatureDraw, FeatureDrawOptions } from './feature-draws';
 import type { FeatureDescription } from './features';
-import type { FogOptions } from './fog';
-import { checkFog, checkVolume, fogNumbers } from './fog-check';
+import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
 	LENS_CENTER_X,
@@ -81,14 +80,14 @@ import { type LightProbeGridOptions, SceneLightProbeGrid } from './light-probes'
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { ParticleBuffer, ParticleBufferOptions } from './particles';
-import type { PickHit, ScenePicks } from './picks';
-import type {
-	ObjectEventHandler,
-	ObjectEventType,
+import { type PickHit, ScenePicks } from './picks';
+import {
+	type ObjectEventHandler,
+	type ObjectEventType,
 	PointerEvents,
-	PointerInput,
-	PointerListeners,
-	PointerTarget,
+	type PointerInput,
+	type PointerListeners,
+	type PointerTarget,
 } from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
@@ -1371,12 +1370,12 @@ export class Object3D implements Described {
 	 */
 	on(type: ObjectEventType, handler: ObjectEventHandler): void {
 		if (DEV) checkLive('on', this);
-		this.scene.addPointerListener(this, type, handler);
+		this.scene.pointerEvents.add(this, type, handler);
 	}
 
 	/** Removes a handler that `on` added for events of `type`. */
 	off(type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.scene.removePointerListener(this, type, handler);
+		this.scene.pointerEvents.remove(this, type, handler);
 	}
 
 	/** @internal The parent that the object's pointer events go on to. */
@@ -2662,12 +2661,12 @@ export class InstanceBatch implements ViewHolder {
 	 */
 	listen(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
 		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
-		this.scene.addPointerListener(target, type, handler);
+		this.scene.pointerEvents.add(target, type, handler);
 	}
 
 	/** @internal Removes a handler that `listen` added. */
 	unlisten(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.scene.removePointerListener(target, type, handler);
+		this.scene.pointerEvents.remove(target, type, handler);
 	}
 
 	/** @internal A batch has no parent for its pointer events to go on to. */
@@ -3206,27 +3205,6 @@ export class Scene implements ViewHolder {
 	private readonly imageTasks = new Set<Promise<void>>();
 	/** @internal The picture that failed to write, once: the frame loop reports it. */
 	private imageFailure: unknown;
-	/** @internal The feature modules that a call started loading, whose work waits for them. */
-	private readonly firstUseLoads = new Set<Promise<unknown>>();
-
-	/**
-	 * @internal Queues a feature module's load, whose work runs once it arrives. Hold mode waits
-	 * for it before it draws the held frame, so a feature that a call sets still draws there.
-	 */
-	queueFirstUse<T>(load: Promise<T>): Promise<T> {
-		const tracked = load.then((value) => {
-			this.firstUseLoads.delete(tracked);
-			return value;
-		});
-		this.firstUseLoads.add(tracked);
-		void tracked.catch(() => this.firstUseLoads.delete(tracked));
-		return tracked;
-	}
-
-	/** @internal Settles when every feature module that a call started loading has arrived. */
-	async firstUseSettled(): Promise<void> {
-		while (this.firstUseLoads.size > 0) await Promise.all(this.firstUseLoads);
-	}
 
 	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
 	private loadAreaTables(): void {
@@ -3321,10 +3299,6 @@ export class Scene implements ViewHolder {
 	private sceneQueries: SceneQueries | undefined;
 	/** GPU picking's queries, made on the first pick. */
 	private scenePicks: ScenePicks | undefined;
-	/** The load of the picks, which the first pick starts. */
-	private picksLoad: Promise<ScenePicks> | undefined;
-	/** The control block, which the picks attach to when they load. */
-	private pickSlots: Int32Array | undefined;
 	/** The ray and hit that a pick's raycast reuses. */
 	private pickRay: Ray | undefined;
 	private pickHit: RaycastHit | undefined;
@@ -3338,14 +3312,8 @@ export class Scene implements ViewHolder {
 	private sceneBackground: SceneBackground | undefined;
 	/** True while the fog is volumetric. */
 	private fogVolume = false;
-	/** The fog's write, which the first `setFog` loads. */
-	private fogWriter: ((fog: FogOptions | null) => void) | undefined;
-	/** Numbers that development builds check a fog's options in, so the check allocates nothing. */
-	private readonly fogScratch = new Float64Array(16);
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
-	/** The load of the module that dispatches objects' pointer events, which the first handler starts. */
-	private pointerEventsLoad: Promise<PointerEvents> | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	/** @internal The batches of command records published so far, which tests count. */
@@ -3407,48 +3375,13 @@ export class Scene implements ViewHolder {
 		return this.cameras;
 	}
 
-	/**
-	 * @internal Adds a handler for an object's events. The module that dispatches them loads on the
-	 * first call, and a handler added meanwhile joins the events once it has.
-	 */
-	addPointerListener(
-		target: PointerTarget,
-		type: ObjectEventType,
-		handler: ObjectEventHandler,
-	): void {
-		if (this.objectEvents) {
-			this.objectEvents.add(target, type, handler);
-			return;
-		}
-		void this.queueFirstUse(this.pointerEventsModule()).then((events) =>
-			events.add(target, type, handler),
+	/** @internal Pointer events on objects, made on the first call. */
+	get pointerEvents(): PointerEvents {
+		this.objectEvents ??= new PointerEvents(
+			{ pick: (frame, numbers, ray) => this.pickForEvent(frame, numbers, ray) },
+			this.pointerInput,
 		);
-	}
-
-	/** @internal Removes a handler that `addPointerListener` added. */
-	removePointerListener(
-		target: PointerTarget,
-		type: ObjectEventType,
-		handler: ObjectEventHandler,
-	): void {
-		if (this.objectEvents) this.objectEvents.remove(target, type, handler);
-		else
-			void this.queueFirstUse(this.pointerEventsModule()).then((events) =>
-				events.remove(target, type, handler),
-			);
-	}
-
-	/** @internal Loads the module that dispatches objects' pointer events, on the first need. */
-	private pointerEventsModule(): Promise<PointerEvents> {
-		this.pointerEventsLoad ??= import('./pointer-events').then(({ PointerEvents }) => {
-			const events = new PointerEvents(
-				{ pick: (frame, numbers, ray) => this.pickForEvent(frame, numbers, ray) },
-				this.pointerInput,
-			);
-			this.objectEvents = events;
-			return events;
-		});
-		return this.pointerEventsLoad;
+		return this.objectEvents;
 	}
 
 	/**
@@ -4982,26 +4915,8 @@ export class Scene implements ViewHolder {
 	 * so a sketch can change the fog in every frame.
 	 */
 	setFog(fog: FogOptions | null): void {
-		// The check runs at the call, so a development build throws here, before the write's module
-		// has loaded. It fills the call values, which the write gives every value of its own.
-		if (DEV && fog !== null) {
-			const numbers = fogNumbers(fog, this.fogScratch);
-			checkFog(fog, this.fogScratch);
-			const volume =
-				fog.volumetric && typeof fog.volumetric === 'object' ? fog.volumetric : undefined;
-			if (numbers.on) checkVolume(volume, numbers.intensity, numbers.anisotropy, numbers.distance);
-		}
-		if (this.fogWriter) {
-			this.fogWriter(fog);
-			return;
-		}
-		void this.queueFirstUse(import('./fog')).then(({ setSceneFog }) => {
-			this.fogWriter = (value) => {
-				this.fogVolume = setSceneFog(this.core, value);
-				if (this.fogVolume) this.makers?.materials.shaders.need('fog_volume');
-			};
-			this.fogWriter(fog);
-		});
+		this.fogVolume = setSceneFog(this.core, fog);
+		if (this.fogVolume) this.makers?.materials.shaders.need('fog_volume');
 	}
 
 	/** @internal True while the scene's fog is volumetric, which needs HDR color. */
@@ -5044,14 +4959,13 @@ export class Scene implements ViewHolder {
 	}
 
 	/** GPU picking's queries, made on the first pick. */
-	private picksModule(): Promise<ScenePicks> {
-		this.picksLoad ??= import('./picks').then(({ ScenePicks }) => {
-			const picks = new ScenePicks(this.core, this.queryTargets(), (x, y) => this.pickByRay(x, y));
-			if (this.pickSlots) picks.attach(this.pickSlots);
-			this.scenePicks = picks;
-			return picks;
-		});
-		return this.picksLoad;
+	private get picks(): ScenePicks {
+		if (!this.scenePicks) {
+			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y) =>
+				this.pickByRay(x, y),
+			);
+		}
+		return this.scenePicks;
 	}
 
 	/**
@@ -5073,8 +4987,7 @@ export class Scene implements ViewHolder {
 			if (!Number.isFinite(x)) throw new EngineError('E1203', `pick() got ${x} for x.`);
 			if (!Number.isFinite(y)) throw new EngineError('E1203', `pick() got ${y} for y.`);
 		}
-		if (this.scenePicks) return this.scenePicks.pick(x, y);
-		return this.queueFirstUse(this.picksModule()).then((picks) => picks.pick(x, y));
+		return this.picks.pick(x, y);
 	}
 
 	/** @internal Answers each pick whose read landed, at the end of a frame. */
@@ -5084,8 +4997,7 @@ export class Scene implements ViewHolder {
 
 	/** @internal Gives the picks the engine's control block, when the frame loop starts. */
 	attachPickControl(slots: Int32Array): void {
-		this.pickSlots = slots;
-		this.scenePicks?.attach(slots);
+		this.picks.attach(slots);
 	}
 
 	/** @internal Fails the picks that wait, when the engine stops. */
