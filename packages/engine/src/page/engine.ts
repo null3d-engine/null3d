@@ -1984,11 +1984,13 @@ async function startEngine(
 				// The sketch thread hears which of a batch of job workers run once the whole batch has
 				// settled, so it never takes a worker for running before the batch is known. A batch
 				// that started no worker, because the browser refused them or the engine is stopping,
-				// stays unheard: the thread then uses the workers it asked for.
+				// stays unheard: the thread then uses the workers it asked for. A sketch on this page
+				// reads the news itself, since no sketch worker carries it.
 				if (starting.length === 0) return;
 				void Promise.allSettled(starting).then(() => {
 					running.sort((a, b) => a - b);
 					threads?.sketch?.send({ type: 'job-workers', running: [...running] });
+					if (jobTaskHost) jobTaskHost.running = [...running];
 				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
