@@ -85,6 +85,9 @@ const FULL_PRECISION = 'half=off';
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
 
+/** The sketch of the tone mapping flag's test: one bright color on two panels, with the flag and without. */
+export const TONE_MAPPED_SKETCH = 'tests/pages/sketches/tone-mapped-sketch.ts';
+
 /** The name of the test that draws a tone mapping test at an exposure of 1 on the 8-bit path. */
 export const eightBitTest = (tone: string) => `tone-${tone}-8-bit`;
 
@@ -1236,6 +1239,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		deviceTolerance: EIGHT_BIT_TOLERANCE,
 	},
 	...toneMappingTests(),
+	// One bright unlit color on two panels, the left with toneMapped: false. The 8-bit path applies
+	// the output transform in each material's shader, so it keeps that panel's color as the display
+	// shows it and tone maps the other: the panels differ. The HDR path tone maps the whole image in
+	// its final pass, which carries no per-material flag, so both panels draw alike (D-200). The
+	// spec reads the panels on every tier and checks each path's promise.
+	{ name: 'tone-mapped', sketch: TONE_MAPPED_SKETCH, hold: 0 },
+	// The same scene forced onto the 8-bit path on both backends. Compatibility mode covers the
+	// WebGPU build of the material shaders, and WebGL2 uses the build that naga writes instead, so
+	// each must keep the flagged panel's color.
+	{
+		name: 'tone-mapped-8-bit',
+		sketch: TONE_MAPPED_SKETCH,
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+	},
 	...antialiasTests(),
 	// The edges scene in a live engine with the still-camera accumulation on, captured once the
 	// view has blended its frames and rests (tests/pages/still.ts). Its edges come out smoother
@@ -2578,16 +2598,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
 	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
-	...DEMOS.map(
-		(demo): ImageTest => ({
+	...DEMOS.map((demo): ImageTest => {
+		const switches = [
+			...(demo.largeWorld ? ['largeWorld'] : []),
+			// The engine reads the page's switch, but not the demo's option, which a sketch test has no
+			// page to pass. Both take the 8-bit path that the demo's own start takes.
+			...(demo.hdr === false ? ['hdr=off'] : []),
+		];
+		return {
 			name: `demo-${demo.name}`,
 			sketch: `examples/${sketchPath(demo)}`,
 			hold: demo.hold,
-			...(demo.largeWorld && { switches: ['largeWorld'] }),
+			...(switches.length > 0 && { switches }),
+			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
-		}),
-	),
+		};
+	}),
 	// The objects demo's Look button, which a held frame cannot press: the same stage and time with
 	// one material over every mesh of the main pass, so each crate keeps its shape and its place.
 	{

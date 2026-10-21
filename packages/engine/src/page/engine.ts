@@ -252,6 +252,14 @@ export interface EngineOptions {
 	 */
 	transparent?: boolean;
 	/**
+	 * False draws the scene into 8-bit color, where each material's shader applies the output
+	 * transform, instead of HDR color, which the final pass tone maps. A material with
+	 * `toneMapped: false` keeps its exact color only on that path. The default lets the engine pick
+	 * the path from the device, which draws HDR color wherever it can. The `?hdr=off` switch takes
+	 * the 8-bit path too.
+	 */
+	hdr?: boolean;
+	/**
 	 * True for scenes that reach far beyond a city, such as a planet. Object positions then keep the
 	 * precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without
 	 * it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and
@@ -1839,6 +1847,8 @@ async function startEngine(
 
 		const device = coreDevice(tier, report, {
 			...switches,
+			// The switch and the option can both only take the 8-bit path, and the switch wins.
+			hdr: switches.hdr && options.hdr !== false,
 			antialias: quality.settings.antialias,
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
