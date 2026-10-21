@@ -274,8 +274,8 @@
       "three": "parent.add(child) / remove / attach / scene.add",
       "status": "changed",
       "since": "0.1",
-      "target": "child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); destroy() to remove",
-      "notes": "Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(). Creating, destroying and re-parenting rebuild the draw tables in that frame, so during play hide with setVisible and pool with setActiveCount instead (guides/performance).",
+      "target": "child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); getParent() for object.parent; destroy() to remove",
+      "notes": "Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(), and getParent() returns an object's parent, or null for a root object. Creating, destroying and re-parenting rebuild the draw tables in that frame, so during play hide with setVisible and pool with setActiveCount instead (guides/performance).",
       "docs": "api/objects",
       "detect": "\\bscene\\.(add|remove)\\s*\\(|\\.attach\\s*\\("
     },
@@ -395,8 +395,8 @@
       "three": "object.layers / camera.layers (set, enable, disable)",
       "status": "changed",
       "since": "0.1",
-      "target": "obj.setLayers(mask), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
-      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n). For enable and disable, keep the mask in your code and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
+      "target": "obj.setLayers(mask), obj.getLayers(), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
+      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n), and layers.mask becomes getLayers(). For enable and disable, read the mask with getLayers() and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
       "docs": "concepts/render-layers",
       "detect": "\\.layers\\.(set|enable|disable|toggle|enableAll|disableAll|mask)\\b"
     },
@@ -1593,9 +1593,9 @@
       "three": "TransformControls / DragControls",
       "status": "changed",
       "since": "0.3",
-      "target": "Dragging with scene.raycast against a plane",
-      "notes": "Gizmos come in 0.3.",
-      "docs": "porting/threejs-unsupported",
+      "target": "createTransformControls(ctx, camera, { mode, space, size, showX, showY, showZ, translationSnap, rotationSnap, scaleSnap }) from @null3d/controls, then attach(object) and controls.update(dt) in onUpdate; createDragControls(ctx, camera, objects, { recursive, transformGroup, rotateSpeed, mouseButtons, touches })",
+      "notes": "Option names and defaults match TransformControls and DragControls. There is no DOM element, getHelper or event: the controls make their handles in the scene, report dragging, axis, hovered and state, and update(dt) returns true when it moved something. A gizmo turns an object by the exact angle that the pointer sweeps around the axis, where three.js scales a linear approximation of it. minX to maxZ and showXY, showYZ and showXZ are not built yet, and showX, showY and showZ hide the plane handles too. A press on a handle reaches the handle alone, so a click handler on the object behind it does not hear it.",
+      "docs": "api/controls",
       "detect": "\\b(Transform|Drag)Controls\\b"
     },
     {

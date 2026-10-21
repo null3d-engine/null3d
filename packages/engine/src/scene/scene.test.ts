@@ -351,6 +351,25 @@ describe('structural changes', () => {
 		]);
 	});
 
+	test('getParent names the parent, and null for a root object', () => {
+		const { scene } = fakeCore();
+		const arm = scene.createGroup();
+		const hand = scene.createGroup({ parent: arm });
+		expect(hand.getParent()).toBe(arm);
+		expect(arm.getParent()).toBeNull();
+		hand.setParent(null);
+		expect(hand.getParent()).toBeNull();
+	});
+
+	test('getLayers reads the mask that the create options and setLayers set', () => {
+		const { scene } = fakeCore();
+		const object = scene.createGroup({ layers: 1 | (1 << 3) });
+		expect(object.getLayers()).toBe(1 | (1 << 3));
+		object.setLayers(1 | (1 << 30));
+		expect(object.getLayers()).toBe(1 | (1 << 30));
+		expect(scene.createGroup().getLayers()).toBe(1);
+	});
+
 	test('createMesh passes the shadow options with the create command', () => {
 		const { scene, box, paint, take } = fakeCore();
 		const plain = scene.createMesh({ mesh: box, material: paint });

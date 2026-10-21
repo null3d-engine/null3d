@@ -169,8 +169,9 @@ obj.setScale(x, y, z);               obj.translate(x, y, z);       // along the 
 obj.lookAt(x, y, z);                                                // cameras and lights look down -Z, other objects turn +Z to it
 obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);  // last frame; matrix column by column
 obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
+obj.getParent();                                                    // the parent, or null for a root object
 obj.setVisible(false);               obj.setDynamic(true);
-obj.setLayers(mask);                                                // bit n puts it on layer n; no rebuild
+obj.setLayers(mask);                 obj.getLayers();              // bit n puts it on layer n; no rebuild
 obj.destroy();                                                      // at the next frame; its children become roots
 obj.name;                                                           // string, read-only after creation
 mesh.setOutlined(true);              // (0.2) with post.set({ outline }); a copy from scene.instantiate has it too
@@ -552,6 +553,19 @@ createMapControls(ctx, camera);         // pans over the ground
 //   WASD walks, a drag looks; while input.pointer.locked the mouse turns the view as PointerLockControls do
 //   controls.moveForward(d); controls.moveRight(d); controls.getDirection(out); controls.lookAt(x, y, z)
 // either camera kind: an orthographic camera zooms by its view height, within minZoom and maxZoom
+
+import { createTransformControls, createDragControls } from '@null3d/controls';
+const gizmo = createTransformControls(ctx, camera, { mode: 'translate', space: 'world' });
+gizmo.attach(crate);                    // the handles follow this object; gizmo.detach() hides them
+gizmo.update(dt);                       // every frame in onUpdate; true when it moved the object
+gizmo.dragging; gizmo.axis;             // 'X' | 'Y' | 'Z' | 'XY' | 'YZ' | 'XZ' | 'XYZ' | 'E' | null
+// mode: 'translate' | 'rotate' | 'scale'; space: 'world' | 'local' (a scale drag always uses local)
+// showX/showY/showZ; size; translationSnap, rotationSnap, scaleSnap; layers (30) and pickLayers (29)
+// a press on a handle reaches the handle alone, so a click handler on the object behind it does not hear it
+const dragger = createDragControls(ctx, camera, [crate, barrel], { layers: 1 });
+dragger.update(dt);                     // true when it moved a held object
+dragger.dragging; dragger.hovered;      // the object each names, or null
+// a press drags the object over a plane that faces the camera; the right button turns it
 ```
 
 Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
