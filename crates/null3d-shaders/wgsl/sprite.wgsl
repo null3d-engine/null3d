@@ -17,7 +17,7 @@ enable draw_index;
 // against the alpha hash (null3d::cutout), whose pattern stays on the quad, in the sprite's units.
 // A material that blends writes premultiplied color. Fog takes the sprite's center, as three.js's
 // fog depth does.
-#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed_material, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{frame as engine_frame, material_of}
 #import null3d::vertex::{mesh_position, mesh_uv}
@@ -154,7 +154,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
+    let finished = finish_exposed_material(m, fogged(exposed(base), in.relative, m), in.clip.xy);
 #ifdef SAMPLE_MASK
     return masked_fragment(vec4f(finished.rgb, alpha));
 #else ifdef ALPHA_COVERAGE

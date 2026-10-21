@@ -52,7 +52,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | Same name (0.2), on standard, unlit and custom materials | Fixed when the material is created. Lines one pixel wide with the material's shading, as in three.js. `wireframeLinewidth` has no effect. For the outline edges of `EdgesGeometry`, use `scene.createLines({ positions, mode: 'segments' })` |
 | `fog: false` | Same name | |
-| `toneMapped: false` | A flag per material (0.3) | Until then, no pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
+| `toneMapped: false` | `toneMapped: false` (0.3) | Fixed when the material is created. Its own shader keeps the color as the display shows it, on the 8-bit path, which tone maps there. The HDR path tone maps the whole image in its final pass and still maps the material there |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |

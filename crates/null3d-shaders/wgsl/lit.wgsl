@@ -146,8 +146,8 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-#import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
-#import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, finish_exposed_material, finish_material, fogged, fragment_color}
+#import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, keeps_display_color, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #ifndef DECAL
 #import null3d::probes::{has_probes, probe_light}
@@ -1568,7 +1568,8 @@ fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         -engine_frame.sun_direction.xyz,
     );
 #endif
-    return fragment_color(material_row, finish(s.baseColor, pixel.xy).rgb, s.alpha * shadow);
+    let shown = finish_material(material_row, s.baseColor, pixel.xy);
+    return fragment_color(material_row, shown.rgb, s.alpha * shadow);
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
@@ -1785,7 +1786,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
     let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
-    let toned = tone_map(shaded, engine_frame.output);
+    let keeps = keeps_display_color(material_row);
+    let toned = select(tone_map(shaded, engine_frame.output), saturate(shaded), keeps);
 #ifdef COAT_SHEEN
     let display = toned + through * share * (1.0 - fog) * coat_transmittance(input.viewDirection);
 #else
@@ -1793,10 +1795,18 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
     let finished = vec4f(encode(saturate(display), pixel.xy), 1.0);
 #else
-    let finished = finish_exposed(fogged(layered, input.relativePosition, material_row), pixel.xy);
+    let finished = finish_exposed_material(
+        material_row,
+        fogged(layered, input.relativePosition, material_row),
+        pixel.xy,
+    );
 #endif
 #else
-    let finished = finish_exposed(fogged(layered, input.relativePosition, material_row), pixel.xy);
+    let finished = finish_exposed_material(
+        material_row,
+        fogged(layered, input.relativePosition, material_row),
+        pixel.xy,
+    );
 #endif
 #ifdef DECAL
     let shown = saturate(s.alpha) * decal_fade;
