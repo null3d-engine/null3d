@@ -23,6 +23,8 @@ const LEVELS: [number, Vec3][] = [
 	[8, [0.25, 0.45, 0.95]],
 	[5, [0.95, 0.8, 0.2]],
 ];
+/** The threshold bias that `?bias` gives each object, and the factor that it divides. */
+const BIAS = params.has('bias') ? 2 : 1;
 /** Each copy's distance as a share of its switch distance: before and after. */
 const SIDES = [0.95, 1.03];
 /** Each copy's distance as a share of its hide distance: before the band, in it, and past it. */
@@ -95,7 +97,7 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	// the threshold. A copy of scale 1 switches to level j past ERRORS[j - 1] times it.
 	const tan = Math.tan((FOV * Math.PI) / 360);
 	const factor = () =>
-		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD);
+		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD * BIAS);
 	const aspect = () => engine.viewport.width / engine.viewport.height;
 
 	if (shadows) {
@@ -103,12 +105,13 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		// that takes its shadow.
 		const distance = 0.5 * (ERRORS[0] as number) * factor();
 		const center = distance + RADIUS;
-		scene.createMesh({
+		const copy = scene.createMesh({
 			mesh: base,
 			material,
 			position: [0, 0, -center],
 			castShadows: true,
 		});
+		if (BIAS !== 1) copy.setLevelBias(BIAS);
 		scene.createMesh({
 			mesh: geometry.plane({ width: 40, height: 40 }),
 			material: materials.standard({ color: '#c8c4bc' }),
@@ -148,9 +151,11 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		place();
 		return { onUpdate: place };
 	}
-	const copies = spots.map((position) =>
-		scene.createMesh({ mesh: base, material, position, dynamic: true }),
-	);
+	const copies = spots.map((position) => {
+		const copy = scene.createMesh({ mesh: base, material, position, dynamic: true });
+		if (BIAS !== 1) copy.setLevelBias(BIAS);
+		return copy;
+	});
 	return {
 		onUpdate() {
 			for (const [k, [x, y, z]] of places(spots).entries()) copies[k]?.setPosition(x, y, z);
