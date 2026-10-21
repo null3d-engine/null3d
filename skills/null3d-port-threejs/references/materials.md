@@ -52,7 +52,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | Same name (0.2), on standard, unlit and custom materials | Fixed when the material is created. Lines one pixel wide with the material's shading, as in three.js. `wireframeLinewidth` has no effect. For the outline edges of `EdgesGeometry`, use `scene.createLines({ positions, mode: 'segments' })` |
 | `fog: false` | Same name | |
-| `toneMapped: false` | A flag per material (1.0) | Until then, no pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
+| `toneMapped: false` | A flag per material (0.3) | Until then, no pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
@@ -73,7 +73,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap`, `specularColorMap` or `diffuseTransmission`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. Iridescence, anisotropy and the transmission and thickness maps come in 1.0. Until then, these workarounds apply:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. Iridescence, anisotropy and the transmission and thickness maps come in 0.3. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
