@@ -102,6 +102,14 @@ describe('growthProblems', () => {
 		expect(growthProblems(firstUse, new Map())).toEqual([]);
 	});
 
+	it('passes a grown file that loads only on a feature’s first use', () => {
+		const grown = compareSizes(
+			record({ 'js/shaders-wgsl-combos-bump.js': 400, 'js/shader-paragraphs-glsl-bump.js': 400 }),
+			record({ 'js/shaders-wgsl-combos-bump.js': 900, 'js/shader-paragraphs-glsl-bump.js': 900 }),
+		);
+		expect(growthProblems(grown, new Map())).toEqual([]);
+	});
+
 	it('passes the files that a trailer explains', () => {
 		const explained = new Map([
 			['js/page.js', 'a1b2c3d4e5'],

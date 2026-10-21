@@ -157,9 +157,10 @@ export function growthSummary(
 }
 
 /**
- * True when a new file loads only on the first use of a feature: one of the shader families' tables
- * or combination loaders. Such a file adds nothing to a page's start download, and its own budget
- * caps it, so it needs no Size-Growth trailer that names it.
+ * True for a file that loads only on the first use of a feature: one of the shader families' tables
+ * or combination loaders. Such a file is absent from a page's start download whether it is new or
+ * grows, because the feature that names it asks for it, and its own budget caps it. It therefore
+ * needs no Size-Growth trailer, and one change to a shared shader library moves thousands of them.
  */
 function firstUseShaderFile(file: string): boolean {
 	const name = file.startsWith('js/') ? file.slice(3) : file;
@@ -173,7 +174,7 @@ export function growthProblems(
 ): string[] {
 	return grownFiles(changes)
 		.filter((change) => !explainedBy.has(change.file))
-		.filter((change) => !(change.base === undefined && firstUseShaderFile(change.file)))
+		.filter((change) => !firstUseShaderFile(change.file))
 		.map((change) =>
 			change.base === undefined
 				? `${change.file} is new, ${bytes(change.head)} bytes after Brotli, and no Size-Growth trailer names it`
