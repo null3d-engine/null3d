@@ -4,7 +4,8 @@
 // the tarballs there with Bun. In that project it runs the command-line tool's test command twice:
 // once to keep the images of the first run as the references, then once to match them. The test
 // command type checks the project against the packages' declarations, and draws the project's
-// sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
+// sketch on every GPU tier. It shows next that the command's upgrade moves a manifest's null3D
+// packages to one version. Then the tool optimizes a model, and last, it builds the project for
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the
@@ -27,7 +28,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
 import {
 	FILES_LIST,
@@ -186,6 +187,37 @@ const CLOSE_LIMIT_MS = 15_000;
 
 /** How long one page of the website's build may take to load and start, past Playwright's limits. */
 const PAGE_LIMIT_MS = 90_000;
+
+/**
+ * The asset tool's build, which a checkout needs before it packs the command-line tool. The pack
+ * reads it from the command's own folder, and the run stops before the project exists when it is
+ * missing. A check that only the command needs says so and goes on without it.
+ */
+const ASSET_TOOL = join(ROOT, 'packages/cli/dist/assets.wasm');
+
+/**
+ * Runs the installed command's upgrade in a folder of the project's own, whose manifest names one
+ * null3D package a version behind. It fails unless a dry run writes nothing, and the run after it
+ * moves that package to `version` and changes no other.
+ */
+function upgradesManifest(project: string, cli: string, version: string): void {
+	const folder = join(project, 'upgrade-check');
+	mkdirSync(folder);
+	const manifest = { dependencies: { '@null3d/controls': '^0.0.0', three: '0.186.1' } };
+	writeFileSync(join(folder, 'package.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
+	step('Show what upgrade would change', folder, cli, ['upgrade', '--to', version, '--dry-run']);
+	const shown = readFileSync(join(folder, 'package.json'), 'utf8');
+	if (shown !== `${JSON.stringify(manifest, null, '\t')}\n`)
+		throw new Error('upgrade --dry-run wrote the manifest, and it must write nothing');
+	step('Move the null3D packages to one version', folder, cli, ['upgrade', '--to', version]);
+	const moved = JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8'));
+	if (moved.dependencies['@null3d/controls'] !== version)
+		throw new Error(
+			`upgrade left @null3d/controls at ${moved.dependencies['@null3d/controls']}, not ${version}`,
+		);
+	if (moved.dependencies.three !== '0.186.1')
+		throw new Error('upgrade changed a package that is not null3D');
+}
 
 /** Resolves with `promise`, or fails with the error that `error` writes once `ms` milliseconds pass. */
 async function within<T>(promise: Promise<T>, ms: number, error: () => string): Promise<T> {
@@ -459,6 +491,14 @@ async function main(): Promise<void> {
 		step('Install', project, 'bun', ['install']);
 		// The installed command, as `bunx @null3d/cli` runs it in a project that installs the tool.
 		const cli = join(project, 'node_modules/.bin/null3d');
+		// The upgrade takes the version of the engine that the packages ship with.
+		const engine = packed.find((pkg) => pkg.name === '@null3d/engine');
+		if (!engine) throw new Error('the pack holds no @null3d/engine');
+		if (existsSync(ASSET_TOOL)) upgradesManifest(project, cli, engine.version);
+		else
+			console.log(
+				`\nSKIP upgrade: this checkout has no ${relative(ROOT, ASSET_TOOL)}. Run bun run build first.`,
+			);
 		step('Keep the first images as references', project, cli, ['test', '--update-references']);
 		step('Match the references', project, cli, ['test']);
 		// The asset tool from the tarball: its encoder, its worker and its dependencies.
