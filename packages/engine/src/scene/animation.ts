@@ -18,6 +18,16 @@ import type { QuatLike, Vec3Like } from '../math/types';
 import { DEV } from '../shared/dev';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
 import type { CoreMemory, ViewHolder } from './memory';
+import {
+	type PropertyBinding,
+	type PropertyClipTracks,
+	type PropertyStepper,
+	type PropertySystem,
+	type PropertyTrack,
+	type PropertyWriter,
+	type SlotSource,
+	sample,
+} from './property-animation';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
 
 export type { RigClip, RigData, RigJoint, RigTrack };
@@ -348,11 +358,12 @@ function listed(names: Iterable<string>): string {
  * The scene's animated objects: the animation table in the engine core, the arrays of it that
  * calls write, and the events of each frame step. The first rig creates it.
  */
-export class SceneAnimations implements ViewHolder {
+export class SceneAnimations implements ViewHolder, SlotSource {
 	private generation = -1;
 	private scales = NO_FLOATS;
 	private intervals = NO_WORDS;
 	private weights = NO_FLOATS;
+	private times = NO_FLOATS;
 	private sources = NO_WORDS;
 	private clipWeights = NO_FLOATS;
 	private blends = NO_FLOATS;
@@ -374,7 +385,11 @@ export class SceneAnimations implements ViewHolder {
 	private readonly event = { name: '', clip: '', layer: 0 };
 	private warnedDropped = false;
 
-	constructor(readonly core: CoreMemory) {
+	constructor(
+		readonly core: CoreMemory,
+		/** The scene's property animations, which the tracks of a model's clips join. */
+		readonly properties: PropertySystem,
+	) {
 		core.checkGrowth(
 			core.glue.initAnimations(ANIMATED_OBJECTS, ANIMATED_JOINTS),
 			'the animation table',
@@ -388,6 +403,7 @@ export class SceneAnimations implements ViewHolder {
 	dropViews(): void {
 		this.generation = -1;
 		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
+		this.times = NO_FLOATS;
 		this.overrides = NO_FLOATS;
 		this.sources = this.records = this.totals = this.intervals = NO_WORDS;
 		this.targets = NO_DOUBLES;
@@ -425,6 +441,7 @@ export class SceneAnimations implements ViewHolder {
 		this.blends = core.f32(at(C.ANIMATION_FIELD_BLEND_VALUES), objects * C.ANIMATION_MAX_LAYERS);
 		const slots = objects * C.ANIMATION_MAX_BLEND;
 		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
+		this.times = core.f32(at(C.ANIMATION_FIELD_SLOT_TIMES), slots);
 		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
 		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
 		this.records = core.u32(
@@ -537,6 +554,12 @@ export class SceneAnimations implements ViewHolder {
 		return this.clipWeights;
 	}
 
+	/** The time in seconds of each sample slot, `ANIMATION_MAX_BLEND` per instance. */
+	slotTimes(): Float32Array {
+		this.views();
+		return this.times;
+	}
+
 	/**
 	 * Calls the handlers of each event of the last frame step, in order of object and time. A
 	 * handler's error goes to `report`, and the other handlers still run.
@@ -590,6 +613,17 @@ export class Animator implements Described {
 	readonly morphed: Mesh[] = [];
 	/** The record of the last look-at's options, whose chain engine memory holds. */
 	private looking: ReadLook | undefined;
+	/** The property tracks of the model's clips, as this copy's targets reach them. */
+	private player: PropertyPlayer | undefined;
+	/** What `bindProperties` gave the player, which a copy of the object binds again. */
+	private propertyData:
+		| {
+				bindings: readonly PropertyBinding[];
+				clips: PropertyClipTracks;
+				targets: readonly (object | object[] | null)[];
+				keys: readonly string[];
+		  }
+		| undefined;
 
 	/** @internal */
 	constructor(
@@ -920,7 +954,45 @@ export class Animator implements Described {
 		for (const mesh of this.morphed)
 			if (mesh.destroyedFrame === -1)
 				morphObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
+		// The copy's objects take the places of the ones that its clips move, and the model's
+		// materials stay shared, so both copies' clips write the same values to them.
+		const properties = this.propertyData;
+		if (properties) {
+			const targets = properties.targets.map((target) =>
+				target === null || Array.isArray(target)
+					? target
+					: ((copies.get(target as Object3D) as object | undefined) ?? target),
+			);
+			animator.bindProperties(properties.bindings, properties.clips, targets, properties.keys);
+		}
 		return animator;
+	}
+
+	/**
+	 * @internal The value that the last frame wrote to the property named `key`, such as
+	 * "materials/0/color", or undefined for a property that no clip plays. It allocates.
+	 */
+	propertySample(key: string): Float32Array | undefined {
+		return this.player?.sampleOf(key);
+	}
+
+	/**
+	 * @internal Follows the property tracks of the model's clips, writing each property of this
+	 * copy that a playing clip moves: a light's intensity, a material's color or an object's place
+	 * among them. `targets` gives the object of each binding, or null for a property that this
+	 * copy does not have.
+	 */
+	bindProperties(
+		bindings: readonly PropertyBinding[],
+		clips: PropertyClipTracks,
+		targets: readonly (object | object[] | null)[],
+		keys: readonly string[] = [],
+	): void {
+		const first = (this.instance - 1) * C.ANIMATION_MAX_BLEND;
+		const player = new PropertyPlayer(this.system, first, bindings, clips, targets, keys);
+		this.player = player;
+		this.propertyData = { bindings, clips, targets, keys };
+		this.system.properties.addPlayer(player);
 	}
 
 	/**
@@ -929,6 +1001,10 @@ export class Animator implements Described {
 	 */
 	release(): void {
 		if (this.instance === 0) return;
+		if (this.player) {
+			this.system.properties.removePlayer(this.player);
+			this.player = undefined;
+		}
 		for (const mesh of this.skinned)
 			if (mesh.row !== 0) mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, 0, 0, 'destroy');
 		this.skinned.length = 0;
@@ -1294,10 +1370,104 @@ export class Animator implements Described {
 	}
 }
 
+/**
+ * The property tracks of one animated object: its bindings, the target that each binding writes in
+ * this copy, and the tracks of each clip. It reads the clip times and weights of the object's
+ * sample slots and writes every property that the playing clips move.
+ */
+export class PropertyPlayer implements PropertyStepper {
+	private readonly weights: Float32Array;
+	private readonly values: Float32Array;
+	/** The value of one track's key, which the mixer reads before it mixes it. */
+	private readonly sample = new Float32Array(4);
+
+	constructor(
+		private readonly source: SlotSource,
+		/** The object's first sample slot in the animation table. */
+		private readonly first: number,
+		private readonly bindings: readonly PropertyBinding[],
+		private readonly clips: PropertyClipTracks,
+		/** The object of each binding's target, or one object for each material that draws it. */
+		private readonly targets: readonly (object | object[] | null)[],
+		/** What each binding animates, such as "materials/0/color", for debug and tests. */
+		private readonly keys: readonly string[] = [],
+	) {
+		this.weights = new Float32Array(bindings.length);
+		this.values = new Float32Array(bindings.length * 4);
+	}
+
+	/**
+	 * @internal The value that the last step wrote to the property named `key`, mixed with the
+	 * property's base as the write mixed it, or undefined for a property that nothing plays. It
+	 * allocates, so tests and debug drawing use it alone.
+	 */
+	sampleOf(key: string): Float32Array | undefined {
+		const at = this.keys.indexOf(key);
+		if (at < 0) return undefined;
+		const weight = this.weights[at] as number;
+		if (weight <= 0) return undefined;
+		const binding = this.bindings[at] as PropertyBinding;
+		const held = Math.min(weight, 1);
+		const out = new Float32Array(binding.components);
+		for (let c = 0; c < binding.components; c++)
+			out[c] =
+				(this.values[at * 4 + c] as number) * held + (binding.base[c] as number) * (1 - held);
+		return out;
+	}
+
+	/** Samples the playing clips and writes each property that they move. */
+	step(write: PropertyWriter): void {
+		const { bindings, clips, weights, values, sample: key } = this;
+		if (bindings.length === 0) return;
+		const sources = this.source.slotSources();
+		const times = this.source.slotTimes();
+		const slotWeights = this.source.slotWeights();
+		weights.fill(0);
+		for (let slot = 0; slot < C.ANIMATION_MAX_BLEND; slot++) {
+			const at = this.first + slot;
+			const source = sources[at] as number;
+			if (source === C.ANIMATION_NO_SOURCE) continue;
+			const weight = slotWeights[at] as number;
+			if (!(weight > 0)) continue;
+			const tracks = clips[source];
+			if (tracks === undefined) continue;
+			const time = times[at] as number;
+			for (let k = 0; k < tracks.length; k++) {
+				const track = tracks[k] as PropertyTrack;
+				const binding = track.binding;
+				sample(track, bindings[binding] as PropertyBinding, time, key, 0);
+				// The tracks mix in proportion to their weights, as three.js's property mixer does.
+				const before = weights[binding] as number;
+				const total = before + weight;
+				const share = weight / total;
+				const out = binding * 4;
+				for (let c = 0; c < 4; c++) {
+					const held = values[out + c] as number;
+					values[out + c] = held + ((key[c] as number) - held) * share;
+				}
+				weights[binding] = total;
+			}
+		}
+		for (let k = 0; k < bindings.length; k++) {
+			const weight = weights[k] as number;
+			if (weight <= 0) continue;
+			const target = this.targets[k];
+			if (target === null) continue;
+			const written = Math.min(weight, 1);
+			// A material value reaches every variant of the file's material, which its primitives
+			// may draw with.
+			if (Array.isArray(target))
+				for (let t = 0; t < target.length; t++)
+					write(target[t] as object, bindings[k] as PropertyBinding, values, k * 4, written);
+			else write(target as object, bindings[k] as PropertyBinding, values, k * 4, written);
+		}
+	}
+}
+
 /** The scene's animated objects, which the first rig of the scene creates. */
 function animationsOf(scene: Scene): SceneAnimations {
 	checks = scene.checks;
-	scene.animations ??= new SceneAnimations(scene.core);
+	scene.animations ??= new SceneAnimations(scene.core, scene.propertySystem());
 	return scene.animations;
 }
 
