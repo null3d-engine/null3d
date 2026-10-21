@@ -3,7 +3,7 @@
 // lives in its own shared buffer, separate from WebAssembly memory, so it exists before any worker
 // has loaded the engine core.
 
-import { type LabelRegion, labelBytes, labelRegion } from './labels';
+import { type LabelRegion, labelBytes, labelRegion, setLabelCapacity3d } from './labels';
 
 /** Int32 slots of the control block, read as `Slot.Running`. */
 export * as Slot from './slot';
@@ -95,11 +95,18 @@ export interface ControlViews {
 
 /**
  * A shared control buffer in threaded mode, or a plain one when the page is not isolated, with
- * label tables for `maxLabels` labels.
+ * label tables for `maxLabels` screen labels and `maxLabels3d` 3D labels.
  */
-export function createControlBuffer(shared: boolean, maxLabels = 0): ArrayBufferLike {
-	const bytes = CONTROL_BYTES + labelBytes(maxLabels);
-	return shared ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+export function createControlBuffer(
+	shared: boolean,
+	maxLabels = 0,
+	maxLabels3d = 0,
+): ArrayBufferLike {
+	const bytes = CONTROL_BYTES + labelBytes(maxLabels, maxLabels3d);
+	const buffer = shared ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+	// A buffer without label tables has no header to hold the 3D capacity.
+	if (bytes > CONTROL_BYTES) setLabelCapacity3d(buffer, CONTROL_BYTES, maxLabels3d);
+	return buffer;
 }
 
 /** The label tables of a control buffer, or undefined when it holds none. */

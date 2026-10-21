@@ -48,6 +48,7 @@ const engine = await createEngine({
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
+  maxLabels3d: 256,                      // (0.2) the default; labels that are planes of the scene, 0 to 65,536
   expectedObjects: 22000,                // (0.2) the scene starts with room for this many objects (default 1,023) and never grows in play; it grows on its own past it
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
@@ -655,6 +656,8 @@ The page's `?preset=low` switch fixes the preset for tests. After a start that c
 page.post('score', { value: 10 });      // an optional third argument lists transferables
 const stop = page.onMessage((type, data) => { if (type === 'difficulty') level = data.level; });  // returns a remover
 ui.trackLabel(unit, 'hp-12', { offset: [0, 2, 0] });   // (0.2)
+ui.trackLabel(panel, 'card', { transform: 'world', offset: [0, 1.4, 0] });      // (0.2) a plane of the scene
+ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });        // (0.2) faces the camera
 ui.untrackLabel('hp-12');                               // (0.2)
 
 // page.ts

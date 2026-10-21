@@ -78,7 +78,7 @@ import type { FrameMetrics } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
-import { type EngineLabels, labelCapacity, PageLabels } from './labels';
+import { type EngineLabels, labelCapacity, labelCapacity3d, PageLabels } from './labels';
 import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
@@ -286,6 +286,13 @@ export interface EngineOptions {
 	 * tables of 16 bytes per label in memory that its threads share, so 4,096 labels take 192 KB.
 	 */
 	maxLabels?: number;
+	/**
+	 * The most labels that the sketch can track at once with `ui.trackLabel` whose `transform` is
+	 * `'world'` or `'billboard'`: a whole number from 0 to 65,536, 256 by default. Another value
+	 * fails with E1213. Each of them is a plane of the scene, which takes three tables of 52 bytes
+	 * per label, so 256 of them take 40 KB. A sketch that tracks one more fails with E1219.
+	 */
+	maxLabels3d?: number;
 	/**
 	 * The number of objects that the scene will hold at most, when the sketch knows it: a whole
 	 * number from 1 to 1,048,575. Another value fails with E1213. The scene then starts with room
@@ -774,7 +781,7 @@ interface WorkerEvents {
 	quality(update: QualityUpdate): void;
 	/** The sketch asked to show or hide the stats overlay, or to change its options. */
 	stats(show: StatsRequest): void;
-	/** The slot in the label table of a label's id, or -1 once it has none. */
+	/** The table and slot in the label tables of a label's id, or a slot of -1 once it has none. */
 	labelSlot: LabelSlotSender;
 	/** The sketch thread asked for this many job workers, as its parallel work grew. */
 	jobsWanted(count: number): void;
@@ -870,7 +877,7 @@ export class EngineWorker {
 						events.stats(reply.show);
 						return;
 					case 'label':
-						events.labelSlot(reply.id, reply.slot, reply.generation);
+						events.labelSlot(reply.id, reply.table, reply.slot, reply.generation);
 						return;
 					case 'jobs-wanted':
 						events.jobsWanted(reply.count);
@@ -1480,7 +1487,7 @@ async function startEngine(
 			checkStore?.save(update.check, maxTarget);
 		},
 		stats: (show) => statsSwitch.show(show),
-		labelSlot: (id, slot, generation) => pageLabels?.setSlot(id, slot, generation),
+		labelSlot: (id, table, slot, generation) => pageLabels?.setSlot(id, table, slot, generation),
 		jobsWanted: (count) => growJobs?.(count),
 	};
 	/** Starts job workers up to a count, once the core is ready to hand them. */
@@ -1491,7 +1498,11 @@ async function startEngine(
 	const jobWorkers = threaded
 		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
-	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
+	const control = createControlBuffer(
+		threaded,
+		labelCapacity(options.maxLabels),
+		labelCapacity3d(options.maxLabels3d),
+	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);

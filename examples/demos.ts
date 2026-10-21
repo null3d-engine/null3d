@@ -507,6 +507,17 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'css3d-labels',
+		group: 'Motion and interaction',
+		sketch: new URL('./css3d-labels/sketch.ts', import.meta.url),
+		title: '3D labels',
+		scene: 'Ring of monoliths',
+		summary:
+			'Nine monoliths stand in a ring that turns in a dark hall, each with an HTML card that turns and scales with it, and a title above the ring that always faces the camera. The cards are planes of the scene, so one leans away as its monolith passes and the title stays square to the view.',
+		hold: 3.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'picking',
 		group: 'Motion and interaction',
 		sketch: new URL('./picking/sketch.ts', import.meta.url),
