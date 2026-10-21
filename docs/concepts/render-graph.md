@@ -50,6 +50,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Late culling | Compute, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The world matrix and bounds of every object, and the depth pyramid | The view's visible instances and draw counts |
 | Debug lines | Scene, in development builds, in frames with debug drawing | The frame's lines | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
+| Depth copy | Fullscreen, one pass for the camera, while a custom material reads the scene's depth or a soft particle fades near it | The opaque scene depth | A copy of it, one texel for each pixel |
 | Motion culling | Compute, on WebGPU only, while a pass reads the motion vectors | The world matrix of every opaque object and instance in this frame and the last | The instances that moved, with both matrices |
 | Motion | Scene, while a pass reads the motion vectors | The objects that moved, and the last frame's transforms, joints, morph weights and skinned vertices | The motion vectors, tested against the scene depth |
 | Motion view | Fullscreen, in development builds, with `debug.view('motion')` | The motion vectors and the scene depth | The scene color |
@@ -72,6 +73,26 @@ A full-screen pass that a sketch adds is a view without a camera. It draws one t
 A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy. A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes, so the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it.
 
 Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
+
+## Scene inputs
+
+A custom material or an add-on feature can read scene resources that the frame makes before it draws:
+
+| Input | What it holds | Made where |
+| --- | --- | --- |
+| `'sceneColor'` | The scene's color before the tone curve | The camera's opaque and transparent passes |
+| `'sceneDepth'` | The scene's depth | The camera's opaque pass |
+| `'normals'` | The surface normals that a depth prepass writes | No pass makes them yet |
+| `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while a reader wants it |
+
+A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).
+
+A blended material that reads the depth binds a copy of it, one texel for each pixel. The frame makes the copy after the opaque pass and before the transparent pass, so the material never samples the depth target that its own pass writes. While the copy does not exist, a draw binds one texel at the far plane and reads 0:
+
+- in the opaque pass, which runs before the copy;
+- in a scene pass or a reflection pass, whose view has no copy of its own.
+
+The frame makes the copy while a material that reads it draws, or while a particle system fades near the surfaces behind it, whatever the quality preset says. A frame with neither makes no copy, no target and no draw.
 
 ## Motion vectors
 

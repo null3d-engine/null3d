@@ -289,14 +289,15 @@ impl Skinning {
 
 /// The group index of the first bind group after the frame's in the mesh pipelines.
 const FIRST_GROUP: u32 = 1;
-/// The bind groups after the frame's that a mesh pipeline reads at most: a material's maps, the
-/// joint texture and the view's index group.
-const MESH_GROUPS: usize = 3;
+/// The bind groups after the frame's that a mesh pipeline reads at most: a material's maps, its
+/// scene group, the joint texture and the view's index group.
+const MESH_GROUPS: usize = 4;
 
 /// The bind groups after the frame's that a bundle or a pass has set while it records its draws.
 /// A mesh pipeline reads, one after another from the group after the frame's: a material's maps
-/// where it samples them, the joint texture where it skins in the vertex shader, and the view's
-/// index group where it reads its instances by index.
+/// where it samples them, the scene group where its surface function reads the scene's depth, the
+/// joint texture where it skins in the vertex shader, and the view's index group where it reads
+/// its instances by index.
 #[derive(Debug, Default)]
 pub(super) struct DrawGroups {
     /// The group set at each index after the frame's, or 0 for none yet.
@@ -305,17 +306,19 @@ pub(super) struct DrawGroups {
 
 impl DrawGroups {
     /// Sets the groups that a draw's pipeline reads where they differ from those set: the maps'
-    /// group `maps`, or 0 for a pipeline that samples none, with `skins`, the joint texture's, and
-    /// the index group `index`, or 0 for a pipeline that reads copies.
+    /// group `maps`, or 0 for a pipeline that samples none, the scene group `scene`, or 0 for a
+    /// material that reads no scene input, with `skins`, the joint texture's, and the index group
+    /// `index`, or 0 for a pipeline that reads copies.
     pub(super) fn set(
         &mut self,
         list: &mut DrawList,
         maps: u32,
+        scene: u32,
         skins: bool,
         index: u32,
     ) -> Result<(), RecordError> {
         let joints = if skins { ids::JOINTS_GROUP } else { 0 };
-        let wanted = [maps, joints, index]
+        let wanted = [maps, scene, joints, index]
             .into_iter()
             .filter(|&group| group != 0);
         for (slot, group) in wanted.enumerate() {

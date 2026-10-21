@@ -25,6 +25,7 @@ use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
 };
 
+use super::DECAL_DEPTH_INDEX;
 use super::data::{RING, RingSlot};
 use super::ids;
 use super::layout::{Draw, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
@@ -621,6 +622,7 @@ impl Opaque {
         list: &mut DrawList,
         view: ViewId,
         light_slot: u32,
+        scene: u32,
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let frame_slot = self.frame_slot(view);
@@ -628,6 +630,11 @@ impl Opaque {
         list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
         let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
+        // The scene's depth, which a custom material's surface function reads: group 4 sits after
+        // the maps' group in its template.
+        if scene != 0 {
+            list.push(Op::SetBindGroup, &[DECAL_DEPTH_INDEX, scene, 0])?;
+        }
         Ok(())
     }
 
@@ -654,6 +661,7 @@ impl Opaque {
         meshes: &MeshBuffers,
         shading: Shading,
         hidden: &dyn Fn(u32) -> bool,
+        scene: u32,
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
@@ -672,7 +680,7 @@ impl Opaque {
             Shading::Tile => (0, true, false),
             Shading::Pick => (0, false, true),
         };
-        self.bind_view(list, view, light_slot)?;
+        self.bind_view(list, view, light_slot, scene)?;
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
@@ -741,7 +749,7 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
-        self.bind_view(list, view, 0)?;
+        self.bind_view(list, view, 0, 0)?;
         let frame_slot = self.frame_slot(view);
         list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
         let mut pipeline = None;
@@ -889,6 +897,7 @@ mod tests {
                     &meshes,
                     shading,
                     &hidden,
+                    0,
                 )
                 .unwrap();
             let stride = record_stride(multi_draw);
