@@ -2318,6 +2318,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [POINT_IMAGE.width, POINT_IMAGE.height],
 	},
+	// A point cloud that an add-on declares with a feature description: an opaque cloud of discs
+	// behind a blended cloud of soft discs. Each draw gives its WGSL, its vertex format, its uniforms
+	// and the description's frame point and order, so every thread mode must draw the same picture.
+	{
+		name: 'feature-draw',
+		sketch: 'tests/pages/sketches/feature-draw-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
