@@ -141,14 +141,17 @@ export class FrameReplay {
 		const from = this.restOf(frame);
 		const words = this.views.heap(Uint32Array);
 		const floats = this.views.heap(Float32Array);
-		if (this.end > from) {
+		// A list whose first word is zero holds no draw that the backend can read: it refuses the
+		// list as truncated. The other frame's slot then holds the list that drew last.
+		if (this.end > from && words[from] !== 0) {
 			this.backend.replay(words, floats, from, this.end, words.buffer);
 			return;
 		}
 		const parity = (frame & 1) ^ 1;
 		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
 		const end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
-		if (end > start) this.backend.replay(words, floats, start, end, words.buffer);
+		if (end > start && words[start] !== 0)
+			this.backend.replay(words, floats, start, end, words.buffer);
 		else this.backend.replay(words, floats, from, this.end, words.buffer);
 	}
 

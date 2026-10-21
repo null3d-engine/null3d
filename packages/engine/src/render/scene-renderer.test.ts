@@ -138,6 +138,25 @@ describe('FrameReplay', () => {
 		await expect(taken).resolves.toBe(3);
 	});
 
+	it("replays the other frame's list when the taken one begins with a zero", () => {
+		const control = createControlBuffer(false);
+		const { slots } = controlViews(control);
+		const memory = new WebAssembly.Memory({ initial: 1 });
+		const backend = fakeBackend();
+		const replay = new FrameReplay(backend, memory, control);
+		const words = new Uint32Array(memory.buffer);
+		// Frame 2's list begins with zero, which the backend refuses as truncated; frame 3's slot
+		// holds the list that drew last, whose header is a count.
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
+		words[101] = 0;
+		words[200] = 5;
+		replay.replayForCapture(2);
+		expect(backend.replayedFrom).toEqual([200]);
+	});
+
 	it('stops a capture that waits for builds when the renderer is destroyed', async () => {
 		const { slots, backend, replay } = setup();
 		Atomics.store(slots, Slot.FramesTaken, 1);
