@@ -149,7 +149,7 @@ export default defineSketch(async (ctx) => {
 | `createTerrain(ctx, { size, height, resolution, layers, splat, splatResolution, chunkQuads, maxLevel, split, skirt, metalness, castShadows, receiveShadows, maxBlocks, blocksPerUpdate })` from `@null3d/terrain` (0.2) | Terrain | A height field drawn as a camera-centered quadtree of blocks with a splat-mapped surface, built on public APIs. `height` is a function or a `Float32Array` height map; `layers` is one to four `{ map, tile, roughness }`. Call `terrain.update(x, z)` with the camera's ground position in `onUpdate`; it picks blocks again only when the camera crosses a cell, and builds at most `blocksPerUpdate` new blocks per call while the last complete ground stays on screen. `terrain.setVisible(visible)`, `terrain.building`, `terrain.heightAt(x, z)`, `terrain.normalAt(x, z, out)`, `terrain.drawn`, `terrain.triangles`, `terrain.destroy()`. `terrainTextures(textures, { size, seed })` makes grass, soil, rock and snow maps in code. No collision. Docs `api/terrain` |
 | `scene.overrideMaterial = material` or `null` (0.3) | | Draws every mesh and instance batch of the main pass with the material, each keeping its mesh, place and instances, as three.js's `scene.overrideMaterial`. Sprites, points, lines and particle systems keep their own materials, and shadow maps keep each object's material. Throws E1223 for a sprite, point or line material |
 | `scene.createView({ camera, rect })` (0.3) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
-| `scene.animateProperty(target, path, keyframes)` (0.3) | Animation | Until then, animate values in `onUpdate` |
+| `scene.animateProperty(target, path, keyframes)` | PropertyAnimation | Animates one value of a light, a camera, a material or an object, and the engine writes it every frame. `path`: `'light.intensity'`, `'light.color'`, `'light.range'`, `'light.decay'`, `'light.angle'`, `'light.penumbra'`, `'camera.fov'` (degrees), `'camera.near'`, `'camera.far'`, `'camera.height'` (orthographic), a material value that `setUniform` takes, or `'position'`, `'rotation'`, `'scale'`, `'visible'`; the prefix is optional. `keyframes`: `{ times, values, interpolation, loop, speed, time, paused }`, where a key holds 1 number, 3 for a color, a position or a scale, 4 for a rotation, and a cubic key holds an in-tangent, the value and an out-tangent. The animation has `setTime`, `setSpeed`, `setPaused`, `setLoop`, `stop`, `time`, `playing` |
 | `scene.raycast(...)` and other queries (0.2) | | Section 13 |
 | `await scene.warmUp()` | | Resolves when every pipeline the scene needs is built, hidden objects included |
 
@@ -493,7 +493,11 @@ const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.
 
 // Joint overrides (0.2): anim.setJointRotation(joint, q, weight) until anim.clearJoint(joint).
-// (0.3): scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
+// Property animation: a lamp's intensity pulses, and glTF's KHR_animation_pointer tracks play with the clip.
+const pulse = scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
+pulse.setTime(0.5);                     // any time; setSpeed, setPaused, setLoop, stop
+// A glTF file's KHR_animation_pointer tracks move lights, material values and node visibility
+// through the animator: copy.animator().play(name) plays them with the clip's time and weights.
 ```
 
 Sampling and blending run on job workers; there is no update call. Playing a clip that already plays keeps its time, so calling `play` again costs nothing. Event handlers get one reused object, so copy what you keep. They run at the start of the next frame, before `onUpdate`.

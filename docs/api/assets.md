@@ -73,6 +73,8 @@ The prefab turns each part of the file into the engine's own:
 | `EXT_texture_webp`, `EXT_texture_avif` | The texture's WebP or AVIF image, which the browser decodes in the loader's worker. A texture with a KTX2 image takes that first, then WebP, then AVIF. The texture's own image is a fallback for other loaders, and the engine does not download or decode it |
 | `KHR_texture_transform` | The material's `uvTransform`: the base color map's transform, or the first map's |
 | `KHR_lights_punctual` | Directional, point and spot lights, in the units of glTF and three.js |
+| `KHR_node_visibility` | A node that the file hides draws nothing until a clip shows it |
+| `KHR_animation_pointer` | Property tracks of a clip, which move a light's intensity, color or range, a material's values, and a node's visibility. A pointer the engine does not read leaves its value as the file has it, and development builds warn: [Property animation](animation.md#property-animation) |
 | `EXT_mesh_gpu_instancing` | An instance batch for each copy, in `instance.batches` |
 | A skin | Joints of the model's skeleton, which every copy's [animator](animation.md#models-from-gltf-files) poses. Joints are not objects. A skinned mesh goes in the copy's group |
 | An animation | A clip that a copy's animator plays, with linear, step and cubic spline keys. The job workers resample it while `loadGltf` waits |

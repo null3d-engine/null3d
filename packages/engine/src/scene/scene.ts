@@ -97,6 +97,29 @@ import {
 	ReflectionProbes,
 } from './probes';
 import {
+	PROPERTY_CAMERA_FAR,
+	PROPERTY_CAMERA_FOV,
+	PROPERTY_CAMERA_HEIGHT,
+	PROPERTY_CAMERA_NEAR,
+	PROPERTY_LIGHT_ANGLE,
+	PROPERTY_LIGHT_COLOR,
+	PROPERTY_LIGHT_DECAY,
+	PROPERTY_LIGHT_INTENSITY,
+	PROPERTY_LIGHT_PENUMBRA,
+	PROPERTY_LIGHT_RANGE,
+	PROPERTY_MATERIAL,
+	PROPERTY_POSITION,
+	PROPERTY_ROTATION,
+	PROPERTY_SCALE,
+	PROPERTY_VISIBLE,
+	PropertyAnimation,
+	type PropertyBinding,
+	type PropertyInterpolation,
+	type PropertyKeyframes,
+	PropertySystem,
+	type PropertyTrack,
+} from './property-animation';
+import {
 	type OverlapHit,
 	type QueryOptions,
 	type QueryTargets,
@@ -105,7 +128,13 @@ import {
 	type RaycastOptions,
 	SceneQueries,
 } from './queries';
-import type { AlphaMode, CompiledWgsl, Material, MeshGeometry } from './resources';
+import {
+	type AlphaMode,
+	type CompiledWgsl,
+	Material,
+	type MeshGeometry,
+	materialValueComponents,
+} from './resources';
 import { quaternionLookAt } from './rotation';
 import type {
 	PointBatch,
@@ -2895,6 +2924,219 @@ export const SCENE_CHECKS = {
 /** @internal The type of `SCENE_CHECKS`. */
 export type SceneChecks = typeof SCENE_CHECKS;
 
+/** The color that a property write fills for a material or a light, shared by every write. */
+const PROPERTY_COLOR: [number, number, number] = [0, 0, 0];
+
+/** The smallest positive value that a light's range, a camera's planes and its view take. */
+const SMALLEST = 1e-6;
+
+/** `value` kept between `low` and `high`: a key's curve can overshoot the values that a setter takes. */
+function between(value: number, low: number, high = Infinity): number {
+	return value < low ? low : value > high ? high : value;
+}
+
+/**
+ * Writes a value that a property track sampled into its target, mixed by `weight` with the value
+ * that the target held before any clip moved it, which is the binding's base. It keeps a value
+ * within what the target takes, because a cubic key can overshoot, and writes nothing for a value
+ * that is not a number or for a target that was destroyed. It allocates nothing, so a track writes
+ * a value in every frame.
+ */
+function writeProperty(
+	target: object,
+	binding: PropertyBinding,
+	values: Float32Array,
+	at: number,
+	weight: number,
+): void {
+	const { what, base } = binding;
+	const rest = 1 - weight;
+	/** The number of component `c`, mixed with the base, or the base for one that is no number. */
+	const mixed = (c: number) => {
+		const value = (values[at + c] as number) * weight + (base[c] as number) * rest;
+		return Number.isFinite(value) ? value : (base[c] as number);
+	};
+	/** The color of components 0 to 2, each between 0 and 1. */
+	const color = () => {
+		PROPERTY_COLOR[0] = between(mixed(0), 0, 1);
+		PROPERTY_COLOR[1] = between(mixed(1), 0, 1);
+		PROPERTY_COLOR[2] = between(mixed(2), 0, 1);
+		return PROPERTY_COLOR;
+	};
+	if (what === PROPERTY_MATERIAL) {
+		const material = target as Material;
+		if (!material.live) return;
+		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
+		else material.writeUniform(binding.name, color());
+		return;
+	}
+	const object = target as Object3D;
+	if (object.destroyedFrame !== -1) return;
+	switch (what) {
+		case PROPERTY_LIGHT_INTENSITY:
+			(target as Light).setIntensity(between(mixed(0), 0));
+			return;
+		case PROPERTY_LIGHT_COLOR:
+			(target as Light).setColor(color());
+			return;
+		case PROPERTY_LIGHT_RANGE:
+			(target as PointLight).setRange(between(mixed(0), SMALLEST));
+			return;
+		case PROPERTY_LIGHT_DECAY:
+			(target as PointLight).setDecay(between(mixed(0), 0));
+			return;
+		case PROPERTY_LIGHT_ANGLE:
+			(target as SpotLight).setAngle(between(mixed(0), SMALLEST, Math.PI / 2));
+			return;
+		case PROPERTY_LIGHT_PENUMBRA:
+			(target as SpotLight).setPenumbra(between(mixed(0), 0, 1));
+			return;
+		case PROPERTY_CAMERA_FOV:
+			(target as PerspectiveCamera).setFov(between(mixed(0), 1e-3, 179.999));
+			return;
+		case PROPERTY_CAMERA_NEAR: {
+			// The near plane stays below the far one, and above 0.
+			const camera = target as Camera;
+			camera.setNearFar(between(mixed(0), SMALLEST, camera.far), camera.far);
+			return;
+		}
+		case PROPERTY_CAMERA_FAR: {
+			const camera = target as Camera;
+			camera.setNearFar(camera.near, between(mixed(0), camera.near * 1.001));
+			return;
+		}
+		case PROPERTY_CAMERA_HEIGHT:
+			(target as OrthographicCamera).setOrthoHeight(between(mixed(0), SMALLEST));
+			return;
+		case PROPERTY_POSITION:
+			object.setPosition(mixed(0), mixed(1), mixed(2));
+			return;
+		case PROPERTY_ROTATION: {
+			const x = mixed(0);
+			const y = mixed(1);
+			const z = mixed(2);
+			const w = mixed(3);
+			const length = Math.hypot(x, y, z, w);
+			if (length === 0) object.setRotation(0, 0, 0, 1);
+			else object.setRotation(x / length, y / length, z / length, w / length);
+			return;
+		}
+		case PROPERTY_SCALE:
+			object.setScale(mixed(0), mixed(1), mixed(2));
+			return;
+		case PROPERTY_VISIBLE:
+			object.setVisible(mixed(0) >= 0.5);
+			return;
+	}
+}
+
+/** What a property path names: the value, the material name that holds it, and its size. */
+interface PropertyPath {
+	what: number;
+	name: string;
+	components: number;
+}
+
+/** The properties of a light, by the name that a path gives them. */
+const LIGHT_PATHS: ReadonlyMap<string, PropertyPath> = new Map<string, PropertyPath>([
+	['intensity', { what: PROPERTY_LIGHT_INTENSITY, name: '', components: 1 }],
+	['color', { what: PROPERTY_LIGHT_COLOR, name: '', components: 3 }],
+	['range', { what: PROPERTY_LIGHT_RANGE, name: '', components: 1 }],
+	['decay', { what: PROPERTY_LIGHT_DECAY, name: '', components: 1 }],
+	['angle', { what: PROPERTY_LIGHT_ANGLE, name: '', components: 1 }],
+	['penumbra', { what: PROPERTY_LIGHT_PENUMBRA, name: '', components: 1 }],
+]);
+
+/** The properties of a camera, by the name that a path gives them. */
+const CAMERA_PATHS: ReadonlyMap<string, PropertyPath> = new Map<string, PropertyPath>([
+	['fov', { what: PROPERTY_CAMERA_FOV, name: '', components: 1 }],
+	['near', { what: PROPERTY_CAMERA_NEAR, name: '', components: 1 }],
+	['far', { what: PROPERTY_CAMERA_FAR, name: '', components: 1 }],
+	['height', { what: PROPERTY_CAMERA_HEIGHT, name: '', components: 1 }],
+]);
+
+/** The properties of an object, by the name that a path gives them. */
+const OBJECT_PATHS: ReadonlyMap<string, PropertyPath> = new Map<string, PropertyPath>([
+	['position', { what: PROPERTY_POSITION, name: '', components: 3 }],
+	['rotation', { what: PROPERTY_ROTATION, name: '', components: 4 }],
+	['scale', { what: PROPERTY_SCALE, name: '', components: 3 }],
+	['visible', { what: PROPERTY_VISIBLE, name: '', components: 1 }],
+]);
+
+/** A list of names for a message, such as "a, b and c". */
+function listNames(names: Iterable<string>): string {
+	const all = [...names];
+	return all.length < 2 ? (all[0] ?? 'none') : `${all.slice(0, -1).join(', ')} and ${all.at(-1)}`;
+}
+
+/** The properties of a target that has none of its own, such as a plain object. */
+const NO_OWN_PATHS: ReadonlyMap<string, PropertyPath> = new Map();
+
+/** The light properties that a directional light lacks, and the ones that only a spot light has. */
+const LIGHT_RANGE_PATHS: ReadonlySet<number> = new Set([
+	PROPERTY_LIGHT_RANGE,
+	PROPERTY_LIGHT_DECAY,
+]);
+const SPOT_PATHS: ReadonlySet<number> = new Set([PROPERTY_LIGHT_ANGLE, PROPERTY_LIGHT_PENUMBRA]);
+
+/**
+ * The property that `path` names on `target`: `'light.intensity'` or `'intensity'` for a light,
+ * `'camera.fov'` or `'fov'` for a camera, `'material.opacity'` or `'opacity'` for a material, and
+ * `'position'`, `'rotation'`, `'scale'` or `'visible'` for any object. Throws E1218 for a path that
+ * the target does not take, before an animation is made.
+ */
+function propertyPath(
+	target: object,
+	path: string,
+	error: (detail: string) => never,
+): PropertyPath {
+	const dot = path.indexOf('.');
+	const head = dot > 0 ? path.slice(0, dot) : '';
+	const name = dot > 0 ? path.slice(dot + 1) : path;
+	if (target instanceof Material) {
+		const components = materialValueComponents(name);
+		if (components > 0 && (head === 'material' || head === ''))
+			return { what: PROPERTY_MATERIAL, name, components };
+		throw error(
+			`animateProperty() got "${path}" on a material, which it does not take. A material animates the values that setUniform takes, such as "opacity" and "color", with or without the "material." prefix.`,
+		);
+	}
+	const kind = target instanceof Light ? 'light' : target instanceof Camera ? 'camera' : '';
+	const own = kind === 'light' ? LIGHT_PATHS : kind === 'camera' ? CAMERA_PATHS : NO_OWN_PATHS;
+	const found =
+		head === '' || head === 'object'
+			? (OBJECT_PATHS.get(name) ?? (head === '' ? own.get(name) : undefined))
+			: head === kind
+				? own.get(name)
+				: undefined;
+	// A light or a camera takes only the values of its own kind: a directional light has no range,
+	// and a perspective camera has no view height.
+	const otherKind =
+		target instanceof OrthographicCamera
+			? found?.what === PROPERTY_CAMERA_FOV
+			: target instanceof PerspectiveCamera
+				? found?.what === PROPERTY_CAMERA_HEIGHT
+				: target instanceof DirectionalLight
+					? LIGHT_RANGE_PATHS.has(found?.what ?? -1)
+					: target instanceof Light && !(target instanceof SpotLight)
+						? SPOT_PATHS.has(found?.what ?? -1)
+						: false;
+	if (found !== undefined && !otherKind) return found;
+	const where =
+		kind === '' ? (target as Object3D).describe() : `${(target as Object3D).describe()}, a ${kind}`;
+	if (otherKind)
+		throw error(
+			`animateProperty() got "${path}" on ${where}, which this kind of ${kind} does not have.`,
+		);
+	const accepted = [
+		...(kind === '' ? [] : [...own.keys()].map((key) => `${kind}.${key}`)),
+		...[...OBJECT_PATHS.keys()].map((key) => (kind === '' ? key : `object.${key}`)),
+	];
+	throw error(
+		`animateProperty() got "${path}" on ${where}, which it does not take. It animates ${listNames(accepted)}.`,
+	);
+}
+
 /**
  * The scene: every object, the active camera, the lights and the background.
  *
@@ -3041,6 +3283,8 @@ export class Scene implements ViewHolder {
 	declare readonly unmarkedRows: UnmarkedRows | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
+	/** @internal The scene's property animations, from the first animated property. */
+	properties: PropertySystem | undefined;
 	/** @internal True once an object has morph weights, so each frame's animation step runs. */
 	morphed = false;
 	/** The core's table of morph weights, made again after the engine's memory grew. */
@@ -3599,6 +3843,93 @@ export class Scene implements ViewHolder {
 		}
 		instance.batches = batches;
 		return instance;
+	}
+
+	/**
+	 * Animates one value of a light, a camera, a material or an object from keyframes, such as a
+	 * lamp that pulses or a color that changes, and returns an object that controls it. The engine
+	 * writes the value in each frame, so the sketch has no update call to make. A glTF file
+	 * animates the same kinds of value with its `KHR_animation_pointer` channels.
+	 *
+	 * `path` names the value. A light takes `'light.intensity'`, `'light.color'`, `'light.range'`,
+	 * `'light.decay'`, `'light.angle'` or `'light.penumbra'`; a camera takes `'camera.fov'` (in
+	 * degrees), `'camera.near'`, `'camera.far'` or `'camera.height'` (for an orthographic camera);
+	 * a material takes the values that `setUniform` takes, such as `'material.opacity'` or
+	 * `'material.color'`; and every object takes `'position'`, `'rotation'`, `'scale'` or
+	 * `'visible'`. The prefix is optional, so `'intensity'` and `'position'` work too.
+	 *
+	 * Every object that uses the material changes with it, and an animation that writes every
+	 * frame allocates nothing. `setTime` places the animation at a time; a frozen keyframes object
+	 * is read once. Throws E1218 for a path that the target does not take, or for keyframes that
+	 * do not fit the value's numbers per key.
+	 *
+	 * @category api/animation
+	 */
+	animateProperty(
+		target: Light | Camera | Material | Object3D,
+		path: string,
+		keyframes: PropertyKeyframes,
+	): PropertyAnimation {
+		const call = 'animateProperty';
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (DEV) {
+			if (target === null || typeof target !== 'object') fail(`${call}() got no target.`);
+			if (target instanceof Material) {
+				checkSameEngine(call, 'material', target.core, this);
+				if (!target.live) fail(`${call}() got a material that was destroyed.`);
+			} else checkLive(call, target, true);
+		}
+		const property = propertyPath(target, path, fail);
+		const { times, values } = keyframes;
+		const interpolation: PropertyInterpolation = keyframes.interpolation ?? 'linear';
+		if (DEV) {
+			if (interpolation !== 'linear' && interpolation !== 'step' && interpolation !== 'cubic')
+				fail(
+					`${call}() got the interpolation ${String(interpolation)}; it takes 'linear', 'step' or 'cubic'.`,
+				);
+			if (times.length === 0) fail(`${call}() got no keys for "${path}". Name at least one.`);
+			// A cubic key holds an in-tangent, the value and an out-tangent for each value.
+			const parts = interpolation === 'cubic' ? 3 : 1;
+			const perKey = property.components * parts;
+			if (values.length !== times.length * perKey)
+				fail(
+					`${call}() got ${values.length} values for ${times.length} keys of "${path}", which takes ${perKey} ${perKey === 1 ? 'value' : 'values'} per key.`,
+				);
+			let previous = -Infinity;
+			for (let k = 0; k < times.length; k++) {
+				const time = times[k] as number;
+				if (!Number.isFinite(time) || time < previous)
+					fail(
+						`${call}() got the key times of "${path}", which must be numbers from 0 up that never fall back.`,
+					);
+				previous = time;
+			}
+			for (let k = 0; k < values.length; k++)
+				if (!Number.isFinite(values[k])) fail(`${call}() got a value that is not a number.`);
+			const { speed, time } = keyframes;
+			if (speed !== undefined) checkNumber(call, 'speed', speed, target as Object3D);
+			if (time !== undefined) checkNumber(call, 'time', time, target as Object3D);
+		}
+		const system = this.propertySystem();
+		const { what, name, components } = property;
+		const binding: PropertyBinding = { what, name, components, base: new Float32Array(components) };
+		const track: PropertyTrack = {
+			binding: 0,
+			interpolation,
+			times: Float32Array.from(times),
+			values: Float32Array.from(values),
+		};
+		const animation = new PropertyAnimation(system, target, binding, track, keyframes);
+		system.add(animation);
+		return animation;
+	}
+
+	/** @internal The scene's property animations, which the first one makes. */
+	propertySystem(): PropertySystem {
+		this.properties ??= new PropertySystem(writeProperty);
+		return this.properties;
 	}
 
 	/**

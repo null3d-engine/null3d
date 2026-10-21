@@ -6,14 +6,15 @@
 		"test": "playwright test"
 	},
 	"devDependencies": {
-		"@playwright/test": "1.63.0",
+		"@needle-tools/three-animation-pointer": "1.1.3",
 		"@null3d/controls": "workspace:*",
-		"@null3d/particles": "workspace:*",
 		"@null3d/engine": "workspace:*",
 		"@null3d/geometry": "workspace:*",
 		"@null3d/impostors": "workspace:*",
+		"@null3d/particles": "workspace:*",
 		"@null3d/terrain": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
+		"@playwright/test": "1.63.0",
 		"@types/three": "0.186.0",
 		"@webgpu/types": "0.1.74",
 		"three": "0.186.1",

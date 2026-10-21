@@ -43,6 +43,7 @@ import type {
 	GltfExtensionHandler,
 	GltfExtensionPart,
 } from './assets';
+import type { RigJoint, RigPropertyTarget } from './gltf-animation';
 import { affineOf, growBox, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
@@ -63,8 +64,19 @@ import {
 	type MorphTemplate,
 	type PartTemplate,
 	Prefab,
+	type PropertyAnimationData,
 	type TemplateNode,
 } from './prefab';
+import {
+	PROPERTY_LIGHT_ANGLE,
+	PROPERTY_LIGHT_COLOR,
+	PROPERTY_LIGHT_INTENSITY,
+	PROPERTY_LIGHT_RANGE,
+	PROPERTY_MATERIAL,
+	PROPERTY_VISIBLE,
+	type PropertyBinding,
+	type PropertyTrack,
+} from './property-animation';
 import type {
 	Geometry,
 	Material,
@@ -487,12 +499,30 @@ async function buildPrefab(
 	/** Each file node's template node, which its children go under, or -1 for a joint. */
 	const placed: number[] = [];
 	const parents = new Set(data.nodes.map((n) => n.parent));
+	/**
+	 * Adds a template node, which a copy makes an object of. A node that the file hides draws
+	 * nothing until a clip shows it.
+	 */
 	const node = (
-		fields: Partial<TemplateNode> & Pick<TemplateNode, 'name' | 'parent' | 'transform'>,
-	) =>
-		template.push({ flags: FLAG_VISIBLE, layers: LAYERS_DEFAULT, renderOrder: 0, ...fields }) - 1;
+		fields: Partial<TemplateNode> &
+			Pick<TemplateNode, 'name' | 'parent' | 'transform'> & { visible?: boolean },
+	) => {
+		const { visible = true, ...rest } = fields;
+		return (
+			template.push({
+				flags: FLAG_VISIBLE,
+				layers: LAYERS_DEFAULT,
+				renderOrder: 0,
+				...rest,
+				...(visible ? {} : { flags: 0 }),
+			}) - 1
+		);
+	};
+	/** The template node that holds each file light, by the light's index. */
+	const lightNode: number[] = [];
 	for (const [index, n] of data.nodes.entries()) {
 		const parent = n.parent < 0 ? 0 : (placed[n.parent] as number);
+		const visible = n.visible !== false;
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
 		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
@@ -511,10 +541,18 @@ async function buildPrefab(
 			// Joints move the mesh in the space of the copy's group, where the parser boxed it.
 			parts.forEach((part, k) => {
 				const rest = mesh?.primitives[k]?.rest;
-				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest });
+				node({
+					name: n.name,
+					parent: 0,
+					transform: IDENTITY,
+					visible,
+					...part,
+					skinned: true,
+					rest,
+				});
 			});
 			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
-			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
+			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform, visible }) : -1);
 			continue;
 		}
 		if ((n.joint ?? -1) >= 0 && parts.length === 0 && !light) {
@@ -523,30 +561,42 @@ async function buildPrefab(
 			continue;
 		}
 		if (n.instancing) {
-			const at = node({ name: n.name, parent, transform: n.transform });
+			const at = node({ name: n.name, parent, transform: n.transform, visible });
 			placed.push(at);
 			instancing.push({
 				node: at,
 				...n.instancing,
 				parts: parts.map((part) => ({ ...part, matrix: IDENTITY_PART })),
 			});
-			if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
+			if (light)
+				lightNode[n.light] = node({
+					name: n.name,
+					parent: at,
+					transform: IDENTITY,
+					light,
+					visible,
+				});
 			continue;
 		}
 		if (parts.length === 1 && !light) {
 			const [part] = parts as [(typeof parts)[number]];
-			placed.push(node({ name: n.name, parent, transform: n.transform, ...part }));
+			placed.push(node({ name: n.name, parent, transform: n.transform, visible, ...part }));
 			continue;
 		}
 		if (parts.length === 0 && light) {
-			placed.push(node({ name: n.name, parent, transform: n.transform, light }));
+			const at = node({ name: n.name, parent, transform: n.transform, light, visible });
+			lightNode[n.light] = at;
+			placed.push(at);
 			continue;
 		}
-		const at = node({ name: n.name, parent, transform: n.transform });
+		const at = node({ name: n.name, parent, transform: n.transform, visible });
 		placed.push(at);
-		for (const part of parts) node({ name: n.name, parent: at, transform: IDENTITY, ...part });
-		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
+		for (const part of parts)
+			node({ name: n.name, parent: at, transform: IDENTITY, visible, ...part });
+		if (light)
+			lightNode[n.light] = node({ name: n.name, parent: at, transform: IDENTITY, light, visible });
 	}
+	const properties = propertyAnimation(data, materials, placed, lightNode, rig, data.notes);
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
@@ -570,6 +620,7 @@ async function buildPrefab(
 			geometry: context.geometry,
 			error: context.scene.checks.error,
 		},
+		properties,
 	);
 }
 
@@ -601,9 +652,14 @@ async function makeRig(
 	call: string,
 ): Promise<AnimationRig | undefined> {
 	const animation = data.animation;
-	if (!animation || animation.joints.length === 0) return undefined;
+	if (!animation) return undefined;
+	const movesProperties = animation.clips.some((clip) => (clip.properties?.length ?? 0) > 0);
+	if (animation.joints.length === 0 && !movesProperties) return undefined;
 	try {
-		return await loadAnimationRig(context.scene, animation);
+		// A file that moves only properties still takes a skeleton, which holds its clips: one
+		// joint at the origin, which moves no vertex.
+		const rig = animation.joints.length > 0 ? animation : { ...animation, joints: [REST_JOINT] };
+		return await loadAnimationRig(context.scene, rig);
 	} catch (error) {
 		throw context.error(
 			'E1416',
@@ -715,6 +771,16 @@ function isKtx2(bytes: Uint8Array): boolean {
 	return KTX2_IDENTIFIER.every((byte, k) => bytes[k] === byte);
 }
 
+/** The joint of a model whose clips move only properties: it rests at the origin. */
+const REST_JOINT: RigJoint = {
+	name: '',
+	parent: -1,
+	translation: [0, 0, 0],
+	rotation: [0, 0, 0, 1],
+	scale: [1, 1, 1],
+	inverseBind: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]),
+};
+
 /**
  * The engine's meshes of a glTF mesh, one for each primitive, with the stored tree and the blocker
  * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made.
@@ -813,6 +879,16 @@ class FileMaterials {
 	/** The materials in the file's order. */
 	list(): Material[] {
 		return this.base;
+	}
+
+	/**
+	 * Every material that draws the file's material `k`: the material itself, and each variant of
+	 * it that a primitive asked for. A property animation writes them all.
+	 */
+	variants(k: number): Material[] {
+		const out: Material[] = [];
+		for (const [key, material] of this.made) if (key.startsWith(`${k} `)) out.push(material);
+		return out;
 	}
 
 	/** Every material made so far: the file's, the other ways that primitives draw them, and the
@@ -931,6 +1007,166 @@ class FileMaterials {
 		}
 		return materials.standard(options);
 	}
+}
+
+/** The properties of a light that a track may move, by the name that a pointer gives them. */
+const LIGHT_PROPERTIES: ReadonlyMap<string, number> = new Map([
+	['intensity', PROPERTY_LIGHT_INTENSITY],
+	['color', PROPERTY_LIGHT_COLOR],
+	['range', PROPERTY_LIGHT_RANGE],
+	['angle', PROPERTY_LIGHT_ANGLE],
+]);
+
+/**
+ * The properties that a model's clips move, as the prefab's copies play them: one binding for each
+ * property, with the value that the file gave it, and the tracks of each clip by its id in the
+ * core. Returns undefined when no clip moves a property, and notes the tracks that name a target
+ * the copy does not have.
+ */
+function propertyAnimation(
+	data: GltfData,
+	materials: FileMaterials,
+	placed: readonly number[],
+	lightNode: readonly number[],
+	rig: AnimationRig | undefined,
+	notes: string[],
+): PropertyAnimationData | undefined {
+	if (!rig || !data.animation) return undefined;
+	const bindings: PropertyBinding[] = [];
+	const targets: (Material[] | { node: number })[] = [];
+	const keys: string[] = [];
+	const known = new Map<string, number>();
+	const clips: (PropertyTrack[] | undefined)[] = [];
+	let found = false;
+	for (const clip of data.animation.clips) {
+		const id = rig.clips.get(clip.name);
+		if (id === undefined) continue;
+		const tracks: PropertyTrack[] = [];
+		for (const track of clip.properties ?? []) {
+			const { target, components } = track;
+			const key = `${target.kind} ${target.index} ${target.value}`;
+			let binding = known.get(key);
+			if (binding === undefined) {
+				const base = propertyBase(target, data);
+				const where = propertyTarget(target, materials, placed, lightNode);
+				if (!base || !where) {
+					notes.push(
+						`the clip "${clip.name}" moves ${target.kind} ${target.index}'s ${target.value}, which this copy does not have`,
+					);
+					continue;
+				}
+				binding = bindings.length;
+				const what =
+					target.kind === 'material'
+						? PROPERTY_MATERIAL
+						: target.kind === 'node'
+							? PROPERTY_VISIBLE
+							: (LIGHT_PROPERTIES.get(target.value) ?? PROPERTY_LIGHT_INTENSITY);
+				bindings.push({
+					what,
+					name: target.kind === 'material' ? target.value : '',
+					components,
+					base,
+				});
+				targets.push(where);
+				// The key names the property as a file's pointer does, such as "materials/0/color".
+				keys.push(`${target.kind}s/${target.index}/${target.value}`);
+				known.set(key, binding);
+			}
+			tracks.push({
+				binding,
+				interpolation: track.interpolation ?? 'linear',
+				times: track.times as Float32Array,
+				values: track.values as Float32Array,
+			});
+		}
+		if (tracks.length === 0) continue;
+		found = true;
+		clips[id - 1] = tracks;
+	}
+	return found ? { bindings, targets, clips, keys } : undefined;
+}
+
+/** Where a property binding's target lies in a copy: the materials that draw it, or its node. */
+function propertyTarget(
+	target: RigPropertyTarget,
+	materials: FileMaterials,
+	placed: readonly number[],
+	lightNode: readonly number[],
+): Material[] | { node: number } | undefined {
+	if (target.kind === 'material') {
+		const variants = materials.variants(target.index);
+		return variants.length > 0 ? variants : undefined;
+	}
+	const node = target.kind === 'light' ? lightNode[target.index] : placed[target.index];
+	return node === undefined || node < 0 ? undefined : { node };
+}
+
+/**
+ * The value that the file gave a property, which a clip at less than full weight mixes with: the
+ * value that the engine made the material, the light or the node with.
+ */
+function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array | undefined {
+	if (target.kind === 'material') {
+		const m = data.materials[target.index];
+		if (!m) return undefined;
+		const layers = m.layers;
+		const one = (value: number | undefined) => new Float32Array([value ?? 0]);
+		switch (target.value) {
+			case 'color':
+				return Float32Array.from(m.color);
+			case 'opacity':
+				return one(m.opacity);
+			case 'metalness':
+				return one(m.metalness);
+			case 'roughness':
+				return one(m.roughness);
+			case 'emissive':
+				return Float32Array.from(m.emissive);
+			case 'emissiveIntensity':
+				return one(m.emissiveIntensity);
+			case 'alphaCutoff':
+				// The loader clamps the cutoff, so the material holds the clamped value.
+				return one(Math.min(m.alphaCutoff, 1));
+			case 'aoMapIntensity':
+				return one(m.aoMapIntensity);
+			case 'specularIntensity':
+				return one(m.specularIntensity);
+			case 'specularColor':
+				return Float32Array.from(m.specularColor);
+			case 'transmission':
+				return one(m.transmission?.factor);
+			case 'thickness':
+				return one(m.transmission?.thickness ?? m.diffuseTransmission?.thickness);
+			case 'clearcoat':
+				return one(layers?.clearcoat);
+			case 'clearcoatRoughness':
+				return one(layers?.clearcoatRoughness);
+			case 'sheenColor':
+				return layers ? Float32Array.from(layers.sheenColor) : new Float32Array(3);
+			case 'sheenRoughness':
+				return one(layers?.sheenRoughness);
+		}
+		return undefined;
+	}
+	if (target.kind === 'light') {
+		const light = data.lights[target.index];
+		if (!light) return undefined;
+		if (target.value === 'color') return Float32Array.from(light.color);
+		// The engine's range covers the file's light when the file gives none, so it comes from the
+		// template that the copy makes its light from.
+		const values = lightTemplate(light).values;
+		const code =
+			target.value === 'intensity'
+				? LIGHT_VALUE_INTENSITY
+				: target.value === 'range'
+					? LIGHT_VALUE_RANGE
+					: LIGHT_VALUE_ANGLE;
+		for (const [which, value] of values) if (which === code) return new Float32Array([value]);
+		return undefined;
+	}
+	const node = data.nodes[target.index];
+	return node ? new Float32Array([node.visible === false ? 0 : 1]) : undefined;
 }
 
 /** A light's template: its kind and values, with a range where the file gives none. */
