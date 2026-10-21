@@ -318,6 +318,7 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds. A physical sky, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, reflection probes, order-independent transparency and pixel-exact picking. Stand-in images and merged meshes for far objects, light through leaves and skin, still views, per-object motion vectors, direct draws where a start-up measurement finds them faster, and add-ons for particles and terrain |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, and global illumination from a probe volume that light does not leak through. Video textures and light maps that store direction. Add-ons for Gaussian splats with detail levels and streaming, MSDF text, physics, water and three.js's tone curves. Property animation, glTF's iridescence and anisotropy, multiple views, gizmos, spot-light cookies, CSS3D labels, a tone-mapping flag per material, an ocean for the water add-on, and a build for a plain script tag |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
+| after 1.0 | The content packs that demanding scenes ask for: OpenPBR materials, distance-field shadows, hair and GPU grass, each taken up when a real scene needs it |
 
 ## Development
 
