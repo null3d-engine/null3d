@@ -262,3 +262,20 @@ and Medium. The H8 sky-layers hook (M3-E10) keeps its place: it is how another d
 own clouds behind these settings, not a second way for the engine to draw them.
 
 The rule of one place per feature holds. Clouds stay in the core, and no cloud add-on is planned.
+
+## Addendum, 21 October 2026: the add-ons come last in M3
+
+The owner ruled on 21 October 2026 that the add-ons wait until the architecture and the core engine
+work are done. The order inside M3 is therefore:
+
+1. The core's work: level of detail, the Rive City follow-ups, the glTF and API features, the script
+   tag and the study's tasks. M3-R1, one feature description for every hook, is architecture and
+   belongs here.
+2. The add-on platform: the pack, version, namespace, texture-unit, listing and interface-version
+   tasks (M3-D1 to M3-D9), the hooks each with its first user (M3-E1 to M3-E10), and the example
+   add-on layout (M3-D5).
+3. The add-on products: `@null3d/particles`-style Gaussian splats (M3-F2), `@null3d/water` with the
+   FFT ocean (M3-F5, M3-F9) and `@null3d/three-compat` (M3-F7).
+
+This changes no ruling about what is built, only when. Hooks still ship with a first user, so each
+hook's task waits for the add-on that uses it.
