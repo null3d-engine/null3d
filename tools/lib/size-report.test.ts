@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	type BuiltFile,
 	budgetProblems,
+	budgetWarnings,
 	COMBOS_BUDGET,
 	DOWNLOADS,
 	downloadSizes,
@@ -528,5 +529,25 @@ describe('budgetProblems', () => {
 		expect(budgetProblems(within, downloads, later)).toEqual([
 			'js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
 		]);
+	});
+});
+
+describe('budgetWarnings', () => {
+	const downloads = [{ mode: 'pipelined', parts: ['page.js'], shaders: 'shaders-' }];
+	/** A size map whose start holds `brotli` bytes. */
+	const start = (brotli: number) =>
+		new Map([['page.js', size(brotli - 5_000, brotli - 5_000, brotli)]]);
+	const near = Math.floor(START_BUDGET.brotli * 0.97);
+
+	it('warns about a start past 97% of its budget, and leaves a smaller one alone', () => {
+		expect(budgetWarnings(start(Math.floor(START_BUDGET.brotli * 0.5)), downloads)).toEqual([]);
+		expect(budgetWarnings(start(near), downloads)).toEqual([]);
+		expect(budgetWarnings(start(near + 1), downloads)).toEqual([
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(near + 1).toLocaleString('en-US')} bytes after Brotli, past 97% of its ${START_BUDGET.brotli / 1024} KB budget, with ${(START_BUDGET.brotli - near - 1).toLocaleString('en-US')} bytes left`,
+		]);
+	});
+
+	it('leaves a start over its budget to budgetProblems', () => {
+		expect(budgetWarnings(start(START_BUDGET.brotli + 1), downloads)).toEqual([]);
 	});
 });

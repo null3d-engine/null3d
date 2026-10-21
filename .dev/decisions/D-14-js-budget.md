@@ -688,3 +688,42 @@ the worst start measured 167.5 KB of the 176 KB budget, so 8.5 KB remained.
 
 The reclaimed code stays out. The frame figures behind `engine.measure()` and the error-fix table
 serve measurements and error text, not drawing, so no page loses anything it uses to draw.
+
+### Where the start's bytes are, 22 October 2026
+
+M3-T1 trims the start back under 160 KB. The first step measured the pipelined WebGL2 start of the
+milestone branch, 183,810 bytes after Brotli, part by part, with the report's own tooling: a page
+build at `target/js-size`, and `downloadSizes` over its parts.
+
+| Part | Bytes after Brotli | Holds |
+| --- | --- | --- |
+| The WebGL2 shader device file | 51,334 | the largest of the twelve device modules a device may load |
+| `sketch-worker.js` | 61,360 | the scene API and its feature modules |
+| `page.js` | 30,360 | the page's start, the quality preset tables and the probes |
+| `render-worker.js` | 18,245 | the frame loop, the recovery and the protocol |
+| `render-worker-webgl2.js` | 14,123 | the WebGL2 renderer |
+| `render-worker-gpu-shared.js` | 3,883 | the scene renderer of both paths |
+| The other six parts | 4,505 | the probe worker, the job worker, the small shared modules |
+
+The shader file is not the lever it was. Removing whole templates from it, and whole permutation
+builds of the standard material, barely changes its compressed size: dropping 193,000 characters of
+build text saves 1,096 bytes, because the builds are near copies of each other and Brotli already
+holds them once. The device modules are a floor of about 33 KB on WebGPU and 51 KB on WebGL2 until
+the shader library itself shrinks.
+
+The code is the lever, and its cost is spread across many modules rather than held in one. The
+scene API's own modules are about 24 KB of the sketch worker. Its feature modules are about 37 KB,
+and each one is a few kilobytes: the post settings, the assets loader, the texture and mesh array
+creators, the queries, the picks, the cameras, the background, the fog, the reflection probes, the
+probe grid, the object events and the labels.
+
+A feature module can load on its first use only where its calls can answer later. The loader of
+files answers with promises already, so its module moves out of the start with no API change. A
+setter that validates its arguments and throws an error code for a bad one cannot: the error must
+reach the caller at the call, so the module that holds its checks and its message text stays. That
+is why the sprites, lines, particles, area lights, light images, glTF, KTX2 and panorama code could
+move, and the setters could not.
+
+`budgetWarnings` in `tools/lib/size-report.ts` now prints a warning for each start past 97% of the
+budget, so a start that is about to pass it is named while the build still passes. M3-T1 asked for
+that guard.
