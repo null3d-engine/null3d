@@ -39,9 +39,8 @@ import type { EngineCapabilities } from '../page/engine';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
-import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
+import { Assets } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
-import { GltfExtensions } from '../scene/gltf-extensions';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Render } from '../scene/render';
@@ -50,7 +49,6 @@ import { Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
 import { ShaderTemplates } from '../scene/shader-templates';
 import { Textures } from '../scene/textures';
-import { awaitLater } from '../shared/await-later';
 import {
 	type ControlViews,
 	controlLabels,
@@ -162,44 +160,6 @@ const JOB_GROW_US = 200;
  * a fast one does.
  */
 const JOB_PAUSE_SECONDS = 4.5;
-
-/**
- * The assets API, whose loader loads with the first call that reads a file: a sketch that loads no
- * file downloads none of it. Every call waits for the loader first. The two calls that answer with
- * a function of their own answer at once: the extension handlers live beside the runner, so a
- * registration keeps its errors, and the progress handlers join the loader once it arrives.
- */
-function lazyAssets(
-	textures: Textures,
-	base: string,
-	makers: import('../scene/assets').ModelMakers,
-): Assets {
-	const extensions = new GltfExtensions();
-	const ready = awaitLater(
-		import('../scene/assets').then(({ Assets }) => new Assets(textures, base, makers, extensions)),
-	);
-	return new Proxy({} as Assets, {
-		get(_target, name: string | symbol) {
-			// The proxy must not look like a promise to the code that awaits a call's result.
-			if (name === 'then') return undefined;
-			if (name === 'registerGltfExtension')
-				return (handler: GltfExtensionHandler) => extensions.register(handler);
-			if (name === 'onProgress') {
-				return (handler: ProgressHandler) => {
-					let off: (() => void) | undefined;
-					void ready.then((assets) => {
-						off = assets.onProgress(handler);
-					});
-					return () => off?.();
-				};
-			}
-			return (...args: unknown[]) =>
-				ready.then((assets) =>
-					(assets[name as keyof Assets] as unknown as (...a: unknown[]) => unknown)(...args),
-				);
-		},
-	});
-}
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -589,7 +549,7 @@ export class SketchRunner {
 			materials,
 			geometry,
 			textures,
-			assets: lazyAssets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
+			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
 			render: this.render,
