@@ -150,27 +150,37 @@ export class FrameReplay {
 	 * that rests records every frame, so the sketch rewrites that frame's list after the renderer
 	 * took it, and the pipelines at the front then hold different words: the draw section is found
 	 * again, starting no build. A list that a failed device cleared holds no op, so the other
-	 * frame's slot then holds the list that drew last, which is the frame the screen shows. Null
-	 * when neither list holds an op.
+	 * frame's slot then holds the list that drew last, which is the frame the screen shows. A list
+	 * that a device that the browser took away recorded names that device's objects, so neither it
+	 * nor its slot draws. Null when no list draws.
 	 */
 	private captureRange(frame: number): { from: number; end: number } | null {
-		const from = this.restOf(frame);
-		const end = this.end;
 		const words = this.views.heap(Uint32Array);
 		const parity = frame & 1;
 		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
+		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
+		const end = this.end;
 		// A list whose first word is zero is the one a failed device cleared.
-		if (end > start && words[start] !== 0) {
+		if (this.epochOf(parity) && end > start && words[start] !== 0) {
+			const found = this.restOf(frame);
 			const rest =
-				end > from && words[from] !== 0 ? from : this.backend.restStart(words, start, end);
+				end > found && words[found] !== 0 ? found : this.backend.restStart(words, start, end);
 			if (end > rest && words[rest] !== 0) return { from: rest, end };
 		}
 		const other = parity ^ 1;
 		const otherStart = (Atomics.load(this.slots, Slot.DrawListAddress0 + other) >>> 0) / 4;
 		const otherEnd = otherStart + Atomics.load(this.slots, Slot.DrawListWords0 + other);
-		if (otherEnd > otherStart && words[otherStart] !== 0)
+		if (this.epochOf(other) && otherEnd > otherStart && words[otherStart] !== 0)
 			return { from: otherStart, end: otherEnd };
 		return null;
+	}
+
+	/** True when the list of a frame's parity was recorded for the GPU device that draws now. */
+	private epochOf(parity: number): boolean {
+		return (
+			Atomics.load(this.slots, Slot.FrameEpoch0 + parity) ===
+			Atomics.load(this.slots, Slot.GpuEpoch)
+		);
 	}
 
 	/**

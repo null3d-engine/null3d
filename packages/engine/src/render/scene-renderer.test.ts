@@ -155,6 +155,26 @@ describe('FrameReplay', () => {
 		await expect(taken).resolves.toBe(3);
 	});
 
+	it('waits for a list that the GPU device that draws now recorded, after a GPU loss', async () => {
+		const { slots, replay, words } = setup();
+		// A new device took over, and the lists that both frames in the slots hold name the old one.
+		Atomics.store(slots, Slot.GpuEpoch, 1);
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
+		words[100] = 0x0104;
+		words[103] = 5;
+		words[200] = 0x0104;
+		words[203] = 5;
+		Atomics.store(slots, Slot.FramesTaken, 2);
+		const taken = replay.builtTaken();
+		// The next frame records for the device that draws now.
+		Atomics.store(slots, Slot.FrameEpoch0 + 1, 1);
+		Atomics.store(slots, Slot.FramesTaken, 3);
+		await expect(taken).resolves.toBe(3);
+	});
+
 	it("replays the other frame's list when a failed device cleared the taken one", () => {
 		const { slots, backend, replay, words } = setup();
 		// Frame 2's list begins with zero, where a cleared list begins; frame 3's slot still holds
