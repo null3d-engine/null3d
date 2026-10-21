@@ -91,6 +91,8 @@ pub(crate) struct SortedBucket {
     /// The id of the pipeline that draws its rows in the camera's weighted layer (see
     /// [`crate::weighted`]), or 0 for a bucket whose material does not take the weighted blending.
     pub(crate) weighted: u32,
+    /// True when its material reads the copy of the scene's depth, which its draws bind.
+    pub(crate) scene_depth: bool,
 }
 
 impl SortedBucket {
@@ -544,6 +546,10 @@ impl SortedLayout {
                 material,
                 group,
                 weighted,
+                // A custom material that reads the scene's depth binds its copy. A particle
+                // system's bucket draws no surface function.
+                scene_depth: group & (SKINNED_GROUP | PARTICLE_GROUP) == 0
+                    && settings.materials().reads_scene_depth(material - 1),
             });
             total = total.saturating_add(count);
             largest = largest.max(count);

@@ -34,6 +34,7 @@ import {
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
+	LAYOUT_MATERIAL_SCENE,
 	LAYOUT_MOTION_FRAME,
 	LAYOUT_PARTICLE,
 	LAYOUT_PARTICLE_DEPTH_MS,
@@ -56,6 +57,7 @@ import {
 	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_MOTION,
 	PERMUTATION_PARALLAX,
+	PERMUTATION_PICK,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
@@ -1073,6 +1075,10 @@ export class Pipelines {
 		// read the position of the box's corners alone.
 		this.defineLayout(LAYOUT_DECAL_DEPTH, 'decal depth', [unfiltered(0)]);
 		this.defineLayout(LAYOUT_DECAL_DEPTH_MS, 'decal depth ms', [unfiltered(0, true)]);
+		// A custom material that reads the scene's depth binds the copy of the camera's opaque
+		// depth after the maps' group, or after the frame's when it has no textures. The copy is
+		// one sample whatever the scene's antialiasing, so it needs no multisampled layout.
+		this.defineLayout(LAYOUT_MATERIAL_SCENE, 'material scene depth', [unfiltered(0)]);
 		for (const [id, label, shader, maps] of [
 			[TEMPLATE_DECAL, 'decal', shaders.decal, []],
 			[TEMPLATE_DECAL_MAPS, 'decal maps', shaders.decal_maps, [LAYOUT_MATERIAL_MAPS]],
@@ -1386,11 +1392,17 @@ export class Pipelines {
 			});
 			return;
 		}
+		// A material that reads the scene's depth binds the copy after its maps, or after the
+		// frame's group when it has none.
+		const scene = shader.sceneDepth === true ? [LAYOUT_MATERIAL_SCENE] : [];
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
 			pipeline: 'main',
-			layouts: shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME],
+			layouts: [
+				...(shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME]),
+				...scene,
+			],
 			meshLocations: shader.locations,
 			vertexBuffers: INSTANCE_BUFFERS,
 			ownPrepass: true,
@@ -1522,8 +1534,13 @@ export class Pipelines {
 					)
 				: listed;
 			const first = caster ? LAYOUT_DEPTH : motion ? LAYOUT_MOTION_FRAME : undefined;
+			// A caster, motion or pick build shades no surface, so its shader binds no scene
+			// depth. Its layout leaves that group out, and its draws bind no group there.
+			const pick = (permutation & PERMUTATION_PICK) !== 0;
+			const shaded =
+				caster || motion || pick ? own.filter((id) => id !== LAYOUT_MATERIAL_SCENE) : own;
 			const groups = [
-				...(first === undefined ? own : [first, ...own.slice(1)]),
+				...(first === undefined ? shaded : [first, ...shaded.slice(1)]),
 				...(skins ? [LAYOUT_JOINTS] : []),
 				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
 			];

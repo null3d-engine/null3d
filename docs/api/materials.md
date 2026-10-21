@@ -474,6 +474,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `contactShadows` | Standard | true | Takes the main directional light's contact shadows. With `false`, the surface takes none and keeps the shadow map's shadows. Use it on grass, leaf cards and other thin surfaces that crowd together or sway, where contact shadows make them dark and grainy and flicker as they move. [Shadows](../concepts/shadows.md#grass-and-other-thin-surfaces) explains why |
 | `wireframe` | Both | false | Draws the edges of each triangle as lines one pixel wide, with the material's own shading, as three.js's `wireframe` does. See "Wireframe" |
 | `parallax` | Standard | false | With a `displacementMap`, adds parallax occlusion mapping. See "Relief" |
+| `sceneInputs` | Custom | None | The scene inputs that the material's WGSL reads, which fix its shader. `['sceneDepth']` binds the copy of the opaque scene's depth. See "The scene behind a surface" |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
 
@@ -642,6 +643,44 @@ const leaves = materials.shader({ wgsl: masked, alphaMode: 'mask', textures: { m
 ```
 
 A texture samples as white until its image is on the GPU. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
+
+### The scene behind a surface
+
+A surface function can read the depth of the opaque scene behind it. This gives water its shallow color near a shore and its deep color farther out, and foam where a rock nearly touches the surface. Call `sceneDistance(uv)` for the distance in front of the camera of the surface behind the point at the screen's place `uv`, or `sceneDepth(uv)` for its depth value. Declare the input in the `sceneInputs` option:
+
+```ts
+const water = /* wgsl */ `
+struct Uniforms { shallow: vec3f, deep: vec3f }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    let behind = sceneDistance(uv);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(1.0, 8.0, behind));
+    s.alpha = mix(0.45, 0.9, smoothstep(1.0, 8.0, behind));
+    return s;
+}
+`;
+const sheet = materials.shader({
+    wgsl: water,
+    sceneInputs: ['sceneDepth'],
+    alphaMode: 'blend',
+    depthWrite: false,
+    uniforms: { shallow: '#8fe0d2', deep: '#0b4a63' },
+});
+```
+
+- `sceneDepth(uv)` gives the scene's depth with 1 at the camera's near plane and 0 at its far plane, and 0 where nothing drew.
+- `sceneDistance(uv)` gives the distance in front of the camera of that surface, in world units.
+- `input.fragCoord` counts pixels from the top left of the render target on both GPU paths, so `input.fragCoord.xy / frame.resolution` is the `uv` of the point.
+- The engine copies the opaque scene's depth after the opaque pass and before the transparent pass. A blended surface therefore reads the surfaces behind it.
+- A surface in the opaque pass reads 0, the far plane, because the copy comes later. A surface in a scene pass or a reflection pass reads 0 too, because its view makes no copy.
+- The copy is made while a material that declares the input draws, whatever the quality preset says. It costs one full-screen pass and one texture of four bytes for each pixel.
+- On WebGL2 the copy holds the depth that the device stores. Where the device draws `reversed-gl` depth, `sceneDistance` is less precise. The engine draws `reversed` depth where the browser has `EXT_clip_control`.
+- A material that reads the scene's depth declares no textures of its own. The depth group and the maps' group together would pass WebGPU's 16 sampled textures in the fragment stage. Development builds throw E1217 for that combination.
+- The declaration and the WGSL must agree. Development builds throw E1217 for a declaration that the WGSL never uses, and for WGSL that reads the depth without the declaration. They throw it for a scene input that custom materials do not read yet too.
+
+[Surface functions](../shaders/surface-functions.md#the-scenes-depth) shows the helpers among the WGSL.
 
 A surface function can set a clear coat and a sheen too, such as a coat where a stone is wet. The WGSL sets the surface's `clearcoat`, `clearcoatRoughness`, `clearcoatNormal`, `sheenColor` or `sheenRoughness`. Only WGSL that names one of them has the shaders that light the layers. The layer options of such a material give `defaultSurface` its values, and WGSL that never names them throws E1217 when you give it a layer option. [Layers](../shaders/surface-functions.md#clear-coat-and-sheen) on the Surface functions page shows the WGSL.
 

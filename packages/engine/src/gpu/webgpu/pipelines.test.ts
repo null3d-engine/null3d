@@ -204,6 +204,10 @@ describe('the WebGPU pipeline layouts', () => {
 		const shaders = [
 			custom(undefined, 0, meshBits),
 			custom(undefined, G.SIZE_MAP_SLOTS, meshBits),
+			// A material that reads the scene's depth takes the group after the frame's, and
+			// `materials.shader` refuses one that also declares textures, so its fragment stage
+			// stays within the default limit.
+			{ ...custom(undefined, 0, meshBits), sceneDepth: true },
 			custom('effect', G.SIZE_MAP_SLOTS, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectGroup', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectFold', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),

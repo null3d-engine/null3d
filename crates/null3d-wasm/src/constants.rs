@@ -1023,6 +1023,7 @@ pub fn typescript() -> String {
                 ("WIREFRAME", feature::WIREFRAME),
                 ("PARALLAX", feature::PARALLAX),
                 ("NO_TONE_MAP", feature::NO_TONE_MAP),
+                ("SCENE_DEPTH", feature::SCENE_DEPTH),
             ],
         ),
         // The debug views that `setDebugView` takes.

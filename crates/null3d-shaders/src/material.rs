@@ -6,7 +6,10 @@
 //! function that loads them after the WGSL, and builds with the shader def CUSTOM_UNIFORMS.
 //! Module-scope `var name: texture_2d<f32>;` lines declare its textures (see [`crate::textures`]):
 //! the build binds them after the WGSL, gives each texture function the texture's layer, and
-//! builds with the shader def CUSTOM_TEXTURES, which loads the layers.
+//! builds with the shader def CUSTOM_TEXTURES, which loads the layers. WGSL that calls
+//! `sceneDepth` or `sceneDistance` builds with SCENE_DEPTH, which binds the copy of the scene's
+//! depth in the shading builds alone: the caster, motion and pick builds use stand-ins, as they
+//! read no surface.
 //!
 //! WGSL with a `@vertex` and a `@fragment` entry point is a full shader instead: the build makes
 //! the variants that the engine's mesh templates need of it on its own, for WebGPU and for WebGL2
@@ -32,8 +35,15 @@ use crate::{
 const UNIFORMS_DEF: &str = "CUSTOM_UNIFORMS";
 /// The shader def that makes the template load the layers of a custom material's textures.
 const TEXTURES_DEF: &str = "CUSTOM_TEXTURES";
-/// The shader def that puts the joint texture's group after the maps' group on WebGPU.
+/// The shader def that puts the joint texture's group after the template's own groups on WebGPU:
+/// after the maps' group, or after the scene depth's.
 const JOINTS_AFTER_MAPS_DEF: &str = "JOINTS_AFTER_MAPS";
+/// The shader def that binds the copy of the camera's opaque depth for a custom material's
+/// surface function, which reads it through `sceneDepth` and `sceneDistance`.
+const SCENE_DEPTH_DEF: &str = "SCENE_DEPTH";
+/// The shader def that gives a caster, motion or pick build stand-ins for the scene's depth
+/// functions, which the material's WGSL may call where no surface is shaded.
+const SCENE_DEPTH_STUB_DEF: &str = "SCENE_DEPTH_STUB";
 /// The permutation bit of the lit templates' builds that shade area lights, which every build of a
 /// custom material holds as a shader def instead.
 const AREA_LIGHTS: &str = "AREA_LIGHTS";
@@ -72,6 +82,27 @@ const HOOKS: [Hook; 2] = [
 /// The shader def that makes the template call a custom material's vertex offset.
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
 
+/// `defs` without the def that binds the scene's depth, which only the shading builds read: a
+/// caster, a motion or a pick build draws no surface function, so it takes no depth group.
+fn without_scene_depth(defs: &[String]) -> Vec<String> {
+    // A build with only the scene depth takes no group after the frame's once the depth is gone, so
+    // its joint texture goes back to the group after the frame's. A build with textures keeps the
+    // group that the maps take. A build that shaded a surface gets stand-ins for the functions
+    // that its WGSL may call, so the WGSL still builds where no surface runs.
+    let textures = defs.iter().any(|def| def == TEXTURES_DEF);
+    let shaded = defs.iter().any(|def| def == SCENE_DEPTH_DEF);
+    let mut out: Vec<String> = defs
+        .iter()
+        .filter(|def| def.as_str() != SCENE_DEPTH_DEF)
+        .filter(|def| textures || def.as_str() != JOINTS_AFTER_MAPS_DEF)
+        .cloned()
+        .collect();
+    if shaded {
+        out.push(SCENE_DEPTH_STUB_DEF.to_owned());
+    }
+    out
+}
+
 /// The bits of a custom material's shading builds that its shadow caster builds keep: the draw
 /// index, skins on WebGL2, and row values, which a vertex offset may read.
 const CASTER_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
@@ -89,7 +120,7 @@ fn caster_variant(shading: &Variant) -> Variant {
         .collect();
     permutations.extend(["CASTER_OFFSET", "CASTER"].map(str::to_owned));
     Variant {
-        defs: shading.defs.clone(),
+        defs: without_scene_depth(&shading.defs),
         permutations,
         required: vec!["CASTER".to_owned()],
         targets: shading.targets.clone(),
@@ -112,7 +143,7 @@ fn motion_variant(shading: &Variant) -> Variant {
         .collect();
     permutations.push("MOTION".to_owned());
     Variant {
-        defs: shading.defs.clone(),
+        defs: without_scene_depth(&shading.defs),
         permutations,
         required: vec!["MOTION".to_owned()],
         targets: shading.targets.clone(),
@@ -127,7 +158,7 @@ const PICK_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
 /// defs with the instance's ids, which the fragment shader writes, and every build with the PICK
 /// bit. The material's vertex offset then moves the object in GPU picking as it moves its surface.
 fn pick_variant(shading: &Variant) -> Variant {
-    let mut defs = shading.defs.clone();
+    let mut defs = without_scene_depth(&shading.defs);
     if !defs.iter().any(|def| def == OBJECT_IDS_DEF) {
         defs.push(OBJECT_IDS_DEF.to_owned());
         defs.sort();
@@ -183,6 +214,23 @@ const INPUTS: [Input; 3] = [
         ],
     },
 ];
+
+/// The functions that the template defines when the build binds the copy of the scene's depth.
+const SCENE_DEPTH_FUNCTIONS: [&str; 2] = ["sceneDepth", "sceneDistance"];
+
+/// True when the WGSL calls the function `name`.
+fn calls_function(tokens: &[Token], name: &str) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == name && pair[1].text == "(")
+}
+
+/// True when the WGSL calls one of the scene's depth functions, so its builds bind the copy.
+fn calls_scene_depth(tokens: &[Token]) -> bool {
+    SCENE_DEPTH_FUNCTIONS
+        .iter()
+        .any(|name| calls_function(tokens, name))
+}
 
 /// True when the WGSL reads `field` of a value: a `.` and the field's name, after `owner` where it
 /// names one.
@@ -412,6 +460,9 @@ pub struct MaterialOutput {
     /// True when the WGSL reads an instance's index or an object's id, which the vertex shader
     /// finds in the table of object ranges that the engine then keeps.
     pub object_ids: bool,
+    /// True when the WGSL reads the copy of the scene's depth through `sceneDepth` or
+    /// `sceneDistance`, so its shading builds bind the copy.
+    pub scene_depth: bool,
 }
 
 /// The entry points of a full shader: its `@vertex` function's name and the `@fragment` ones'.
@@ -588,6 +639,7 @@ impl Compiler {
         let layered = names_coat_sheen(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let inputs = read_inputs(&tokens);
+        let scene_depth = calls_scene_depth(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
             .variants
             .iter()
@@ -598,9 +650,16 @@ impl Compiler {
                 defs.extend(inputs.iter().map(|&def| def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 if !texture_fields.is_empty() {
-                    // On WebGPU the textures take the maps' group after the frame's, so the SKIN
-                    // builds read the joint texture from the group after them.
                     defs.push(TEXTURES_DEF.to_owned());
+                }
+                if scene_depth {
+                    // The surface function reads the copy of the scene's depth, which the shading
+                    // builds bind in the group after the frame's.
+                    defs.push(SCENE_DEPTH_DEF.to_owned());
+                }
+                if !texture_fields.is_empty() || scene_depth {
+                    // On WebGPU a group after the frame's takes a place of its own, so the SKIN
+                    // builds read the joint texture from the group after it.
                     defs.push(JOINTS_AFTER_MAPS_DEF.to_owned());
                 }
                 // Every build shades area lights, so a material's builds stay as few as before.
@@ -696,6 +755,7 @@ impl Compiler {
             attributes,
             base_color: true,
             object_ids: inputs.contains(&OBJECT_IDS_DEF),
+            scene_depth,
         })
     }
 
@@ -784,6 +844,7 @@ impl Compiler {
             attributes,
             base_color: false,
             object_ids: false,
+            scene_depth: false,
         })
     }
 }

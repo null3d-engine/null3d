@@ -154,6 +154,7 @@ export const LAYOUT_SUBSURFACE_COMPOSITE_MS = 45;
 export const LAYOUT_DECAL_DEPTH = 36;
 export const LAYOUT_DECAL_DEPTH_MS = 37;
 export const LAYOUT_DECAL_FRAME = 46;
+export const LAYOUT_MATERIAL_SCENE = 38;
 export const LAYOUT_PARTICLE = 32;
 export const LAYOUT_PARTICLE_SCENE_DEPTH = 33;
 export const LAYOUT_PARTICLE_DEPTH_MS = 35;

@@ -464,8 +464,10 @@ mod ids {
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = ROW_VALUES + 1;
+    /// The texel that custom materials bind in place of the copy of the camera's opaque depth.
+    pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The physical sky's tables and panorama.
-    pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const SKY_TABLES: u32 = BLANK_SCENE_DEPTH + 1;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
     pub const BLANK_PASS_COLOR: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
@@ -636,8 +638,11 @@ mod ids {
     pub const DECAL_DEPTH_GROUP: u32 = STILL_GROUP + 1;
     /// The decal pass's frame group, after its depth's.
     pub const DECAL_FRAME_GROUP: u32 = DECAL_DEPTH_GROUP + 1;
-    /// The bind groups of the volumetric fog's steps, after the decal pass's frame group.
-    pub const FOG_GROUPS: u32 = DECAL_FRAME_GROUP + 1;
+    /// The first of two bind groups that custom materials which read the scene's depth bind: the
+    /// blank texel, then the copy of the camera's opaque depth.
+    pub const MATERIAL_SCENE_GROUPS: u32 = DECAL_FRAME_GROUP + 1;
+    /// The bind groups of the volumetric fog's steps, after the materials' scene groups.
+    pub const FOG_GROUPS: u32 = MATERIAL_SCENE_GROUPS + 2;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The motion view's frame group for each frame parity.
@@ -996,6 +1001,8 @@ impl GpuDrivenRenderer {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
+                        material_scene: ids::MATERIAL_SCENE_GROUPS,
+                        blank_scene_depth: ids::BLANK_SCENE_DEPTH,
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
                         }),
@@ -1505,8 +1512,11 @@ impl GpuDrivenRenderer {
         let redraws = self.redraws_built && skipped != 0;
         self.graph
             .set_decals(!self.decal_layout.is_empty(), redraws);
-        self.graph
-            .set_soft_particles(self.settings.particles().wants_depth());
+        let materials_read_depth = self.settings.materials().any_reads_scene_depth();
+        self.graph.set_soft_particles(
+            self.settings.particles().wants_depth() || materials_read_depth,
+            materials_read_depth,
+        );
         // The render scale's range decides which of the final pass's pipelines the frame asks for.
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph
@@ -2592,8 +2602,12 @@ impl GpuDrivenRenderer {
                         SortedRows::All
                     };
                     let frame = ids::frame_group(view);
+                    // The camera's transparent pass draws after the copy of its opaque depth; a
+                    // scene pass's view has no copy and binds the blank texel.
+                    let scene = ids::MATERIAL_SCENE_GROUPS + u32::from(view == ViewId::CAMERA);
                     transparent.record(
-                        list, view, rows, sorted, skinning, settings, meshes, frame, 0, particles,
+                        list, view, rows, sorted, skinning, settings, meshes, frame, 0, scene,
+                        particles,
                     )
                 }
                 Role::Decals => {
@@ -2609,6 +2623,7 @@ impl GpuDrivenRenderer {
                         meshes,
                         ids::DECAL_FRAME_GROUP,
                         depth,
+                        ids::MATERIAL_SCENE_GROUPS,
                         particles,
                     )
                 }
@@ -2624,6 +2639,7 @@ impl GpuDrivenRenderer {
                         meshes,
                         ids::frame_group(view),
                         0,
+                        ids::MATERIAL_SCENE_GROUPS,
                         particles,
                     )
                 }
@@ -2655,6 +2671,7 @@ impl GpuDrivenRenderer {
                     meshes,
                     ids::frame_group(ViewId::CAMERA),
                     0,
+                    ids::MATERIAL_SCENE_GROUPS,
                     particles,
                 ),
                 _ => Ok(()),

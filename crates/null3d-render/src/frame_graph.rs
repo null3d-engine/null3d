@@ -163,7 +163,8 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use null3d_gpu::drawlist::{
-    DrawList, NO_TARGET, Op, format, pass_flags, permutation, texture_usage, view,
+    DrawList, NO_TARGET, Op, format, layout as bind_layout, pass_flags, permutation, resource_kind,
+    texture_usage, view,
 };
 
 use crate::accumulate::{self, AccumulateIds, AccumulatePass};
@@ -245,6 +246,12 @@ pub(crate) struct GraphIds {
     pub(crate) weighted: WeightedIds,
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub(crate) particle_depth: u32,
+    /// The first of two bind groups for custom materials that read the scene's depth: the blank
+    /// texel, then the copy of the camera's opaque depth.
+    pub(crate) material_scene: u32,
+    /// The texel that a material's scene group binds in place of the copy while the frame makes
+    /// none.
+    pub(crate) blank_scene_depth: u32,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -1001,16 +1008,29 @@ pub(crate) struct FrameGraph {
     redraws_wanted: bool,
     /// True when the declared passes hold the decal pass.
     decals_declared: bool,
-    /// The copy of the camera's opaque depth for soft particles.
+    /// The copy of the camera's opaque depth for soft particles and custom materials.
     particle_depth: ParticleDepthCopy,
-    /// True while a particle system on the scene fades near the surfaces behind it.
+    /// True while a particle system on the scene fades near the surfaces behind it, or a custom
+    /// material reads the scene's depth.
     particle_depth_wanted: bool,
     /// True once the copy's pipeline is built, after the frame whose list created it.
     particle_depth_built: bool,
     /// True when the declared passes hold the copy.
     particle_depth_declared: bool,
     /// The textures that the copy reads and draws into, found once for each compile of the graph.
-    particle_depth_target: CompileCache<(u32, u32)>,
+    particle_depth_target: CompileCache<Option<(u32, u32)>>,
+    /// The first of the two bind groups that custom materials which read the scene's depth bind,
+    /// and the texture id of the blank texel that stands in for the copy.
+    material_scene: u32,
+    blank_scene_depth: u32,
+    /// The scene groups of custom materials that read the depth: the copy the camera group binds,
+    /// or 0 before the groups exist, and whether the blank texel exists.
+    material_scene_bound: u32,
+    material_scene_has_blank: bool,
+    /// True while a custom material reads the scene's depth.
+    material_scene_wanted: bool,
+    /// True once the frame made the groups that materials bind for their scene inputs.
+    material_scene_ready: bool,
     /// The words of the frame's reflection probe filter, which runs after the capture views'
     /// passes and before the camera's first render pass, or `None` in a frame that captures no
     /// probe (see [`crate::probes`]).
@@ -1209,6 +1229,12 @@ impl FrameGraph {
             particle_depth_built: false,
             particle_depth_declared: false,
             particle_depth_target: CompileCache::default(),
+            material_scene: ids.material_scene,
+            blank_scene_depth: ids.blank_scene_depth,
+            material_scene_bound: 0,
+            material_scene_has_blank: false,
+            material_scene_wanted: false,
+            material_scene_ready: false,
             probe_filter: None,
             first_texture: ids.first_texture,
             made: Vec::new(),
@@ -2286,10 +2312,13 @@ impl FrameGraph {
     }
 
     /// Turns the copy of the camera's opaque depth on while a particle system fades near the
-    /// surfaces behind it, and off otherwise, as [`FrameGraph::set_transmission`] turns its copy.
-    pub(crate) fn set_soft_particles(&mut self, on: bool) {
+    /// surfaces behind it or a custom material reads the scene's depth, and off otherwise, as
+    /// [`FrameGraph::set_transmission`] turns its copy. `materials` says whether a custom material
+    /// reads it, which makes the groups that those materials bind.
+    pub(crate) fn set_soft_particles(&mut self, on: bool, materials: bool) {
         let was = self.particle_depth_draws();
         self.particle_depth_wanted = on;
+        self.material_scene_wanted = materials;
         if self.particle_depth_draws() != was {
             self.declared = false;
         }
@@ -2357,8 +2386,8 @@ impl FrameGraph {
         self.samples > 1
     }
 
-    /// True while the copy of the camera's opaque depth draws: a particle system wants it, and its
-    /// pipeline is built.
+    /// True while the copy of the camera's opaque depth draws: a particle system or a material
+    /// wants it, and its pipeline is built.
     fn particle_depth_draws(&self) -> bool {
         self.particle_depth_wanted && self.particle_depth_built
     }
@@ -2370,7 +2399,35 @@ impl FrameGraph {
         if !self.particle_depth_declared {
             return None;
         }
-        self.particle_depth_target.last().map(|(_, target)| target)
+        self.particle_depth_target
+            .last()
+            .flatten()
+            .map(|(_, target)| target)
+    }
+
+    /// The bind group that a draw in `view` binds for a custom material that reads the scene's
+    /// depth: the copy of the camera's opaque depth in the camera's view, or the blank texel in
+    /// another view. 0 while no material reads the depth.
+    pub(crate) fn material_scene_group(&self, view: ViewId) -> u32 {
+        if !self.material_scene_ready {
+            return 0;
+        }
+        let first = self.material_scene;
+        if view == ViewId::CAMERA {
+            first + 1
+        } else {
+            first
+        }
+    }
+
+    /// The bind group that a draw binds for its material's scene inputs before the copy exists:
+    /// one texel at the far plane. 0 while no material reads the depth.
+    pub(crate) fn material_scene_blank(&self) -> u32 {
+        if self.material_scene_ready {
+            self.material_scene
+        } else {
+            0
+        }
     }
 
     /// Switches each view's passes on or off with the view, and its transparent pass only while
@@ -3884,6 +3941,7 @@ impl FrameGraph {
         self.prepare_motion_view(list, arena)?;
         self.bind_weighted(list)?;
         self.bind_particle_depth(list)?;
+        self.bind_material_scene(list)?;
         if !self.final_runs() {
             return Ok(());
         }
@@ -4394,6 +4452,45 @@ impl FrameGraph {
         Ok(())
     }
 
+    /// Makes the bind groups that custom materials that read the scene's depth bind: one for the
+    /// blank texel, which a draw before the copy exists or in another view binds, and one for the
+    /// copy of the camera's opaque depth. The groups exist from the frame that first wants the
+    /// copy, so a material whose pipeline is ready draws with the blank until the copy draws.
+    fn bind_material_scene(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        self.material_scene_ready = self.material_scene_wanted && self.views > 0;
+        if !self.material_scene_ready {
+            return Ok(());
+        }
+        if !self.material_scene_has_blank {
+            crate::effects::create_texel(list, self.blank_scene_depth, format::R32_FLOAT)?;
+            self.material_scene_has_blank = true;
+        }
+        let blank = self.blank_scene_depth;
+        let camera = self.particle_depth_texture().unwrap_or(blank);
+        if self.material_scene_bound == camera && !self.textures_made {
+            return Ok(());
+        }
+        let group = |list: &mut DrawList, id: u32, texture: u32| {
+            list.push(
+                Op::CreateBindGroup,
+                &[
+                    id,
+                    bind_layout::MATERIAL_SCENE,
+                    1,
+                    0,
+                    resource_kind::TEXTURE,
+                    texture,
+                    0,
+                    0,
+                ],
+            )
+        };
+        group(list, self.material_scene, blank)?;
+        group(list, self.material_scene + 1, camera)?;
+        self.material_scene_bound = camera;
+        Ok(())
+    }
+
     /// Binds the copy of the camera's opaque depth to the scene depth while it is declared, and
     /// finds the texture of its target, once for each compile of the graph.
     fn bind_particle_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
@@ -4401,14 +4498,16 @@ impl FrameGraph {
             return Ok(());
         }
         let mut found = self.particle_depth_target;
-        let (source, _) = found.get_or(self.graph.compiles(), || {
-            let id = |name: &str| {
-                self.sampled_id(name)
-                    .expect("the depth copy reads and writes planned textures")
-            };
-            (id(SCENE_DEPTH), id(PARTICLE_DEPTH))
+        // The graph culls the copy while no running pass reads it, as in a frame whose only
+        // reader shades its opaque objects, so the plan may hold no target for it.
+        let targets = found.get_or(self.graph.compiles(), || {
+            self.sampled_id(SCENE_DEPTH)
+                .zip(self.sampled_id(PARTICLE_DEPTH))
         });
         self.particle_depth_target = found;
+        let Some((source, _)) = targets else {
+            return Ok(());
+        };
         self.particle_depth
             .prepare(list, source, self.textures_made)
     }
@@ -5059,6 +5158,10 @@ impl FrameGraph {
         self.motion_step.reset_gpu();
         self.weighted.reset_gpu();
         self.particle_depth.reset_gpu();
+        // The blank texel and the two groups belong to the device that was lost.
+        self.material_scene_has_blank = false;
+        self.material_scene_bound = 0;
+        self.material_scene_ready = false;
     }
 }
 
@@ -5435,6 +5538,58 @@ mod tests {
         assert_eq!(view_name(31, "Opaque", "Opaque"), "Opaque31");
     }
 
+    #[test]
+    fn a_frame_that_reads_the_scene_depth_makes_the_copy_and_its_groups() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default()]);
+        // A custom material reads the depth, with no particle system on the scene.
+        frames.set_soft_particles(true, true);
+        let mut pipelines = PipelineCache::default();
+        let mut list = DrawList::with_capacity(4096);
+        // The first frame asks for the copy's pipeline; the next frame, which has it built,
+        // declares the copy.
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        frames.request_pipelines(&mut pipelines, 0);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        // The frame declares the copy. Nothing blends in this frame, so the graph culls the copy
+        // with the transparent pass that reads it.
+        assert!(frames.particle_depth_declared);
+
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        // The camera's group differs from the blank one, so a draw before the copy exists binds
+        // the texel at the far plane.
+        let camera = frames.material_scene_group(ViewId::CAMERA);
+        let blank = frames.material_scene_blank();
+        assert_ne!(camera, 0);
+        assert_ne!(blank, 0);
+        assert_ne!(camera, blank);
+        assert_ne!(frames.material_scene_group(ViewId::from_index(1)), camera);
+        let mut made_blank = false;
+        let mut made_groups = 0;
+        for command in null3d_gpu::drawlist::decode(list.words()) {
+            let command = command.unwrap();
+            if command.op == Op::CreateTexture && command.operands[0] == IDS.blank_scene_depth {
+                made_blank = true;
+            } else if command.op == Op::CreateBindGroup
+                && (command.operands[0] == camera || command.operands[0] == blank)
+            {
+                made_groups += 1;
+            }
+        }
+        assert!(made_blank);
+        assert_eq!(made_groups, 2);
+    }
+
     /// The ids that the test graphs give their GPU objects. A builder chains each kind of object
     /// in a run of its own, and this table keeps that order and spacing: the buffers, the samplers
     /// and the compute pipelines take one number each from their own bands, and the bind groups
@@ -5537,6 +5692,8 @@ mod tests {
         },
         weighted: WeightedIds { first_group: 140 },
         particle_depth: 121,
+        material_scene: 122,
+        blank_scene_depth: 902,
     };
 
     /// One run of ids of a test graph's table: what the first one names, its id, and how many ids
@@ -5689,6 +5846,16 @@ mod tests {
             ssr::STEPS as u32,
         ));
         groups.push(("the particle depth copy".to_string(), IDS.particle_depth, 1));
+        groups.push((
+            "the materials' scene groups".to_string(),
+            IDS.material_scene,
+            2,
+        ));
+        textures.push((
+            "the materials' blank depth".to_string(),
+            IDS.blank_scene_depth,
+            1,
+        ));
         buffers.push(("the motion view's block".to_string(), IDS.motion.buffer, 1));
         samplers.push((
             "the motion view's sampler".to_string(),

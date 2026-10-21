@@ -984,6 +984,16 @@
       "detect": "\\.onBeforeCompile\\s*="
     },
     {
+      "id": "mat-scene-depth",
+      "category": "Materials",
+      "three": "A ShaderMaterial that samples the scene's depth texture",
+      "status": "changed",
+      "since": "0.3",
+      "target": "materials.shader({ sceneInputs: ['sceneDepth'], wgsl }) with sceneDepth(uv) or sceneDistance(uv)",
+      "notes": "Declare sceneInputs: ['sceneDepth'] and read the opaque scene's depth in the surface function, with uv = input.fragCoord.xy / frame.resolution. The engine binds a copy of the opaque depth. sceneDepth gives 1 at the near plane and 0 at the far plane, and sceneDistance gives the distance in world units. A surface in the opaque pass, or in a scene or reflection pass, reads 0, the far plane.",
+      "docs": "api/materials"
+    },
+    {
       "id": "mat-shader-builtins",
       "category": "Materials",
       "three": "ShaderMaterial built-ins: uv1, gl_FragCoord, gl_InstanceID / instanceIndex, modelMatrix, normalMatrix, viewMatrix, projectionMatrix, cameraNear, cameraFar",

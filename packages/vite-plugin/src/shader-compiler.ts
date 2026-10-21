@@ -131,6 +131,8 @@ export interface MaterialBuild {
 	readonly baseColor: boolean;
 	/** True when the WGSL reads an instance's index or an object's id. */
 	readonly objectIds: boolean;
+	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
+	readonly sceneDepth: boolean;
 }
 
 /** The result of a custom material's compile, with its warnings when it succeeds. */
