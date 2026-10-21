@@ -120,3 +120,22 @@ Ruling 26 gave the spot-light cookie, three.js's `SpotLight.map`, to M3. The pla
 **Options rejected.** One texture unit per light, as the plan first said: WebGL2's lit fragment stage has no unit to spare and a scene with many mapped lights would exceed its count. An engine texture handle per light: a sampled binding of its own for each light, or a copy of its texels into the layer for each format, compressed ones included, where a light's picture already takes the sRGB pixels that a rectangle light's image takes and resamples them once. A tile of the shadow atlas: a spot light that casts shadows needs its tile for depth, so a mapped light that casts them would need two, and a light that casts none still needs a projection frame. A separate atlas and binding: a second unit of the frame group on WebGL2 for one feature, where the light tables' array already holds 128 x 128 layers with mips.
 
 **Consequences.** The three.js mapping's `spot-light` entry names `map`, the API page has a "Spot light maps" section, and the develop skill's quick reference lists it. An image test draws a gobo on both GPU paths and in compatibility mode. The light record's layout change is why the GPU's light clustering test fixture is made again.
+
+## Addendum, 21 October 2026: two of ruling 20's drops come back, and two move past 1.0
+
+The owner read the four dropped techniques back on 21 October 2026 with the engine's aim in mind, an
+engine for demanding games rather than for demos, and ruled:
+
+- **Screen-space bounce light comes into M3 as a core task (M3-F12)**, after M3-A11's temporal
+  resolve, at half resolution and on High and above. It is core because it feeds the lighting model;
+  an add-on pass could only tint the final picture.
+- **Moment transparency comes into M3 as a core task (M3-F13)**, off by default and turned on by a
+  scene's setting. It resolves once per pixel, and MSAA stays on for opaque geometry; the surfaces it
+  resolves take the post-process anti-alias the setting names rather than MSAA's samples, because
+  per-sample OIT multiplies its bandwidth by the sample count.
+- **OpenPBR goes on the post-1.0 roadmap**, and waits for the file formats to carry it: glTF and
+  MaterialX shipping OpenPBR is the signal.
+- **Distance-field shadows go on the post-1.0 roadmap**, behind a future hook that lets an add-on or
+  a core path own the shadow term; until then cascades and contact shadows carry the ground.
+
+Ruling 20's other drops stand: GPU grass and hair stay out of the plan, and the rest of the list is unchanged.
