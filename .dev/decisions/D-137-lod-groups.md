@@ -228,3 +228,27 @@ Each copy now shifts the pattern by a phase from 0 to 15 that a hash of the copy
 The two levels of a band draw the same copy, so they take the same phase. Each pixel still draws exactly one level, and no gap opens between them. A copy's source names it on both GPU paths. The culling shader writes it beside the fade value on WebGPU, and the index list holds it on WebGL2. The hash is `pcg` from `null3d::noise`, which every GPU works out alike. The phase rides in the flat vertex value that already carried the fade value. The change adds no texture, no draw and no lookup, and the vertex shader hashes each copy once per vertex.
 
 Both GPU paths carry the phase in the same shader source, so a change to the pattern lands on both at once. The `lod-fade` test drew new pictures, about 1% of its pixels on each tier, and its references moved in both sets. The demos whose trees carry levels stayed within the image tolerance on both GPUs, so their references did not move.
+## Addendum: a bound under a pixel draws nothing (21 October 2026)
+
+M3-L1 gives every level set a last level that holds no geometry. An object or instance row hides
+when the world diameter of its bounding sphere covers fewer pixels than `lodThreshold`:
+
+```text
+diameter × factor < distance,  factor = render height × P[1][1] / (2 × threshold)
+```
+
+This is the factor that picks every level, so the render height, the render scale and the
+governor's doubled threshold all move the hide distance. The diameter, not the radius, measures the
+object: a bound that covers half a pixel each way is a pixel across, and other engines cull at that
+size. At Medium and above an object goes when its diameter is under a pixel, and on Low under two.
+
+Past the hide distance lies the same 8% band as a level switch. There the level that the object
+would draw goes into its fade bucket with a negative fade value, so the dither drops a growing
+share of its pixels until none remain. Without a band, or without a fading build, the object hides
+at the hide distance. A mesh without levels never hides, so a scene without levels still pays
+nothing. Both paths compare the same values: the job workers and the direct-draw culling read
+`levels.rs`, and the GPU's culling shader reads `cull.wgsl`.
+
+The shadow views use their own threshold, times `lodShadowFactor`, as their level choice does. A
+caster's shadow therefore goes at a nearer distance than the object itself. It draws no band, as
+the shadow maps already pick without one.

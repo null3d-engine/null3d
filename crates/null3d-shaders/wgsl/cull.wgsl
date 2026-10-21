@@ -48,6 +48,12 @@
 // level and negative for the old. A link of 0 means none, so a bucket record without levels holds
 // zeros there, and a view whose level factor is 0 draws every instance's base level.
 //
+// An instance whose bounding sphere covers fewer pixels than the threshold draws nothing: the last
+// level holds no geometry. The sphere's world diameter times the level factor measures the pixels
+// it covers, so it hides while that product stays under its distance, the same comparison that
+// picks the levels. Past the hide distance a band thins the coarsest level out with the same
+// dither, where a fading build exists, so the instance does not pop away.
+//
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
 // runs. Each workgroup finds its run, and each thread reads its instance from the cell order.
@@ -277,16 +283,20 @@ fn survivor(i: u32) -> Survivor {
 }
 
 /// The level of detail that an instance in view draws: its bucket, the bucket of the level before
-/// it, and how far past the level's switch distance the instance lies, as a share of that distance.
+/// it, how far past the level's switch distance the instance lies, as a share of that distance,
+/// how far past the hide distance it lies, as a share of the hide distance, and whether its bounds
+/// cover fewer pixels than the threshold, where nothing draws.
 struct Level {
     bucket: u32,
     before: u32,
     past: f32,
+    hide_past: f32,
+    hidden: bool,
 }
 
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
-    var out = Level(s.bucket, s.bucket, 0.0);
+    var out = Level(s.bucket, s.bucket, 0.0, 0.0, false);
     let factor = params.levels.x;
     var next = buckets[s.bucket].next;
     if next == 0u || factor <= 0.0 {
@@ -303,23 +313,38 @@ fn level_of(s: Survivor) -> Level {
     if out.bucket != s.bucket {
         out.past = distance / (buckets[out.bucket].error * reach) - 1.0;
     }
+    // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
+    // geometry. The view's level factor also carries the render height, the render scale and the
+    // threshold, so all of them move the hide distance.
+    let hide = 2.0 * s.radius * factor;
+    out.hidden = hide > 0.0 && hide < distance;
+    if out.hidden {
+        out.hide_past = distance / hide - 1.0;
+    }
     return out;
 }
 
 /// Appends an instance in the view to the bucket of the level of detail it draws, and to the fade
-/// buckets of two levels inside a fading band. The draws start `draws_before` draws into the
-/// indirect draws.
-fn append(s: Survivor, draws_before: u32) {
-    let level = level_of(s);
+/// buckets of two levels inside a fading band. An instance that hides draws nothing, apart from the
+/// share of the pixels a fading level keeps as it thins the instance out. The draws start
+/// `draws_before` draws into the indirect draws.
+fn append(s: Survivor, level: Level, draws_before: u32) {
     let band = params.levels.z;
-    let fades = buckets[level.bucket].fade != 0u && buckets[level.before].fade != 0u;
-    if level.bucket != s.bucket && band > 0.0 && fades {
+    let new_fade = buckets[level.bucket].fade;
+    let old_fade = buckets[level.before].fade;
+    if level.bucket != s.bucket && band > 0.0 && new_fade != 0u && old_fade != 0u {
         let t = level.past / band;
         if t < 1.0 {
-            append_to(s, buckets[level.bucket].fade - 1u, draws_before, max(t, 1e-6));
-            append_to(s, buckets[level.before].fade - 1u, draws_before, -max(t, 0.0));
+            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6));
+            append_to(s, old_fade - 1u, draws_before, -max(t, 0.0));
             return;
         }
+    }
+    if level.hidden {
+        if band > 0.0 && new_fade != 0u && level.hide_past < band {
+            append_to(s, new_fade - 1u, draws_before, -max(level.hide_past / band, 0.0));
+        }
+        return;
     }
     append_to(s, level.bucket, draws_before, 0.0);
 }
@@ -376,7 +401,12 @@ fn main(
     if s.bucket == HIDDEN {
         return;
     }
-    let bucket = buckets[level_of(s).bucket];
+    let level = level_of(s);
+    // An instance that hides draws no pixels, so it draws no motion either.
+    if level.hidden {
+        return;
+    }
+    let bucket = buckets[level.bucket];
     let now = array<vec4f, 3>(matrices[i * 3u], matrices[i * 3u + 1u], matrices[i * 3u + 2u]);
     let last = array<vec4f, 3>(previous[i * 3u], previous[i * 3u + 1u], previous[i * 3u + 2u]);
     let still = all(now[0] == last[0]) && all(now[1] == last[1]) && all(now[2] == last[2]);
@@ -420,7 +450,7 @@ fn main(
     }
     let s = survivor(i);
     if s.bucket != HIDDEN {
-        append(s, params.occlusion.info.y);
+        append(s, level_of(s), params.occlusion.info.y);
     }
 }
 
@@ -440,6 +470,11 @@ fn early(
     if s.bucket == HIDDEN || !s.occluder {
         return;
     }
+    let level = level_of(s);
+    // A bound that covers fewer pixels than the threshold draws no depth, so it cannot hide others.
+    if level.hidden {
+        return;
+    }
     // A sphere that reaches the camera's plane covers much of the screen.
     let bounds = screen_bounds(s.center, s.radius);
     let span = max(bounds.high.x - bounds.low.x, bounds.high.y - bounds.low.y);
@@ -447,7 +482,7 @@ fn early(
         return;
     }
     atomicAdd(&pyramid[0], 1u);
-    append(s, 0u);
+    append(s, level, 0u);
 }
 
 /// The second occlusion phase: tests every instance in view against the depth pyramid, keeps
@@ -462,10 +497,16 @@ fn late(
         return;
     }
     let s = survivor(i);
-    let seen = s.bucket != HIDDEN && !occluded(s.center, s.radius);
+    if s.bucket == HIDDEN {
+        atomicStore(&indirect[params.occlusion.info.z + i], 0u);
+        return;
+    }
+    let level = level_of(s);
+    // A hidden instance draws nothing, so its history says it did not draw.
+    let seen = !level.hidden && !occluded(s.center, s.radius);
     atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
     if seen {
-        append(s, params.occlusion.info.y);
+        append(s, level, params.occlusion.info.y);
     }
 }
 

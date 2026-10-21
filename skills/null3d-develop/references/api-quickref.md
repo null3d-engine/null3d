@@ -308,7 +308,8 @@ mesh.destroy();             // (0.2) after the objects and batches that use it, 
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
 mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, error: 0.1 }]);  // (0.2) levels of detail, most detailed first
-// every object and batch of `mesh` draws the coarsest level whose error covers under lodThreshold pixels;
+// every object and batch of `mesh` draws the coarsest level whose error covers under lodThreshold pixels,
+// and draws nothing where its bound covers fewer pixels than that; the hide fades out with the same band;
 // { mesh, distance } in place of error maps three.js's LOD.addLevel; errors grow; E1221 for bad levels
 ```
 

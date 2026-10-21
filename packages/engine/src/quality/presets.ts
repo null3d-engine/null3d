@@ -273,7 +273,9 @@ export const QUALITY_SETTINGS = {
 	},
 	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
 	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
-	// scale picks coarser levels too. 0 draws every mesh's base level. D-137 gives the figures.
+	// scale picks coarser levels too. A bound that covers fewer pixels than this draws nothing, and
+	// the levels' hiding fades out with the same band. 0 draws every mesh's base level. D-137 gives
+	// the figures.
 	lodThreshold: {
 		presets: [2, 1, 1, 1],
 		changes: 'live',

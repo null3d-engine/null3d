@@ -274,7 +274,7 @@ flowchart LR
 
 Dynamic resolution is the first part of the frame-budget governor. A sketch can register budgets for its own systems with `quality.setBudget`. Then a step of their scale comes before each step of the render scale, and their remaining steps come once the render scale is at `minRenderScale`. [Quality API](../api/quality.md#budgets-for-the-sketchs-own-systems) gives the rule. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the detail, the live shadow settings and the effects' settings, one step at a time:
 
-1. The `lodThreshold` of the [levels of detail](lod.md) doubles, twice at most, so coarser levels draw nearer the camera. A level's error stays under the threshold, so two pixels look much as one does, while far objects lose most of their vertices. This step happens only while a mesh has levels.
+1. The `lodThreshold` of the [levels of detail](lod.md) doubles, twice at most, so coarser levels draw nearer the camera and small objects hide nearer it. A level's error stays under the threshold, so two pixels look much as one does, while far objects lose most of their vertices. This step happens only while a mesh has levels.
 2. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 3. The shadow filter blends 3 x 3 texels instead of 5 x 5.
 4. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.

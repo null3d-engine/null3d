@@ -230,7 +230,7 @@ rock.setLevels([
 ]);
 ```
 
-Each level must have the mesh's vertex attributes, as it draws with the same material and shading. A level can give the `distance` at which it switches in, as three.js's `LOD.addLevel` does, in place of its error. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them, each with its error. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the rule, the fading bands and the shadows, and how glTF files from the asset tool bring their levels.
+Each level must have the mesh's vertex attributes, as it draws with the same material and shading. A level can give the `distance` at which it switches in, as three.js's `LOD.addLevel` does, in place of its error. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them, each with its error. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the rule, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
 
 ## Destroying a mesh
 
