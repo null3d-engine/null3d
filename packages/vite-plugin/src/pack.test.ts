@@ -51,6 +51,7 @@ function material(variants: number): CompiledMaterial {
 		attributes: 0,
 		baseColor: true,
 		objectIds: false,
+		sceneDepth: false,
 	};
 }
 

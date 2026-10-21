@@ -35,18 +35,23 @@ export type FeatureKind = 'draw' | 'compute' | 'fullscreen';
 export type FeatureBand = 'before' | 'normal' | 'after';
 
 /**
- * A scene resource that a feature reads or writes. The render graph orders the feature around the
- * passes that write and read the same resource.
+ * A scene resource that a custom material or a feature reads: the scene's color before the tone
+ * curve, its depth, its surface normals, or how far each pixel's surface moved since the last
+ * frame. A reader declares the input, and the engine binds what the frame makes.
  *
  * @category api/features
  */
-export type FeatureResource =
-	| 'sceneColor'
-	| 'sceneDepth'
-	| 'normals'
-	| 'motionVectors'
-	| 'history'
-	| 'shadowAtlas';
+export type SceneInput = 'sceneColor' | 'sceneDepth' | 'normals' | 'motionVectors';
+
+/**
+ * A scene resource that a feature reads or writes. The render graph orders the feature around the
+ * passes that write and read the same resource. `history` is the image of an earlier frame that a
+ * temporal effect keeps, and `shadowAtlas` holds the sun's cascades and the point and spot lights'
+ * shadow tiles.
+ *
+ * @category api/features
+ */
+export type FeatureResource = SceneInput | 'history' | 'shadowAtlas';
 
 /**
  * A lighting slot that a feature provides. One feature provides each slot: a second provider would

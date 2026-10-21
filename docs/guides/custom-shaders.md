@@ -201,7 +201,7 @@ These rules apply:
 
 - A change to other code in the script file runs the module again, so Vite reloads the page as it does for any module.
 - WGSL that does not compile shows in Vite's overlay and in the terminal. The page keeps drawing with the last shader that compiled. The overlay closes when your fix compiles.
-- A change to the uniforms, the textures or the vertex attributes of a custom material reloads the page. So does a change between a surface function and a full shader, and a vertex offset that you add or remove. The materials keep their values in a layout that these set, and a vertex offset gives a material the shaders of its shadows.
+- A change to the uniforms, the textures or the vertex attributes of a custom material reloads the page. So does a change between a surface function and a full shader, a vertex offset that you add or remove, and the scene inputs that the WGSL reads. The materials keep their values in a layout that these set, and a vertex offset gives a material the shaders of its shadows.
 - A whole shader reloads the page, because your own code draws it.
 - A change to the WGSL of a custom post effect or a custom tone curve reloads the page.
 

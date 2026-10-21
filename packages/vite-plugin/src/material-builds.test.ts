@@ -73,6 +73,7 @@ const material = (variants: Record<string, ShaderVariant>): CompiledMaterial => 
 	attributes: 0,
 	baseColor: true,
 	objectIds: false,
+	sceneDepth: false,
 });
 
 /** The folders of the modules that the tests ran. */
