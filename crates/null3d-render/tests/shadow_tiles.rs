@@ -898,13 +898,13 @@ fn webgl2_casters_draw_with_a_pipeline_for_each_depth_format() {
     }
 }
 
-/// A rectangle light's record carries its image's layer where a point or spot light carries its
-/// tile of the atlas ([`VisibleLight::area`]), so marking the tiles leaves that layer alone: the
-/// shader reads it as the layer of the light tables' texture that holds the light's picture. The
-/// bench's rectangle-light tests drew the picture-less scene for four days while every mark of the
-/// tiles wiped the layer, and their references were pictures of nothing.
+/// A rectangle light's record keeps its image's layer in a field of its own, and its shadow tile's
+/// place free, so marking the tiles leaves that layer alone: the shader reads it as the layer of the
+/// light tables' texture that holds the light's picture. The bench's rectangle-light tests drew the
+/// picture-less scene for four days while every mark of the tiles wiped the layer, and their
+/// references were pictures of nothing.
 #[test]
-fn an_area_lights_record_keeps_its_image_where_a_spot_light_keeps_its_tile() {
+fn marking_the_tiles_leaves_an_area_lights_image_alone() {
     let mut world = world(GpuDrivenRenderer::new(Default::default()), TWO_TILES);
     // The area lights' tables arrive, as they do before an area light lights anything.
     let tables = world.renderer.settings_mut().light_tables_mut();
@@ -944,15 +944,17 @@ fn an_area_lights_record_keeps_its_image_where_a_spot_light_keeps_its_tile() {
     step(&mut world, &mut mock, true);
     let grid = world.renderer.light_grid().lights();
     let record = |window: u32| {
-        grid.iter()
-            .find(|light| light.kind == window)
-            .unwrap()
-            .shadow
+        let light = grid.iter().find(|light| light.kind == window).unwrap();
+        (light.shadow, light.image)
     };
-    assert_eq!(record(kind::SPOT), 1.0, "the spot light takes tile 1");
+    assert_eq!(
+        record(kind::SPOT),
+        (1.0, 0.0),
+        "the spot light takes tile 1 and holds no image"
+    );
     assert_eq!(
         record(kind::RECT),
-        3.0,
-        "the rectangle light keeps its image's layer"
+        (0.0, 3.0),
+        "the rectangle light keeps its image's layer and takes no tile"
     );
 }

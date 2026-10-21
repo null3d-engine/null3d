@@ -1,8 +1,9 @@
-// The images of rectangle lights: a picture that a rectangle light shows over its area, such as a
-// shop window or a screen (decision record D-145). The engine keeps each image as a layer of the
-// light tables' texture, 128 x 128 texels of linear half floats with every mip level, so the
-// shaders read a sharp image in a mirror-like reflection and a blurred one in a rough surface.
-// This module turns the sketch's sRGB pixels into those texels.
+// The images of lights: a picture that a rectangle light shows over its area, such as a shop
+// window or a screen, or that a spot light projects over its cone, such as a gobo pattern (decision
+// record D-145). The engine keeps each image as a layer of the light tables' texture, 128 x 128
+// texels of linear half floats with every mip level, so the shaders read a sharp image in a
+// mirror-like reflection and a blurred one in a rough surface. This module turns the sketch's sRGB
+// pixels into those texels.
 
 import { toHalfFloat } from './half-float';
 
@@ -14,8 +15,8 @@ export const LIGHT_IMAGE_LEVELS = 8;
 export const LIGHT_IMAGE_HALVES = 4 * ((4 ** LIGHT_IMAGE_LEVELS - 1) / 3);
 
 /**
- * Pixels that a rectangle light shows over its area, for `RectAreaLight.setImage`: rows from the
- * top, four sRGB bytes per pixel.
+ * Pixels of a picture that a light shows, for `RectAreaLight.setImage` and `SpotLight.setMap`:
+ * rows from the top, four sRGB bytes per pixel.
  *
  * @category api/lights
  */
