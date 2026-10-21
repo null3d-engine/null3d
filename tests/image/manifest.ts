@@ -2123,6 +2123,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
+		// Each object takes a bias of 2 and stands at half the distance, so its levels switch where
+		// the copies without a bias do: the image must match the first test's.
+		name: 'lod-bias',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&bias',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
 		name: 'lod-fade',
 		sketch: 'tests/pages/sketches/lod-sketch.ts',
 		hold: 0,

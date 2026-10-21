@@ -276,7 +276,9 @@ levels runs no count.
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
 | 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists.
+`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists. A
+band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
+buckets.
 
 The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
 buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0
