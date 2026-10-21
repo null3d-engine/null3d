@@ -133,6 +133,7 @@
 //! tables and scratch space between rebuilds. Only the first frames after the scene grows, with a
 //! new batch, mesh, view, or mesh and material pair, allocate.
 
+mod copies;
 mod cull;
 mod direct;
 mod layout;
@@ -869,6 +870,10 @@ pub struct GpuDrivenRenderer {
     value_rows: u32,
     /// GPU picking's GPU objects, while a page picks.
     pick: crate::pick::PickState,
+    /// The views that draw each layout, as the sizing of the levels' copies reads them, and the
+    /// offsets from each view's camera to the cells, which that sizing computes in turn.
+    copy_views: Vec<copies::CopyView>,
+    copy_offsets: crate::frame::CellOffsets,
 }
 
 /// The builder's scene settings from `config`: meshes in shared buffers, each page within one
@@ -1086,6 +1091,8 @@ impl GpuDrivenRenderer {
             cascades_held: false,
             created: false,
             pick: crate::pick::PickState::default(),
+            copy_views: Vec::new(),
+            copy_offsets: crate::frame::CellOffsets::default(),
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
@@ -1140,6 +1147,19 @@ impl GpuDrivenRenderer {
         self.skinning.skinned_bytes()
     }
 
+    /// The bytes that each view's compacted instance buffer takes for each layout in the last
+    /// recorded frame, which the levels' copy slices fill: the scene's layout, the shadow casters',
+    /// the outlined objects', the scattered ones' and the moving ones'. For tests.
+    pub fn compacted_bytes(&self) -> [u32; 5] {
+        [
+            self.layout.compacted_bytes(),
+            self.casters.compacted_bytes(),
+            self.outlined.compacted_bytes(),
+            self.scattering.compacted_bytes(),
+            self.moving.compacted_bytes(),
+        ]
+    }
+
     /// The sources that a view's culling pass tests in the last recorded frame, in the order its
     /// threads take them: the sources in the runs of the cell order that it culls, or every
     /// source in place when it culls without cells. For tests; it allocates the list.
@@ -1153,6 +1173,69 @@ impl GpuDrivenRenderer {
             }
             None => (0..self.layout.sources).collect(),
         }
+    }
+
+    /// Sizes each level's slice of every view's compacted instance buffer to the copies that this
+    /// frame's views draw, in every layout that holds a level's buckets. A set of levels then
+    /// takes the room of its sources in each view, instead of the room of a whole level for each.
+    fn fit_level_copies(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        input: &FrameInput<'_>,
+        parity: usize,
+    ) -> Result<(), RecordError> {
+        let settings = &self.settings;
+        if !settings.levels().any() {
+            return Ok(());
+        }
+        // The camera view's rule picks the levels of the plain, outlined, subsurface and motion
+        // views, which have no camera of their own, and the shadow rule picks the casters'.
+        let Some(camera) = self.frames.first().and_then(|frame| frame.as_ref()) else {
+            return Ok(());
+        };
+        let camera = camera.camera;
+        let plain = copies::CopyView {
+            rule: settings.level_view(ViewId::CAMERA, input.canvas),
+            camera,
+        };
+        let shadow = copies::CopyView {
+            rule: settings.shadow_level_view(input.canvas),
+            camera,
+        };
+        let mut views = std::mem::take(&mut self.copy_views);
+        views.clear();
+        for (index, frame) in self.frames.iter().enumerate() {
+            if let Some(frame) = frame {
+                let view = ViewId::from_index(index);
+                views.push(copies::CopyView {
+                    rule: settings.level_view(view, input.canvas),
+                    camera: frame.camera,
+                });
+            }
+        }
+        let Self {
+            layout,
+            casters,
+            outlined,
+            scattering,
+            moving,
+            copy_offsets,
+            ..
+        } = self;
+        let scene = input.scene;
+        let batches = input.batches;
+        for (layout, drawn_by) in [
+            (layout, &views[..]),
+            (casters, std::slice::from_ref(&shadow)),
+            (outlined, std::slice::from_ref(&plain)),
+            (scattering, std::slice::from_ref(&plain)),
+            (moving, std::slice::from_ref(&plain)),
+        ] {
+            layout.fit_copies(list, arena, scene, batches, drawn_by, parity, copy_offsets)?;
+        }
+        self.copy_views = views;
+        Ok(())
     }
 
     /// Records a frame into its parity's list and arena: the pipelines the GPU lacks, then the
@@ -2109,6 +2192,9 @@ impl GpuDrivenRenderer {
         self.decals.size(list, &self.decal_layout, 1)?;
         self.redraws.size(list, &self.redraw_layout, 1)?;
 
+        // Each level's slice holds the copies that this frame's views draw, rather than the room
+        // for every source.
+        self.fit_level_copies(list, arena, input, parity)?;
         let render_size = self.graph.render_size();
         let any_probes = self.settings.probes().any();
         let list_probes = self.probes_listed || any_probes;
