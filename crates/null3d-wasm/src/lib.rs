@@ -4077,6 +4077,27 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
+/// Draws every mesh of the main pass with the material whose id is `material` in place of its own,
+/// or with its own materials with 0, from the next frame on. A change rebuilds the draw tables.
+#[wasm_bindgen(js_name = setOverrideMaterial)]
+pub fn set_override_material(material: u32) -> u32 {
+    value_with_engine(|e| {
+        if material != 0 {
+            // An id that no live material has, as a material of another engine's table, is rejected
+            // before the override draws every mesh with nothing.
+            e.renderer
+                .settings()
+                .materials()
+                .shading(material - 1)
+                .map_err(material_failure)?;
+        }
+        if e.renderer.settings_mut().set_override_material(material) {
+            e.structure_changed = true;
+        }
+        Ok(0)
+    })
+}
+
 /// The scene's fog: its curve (`constants::fog_curve`), or no fog. The call values give its linear
 /// color, the density of exponential and exponential squared fog, the near and far distances of
 /// linear fog, the height where the fog has that density, its height falloff, its sun glow and the
@@ -4677,6 +4698,7 @@ pub fn update_animations(step_us: u32) -> u32 {
             &e.morphs,
             settings.meshes(),
             settings.materials(),
+            settings.override_material(),
         );
         0
     })

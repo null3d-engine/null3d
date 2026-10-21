@@ -863,6 +863,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setDebugView(view: number): number;
 	/**
+	 * Draws every mesh of the main pass with the material whose id is `material` in place of its
+	 * own, or with its own materials with 0, from the next frame on.
+	 */
+	setOverrideMaterial(material: number): number;
+	/**
 	 * The layers whose objects decals mark, as a 32-bit mask. An object that is also on another
 	 * layer draws again after the decals.
 	 */
@@ -1158,6 +1163,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFogSlices',
 	'setFogHalvings',
 	'setDebugView',
+	'setOverrideMaterial',
 	'setDecalLayers',
 	'initAnimations',
 	'animationStaging',
