@@ -13,6 +13,7 @@ export const COMMAND_SET_FLAGS = 9;
 export const COMMAND_SET_RENDER_ORDER = 10;
 export const COMMAND_SET_SKIN = 11;
 export const COMMAND_SET_MORPH = 12;
+export const COMMAND_SET_LEVEL_BIAS = 13;
 export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 

@@ -5,7 +5,7 @@
 //! source picks one level, or two inside a fading band. So the buckets of one level set hold about
 //! as many copies in all as the set has sources, however many levels it has. The build reserves a
 //! slice for every source of the set in every level's bucket, since any source may pick any
-//! level: a set of four fading levels takes eight times the copies that its sources need, in
+//! level: a set of four fading levels would take eight times the copies that its sources need, in
 //! every view.
 //!
 //! This module counts the copies that a frame's views place in each bucket, and gives each bucket
@@ -20,7 +20,7 @@
 //! table is one for all of them.
 
 use null3d_core::cells::CellPosition;
-use null3d_core::culling::NO_BUCKET;
+use null3d_core::culling::{NO_BUCKET, row_center};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::levels::{LevelRule, NO_LINK, Picked};
@@ -114,20 +114,16 @@ impl Layout {
         let spheres = scene.world(parity).spheres();
         let slots = scene.cells();
         let radii = scene.local_radii();
+        let biases = scene.level_biases();
         for source in 0..self.scene_rows as usize {
             let home = self.cull_buckets[source];
             if home == NO_BUCKET || self.marks[home as usize] == 0 {
                 continue;
             }
-            let cell = slots[source] as usize;
-            let offset = cells.get(cell).copied().unwrap_or([0.0; 4]);
-            let center = [
-                spheres.xs[source] + offset[0],
-                spheres.ys[source] + offset[1],
-                spheres.zs[source] + offset[2],
-            ];
+            let center = row_center(&spheres, slots[source], cells, source);
             let radius = spheres.radii[source];
-            self.count_source(counts, rule, home, center, radius, radii[source]);
+            let bias = biases[source];
+            self.count_source(counts, rule, home, center, radius, radii[source], bias);
         }
         for &(id, first) in &self.batch_bases {
             let Ok(batch) = batches.get(Handle::from_raw(id)) else {
@@ -143,21 +139,16 @@ impl Layout {
                 if home == NO_BUCKET || self.marks[home as usize] == 0 {
                     continue;
                 }
-                let cell = batch_cells[row] as usize;
-                let offset = cells.get(cell).copied().unwrap_or([0.0; 4]);
-                let center = [
-                    spheres.xs[row] + offset[0],
-                    spheres.ys[row] + offset[1],
-                    spheres.zs[row] + offset[2],
-                ];
-                self.count_source(counts, rule, home, center, spheres.radii[row], local);
+                let center = row_center(&spheres, batch_cells[row], cells, row);
+                self.count_source(counts, rule, home, center, spheres.radii[row], local, 1.0);
             }
         }
     }
 
     /// Counts one source's copies: the buckets of base bucket `home` that the rule may place it
     /// in, for a source whose world bounding sphere is at `center` relative to the camera, with
-    /// the world radius `radius` and the local radius `local`.
+    /// the world radius `radius`, the local radius `local` and the threshold `bias`.
+    #[allow(clippy::too_many_arguments)]
     fn count_source(
         &self,
         counts: &mut [u32],
@@ -166,6 +157,7 @@ impl Layout {
         center: [f32; 3],
         radius: f32,
         local: f32,
+        bias: f32,
     ) {
         // A sphere that covers all of space, and an object whose local radius is 0, have no scale
         // to read here. Its buckets hold the room for every level that it may pick.
@@ -190,7 +182,7 @@ impl Layout {
                     len += 1;
                 }
             };
-            match rule.pick(&self.level_links, home, scale, radius, near) {
+            match rule.pick(&self.level_links, home, scale, radius, near, bias) {
                 Picked::One(bucket) => keep(bucket),
                 Picked::Fade { new, old, .. } => {
                     keep(new);

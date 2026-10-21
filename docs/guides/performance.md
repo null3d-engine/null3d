@@ -126,6 +126,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 | `scene.overrideMaterial`, set or cleared | A rebuild. Every mesh of the main pass then shares the override's buckets, so the draw calls fall |
 | `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
+| `setLevelBias`, which changes the bucket that the object draws from | A rebuild |
 | `setOutlined`, and `post.set` with `outline` turned on or off | A rebuild |
 | `setMorphWeight` | The object's weights. On WebGPU, the skinning pass morphs the mesh again |
 | `post.set` that turns bloom or ambient occlusion on or off, and `post.addEffect` or `post.removeEffect` | New passes. The last image stays on screen while their pipelines build |
@@ -141,6 +142,7 @@ These habits keep play free of rebuilds:
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
 - Give bounds of your own with `setBounds` to few objects, and set them once: each call rebuilds the draw tables. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
+- Give a threshold bias with `setLevelBias` to few objects too, such as a hero object. On WebGPU, each object with a bias of its own takes a draw of its own.
 - Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). The places in the scene's object tables count toward it too, so batches hold at most the limit less those places. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 

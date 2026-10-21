@@ -4,6 +4,7 @@
 mod common;
 
 use common::{World, base_sphere, count};
+use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, permutation, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, LevelQuality};
@@ -238,7 +239,7 @@ fn ball_at(world: &mut World, distance: f32) {
 }
 
 #[test]
-fn a_meshs_levels_take_the_room_of_the_copy_that_draws_the_not_of_a_level_each() {
+fn a_meshs_levels_take_the_room_of_the_copy_that_draws_not_of_a_level_each() {
     let mut plain = World::new();
     plain.record(true);
     let without = copies(&plain);
@@ -325,4 +326,36 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
     assert_eq!(levels, rows * 64, "{levels}");
     assert_eq!(levels, plain, "{levels} {plain}");
     assert_eq!(8 * rows * 64, 20_480_000);
+}
+
+#[test]
+fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
+    let mut world = cpu_world();
+    let [fine, coarse] = give_levels(&mut world, false);
+    // Level 2 switches in past 15.6 m, so the ball whose nearest point lies 8.6 m away draws
+    // level 1.
+    let ball = world.objects[2];
+    world.scene.set_position(ball, [0.0, 0.0, 10.5]).unwrap();
+    world.record(true);
+    let drawn = draws(&world);
+    assert!(drawn.contains(&(indices_of(&world, fine), 1)), "{drawn:?}");
+    // A bias of 2 halves every switch distance, so the same ball draws its coarsest level at
+    // 7.8 m of nearest point.
+    world
+        .scene
+        .apply_commands(&[Command::set_level_bias(ball, 2.0)], world.frame)
+        .unwrap();
+    world.frame += 1;
+    world.record(true);
+    let drawn = draws(&world);
+    assert!(
+        drawn.contains(&(indices_of(&world, coarse), 1)),
+        "{drawn:?}"
+    );
+    assert!(
+        !drawn
+            .iter()
+            .any(|&(indices, _)| indices == indices_of(&world, fine)),
+        "{drawn:?}"
+    );
 }

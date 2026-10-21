@@ -5,14 +5,17 @@
 //! positions. Errors grow from level to level. A source draws the last level whose error passes:
 //!
 //! ```text
-//! level j draws while error[j] × scale × factor < distance
+//! level j draws while error[j] × scale × factor / bias < distance
 //! ```
 //!
 //! `scale` is the largest axis scale of the source's world matrix, and `distance` the distance from
 //! the view's camera to the nearest point of the source's bounding sphere, at least
 //! [`LEAST_DISTANCE`], or 1 for an orthographic camera, whose pixels do not shrink with distance.
 //! `factor` is the render height in pixels times the projection's `P[1][1]`, over twice the
-//! threshold in pixels. The base level's error is 0, so it always passes. The rule keeps no state,
+//! threshold in pixels. `bias` raises or lowers the source's own threshold, as Godot's `lod_bias`
+//! raises or lowers an object's: a bias above 1 makes every switch happen nearer, so the source
+//! draws coarser levels, and a bias below 1 keeps its detail. The bias divides the factor of the
+//! level rule and of the rule that hides a bound under the threshold, so both move together. The base level's error is 0, so it always passes. The rule keeps no state,
 //! so every view and both frame builders pick the same level for the same source: the job workers
 //! through [`LevelRule::pick`], and the GPU's culling shader by the same steps.
 //!
@@ -168,7 +171,8 @@ impl LevelRule {
 
     /// The buckets that a source of base bucket `home` draws, at `distance` with a world matrix of
     /// largest axis scale `scale` and a bounding sphere of world radius `radius`, given each
-    /// bucket's link in `links`.
+    /// bucket's link in `links`. `bias` raises the source's threshold above 1, for coarser levels,
+    /// or lowers it below 1, for finer ones.
     #[inline]
     pub fn pick(
         &self,
@@ -177,8 +181,10 @@ impl LevelRule {
         scale: f32,
         radius: f32,
         distance: f32,
+        bias: f32,
     ) -> Picked {
-        let reach = scale * self.factor;
+        let factor = self.factor / bias;
+        let reach = scale * factor;
         let mut before = home;
         let mut level = home;
         // A rule without a factor keeps every source at its base level.
@@ -206,7 +212,7 @@ impl LevelRule {
         // A bound that covers fewer pixels than the threshold draws nothing: the last level holds
         // no geometry. A mesh without levels has no such level. The band past the hide distance
         // thins the level out with the same dither, where the pipeline has a fading build.
-        let hide = 2.0 * radius * self.factor;
+        let hide = 2.0 * radius * factor;
         if self.on() && links[home as usize].has_next() && radius > 0.0 && hide < distance {
             if self.band > 0.0 && new != NO_LINK {
                 let t = (distance / hide - 1.0) / self.band;
@@ -268,14 +274,14 @@ mod tests {
         ];
         for (distance, level) in cases {
             assert_eq!(
-                rule.pick(&links, 0, 1.0, 0.5, distance),
+                rule.pick(&links, 0, 1.0, 0.5, distance, 1.0),
                 Picked::One(level),
                 "{distance}"
             );
         }
         // Twice the scale doubles every switch distance.
-        assert_eq!(rule.pick(&links, 0, 2.0, 0.5, 9.9), Picked::One(0));
-        assert_eq!(rule.pick(&links, 0, 2.0, 0.5, 10.1), Picked::One(1));
+        assert_eq!(rule.pick(&links, 0, 2.0, 0.5, 9.9, 1.0), Picked::One(0));
+        assert_eq!(rule.pick(&links, 0, 2.0, 0.5, 10.1, 1.0), Picked::One(1));
     }
 
     #[test]
@@ -298,9 +304,9 @@ mod tests {
         // Level 1 switches in at a nearest point of 5 m. A sphere of radius 4 m centred at 9 m
         // reaches 4 m, and one centred at 9.1 m reaches 5.1 m.
         let near = rule.distance([0.0, 0.0, -9.0], 4.0);
-        assert_eq!(rule.pick(&links, 0, 1.0, 4.0, near), Picked::One(0));
+        assert_eq!(rule.pick(&links, 0, 1.0, 4.0, near, 1.0), Picked::One(0));
         let far = rule.distance([0.0, 0.0, -9.1], 4.0);
-        assert_eq!(rule.pick(&links, 0, 1.0, 4.0, far), Picked::One(1));
+        assert_eq!(rule.pick(&links, 0, 1.0, 4.0, far, 1.0), Picked::One(1));
     }
 
     #[test]
@@ -309,9 +315,9 @@ mod tests {
         let full = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         let half = LevelRule::new(500.0, 1.0, false, 1.0, 0.0);
         let coarse = LevelRule::new(1000.0, 1.0, false, 2.0, 0.0);
-        assert_eq!(full.pick(&links, 0, 1.0, 0.5, 12.0), Picked::One(1));
-        assert_eq!(half.pick(&links, 0, 1.0, 0.5, 12.0), Picked::One(2));
-        assert_eq!(coarse.pick(&links, 0, 1.0, 0.5, 12.0), Picked::One(2));
+        assert_eq!(full.pick(&links, 0, 1.0, 0.5, 12.0, 1.0), Picked::One(1));
+        assert_eq!(half.pick(&links, 0, 1.0, 0.5, 12.0, 1.0), Picked::One(2));
+        assert_eq!(coarse.pick(&links, 0, 1.0, 0.5, 12.0, 1.0), Picked::One(2));
     }
 
     #[test]
@@ -326,7 +332,7 @@ mod tests {
         let cases = [(1.0, 0), (0.5, 1), (0.2, 2), (0.04, 3)];
         for (scale, level) in cases {
             assert_eq!(
-                rule.pick(&links, 0, scale, 1.0, distance),
+                rule.pick(&links, 0, scale, 1.0, distance, 1.0),
                 Picked::One(level),
                 "{scale}"
             );
@@ -334,11 +340,29 @@ mod tests {
     }
 
     #[test]
+    fn a_bias_moves_every_switch_and_the_hide_distance_together() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // Level 1 switches in past 5 m at a bias of 1: past 2.5 m at 2, and past 10 m at 0.5.
+        // Level 2 switches in past 20 m at a bias of 1, and past 10 m at 2.
+        assert_eq!(rule.pick(&links, 0, 1.0, 0.5, 12.0, 1.0), Picked::One(1));
+        assert_eq!(rule.pick(&links, 0, 1.0, 0.5, 12.0, 2.0), Picked::One(2));
+        assert_eq!(rule.pick(&links, 0, 1.0, 0.5, 25.0, 1.0), Picked::One(2));
+        // A bias below 1 keeps the detail that a hero object needs.
+        assert_eq!(rule.pick(&links, 0, 1.0, 0.5, 25.0, 0.5), Picked::One(1));
+        // A bound covers a pixel past 1,000 m at a bias of 1, so a bias of 2 hides it at 600 m.
+        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 600.0, 1.0), Picked::One(3));
+        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 600.0, 2.0), Picked::Hidden);
+        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 1_500.0, 1.0), Picked::Hidden);
+        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 1_500.0, 0.5), Picked::One(3));
+    }
+
+    #[test]
     fn a_rule_without_a_factor_draws_the_base_level() {
         let links = links([0.0, 0.01, 0.04, 0.2], true);
         let off = LevelRule::new(1000.0, 1.0, false, 0.0, FADE_BAND);
         assert!(!off.on());
-        assert_eq!(off.pick(&links, 0, 1.0, 1.0, 1e9), Picked::One(0));
+        assert_eq!(off.pick(&links, 0, 1.0, 1.0, 1e9, 1.0), Picked::One(0));
     }
 
     #[test]
@@ -350,28 +374,31 @@ mod tests {
         let band_end = switch_distance * (1.0 + FADE_BAND);
         let middle = (switch_distance + band_end) / 2.0;
         assert_eq!(
-            rule.pick(&links, 0, 1.0, 1.0, switch_distance - 0.1),
+            rule.pick(&links, 0, 1.0, 1.0, switch_distance - 0.1, 1.0),
             Picked::One(0)
         );
-        let Picked::Fade { new, old, t } = rule.pick(&links, 0, 1.0, 1.0, middle) else {
+        let Picked::Fade { new, old, t } = rule.pick(&links, 0, 1.0, 1.0, middle, 1.0) else {
             panic!("no fade in the band");
         };
         assert_eq!((new, old), (5, 4));
         assert!((t - 0.5).abs() < 1e-4);
         assert_eq!(
-            rule.pick(&links, 0, 1.0, 1.0, band_end + 0.01),
+            rule.pick(&links, 0, 1.0, 1.0, band_end + 0.01, 1.0),
             Picked::One(1)
         );
         // Level 2's band, past 20 m, fades from level 1.
-        let Picked::Fade { new, old, .. } = rule.pick(&links, 0, 1.0, 1.0, 20.5) else {
+        let Picked::Fade { new, old, .. } = rule.pick(&links, 0, 1.0, 1.0, 20.5, 1.0) else {
             panic!("no fade at 20.5 m");
         };
         assert_eq!((new, old), (6, 5));
         // Without fade buckets, or without a band, levels switch at once.
         let still = links_without_fades();
-        assert_eq!(rule.pick(&still, 0, 1.0, 1.0, 5.375), Picked::One(1));
+        assert_eq!(rule.pick(&still, 0, 1.0, 1.0, 5.375, 1.0), Picked::One(1));
         let no_band = LevelRule { band: 0.0, ..rule };
-        assert_eq!(no_band.pick(&links, 0, 1.0, 1.0, 5.375), Picked::One(1));
+        assert_eq!(
+            no_band.pick(&links, 0, 1.0, 1.0, 5.375, 1.0),
+            Picked::One(1)
+        );
         let (new, old) = fade_values(0.0);
         assert!(new > 0.0 && old == 0.0);
     }
@@ -384,7 +411,7 @@ mod tests {
     fn a_bucket_without_levels_draws_itself() {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND);
         let links = [LevelLink::NONE; 2];
-        assert_eq!(rule.pick(&links, 1, 1.0, 1.0, 1e9), Picked::One(1));
+        assert_eq!(rule.pick(&links, 1, 1.0, 1.0, 1e9, 1.0), Picked::One(1));
     }
 
     #[test]
@@ -392,12 +419,12 @@ mod tests {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         let links = links([0.0, 0.01, 0.04, 0.2], false);
         // A world diameter of 2 m covers 1,000 / distance pixels: one pixel at 1,000 m.
-        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 999.0), Picked::One(3));
-        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 1_001.0), Picked::Hidden);
+        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 999.0, 1.0), Picked::One(3));
+        assert_eq!(rule.pick(&links, 0, 1.0, 1.0, 1_001.0, 1.0), Picked::Hidden);
         // A bound of no radius has no size to test, and a mesh without levels has no hidden level.
-        assert_eq!(rule.pick(&links, 0, 1.0, 0.0, 1e9), Picked::One(3));
+        assert_eq!(rule.pick(&links, 0, 1.0, 0.0, 1e9, 1.0), Picked::One(3));
         let plain = [LevelLink::NONE; 2];
-        assert_eq!(rule.pick(&plain, 1, 1.0, 1.0, 1e9), Picked::One(1));
+        assert_eq!(rule.pick(&plain, 1, 1.0, 1.0, 1e9, 1.0), Picked::One(1));
     }
 
     #[test]
@@ -407,9 +434,9 @@ mod tests {
         let full = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         let low = LevelRule::new(1000.0, 1.0, false, 2.0, 0.0);
         let half = LevelRule::new(500.0, 1.0, false, 1.0, 0.0);
-        assert_eq!(full.pick(&links, 0, 1.0, 1.0, 501.0), Picked::One(3));
-        assert_eq!(low.pick(&links, 0, 1.0, 1.0, 501.0), Picked::Hidden);
-        assert_eq!(half.pick(&links, 0, 1.0, 1.0, 501.0), Picked::Hidden);
+        assert_eq!(full.pick(&links, 0, 1.0, 1.0, 501.0, 1.0), Picked::One(3));
+        assert_eq!(low.pick(&links, 0, 1.0, 1.0, 501.0, 1.0), Picked::Hidden);
+        assert_eq!(half.pick(&links, 0, 1.0, 1.0, 501.0, 1.0), Picked::Hidden);
     }
 
     #[test]
@@ -420,23 +447,23 @@ mod tests {
         // 1,000 m, and nothing past the band.
         let hide = 1_000.0;
         let middle = hide * (1.0 + FADE_BAND / 2.0);
-        let Picked::FadeOut { old, t } = rule.pick(&links, 0, 1.0, 1.0, middle) else {
+        let Picked::FadeOut { old, t } = rule.pick(&links, 0, 1.0, 1.0, middle, 1.0) else {
             panic!("no fade out in the band");
         };
         assert_eq!(old, 7);
         assert!((t - 0.5).abs() < 1e-4);
         assert_eq!(
-            rule.pick(&links, 0, 1.0, 1.0, hide * (1.0 + FADE_BAND) + 0.1),
+            rule.pick(&links, 0, 1.0, 1.0, hide * (1.0 + FADE_BAND) + 0.1, 1.0),
             Picked::Hidden
         );
         // Without a band or a fading build, the source hides at once.
         let no_band = LevelRule { band: 0.0, ..rule };
         assert_eq!(
-            no_band.pick(&links, 0, 1.0, 1.0, hide + 0.1),
+            no_band.pick(&links, 0, 1.0, 1.0, hide + 0.1, 1.0),
             Picked::Hidden
         );
         assert_eq!(
-            rule.pick(&links_without_fades(), 0, 1.0, 1.0, hide + 0.1),
+            rule.pick(&links_without_fades(), 0, 1.0, 1.0, hide + 0.1, 1.0),
             Picked::Hidden
         );
     }
@@ -449,7 +476,13 @@ mod tests {
         let distance = rule.distance([1e5, 0.0, 0.0], 0.005);
         // A diameter of 1 cm covers exactly one pixel, and 9.8 mm covers under it. The base level
         // draws at a scale of 1, where level 1's error covers exactly a pixel too.
-        assert_eq!(rule.pick(&links, 0, 1.0, 0.005, distance), Picked::One(0));
-        assert_eq!(rule.pick(&links, 0, 1.0, 0.0049, distance), Picked::Hidden);
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 0.005, distance, 1.0),
+            Picked::One(0)
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 0.0049, distance, 1.0),
+            Picked::Hidden
+        );
     }
 }
