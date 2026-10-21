@@ -31,6 +31,8 @@ const START_BITS: u32 = 23u;
 const MAX_PLANES: u32 = 32u;
 /// A tile rectangle that holds no tile.
 const NO_TILES: u32 = 0xffffffffu;
+/// Vectors of four values in one light record.
+const LIGHT_VECTORS: u32 = 5u;
 
 struct ClusterParams {
     /// Tiles across, tiles up, slices, and the lights of the light list.
@@ -52,7 +54,7 @@ struct ClusterParams {
 }
 
 @group(0) @binding(0) var<uniform> params: ClusterParams;
-/// The light list: four vectors per light, the first its position relative to the camera and its
+/// The light list: five vectors per light, the first its position relative to the camera and its
 /// range.
 @group(0) @binding(1) var<storage, read> lights: array<vec4f>;
 /// One word per cluster, then the light index list.
@@ -92,7 +94,7 @@ fn tile_span(first: u32, tiles: u32, center: vec3f, reach: f32) -> vec2u {
 /// The tiles of slice `slice` that light `light` reaches, packed as the bytes first column, last
 /// column, first row and last row, or NO_TILES.
 fn rect(light: u32, slice: u32) -> u32 {
-    let position_range = lights[light * 4u];
+    let position_range = lights[light * LIGHT_VECTORS];
     let p = position_range.xyz;
     let r = position_range.w;
     let row = params.depth_row;

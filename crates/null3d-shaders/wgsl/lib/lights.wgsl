@@ -10,6 +10,7 @@
 #import null3d::lighting::{direct_light}
 #endif
 #import null3d::mesh::{frame}
+#import null3d::tables::{IMAGE_LEVELS, IMAGE_SIZE, light_image}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{light_shadow}
 #endif
@@ -29,11 +30,11 @@
 // Two bindings of the frame's group hold the lists. The light grid at binding 7 holds one 32-bit
 // word per cluster, then the light index list. A cluster's word holds where its lights start in
 // the grid in its low START_BITS bits, and how many there are in the bits above. The light list at
-// binding 8 holds the lights, four vectors each. On WebGPU both are storage buffers that fragment
+// binding 8 holds the lights, five vectors each. On WebGPU both are storage buffers that fragment
 // shaders read. On WebGL2 (the WEBGL2 builds) both share one data texture of 32-bit integers at
-// binding 7, read with `textureLoad`, so they take one texture unit: the lights in the columns of
-// its first half, four texels each, and the grid in the columns of its second half, four words per
-// texel. The frame's `cluster_depth` and `cluster_grid` find a position's cluster.
+// binding 7, read with `textureLoad`, so they take one texture unit: the lights in the columns
+// from its first, five texels each, and the grid in the columns after them, four words per texel.
+// The frame's `cluster_depth` and `cluster_grid` find a position's cluster.
 
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
@@ -59,16 +60,21 @@ struct PointLight {
     /// which are for the engine, then its first tile in the shadow atlas plus one, or 0 when it
     /// has none.
     penumbra: vec4f,
+    /// The up axis that a spot light's image reads with, or zero for a light without one, then the
+    /// layer of the light's image in the light tables plus one, or 0 when it shows none.
+    up_image: vec4f,
 }
 
 #ifdef WEBGL2
-/// Lights per row of the light data texture are 1 << LIGHT_ROW_SHIFT, four texels each, from its
+/// Lights per row of the light data texture are 1 << LIGHT_ROW_SHIFT, five texels each, from its
 /// first column.
 const LIGHT_ROW_SHIFT: u32 = 8u;
+/// Texels of one light record: one per vector of four values.
+const LIGHT_TEXELS: u32 = 5u;
 /// Words of the light grid per row of the light data texture are 1 << WORD_ROW_SHIFT, four per
 /// texel, from column GRID_COLUMN.
-const WORD_ROW_SHIFT: u32 = 12u;
-const GRID_COLUMN: u32 = 1024u;
+const WORD_ROW_SHIFT: u32 = 11u;
+const GRID_COLUMN: u32 = 1280u;
 
 @group(0) @binding(7) var light_data: texture_2d<u32>;
 #else
@@ -91,12 +97,13 @@ fn grid_word(i: u32) -> u32 {
 fn light_of(i: u32) -> PointLight {
 #ifdef WEBGL2
     let row = (1u << LIGHT_ROW_SHIFT) - 1u;
-    let at = vec2u((i & row) * 4u, i >> LIGHT_ROW_SHIFT);
+    let at = vec2u((i & row) * LIGHT_TEXELS, i >> LIGHT_ROW_SHIFT);
     return PointLight(
         bitcast<vec4f>(textureLoad(light_data, at, 0)),
         bitcast<vec4f>(textureLoad(light_data, at + vec2u(1u, 0u), 0)),
         bitcast<vec4f>(textureLoad(light_data, at + vec2u(2u, 0u), 0)),
         bitcast<vec4f>(textureLoad(light_data, at + vec2u(3u, 0u), 0)),
+        bitcast<vec4f>(textureLoad(light_data, at + vec2u(4u, 0u), 0)),
     );
 #else
     return light_list[i];
@@ -129,8 +136,9 @@ fn area_light(
     if kind == KIND_TUBE {
         return tube_light(m, terms, normal, to_view, toward, along, across.x, color);
     }
-    // A rectangle light keeps its image's layer plus one where a spot light keeps its tile.
-    let image = i32(light.penumbra.w) - 1;
+    // A rectangle light keeps its image's layer plus one in the place of a spot light's up axis
+    // and image.
+    let image = i32(light.up_image.w) - 1;
     return rectangle_light(m, terms, normal, to_view, toward, along, across, color, image);
 }
 #endif
@@ -154,6 +162,43 @@ fn cluster_lights(relative: vec3f) -> vec2u {
     let cluster = (u32(slice) * tiles.y + u32(tile.y)) * tiles.x + u32(tile.x);
     let word = grid_word(cluster);
     return vec2u(word & ((1u << START_BITS) - 1u), word >> START_BITS);
+}
+
+/// The map that a spot light projects over its cone at a surface, as three.js's spot light map
+/// reads it: the map's color where the cone's square covers the surface, and white outside the
+/// square, where the light shows one color. `relative` is the surface's position relative to the
+/// camera, `normal` its unit normal, `to_view` the unit direction toward the camera, and
+/// `to_light` the unit direction from the surface toward the light. The light's record holds the
+/// map's layer in the light tables plus one and the up axis that it reads with.
+fn spot_map(
+    light: PointLight,
+    relative: vec3f,
+    normal: vec3f,
+    to_view: vec3f,
+    to_light: vec3f,
+) -> vec3f {
+    let forward = light.direction_cone.xyz;
+    let up = light.up_image.xyz;
+    let right = cross(forward, up);
+    let ray = -to_light;
+    let depth = dot(ray, forward);
+    let cone_cos = light.direction_cone.w;
+    // The half extent of the cone's square, where the map's edge lies, over the depth along the
+    // light: the tangent of the cone's half angle.
+    let stretch = sqrt(max(1.0 - cone_cos * cone_cos, 0.0)) / max(cone_cos, 1e-4);
+    let uv = 0.5 + 0.5 * vec2f(dot(ray, right), dot(ray, up)) / (max(depth, 1e-4) * stretch);
+    if (any(abs(uv * 2.0 - 1.0) >= vec2f(1.0))) {
+        return vec3f(1.0);
+    }
+    // The map's texel at the surface covers a share of the cone's square. The level follows the
+    // fragment's footprint on the surface against it: farther from the camera, and at a slant,
+    // the footprint covers more texels, and the map blurs.
+    let texel = 2.0 * depth * stretch / f32(IMAGE_SIZE);
+    let camera_distance = mix(1.0, length(relative), frame.camera_position.w);
+    let pixel = 2.0 * camera_distance / (frame.projection[0][0] * frame.target_size.x);
+    let footprint = pixel / max(abs(dot(normal, to_view)), 0.1);
+    let level = clamp(log2(max(footprint / texel, 1e-6)), 0.0, IMAGE_LEVELS - 1.0);
+    return light_image(i32(light.up_image.w) - 1, uv, level);
 }
 
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
@@ -224,6 +269,9 @@ fn clustered_light(
         }
 #endif
         var incoming = light.color_decay.rgb * strength;
+        if (light.up_image.w > 0.5) {
+            incoming *= spot_map(light, relative, normal, to_view, to_light);
+        }
 #ifdef COAT_SHEEN
         // The layers gather their light first, and the sheen keeps part of it from the base.
         incoming *= layered_light(normal, to_view, to_light, incoming);

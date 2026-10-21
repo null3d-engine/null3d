@@ -179,7 +179,7 @@ mod render_detail {
     pub const SKINNED_PAGES_FULL: u32 = 13;
     /// The second detail is the most views a frame builder draws, the camera's included.
     pub const TOO_MANY_VIEWS: u32 = 14;
-    /// The second detail is the most rectangle lights with images at once.
+    /// The second detail is the most lights with images at once.
     pub const LIGHT_IMAGES_FULL: u32 = 16;
     /// Levels of detail that a mesh cannot take; the second detail says why
     /// (`constants::level_problem`).
@@ -3118,7 +3118,8 @@ pub fn set_light_default(which: u32) -> u32 {
 // The area lights' two tables load on first use: TypeScript fetches them when the sketch makes its
 // first area light, writes their half floats at the address that `areaLightTables` gives, and
 // calls `finishAreaLightTables`. Area lights light frames from the next frame on. A rectangle
-// light's image goes the same way, through `areaLightImage` and `finishAreaLightImage`.
+// light's image, and the map that a spot light projects over its cone, go the same way, through
+// `lightImage` and `finishLightImage`.
 /// Makes room for the area lights' tables, and returns the address of their half floats.
 #[wasm_bindgen(js_name = areaLightTables)]
 pub fn area_light_tables() -> u32 {
@@ -3141,10 +3142,10 @@ pub fn finish_area_light_tables() -> u32 {
     })
 }
 
-/// Makes room for rectangle light `light`'s image, and returns the address of its half floats.
-/// Fails with E1501 when every place for an image is taken.
-#[wasm_bindgen(js_name = areaLightImage)]
-pub fn area_light_image(light: u32) -> u32 {
+/// Makes room for light `light`'s image, and returns the address of its half floats. Fails with
+/// E1501 when every place for an image is taken.
+#[wasm_bindgen(js_name = lightImage)]
+pub fn light_image(light: u32) -> u32 {
     value_with_engine(|e| {
         e.lights.object(light).map_err(core_failure)?;
         let tables = e.renderer.settings_mut().light_tables_mut();
@@ -3158,10 +3159,9 @@ pub fn area_light_image(light: u32) -> u32 {
     })
 }
 
-/// Marks rectangle light `light`'s image as written, so the next frame uploads it and the light
-/// shows it.
-#[wasm_bindgen(js_name = finishAreaLightImage)]
-pub fn finish_area_light_image(light: u32) -> u32 {
+/// Marks light `light`'s image as written, so the next frame uploads it and the light shows it.
+#[wasm_bindgen(js_name = finishLightImage)]
+pub fn finish_light_image(light: u32) -> u32 {
     with_engine(|e| {
         let probe_layers = e.renderer.settings().probes().probe_layers();
         let layer = e
@@ -3176,9 +3176,9 @@ pub fn finish_area_light_image(light: u32) -> u32 {
     })
 }
 
-/// Takes rectangle light `light`'s image away, so it lights with its color alone.
-#[wasm_bindgen(js_name = removeAreaLightImage)]
-pub fn remove_area_light_image(light: u32) -> u32 {
+/// Takes light `light`'s image away, so it lights with its color alone.
+#[wasm_bindgen(js_name = removeLightImage)]
+pub fn remove_light_image(light: u32) -> u32 {
     with_engine(|e| {
         e.renderer
             .settings_mut()

@@ -50,7 +50,7 @@
 //! # What the shaders read
 //!
 //! [`LightGrid::lights`] lists the lights in the order the index list numbers them, as the core's
-//! 64-byte [`VisibleLight`] records. [`LightGrid::words`] holds one 32-bit word per cluster, then
+//! 80-byte [`VisibleLight`] records. [`LightGrid::words`] holds one 32-bit word per cluster, then
 //! the index list. A cluster's word holds where its lights start in the words in its low
 //! [`START_BITS`] bits, and how many there are in the bits above. Clusters count across the tiles
 //! of a row first, then up the rows, then along the slices. [`GridUniform`] holds what a shader
@@ -1292,9 +1292,10 @@ mod tests {
                 "const LIGHT_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::LIGHTS_PER_TEXTURE_ROW)
             ),
+            format!("const LIGHT_TEXELS: u32 = {}u;", sizes::LIGHT_RECORD_TEXELS),
             format!(
                 "const GRID_COLUMN: u32 = {}u;",
-                sizes::LIGHTS_PER_TEXTURE_ROW * 4
+                sizes::LIGHTS_PER_TEXTURE_ROW * sizes::LIGHT_RECORD_TEXELS
             ),
         ] {
             assert!(lights.contains(&line), "lib/lights.wgsl lacks {line}");
@@ -1307,11 +1308,16 @@ mod tests {
 
     #[test]
     fn the_light_clustering_shader_reads_the_parameters_as_the_grid_writes_them() {
+        use null3d_gpu::drawlist::sizes;
         let shader = include_str!("../../null3d-shaders/wgsl/light_clusters.wgsl");
         for line in [
             format!("const WORKGROUP_SIZE: u32 = {GPU_WORKGROUP_SIZE}u;"),
             format!("const START_BITS: u32 = {START_BITS}u;"),
             format!("const MAX_PLANES: u32 = {GPU_MAX_PLANES}u;"),
+            format!(
+                "const LIGHT_VECTORS: u32 = {}u;",
+                sizes::LIGHT_RECORD_BYTES / 16
+            ),
             format!("bounds: array<vec4f, {}>,", GPU_MAX_SLICES / 2),
             "planes: array<vec4f, MAX_PLANES>,".to_owned(),
         ] {

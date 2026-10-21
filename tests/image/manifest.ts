@@ -1975,6 +1975,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height],
 	},
+	// A spot light that projects a picture over its cone: a gobo with a dark cross and border and
+	// colored squares, over a floor, a wall and a sphere in the beam. The map's colors tint the
+	// light, and its pattern shows the projection on both GPU paths and in compatibility mode.
+	{
+		name: 'spot-map',
+		sketch: 'tests/pages/sketches/spot-map-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
 	// test borrows its references.
