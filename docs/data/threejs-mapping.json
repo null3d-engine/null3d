@@ -1716,9 +1716,20 @@
       "status": "changed",
       "since": "0.1",
       "target": "The render scale: quality.set({ minRenderScale, maxRenderScale })",
-      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up with GSR 1, an edge-aware spatial upscaler, which fills FSR 1's role. It has no FSR 1 pass and no separate sharpening control.",
+      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up with GSR 1, an edge-aware spatial upscaler, which fills FSR 1's role. It has no FSR 1 pass. Sharpening is a setting of its own, post.set({ sharpen }), which draws at the whole canvas's render scale.",
       "docs": "api/quality",
       "detect": "\\bFSR1Node\\b|\\bfsr1\\s*\\("
+    },
+    {
+      "id": "sharpen",
+      "category": "Post-processing",
+      "three": "SharpenNode / sharpen() (RCAS)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ sharpen })",
+      "notes": "Both sharpen display color with FSR 1's RCAS in the final pass, so the port needs no render target and no pass of its own. three.js scales the sharpening by 2^-sharpness, where 0 sharpens the most and 2 does nothing: set sharpen to that factor, so three.js's default of 0.2 is sharpen: 0.87. null3D damps the sharpening where the ring around a pixel is noise, which three.js does only with denoise: true. It draws at the whole canvas's render scale; below one, the upscale sharpens the image itself.",
+      "docs": "api/post",
+      "detect": "\\bSharpenNode\\b|\\bsharpen\\s*\\("
     },
     {
       "id": "outline",

@@ -665,8 +665,8 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette` or
-	 * `setOutline`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette`,
+	 * `setSharpen` or `setOutline`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
@@ -745,6 +745,8 @@ export interface CoreGlue extends CoreErrors {
 	 * or off.
 	 */
 	setVignette(on: boolean): number;
+	/** Turns the sharpening on with the post-processing values' strength, or off. */
+	setSharpen(on: boolean): number;
 	/** Turns outlines on with the post-processing values' line colors and width, or off. */
 	setOutline(on: boolean): number;
 	/**
@@ -1156,6 +1158,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOcclusionBuffer',
 	'setLut',
 	'setVignette',
+	'setSharpen',
 	'environmentValues',
 	'setEnvironment',
 	'lightProbeValues',

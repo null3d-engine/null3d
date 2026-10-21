@@ -16,7 +16,7 @@ three.js builds post-processing from passes in an `EffectComposer`. null3D has t
 flowchart LR
     scene["Scene passes:<br/>linear HDR color,<br/>after the exposure"] --> effects["Custom effects:<br/>lowest order first,<br/>joined into few passes"]
     effects --> bloom["Bloom"]
-    bloom --> final["Final pass: vignette,<br/>tone curve, FXAA, sRGB,<br/>outlines, color grading,<br/>dithering"]
+    bloom --> final["Final pass: vignette,<br/>tone curve, FXAA, sRGB,<br/>outlines, color grading,<br/>sharpening, dithering"]
     effects --> final
     final --> canvas["Canvas"]
 ```
@@ -65,6 +65,7 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs in the final pass. |
 | `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA, SSAA or TAA. |
+| `SharpenNode`, the `sharpen()` node | `sharpen` | Both sharpen display color with FSR 1's RCAS in the final pass, so the port needs no render target and no pass of its own. three.js scales the sharpening by `2^-sharpness`, where 0 sharpens the most and 2 does nothing. Set `sharpen` to that factor, so three.js's default of 0.2 is `sharpen: 0.87`. null3D damps the sharpening where the ring around a pixel is noise, which three.js does only with `denoise: true`. |
 | `BokehPass` | `dof: { focusDistance: focus, aperture, maxBlur }` and `camera.setFocalLength(mm)` | `focus` becomes `focusDistance`. null3D's `aperture` is an f-number of a camera's lens, so pick one by eye, such as 2.8, with the camera's focal length. `maxblur` is a share of the canvas's width, and `maxBlur` of its height: multiply by the aspect ratio. null3D blurs the near and far fields apart, so sharp objects spread no halo. |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | A custom effect for each | Port each shader as a `ShaderPass`. |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. |

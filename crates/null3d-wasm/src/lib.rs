@@ -276,13 +276,14 @@ struct Engine {
 /// 2% of the image's height and round aperture, with no focus point, then the automatic
 /// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
 /// per second, range of 4 stops either way and no compensation, then screen-space reflections'
-/// full intensity, most distance of 100, thickness of 0.5 and most roughness of 0.5.
+/// full intensity, most distance of 100, thickness of 0.5 and most roughness of 0.5, then no
+/// sharpening.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
-        3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5,
+        3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -742,7 +743,7 @@ pub fn set_tone_curve(template: u32) -> u32 {
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
-/// before it calls `setOutput`, `setBloom`, `setLut`, `setVignette` or `setOutline`.
+/// before it calls `setOutput`, `setBloom`, `setLut`, `setVignette`, `setSharpen` or `setOutline`.
 #[wasm_bindgen(js_name = postValues)]
 pub fn post_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.post_values[..])))
@@ -3799,6 +3800,17 @@ pub fn set_vignette(on: bool) -> u32 {
             roundness: e.post_value(constants::post_value::VIGNETTE_ROUNDNESS),
         });
         e.renderer.settings_mut().set_vignette(vignette);
+        0
+    })
+}
+
+/// Turns the sharpening on with its strength from the post-processing values, or off, from the next
+/// frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setSharpen)]
+pub fn set_sharpen(on: bool) -> u32 {
+    with_engine(|e| {
+        let sharpen = on.then(|| e.post_value(constants::post_value::SHARPEN));
+        e.renderer.settings_mut().set_sharpen(sharpen);
         0
     })
 }

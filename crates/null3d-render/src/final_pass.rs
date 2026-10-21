@@ -4,9 +4,11 @@
 //! edges first. On the 8-bit path the scene shaders did the output transform, and the pass runs
 //! when the scene has one sample per pixel or the render scale can drop: it copies the scene color,
 //! or runs FXAA on it. Below the whole canvas's render scale, it scales the scene's corner of the
-//! scene color up to the canvas instead. With bloom (see [`crate::bloom`]), the pass draws with its
-//! bloom build, which blends the base level of bloom's chain into the scene color before the output
-//! transform. The vignette darkens HDR color before the output transform too. While objects are
+//! scene color up to the canvas instead. While the sketch sharpens, the second step sharpens the
+//! display color with RCAS, at the whole canvas's scale as well. With bloom (see
+//! [`crate::bloom`]), the pass draws with its bloom build, which blends the base level of bloom's
+//! chain into the scene color before the output transform. The vignette darkens HDR color before
+//! the output transform too. While objects are
 //! outlined, the pass paints the outline's line around them after the output transform (see
 //! [`crate::outline`]). Then it grades the canvas color with a color grading table while the sketch
 //! sets one (see [`crate::grading`]), and it dithers last. A custom tone curve takes the place of
@@ -32,8 +34,8 @@ use crate::output::{Antialias, Output, OutputUniform, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
 /// Bytes of the final pass's settings: the output settings, then the vignette's vector, the color
-/// grading table's two and the outline's two.
-const SETTINGS_BYTES: u32 = 96;
+/// grading table's two, the outline's two and the sharpening's one.
+const SETTINGS_BYTES: u32 = 112;
 /// The bindings of the color grading table and of its sampler in the final pass's group.
 const LUT_BINDING: u32 = 9;
 const LUT_SAMPLER_BINDING: u32 = 10;
@@ -59,6 +61,8 @@ struct FinalUniform {
     /// The outline's visible color and width, then its hidden color and whether it draws (see
     /// [`Outline::uniform`]).
     outline: [[f32; 4]; 2],
+    /// The sharpening's strength, then three spare values.
+    sharpen: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FinalUniform>() == SETTINGS_BYTES as usize);
@@ -483,6 +487,10 @@ impl FinalPass {
             }
             None => ids.blank_outline,
         };
+        if let Some(strength) = inputs.grading.sharpen {
+            settings.output.flags |= OutputUniform::SHARPEN;
+            settings.sharpen[0] = strength;
+        }
         let bound = Bound {
             scene_color: inputs.color,
             bloom: inputs.bloom,
@@ -901,6 +909,7 @@ mod tests {
                 falloff: 2.0,
                 roundness: 0.5,
             }),
+            sharpen: None,
         };
         let (_, settings, list) = prepared(format::CANVAS, Antialias::Msaa, grading);
         assert_eq!(
@@ -910,5 +919,23 @@ mod tests {
         assert_eq!(settings.vignette, [0.7, 1.2, 2.0, 0.5]);
         assert_eq!((settings.lut_scale, settings.lut_offset), (scale, offset));
         assert_eq!(bound_table(&list), 40);
+    }
+
+    #[test]
+    fn the_sharpening_sets_its_flag_and_its_strength() {
+        check_flag("SHARPEN", OutputUniform::SHARPEN);
+        let (_, settings, _) = prepared(
+            format::RGBA16_FLOAT,
+            Antialias::Msaa,
+            Grading {
+                sharpen: Some(0.5),
+                ..Grading::default()
+            },
+        );
+        assert_ne!(settings.output.flags & OutputUniform::SHARPEN, 0);
+        assert_eq!(settings.sharpen, [0.5, 0.0, 0.0, 0.0]);
+        let (_, settings, _) = prepared(format::RGBA16_FLOAT, Antialias::Msaa, Grading::default());
+        assert_eq!(settings.output.flags & OutputUniform::SHARPEN, 0);
+        assert_eq!(settings.sharpen, [0.0; 4]);
     }
 }

@@ -772,6 +772,9 @@ pub(crate) struct FrameGraph {
     /// True while the sketch sets a color grading table or the vignette, so the final pass runs to
     /// grade the image even where the scene could resolve into the canvas.
     grades: bool,
+    /// The sharpening's strength while the sketch turns it on, so the final pass runs to sharpen
+    /// the image even where the scene could resolve into the canvas.
+    sharpen: Option<f32>,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// True while some object is outlined.
@@ -1094,6 +1097,7 @@ impl FrameGraph {
             two_step_declared: false,
             two_step_built: false,
             grades: false,
+            sharpen: None,
             outline: None,
             outlined: false,
             outline_passes: Vec::new(),
@@ -1686,6 +1690,7 @@ impl FrameGraph {
         !self.resolves
             || self.scales
             || self.grades
+            || self.sharpen.is_some()
             || self.fullscreen_reads_color
             || self.outline_draws()
             || self.transmission_declared
@@ -1706,6 +1711,22 @@ impl FrameGraph {
         self.enable_outputs();
     }
 
+    /// Sharpens the canvas color at the whole canvas's render scale with `sharpen`, or turns the
+    /// sharpening off with `None`. The two-step pass draws at the whole canvas's scale while the
+    /// sketch sharpens, so turning it on or off declares the passes again, as a change of the
+    /// render scale's range does. Only the strength changes with neither.
+    pub(crate) fn set_sharpen(&mut self, sharpen: Option<f32>) {
+        if sharpen.is_some() != self.sharpen.is_some() {
+            // The declarations hold the two-step pass for the whole time the sketch sharpens, so a
+            // change declares them again. This is a sketch setting, never a frame loop's.
+            self.sharpen = sharpen;
+            self.redeclare();
+        } else {
+            self.sharpen = sharpen;
+        }
+        self.enable_outputs();
+    }
+
     /// Declares the passes again from the last views, for a change that only the declarations
     /// follow, such as the render scale's range changing. It allocates, so it stays off the frame
     /// loop: a frames' render scale changing must not declare anything again.
@@ -1719,12 +1740,14 @@ impl FrameGraph {
         }
     }
 
-    /// True when the frame draws the two-step pass: the render scale can drop below the whole
-    /// canvas, the frame draws below it, and the second step's pipeline is built. The declarations
-    /// hold the pass whenever the render scale can drop, so a crossing changes only this answer and
-    /// declares nothing again.
+    /// True when the frame draws the two-step pass: the pass is declared, the second step's
+    /// pipeline is built, and either the frame draws below the whole canvas's render scale or the
+    /// sketch sharpens, which reads the first step's display color at the whole scale too. A
+    /// crossing changes only this answer and declares nothing again.
     fn two_step_runs(&self) -> bool {
-        self.two_step_declared && self.two_step_built && self.scale != RenderScale::FULL
+        self.two_step_declared
+            && self.two_step_built
+            && (self.scale != RenderScale::FULL || self.sharpen.is_some())
     }
 
     /// Says whether the sketch sets a color grading table or the vignette. Where the scene could
@@ -2811,8 +2834,9 @@ impl FrameGraph {
         let resolve = self.add(resolve, Role::Resolve);
         // Below the whole canvas's render scale the final pass draws in two steps: the first step
         // draws the scene's display color at the render size into OUTPUT_COLOR, and the plain final
-        // pass then scales that up to the canvas.
-        self.two_step_declared = self.scales;
+        // pass then scales that up to the canvas. A sketch that sharpens draws the same two steps
+        // at the whole canvas's scale, where the second step sharpens the display color.
+        self.two_step_declared = self.scales || self.sharpen.is_some();
         let two_step = self.two_step_declared;
         let output = if two_step {
             [
@@ -3410,13 +3434,15 @@ impl FrameGraph {
     /// True when a still view of this frame may accumulate: the accumulation's steps are declared
     /// and built, the final pass takes the color to the canvas, and nothing between them changes
     /// from frame to frame on the GPU alone or draws over the color. Bloom, outlines, effects that
-    /// fold into the final pass, automatic exposure, the volumetric fog, screen-space reflections
-    /// and a canvas that keeps the scene's alpha each rule it out: the blend averages color alone.
+    /// fold into the final pass, automatic exposure, the volumetric fog, screen-space reflections,
+    /// the sharpening, which the second step applies to a moving frame, and a canvas that keeps the
+    /// scene's alpha each rule it out: the blend averages color alone.
     pub(crate) fn still_eligible(&self) -> bool {
         self.still_declared
             && self.still_built
             && !self.canvas_alpha
             && self.final_runs()
+            && self.sharpen.is_none()
             && !self.bloom_draws()
             && !self.outline_draws()
             && self.folded.is_none()
@@ -3647,10 +3673,11 @@ impl FrameGraph {
             pipelines.built(blend, pipelines_built)
                 && still.is_some_and(|id| pipelines.built(id, pipelines_built))
         };
-        // While the render scale can drop, the two steps ask for their pipelines before it first
-        // drops. The first step draws the final pass's builds, which are built with it, so the
+        // While the two steps are declared, they ask for their pipelines before a frame first
+        // draws them: a render scale below the whole canvas's, or the sharpening at the whole
+        // scale. The first step draws the final pass's builds, which are built with it, so the
         // second step's plain build alone decides when the two steps can draw.
-        self.two_step_built = self.scales && {
+        self.two_step_built = self.two_step_declared && {
             self.output_pass.request_pipeline(pipelines, wanted);
             let present = self.final_pass.request_present(pipelines);
             pipelines.built(present, pipelines_built)
@@ -3937,7 +3964,12 @@ impl FrameGraph {
             render_size,
             color: scene_color,
             bloom,
-            grading,
+            // The sharpening runs in the second step alone, which reads display color: a pass that
+            // read high dynamic range color would tone map each of the sharpening's taps.
+            grading: Grading {
+                sharpen: None,
+                ..grading
+            },
             outline,
             fold,
             exposure,
@@ -3965,13 +3997,14 @@ impl FrameGraph {
         // While the render scale can drop, every frame keeps the two steps' bind groups ready, so a
         // crossing of the whole canvas's scale makes no GPU object. The first step draws the display
         // color at the render size, with the bloom, and the second scales it up to the canvas, with
-        // the grading and the outline. The vignette darkens high dynamic range color in the first
-        // step and display color in the second.
+        // the grading, the sharpening and the outline. The vignette darkens high dynamic range color
+        // in the first step and display color in the second.
         let hdr = self.scene_color.is_hdr();
         let first = FinalInputs {
             grading: Grading {
                 vignette: grading.vignette.filter(|_| hdr),
                 lut: None,
+                sharpen: None,
             },
             outline: None,
             fold: None,
@@ -3987,6 +4020,7 @@ impl FrameGraph {
             grading: Grading {
                 vignette: grading.vignette.filter(|_| !hdr),
                 lut: grading.lut,
+                sharpen: grading.sharpen,
             },
             fold: None,
             exposure: None,
@@ -4817,8 +4851,8 @@ impl FrameGraph {
     fn draws(&self, role: Role) -> bool {
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
-            // The first step runs only below the whole canvas's scale; at the whole canvas the final
-            // pass reads the scene color as it always did.
+            // The first step runs below the whole canvas's scale, and at it while the sketch
+            // sharpens, which reads the display color that the step draws.
             (Role::Output | Role::OutputBloom, _) => self.two_step_runs() && !self.accumulate_on,
             // A still view draws its accumulated color in place of the final pass.
             (Role::Final | Role::FinalBloom, _) => !self.accumulate_on,
