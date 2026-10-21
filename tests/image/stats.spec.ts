@@ -134,6 +134,37 @@ for (const gpu of ['webgpu', 'webgl2'])
 		);
 	});
 
+test("the stats overlay shows an add-on feature's setting, budget, memory and GPU scope", async ({
+	page,
+}) => {
+	const result = await openStats(page, 'gpu=webgl2&preset=medium&feature');
+	const { feature } = result;
+	if (!feature) throw new Error('the page added no feature');
+	// The feature's own row names it, its one GPU scope, the preset's value of its setting, its
+	// budget and the memory that it reports.
+	expect(feature.added).toEqual({
+		samples: 22,
+		budgetMs: 4,
+		budgetScale: 1,
+		bytes: 1024 * 1024,
+		gpuMs: null,
+	});
+	expect(feature.before).toBe(
+		'test-glow  gpu not measured  samples 22  budget 4.0 of 4.0 ms  memory 1.0 MiB',
+	);
+	// Low sets the setting's lighter value and the budget's shorter time, and the overlay follows.
+	expect(feature.lowered).toEqual({
+		samples: 0,
+		budgetMs: 2,
+		budgetScale: 1,
+		bytes: 1024 * 1024,
+		gpuMs: null,
+	});
+	expect(feature.after).toBe(
+		'test-glow  gpu not measured  samples 0  budget 2.0 of 2.0 ms  memory 1.0 MiB',
+	);
+});
+
 test('the stats overlay leaves out the figures that the browser does not give, and its memory adds up', async ({
 	page,
 }) => {

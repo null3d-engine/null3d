@@ -184,6 +184,7 @@ The header stays in the corner when the card opens, and the card opens under it,
 | `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
 | Whole page | The memory of the whole page and its workers, as the browser counts it |
 | Counts | Draw calls, triangles and objects per frame |
+| `Add-ons` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. The section shows only while a feature reports figures |
 | Last line | The GPU path, the quality preset and the render scale |
 
 **The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
@@ -207,6 +208,8 @@ A bar stacks parts only where the parts add up to the time beside it. A thread's
 **The colors.** A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
 
 **Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
+
+**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget` or `memory` gets one row under the counts, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature's GPU scope reads `gpu not measured` until the engine records and times its work. [Add-on feature descriptions](features.md#stats) explains the figures.
 
 **Figures that the browser gives.** The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
 

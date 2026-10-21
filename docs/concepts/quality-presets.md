@@ -290,6 +290,10 @@ Phones slow down as they heat up, often after a few minutes of play. The governo
 
 `quality.governor` reports what the governor lowered, and the `quality.onChange` handlers run after each shadow step. So a sketch can lighten its own work at the same time: [Quality API](../api/quality.md#the-frame-budget-governor) shows how. `quality.set({ governor: false })` turns the governor off. The scene then draws at `maxRenderScale`, with the shadow settings as set, as a benchmark or a recorded video needs. Hold mode has no governor.
 
+### Settings of an add-on's feature
+
+An add-on's feature declares its own settings in the same form as the engine's table: a value on each preset, an optional WebGL2 column, and the values it takes. The feature's budget joins the sketch's budgets. A step of the budgets' scale then lowers the feature's share of full quality with the sketch's own systems. A setting that names a `governor` follows that share: a count shrinks with it, and an interval doubles with each step. The stats overlay shows the feature's values and its budget beside the engine's figures. [Add-on feature descriptions](../api/features.md#preset-settings-and-the-frame-budget-governor) shows how a feature declares them.
+
 ## Related pages
 
 - [Quality API](../api/quality.md): `ctx.quality`, its settings, `setPreset` and its errors.

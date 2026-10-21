@@ -10,7 +10,16 @@
 // that leaves the core uses it like any add-on (D-173, D-199).
 
 import { EngineError } from '../errors/engine-error';
-import type { QualityPreset, QualitySettings } from '../quality/presets';
+import { BUDGET_STEPS } from '../quality/governor';
+import {
+	describeValues,
+	presetIndex,
+	type QualityPreset,
+	type QualitySettings,
+	type SettingValues,
+	takesValue,
+} from '../quality/presets';
+import type { Tier } from '../shared/tier';
 
 /**
  * The point of a frame where a feature records its work, from the shadow passes to the display. A
@@ -77,6 +86,111 @@ export type FeatureNeutral = 'black' | 'white' | 'transparent';
  * @category api/features
  */
 export type FeatureReset = 'resize' | 'camera' | 'exposure';
+
+/**
+ * The value of a feature's own setting: a number, a word or a flag. The engine resolves the value
+ * from the setting's row for the preset, the GPU path and the governor's steps.
+ *
+ * @category api/features
+ */
+export type FeatureValue = number | string | boolean;
+
+/**
+ * What each of the frame-budget governor's steps does to a feature's setting.
+ *
+ * @category api/features
+ */
+export type FeatureGovernor = 'none' | 'scale' | 'double';
+
+/**
+ * One setting of a feature's own, with a value on each quality preset, like the engine's own rows
+ * of the quality table. The engine checks each preset value against `values`, resolves the row for
+ * the preset and the GPU path in use, and applies the governor's steps to it.
+ *
+ * @category api/features
+ */
+export interface FeatureSetting {
+	/** The value on each preset, from Low to Ultra. */
+	readonly presets: readonly [FeatureValue, FeatureValue, FeatureValue, FeatureValue];
+	/**
+	 * The value on each preset on WebGL2, from Low to Ultra, where WebGL2 differs. A preset without
+	 * a value here takes the row's own value.
+	 */
+	readonly webgl2?: readonly [FeatureValue, FeatureValue, FeatureValue, FeatureValue];
+	/**
+	 * The values the setting takes: `'flag'` for true or false, a list of choices, or a range from
+	 * a minimum to a maximum, where `whole` keeps it to whole numbers. The engine checks every
+	 * preset value against them.
+	 */
+	readonly values:
+		| 'flag'
+		| readonly (string | number)[]
+		| { readonly min: number; readonly max: number; readonly whole?: boolean };
+	/**
+	 * What each of the governor's budget steps does to the setting. `'scale'` takes the budget's
+	 * share of the value, for a count that costs its number. `'double'` multiplies the value by two
+	 * for each step taken, up to the highest value of its range, for an interval whose work happens
+	 * less often. `'none'` keeps the preset's value. It is `'none'` by default. A setting that the
+	 * governor steps needs the feature's `budget`, whose steps are what reach the setting.
+	 */
+	readonly governor?: FeatureGovernor;
+}
+
+/**
+ * A feature's time budget per frame, at full quality, on each quality preset. The frame-budget
+ * governor lowers the budget's share of full quality when frames take too long, and the feature
+ * reads that share to lighten its own work.
+ *
+ * @category api/features
+ */
+export interface FeatureBudget {
+	/** The time in ms that the feature may take in each frame at full quality, from Low to Ultra. */
+	readonly presets: readonly [number, number, number, number];
+	/**
+	 * The lowest share of full quality that the governor gives the feature, from 0 to 1. The
+	 * default is 0.
+	 */
+	readonly min?: number;
+}
+
+/**
+ * What a feature reads while its quality callback runs: its own settings, as the engine resolved
+ * them, and its budget's share of full quality after the governor's steps.
+ *
+ * @category api/features
+ */
+export interface FeatureQuality {
+	/** The feature's own settings for the preset and GPU path in use, by name. */
+	readonly settings: Readonly<Record<string, FeatureValue>>;
+	/** The budget's share of full quality, from 0 to 1, or 1 without a budget. */
+	readonly budgetScale: number;
+	/** The time in ms that the feature may take in each frame now, or 0 without a budget. */
+	readonly budgetMs: number;
+}
+
+/**
+ * One feature's figures, as the stats overlay shows them beside the engine's own. A feature that
+ * records frame work has one GPU timing scope, and `gpuMs` is that scope's time.
+ *
+ * @category api/features
+ */
+export interface FeatureStats {
+	/** The feature's name. */
+	readonly name: string;
+	/** The feature's own settings, as the engine resolved them now. */
+	readonly settings: Readonly<Record<string, FeatureValue>>;
+	/**
+	 * The GPU time per frame of the feature's scope, in ms, or null until the engine times a frame
+	 * that records the feature's work.
+	 */
+	readonly gpuMs: number | null;
+	/** The GPU bytes that the feature's own objects hold, or null where it reports none. */
+	readonly bytes: number | null;
+	/** The time in ms that the feature may take in each frame at full quality, or null without a budget. */
+	readonly budgetMs: number | null;
+	/** The time in ms that the feature may take in each frame now, or null without a budget. */
+	readonly allowedMs: number | null;
+}
 
 /**
  * The render size in device pixels, which the engine gives a feature when it changes.
@@ -167,10 +281,34 @@ export interface FeatureDescription {
 	 */
 	readonly ready?: () => boolean;
 	/**
-	 * Called when the preset or its settings change, with the preset and the settings in use. The
-	 * feature maps the engine's quality onto its own settings here.
+	 * The feature's own settings, by name, each with a value on every preset and the values it
+	 * takes. The engine resolves them for the preset and the GPU path in use, applies the governor's
+	 * steps, and gives them to the `quality` callback. Names are the feature's own: two features may
+	 * use the same name.
 	 */
-	readonly quality?: (preset: QualityPreset, settings: Readonly<QualitySettings>) => void;
+	readonly settings?: Readonly<Record<string, FeatureSetting>>;
+	/**
+	 * The feature's time budget per frame on each preset. The frame-budget governor lowers its share
+	 * of full quality with the sketch's other budgets, and the feature reads the share from its
+	 * `quality` callback. A feature that gives settings a `governor` needs a budget.
+	 */
+	readonly budget?: FeatureBudget;
+	/**
+	 * Returns the GPU bytes that the feature's own objects hold now, which the stats overlay shows
+	 * beside the engine's own memory. The engine calls it when a figure of the feature changes, never
+	 * in a frame.
+	 */
+	readonly memory?: () => number;
+	/**
+	 * Called when the preset or its settings change, with the preset and the settings in use, and
+	 * with the feature's own resolved settings and budget share. The feature maps the engine's
+	 * quality onto its own settings here.
+	 */
+	readonly quality?: (
+		preset: QualityPreset,
+		settings: Readonly<QualitySettings>,
+		feature: FeatureQuality,
+	) => void;
 	/** Called when the render size changes, after the engine takes the new size. */
 	readonly resize?: (size: FeatureSize) => void;
 	/** Called when the feature must drop the history that it keeps from earlier frames. */
@@ -250,14 +388,29 @@ const TAKES: ReadonlySet<string> = new Set([
 	'provides',
 	'views',
 	'ready',
+	'settings',
+	'budget',
+	'memory',
 	'quality',
 	'resize',
 	'reset',
 	'destroy',
 ]);
 
+/** The options of a feature's setting, which the check refuses when it meets another one. */
+const SETTING_TAKES: ReadonlySet<string> = new Set(['presets', 'webgl2', 'values', 'governor']);
+
+/** What the governor's steps do to a feature's setting. */
+const GOVERNORS: readonly FeatureGovernor[] = ['none', 'scale', 'double'];
+
+/** The keys of a range of values. */
+const RANGE_TAKES: ReadonlySet<string> = new Set(['min', 'max', 'whole']);
+
 /** The outputs of a feature that publishes none. */
 const NO_OUTPUTS: Readonly<Record<string, FeatureOutput>> = Object.freeze(Object.create(null));
+
+/** The settings of a feature that declares none. */
+const NO_SETTINGS: Readonly<Record<string, FeatureSetting>> = Object.freeze(Object.create(null));
 
 /** E1223 for a description that the engine cannot take. */
 function invalid(call: string, detail: string): EngineError {
@@ -376,6 +529,171 @@ function checkCallback(value: unknown, call: string, what: string): void {
 		throw invalid(call, `got a ${what} that is not a function.`);
 }
 
+/** The values that a feature's setting takes, or throws E1223. */
+function checkSettingValues(value: unknown, call: string, name: string): SettingValues {
+	const what = `values of the setting '${name}'`;
+	if (value === 'flag') return value;
+	if (Array.isArray(value)) {
+		if (value.length === 0)
+			throw invalid(call, `got ${what} as an empty list; give at least one choice.`);
+		for (const item of value)
+			if (typeof item !== 'number' && typeof item !== 'string')
+				throw invalid(
+					call,
+					`got ${JSON.stringify(item)} in ${what}; each choice is a number or a word.`,
+				);
+		return Object.freeze([...value]) as readonly (string | number)[];
+	}
+	if (typeof value === 'object' && value !== null) {
+		const range = value as Record<string, unknown>;
+		for (const key of Object.keys(range))
+			if (!RANGE_TAKES.has(key))
+				throw invalid(
+					call,
+					`got the option '${key}' in ${what}; a range takes ${choices([...RANGE_TAKES])}.`,
+				);
+		const { min, max } = range;
+		if (typeof min !== 'number' || typeof max !== 'number' || !(min <= max))
+			throw invalid(
+				call,
+				`got ${what} ${JSON.stringify(value)}; a range takes a minimum and a maximum, the minimum first.`,
+			);
+		const out: { min: number; max: number; whole?: boolean } = { min, max };
+		if (range.whole !== undefined) {
+			if (typeof range.whole !== 'boolean')
+				throw invalid(
+					call,
+					`got whole ${JSON.stringify(range.whole)} in ${what}; it is true or false.`,
+				);
+			out.whole = range.whole;
+		}
+		return Object.freeze(out);
+	}
+	throw invalid(
+		call,
+		`got ${what} ${JSON.stringify(value)}; it takes 'flag', a list of choices, or a range { min, max }.`,
+	);
+}
+
+/** The four values of a feature setting's row, or throws E1223. */
+function checkPresets(
+	value: unknown,
+	values: SettingValues,
+	call: string,
+	what: string,
+): readonly [FeatureValue, FeatureValue, FeatureValue, FeatureValue] {
+	if (!Array.isArray(value) || value.length !== 4)
+		throw invalid(
+			call,
+			`got ${what} ${JSON.stringify(value)}; it takes one value for each preset, from Low to Ultra: four values.`,
+		);
+	for (const item of value)
+		if (!takesValue(values, item))
+			throw invalid(
+				call,
+				`got the value ${JSON.stringify(item)} in ${what}, which is not ${describeValues(values)}.`,
+			);
+	return Object.freeze([...value]) as readonly [
+		FeatureValue,
+		FeatureValue,
+		FeatureValue,
+		FeatureValue,
+	];
+}
+
+/** The settings that `value` declares, each checked against its own values, or throws E1223. */
+function checkSettings(
+	value: unknown,
+	call: string,
+	hasBudget: boolean,
+): Readonly<Record<string, FeatureSetting>> {
+	if (value === undefined) return NO_SETTINGS;
+	if (typeof value !== 'object' || value === null || Array.isArray(value))
+		throw invalid(
+			call,
+			`got settings ${JSON.stringify(value)}; give an object of settings by name.`,
+		);
+	const out: Record<string, FeatureSetting> = Object.create(null);
+	for (const name of Object.keys(value)) {
+		checkName(name, call, 'setting name');
+		const row = (value as Record<string, unknown>)[name];
+		if (typeof row !== 'object' || row === null || Array.isArray(row))
+			throw invalid(
+				call,
+				`got ${JSON.stringify(row)} for the setting '${name}'; give it presets, values and a governor.`,
+			);
+		const unknown = Object.keys(row).find((key) => !SETTING_TAKES.has(key));
+		if (unknown !== undefined)
+			throw invalid(
+				call,
+				`got the option '${unknown}' for the setting '${name}'; a setting takes ${choices([...SETTING_TAKES])}.`,
+			);
+		const values = checkSettingValues((row as { values?: unknown }).values, call, name);
+		const presets = checkPresets(
+			(row as { presets?: unknown }).presets,
+			values,
+			call,
+			`presets of the setting '${name}'`,
+		);
+		const webgl2 = (row as { webgl2?: unknown }).webgl2;
+		const governor =
+			(row as { governor?: unknown }).governor === undefined
+				? 'none'
+				: checkOne(
+						(row as { governor?: unknown }).governor,
+						GOVERNORS,
+						call,
+						`governor of the setting '${name}'`,
+					);
+		if (governor !== 'none' && !hasBudget)
+			throw invalid(
+				call,
+				`got the governor '${governor}' for the setting '${name}' without a budget; the budget's steps are what reach a setting. Give the feature a budget.`,
+			);
+		out[name] = Object.freeze({
+			presets,
+			values,
+			governor,
+			...(webgl2 === undefined
+				? {}
+				: {
+						webgl2: checkPresets(webgl2, values, call, `WebGL2 presets of the setting '${name}'`),
+					}),
+		});
+	}
+	return Object.freeze(out);
+}
+
+/** The budget that `value` declares, or throws E1223. */
+function checkBudget(value: unknown, call: string): FeatureBudget | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== 'object' || value === null || Array.isArray(value))
+		throw invalid(call, `got the budget ${JSON.stringify(value)}; give it presets and a minimum.`);
+	const budget = value as { presets?: unknown; min?: unknown; [key: string]: unknown };
+	const unknown = Object.keys(budget).find((key) => key !== 'presets' && key !== 'min');
+	if (unknown !== undefined)
+		throw invalid(call, `got the budget option '${unknown}'; a budget takes presets and min.`);
+	const presets = budget.presets;
+	if (!Array.isArray(presets) || presets.length !== 4)
+		throw invalid(
+			call,
+			`got the budget's presets ${JSON.stringify(presets)}; give the time in ms at full quality on each preset, from Low to Ultra: four values.`,
+		);
+	for (const ms of presets)
+		if (typeof ms !== 'number' || !(ms > 0) || !Number.isFinite(ms))
+			throw invalid(
+				call,
+				`got the budget's time ${JSON.stringify(ms)}; give a number of ms above 0 on each preset.`,
+			);
+	const min = budget.min ?? 0;
+	if (typeof min !== 'number' || !(min >= 0 && min <= 1))
+		throw invalid(call, `got the budget's min ${JSON.stringify(min)}; give a number from 0 to 1.`);
+	return Object.freeze({
+		presets: Object.freeze([...presets]) as unknown as readonly [number, number, number, number],
+		min,
+	});
+}
+
 /**
  * A checked description with its defaults filled. The public type keeps the options optional, but
  * a registered feature always holds a value for each one.
@@ -388,6 +706,7 @@ type NormalizedFeature = FeatureDescription & {
 	readonly outputs: Readonly<Record<string, FeatureOutput>>;
 	readonly provides: readonly FeatureSlot[];
 	readonly views: readonly FeatureView[];
+	readonly settings: Readonly<Record<string, FeatureSetting>>;
 };
 
 /**
@@ -417,8 +736,11 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
 	const provides = checkList(description.provides, SLOTS, call, 'slot', 'provides');
 	const views = checkList(description.views, VIEWS, call, 'view', 'views');
 	const outputs = checkOutputs(description.outputs, call);
+	const budget = checkBudget(description.budget, call);
+	const settings = checkSettings(description.settings, call, budget !== undefined);
 	checkCallback(description.ready, call, 'ready');
 	checkCallback(description.quality, call, 'quality');
+	checkCallback(description.memory, call, 'memory');
 	checkCallback(description.resize, call, 'resize');
 	checkCallback(description.reset, call, 'reset');
 	checkCallback(description.destroy, call, 'destroy');
@@ -471,8 +793,11 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
 		writes,
 		outputs,
 		provides,
+		settings,
+		...(budget === undefined ? {} : { budget }),
 		...(description.ready === undefined ? {} : { ready: description.ready }),
 		...(description.quality === undefined ? {} : { quality: description.quality }),
+		...(description.memory === undefined ? {} : { memory: description.memory }),
 		...(description.resize === undefined ? {} : { resize: description.resize }),
 		...(description.reset === undefined ? {} : { reset: description.reset }),
 		...(description.destroy === undefined ? {} : { destroy: description.destroy }),
@@ -497,12 +822,59 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
  *
  * Throws E1223 for an option that a description does not take, a name that is empty or longer than
  * 64 characters, a frame point or kind that does not exist or does not go together, an order
- * outside its band, an unknown resource, slot or view, or an output with no neutral default.
+ * outside its band, an unknown resource, slot or view, an output with no neutral default, a setting
+ * with a value outside its own range or a governor without a budget, or a budget whose presets are
+ * not four times above 0.
  *
  * @category api/features
  */
 export function defineFeature(description: FeatureDescription): FeatureDescription {
 	return normalize(description, 'defineFeature');
+}
+
+/** True when a setting's values are whole numbers, which a scaled value rounds to. */
+function wholeValues(values: SettingValues): boolean {
+	if (values === 'flag') return false;
+	if (!('min' in values)) return values.every((value) => Number.isInteger(value));
+	return values.whole === true;
+}
+
+/**
+ * The value of a feature's setting on `preset` and the GPU path `tier`, before the governor's
+ * steps: the row's WebGL2 value where WebGL2 gives one, and the row's own value otherwise.
+ */
+export function featureSettingValue(
+	setting: FeatureSetting,
+	preset: QualityPreset,
+	tier?: Tier,
+): FeatureValue {
+	const values = (tier === 'webgl2' && setting.webgl2) || setting.presets;
+	return values[presetIndex(preset)] as FeatureValue;
+}
+
+/**
+ * The value that `setting` gives while the governor's budget scale is `scale`, from `base`, the
+ * value of the preset in use. A `'scale'` setting takes the budget's share of its value, which
+ * costs that share of the work, and rounds where its values are whole numbers. A `'double'`
+ * setting doubles its value for each step taken, up to the highest value of its range. Any other
+ * setting keeps its value.
+ */
+export function governedValue(
+	setting: FeatureSetting,
+	base: FeatureValue,
+	scale: number,
+): FeatureValue {
+	if (setting.governor === undefined || setting.governor === 'none') return base;
+	if (typeof base !== 'number' || scale >= 1) return base;
+	const steps = Math.round((1 - scale) * BUDGET_STEPS);
+	if (setting.governor === 'scale') {
+		const scaled = base * scale;
+		return wholeValues(setting.values) ? Math.round(scaled) : scaled;
+	}
+	const doubled = base * 2 ** steps;
+	const { values } = setting;
+	if (typeof values !== 'string' && 'min' in values) return Math.min(values.max, doubled);
+	return doubled;
 }
 
 /**
