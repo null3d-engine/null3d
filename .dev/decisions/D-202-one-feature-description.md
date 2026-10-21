@@ -173,3 +173,41 @@ M3-E1 builds H3's adapter, `scene.addFeatureDraw(description, options)`. It take
 - **The band and order become the object's render order.** Blended objects sort lower first, so a band shifts the order by two million places. Opaque draws keep the engine's own order, and the docs say so, because the depth test decides what shows.
 - **The adapter places the main view alone.** A scene or reflection pass would need per-view object lists that the adapter does not have. A description with another view throws E1223 rather than drawing in the main view alone with no warning. The shape already allows the mask to grow when an adapter can honour it.
 - **Splats' core draw is still ahead.** The first test user is a point cloud, which the adapter draws from its vertices. A splat scene's compact buffer, its per-frame order and its dynamic count need M3-E2's sort and M3-E9's GPU-written count. The H3 hook is the shape those tasks extend, not a replacement for them.
+
+## Addendum, 21 October 2026: the preset and stats link
+
+Task M3-E6. [D-173](D-173-addon-hooks.md#4-shared-budgets-and-names-for-add-ons) asked for two links that the shape did not carry. An add-on declares its settings per preset, and the governor's steps reach them. The stats overlay shows each add-on's GPU time and memory. Its first users are the Gaussian splats' budget and the water add-on's reflection cadence.
+
+### The problem
+
+The `quality` callback gave a feature the preset and the engine's settings, so an add-on could hard-code its own table inside the callback. That gives three faults:
+
+- The values are unchecked. A preset's value outside its range reaches the feature and breaks its shader or its sort.
+- The WebGL2 column, which the engine's table gives every row that needs one, would be copied by hand.
+- The governor cannot reach the values. A feature that costs too much has no step that lowers it, and the renderer measures one frame cost for the whole page.
+
+The stats have the same gap. `FrameStats` reports the engine's threads, passes and memory, but an add-on's cost is invisible. Its code runs inside the sketch's `update` phase, and its GPU objects count with the engine's buffers.
+
+### The rule
+
+- A feature declares `settings`, each a row with `presets`, an optional `webgl2`, `values` and a `governor` word. The checks are the engine's own: every preset value must be one that `values` takes, and the range shape is checked.
+- A feature declares `budget`, its time per frame at full quality on each preset and a `min` share.
+- `FeatureHost` takes the sketch's `quality` and GPU path. It resolves the rows for the preset and the tier in use, and it registers the budget with the sketch's `GameBudgets`. The budgets' shared scale is the governor's link: a budget's step comes before a render scale step, as it does for the sketch's own systems.
+- A setting with `governor: 'scale'` takes the budget's share of its value and rounds where its values are whole. A setting with `governor: 'double'` doubles its value for each budget step, up to its range's highest value. A setting with `governor` needs a budget, which `defineFeature` checks.
+- The `quality` callback gets a third argument: the feature's resolved settings and its budget's share and time. The callback runs when the feature is added and again when a change moves one of those values.
+- `FeatureStats` holds the feature's name, settings, GPU time, memory, budget at full quality and budget now. The host sends them to the page as a `null3d:feature-stats` sketch message whenever a figure changes, and the page's overlay shows one row per feature.
+- A feature's `memory` callback returns the GPU bytes that its own objects hold. The engine calls it when a figure changes, never in a frame.
+- A feature has one GPU timing scope, named by the feature's `name`. The engine fills it when it records the feature's frame work (M3-E1's adapter). Until then the row reads `gpu not measured`.
+
+### Options rejected
+
+- **A second quality table for add-ons in `QualitySettings`.** The type is the sketch's own settings, and the engine's own table gives every row a value for every preset. An add-on's row would need a matching member, and a preset change would have to walk two tables.
+- **New steps in the governor's `LEVELS` and step order.** The budgets' scale already has the order that D-173's ruling asks for: a feature scales down before the render scale reaches its floor. A per-feature step would add a trial, a wait and a level to the governor for each add-on.
+- **A feature's figures in the metrics buffer's header.** It has fixed slots, one per named figure, which the overlay names. Feature names are dynamic, up to 64 characters, and the buffer is shared with the job workers. The sketch message carries the names as they are and costs nothing while no figure changes.
+- **The add-on reporting its own GPU time.** A page could then print a figure that no engine thread measured. The scope belongs to the engine's timer or it does not exist.
+- **Memory attributed by the engine.** The GPU layer counts buffers and textures as one pool. Splitting that by feature needs ownership on every GPU object, which is M3-D6's namespace work, not this hook.
+
+### Tests
+
+- `packages/engine/src/scene/feature-host.test.ts` writes one feature with a `'scale'` setting, a `'double'` setting, a budget and a memory figure. It checks the value on each preset and the WebGL2 column. It checks the quality callback's arguments and a budget step's effect on both words. It also checks the budget's time on a new preset, the range's cap, the figures, and the removal of a feature and its budget.
+- `tests/image/stats.spec.ts` opens the stats page with `feature`: the sketch adds the feature, and the overlay shows its row with the preset's value, its budget and its memory. A switch to Low moves both, and the row follows.

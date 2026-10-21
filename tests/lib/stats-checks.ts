@@ -97,7 +97,30 @@ export type StatsResult = {
 	figures: StatsFigures | null;
 	/** The instance rows and shadow map that `?instances=` added, or null without them. */
 	instances: StatsInstances | null;
+	/** The test feature's figures that `?feature` added, or null without it. */
+	feature: StatsFeatureResult | null;
 };
+
+/** What the sketch resolved for the test feature on one preset. */
+export interface StatsFeatureReading {
+	/** The feature's `samples` setting, which the preset sets. */
+	samples: number;
+	/** The feature's budget at full quality, and its share after the governor's steps, in ms. */
+	budgetMs: number;
+	budgetScale: number;
+	/** The GPU bytes that the feature reports, and its GPU time, which no scope times yet. */
+	bytes: number | null;
+	gpuMs: number | null;
+}
+
+/** The test feature's figures on the page's preset, and after a change to Low. */
+export interface StatsFeatureResult {
+	added: StatsFeatureReading;
+	lowered: StatsFeatureReading;
+	/** The overlay's row for the feature on each preset. */
+	before: string;
+	after: string;
+}
 
 /** The threads that a mode's figures name, as `engine.measure` names them. */
 export function statsThreads(mode: StatsResult['mode']): string[] {

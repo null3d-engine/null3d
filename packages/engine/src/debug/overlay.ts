@@ -13,6 +13,7 @@
 // holds its look.
 
 import type { EngineMode } from '../page/engine';
+import type { FeatureStats } from '../scene/features';
 import { refreshRate, sampleFrames } from '../shared/metrics';
 import type { FrameMode } from './overlay-look';
 import { PageMemorySampler, pageHeapBytes } from './page-meters';
@@ -41,6 +42,8 @@ export interface OverlaySetup {
 	gpuFeatures: readonly string[];
 	/** The threads that run the sketch and draw, as `engine.mode` gives them. */
 	mode: Pick<EngineMode, 'latency' | 'sketchThread' | 'renderThread'>;
+	/** The add-on features' figures, as the sketch last reported them. */
+	features?: () => readonly FeatureStats[];
 }
 
 /** How often the overlay reads new figures and follows the canvas. */
@@ -53,8 +56,13 @@ export interface PageFigures {
 }
 
 /** The overlay's figures: the engine's frame figures, with the page's own. */
-export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigures {
+export function overlayFigures(
+	stats: FrameStats,
+	page: PageFigures,
+	features: readonly FeatureStats[] = [],
+): StatsFigures {
 	return {
+		features,
 		heading: `${stats.tier}  ${stats.preset}  scale ${stats.renderScale.toFixed(2)}`,
 		frames: stats.frames,
 		presentedFps: stats.presentedFps,
@@ -156,10 +164,11 @@ export class StatsOverlay {
 	}
 
 	private updateCard(): void {
-		const figures: StatsFigures = overlayFigures(this.window.stats, {
-			jsHeapBytes: pageHeapBytes(),
-			page: this.pageMemory.page,
-		});
+		const figures: StatsFigures = overlayFigures(
+			this.window.stats,
+			{ jsHeapBytes: pageHeapBytes(), page: this.pageMemory.page },
+			this.setup.features?.(),
+		);
 		this.panel.update(figures, {
 			refreshHz: this.refreshHz(),
 			maxTargetFps: this.setup.maxTargetFps,

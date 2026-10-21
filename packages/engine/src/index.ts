@@ -114,17 +114,25 @@ export type {
 	EnvironmentOptions,
 } from './scene/environment';
 export type { FeatureDraw, FeatureDrawOptions, FeatureDrawVertices } from './scene/feature-draws';
+export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
+export { FeatureHost } from './scene/feature-host';
 export type {
 	FeatureBand,
+	FeatureBudget,
 	FeatureDescription,
 	FeatureFrame,
+	FeatureGovernor,
 	FeatureKind,
 	FeatureNeutral,
 	FeatureOutput,
+	FeatureQuality,
 	FeatureReset,
 	FeatureResource,
+	FeatureSetting,
 	FeatureSize,
 	FeatureSlot,
+	FeatureStats,
+	FeatureValue,
 	FeatureView,
 } from './scene/features';
 export { defineFeature, FeatureRegistry } from './scene/features';
