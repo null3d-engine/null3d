@@ -1,4 +1,4 @@
-# D-204: Add-on version checks and the upgrade command
+# D-207: Add-on version checks and the upgrade command
 
 Status: decided. Date: 2026-10-21. Task: M3-D2. This record gives the shape of the run-time version check that [D-173](D-173-addon-hooks.md) ruling 13 requires of each foundation add-on. It also gives the shape of the command that brings a project's null3D packages back to one version.
 
