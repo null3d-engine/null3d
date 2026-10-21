@@ -135,8 +135,8 @@ const STUDIO_KEY = [0.45, -0.75, -0.5] as const;
 const STUDIO_FOG = [0.05, 0.05, 0.055] as const;
 /** How thick the studio's fog is. */
 const STUDIO_FOG_DENSITY = 0.012;
-/** How many minutes a whole day takes in Auto, unless a scene says otherwise. */
-const MINUTES_PER_DAY = 4;
+/** How many minutes a whole day takes in Auto, unless a scene says otherwise: 80 seconds. */
+const MINUTES_PER_DAY = 4 / 3;
 /** Seconds for a value to settle most of the way to its target: a fast, smooth ease. */
 const EASE = 0.14;
 /** How close a value must be to its target before the look counts as settled, in size. */
@@ -188,7 +188,7 @@ export interface StageOptions {
 	cloudCoverage: number;
 	/** A factor of the fog's density in some moods, such as a haze at golden hour. */
 	haze?: Partial<Record<FixedMood, number>>;
-	/** The minutes a whole day takes in Auto. The default is 4. */
+	/** The minutes a whole day takes in Auto. The default is 4/3, a day in 80 seconds. */
 	minutesPerDay?: number;
 	/** The plain background color, in linear RGB, that shows while the sky is off. */
 	backdrop: readonly [number, number, number];

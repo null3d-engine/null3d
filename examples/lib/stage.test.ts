@@ -205,7 +205,7 @@ test('Auto carries on from the hour on show, so turning it on never jumps the sk
 	stage.set('Auto');
 	expect(stage.hours).toBeCloseTo(7.05, 3);
 	frames(60);
-	// A whole day takes four minutes of Auto, so a second moves the hour on about six minutes from
+	// A whole day takes 80 seconds of Auto, so a second moves the hour on about 18 minutes from
 	// where it started, never hours away.
 	expect(stage.hours).toBeGreaterThan(7.05);
 	expect(stage.hours).toBeLessThan(8);
