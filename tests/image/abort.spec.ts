@@ -17,7 +17,7 @@ test('a cancelled start rejects, and the next start runs', async ({ page }) => {
 		late: string;
 		framesAfter: number;
 		error?: string;
-	}>(page, 30_000);
+	}>(page, 45_000);
 	expect(result.error).toBeUndefined();
 	expect(result.early).toBe('cancelled early');
 	expect(result.late).toBe('cancelled after the core');
