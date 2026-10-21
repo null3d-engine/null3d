@@ -13,6 +13,9 @@ import {
 /** The presets that depth of field's real setting draws on. */
 const PRESETS: readonly QualityPreset[] = ['low', 'medium', 'high', 'ultra'];
 
+/** What a feature's quality callback reads when the test calls it: no own settings or budget. */
+const own = () => ({ settings: {}, budgetScale: 1, budgetMs: 0 }) as const;
+
 /** A minimal description of a feature that records in the opaque pass. */
 function minimal(overrides: Partial<FeatureDescription> = {}): FeatureDescription {
 	return defineFeature({
@@ -214,12 +217,12 @@ describe('a real built-in feature', () => {
 		expect(feature.ready?.()).toBe(false);
 		on = true;
 		for (const preset of PRESETS) {
-			feature.quality?.(preset, presetSettings(preset));
+			feature.quality?.(preset, presetSettings(preset), own());
 			expect(samples).toBe(QUALITY_SETTINGS.dofSamples.presets[PRESETS.indexOf(preset)] ?? -1);
 			expect(feature.ready?.()).toBe(samples > 0);
 		}
 		// The real preset table draws none on Low.
-		feature.quality?.('low', presetSettings('low'));
+		feature.quality?.('low', presetSettings('low'), own());
 		expect(samples).toBe(0);
 		expect(feature.ready?.()).toBe(false);
 
