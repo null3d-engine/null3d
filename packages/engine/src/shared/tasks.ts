@@ -1,5 +1,7 @@
 // The on-demand loader: one way to load WebAssembly and code that a page needs only on first use,
-// for the engine's own decoders and for add-ons alike. It runs in the thread that runs the sketch.
+// for the engine's own decoders and for add-ons alike. It runs in the thread that runs the sketch,
+// and an add-on declares its tasks through the public runTask (shared/run-task.ts), which loads
+// this module on first use.
 //
 // It compiles each WebAssembly module once per page with WebAssembly.compileStreaming, and posts
 // the compiled module to each worker that runs it, which only instantiates it. Tasks run in the
@@ -11,9 +13,11 @@
 // loader too (scene/gltf.ts). When the engine on this thread stops, the loader stops its task
 // worker and fails the tasks that wait, and the next engine's tasks start afresh.
 
-import type { TaskAnswer, TaskRequest, TaskStage } from '../workers/tasks';
+import type { TaskAnswer, TaskRequest } from '../workers/tasks';
 import { onEngineStop } from './helper-workers';
+import { TaskFailure } from './task-failure';
 import { type JobTaskHost, jobTasks, taskTakers } from './task-host';
+import { moduleKey } from './task-modules';
 import { compileWasm, type WasmError } from './wasm';
 import { bootstrapFailure, spawnWorker } from './worker-start';
 
@@ -27,37 +31,40 @@ const ANNOUNCE_WAIT_MS = 10_000;
 /** How often it looks for the page's word while it waits, in ms. */
 const ANNOUNCE_POLL_MS = 4;
 
-/** A WebAssembly file that loads on first use. */
+/**
+ * A WebAssembly file that a task runs. The engine compiles it once per page and sends the compiled
+ * module to each worker that runs the task, which instantiates it there.
+ *
+ * @category api/tasks
+ */
 export interface WasmFile {
-	/** The name that the module goes by in the workers. */
+	/** The name that the module goes by in the task's `run`, and in error messages. */
 	name: string;
 	/** The file's address, written as `new URL('<file>', import.meta.url)` so bundlers ship it. */
 	url: URL;
-	/** What the file is, as error messages name it, such as "the KTX2 transcoder". */
+	/** What the file is, as error messages name it, such as "the splat sorter". */
 	what: string;
 }
 
-/** A task that runs in the job workers. */
-export interface Task {
-	/** The engine task's name, or an add-on's name for its task. */
-	name: string;
-	/** The address of an add-on task's module; the engine's own tasks have none. */
-	script?: URL;
-	/** The WebAssembly files that the task's module runs. */
-	wasm?: readonly WasmFile[];
-}
-
 /**
- * A task that failed in its worker, loading its code or WebAssembly or running on its input, or
- * that still waited when the engine stopped.
+ * Work that runs in a job worker, beside the frames.
+ *
+ * @category api/tasks
  */
-export class TaskFailure extends Error {
-	constructor(
-		readonly stage: TaskStage | 'stopped',
-		message: string,
-	) {
-		super(message);
-	}
+export interface Task {
+	/**
+	 * The task's name. The engine's own tasks have names of their own, so give an add-on's task
+	 * another one.
+	 */
+	name: string;
+	/**
+	 * The address of the task's module, written as `new URL('<file>', import.meta.url)` so bundlers
+	 * ship it. The module exports `run`, which the worker calls once per task. A task without a
+	 * script names one of the engine's own tasks.
+	 */
+	script?: URL;
+	/** The WebAssembly files that the task's module runs, each with a name of its own. */
+	wasm?: readonly WasmFile[];
 }
 
 /** The thread's compiled modules, by name, which stays the same in every copy of this module. */
@@ -71,11 +78,11 @@ const thread = globalThis as { [COMPILED]?: Map<string, Promise<WebAssembly.Modu
 export function compileOnce(file: WasmFile, error: WasmError): Promise<WebAssembly.Module> {
 	thread[COMPILED] ??= new Map();
 	const compiled = thread[COMPILED];
-	let module = compiled.get(file.name);
+	let module = compiled.get(file.url.href);
 	if (!module) {
 		module = compileWasm(file.url, file.what, error).then((result) => result.module);
-		module.catch(() => compiled.delete(file.name));
-		compiled.set(file.name, module);
+		module.catch(() => compiled.delete(file.url.href));
+		compiled.set(file.url.href, module);
 	}
 	return module;
 }
@@ -125,14 +132,15 @@ class Runners {
 		const runner = this.leastBusy(error);
 		const id = ++this.next;
 		const request: TaskRequest = { id, task: task.name, input };
-		if (task.script) request.script = task.script.href;
+		const script = task.script?.href;
+		if (script) request.script = script;
 		const newModules = (task.wasm ?? []).flatMap((file, k) =>
-			runner.modules.has(file.name)
+			runner.modules.has(moduleKey(script, file.name))
 				? []
-				: [[file.name, modules[k]] as [string, WebAssembly.Module]],
+				: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
 		);
 		if (newModules.length > 0) request.modules = newModules;
-		for (const [name] of newModules) runner.modules.add(name);
+		for (const [key] of newModules) runner.modules.add(key);
 		runner.running++;
 		return new Promise((resolve, reject) => {
 			this.waiting.set(id, { resolve, reject, runner });
@@ -291,8 +299,9 @@ let runners: Runners | undefined;
  * workers, moving the `transfer` objects there. The task's WebAssembly files compile once per page,
  * here. Rejects with the engine error of a file that does not download or compile, made by
  * `error`, and with a `TaskFailure` when the task fails in its worker or the engine stops first.
+ * The engine's own callers give their thread's error factory; an add-on calls `runTask`.
  */
-export function runTask<T>(
+export function runTaskWithError<T>(
 	task: Task,
 	input: unknown,
 	transfer: Transferable[],

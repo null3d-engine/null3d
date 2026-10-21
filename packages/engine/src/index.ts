@@ -293,7 +293,11 @@ export type {
 	WgslUniforms,
 } from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
+export { runTask } from './shared/run-task';
 export type { Percentiles } from './shared/stats';
+export { TaskFailure } from './shared/task-failure';
+export { TaskLoadError } from './shared/task-load-error';
+export type { Task, WasmFile } from './shared/tasks';
 export type { Tier } from './shared/tier';
 export type {
 	SketchCallbacks,
@@ -316,6 +320,7 @@ export type {
 } from './sketch/quality';
 export type { LabelOptions, Ui } from './sketch/ui';
 export type { WorkerProbe } from './workers/probe-worker';
+export type { TaskModule, TaskResult, TaskStage } from './workers/tasks';
 
 /**
  * The engine version, which the WebAssembly core and this package always share.

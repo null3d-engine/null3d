@@ -24,6 +24,7 @@ This is the API of null3D, with the parts planned up to version 1.0. A number in
 18. Messages and UI
 19. Debug
 20. Math, color and time
+21. Tasks on the job workers (0.3)
 
 ## 1. Page: createEngine (`api/engine`)
 
@@ -702,3 +703,22 @@ time.now; time.dt; time.frame;            // seconds, the frame's step in second
 - `quat.lookAt` gives a mesh's rotation. For a camera or a light, which looks down -Z, swap `eye` and `target`.
 - `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
 - Color options take `'#rrggbb'` or `'#rgb'` strings and `0xrrggbb` numbers, which are sRGB, and `[r, g, b]` arrays from 0 to 1, which are linear, as three.js's `setRGB` reads them. The engine converts hex colors to linear, as three.js does. The `color` helpers give linear RGB, which color options and instance colors take.
+
+## 21. Tasks on the job workers (`api/tasks`, 0.3)
+
+```ts
+import { runTask, type Task } from '@null3d/engine';
+
+const sort: Task = {
+  name: 'splat-sort',                                   // an add-on's own name
+  script: new URL('./sort-task.js', import.meta.url),   // a module that exports run(input, wasm)
+  wasm: [{ name: 'sort', url: new URL('./sort.wasm', import.meta.url), what: 'the sorter' }],
+};
+const answer = await runTask<{ order: number[] }>(sort, { view }, []);  // view: a SharedArrayBuffer
+```
+
+- The task runs in a job worker, never in the thread that runs the sketch. A frame never waits for it.
+- An answer arrives between two frames, so its `then` callback runs before the next `onUpdate`, and that frame draws what the task wrote.
+- A `SharedArrayBuffer` in the input is shared with the worker, not copied. Write it with `Atomics` while the task runs, and read it once the promise resolves.
+- Tasks run at the same time in different job workers. Their answers come back in no fixed order.
+- A failed task rejects with a `TaskFailure` whose `stage` is `'load'`, `'run'` or `'stopped'`. A WebAssembly file that does not download or compile rejects with an engine error.
