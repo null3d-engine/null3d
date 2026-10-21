@@ -187,6 +187,17 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'canvas-screen',
+		group: 'Light, materials and effects',
+		sketch: new URL('./canvas-screen/sketch.ts', import.meta.url),
+		title: 'Screens drawn on a canvas',
+		scene: 'Reactor control room',
+		summary:
+			'Three wall screens that a sketch paints on OffscreenCanvas objects, each a texture that refreshes only the rectangle that changed. The reactor, shield and coolant readings rise and fall, with their bars and lights, under a breathing lamp.',
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'coat-and-sheen',
 		group: 'Light, materials and effects',
 		sketch: new URL('./coat-and-sheen/sketch.ts', import.meta.url),

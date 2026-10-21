@@ -473,6 +473,64 @@ export default defineSketch(({ scene, geometry, materials, textures, render, tim
 
 A pass never draws the objects that show its own texture, so the screen does not show itself. A pass that nothing shows costs nothing. [Render graph API](../api/render.md) says what a scene pass draws in this version.
 
+## Screens in the world
+
+An `OffscreenCanvas` in the sketch is a texture. Draw on it with the 2D context, and refresh only the rectangle that changed. Here the screen shows a score that counts up, on a panel in the world.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+/** The screen's texture, in texels. */
+const SIZE = 512;
+/** The score's rectangle, in texels, from the canvas's top-left corner. */
+const SCORE = { x: 32, y: 32, width: 448, height: 96 };
+
+export default defineSketch(({ scene, geometry, materials, textures, time }) => {
+  scene.setBackground('#141a22');
+  const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 0, 3.4], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  scene.createAmbientLight({ intensity: 0.8 });
+
+  const canvas = new OffscreenCanvas(SIZE, SIZE);
+  // willReadFrequently keeps the pixels where the engine reads them cheaply.
+  const context = canvas.getContext('2d', { willReadFrequently: true })!;
+  const board = textures.fromCanvas(canvas, { refreshHz: 30 });
+
+  // Paint the board once. The panel stands upright, because fromCanvas puts the canvas's last
+  // row at the bottom of a plane.
+  context.fillStyle = '#0c1420';
+  context.fillRect(0, 0, SIZE, SIZE);
+  context.strokeStyle = '#2a6df0';
+  context.lineWidth = 8;
+  context.strokeRect(4, 4, SIZE - 8, SIZE - 8);
+  context.fillStyle = '#7fb0ff';
+  context.font = 'bold 88px sans-serif';
+  context.textBaseline = 'top';
+
+  scene.createMesh({
+    mesh: geometry.plane({ width: 2.2, height: 2.2 }),
+    material: materials.unlit({ map: board }),
+  });
+
+  let shown = -1;
+  return {
+    onUpdate() {
+      const score = Math.floor(time.now * 10);
+      if (score === shown) return;
+      shown = score;
+      // Only the score's rectangle changes, so only it uploads.
+      context.fillStyle = '#0c1420';
+      context.fillRect(SCORE.x, SCORE.y, SCORE.width, SCORE.height);
+      context.fillStyle = '#7fb0ff';
+      context.fillText(String(score), SCORE.x, SCORE.y);
+      board.refresh(SCORE);
+    },
+  };
+});
+```
+
+The `refreshHz` option caps the refreshes, so a frame rate above the cap costs no canvas read. A refresh costs one `ImageData` of the rectangle and its upload, which stays within the frame's upload budget. [Textures](../api/textures.md#canvases) covers the rectangle's coordinates and what `texture.refresh` does to the rest of the texture.
+
 ## A trail behind a moving object
 
 A dynamic line batch updates every point in every frame. Each frame, the sketch moves the trail's points one place back and puts the object's place at the front.

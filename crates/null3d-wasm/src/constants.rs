@@ -398,6 +398,8 @@ pub mod texture_stat {
     pub const RELOAD_LEVEL: u32 = 14;
     /// The hidden texture that takes the texels of one texture's load again.
     pub const RELOAD_TEXTURE: u32 = 15;
+    /// 1 while one texture waits for texels to upload, and 0 otherwise.
+    pub const UPLOADING: u32 = 16;
 }
 
 /// The parts of the number that `shadowCasters` returns.
@@ -1307,6 +1309,7 @@ pub fn typescript() -> String {
                 ("BUDGET_EPOCH", texture_stat::BUDGET_EPOCH),
                 ("RELOAD_LEVEL", texture_stat::RELOAD_LEVEL),
                 ("RELOAD_TEXTURE", texture_stat::RELOAD_TEXTURE),
+                ("UPLOADING", texture_stat::UPLOADING),
             ],
         ),
         (
