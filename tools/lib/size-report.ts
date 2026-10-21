@@ -320,6 +320,18 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-shader-features.js',
+		module: 'generated/shader-features.ts',
+		loadedBy: 'page-assets.js',
+	},
+	{
+		// The copies of modules that the page's start keeps inline, which the loader's file carries.
+		name: 'page-assets-check.js',
+		module: 'quality/check.ts',
+		loadedBy: 'page-assets.js',
+	},
+	{ name: 'page-assets-core.js', module: 'generated/core.ts', loadedBy: 'page-assets.js' },
 	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
@@ -386,6 +398,19 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-assets.js', module: 'scene/assets.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-shader-features.js',
+		module: 'generated/shader-features.ts',
+		loadedBy: 'sketch-worker-assets.js',
+	},
+	{
+		// The shared helpers that the loader's own file carries a copy of, which the page's start
+		// keeps inline.
+		name: 'sketch-worker-assets-helpers.js',
+		module: 'shared/images.ts',
+		loadedBy: 'sketch-worker-assets.js',
+	},
+	{ name: 'sketch-worker-gpu.js', module: 'generated/gpu.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
@@ -711,14 +736,72 @@ export function findEngineParts(
 			);
 		found.set(part.name, matches[0]!);
 	}
-	for (const part of parts) {
-		const loader = part.loadedBy ? found.get(part.loadedBy) : undefined;
-		if (!loader) continue;
-		const claimed = new Set(found.values());
-		const file = files.find(
-			(f) => !claimed.has(f) && holds(f, part.module) && loader.text.includes(f.file),
-		);
-		if (file) found.set(part.name, file);
+	// A loader names the files that it loads, and each of those names more: a feature's loader loads
+	// the loaders of the files that the feature reads. So a part's file is named in the text of the
+	// loader, or of a file that the loader names, two steps down.
+	// The files that each file names, read once: a loader names the files it loads, and each of
+	// those may name more, as a feature's loader loads the loaders of the files that feature reads.
+	const mentions = new Map<string, string[]>();
+	const byName = new Map(files.map((file) => [file.file, file]));
+	for (const file of files) mentions.set(file.file, file.text.match(/[A-Za-z0-9_.-]+\.js/g) ?? []);
+	const namedCache = new Map<string, Set<string>>();
+	/** The names of the files that a loader fetches, two steps down its chain of loaders. */
+	const named = (loader: BuiltFile): Set<string> => {
+		const cached = namedCache.get(loader.file);
+		if (cached) return cached;
+		const names = new Set<string>();
+		const reached = new Set<string>([loader.file]);
+		let frontier = [loader.file];
+		for (let step = 0; step < 2 && frontier.length > 0; step++) {
+			const next: string[] = [];
+			for (const file of frontier)
+				for (const name of mentions.get(file) ?? []) {
+					names.add(name);
+					if (!reached.has(name) && byName.has(name)) {
+						reached.add(name);
+						next.push(name);
+					}
+				}
+			frontier = next;
+		}
+		namedCache.set(loader.file, names);
+		return names;
+	};
+	// Each part that a loader loads takes a file that the loader names, in the parts' order, and
+	// then a file that the loader reaches through the files it names: a feature's loader loads the
+	// loaders of the files that the feature reads, as the file loader loads the glTF loader. A
+	// round repeats while a loader that was found names the file of a part that waited for it.
+	const loaded = parts.filter((part) => part.loadedBy);
+	for (let round = 0; round < 4; round++) {
+		let foundOne = false;
+		for (const part of loaded) {
+			if (found.has(part.name)) continue;
+			const loader = found.get(part.loadedBy as string);
+			if (!loader) continue;
+			const claimed = new Set(found.values());
+			const direct = new Set(mentions.get(loader.file) ?? []);
+			const file = files.find(
+				(f) => !claimed.has(f) && holds(f, part.module) && direct.has(f.file),
+			);
+			if (file) {
+				found.set(part.name, file);
+				foundOne = true;
+			}
+		}
+		for (const part of loaded) {
+			if (found.has(part.name)) continue;
+			const loader = found.get(part.loadedBy as string);
+			if (!loader) continue;
+			const claimed = new Set(found.values());
+			const file = files.find(
+				(f) => !claimed.has(f) && holds(f, part.module) && named(loader).has(f.file),
+			);
+			if (file) {
+				found.set(part.name, file);
+				foundOne = true;
+			}
+		}
+		if (!foundOne) break;
 	}
 	const claimed = new Set(found.values());
 	const shaders = new Map<string, BuiltFile>();
