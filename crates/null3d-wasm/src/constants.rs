@@ -192,7 +192,8 @@ pub mod pass_source {
 
 /// The numbers that `textureStat` reads from the texture store.
 /// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
-/// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
+/// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut`, `setVignette`,
+/// `setSharpen` or `setOutline`. The
 /// values come through engine memory, not as arguments, because the browser stores each fraction
 /// that it passes to a call it does not inline in an object of its own.
 pub mod post_value {
@@ -260,8 +261,10 @@ pub mod post_value {
     pub const SSR_MAX_DISTANCE: u32 = 60;
     pub const SSR_THICKNESS: u32 = 61;
     pub const SSR_MAX_ROUGHNESS: u32 = 62;
+    /// The sharpening's strength, from 0 to 1.
+    pub const SHARPEN: u32 = 63;
     /// The values in the block.
-    pub const COUNT: u32 = 63;
+    pub const COUNT: u32 = 64;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -1223,6 +1226,7 @@ pub fn typescript() -> String {
                 ("SSR_MAX_DISTANCE", post_value::SSR_MAX_DISTANCE),
                 ("SSR_THICKNESS", post_value::SSR_THICKNESS),
                 ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
+                ("SHARPEN", post_value::SHARPEN),
                 ("COUNT", post_value::COUNT),
             ],
         ),

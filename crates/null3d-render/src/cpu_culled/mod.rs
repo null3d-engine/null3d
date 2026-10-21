@@ -1688,6 +1688,7 @@ impl CpuCulledRenderer {
         );
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
+        self.graph.set_sharpen(self.settings.sharpen());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_still_enabled(self.settings.still_enabled());

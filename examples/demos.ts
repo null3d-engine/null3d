@@ -436,7 +436,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Post effects',
 		scene: 'Neon alley',
 		summary:
-			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette, a light sharpening and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grading table changes: none, warm, then cool.',
 		hold: 4,
 	},
 	{

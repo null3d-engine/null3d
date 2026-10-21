@@ -969,6 +969,8 @@ pub struct SceneSettings {
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
+    /// The sharpening's strength while the sketch turns it on, from 0 for off to 1 for the most.
+    sharpen: Option<f32>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
     /// The scene's light probe grid while the sketch sets one.
@@ -1129,6 +1131,7 @@ impl SceneSettings {
             fog_halvings: 0,
             lut: None,
             vignette: None,
+            sharpen: None,
             environment: None,
             probe_grid: None,
             probe_shading: ProbeShading::default(),
@@ -1815,6 +1818,12 @@ impl SceneSettings {
         self.vignette = vignette;
     }
 
+    /// Sharpens the canvas color with `strength`, from 0 for off to 1 for the most, or turns the
+    /// sharpening off with `None`, from the next recorded frame on.
+    pub fn set_sharpen(&mut self, sharpen: Option<f32>) {
+        self.sharpen = sharpen;
+    }
+
     /// Lights the scene with an environment, or with none, from the next recorded frame on.
     pub fn set_environment(&mut self, environment: Option<Environment>) {
         self.environment = environment;
@@ -1974,8 +1983,8 @@ impl SceneSettings {
         }
     }
 
-    /// What the final pass grades the frame with: the table once its texels are on the GPU, and
-    /// the vignette. Nothing in a debug view.
+    /// What the final pass grades the frame with: the table once its texels are on the GPU, the
+    /// vignette, and the sharpening. Nothing in a debug view.
     pub(crate) fn grading(&self) -> Grading {
         if self.debug_view.is_debug() {
             return Grading::default();
@@ -1988,7 +1997,13 @@ impl SceneSettings {
         Grading {
             lut,
             vignette: self.final_vignette(),
+            sharpen: self.sharpen(),
         }
+    }
+
+    /// The sharpening's strength, or `None` while the sketch turns it off.
+    pub(crate) fn sharpen(&self) -> Option<f32> {
+        self.sharpen.filter(|_| !self.debug_view.is_debug())
     }
 
     /// True when the render scale may drop below the whole canvas.
