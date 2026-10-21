@@ -113,11 +113,13 @@ fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -
 
 /// The color that a scene shader writes for exposed linear color `c` at framebuffer position
 /// `pixel` of a material that keeps its color as the display shows it: `finish` without the tone
-/// curve. The vignette darkens it as it darkens every other surface.
+/// curve. The vignette darkens it as it darkens every other surface. Both paths take `c` through
+/// the same limit, so a NaN draws black here too.
 fn finish_unmapped(c: vec3f, pixel: vec2f, size: vec2f, shape: vec4f) -> vec4f {
+    let limited = limit_hdr(c);
 #ifdef TONE_MAP
-    return vec4f(encode(c * vignette(pixel, size, shape), pixel), 1.0);
+    return vec4f(encode(limited * vignette(pixel, size, shape), pixel), 1.0);
 #else
-    return vec4f(limit_hdr(c), 1.0);
+    return vec4f(limited, 1.0);
 #endif
 }

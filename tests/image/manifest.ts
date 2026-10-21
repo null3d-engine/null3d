@@ -383,8 +383,10 @@ export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
 /**
  * Light far past the largest 16-bit float, without bloom and with it, on every tier: an emissive
  * sphere and the sun's highlight on a smooth metal floor. Both must draw white, and the sphere must
- * glow with bloom. The HDR limit spec checks those pixels too, so CI's software GPU, which stores
- * such light as infinity without the limit, fails even where a reference would match.
+ * glow with bloom. The same scene with ?nan adds a plate that gives off light, whose upper half
+ * writes a NaN in every channel: it must draw black on every path, and with bloom it must not
+ * spread through the blur. The HDR limit spec checks those pixels too, so CI's software GPU, which
+ * stores such light as infinity without the limit, fails even where a reference would match.
  */
 function hdrLimitTests(): ImageTest[] {
 	return [

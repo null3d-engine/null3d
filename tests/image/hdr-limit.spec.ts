@@ -4,7 +4,10 @@
 // light as infinity, and the tone mapping draws it black: the emissive sphere vanishes, the sun's
 // highlight on the metal floor gets a black hole at its center, and bloom draws no glow at all.
 // The image comparison catches a change of the picture. This spec checks the pixels that the fault
-// turns black, so it fails even before a test has references.
+// turns black, so it fails even before a test has references. The NaN tests draw a plate whose
+// upper half writes a NaN in every channel and whose lower half gives off light: the upper half
+// must draw black on every path, the lower half must draw, and with bloom the sphere beside it must
+// still glow, because a NaN that survives the blur covers the picture.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import { IMAGE_RUNS } from './manifest.ts';
@@ -15,10 +18,19 @@ test.describe.configure({ mode: 'parallel' });
 const SPHERE: Point = [102, 46];
 /** Where the center of the sun's highlight on the floor draws. */
 const HIGHLIGHT: Point = [160, 90];
-/** Where the ?nan plate's center draws, beside the sphere at [102, 46]. */
-const PLATE: Point = [218, 46];
-/** The highest value of any channel of the NaN plate's pixels that still counts as black, out of 255. */
-const BLACK = 2;
+/** Where the upper half of the ?nan plate, which writes NaN, draws, beside the sphere at [102, 46]. */
+const NAN_HALF: Point = [218, 35];
+/** The radius of the NaN half's sample: small enough to stay clear of the lit half's glow. */
+const NAN_RADIUS = 2;
+/** Where the lower half of the ?nan plate, which gives off light, draws. */
+const LIT_HALF: Point = [218, 54];
+/**
+ * The highest value of any channel of the NaN half's pixels that still counts as black, out of 255.
+ * The lit half's bloom reaches a few steps into the NaN half.
+ */
+const BLACK = 3;
+/** The lowest value of the lit half that proves the plate drew at all, out of 255. */
+const LIT = 100;
 /** The lowest value of each channel that counts as white, out of 255. */
 const WHITE = 250;
 /** How far from the sphere's center bloom's glow must reach, in pixels. */
@@ -119,10 +131,14 @@ for (const name of ['hdr-limit-nan', 'hdr-limit-nan-bloom', 'hdr-limit-nan-8-bit
 		expect(runs.length).toBe(name === 'hdr-limit-nan-8-bit' ? 2 : 3);
 		for (const run of runs) {
 			const image = await imageOf(page, run.path);
-			const plate = lightest(image, PLATE, 4);
+			const black = lightest(image, NAN_HALF, NAN_RADIUS);
 			expect
-				.soft(plate.value, `${run.id}: the NaN plate draws ${plate.value} at ${plate.at}`)
+				.soft(black.value, `${run.id}: the NaN half draws ${black.value} at ${black.at}`)
 				.toBeLessThanOrEqual(BLACK);
+			const lit = lightest(image, LIT_HALF, 3);
+			expect
+				.soft(lit.value, `${run.id}: the lit half draws ${lit.value} at ${lit.at}`)
+				.toBeGreaterThanOrEqual(LIT);
 			if (name !== 'hdr-limit-nan-bloom') continue;
 			// A NaN that survived bloom's first step would poison the whole blur, so the sphere's
 			// glow must still reach its usual radius.
