@@ -297,9 +297,11 @@ mod ids {
     pub const BLANK_PROBES: u32 = STREAMED_VALUES + RING;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = BLANK_PROBES + 1;
+    /// The texel that custom materials bind in place of the copy of the camera's opaque depth.
+    pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
-    pub const BLANK_MOTION: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const BLANK_MOTION: u32 = BLANK_SCENE_DEPTH + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_MOTION + 1;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
@@ -426,8 +428,11 @@ mod ids {
     pub const STILL_GROUP: u32 = ACCUMULATE_GROUP + 1;
     /// The bind group of the scene depth that the decal pass reads, after the still build's.
     pub const DECAL_DEPTH_GROUP: u32 = STILL_GROUP + 1;
-    /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
-    pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The first of two bind groups that custom materials which read the scene's depth bind: the
+    /// blank texel, then the copy of the camera's opaque depth.
+    pub const MATERIAL_SCENE_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The bind groups of the volumetric fog's steps, after the materials' scene groups.
+    pub const FOG_GROUPS: u32 = MATERIAL_SCENE_GROUPS + 2;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The motion pass's frame group for each frame parity and each slot of the streamed ring,
@@ -753,6 +758,8 @@ impl CpuCulledRenderer {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
+                        material_scene: ids::MATERIAL_SCENE_GROUPS,
+                        blank_scene_depth: ids::BLANK_SCENE_DEPTH,
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -1706,8 +1713,11 @@ impl CpuCulledRenderer {
         let redraws = self.redraws_built && skipped != 0;
         self.graph
             .set_decals(!self.decal_layout.is_empty(), redraws);
-        self.graph
-            .set_soft_particles(self.settings.particles().wants_depth());
+        let materials_read_depth = self.settings.materials().any_reads_scene_depth();
+        self.graph.set_soft_particles(
+            self.settings.particles().wants_depth() || materials_read_depth,
+            materials_read_depth,
+        );
         // The render scale's range decides which of the final pass's pipelines the frame asks for.
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph
@@ -2156,6 +2166,13 @@ impl CpuCulledRenderer {
         let (motion_state, motion_moving, skins) =
             (&mut self.motion, &self.motion_moving, &self.skins);
         let motion_group = ids::motion_frame_group(input.parity(), self.streamed_slot.slot());
+        // The scene group that each view's blended draws bind for a custom material that reads the
+        // scene's depth, and the blank group that a draw before the copy exists binds.
+        let scene_blank = self.graph.material_scene_blank();
+        let mut scene_groups = [0u32; MAX_VIEWS];
+        for (index, group) in scene_groups.iter_mut().enumerate() {
+            *group = self.graph.material_scene_group(ViewId::from_index(index));
+        }
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
@@ -2182,7 +2199,19 @@ impl CpuCulledRenderer {
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
                     let hidden = hidden_in(view);
-                    opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)?;
+                    // The opaque pass runs before the copy of its depth, so a material that reads
+                    // the depth binds the blank texel here and the copy in the transparent pass.
+                    opaque.record(
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        layout,
+                        meshes,
+                        shading,
+                        &hidden,
+                        scene_blank,
+                    )?;
                     if backdrop {
                         background.record(list, group, &[slot, slot], Place::Last)?;
                     }
@@ -2194,18 +2223,23 @@ impl CpuCulledRenderer {
                         light_slot: light_textures.slot(view),
                     };
                     let hidden = hidden_in(view);
-                    opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)
+                    opaque.record(
+                        list, arena, view, starts, layout, meshes, shading, &hidden, 0,
+                    )
                 }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Depth;
-                    cascade_draws
-                        .record(list, arena, view, starts, casters, meshes, shading, &never)
+                    cascade_draws.record(
+                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                    )
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Tile;
-                    tile_draws.record(list, arena, view, starts, casters, meshes, shading, &never)
+                    tile_draws.record(
+                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                    )
                 }
                 Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
                     let view = ViewId::OUTLINE;
@@ -2219,6 +2253,7 @@ impl CpuCulledRenderer {
                         meshes,
                         Shading::Depth,
                         &never,
+                        0,
                     )
                 }
                 Role::SkinLight if skin_culling.frame(ViewId::SUBSURFACE).is_some() => {
@@ -2229,7 +2264,15 @@ impl CpuCulledRenderer {
                     };
                     let hidden = hidden_in(ViewId::CAMERA);
                     skin_draws.record(
-                        list, arena, view, starts, scattering, meshes, shading, &hidden,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        scattering,
+                        meshes,
+                        shading,
+                        &hidden,
+                        scene_blank,
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
@@ -2241,7 +2284,9 @@ impl CpuCulledRenderer {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    let scene = scene_groups.get(view.index()).copied().unwrap_or(0);
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_view(list, view, light_slot, scene);
                     let hidden = hidden_in(view);
                     let index = view.index();
                     transparent.record(
@@ -2253,7 +2298,7 @@ impl CpuCulledRenderer {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
                     let hidden = hidden_in(view);
                     let (index, rows) = (view.index(), SortedRows::Weighted);
                     transparent.record(
@@ -2266,7 +2311,7 @@ impl CpuCulledRenderer {
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
                     let bind = |list: &mut DrawList| {
-                        opaque.bind_view(list, view, light_slot)?;
+                        opaque.bind_view(list, view, light_slot, 0)?;
                         let group = ids::DECAL_DEPTH_GROUP;
                         list.push(Op::SetBindGroup, &[DECAL_DEPTH_INDEX, group, 0])?;
                         Ok(())
@@ -2290,7 +2335,10 @@ impl CpuCulledRenderer {
                     let at = opaque.sorted_records_at(view, layout) + redraw_records_at;
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    // The redraw runs before the copy of the opaque depth, so a material that reads
+                    // the depth binds the blank texel.
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_view(list, view, light_slot, scene_blank);
                     let hidden = hidden_in(view);
                     redraws.record(
                         list,
@@ -2322,6 +2370,7 @@ impl CpuCulledRenderer {
                         meshes,
                         Shading::Pick,
                         &hidden,
+                        0,
                     )
                 }
                 Role::PickResolve => {

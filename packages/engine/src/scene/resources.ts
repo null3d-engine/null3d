@@ -37,6 +37,7 @@ import {
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_NO_TONE_MAP,
 	MATERIAL_FEATURE_PARALLAX,
+	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
@@ -109,6 +110,7 @@ import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
+import type { SceneInput } from './features';
 import type { CoreMemory } from './memory';
 import {
 	arraysProblem,
@@ -1486,6 +1488,16 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * check.
 	 */
 	textures?: NoInfer<TextureValues<Wgsl>>;
+	/**
+	 * The scene inputs that the material's surface function reads. Today that is `'sceneDepth'`:
+	 * the WGSL calls `sceneDepth(uv)` or `sceneDistance(uv)`, and the engine binds the copy of the
+	 * opaque scene's depth. A material that declares it draws after that copy exists, so it reads
+	 * it in the transparent pass; a surface that draws earlier reads 0, the far plane. A material
+	 * that declares it takes no textures of its own, as the two groups together would pass WebGPU's
+	 * limit of sampled textures in the fragment stage. The engine checks that the declaration and
+	 * the WGSL agree.
+	 */
+	sceneInputs?: readonly SceneInput[];
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -1514,6 +1526,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly baseColor: boolean;
 	/** True when the WGSL reads an instance's index or an object's id. */
 	readonly objectIds?: boolean;
+	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
+	readonly sceneDepth?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly { readonly name: string }[];
@@ -1530,6 +1544,7 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		variants: compiled.variants,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
+		...(compiled.sceneDepth === true && { sceneDepth: true }),
 		...(compiled.builds && { builds: true }),
 	};
 }
@@ -2273,6 +2288,62 @@ function featureBits(options: StandardOptions): number {
 	);
 }
 
+/** The scene inputs that a material or a feature may declare. */
+const SCENE_INPUTS: readonly SceneInput[] = [
+	'sceneColor',
+	'sceneDepth',
+	'normals',
+	'motionVectors',
+];
+
+/**
+ * Checks the scene inputs that a custom material declares against the ones its WGSL reads. Today
+ * the engine binds the copy of the opaque scene's depth alone; a feature declares the other scene
+ * resources in its reads, which the render graph orders.
+ */
+function checkSceneInputs(
+	declared: readonly SceneInput[],
+	sceneDepth: boolean,
+	textures: number,
+	call: string,
+): void {
+	const seen = new Set<string>();
+	for (const input of declared as readonly string[]) {
+		if (!SCENE_INPUTS.includes(input as SceneInput))
+			throw new EngineError(
+				'E1217',
+				`${call}() got the scene input ${JSON.stringify(input)}; it takes 'sceneColor', 'sceneDepth', 'normals' or 'motionVectors'.`,
+			);
+		if (seen.has(input))
+			throw new EngineError(
+				'E1217',
+				`${call}() got the scene input '${input}' twice in sceneInputs; give each one once.`,
+			);
+		seen.add(input);
+		if (input !== 'sceneDepth')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the scene input '${input}', which custom materials do not read yet. Read the scene's depth with 'sceneDepth', or declare '${input}' in a feature's reads.`,
+			);
+	}
+	const wantsDepth = seen.has('sceneDepth');
+	if (wantsDepth && !sceneDepth)
+		throw new EngineError(
+			'E1217',
+			`${call}() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance. Read it in fn surface, such as let behind = sceneDistance(uv).`,
+		);
+	if (sceneDepth && !wantsDepth)
+		throw new EngineError(
+			'E1217',
+			`${call}() got WGSL that reads the scene's depth, but sceneInputs does not declare it. Add sceneInputs: ['sceneDepth'].`,
+		);
+	if (sceneDepth && textures > 0)
+		throw new EngineError(
+			'E1217',
+			`${call}() got WGSL that reads the scene's depth and declares textures of its own. A material takes one or the other: the depth group and the maps' group together pass WebGPU's 16 sampled textures in the fragment stage.`,
+		);
+}
+
 /** The numbers each type of uniform takes. */
 const UNIFORM_FLOATS: Readonly<Record<CompiledUniform['type'], number>> = {
 	f32: 1,
@@ -2856,6 +2927,9 @@ export class Materials {
 				`${call}() got the 'weighted' blending, which custom materials do not take. Give it the 'normal' blending, which draws back to front.`,
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
+		const sceneDepth = compiled.sceneDepth === true;
+		if (DEV)
+			checkSceneInputs(options.sceneInputs ?? [], sceneDepth, compiled.textures.length, call);
 		if (DEV && options.transmission !== undefined && !lets(compiled))
 			throw new EngineError(
 				'E1217',
@@ -2906,7 +2980,11 @@ export class Materials {
 			{ ...options, alphaToCoverage: false, diffuseTransmission, subsurfaceRadius: undefined },
 			call,
 			layered,
+			sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0,
 		);
+		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
+		// with the material, before its first frame.
+		if (sceneDepth) this.shaders.need('particles');
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);

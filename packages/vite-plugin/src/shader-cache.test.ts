@@ -74,6 +74,7 @@ class CountingCompiler implements ShaderCompiler {
 				attributes: 0,
 				baseColor: false,
 				objectIds: false,
+				sceneDepth: false,
 			},
 			warnings: [],
 		};

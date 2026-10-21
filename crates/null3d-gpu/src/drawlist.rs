@@ -845,6 +845,11 @@ pub mod layout {
     /// [`DECAL_DEPTH`] for a multisampled depth target, whose sample 0 the decals read. Only WebGPU
     /// has it.
     pub const DECAL_DEPTH_MS: u32 = 37;
+    /// The group of a custom material that reads the scene's depth: the copy of the camera's
+    /// opaque depth, which its surface function reads with `textureLoad` as plain floats. It is
+    /// group 1 of the custom material's template and group 2 of one with textures on WebGPU, and
+    /// group 4 on WebGL2. A view that makes no copy binds one texel at the far plane.
+    pub const MATERIAL_SCENE: u32 = 38;
     /// Group 0 of the decal templates on WebGPU: [`FRAME`]'s bindings without the light probe
     /// grids' texture and the copy of the opaque color, which no decal build reads. A decal with
     /// maps then reads 15 sampled textures in its fragment stage, within WebGPU's default limit of
@@ -2564,6 +2569,7 @@ pub fn typescript_constants() -> String {
                 ("DECAL_DEPTH", layout::DECAL_DEPTH),
                 ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
                 ("DECAL_FRAME", layout::DECAL_FRAME),
+                ("MATERIAL_SCENE", layout::MATERIAL_SCENE),
                 ("PARTICLE", layout::PARTICLE),
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),

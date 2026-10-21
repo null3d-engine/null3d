@@ -111,12 +111,16 @@ A feature without an `order` takes the first place of its band, which is 0 for `
 | --- | --- |
 | `'sceneColor'` | The scene's color, before the tone curve. |
 | `'sceneDepth'` | The scene's depth. |
-| `'normals'` | The surface normals that a depth prepass writes. |
+| `'normals'` | The scene's surface normals. No pass makes them yet. |
 | `'motionVectors'` | How far each pixel's surface moved since the last frame. |
 | `'history'` | The image of an earlier frame, which a temporal effect keeps. |
 | `'shadowAtlas'` | The sun's cascades and the point and spot lights' shadow tiles. |
 
 The render graph runs a feature after the passes that write the resources that it reads. It runs the readers of the resources that the feature writes after the feature. The graph keeps its order from these declarations.
+
+The first four are the scene inputs. A custom material declares `'sceneDepth'` in the same words: `SceneInput` is one public type, and `FeatureResource` adds `'history'` and `'shadowAtlas'` to it. No pass makes a normals target today, and the motion pass runs only while a reader wants the motion vectors.
+
+A custom material reads the scene's depth now ([Materials](materials.md#the-scene-behind-a-surface)). The feature side binds its reads when the engine places a registered feature in the frame.
 
 ## Published outputs
 

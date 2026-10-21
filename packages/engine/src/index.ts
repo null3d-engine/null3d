@@ -125,6 +125,7 @@ export type {
 	FeatureSize,
 	FeatureSlot,
 	FeatureView,
+	SceneInput,
 } from './scene/features';
 export { defineFeature, FeatureRegistry } from './scene/features';
 export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';

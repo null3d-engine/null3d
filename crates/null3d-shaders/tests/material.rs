@@ -831,3 +831,57 @@ fn a_share_past_its_count_is_refused() {
         .expect_err("share 2 of 2 does not exist");
     assert!(error.problems[0].message.contains("share 2 of 2"));
 }
+
+/// A surface function that reads the copy of the scene's depth, with a vertex offset, so the
+/// build also makes its caster, motion and pick variants.
+const DEPTH: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    s.roughness = clamp(sceneDistance(uv) * 0.1, 0.0, 1.0);
+    return s;
+}
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0);
+}
+";
+
+#[test]
+fn a_surface_function_that_reads_the_depth_binds_its_copy_alone_in_the_shading_builds() {
+    let built = compile(DEPTH).expect("the surface function builds");
+    assert!(built.scene_depth);
+    let mut shaded = 0;
+    for (name, variant) in &built.variants {
+        // A vertex offset's caster, motion and pick builds name their kind right after the shading
+        // variant's name, and their permutations follow it.
+        let kind = name
+            .strip_prefix("webgpu_")
+            .or_else(|| name.strip_prefix("webgl2_"))
+            .unwrap_or_default();
+        let culled = ["shadow", "motion", "pick"]
+            .iter()
+            .any(|culled| kind.starts_with(culled));
+        // The shading builds that write WGSL hold the binding, and the builds that shade no surface
+        // lose it on both paths.
+        if let Some(wgsl) = &variant.wgsl {
+            if culled {
+                assert!(!wgsl.source.contains("scene_depth_copy"), "{name}");
+            } else {
+                assert!(wgsl.source.contains("scene_depth_copy"), "{name}");
+                shaded += 1;
+            }
+        }
+        if let Some(programs) = &variant.glsl {
+            for program in programs.values() {
+                if culled {
+                    assert!(
+                        !program.fragment.source.contains("scene_depth_copy"),
+                        "{name}"
+                    );
+                }
+            }
+        }
+    }
+    assert!(shaded > 0);
+    assert!(!compile(STRIPES).expect("the material builds").scene_depth);
+}

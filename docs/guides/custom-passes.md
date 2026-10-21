@@ -416,6 +416,7 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
 - The foam hides the reflection where it lies, through the reflection's share in `a`.
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
+- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']` and `sceneDistance(uv)`. That gives the shallow tint and the foam of soft shores, as [Materials](../api/materials.md#the-scene-behind-a-surface) shows.
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 
 ## Full-screen passes
