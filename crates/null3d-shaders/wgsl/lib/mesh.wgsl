@@ -8,6 +8,9 @@ enable draw_index;
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
+#ifdef LOD_FADE
+#import null3d::noise::{pcg}
+#endif
 #ifdef WEBGL2
 #import null3d::tables::{materials}
 #else
@@ -625,27 +628,38 @@ fn find_instance(i: InstanceIn) -> Instance {
 }
 
 #ifdef LOD_FADE
+/// The phase of the dither of a fading level, from 0 to 15, for the copy whose source is `source`:
+/// a hash of the source, so that neighboring copies dither in different places rather than in one
+/// grid. Both levels of a band name the same copy, so they keep the same phase.
+fn lod_hash(source: u32) -> u32 {
+    return pcg(source) & 15u;
+}
+
 /// The fade value of the instance that a vertex shader invocation draws, from a fade bucket of a
 /// level of detail: positive for the level that a band hands over to, negative for the level it
-/// hands over from. On WebGPU the culling shader writes it into the copy's fourth id, and on
-/// WebGL2 it follows the instance's entry in the index list.
-fn instance_fade(i: InstanceIn) -> f32 {
+/// hands over from. Then the phase of its dither, from the copy that `source` names. On WebGPU the
+/// culling shader writes the fade value into the copy's fourth id, and on WebGL2 it follows the
+/// instance's entry in the index list.
+fn instance_lod(i: InstanceIn, source: u32) -> vec2f {
 #ifdef WEBGL2
     let record = draw_record(i);
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let slot = record.x + i.instance * 2u + 1u;
-    return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+    let fade = bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+    return vec2f(fade, f32(lod_hash(source)));
 #else
-    return bitcast<f32>(i.ids.w);
+    return vec2f(bitcast<f32>(i.ids.w), f32(lod_hash(source)));
 #endif
 }
 
-/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade`: the
-/// pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies under a positive fade value,
-/// or at or over the size of a negative one. The two levels of a band take the fade value with
-/// opposite signs, so each pixel draws one of them, and a fade value of 0 keeps every pixel.
-fn lod_kept(fade: f32, pixel: vec2f) -> bool {
-    let p = vec2u(pixel) & vec2u(3u);
+/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade` and
+/// dither phase `phase`: the pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies
+/// under a positive fade value, or at or over the size of a negative one. The phase moves the
+/// pattern by whole pixels within its 4 × 4 tile. The two levels of a band take the fade value
+/// with opposite signs and the same phase, so each pixel draws one of them, and a fade value of 0
+/// keeps every pixel.
+fn lod_kept(fade: f32, pixel: vec2f, phase: u32) -> bool {
+    let p = (vec2u(pixel) + vec2u(phase & 3u, phase >> 2u)) & vec2u(3u);
     let low = p & vec2u(1u);
     let high = p >> vec2u(1u);
     // The 2 × 2 dither is 0, 2 on its first row and 3, 1 on its second.

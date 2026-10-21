@@ -63,7 +63,7 @@ The distance runs from the camera to the center of the object's bounding sphere,
 
 ## Fading between levels
 
-A level that switches in at once can pop. Past each switch distance lies a short band, 8% of the distance long, where the old level and the new one both draw. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. No pixel draws twice, and nothing sorts.
+A level that switches in at once can pop. Past each switch distance lies a short band, 8% of the distance long, where the old level and the new one both draw. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
 
 `setLevels(levels, { fade: false })` switches a mesh's levels at once. The `lodFade` quality setting turns every band off on Low. The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade.
 
