@@ -109,6 +109,7 @@ import {
 	type Budget,
 	type BuiltFile,
 	budgetProblems,
+	budgetWarnings,
 	COLUMNS,
 	COMBOS_BUDGET,
 	type CORE_BUILDS,
@@ -1206,6 +1207,7 @@ async function main(): Promise<void> {
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
+	for (const warning of budgetWarnings(parts)) console.warn(`warning: ${warning}`);
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {
 		console.error('');
