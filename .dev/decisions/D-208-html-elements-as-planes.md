@@ -34,7 +34,7 @@ The question has four parts:
 | A billboard's matrix against three.js's `CSS3DSprite` matrix, a turned camera, a turned and scaled object and `rotation2D` | Within a ten-thousandth | Same test |
 | The container's transform against three.js's `CSS3DRenderer` camera transform, a perspective view and two orthographic views | Within a ten-thousandth | Same test |
 | An element's box against three.js's `CSS3DRenderer` box, a turned card and a billboard card | Within 1.5 CSS pixels | `tests/image/labels-3d.spec.ts`, hold mode |
-| A billboard's element against the card's place in the frame on screen, while the camera rolls | Within 1 CSS pixel, in every thread mode | Same test |
+| A billboard's element against the card's place in the frame on screen, while the camera rolls | Within 2 CSS pixels, in every thread mode: the box comes from two composed transforms, so a reading can catch a fraction of the card's move | Same test |
 | Download, after Brotli | The page's label loop grows from 1,157 to 2,009 bytes, 852 bytes more, and loads with the first bind | `bun run build`, against main's size report |
 
 ## Decision
