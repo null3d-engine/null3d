@@ -93,3 +93,7 @@ The brief also listed smaller items with a recommendation. The owner's rulings a
 - **The three.js mapping:** new entries for `TAAUNode`, `TRAANode`, `FSR1Node`, `SSGINode`, `LightProbeGrid`, the clustered lights, `GaussianSplat`, `SunLight` and the screen-space shadows. Entries that said "after 1.0" now give the version that brings the feature. WebXR says "not in version 1", and TAA says "no equivalent" until M3-A11 rules. The porting skill and the develop skill follow.
 - **README:** the roadmap's 0.3 and 1.0 steps gain the features of these rulings.
 - **Plans:** the new tasks join M3's and M4's task lists.
+
+## Addendum, 21 October 2026: M4's tasks from these rulings move into M3
+
+The owner moved all of M4's feature work into M3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). Rulings 16 (the temporal upscaler, M3-F10, still only if M3-A11 ships a temporal resolve), 19 (the FFT ocean, M3-F9), 21 (the glTF intent gaps, M3-G1 to M3-G4), 25 (the script-tag build, M3-O1) and 26 (six API features, M3-K1 to M3-K6) now come in M3. Ruling 20 stands: GPU grass stays dropped.

@@ -248,3 +248,7 @@ Tasks, each with its first user:
 - The water add-on: river and lake in M3, after splats, then the FFT ocean before 1.0 ([D-179](D-179-technique-rulings-2026-10-15.md)). The docs' water recipe and the Creek then use it.
 - The `three-compat` add-on in M3, with Reinhard, Cineon and `OutlinePass`'s glow ([D-179](D-179-technique-rulings-2026-10-15.md)).
 - M3-B1 to M3-B6 move to `examples/addons/`.
+
+## Addendum, 21 October 2026: M4's hook and platform tasks move into M3
+
+The owner moved all of M4's feature work into M3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). The hooks table's M4 rows now come in M3: H1 (M3-E8), H2 (M3-E9), H8 (M3-E10), the texture-unit allocator (M3-D7), namespaces (M3-D8), the plugin interface version (M3-D6) and the listing check (M3-D9). The plugin interface version still freezes with the API, in M4. Before H3, M3-R1 defines one public feature description that every hook is an instance of. Built-in renderer features stay internal and do not use these hooks; a feature that leaves the core uses them.

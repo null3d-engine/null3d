@@ -315,3 +315,7 @@ My reading of why it is deferred:
 Two things would make it worth revisiting. Renderer conflicts could rise again across parallel
 work. Or a feature might again need 20 to 30 places in `frame_graph.rs` and both id tables. Until
 then the debt stays recorded here and in review findings M-9, R-16 and R-17, with no code changes.
+
+## Addendum, 21 October 2026: after 1.0, in the shape of the feature description
+
+The owner kept this plan deferred until after 1.0 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). When it restarts, the `FrameStep` trait takes the shape of the public feature description that M3-R1 defines for add-on hooks: frame point, declared reads and writes, the ready, quality, resize, reset and destroy callbacks, published outputs and lighting slots. Built-in steps and add-on features are then the same kind of node in the graph, while the trait stays crate-private. A built-in moves onto it only when it needs major work. M3-R1's test writes one built-in against the description first, which checks the shape before any migration.
