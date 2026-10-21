@@ -144,6 +144,7 @@ To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The en
 | The canvas shows only the background | The sketch set no active camera | Call `scene.setActiveCamera(camera)` |
 | An object that should show does not | It is behind the camera, or outside the camera's near and far distances (0.1 to 2,000 meters by default) | Draw its place with `debug.axes`, and check the camera's `near` and `far` |
 | Objects are black | The scene has no light, and `materials.standard` needs light | Add a light, or use `materials.unlit` |
+| Parts of a custom material draw black | The shader computes NaN there, such as from `normalize` of a zero vector, `pow` of a negative number or a division of zero by zero. The engine draws NaN as black, so it cannot spread through bloom | Guard the math: `normalize` only vectors longer than 0, and `pow` only numbers of 0 or more |
 | `document is not defined` or `window is not defined` | The sketch's code uses the page's DOM, which a worker does not have | Keep DOM code in the page, and send the sketch [messages](../api/page.md) |
 | `engine.mode.build` is `single` | The page is not cross-origin isolated | Send the two headers that [Hosting and cross-origin isolation](../getting-started/hosting.md) lists |
 | Rows written to an instance batch do not move | The batch is static, and the rows are not marked | Call `markDirty`, or create the batch with `dynamic: true` ([Instances and batching](../concepts/instances.md)) |
