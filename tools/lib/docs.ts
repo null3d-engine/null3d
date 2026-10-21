@@ -111,7 +111,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
 	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
-	{ id: 'api/controls', title: 'Camera controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls, with pointer lock (0.2).' },
+	{ id: 'api/controls', title: 'Controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls, with pointer lock (0.2); drag, rotate and scale gizmos.' },
 	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects of 0.2; custom effects with post.addEffect and custom tone curves.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass for scene passes that draw into textures; switching and removing passes; render.dumpGraph.' },
 	{ id: 'api/features', title: 'Add-on feature descriptions', since: '0.3', summary: 'One description for an add-on feature: frame point, reads and writes, callbacks, outputs with neutral defaults, lighting slots, order band and view mask.' },
