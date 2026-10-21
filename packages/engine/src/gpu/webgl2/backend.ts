@@ -695,6 +695,17 @@ export class WebGL2Backend {
 	}
 
 	/**
+	 * Where the draw section of the list in `words[start, end)` begins, after the pipelines it
+	 * creates. It walks the same ops as `prepare` and starts no build.
+	 */
+	restStart(words: Uint32Array, start: number, end: number): number {
+		let i = start;
+		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE)
+			i += (words[i] as number) >>> 8;
+		return i;
+	}
+
+	/**
 	 * True while a program is compiling in the background, or a pipeline waits for its custom
 	 * material's shader. Pipelines whose shaders arrived are created first.
 	 */

@@ -671,6 +671,21 @@ export class WebGPUBackend {
 	}
 
 	/**
+	 * Where the draw section of the list in `words[start, end)` begins, after the pipelines it
+	 * creates. It walks the same ops as `prepare` and starts no build.
+	 */
+	restStart(words: Uint32Array, start: number, end: number): number {
+		let i = start;
+		while (i < end) {
+			const header = words[i] as number;
+			const op = header & 0xff;
+			if (op !== G.OP_CREATE_RENDER_PIPELINE && op !== G.OP_CREATE_COMPUTE_PIPELINE) break;
+			i += header >>> 8;
+		}
+		return i;
+	}
+
+	/**
 	 * True while a pipeline is building. Pipelines whose shaders arrived start to build first, and
 	 * so do those of custom materials whose shader a hot update replaced.
 	 */

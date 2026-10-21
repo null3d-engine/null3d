@@ -5,8 +5,10 @@ import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { BUILD_WAIT_LIMIT_MS, FrameReplay } from './scene-renderer';
 
 /**
- * A backend whose pipelines build while `building` is true. It lists where each list it prepared
- * starts, and where each replay started. Each list creates pipelines in its first word.
+ * A backend whose pipelines build while `building` is true. Each list it prepares is seen with one
+ * pipeline op at its front, and each list it scans holds three, so a list that the sketch records
+ * again after a prepare moves its draw section. It lists where each list it prepared starts, and
+ * where each replay started.
  */
 function fakeBackend() {
 	return {
@@ -27,6 +29,9 @@ function fakeBackend() {
 			this.prepared.push(start);
 			return start + 1;
 		},
+		restStart(_words: Uint32Array, start: number) {
+			return start + 3;
+		},
 		replay(_words: Uint32Array, _floats: Float32Array, from: number) {
 			this.replayed++;
 			this.replayedFrom.push(from);
@@ -42,8 +47,9 @@ function setup() {
 	const control = createControlBuffer(false);
 	const { slots } = controlViews(control);
 	const backend = fakeBackend();
-	const replay = new FrameReplay(backend, new WebAssembly.Memory({ initial: 1 }), control);
-	return { slots, backend, replay };
+	const memory = new WebAssembly.Memory({ initial: 1 });
+	const replay = new FrameReplay(backend, memory, control);
+	return { slots, backend, replay, words: new Uint32Array(memory.buffer) };
 }
 
 describe('FrameReplay', () => {
@@ -89,12 +95,16 @@ describe('FrameReplay', () => {
 	});
 
 	it('waits for the builds, then gives the frame taken last, whose list the sketch has not reused', async () => {
-		const { slots, backend, replay } = setup();
+		const { slots, backend, replay, words } = setup();
 		// The sketch thread records a list for the frame the loop takes.
 		Atomics.store(slots, Slot.DrawListAddress0, 400);
 		Atomics.store(slots, Slot.DrawListWords0, 10);
 		Atomics.store(slots, Slot.DrawListAddress1, 800);
 		Atomics.store(slots, Slot.DrawListWords1, 10);
+		words[100] = 0x0104;
+		words[103] = 5;
+		words[200] = 0x0104;
+		words[203] = 5;
 		Atomics.store(slots, Slot.FramesTaken, 3);
 		backend.building = true;
 		const taken = replay.builtTaken();
@@ -105,12 +115,16 @@ describe('FrameReplay', () => {
 	});
 
 	it('starts the builds of each list once, though a capture replays a frame the loop has passed', async () => {
-		const { slots, backend, replay } = setup();
+		const { slots, backend, replay, words } = setup();
 		// The lists of even and odd frames start at word 100 and word 200.
 		Atomics.store(slots, Slot.DrawListAddress0, 400);
 		Atomics.store(slots, Slot.DrawListAddress1, 800);
 		Atomics.store(slots, Slot.DrawListWords0, 10);
 		Atomics.store(slots, Slot.DrawListWords1, 10);
+		words[100] = 0x0104;
+		words[103] = 5;
+		words[200] = 0x0104;
+		words[203] = 5;
 		expect(replay.prepare(4)).toBe(true);
 		replay.replay(4);
 		Atomics.store(slots, Slot.FramesTaken, 4);
@@ -125,36 +139,46 @@ describe('FrameReplay', () => {
 		expect(backend.replayedFrom).toEqual([101, 101, 201]);
 	});
 
-	it('waits for a frame whose list recorded, after a GPU loss', async () => {
-		const { slots, replay } = setup();
-		// Frame zero's list is the empty one the failed frame left, and the next frame records one.
-		Atomics.store(slots, Slot.DrawListAddress0, 400);
-		Atomics.store(slots, Slot.DrawListWords0, 0);
-		Atomics.store(slots, Slot.DrawListAddress1, 800);
-		Atomics.store(slots, Slot.DrawListWords1, 10);
-		Atomics.store(slots, Slot.FramesTaken, 2);
-		const taken = replay.builtTaken();
-		Atomics.store(slots, Slot.FramesTaken, 3);
-		await expect(taken).resolves.toBe(3);
-	});
-
-	it("replays the other frame's list when the taken one begins with a zero", () => {
-		const control = createControlBuffer(false);
-		const { slots } = controlViews(control);
-		const memory = new WebAssembly.Memory({ initial: 1 });
-		const backend = fakeBackend();
-		const replay = new FrameReplay(backend, memory, control);
-		const words = new Uint32Array(memory.buffer);
-		// Frame 2's list begins with zero, which the backend refuses as truncated; frame 3's slot
-		// holds the list that drew last, whose header is a count.
+	it('waits for a frame whose list holds a draw, after a GPU loss', async () => {
+		const { slots, replay, words } = setup();
+		// The loss cleared the lists that both frames in the slots recorded.
 		Atomics.store(slots, Slot.DrawListAddress0, 400);
 		Atomics.store(slots, Slot.DrawListWords0, 10);
 		Atomics.store(slots, Slot.DrawListAddress1, 800);
 		Atomics.store(slots, Slot.DrawListWords1, 10);
-		words[101] = 0;
+		Atomics.store(slots, Slot.FramesTaken, 2);
+		const taken = replay.builtTaken();
+		// The next frame records a list whose draw section holds an op.
+		words[200] = 0x0104;
+		words[203] = 5;
+		Atomics.store(slots, Slot.FramesTaken, 3);
+		await expect(taken).resolves.toBe(3);
+	});
+
+	it("replays the other frame's list when a failed device cleared the taken one", () => {
+		const { slots, backend, replay, words } = setup();
+		// Frame 2's list begins with zero, where a cleared list begins; frame 3's slot still holds
+		// the list that drew last.
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
 		words[200] = 5;
 		replay.replayForCapture(2);
 		expect(backend.replayedFrom).toEqual([200]);
+	});
+
+	it("finds the draw section again once the sketch recorded into the frame's list again", () => {
+		const { slots, backend, replay, words } = setup();
+		// The renderer prepared frame 4 when its list created one pipeline, and the sketch then
+		// recorded into that list again, so the place found then holds a word of the pipeline.
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 20);
+		words[100] = 0x0104;
+		words[101] = 0;
+		words[103] = 5;
+		replay.replayForCapture(4);
+		expect(backend.replayedFrom).toEqual([103]);
 	});
 
 	it('stops a capture that waits for builds when the renderer is destroyed', async () => {

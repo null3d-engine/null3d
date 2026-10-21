@@ -20,6 +20,8 @@ export const BUILD_WAIT_LIMIT_MS = 30_000;
 /** What the scene renderers ask of a GPU backend. */
 interface SceneBackend {
 	prepare(words: Uint32Array, start: number, end: number): number;
+	/** Where a list's draw section begins, after the pipelines it creates, starting no build. */
+	restStart(words: Uint32Array, start: number, end: number): number;
 	readonly building: boolean;
 	replay(
 		words: Uint32Array,
@@ -131,28 +133,44 @@ export class FrameReplay {
 		if (!this.backend.building) this.complete = true;
 	}
 
-	/**
-	 * Replays the frame taken last for a capture. A view that rests records no list for a frame,
-	 * so the frame's own slot holds no words: the other frame's slot then holds the list that drew
-	 * last, which is the frame the screen shows. With nothing drawn since the frames in the slots,
-	 * the capture replays the frame's own empty list, and the backend reports it.
-	 */
+	/** Replays the list that a capture draws for the frame taken last. */
 	replayForCapture(frame: number): void {
-		const from = this.restOf(frame);
+		const range = this.captureRange(frame);
 		const words = this.views.heap(Uint32Array);
 		const floats = this.views.heap(Float32Array);
-		// A list whose first word is zero holds no draw that the backend can read: it refuses the
-		// list as truncated. The other frame's slot then holds the list that drew last.
-		if (this.end > from && words[from] !== 0) {
-			this.backend.replay(words, floats, from, this.end, words.buffer);
-			return;
-		}
-		const parity = (frame & 1) ^ 1;
+		// With neither list holding an op there is nothing to draw, and the empty replay draws none.
+		const from = range?.from ?? this.end;
+		const end = range?.end ?? this.end;
+		this.backend.replay(words, floats, from, end, words.buffer);
+	}
+
+	/**
+	 * The part of a list that a capture draws. The list of the frame taken last draws from the place
+	 * after the pipelines it creates, which the renderer found when it prepared the frame. A view
+	 * that rests records every frame, so the sketch rewrites that frame's list after the renderer
+	 * took it, and the pipelines at the front then hold different words: the draw section is found
+	 * again, starting no build. A list that a failed device cleared holds no op, so the other
+	 * frame's slot then holds the list that drew last, which is the frame the screen shows. Null
+	 * when neither list holds an op.
+	 */
+	private captureRange(frame: number): { from: number; end: number } | null {
+		const from = this.restOf(frame);
+		const end = this.end;
+		const words = this.views.heap(Uint32Array);
+		const parity = frame & 1;
 		const start = (Atomics.load(this.slots, Slot.DrawListAddress0 + parity) >>> 0) / 4;
-		const end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
-		if (end > start && words[start] !== 0)
-			this.backend.replay(words, floats, start, end, words.buffer);
-		else this.backend.replay(words, floats, from, this.end, words.buffer);
+		// A list whose first word is zero is the one a failed device cleared.
+		if (end > start && words[start] !== 0) {
+			const rest =
+				end > from && words[from] !== 0 ? from : this.backend.restStart(words, start, end);
+			if (end > rest && words[rest] !== 0) return { from: rest, end };
+		}
+		const other = parity ^ 1;
+		const otherStart = (Atomics.load(this.slots, Slot.DrawListAddress0 + other) >>> 0) / 4;
+		const otherEnd = otherStart + Atomics.load(this.slots, Slot.DrawListWords0 + other);
+		if (otherEnd > otherStart && words[otherStart] !== 0)
+			return { from: otherStart, end: otherEnd };
+		return null;
 	}
 
 	/**
@@ -161,7 +179,7 @@ export class FrameReplay {
 	 * taken frame's list again once the next frame is taken, so the caller replays the frame at
 	 * once, before this thread can take another. It fails when the renderer is destroyed during the
 	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit. A frame that
-	 * a failure cleared recorded no list, so the capture waits for a frame whose list holds words:
+	 * a failure cleared recorded no list, so the capture waits for a frame with a list to draw:
 	 * after a GPU loss the frame taken then is the cleared one, and the next frame records again.
 	 */
 	async builtTaken(): Promise<number> {
@@ -170,8 +188,7 @@ export class FrameReplay {
 			if (this.abandoned)
 				throw new Error('the GPU was lost or the engine stopped during the capture');
 			const frame = Atomics.load(this.slots, Slot.FramesTaken);
-			const from = this.restOf(frame);
-			if (!this.backend.building && this.end > from) return frame;
+			if (!this.backend.building && this.captureRange(frame) !== null) return frame;
 			if (performance.now() >= deadline)
 				throw new Error(
 					`the frame's pipelines were still building after ${BUILD_WAIT_LIMIT_MS / 1000} s`,
