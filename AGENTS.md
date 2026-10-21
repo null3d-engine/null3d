@@ -127,6 +127,8 @@ No reviewer reads a branch before it lands ([D-157](.dev/decisions/D-157-direct-
    Run the tests that a change touches before you commit it, on this machine, and read their result. A change is finished when its own tests pass here, never when CI first reports on it: CI is the branch's backstop, not the reader of a single change. Any helper, agent or person who changes code follows this, and updates the tests and the references it moves in the same commit.
 35. When an attached phone or tablet does not answer, run the same plan on the closest cloud device at once, as [Device sessions](.dev/devices.md#a-device-that-does-not-answer) says. Do not wait for the device or its control helper to recover: the gate and the release depend on device runs. Record that the run used the cloud stand-in, and why.
 
+36. A task that adds or changes a feature also brings the demos that show it in step, and makes them better where the feature allows it: the showcase, the comparison scenes and the basic demos, not only a new example. A person must be able to see the feature in a demo, with the pictures and references that the demo draws updated in the same change. The owner's words on 21 October 2026: "as we progress through m3 task list make sure to update and improve all demos accordingly, whether that be visually and/or code".
+
 ## Performance work
 
 The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.dev/benchmarks.md) says how to run them and read them. [Device sessions](.dev/devices.md) covers phones, tablets and the Mac's browser apps. [Implementation notes](.dev/implementation-notes.md) holds the habits and browser faults behind the hard rules. These points apply to every change:
