@@ -225,3 +225,9 @@ The owner ruled on 15 October 2026 ([D-179](D-179-technique-rulings-2026-10-15.m
 - a temporal upscaler that keeps MSAA: in M4 with a temporal resolve.
 
 Without a temporal resolve, both are dropped.
+
+## Addendum, 21 October 2026: the second look refuses TAA
+
+M3-A11, the second look at a temporal resolve, decided on 21 October 2026 ([D-200](D-206-temporal-resolve.md)). The resolve does not ship for 0.1.0. Its prototype drew the scene live on WebGPU, but a captured frame was black, which breaks image tests, hold mode and the command-line screenshot, and a live toggle on WebGPU destroyed a motion target or the scene depth in a flight. Its cost in the Creek at 1080p was 0.3 to 1.3 ms on WebGPU and 2.8 to 9.1 ms on WebGL2. The figures of this record's quality bar could not be measured from black captures.
+
+So TAA is dropped, not deferred, as [D-179](D-179-technique-rulings-2026-10-15.md)'s ruling 24 asks. The presets keep FXAA on Low and MSAA 4x from Medium up. The three.js mapping says that TAA is not planned. The prototype's code was not kept, as a "no" lands the measurement and the record alone.
