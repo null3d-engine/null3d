@@ -18,6 +18,18 @@ const AIM = 60;
 const CARD: [number, number] = [140, 150];
 const CARD_OFFSET: Vec3 = [0, 165, 8];
 const NAMES = ['Aurora', 'Basalt', 'Cinder', 'Delta', 'Ember', 'Fathom', 'Glass', 'Harbor', 'Iris'];
+/** The colors of the monoliths' strips, one for each station around the ring. */
+const TONES = [
+	'#e05151',
+	'#e0b051',
+	'#b0e051',
+	'#51e051',
+	'#51e0b0',
+	'#51b0e0',
+	'#5151e0',
+	'#b051e0',
+	'#e051b0',
+];
 /** What the title above the ring says. */
 const TITLE = 'CSS3D';
 
@@ -25,14 +37,16 @@ export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, ui, page, time } = ctx;
 	scene.setBackground('#06080c');
 	scene.setFog({ color: '#06080c', density: 0.0004 });
-	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.4 });
+	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 1.1 });
 	scene.createDirectionalLight({
-		direction: [-0.5, -1, -0.4],
+		direction: [-0.55, -1, -0.45],
 		color: '#ffe3c2',
-		intensity: 2.2,
+		intensity: 3.4,
 		castShadows: true,
 		shadow: { distance: 1200 },
 	});
+	// A cool light from the far side picks out the ring's far half.
+	scene.createDirectionalLight({ direction: [0.6, -0.4, 0.7], color: '#9dc4ff', intensity: 1.2 });
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
 		near: 5,
@@ -46,7 +60,7 @@ export default defineSketch(async (ctx) => {
 	// A dark floor, which the monoliths cast their shadows on.
 	scene.createMesh({
 		mesh: geometry.plane({ width: 6000, height: 6000 }),
-		material: materials.standard({ color: '#10151d', roughness: 0.55, metalness: 0.3 }),
+		material: materials.standard({ color: '#1c2531', roughness: 0.5, metalness: 0.2 }),
 		position: [0, -48, 0],
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
@@ -63,11 +77,11 @@ export default defineSketch(async (ctx) => {
 			position: [Math.sin(angle) * RING, 36, Math.cos(angle) * RING],
 			rotation: quat.fromEuler(quat.create(), 0, angle, 0),
 		});
-		const tone = `hsl(${Math.round((i / STATIONS) * 360)} 70% 60%)`;
+		const tone = TONES[i] as string;
 		scene.createMesh({
 			parent: station,
 			mesh: slab,
-			material: materials.standard({ color: '#1b2230', roughness: 0.35, metalness: 0.7 }),
+			material: materials.standard({ color: '#35425c', roughness: 0.3, metalness: 0.55 }),
 			scale: [96, 168, 14] as Vec3,
 			castShadows: true,
 			receiveShadows: true,

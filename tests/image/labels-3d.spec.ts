@@ -22,8 +22,12 @@ interface Samples {
 
 /** How far an element may sit from three.js's, in CSS pixels. */
 const TOLERANCE = 1.5;
-/** How far the element may sit from the card's place in its frame, in CSS pixels. */
-const PLACE_TOLERANCE = 1;
+/**
+ * How far the element may sit from the card's place in its frame, in CSS pixels. The element's box
+ * comes from the browser composing the container's transform with the element's, so a reading can
+ * differ from the sketch's place by a fraction of the card's move between two frames.
+ */
+const PLACE_TOLERANCE = 2;
 /** The card moves at least this far between frames while the camera rolls, in CSS pixels. */
 const MIN_STEP = 3;
 
