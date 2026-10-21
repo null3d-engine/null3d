@@ -5,6 +5,9 @@
 // output or the reason it failed. The engine's own tasks are imported by name below; an add-on's
 // task comes by the address of its module.
 
+import { TaskLoadError } from '../shared/task-load-error';
+import { moduleKey } from '../shared/task-modules';
+
 /** A request of the loader. */
 export interface TaskRequest {
 	id: number;
@@ -12,12 +15,16 @@ export interface TaskRequest {
 	task: string;
 	/** The address of the task's module, for a task that the engine does not hold. */
 	script?: string;
-	/** Compiled modules that this worker has not had before, by name. */
+	/** Compiled modules that this worker has not had before, by key. */
 	modules?: [string, WebAssembly.Module][];
 	input: unknown;
 }
 
-/** Where a task failed: loading its module or its WebAssembly, or running it. */
+/**
+ * Where a task failed: loading its module or its WebAssembly, or running it.
+ *
+ * @category api/tasks
+ */
 export type TaskStage = 'load' | 'run';
 
 /** An answer: the task's output, or where and why it failed. */
@@ -25,7 +32,12 @@ export type TaskAnswer =
 	| { id: number; output: unknown }
 	| { id: number; failed: { stage: TaskStage; message: string } };
 
-/** What a task's module runs. */
+/**
+ * A task's module, which the worker imports at the address that the task names. The module keeps
+ * its state between tasks, and the engine imports it once in each worker that runs the task.
+ *
+ * @category api/tasks
+ */
 export interface TaskModule {
 	/**
 	 * Runs the task on `input`, with the compiled modules the loader sent by name. Throws a
@@ -34,18 +46,16 @@ export interface TaskModule {
 	run(input: unknown, wasm: (name: string) => WebAssembly.Module): TaskResult | Promise<TaskResult>;
 }
 
-/** A task's output, and the objects that move to the loader with it rather than being copied. */
-export interface TaskResult {
-	output: unknown;
-	transfer?: Transferable[];
-}
-
 /**
- * A failure to start a task's code or WebAssembly, as against a failure on the task's input. The
- * worker knows it by its name, which every copy of this module gives it.
+ * A task's output, and the objects that move to the loader with it rather than being copied.
+ *
+ * @category api/tasks
  */
-export class TaskLoadError extends Error {
-	override name = 'TaskLoadError';
+export interface TaskResult {
+	/** The task's answer, which the promise of `runTask` resolves with. */
+	output: unknown;
+	/** The objects that move to the loader with the output rather than being copied. */
+	transfer?: Transferable[];
 }
 
 /** The engine's own tasks, which each load the first time this worker runs one. */
@@ -71,8 +81,8 @@ export function serveTasks(
 	const modules = new Map<string, WebAssembly.Module>();
 	const loaded = new Map<string, Promise<TaskModule>>();
 	let waiters: (() => void)[] = [];
-	const wasm = (name: string) => {
-		const module = modules.get(name);
+	const wasmOf = (script: string | undefined) => (name: string) => {
+		const module = modules.get(moduleKey(script, name));
 		if (!module) throw new TaskLoadError(`the loader sent no ${name} module`);
 		return module;
 	};
@@ -93,12 +103,12 @@ export function serveTasks(
 		return module;
 	};
 	const run = async (request: TaskRequest) => {
-		for (const [name, module] of request.modules ?? []) modules.set(name, module);
+		for (const [key, module] of request.modules ?? []) modules.set(key, module);
 		let stage: TaskStage = 'load';
 		try {
 			const task = await load(request);
 			stage = 'run';
-			const { output, transfer = [] } = await task.run(request.input, wasm);
+			const { output, transfer = [] } = await task.run(request.input, wasmOf(request.script));
 			source.postMessage({ id: request.id, output }, transfer);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

@@ -293,3 +293,41 @@ M3-E3 builds H9, with M3-D3's hint for files that load without it. The shape:
 - Without a handler, a required extension that a foundation add-on reads fails with E1417, whose message names the package: `KHR_gaussian_splatting` names `@null3d/splats`. The table in `gltf-parse.ts` holds that list, so a new add-on's extensions join it with the add-on's handler.
 
 Not in this shape: extensions on materials, nodes or the file itself, and a handler that runs before the file's other objects exist. The first user, splats, carries its data on a mesh primitive, and its own draw uses H3 and H5. The handler also gives no bounds; the model's bounds hold a part's mesh by its radius around the node.
+
+## Addendum, 21 October 2026: H5's shape, an add-on's tasks on the job workers
+
+**Problem.** H5's first user, the Gaussian splats add-on (M3-F2), sorts its instances in every frame on WebGL2. The engine's on-demand loader already runs such work in the job workers for its own decoders. No public entry point exposes it. An add-on that copied the loader would start workers of its own, which D-54 rejects. A page with two add-ons would then run three sets of threads, and each would solve CDN delivery and the page's policy again.
+
+**Decision.** `runTask(task, input, transfer?)` is the hook, exported from `@null3d/engine`.
+
+- A task is one object: a name, the address of the module that exports `run`, and the WebAssembly files that the module uses. The engine compiles each file once per page. It imports the module once in each worker that runs it, so a module keeps its state between tasks.
+- `run` gets the task's input and a function that returns each compiled module by the name the task gives it. It returns `{ output, transfer? }` or a promise of one.
+- The promise resolves on the thread that queued the task. A rejection is a `TaskFailure` with the stage `'load'`, `'run'` or `'stopped'`, or an engine error when a WebAssembly file does not download or compile.
+- The public function loads the loader on first use. `TaskFailure` and `TaskLoadError` live in files of their own. An export that pulled the loader into the page's start also pulled its worker in. The size report refused that chunk as engine code that no part named. A page that runs no task now pays nothing.
+
+The contract, which the docs page and the TSDoc give:
+
+- The task runs in a job worker, never in the thread that runs the sketch.
+- A job worker leaves the job loop only between frame chunks, and with two or more job workers one never takes tasks ([D-07](D-07-job-workers.md), [D-54](D-54-addon-modules.md)). So no frame waits for a task.
+- An answer reaches the thread that queued the task between two frames. A `then` callback runs before the next frame's `onUpdate`, and that frame draws what the task wrote.
+- Tasks run at the same time in different job workers, and their answers come back in no fixed order.
+- A `SharedArrayBuffer` in the input is posted to the worker shared, not copied, and the engine neither copies nor transfers it. Once the promise resolves, the worker has stopped writing.
+- Where no job worker takes the tasks, the loader starts a task worker, as it does on a page without worker threads. A task worker that does not start fails the task with E1406.
+- When the engine stops, the tasks that wait reject with the stage `'stopped'`.
+
+**Options rejected.**
+
+- A worker handle that an add-on starts and keeps. It is D-54's rejected option, with the same costs.
+- A callback without a promise, delivered at a frame point. An add-on could not tell when the worker had finished writing, and the engine would need a frame point for work that has none.
+- A copy of every input and output. A per-frame sort of a large splat scene copies megabytes in each frame, on the thread that must keep the frame.
+- A plugin object with one interface per hook. M3-R1 gives every hook one feature description; H5 has no frame point and no scene resource, so it stays a function and a task descriptor.
+
+**Changes the public hook needed.** Three faults would show with a second add-on, or with a sketch on the page:
+
+- A file's name was global to the page, so two add-ons that both named a file `sort` received each other's module. The engine now keys each file by its task's module address, both in the thread's cache of compiled modules and in each worker's table.
+- The cache of compiled modules was keyed by a file's name. It is keyed by the file's address, so two files with one name each compile once.
+- When the sketch runs on the page (`sketchThread: 'main'`), the page never heard which job workers started. The engine sent that news to the sketch worker alone. The first task then waited its full limit of 10 seconds before it ran. The page's own loader now takes the same news. The browser test's case for that mode took 10.7 seconds before the fix, and 0.66 seconds after it.
+
+**Tests.** `packages/engine/src/shared/tasks.test.ts` checks the shared buffer, the failure stages and the per-task module key. The browser test `tests/image/addon-tasks.spec.ts` runs the hook in every thread mode, through the minimal add-on in `tests/pages/addons/task-probe/`. It checks four things. The task ran in a job worker or the task worker. Each answer landed in a frame after the frame that queued it. The rounds reached the frames in order. The last answer is the one that the drawn frame shows.
+
+**What shows it.** The hook's visible user is the splats add-on, which brings its demo. No demo shows a job-worker task on its own, so this change adds no demo (M3-F2 owns that one).

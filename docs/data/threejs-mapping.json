@@ -2027,6 +2027,17 @@
       "notes": "The sketch worker has no DOM. createEngine({ sketchThread: 'main' }) runs the sketch on the page's thread, where it can reach the DOM.",
       "docs": "api/sketch",
       "detect": "\\bdocument\\.(getElementById|querySelector|querySelectorAll|body|createElement)\\b|\\bwindow\\.(innerWidth|innerHeight|devicePixelRatio|addEventListener)\\b"
+    },
+    {
+      "id": "worker",
+      "category": "Other",
+      "three": "new Worker(...) / worker.postMessage / SharedArrayBuffer",
+      "status": "changed",
+      "since": "0.3",
+      "target": "runTask: the task's module and its WebAssembly run in the engine's job workers",
+      "notes": "An add-on starts no worker of its own. Give runTask the address of a module that exports run, and await its answer. A SharedArrayBuffer in the task's input is shared with the worker rather than copied. The engine never waits for a task in a frame, and an answer arrives between frames.",
+      "docs": "api/tasks",
+      "detect": "new\\s+Worker\\s*\\(|\\bSharedArrayBuffer\\b"
     }
   ]
 }
