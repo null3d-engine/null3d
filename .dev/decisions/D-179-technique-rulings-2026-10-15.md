@@ -137,5 +137,9 @@ engine for demanding games rather than for demos, and ruled:
   MaterialX shipping OpenPBR is the signal.
 - **Distance-field shadows go on the post-1.0 roadmap**, behind a future hook that lets an add-on or
   a core path own the shadow term; until then cascades and contact shadows carry the ground.
+- **GPU grass and hair go on the post-1.0 roadmap beside OpenPBR** (owner, 21 October 2026), as
+  content packs. The trigger for either is a real scene that needs it: vegetation-heavy ground for
+  grass, and a groomed character asset for hair, which also needs an asset path for grooming before
+  the renderer is worth building.
 
 Ruling 20's other drops stand: GPU grass and hair stay out of the plan, and the rest of the list is unchanged.
