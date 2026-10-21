@@ -113,6 +113,7 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
+export type { FeatureDraw, FeatureDrawOptions, FeatureDrawVertices } from './scene/feature-draws';
 export type {
 	FeatureBand,
 	FeatureDescription,

@@ -338,6 +338,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-particles.js', module: 'scene/particles.ts', loadedBy: 'page-sketch-runner.js' },
 	{
+		name: 'page-feature-draws.js',
+		module: 'scene/feature-draws.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
 		name: 'page-area-light-tables.js',
 		module: 'scene/area-light-tables.ts',
 		loadedBy: 'page-sketch-runner.js',
@@ -414,6 +419,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-particles.js',
 		module: 'scene/particles.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-feature-draws.js',
+		module: 'scene/feature-draws.ts',
 		loadedBy: 'sketch-worker.js',
 	},
 	{
