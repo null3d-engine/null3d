@@ -85,6 +85,12 @@ export type {
 } from './scene/animation';
 export type {
 	Assets,
+	GltfExtensionContext,
+	GltfExtensionData,
+	GltfExtensionHandler,
+	GltfExtensionNode,
+	GltfExtensionPart,
+	GltfExtensionPrimitive,
 	LoadGltfOptions,
 	LoadImageOptions,
 	LoadTextureOptions,

@@ -4,7 +4,8 @@
 // sketch thread (gltf.ts) makes engine resources from: each mesh's vertex arrays, tightly packed in
 // the types the file holds them in, the node tree with parents first, the materials as the
 // engine's options, the textures each material uses with their color space and texture
-// coordinates, the lights and the nodes with instancing. It decodes no image: the worker decodes
+// coordinates, the lights, the nodes with instancing, and the primitives that an add-on's
+// extension handler reads, with every attribute as floats. It decodes no image: the worker decodes
 // the images that the file holds, and the loader those it names by address. It allocates only what
 // it returns, so a file with huge counts fails with E1416 before it allocates anything.
 //
@@ -67,6 +68,15 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'EXT_meshopt_compression',
 	'KHR_draco_mesh_compression',
 ];
+
+/**
+ * The glTF extensions that an add-on reads, with the package that reads it. A file that requires
+ * one of them without that add-on fails with E1417, whose message names the package to import.
+ * An add-on that registers a handler reads its extensions, and no message names it.
+ */
+export const ADDON_EXTENSIONS: Readonly<Record<string, string>> = {
+	KHR_gaussian_splatting: '@null3d/splats',
+};
 
 /**
  * The extensions that give a texture an image in another format, in the order the loader takes
@@ -511,9 +521,30 @@ export const MESH_BVH = 'NULL3D_mesh_bvh';
 /** The extension that makes a primitive block the view, with a blocker mesh or with its own. */
 export const OCCLUDER = 'NULL3D_occluder';
 
+/**
+ * A primitive that carries an extension which an add-on's handler reads. The loader hands the
+ * primitive to the handler, and draws only the parts that the handler returns for it.
+ */
+export interface ExtensionPrimitiveData {
+	/** Each claimed extension on the primitive, with its JSON from the file. */
+	extensions: { name: string; json: Entry }[];
+	/** Every attribute's values as floats, by the file's name, such as `POSITION`. */
+	attributes: Record<string, Float32Array>;
+	/** The number of elements in each attribute. */
+	count: number;
+	/** The primitive's indices, which name triangles, or none when it gives none. */
+	indices?: Uint16Array | Uint32Array;
+	/** glTF's mode of the primitive, such as 0 for points and 4 for triangles. */
+	mode: number;
+	/** The material's index in the file, or -1 for glTF's default material. */
+	material: number;
+}
+
 export interface MeshData {
 	name: string;
 	primitives: PrimitiveData[];
+	/** The primitives that an add-on's extension handler reads, when the mesh has any. */
+	extensionPrimitives?: ExtensionPrimitiveData[];
 	/** The weight of each morph target when no clip sets it, when the primitives have targets. */
 	weights?: number[];
 	/** The targets' names, from the file's `extras.targetNames`, or none. */
@@ -786,8 +817,16 @@ export interface GltfContainer {
 	bytes: number;
 }
 
-/** Reads a .glb or .gltf file's container and JSON, and lists the buffers it names by address. */
-export function readContainer(file: Uint8Array, url: string): GltfContainer {
+/**
+ * Reads a file's container and JSON, and lists the buffers that it names by address. `handled`
+ * names the extensions that the add-ons' handlers read, which a file may require as it requires
+ * the engine's own.
+ */
+export function readContainer(
+	file: Uint8Array,
+	url: string,
+	handled: readonly string[] = [],
+): GltfContainer {
 	let text: Uint8Array;
 	let bin: Uint8Array | undefined;
 	const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
@@ -826,9 +865,18 @@ export function readContainer(file: Uint8Array, url: string): GltfContainer {
 			version ? `it is glTF ${version}, and the engine reads glTF 2.0` : 'it names no glTF version',
 		);
 	const required = list(json.extensionsRequired, 'extensionsRequired');
-	for (const name of required)
-		if (typeof name !== 'string' || !READ_EXTENSIONS.includes(name))
+	for (const name of required) {
+		if (typeof name !== 'string')
 			throw new GltfError('E1417', `it requires ${String(name)}, which the engine does not read`);
+		if (READ_EXTENSIONS.includes(name) || handled.includes(name)) continue;
+		const addon = ADDON_EXTENSIONS[name];
+		throw new GltfError(
+			'E1417',
+			addon
+				? `it requires ${name}, which the engine does not read. Import ${addon}, which reads it`
+				: `it requires ${name}, which the engine does not read`,
+		);
+	}
 	const external = new Map<number, string>();
 	list(json.buffers, 'buffers').forEach((buffer, k) => {
 		const uri = entry(buffer, `buffer ${k}`).uri;
@@ -857,6 +905,7 @@ export function parseGltf(
 	externalBuffers: ReadonlyMap<number, Uint8Array>,
 	url: string,
 	decoders: GltfDecoders = {},
+	handled: readonly string[] = [],
 ): GltfData {
 	const { json } = container;
 	const decode = decoders.meshopt;
@@ -1114,12 +1163,21 @@ export function parseGltf(
 	const meshes = list(json.meshes, 'meshes').map((value, k): MeshData => {
 		const mesh = entry(value, `mesh ${k}`);
 		const primitives: PrimitiveData[] = [];
+		const extensionPrimitives: ExtensionPrimitiveData[] = [];
 		list(mesh.primitives, `mesh ${k}'s primitives`).forEach((p, j) => {
 			const what = `mesh ${k}'s primitive ${j}`;
-			const primitive = parsePrimitive(entry(p, what), what, read, budget, notes, dracoOf);
+			const definition = entry(p, what);
+			// A primitive that a handler reads draws only what the handler returns for it.
+			const claimed = parseExtensionPrimitive(definition, what, read, budget, handled);
+			if (claimed) {
+				extensionPrimitives.push(claimed);
+				return;
+			}
+			const primitive = parsePrimitive(definition, what, read, budget, notes, dracoOf);
 			if (primitive) primitives.push(primitive);
 		});
 		const data: MeshData = { name: text(mesh.name), primitives };
+		if (extensionPrimitives.length > 0) data.extensionPrimitives = extensionPrimitives;
 		if (primitives.some((p) => p.morph))
 			Object.assign(data, morphWeights(mesh, primitives, `mesh ${k}`));
 		return data;
@@ -1331,7 +1389,7 @@ export function parseGltf(
 		return data;
 	});
 	for (const mesh of meshes)
-		for (const primitive of mesh.primitives)
+		for (const primitive of [...mesh.primitives, ...(mesh.extensionPrimitives ?? [])])
 			if (primitive.material >= materials.length)
 				broken(
 					`a primitive of mesh "${mesh.name}" names material ${primitive.material}, and the file has ${materials.length}`,
@@ -1566,6 +1624,62 @@ type DracoReader = (
 	primitive: Entry,
 	what: string,
 ) => { read: Reader; indices: Uint16Array | Uint32Array } | undefined;
+
+/**
+ * A primitive's data for an add-on's extension handler, when it carries one of the extensions that
+ * a handler reads: every attribute as floats, whatever its name, its indices, and each claimed
+ * extension's JSON. Undefined for a primitive that no handler claims.
+ */
+function parseExtensionPrimitive(
+	primitive: Entry,
+	what: string,
+	read: Reader,
+	budget: FileBudget,
+	handled: readonly string[],
+): ExtensionPrimitiveData | undefined {
+	const extensions = primitive.extensions as Entry | undefined;
+	if (!extensions) return undefined;
+	const held: ExtensionPrimitiveData['extensions'] = [];
+	for (const name of handled) {
+		const json = extensions[name];
+		if (json === undefined) continue;
+		held.push({ name, json: entry(json, `${what}'s ${name}`) });
+	}
+	if (held.length === 0) return undefined;
+	const attributes = (primitive.attributes ?? {}) as Entry;
+	const out: Record<string, Float32Array> = {};
+	let elements = -1;
+	for (const name of Object.keys(attributes)) {
+		const data = read(Number(attributes[name]), `${what}'s ${name}`);
+		if (elements < 0) elements = data.count;
+		else if (data.count !== elements)
+			broken(`${what}'s ${name} has ${data.count} values, and another attribute has ${elements}`);
+		out[name] = toFloats(data.array, data.normalized, budget, `${what}'s ${name}`);
+	}
+	let indices: Uint16Array | Uint32Array | undefined;
+	if (primitive.indices !== undefined) {
+		const data = read(Number(primitive.indices), `${what}'s indices`);
+		if (
+			data.components !== 1 ||
+			!(
+				data.array instanceof Uint8Array ||
+				data.array instanceof Uint16Array ||
+				data.array instanceof Uint32Array
+			)
+		)
+			broken(`${what}'s indices are not unsigned integers`);
+		indices = data.array instanceof Uint8Array ? Uint16Array.from(data.array) : data.array;
+	}
+	return {
+		extensions: held,
+		attributes: out,
+		count: Math.max(elements, 0),
+		...(indices && { indices }),
+		mode: Number(primitive.mode ?? TRIANGLES),
+		material:
+			primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`),
+	};
+}
 
 /** One primitive's vertex arrays and triangles, or undefined for points and lines, which it notes. */
 function parsePrimitive(
