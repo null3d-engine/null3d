@@ -40,13 +40,13 @@
 // level's bucket holds the level's error, in the units of the base mesh. An instance's entry names
 // its base level's bucket. The thread walks the links while the next level's error, times the
 // instance's largest axis scale and the view's level factor, stays under its distance from the
-// main camera, and appends the instance to the last level that passes. Every view places its
-// instances relative to the main camera, shadow views too, so they all pick by its distance. Past
-// each switch distance lies a band in which the level before still draws: there, the instance goes
-// to both levels' fade buckets, whose pipelines dither each pixel to one of them, and the copy's
-// fourth id holds the fade value, positive for the new level and negative for the old. A link of 0
-// means none, so a bucket record without levels holds zeros there, and a view whose level factor
-// is 0 draws every instance's base level.
+// main camera to the nearest point of its bounding sphere, and appends the instance to the last
+// level that passes. Every view places its instances relative to the main camera, shadow views
+// too, so they all pick by its distance. Past each switch distance lies a band in which the level
+// before still draws: there, the instance goes to both levels' fade buckets, whose pipelines dither
+// each pixel to one of them, and the copy's fourth id holds the fade value, positive for the new
+// level and negative for the old. A link of 0 means none, so a bucket record without levels holds
+// zeros there, and a view whose level factor is 0 draws every instance's base level.
 //
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
@@ -96,6 +96,9 @@ const MAX_RANGES: u32 = 257u;
 const WORKGROUP_SIZE: u32 = 128u;
 /// Levels of the depth pyramid at most.
 const MAX_LEVELS: u32 = 16u;
+/// The smallest distance that the level rule compares, in metres. A camera inside an instance's
+/// bounds measures this distance, so the instance keeps its base level.
+const LEAST_DISTANCE: f32 = 1.0e-3;
 
 /// What the occlusion phases read: the view-projection matrix for positions relative to the
 /// camera, the render size, and the depth pyramid's levels. The levels' shapes follow from the
@@ -290,7 +293,8 @@ fn level_of(s: Survivor) -> Level {
         return out;
     }
     let reach = s.scale * factor;
-    let distance = select(length(s.center), 1.0, params.levels.y > 0.5);
+    let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
+    let distance = select(nearest, 1.0, params.levels.y > 0.5);
     while next != 0u && buckets[next - 1u].error * reach < distance {
         out.before = out.bucket;
         out.bucket = next - 1u;

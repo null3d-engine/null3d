@@ -534,9 +534,10 @@ fn a_short_output_panics() {
     );
 }
 
-/// Rows of one sphere each, of radius 1 and scale 1, straight ahead of the camera at `distances`,
-/// culled into a mesh's three levels and their fade buckets: buckets 0 to 2 are the levels, 3 to 5
-/// their fade buckets. Returns each bucket's words.
+/// Rows of one sphere each, of radius 1 and scale 1, with their centres straight ahead of the
+/// camera at `distances`, culled into a mesh's three levels and their fade buckets: buckets 0 to 2
+/// are the levels, 3 to 5 their fade buckets. The rule measures to each sphere's nearest point, 1 m
+/// nearer the camera. Returns each bucket's words.
 fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
     use null3d_core::culling::{LevelChoice, LevelRows, RowCells, RowRadii};
     use null3d_core::levels::{LevelLink, LevelRule, NO_LINK};
@@ -616,18 +617,27 @@ fn rows_pick_the_level_their_distance_and_scale_give() {
         assert_eq!(
             buckets[0],
             [0, 1],
-            "rows nearer than 5 m draw the base level"
+            "rows whose nearest point is nearer than 5 m draw the base level"
         );
-        assert_eq!(buckets[1], [2, 3], "rows from 5 m to 20 m draw level 1");
-        assert_eq!(buckets[2], [4, 5], "rows past 20 m draw level 2");
+        assert_eq!(
+            buckets[1],
+            [2, 3],
+            "rows whose nearest point is from 5 m to 20 m draw level 1"
+        );
+        assert_eq!(
+            buckets[2],
+            [4, 5],
+            "rows whose nearest point is past 20 m draw level 2"
+        );
         assert!(buckets[3..].iter().all(Vec::is_empty), "no band, no fade");
     }
 }
 
 #[test]
 fn rows_inside_a_band_list_pairs_in_both_levels_fade_buckets() {
-    // 5.375 m lies halfway through level 1's band, and 21.2 m two fifths into level 2's.
-    let distances = [5.375, 8.0, 21.2];
+    // Distances from the camera to the nearest points: 5.375 m lies halfway through level 1's
+    // band, and 21.2 m two fifths into level 2's. The spheres' centres lie 1 m farther out.
+    let distances = [6.375, 8.0, 22.2];
     let buckets = cull_levels(&distances, true, 0.15);
     let bits = |word: u32| f32::from_bits(word);
     assert!(buckets[0].is_empty() && buckets[2].is_empty());

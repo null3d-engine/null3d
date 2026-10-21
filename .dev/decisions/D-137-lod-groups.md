@@ -199,3 +199,23 @@ Cluster levels (M3-L3) serve large static meshes that do not bend, such as scans
 - Multi-draw indirect and 64-bit atomics wait for browsers, as [D-179](D-179-technique-rulings-2026-10-15.md) ruling 27 says. Cluster levels need neither.
 
 Follow-ups 1, 4 and 5 come in M3, in M3-L2. Follow-ups 2 and 3 stay open. Live simplification of meshes while the program runs is not planned: it costs CPU time and uploads every frame, and cluster levels give its result.
+
+## Addendum: the level distance reaches the nearest point (21 October 2026)
+
+The level rule measured from the camera to the center of an object's bounding sphere. It now
+measures to the nearest point of the sphere, as meshoptimizer's README, Godot and `clusterlod.h`
+do. The distance is `max(center distance - radius, 1 mm)`. The minimum keeps the distance positive
+when the camera lies inside the bounds. Such an object then keeps its base level, and the fade
+ratio stays defined.
+
+`LevelRule::distance` in `crates/null3d-core/src/levels.rs` picks for the job workers, and
+`level_of` in `crates/null3d-shaders/wgsl/cull.wgsl` picks for the GPU cull. Both use the same
+expression, so a switch happens at the same camera distance on every GPU path.
+
+An object whose radius is half its distance showed twice the allowed error on its near side before.
+Its switch now moves outward by its radius. Large meshes and merged far cells therefore keep finer
+levels at the same camera distance.
+
+The level-of-detail image tests place their spheres by their nearest points. The image tests and the
+forest, atmosphere, light-shafts and impostors demos were rechecked, and their references were
+redrawn where the picture moved.
