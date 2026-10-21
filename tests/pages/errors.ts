@@ -46,12 +46,23 @@ run('errors', async () => {
 		await failedStart(missingSketch),
 	];
 	const engine = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
-	const inSketch = await new Promise<unknown>((resolve) => {
-		engine.onSketchMessage((name, data) => {
-			if (name === 'raised') resolve(data);
-		});
-		engine.postToSketch('raise');
+	// The sketch reports the errors that it caught at once, and again once the fixes' text has had
+	// time to arrive.
+	let raisedNow: (value: unknown) => void = () => {};
+	let raisedFixed: (value: unknown) => void = () => {};
+	const now = new Promise<unknown>((resolve) => {
+		raisedNow = resolve;
 	});
+	const fixed = new Promise<unknown>((resolve) => {
+		raisedFixed = resolve;
+	});
+	engine.onSketchMessage((name, data) => {
+		if (name === 'raised') raisedNow(data);
+		else if (name === 'patched') raisedFixed(data);
+	});
+	engine.postToSketch('raise');
+	const inSketch = await now;
+	const patched = await fixed;
 	await engine.firstFrame;
 	const queries = await new Promise<unknown>((resolve) => {
 		engine.onSketchMessage((name, data) => {
@@ -63,7 +74,11 @@ run('errors', async () => {
 	await engine.destroy();
 	const again = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
 	await again.firstFrame;
-	const stats = await again.measure(0.5);
+	// A slow GPU draws a frame in more than half a second, so the window repeats until one draws.
+	let stats = await again.measure(0.5);
+	for (let window = 1; window < 10 && stats.frames === 0; window++) {
+		stats = await again.measure(0.5);
+	}
 	await again.destroy();
 	return {
 		mode: again.mode,
@@ -71,6 +86,7 @@ run('errors', async () => {
 		missingSketch: missingSketch.href,
 		failedStarts,
 		inSketch,
+		patched,
 		queries,
 		beside,
 		framesAfterRestart: stats.frames,

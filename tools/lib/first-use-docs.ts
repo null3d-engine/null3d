@@ -23,14 +23,23 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	fog_volume:
 		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
 	sprites: 'with the first sprite batch',
+	picking: 'with the first `scene.pick()` call, which waits for the shaders',
 	particles: 'with the first particle system (`@null3d/particles`)',
 	lines: 'with the first line batch',
 	decals: 'with the first mesh of a decal material (`materials.decal`)',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
+	translucency:
+		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
+	bump: 'with the first material with a bump map',
+	displacement:
+		'with the first material with a displacement map, which also loads the builds of parallax. Its mesh draws nothing until they are built',
+	subsurface:
+		'with the first material whose light spreads under its surface (`subsurfaceRadius`). The skin pass and the blur draw its light',
+	motion:
+		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
 	coat_sheen: 'with the first material with a clear coat or a sheen',
-	weighted:
-		"with the first material of the `'weighted'` blending. Until it is built, such materials draw as blended ones",
+	weighted: "with the first material of the `'weighted'` blending",
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',

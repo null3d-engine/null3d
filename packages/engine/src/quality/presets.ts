@@ -186,6 +186,17 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 16, 22, 43, 71],
 	},
+	// The taps of each step of the subsurface blur, which spreads skin's light under its surface:
+	// across, then down, each over a line of taps around the pixel. High and Ultra blur; Low and
+	// Medium, where phones, tablets, WebGL2 and compatibility mode draw, are 0, which draws no skin
+	// pass and no blur even where materials have a scatter radius. The taps live in a uniform
+	// block, so a change makes no GPU object; a change to or from 0 adds or removes the blur's
+	// passes (D-153).
+	subsurfaceSamples: {
+		presets: [0, 0, 17, 25],
+		changes: 'live',
+		values: [0, 11, 17, 25],
+	},
 	// The size of screen-space reflections' grid, as a share of the render size each way: 0 on Low,
 	// which phones run, where reflective surfaces keep the environment's light. A share above 0 draws
 	// a corner of the same targets, so it changes during play with no new GPU object; a change to or
@@ -232,6 +243,16 @@ export const QUALITY_SETTINGS = {
 		presets: [0.25, 0.5, 0.5, 1],
 		changes: 'live',
 		values: [0.25, 0.5, 1],
+	},
+	// The texels across the largest level of each reflection probe's map, an octahedral map of the
+	// whole sphere. A probe captures the scene through six views of half that size, and costs its
+	// pixels only while it captures. 256 keeps a polished floor's reflection sharp on a desktop's
+	// screen. Low's 128 takes a quarter of the memory, for phones' small screens. A change makes
+	// the maps again and captures every probe again (D-149).
+	probeSize: {
+		presets: [128, 256, 256, 256],
+		changes: 'live',
+		values: [128, 256, 512],
 	},
 	// The most area lights that one frame shades: the ones that give the camera the most light when
 	// more are in view, and a light that crosses the cap fades over a few frames. An area light costs
@@ -287,6 +308,14 @@ export const QUALITY_SETTINGS = {
 	// scene that measures a gain turns it on.
 	softwareOcclusion: {
 		presets: [false, false, false, false],
+		changes: 'live',
+		values: 'flag',
+	},
+	// Parallax occlusion mapping steps through a displacement map's relief at each pixel of the
+	// materials that ask for it, a dozen texture reads or more. Low runs on phones, where those
+	// materials draw with their displacement alone (D-136).
+	parallax: {
+		presets: [false, true, true, true],
 		changes: 'live',
 		values: 'flag',
 	},
@@ -497,6 +526,16 @@ export interface QualitySettings {
 	 */
 	dofSamples: 0 | 16 | 22 | 43 | 71;
 	/**
+	/**
+	 * The taps of each step of the subsurface blur, which spreads the light under the surface of
+	 * materials with a `subsurfaceRadius`, such as skin: 11, 17 or 25, or 0, which draws no blur.
+	 * More taps spread a wide blur more smoothly and cost more. High takes 17 and Ultra 25; Low and
+	 * Medium take 0. The blur needs HDR color: a value above 0 that the page or the sketch gives
+	 * moves compatibility mode from its 8-bit path to HDR color, as bloom does. It changes during
+	 * play.
+	 */
+	subsurfaceSamples: 0 | 11 | 17 | 25;
+	/**
 	 * The size of screen-space reflections' grid, as a share of the render size each way: 0.5,
 	 * 0.25, or 0, which draws no screen-space reflections even when `post.set` turns them on. A
 	 * smaller share costs less, with blockier edges where reflections start and stop. It changes
@@ -530,6 +569,12 @@ export interface QualitySettings {
 	 * the reflections' textures again.
 	 */
 	reflectionScale: 0.25 | 0.5 | 1;
+	/**
+	 * The texels across the largest level of each reflection probe's map: 128, 256 or 512. A larger
+	 * map gives sharper reflections on polished surfaces, and takes four times the memory for each
+	 * step. It changes during play, which makes the maps again and captures every probe again.
+	 */
+	probeSize: 128 | 256 | 512;
 	/**
 	 * The most rectangle and tube lights that one frame shades, a whole number from 0 to 64. When
 	 * more are in view, the ones that give the camera the most light shade: the brightest and
@@ -648,6 +693,12 @@ export interface QualitySettings {
 	 * of `createEngine` turns it on. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
+	/**
+	 * True when materials with `parallax` draw it. Off, they draw with their displacement map
+	 * alone, which saves a dozen texture reads or more at each of their pixels. It changes during
+	 * play.
+	 */
+	parallax: boolean;
 	/**
 	 * True when particle systems with `softness` fade where they near the surfaces behind them. The
 	 * camera then copies its opaque depth once per frame, while such a system draws. False draws

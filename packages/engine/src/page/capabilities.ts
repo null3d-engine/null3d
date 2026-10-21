@@ -105,6 +105,13 @@ export interface WebGPUReport {
 	 */
 	transientAttachments: boolean;
 	/**
+	 * True when the start-up probe measured the device drawing a bucket faster with direct draws
+	 * than with the engine's indirect draws, so the engine draws directly. The probe runs on a
+	 * worker's device. It reads no browser or GPU name, except to never choose the direct path on a
+	 * software renderer (D-174). False on WebGL2.
+	 */
+	directDraws: boolean;
+	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
 	 * earlier start's, to tell whether a stored preset check came from the same GPU.
 	 */
@@ -149,12 +156,15 @@ export interface WebGL2Report {
 	 * pixel for antialiasing that the format takes, or 0 where the device does not render into it.
 	 * WebGL2 renders into the three formats with `EXT_color_buffer_float`, and into the 16-bit one
 	 * with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
-	 * format passes both tests, and with MSAA takes 4 samples. Null without WebGL2.
+	 * format passes both tests, and with MSAA takes 4 samples. It also tests the two-channel
+	 * 16-bit format `RG16F`, the motion target's, for a complete framebuffer and its samples alone,
+	 * as a readback waits for the GPU at every start. Null without WebGL2.
 	 */
 	floatRenderTargets: {
 		rgba16f: { complete: boolean; readsBack: boolean; samples: number };
 		rgba32f: { complete: boolean; readsBack: boolean; samples: number };
 		r11fG11fB10f: { complete: boolean; readsBack: boolean; samples: number };
+		rg16f?: { complete: boolean; readsBack: boolean; samples: number };
 	} | null;
 	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
@@ -222,6 +232,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		wgslLanguageFeatures: [],
 		preferredCanvasFormat: null,
 		transientAttachments: false,
+		directDraws: false,
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -248,6 +259,9 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			transientAttachments:
 				(globalThis.GPUTextureUsage as unknown as Record<string, number> | undefined)
 					?.TRANSIENT_ATTACHMENT === TEXTURE_USAGE_TRANSIENT_ATTACHMENT,
+			// The worker's probe measures this on the device that draws; until then the engine
+			// keeps its current path.
+			directDraws: false,
 			adapterInfo: info
 				? {
 						vendor: info.vendor,
@@ -321,10 +335,15 @@ function formatSamples(gl: WebGL2RenderingContext, format: number): number {
  * and whether a clear to a known color reads back as floats. It also asks how many samples a
  * multisampled renderbuffer of the format takes. The test runs at every engine start. Each
  * readback and each error check waits for the GPU, so it reads one pixel and checks for errors
- * only after a failure. WebGL turns on the float color-buffer extensions only when they are asked
- * for by name, so this runs after those requests.
+ * only after a failure. Without `readBack`, a complete framebuffer counts as one that reads back,
+ * and the test waits for no GPU work. WebGL turns on the float color-buffer extensions only when
+ * they are asked for by name, so this runs after those requests.
  */
-export function probeFloatTarget(gl: WebGL2RenderingContext, format: number): FloatTargetTest {
+export function probeFloatTarget(
+	gl: WebGL2RenderingContext,
+	format: number,
+	readBack = true,
+): FloatTargetTest {
 	const texture = gl.createTexture();
 	const framebuffer = gl.createFramebuffer();
 	let complete = false;
@@ -336,7 +355,10 @@ export function probeFloatTarget(gl: WebGL2RenderingContext, format: number): Fl
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 		complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-		if (complete) {
+		if (complete && !readBack) {
+			readsBack = true;
+			samples = formatSamples(gl, format);
+		} else if (complete) {
 			gl.clearColor(...FLOAT_TARGET_COLOR);
 			gl.clear(gl.COLOR_BUFFER_BIT);
 			// A refused read leaves the pixel at zero, so the values alone show whether it worked.
@@ -398,6 +420,7 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 				rgba16f: probeFloatTarget(gl, gl.RGBA16F),
 				rgba32f: probeFloatTarget(gl, gl.RGBA32F),
 				r11fG11fB10f: probeFloatTarget(gl, gl.R11F_G11F_B10F),
+				rg16f: probeFloatTarget(gl, gl.RG16F, false),
 			},
 			renderer: debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : null,
 		};
@@ -532,6 +555,9 @@ export async function probeCapabilities(
 	hints: DeviceHints = readDeviceHints(),
 ): Promise<CapabilityReport> {
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
+	// The probe worker measures the draw paths on a device of its own, which the render worker's
+	// device answers the same way for the browser and the driver.
+	const directDraws = 'directDraws' in worker && worker.directDraws;
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
@@ -543,7 +569,7 @@ export async function probeCapabilities(
 		transferControlToOffscreen:
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
-		webgpu,
+		webgpu: { ...webgpu, directDraws: webgpu.available && directDraws },
 		webgl2: probeWebGL2(powerPreference),
 		worker,
 	};

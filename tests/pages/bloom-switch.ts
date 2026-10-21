@@ -30,11 +30,16 @@ run('bloom-switch', async () => {
 			resolve(data as { frames: number; ms: number });
 		});
 	});
-	const across = engine.measure(SECONDS * 3);
+	// A software GPU draws a frame in hundreds of milliseconds, and building bloom's pipelines holds
+	// the frame loop for longer still: on 20 October 2026 the settle alone outlasted the window, so
+	// no frame ran inside it and the objects those frames make went uncounted. The windows that
+	// follow stretch to hold whole frames past the settle.
+	const slow = before.intervalMs.p99 > 100;
+	const across = engine.measure(slow ? SECONDS * 20 : SECONDS * 3);
 	engine.postToSketch('bloom', null);
 	const switched = await settled;
 	const during = await across;
-	const after = await engine.measure(SECONDS);
+	const after = await engine.measure(slow ? SECONDS * 4 : SECONDS);
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,

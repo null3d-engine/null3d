@@ -83,6 +83,12 @@ const RESOLVE: u32 = 32u;
 /// sets it when the first step's target came from high dynamic range color, since that path would
 /// otherwise dither in the first step.
 const DITHER: u32 = 64u;
+/// GSR 1's constants: the edge vote's threshold, the tap's weight, the sharpness, and the most the
+/// sharpening may move a pixel from its bilinear color.
+const GSR_EDGE: f32 = 8.0 / 255.0;
+const GSR_TAP: f32 = 0.55;
+const GSR_SHARPNESS: f32 = 2.0;
+const GSR_DELTA_LIMIT: f32 = 23.0 / 255.0;
 
 /// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
 /// roundness, then the scale and the offset that place a display color in the table, with the
@@ -572,6 +578,36 @@ fn corner_texel(place: vec2f, size: vec2f) -> vec2i {
 #endif
 }
 
+/// The display color of a place in the drawn corner: what the pass reads there, with bloom's glow
+/// and the vignette applied as they are to every texel that the pass blends.
+fn corner_display(place: vec2f, render: vec2f, size: vec2f, light: vec4f, shade: f32) -> vec4f {
+    let texel = corner_texel(clamp(place, vec2f(0.0), render - 1.0), size);
+#ifdef EFFECT_CHAIN
+    // The engine folds effects at the whole canvas's scale. A frame below it, before the engine
+    // stops folding, still runs the effects on each texel that the pixel blends.
+    let texel_color = with_glow(effected_texel(texel), light);
+#else
+    let texel_color = with_glow(scene_texel(texel), light);
+#endif
+    return display(shaded(texel_color, shade));
+}
+
+/// GSR 1's window over a tap's distance, after Qualcomm's fast Lanczos 2.
+fn gsr_lanczos(x: f32) -> f32 {
+    var a = x - 4.0;
+    let b = x * a - a;
+    a *= a;
+    return b * a;
+}
+
+/// GSR 1's weight of one tap: the distance from the sharpened place, and the tap's color's distance
+/// from the block's mean along the channel that votes.
+fn gsr_weight(offset: vec2f, c: f32, spread: f32) -> vec2f {
+    let x = dot(offset, offset) * GSR_TAP + clamp(abs(c) * spread, 0.0, 1.0);
+    let w = gsr_lanczos(x);
+    return vec2f(w, w * c);
+}
+
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     eye_factor = eye_exposure();
@@ -622,22 +658,72 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let place = clamp(from_top / size * render - 0.5, vec2f(0.0), render - 1.0);
     let first = floor(place);
     let share = place - first;
-    // The taps run in a loop of no rounds at the whole canvas's scale, not on one side of a branch.
-    // A software GPU, such as CI's, runs both sides of a branch for every group of pixels, but
-    // skips a loop that none of them enters. So the whole canvas costs what it would cost alone.
-    let taps = select(4u, 0u, whole);
-    for (var tap = 0u; tap < taps; tap++) {
-        let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));
-        let weights = mix(1.0 - share, share, corner);
-        let texel = corner_texel(min(first + corner, render - 1.0), size);
-#ifdef EFFECT_CHAIN
-        // The engine folds effects at the whole canvas's scale. A frame below it, before the
-        // engine stops folding, still runs the effects on each texel that the pixel blends.
-        let texel_color = with_glow(effected_texel(texel), light);
-#else
-        let texel_color = with_glow(scene_texel(texel), light);
-#endif
-        color += weights.x * weights.y * display(shaded(texel_color, shade));
+    // The upscale runs in a loop of no rounds at the whole canvas's scale, so a software GPU, such
+    // as CI's, skips its cost there. A phone's driver stalls while it links the form that indexes
+    // arrays of vectors inside a loop, so the taps and the weights stay straight-line code inside
+    // this one, and no array or index reaches the driver.
+    let rounds = select(1u, 0u, whole);
+    for (var round = 0u; round < rounds; round++) {
+        // GSR 1 with every tap named. The offsets count corner rows from the top, and the four
+        // nearest texels are this row and the one below it.
+        let t0 = corner_display(first + vec2f(0.0, 2.0), render, size, light, shade);
+        let t1 = corner_display(first + vec2f(1.0, 2.0), render, size, light, shade);
+        let t2 = corner_display(first + vec2f(-1.0, 1.0), render, size, light, shade);
+        let t3 = corner_display(first + vec2f(0.0, 1.0), render, size, light, shade);
+        let t4 = corner_display(first + vec2f(1.0, 1.0), render, size, light, shade);
+        let t5 = corner_display(first + vec2f(2.0, 1.0), render, size, light, shade);
+        let t6 = corner_display(first + vec2f(-1.0, 0.0), render, size, light, shade);
+        let t7 = corner_display(first, render, size, light, shade);
+        let t8 = corner_display(first + vec2f(1.0, 0.0), render, size, light, shade);
+        let t9 = corner_display(first + vec2f(2.0, 0.0), render, size, light, shade);
+        let t10 = corner_display(first + vec2f(0.0, -1.0), render, size, light, shade);
+        let t11 = corner_display(first + vec2f(1.0, -1.0), render, size, light, shade);
+        // The bilinear blend of the four nearest texels, which stays the result where the edge vote
+        // finds no edge, and the base that the sharpening corrects.
+        let bilinear = mix(mix(t7, t8, share.x), mix(t3, t4, share.x), share.y);
+        let vote = abs(t4.g - t3.g) + abs(bilinear.g - t3.g) + abs(bilinear.g - t4.g);
+        if vote > GSR_EDGE {
+            let mean = (t3.g + t4.g + t7.g + t8.g) * 0.25;
+            let c00 = t3.g - mean;
+            let c10 = t4.g - mean;
+            let c01 = t7.g - mean;
+            let c11 = t8.g - mean;
+            let k0 = t0.g - mean;
+            let k1 = t1.g - mean;
+            let k2 = t2.g - mean;
+            let k5 = t5.g - mean;
+            let k6 = t6.g - mean;
+            let k9 = t9.g - mean;
+            let k10 = t10.g - mean;
+            let k11 = t11.g - mean;
+            let sum = abs(k0) + abs(k1) + abs(k2) + abs(c00) + abs(c10) + abs(k5) + abs(k6)
+                + abs(c01) + abs(c11) + abs(k9) + abs(k10) + abs(k11);
+            let spread = 2.181818 / max(sum, 0.0001);
+            let weighted = gsr_weight(vec2f(0.0, 2.0) - share, k0, spread)
+                + gsr_weight(vec2f(1.0, 2.0) - share, k1, spread)
+                + gsr_weight(vec2f(-1.0, 1.0) - share, k2, spread)
+                + gsr_weight(vec2f(0.0, 1.0) - share, c00, spread)
+                + gsr_weight(vec2f(1.0, 1.0) - share, c10, spread)
+                + gsr_weight(vec2f(2.0, 1.0) - share, k5, spread)
+                + gsr_weight(vec2f(-1.0, 0.0) - share, k6, spread)
+                + gsr_weight(vec2f(0.0, 0.0) - share, c01, spread)
+                + gsr_weight(vec2f(1.0, 0.0) - share, c11, spread)
+                + gsr_weight(vec2f(2.0, 0.0) - share, k9, spread)
+                + gsr_weight(vec2f(0.0, -1.0) - share, k10, spread)
+                + gsr_weight(vec2f(1.0, -1.0) - share, k11, spread);
+            // The kernel's negative lobes can make the weight sum negative, and the average is still
+            // the ratio; only an exactly zero sum needs a guard.
+            let weight_sum = select(1e-6, weighted.x, abs(weighted.x) >= 1e-6);
+            let final_y = weighted.y / weight_sum;
+            // The bounds and the average live in the same mean-subtracted space.
+            let max_y = max(max(c00, c10), max(c01, c11));
+            let min_y = min(min(c00, c10), min(c01, c11));
+            let sharpened = clamp(GSR_SHARPNESS * final_y, min_y, max_y);
+            let delta = clamp(sharpened - (bilinear.g - mean), -GSR_DELTA_LIMIT, GSR_DELTA_LIMIT);
+            color = vec4f(clamp(bilinear.rgb + vec3f(delta), vec3f(0.0), vec3f(1.0)), bilinear.a);
+        } else {
+            color = bilinear;
+        }
     }
     return finish(outlined(color, uv, size, render), position.xy);
 }

@@ -74,18 +74,20 @@ interface ModuleRecord {
  * True for a file that the shader build writes: the main module, the module of feature names, the
  * module of each shader that loads on first use as a whole and each target's table of the modules
  * of builds that need several features, TypeScript, or a device module, plain JavaScript. Each kind
- * of device module has a table of shared paragraphs, one file for each target and each value of the
- * bits a device fixes. A table is plain JavaScript too, and its name carries no `shaders-` prefix,
- * so that the list of a build's files for offline play reads it as no feature of its own.
+ * of device module has tables of shared paragraphs, one file for each target, each value of the
+ * bits a device fixes and each feature family. A table is plain JavaScript too, and its name
+ * carries no `shaders-` prefix, so that the list of a build's files for offline play reads it as
+ * no feature of its own.
  */
 export function isShaderModule(name: string): boolean {
 	return (
 		name === 'shaders.ts' ||
 		name === 'shader-features.ts' ||
 		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
-		// A target's table of builds that need several features, one file for each value of the
-		// half-precision bit: `shaders-wgsl-combos` and `shaders-wgsl-combos-half`, and the same for
-		// GLSL. The suffix names the bit value, and a later bit adds another.
+		// A target's table of builds that need several features, one file for each family and each
+		// value of the half-precision bit: `shaders-wgsl-combos-bump` and
+		// `shaders-wgsl-combos-bump-half`, and the same for GLSL. The family names the key's first
+		// features, and a later feature adds another file.
 		/^shaders-(wgsl|glsl)-combos(-[a-z0-9-]+)*\.ts$/.test(name) ||
 		/^shader-paragraphs-(wgsl|glsl)(-[a-z0-9-]+)*\.js$/.test(name) ||
 		/^shaders-[a-z0-9-]+\.js$/.test(name)
@@ -312,11 +314,19 @@ export function announceColdBuild(entries: string): void {
 }
 
 /**
- * Runs the shader build, with its output on standard error so that callers keep a clean output.
- * The shader profile builds the crate's own parsing and validation code optimized, which the
- * development profile leaves unoptimized.
+ * The folder of this checkout's compiler in the per-entry cache. A stamp from another compiler
+ * changes the folder, so no entry is read with a new meaning.
  */
-function runShaderBuild(root: string): void {
+function entryFolder(root: string, stamp = compilerStamp(root)): string {
+	return join(entryCacheDir(), stamp);
+}
+
+/**
+ * Runs the shader build with `extra` arguments, with its output on standard error so that callers
+ * keep a clean output. The shader profile builds the crate's own parsing and validation code
+ * optimized, which the development profile leaves unoptimized.
+ */
+function runShaderBuild(root: string, extra: readonly string[] = []): void {
 	const args = [
 		'run',
 		'--quiet',
@@ -328,14 +338,13 @@ function runShaderBuild(root: string): void {
 		'shader-build',
 		'--',
 	];
-	const buildArgs = ['--root', root];
+	const buildArgs = ['--root', root, ...extra];
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');
 	} else {
-		// A stamp from another compiler changes the folder, so no entry is read with a new meaning.
 		const stamp = compilerStamp(root);
-		buildArgs.push('--cache', join(entryCacheDir(), stamp), '--stamp', stamp);
-		announceColdBuild(join(entryCacheDir(), stamp));
+		buildArgs.push('--cache', entryFolder(root, stamp), '--stamp', stamp);
+		announceColdBuild(entryFolder(root, stamp));
 	}
 	// runCargo names the checkout's own target folder, so this build never writes another's.
 	const { status, error } = runCargo(root, [...args, ...buildArgs], {
@@ -346,6 +355,36 @@ function runShaderBuild(root: string): void {
 			`could not run cargo (${error.message}). The shader modules are not in git, and building them needs the Rust toolchain that rust-toolchain.toml names.`,
 		);
 	if (status !== 0) throw new Error('the shader build failed; its output is above');
+}
+
+/** The entry files in a folder of the per-entry cache, in order: none when it does not exist. */
+function entryFiles(folder: string): string[] {
+	return filesIn(folder, (name) => name.endsWith('.json'));
+}
+
+/**
+ * Compiles shard `shard` of the manifest's entries, written `i/n` with `i` from 0, into the
+ * per-entry cache, under the same folder and compiler stamp that a normal build reads, and writes
+ * no module. The split keeps each entry whole, so a later build finds the entry under the key it
+ * looks for, and compiles none of the entries that the shards stored. The entries that the cache
+ * already held are reused, not compiled. When `out` names a folder, the entries that this run
+ * stored are copied there, and none that the cache held before, so a CI job can upload only its
+ * new entries. Returns their file names.
+ */
+export function buildEntriesShard(root: string, shard: string, out?: string): string[] {
+	if (shaderCacheOff())
+		throw new Error(
+			'--entries-shard fills the per-entry shader cache, so it cannot run while NULL3D_NO_CACHE, NULL3D_NO_BUILD_CACHE or NULL3D_NO_SHADER_CACHE turns the caches off',
+		);
+	const folder = entryFolder(root);
+	const before = new Set(entryFiles(folder));
+	runShaderBuild(root, ['--entries-shard', shard]);
+	const stored = entryFiles(folder).filter((name) => !before.has(name));
+	if (out !== undefined) {
+		mkdirSync(out, { recursive: true });
+		for (const name of stored) copyInPlace(join(folder, name), join(out, name));
+	}
+	return stored;
 }
 
 /** The names of the shader modules on disk, in order. */

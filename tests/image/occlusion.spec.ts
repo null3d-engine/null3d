@@ -24,10 +24,19 @@ interface OcclusionResult {
 	failures: string[];
 }
 
+/**
+ * How long the page may take to report. On CI's software GPU the WebGPU run took 50 to 57 seconds,
+ * close to the default limit, and a slower machine passed it, so the wait leaves room for that.
+ * On 20 October 2026 a shard's run reached the limit without reporting, so the wait leaves room for
+ * a slower shard too.
+ */
+const RESULT_MS = 180_000;
+
 for (const tier of ['webgl2', 'webgpu'] as const)
 	test(`software occlusion culling hides what the buildings block on ${tier}`, async ({ page }) => {
+		test.setTimeout(RESULT_MS + 30_000);
 		await page.goto(`occlusion-cost.html?gpu=${tier}&rounds=1&seconds=0.5&light`);
-		const result = await pageResult<OcclusionResult>(page, 60_000);
+		const result = await pageResult<OcclusionResult>(page, RESULT_MS);
 		console.log(`occlusion on ${tier}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(tier);

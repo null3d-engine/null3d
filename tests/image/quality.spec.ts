@@ -287,8 +287,11 @@ test('a sketch that changes a setting the engine does not take gets E1213', asyn
 		`gpu=webgpu&preset=high&set=${JSON.stringify({ shadows: 2 })}`,
 	);
 	expect(result.changed).toBeUndefined();
-	expect(result.refused).toContain(
-		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, ssrScale, ssrSteps, exposureMeter, fogSlices, reflectionScale, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion or governor.',
+	// The fix text loads on the error's first use, so the message may gain its "See" link after it
+	// is thrown; the hint is not what this test checks.
+	const refused = (result.refused ?? '').replace(/ See https:\/\/\S+$/, '');
+	expect(refused).toContain(
+		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion, parallax or governor.',
 	);
 });
 

@@ -27,7 +27,7 @@
 pub const NO_LINK: u32 = u32::MAX;
 
 /// The share of the switch distance over which two levels hand over.
-pub const FADE_BAND: f32 = 0.15;
+pub const FADE_BAND: f32 = 0.08;
 
 /// The smallest fade value of the new level in a band, so that its sign marks it even at the
 /// band's start, where it covers no pixel yet.
@@ -271,14 +271,20 @@ mod tests {
     fn the_band_past_a_switch_fades_from_the_old_level_to_the_new() {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND);
         let links = links([0.0, 0.01, 0.04, 0.2], true);
-        // Level 1 switches in at 5 m, and its band runs to 5.75 m.
-        assert_eq!(rule.pick(&links, 0, 1.0, 4.9), Picked::One(0));
-        let Picked::Fade { new, old, t } = rule.pick(&links, 0, 1.0, 5.375) else {
-            panic!("no fade at 5.375 m");
+        // Level 1 switches in at 5 m, and its band runs the share of that distance past it.
+        let switch_distance = 5.0;
+        let band_end = switch_distance * (1.0 + FADE_BAND);
+        let middle = (switch_distance + band_end) / 2.0;
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, switch_distance - 0.1),
+            Picked::One(0)
+        );
+        let Picked::Fade { new, old, t } = rule.pick(&links, 0, 1.0, middle) else {
+            panic!("no fade in the band");
         };
         assert_eq!((new, old), (5, 4));
         assert!((t - 0.5).abs() < 1e-4);
-        assert_eq!(rule.pick(&links, 0, 1.0, 5.76), Picked::One(1));
+        assert_eq!(rule.pick(&links, 0, 1.0, band_end + 0.01), Picked::One(1));
         // Level 2's band, past 20 m, fades from level 1.
         let Picked::Fade { new, old, .. } = rule.pick(&links, 0, 1.0, 20.5) else {
             panic!("no fade at 20.5 m");

@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -209,6 +209,14 @@ const DOCS = {
 			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 7 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. Each level draws with the base mesh's material and shading.",
 		example:
 			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
+		since: '0.2',
+	},
+	E1222: {
+		title: 'Invalid light probe grid texture',
+		cause:
+			'scene.setLightProbeGrid() received a texture that is not a 3D texture. A probe grid sample reads a 3D texture, so the frame cannot bind a texture array in its place. setLightProbeGrid() also refuses a texture that is not live.',
+		example:
+			"E1222: setLightProbeGrid() got a texture that is not a 3D texture. Make the grid's texture with LightProbeGridData.toTexture().",
 		since: '0.2',
 	},
 	E1301: {
@@ -442,6 +450,14 @@ const DOCS = {
 		cause:
 			'engine.requestPointerLock() asked the browser to lock the pointer to the canvas, and the browser refused or ended the lock before it began. Browsers lock the pointer only right after the user clicks or presses a key. They never lock it on phones or in some frames, and they refuse for a moment after the user pressed Esc.',
 		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
+		since: '0.2',
+	},
+	E1430: {
+		title: 'Too many reflection probes',
+		cause:
+			"scene.createReflectionProbe() would make a 17th reflection probe, and a scene has at most 16. Or the scene's first probe needs 6 views of the scene for its captures. The scene and its passes share 32 views, and its passes left fewer than 6.",
+		example:
+			'E1430: scene.createReflectionProbe() would make reflection probe 17; a scene has at most 16.',
 		since: '0.2',
 	},
 	E1431: {

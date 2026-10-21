@@ -5,8 +5,7 @@
 
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
-import { EngineError, errorOfMessage, setErrorFixes } from '../errors/engine-error';
-import { ERROR_FIXES } from '../errors/fixes';
+import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
@@ -41,7 +40,7 @@ import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
-import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
@@ -73,14 +72,7 @@ import {
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
-import {
-	type FrameMetrics,
-	HeapSampler,
-	secondRates,
-	summarizeFrames,
-	threadRoles,
-	wasmDownloadBytes,
-} from './frame-stats';
+import type { FrameMetrics } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
@@ -348,10 +340,11 @@ export interface EngineOptions {
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
 	 * until its shaders are built, `'transmission'` with the first material that lets light
-	 * through, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'`
-	 * with the first material of the `weighted` blending, and `'occlusion'` with the first object that
-	 * `setOccluder(true)`
-	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * through, `'translucency'` with the first material that lets light through to its other side,
+	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
+	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
+	 * the first material of the `weighted` blending, and `'occlusion'` with the first object that
+	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
@@ -367,6 +360,12 @@ export interface EngineOptions {
 	 * whatever this option says. A held engine for image tests shows no overlay.
 	 */
 	stats?: boolean | StatsOverlayOptions;
+	/**
+	 * False draws every frame of a view that holds still. By default such a view blends its frames
+	 * into a sharper picture and then stops drawing until something changes. The
+	 * `?still-camera=off` switch turns it off too, and hold mode draws without it.
+	 */
+	still?: boolean;
 }
 
 /**
@@ -396,7 +395,8 @@ export interface EngineCapabilities {
 	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
 	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
 	 * averages the samples after the tone mapping. It reports the path that the engine started on:
-	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on.
+	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on,
+	 * and so does a `subsurfaceSamples` setting above 0 that the page or the sketch gives.
 	 */
 	hdr: boolean;
 	/**
@@ -425,6 +425,12 @@ export interface EngineCapabilities {
 	 * `reversed` depth, which stays precise far from the camera.
 	 */
 	depth: DepthMode;
+	/**
+	 * True when the start-up probe measured direct draws to be clearly faster than the engine's
+	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. A software
+	 * renderer never takes the path (D-174). False on WebGL2, which always draws directly.
+	 */
+	directDraws: boolean;
 }
 
 /**
@@ -579,7 +585,8 @@ export interface Engine {
 	attach(container: Element): void;
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
-	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
+	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. The first call
+	 * downloads the code that turns the frame records into these figures.
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
@@ -745,6 +752,11 @@ function loadRunnerModule(): Promise<RunnerModule> {
 	return awaitLater(import('../sketch/runner'));
 }
 
+/** Loads the frame figures that a measurement reads, in a file of their own. */
+function loadFrameStats(): Promise<typeof import('./frame-stats')> {
+	return import('./frame-stats');
+}
+
 /** What the page does with the replies of a worker that answer no request. */
 interface WorkerEvents {
 	/** A message that the sketch sent with `ctx.page.post`. */
@@ -776,6 +788,9 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
 }
 
+/** What a worker's error event says when its script, or a file that the script imports, did not load. */
+const NO_SCRIPT = 'its script or a file it imports did not load';
+
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
  * A failure that a started worker reports, or that ends it, reaches the page as E1404, or with its
@@ -785,17 +800,35 @@ export class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
+	private worker: Worker;
 	private started = false;
+	/** True once the worker reported that its script, and the files it imports, loaded. */
+	private scriptLoaded = false;
+	/** True once the page replaced a worker whose script did not load. */
+	private retried = false;
+	/**
+	 * The messages that the page sent before the worker reported that its script loaded. A worker
+	 * that has not run its script cannot take them, so they wait here: a copy that replaces a
+	 * worker whose script did not load then gets all of them, and no message moves a canvas or a
+	 * port to a worker that never ran.
+	 */
+	private readonly held: { message: unknown; transfer?: Transferable[] }[] = [];
 	/** True once the worker answered a stop, and false while it has not or once it failed. */
 	private stoppedCleanly = false;
 	/** Settles the wait for the worker's answer to a stop of its drawing. */
 	private answerStop: (() => void) | undefined;
 
 	constructor(
-		readonly worker: Worker,
+		worker: Worker,
 		private readonly role: string,
 		events: WorkerEvents,
+		/**
+		 * Starts another copy of the worker, for the one retry of a script that did not load. Absent
+		 * for a worker that ran before, such as one that kept its canvas from an engine before.
+		 */
+		private readonly restart?: () => Worker,
 	) {
+		this.worker = worker;
 		this.readyPromise = new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
 		});
@@ -818,73 +851,122 @@ export class EngineWorker {
 			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started) events.failure(failureError(`the ${role} worker`, message));
 		};
-		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
-			const reply = event.data;
-			switch (reply.type) {
-				case 'sketch-message':
-					events.sketchMessage(reply.name, reply.data);
-					return;
-				case 'sketch-error':
-					events.sketchError(new Error(reply.message));
-					return;
-				case 'quality':
-					events.quality(reply.update);
-					return;
-				case 'stats':
-					events.stats(reply.show);
-					return;
-				case 'label':
-					events.labelSlot(reply.id, reply.slot, reply.generation);
-					return;
-				case 'jobs-wanted':
-					events.jobsWanted(reply.count);
-					return;
-				case 'lost':
-					forgetWorkerProbe();
-					events.failure(
-						new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
-					);
-					return;
-				case 'gpu-error':
-					events.failure(
-						gpuFailure(`the ${reply.role} worker`, reply.outOfMemory, reply.message),
-						false,
-					);
-					return;
-				case 'fault':
-					// A job worker that failed has left the job system, so a stop need not wait for it.
-					if (reply.role === 'job') markStopped();
-					failed(reply.message);
-					return;
-				case 'progress':
-					return;
-				case 'stopped':
-					this.stoppedCleanly = true;
-					markStopped();
-					this.answerStop?.();
-					return;
-			}
-			if (reply.type === 'error') {
-				markStopped();
-				// A worker that started and then failed has no request waiting for the error.
-				if (this.started && this.waiting.length === 0) {
-					failed(reply.message);
-					return;
+		const listen = (worker: Worker) => {
+			worker.onmessage = (event: MessageEvent<WorkerReply>) => {
+				const reply = event.data;
+				switch (reply.type) {
+					case 'sketch-message':
+						events.sketchMessage(reply.name, reply.data);
+						return;
+					case 'sketch-error':
+						events.sketchError(new Error(reply.message));
+						return;
+					case 'quality':
+						events.quality(reply.update);
+						return;
+					case 'stats':
+						events.stats(reply.show);
+						return;
+					case 'label':
+						events.labelSlot(reply.id, reply.slot, reply.generation);
+						return;
+					case 'jobs-wanted':
+						events.jobsWanted(reply.count);
+						return;
+					case 'lost':
+						forgetWorkerProbe();
+						events.failure(
+							new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
+						);
+						return;
+					case 'gpu-error':
+						events.failure(
+							gpuFailure(`the ${reply.role} worker`, reply.outOfMemory, reply.message),
+							false,
+						);
+						return;
+					case 'fault':
+						// A job worker that failed has left the job system, so a stop need not wait for it.
+						if (reply.role === 'job') markStopped();
+						failed(reply.message);
+						return;
+					case 'progress':
+						// The first step says that the worker's script and the files that it imports
+						// ran, so the worker can now take the messages held for it.
+						if (reply.step === 'loaded') this.scriptRan();
+						return;
+					case 'stopped':
+						this.stoppedCleanly = true;
+						markStopped();
+						this.answerStop?.();
+						return;
 				}
-			}
-			const pending = this.waiting.shift();
-			if (!pending) return;
-			if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
-			else pending.resolve(reply);
+				if (reply.type === 'error') {
+					markStopped();
+					// A worker that started and then failed has no request waiting for the error.
+					if (this.started && this.waiting.length === 0) {
+						failed(reply.message);
+						return;
+					}
+				}
+				const pending = this.waiting.shift();
+				if (!pending) return;
+				if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
+				else pending.resolve(reply);
+			};
+			worker.onerror = (event) => {
+				// A browser sends an error event without a message when the worker's script, or a
+				// file that the script imports, did not load. That fault comes and goes, so a worker
+				// whose script has not run gets one more copy before the page reports it.
+				if (!event.message && !this.scriptLoaded && this.restart && !this.retried) {
+					this.retried = true;
+					worker.terminate();
+					try {
+						const copy = this.restart();
+						this.worker = copy;
+						listen(copy);
+						return;
+					} catch {
+						// The browser refused the copy too, so the page reports the first failure.
+					}
+				}
+				markStopped();
+				failed(event.message || NO_SCRIPT);
+				this.answerStop?.();
+			};
 		};
-		worker.onerror = (event) => {
-			markStopped();
-			// A browser sends an error event without a message when the worker's script, or a file
-			// that the script imports, did not load.
-			const message = event.message || 'its script or a file it imports did not load';
-			failed(message);
-			this.answerStop?.();
-		};
+		listen(worker);
+	}
+
+	/**
+	 * Hands the held messages to the worker, once its script has run. A worker that the page kept
+	 * from an engine before reports no step, so its messages go to it at once.
+	 */
+	private scriptRan(): void {
+		if (this.scriptLoaded) return;
+		this.scriptLoaded = true;
+		for (const { message, transfer } of this.held.splice(0)) this.post(message, transfer);
+	}
+
+	/** Sends a message to the worker that the page holds now. */
+	private post(message: unknown, transfer?: Transferable[]): void {
+		if (transfer) this.worker.postMessage(message, transfer);
+		else this.worker.postMessage(message);
+	}
+
+	/** The worker that the page holds now, which a copy replaces if its script did not load. */
+	get handle(): Worker {
+		return this.worker;
+	}
+
+	/**
+	 * Sends a message to the worker. A worker whose script has not run yet holds it, so that a copy
+	 * that replaces a worker whose script did not load receives every message in order, and no
+	 * message moves a canvas or a port to a worker that never ran.
+	 */
+	send(message: unknown, transfer?: Transferable[]): void {
+		if (this.restart && !this.scriptLoaded) this.held.push({ message, transfer });
+		else this.post(message, transfer);
 	}
 
 	/**
@@ -896,7 +978,7 @@ export class EngineWorker {
 		const answered = new Promise<void>((resolve) => {
 			this.answerStop = resolve;
 		});
-		this.worker.postMessage({ type: 'stop-drawing' } satisfies RendererRequest);
+		this.send({ type: 'stop-drawing' } satisfies RendererRequest);
 		return answered;
 	}
 
@@ -956,7 +1038,7 @@ export class EngineWorker {
 			};
 			this.waiting.push(pending);
 			arm();
-			this.worker.postMessage(message);
+			this.send(message);
 		});
 	}
 }
@@ -1019,18 +1101,14 @@ function startJobWorker(
 				false,
 			);
 	};
+	const start = () =>
+		new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+			type: 'module',
+			name: `null3d-job-${index}`,
+		});
 	try {
-		const job = new EngineWorker(
-			spawnWorker(
-				() =>
-					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-						type: 'module',
-						name: `null3d-job-${index}`,
-					}),
-				(code, message) => new EngineError(code, message),
-			),
-			`job ${index}`,
-			events,
+		const job = new EngineWorker(startEngineWorker(start), `job ${index}`, events, () =>
+			startEngineWorker(start),
 		);
 		job.ready().then(
 			() => started(index),
@@ -1041,6 +1119,14 @@ function startJobWorker(
 		failed(thrown);
 		return undefined;
 	}
+}
+
+/**
+ * Starts an engine worker from a start function, with the engine's own error codes for a failure
+ * of a worker's bootstrap from another origin.
+ */
+function startEngineWorker(start: () => Worker): Worker {
+	return spawnWorker(start, (code, message) => new EngineError(code, message));
 }
 
 /**
@@ -1059,41 +1145,52 @@ function startWorkers(
 ): EngineWorkers {
 	/** Each worker as it starts, so that a refusal can stop the ones before it. */
 	const made: Worker[] = [];
+	/**
+	 * Starts a worker, and keeps a function that starts another copy of it. A script, or a file
+	 * that the script imports, can fail to load now and then; the engine tries one more copy
+	 * before it reports the worker as failed.
+	 */
 	const kept = (start: () => Worker) => {
-		const worker = spawnWorker(start, (code, message) => new EngineError(code, message));
-		made.push(worker);
-		return worker;
+		const first = startEngineWorker(start);
+		made.push(first);
+		return {
+			worker: first,
+			restart: () => {
+				const copy = startEngineWorker(start);
+				made.push(copy);
+				return copy;
+			},
+		};
 	};
+	/** A worker that ran for an engine before keeps its script: there is nothing to load again. */
+	const keptBefore = (role: DrawingRole) =>
+		reused?.role === role ? { worker: reused.worker, restart: undefined } : undefined;
 	try {
-		const sketch = sketchWorker
-			? new EngineWorker(
-					reused?.role === 'sketch'
-						? reused.worker
-						: kept(
-								() =>
-									new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-										type: 'module',
-										name: 'null3d-sketch',
-									}),
-							),
-					'sketch',
-					events,
-				)
+		const sketchStart = sketchWorker
+			? (keptBefore('sketch') ??
+				kept(
+					() =>
+						new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+							type: 'module',
+							name: 'null3d-sketch',
+						}),
+				))
 			: undefined;
-		const render = renderWorker
-			? new EngineWorker(
-					reused?.role === 'render'
-						? reused.worker
-						: kept(
-								() =>
-									new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-										type: 'module',
-										name: 'null3d-render',
-									}),
-							),
-					'render',
-					events,
-				)
+		const renderStart = renderWorker
+			? (keptBefore('render') ??
+				kept(
+					() =>
+						new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+							type: 'module',
+							name: 'null3d-render',
+						}),
+				))
+			: undefined;
+		const sketch = sketchStart
+			? new EngineWorker(sketchStart.worker, 'sketch', events, sketchStart.restart)
+			: undefined;
+		const render = renderStart
+			? new EngineWorker(renderStart.worker, 'render', events, renderStart.restart)
 			: undefined;
 		return { sketch, render, jobs: [] };
 	} catch (thrown) {
@@ -1125,9 +1222,6 @@ function prefetch(url: string): void {
  * @category api/engine
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
-	// The page's errors end with the fixes from its own table, and each worker gets the same table
-	// in its handoff.
-	setErrorFixes(ERROR_FIXES);
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
@@ -1182,6 +1276,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		return await startEngine(options, switches, hold, place, canvas, holder, release);
 	} catch (error) {
 		release();
+		// A coded error's fix arrives in a file of its own, and a failed start reports it whole.
+		await errorFixesReady();
 		if (holding) publishHold(holdFailure(error));
 		throw error;
 	} finally {
@@ -1394,6 +1490,15 @@ async function startEngine(
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
+	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
+	// or rest, so a captured frame is the frame the sketch drew once.
+	if (
+		!switches.still ||
+		options.still === false ||
+		options.hold !== undefined ||
+		switches.hold !== undefined
+	)
+		Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,
 		metrics,
@@ -1462,8 +1567,7 @@ async function startEngine(
 	if (threads?.sketch) {
 		prefetch(sketchUrl);
 		// In low-latency mode the sketch worker draws, so it loads the renderer now too.
-		if (renderThread === 'sketch-worker')
-			threads.sketch.worker.postMessage({ type: 'load-renderer' });
+		if (renderThread === 'sketch-worker') threads.sketch.send({ type: 'load-renderer' });
 	}
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
@@ -1531,7 +1635,7 @@ async function startEngine(
 	const updateShaders = (event: Event) => {
 		const updates = (event as CustomEvent<readonly WgslUpdate[]>).detail;
 		if (localRunner) localRunner.updateShaders(updates);
-		else threads?.sketch?.worker.postMessage({ type: 'wgsl', updates });
+		else threads?.sketch?.send({ type: 'wgsl', updates });
 	};
 	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
@@ -1559,7 +1663,7 @@ async function startEngine(
 				Slot.JobsReady,
 				Slot.PipelinesBuilt,
 			])
-				notifySlot(slots, slot, threads?.sketch?.worker);
+				notifySlot(slots, slot, threads?.sketch?.handle);
 			await localDrawing?.stop();
 			localRunner?.dispose();
 			input?.listen(false);
@@ -1625,8 +1729,8 @@ async function startEngine(
 			canvasHold.dead = `its ${canvasHold.movedTo} worker did not stop cleanly`;
 			return;
 		}
-		canvasWorker.worker.postMessage({ type: 'park' } satisfies RendererRequest);
-		parkWorker(options.canvas, canvasHold, canvasWorker.worker, canvasHold.movedTo);
+		canvasWorker.send({ type: 'park' } satisfies RendererRequest);
+		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
 		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
@@ -1745,8 +1849,8 @@ async function startEngine(
 		// The GPU path and the device's fixed bits choose the renderers and the shader file that the
 		// thread that draws loads first, so it starts their downloads now, while the core downloads.
 		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
-		if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
-		else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
+		if (renderThread === 'render-worker') threads?.render?.send(shaderPreload);
+		else if (renderThread === 'sketch-worker') threads?.sketch?.send(shaderPreload);
 		else if (drawModule) preloadDeviceFiles(drawModule, tier, device.shaderBits);
 
 		const core = await abortable(coreLoad, signal);
@@ -1767,6 +1871,7 @@ async function startEngine(
 			maxInstances: maxInstances(device),
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
+			directDraws: device.directDraws,
 		};
 		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
@@ -1779,7 +1884,6 @@ async function startEngine(
 			control,
 			metrics,
 			device,
-			errorFixes: ERROR_FIXES,
 			wakeByMessage,
 		};
 		// Only a canvas that no engine used before may need its CSS size fixed: the fix resizes the
@@ -1811,7 +1915,7 @@ async function startEngine(
 			// Counted before the flag clears, so the sketch's first step after the pause sees it.
 			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
-			notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
+			notifySlot(slots, Slot.Paused, threads?.sketch?.handle);
 		};
 		const pageLoss = (reason: string) => {
 			forgetWorkerProbe();
@@ -1874,7 +1978,7 @@ async function startEngine(
 					if (!job) break;
 					jobs.push(job);
 					const port = (taskPorts[index] as MessageChannel).port1;
-					job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: port }, [port]);
+					job.send({ type: 'init', ...handoff, index, taskPort: port }, [port]);
 					starting.push(job.ready());
 				}
 				// The sketch thread hears which of a batch of job workers run once the whole batch has
@@ -1884,7 +1988,7 @@ async function startEngine(
 				if (starting.length === 0) return;
 				void Promise.allSettled(starting).then(() => {
 					running.sort((a, b) => a - b);
-					threads?.sketch?.worker.postMessage({ type: 'job-workers', running: [...running] });
+					threads?.sketch?.send({ type: 'job-workers', running: [...running] });
 				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
@@ -1903,7 +2007,7 @@ async function startEngine(
 		/** Hands the canvas and the core to the render worker, with the port that images come through. */
 		const startRenderWorker = (render: EngineWorker, imagePort: MessagePort) => {
 			const canvas = moveCanvas(render, 'render');
-			render.worker.postMessage(
+			render.send(
 				{ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort },
 				canvas ? [canvas, imagePort] : [imagePort],
 			);
@@ -2037,7 +2141,7 @@ async function startEngine(
 			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
 				const canvas = moveCanvas(sketch, 'sketch');
-				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [
+				sketch.send({ ...init, renderer: { canvas, ...rendererSetup } }, [
 					...(canvas ? [canvas] : []),
 					...taskPorts,
 				]);
@@ -2045,10 +2149,7 @@ async function startEngine(
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
 				const images = channel();
-				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [
-					images.port1,
-					...taskPorts,
-				]);
+				sketch.send({ ...init, imagePort: images.port1 }, [images.port1, ...taskPorts]);
 				if (render) startRenderWorker(render, images.port2);
 				else
 					localDrawing = await abortable(
@@ -2118,7 +2219,7 @@ async function startEngine(
 			labels,
 			postToSketch(name, data, transfer = []) {
 				if (localRunner) localRunner.receive(name, data);
-				else threads?.sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
+				else threads?.sketch?.send({ type: 'post', name, data }, transfer);
 			},
 			onSketchMessage(handler) {
 				messageHandlers.add(handler);
@@ -2154,12 +2255,16 @@ async function startEngine(
 				applyPause();
 			},
 			async measure(seconds) {
+				// The window opens now, before the frame figures load on their first use: a page that
+				// measures and then starts some work must count that work, whatever the load takes.
 				const reader = new MetricsReader(metrics);
-				const heap = new HeapSampler();
 				const mainThread = new MainThreadWatch();
 				reader.begin();
-				heap.start();
 				const started = performance.now();
+				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
+					await loadFrameStats();
+				const heap = new HeapSampler();
+				heap.start();
 				const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
 				await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 				clearInterval(drain);
@@ -2207,7 +2312,7 @@ async function startEngine(
 			},
 			simulateGpuLoss() {
 				if (localDrawing) localDrawing.simulateLoss();
-				else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
+				else rendererHost?.send({ type: 'lose-gpu' });
 			},
 			requestPointerLock(lockOptions) {
 				return requestPointerLock(options.canvas, lockOptions);
@@ -2232,11 +2337,13 @@ async function startEngine(
 			await stop();
 			throw error;
 		}
+		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,
 			time: hold,
 			frame: Atomics.load(slots, Slot.FramesTaken),
 			tier,
+			directDraws: device.directDraws,
 			...held,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 		});
@@ -2245,6 +2352,9 @@ async function startEngine(
 		starting = false;
 		signal?.removeEventListener('abort', cancelStart);
 		await stop();
+		// The fix text of a coded error arrives in a file of its own, so a failed start waits for it
+		// to end the message it rejects with.
+		await errorFixesReady();
 		throw e;
 	}
 }

@@ -192,6 +192,77 @@ test("the wait's limit sits above the time that a frame's pipelines may take", (
 	expect(WORKER_REPLY_LIMIT_MS).toBeGreaterThanOrEqual(2 * BUILD_WAIT_LIMIT_MS);
 });
 
+/** The events of an engine worker that a test gives no handlers of its own. */
+function unwatched() {
+	const failures: EngineError[] = [];
+	return {
+		failures,
+		events: {
+			sketchMessage: () => {},
+			sketchError: () => {},
+			failure: (error: EngineError) => failures.push(error),
+			quality: () => {},
+			stats: () => {},
+			labelSlot: () => {},
+			jobsWanted: () => {},
+		},
+	};
+}
+
+test('a worker whose script did not load gets one more copy, and the messages held for it', async () => {
+	const first = fakeWorker();
+	const second = fakeWorker();
+	const { events, failures } = unwatched();
+	const engineWorker = new EngineWorker(first.worker, 'render', events, () => second.worker);
+	// No message reaches a worker that has not run its script: it could not take one.
+	engineWorker.send({ type: 'init', core: 'core' });
+	expect(first.sent).toEqual([]);
+	first.raw.onerror?.({ message: '' } as ErrorEvent);
+	expect(failures).toEqual([]);
+	// The copy takes the held message once its script has run, and the start goes on.
+	second.reply({ type: 'progress', role: 'render', step: 'loaded' });
+	expect(second.sent).toEqual([{ type: 'init', core: 'core' }]);
+	second.reply({ type: 'ready', role: 'render', threaded: true, version: 'test' });
+	await expect(engineWorker.ready()).resolves.toMatchObject({ type: 'ready' });
+});
+
+test('a worker whose script does not load twice fails the start with E1405', async () => {
+	const first = fakeWorker();
+	const second = fakeWorker();
+	const { events, failures } = unwatched();
+	const engineWorker = new EngineWorker(first.worker, 'render', events, () => second.worker);
+	first.raw.onerror?.({ message: '' } as ErrorEvent);
+	second.raw.onerror?.({ message: '' } as ErrorEvent);
+	await expect(engineWorker.ready()).rejects.toThrow(
+		'the render worker did not start: its script or a file it imports did not load.',
+	);
+	expect(failures).toEqual([]);
+});
+
+test('a worker that fails with a message is not started again', async () => {
+	const first = fakeWorker();
+	const { events } = unwatched();
+	let copies = 0;
+	const engineWorker = new EngineWorker(first.worker, 'sketch', events, () => {
+		copies++;
+		return fakeWorker().worker;
+	});
+	first.raw.onerror?.({
+		message: 'Script at http://localhost/render-worker.ts cannot be accessed.',
+	} as ErrorEvent);
+	await expect(engineWorker.ready()).rejects.toThrow('cannot be accessed');
+	expect(copies).toBe(0);
+});
+
+test('a worker that ran its script keeps the messages that follow', async () => {
+	const fake = fakeWorker();
+	const { events } = unwatched();
+	const engineWorker = new EngineWorker(fake.worker, 'render', events, () => fake.worker);
+	fake.reply({ type: 'progress', role: 'render', step: 'loaded' });
+	engineWorker.send({ type: 'capture' });
+	expect(fake.sent).toEqual([{ type: 'capture' }]);
+});
+
 test('a loop that fails before the worker is ready fails the start', async () => {
 	const fake = fakeWorker();
 	const failures: EngineError[] = [];

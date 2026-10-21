@@ -25,6 +25,15 @@ fn view_z_to_orthographic_depth(view_z: f32, near: f32, far: f32) -> f32 {
     return (view_z + far) / (far - near);
 }
 
+/// A code from 0 to 1 for a depth value, which grows with the distance and gives every distance the
+/// same share of its steps before a perspective camera: the octaves by which the depth lies below
+/// the near plane's 1, over 16 octaves. A perspective depth value halves as the distance doubles,
+/// so the code reaches 1 at 65,536 times the near plane's distance. It needs no camera values, so a
+/// pass that reads only the depth can write it. In 8 bits, one step is about 4% of the distance.
+fn distance_code(code_depth: f32) -> f32 {
+    return saturate(-log2(max(code_depth, 1e-20)) / 16.0);
+}
+
 /// The distance in front of a perspective camera of its depth value, from `near` to `far`.
 fn linear_depth(depth: f32, near: f32, far: f32) -> f32 {
     return -perspective_depth_to_view_z(depth, near, far);

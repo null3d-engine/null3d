@@ -3,11 +3,13 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, thirteen `vec4f`s, which the WGSL
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, fifteen `vec4f`s, which the WGSL
 //! struct `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine
 //! into a `Material`. Only the builds that let light through read the next two, the transmission's
-//! values, and only the builds of layered materials read the last two, the clear coat's and the
-//! sheen's values. The [`param`] module names where each
+//! values; only the builds of layered materials read the next two, the clear coat's and the
+//! sheen's; only the builds that let light through a thin surface read the one after, the diffuse
+//! transmission's values; and only the skin pass's builds read the last, the scatter distances of
+//! the subsurface blur. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
 //! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
@@ -178,6 +180,16 @@ impl Shading {
         }
     }
 
+    /// True when its shader has the builds that let light through a thin surface: the standard
+    /// material's, with or without maps, and a custom material's. A custom material has the
+    /// feature only when its WGSL has such builds, which the engine checks when it creates it.
+    pub const fn translucent(self) -> bool {
+        matches!(
+            self,
+            Shading::Lit | Shading::StandardMaps | Shading::Custom(_)
+        )
+    }
+
     /// True when its shader has the builds that light layers above the base: the standard
     /// material's, with or without maps, and a custom material's. A custom material has the
     /// feature only when its WGSL has such builds, which the engine checks when it creates it.
@@ -225,6 +237,12 @@ impl Shading {
     /// reads an instance's index or an object's id.
     pub const fn reads_object_ids(self) -> bool {
         matches!(self, Shading::Custom(custom) if custom.object_ids)
+    }
+
+    /// True when its shader reads the displacement map's values from the material's custom values:
+    /// the standard material's, with or without maps.
+    pub const fn displaces(self) -> bool {
+        matches!(self, Shading::Lit | Shading::StandardMaps)
     }
 
     /// The template that draws a decal with this shading: the standard material's, with or
@@ -275,6 +293,11 @@ pub mod feature {
     /// color where the main directional light's shadows fall, and nothing where the light reaches
     /// it. It takes the lit template, whose `shade` branches on the material's flag.
     pub const SHADOW_CATCHER: u32 = 2_097_152;
+    /// The main directional light's contact shadows leave the surface alone: it keeps the shadow
+    /// map's shadows, and its row's flag sets the contact shadows' share of the sun to all of it.
+    /// For thin surfaces that crowd together or move, such as grass blades, which the march takes
+    /// for solid walls.
+    pub const NO_CONTACT_SHADOWS: u32 = 4_194_304;
     /// A double-sided surface that blends draws in one draw, both faces in the mesh's order, as
     /// three.js's `forceSinglePass` does. Without it the transparent pass draws such a surface's
     /// back faces first, then its front faces.
@@ -285,12 +308,26 @@ pub mod feature {
     /// material's transmission value sets how much light passes. It takes no mask, so it wins over
     /// [`ALPHA_MASK`].
     pub const TRANSMISSION: u32 = 8192;
+    /// Light that reaches the surface's back shows on its front, as glTF's diffuse transmission
+    /// draws a leaf, a petal or an ear against the light. The material's diffuse transmission
+    /// value sets how much of its diffuse light passes through, and its transmission color tints
+    /// it. It picks the shader builds that light the back, so a material without it pays nothing
+    /// for them. In such a material, the specular maps' slots hold the diffuse transmission maps,
+    /// which read the same channels ([`MapSlot::DIFFUSE_TRANSMISSION`]). [`TRANSMISSION`] wins
+    /// over it.
+    pub const TRANSLUCENCY: u32 = 262144;
     /// The surface has layers above its base, as three.js's `MeshPhysicalMaterial` draws them: a
     /// clear coat, a sheen or both, whose values sit at the end of the material's row. It picks
     /// the shader builds that light them, so a material without layers pays nothing for them. In
     /// a layered material, the map slots of the light map and the specular maps hold the layers'
     /// maps ([`LayerMap`]).
     pub const COAT_SHEEN: u32 = 65536;
+    /// Light that enters the surface leaves it nearby, as in skin: the subsurface blur spreads the
+    /// surface's diffuse light over its scatter radius, redder the further where its scatter color
+    /// says so, so its shadows' edges and the detail of its maps soften. Its objects draw again in
+    /// the skin pass, which only the standard material has, while the quality setting gives the
+    /// blur taps. A material without it pays nothing for the blur.
+    pub const SUBSURFACE: u32 = 1048576;
     /// With [`BLEND`] and normal blending, the surface blends with the other such surfaces in any
     /// order, by a weighted average, in the camera's weighted layer (see [`crate::weighted`]).
     /// Elsewhere it draws back to front with the blended surfaces. A surface that lets light
@@ -301,6 +338,14 @@ pub mod feature {
     /// mesh of its own. Only the standard material has it. It blends, and wins over every other
     /// feature that picks a pass, a mask or faces.
     pub const DECAL: u32 = 131072;
+    /// Each triangle's edges draw as lines, from the part's edge list, with the material's own
+    /// shading, as three.js's `wireframe` draws them. Flat shading and bump maps are off, as they
+    /// read derivatives that lines do not have.
+    pub const WIREFRAME: u32 = 16384;
+    /// The displacement map also shifts where the fragment shader reads the maps, by parallax
+    /// occlusion mapping, so relief finer than the mesh's vertices hides and shows the surface
+    /// behind it. Only opaque and masked surfaces take it.
+    pub const PARALLAX: u32 = 32768;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -313,13 +358,18 @@ pub mod feature {
         | MULTIPLY
         | ALPHA_TO_COVERAGE
         | NO_FOG
+        | NO_CONTACT_SHADOWS
         | ALPHA_HASH
         | SINGLE_PASS
         | TRANSMISSION
         | SHADOW_CATCHER
         | COAT_SHEEN
         | WEIGHTED
-        | DECAL;
+        | DECAL
+        | TRANSLUCENCY
+        | SUBSURFACE
+        | WIREFRAME
+        | PARALLAX;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -365,6 +415,12 @@ pub mod flag {
     /// With `MAP_PREMULTIPLIED`, the base color map holds linear colors instead, multiplied by
     /// their alpha.
     pub const MAP_LINEAR: u32 = 16;
+    /// The normal map's slot holds a height map, whose red channel bends the normal by three.js's
+    /// bump mapping, with the bump scale in the normal scale's first float.
+    pub const BUMP: u32 = 32;
+    /// The normal map's slot holds the displacement map, whose slope bends the normal in world
+    /// units, so the light follows the moved vertices.
+    pub const HEIGHT_NORMALS: u32 = 64;
     /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
     pub const SECOND_UV: u32 = 256;
     /// The shader draws only the shadows that fall on the surface, as three.js's `ShadowMaterial`.
@@ -377,13 +433,15 @@ pub mod flag {
     pub const SHEEN_COLOR_MAP: u32 = 1 << 18;
     /// In a layered material, the alpha of the sheen map multiplies the sheen's roughness.
     pub const SHEEN_ROUGHNESS_MAP: u32 = 1 << 19;
+    /// The shader takes none of the main directional light's contact shadows.
+    pub const NO_CONTACT_SHADOWS: u32 = 1 << 20;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
 /// color map's flag comes later, from its texels.
 const fn row_flags(features: u32) -> u32 {
     let mut flags = 0;
-    if features & feature::FLAT_SHADING != 0 {
+    if features & feature::FLAT_SHADING != 0 && features & feature::WIREFRAME == 0 {
         flags |= flag::FLAT_SHADING;
     }
     if features & feature::BLEND != 0 {
@@ -394,6 +452,9 @@ const fn row_flags(features: u32) -> u32 {
     }
     if features & feature::SHADOW_CATCHER != 0 {
         flags |= flag::SHADOW_CATCHER;
+    }
+    if features & feature::NO_CONTACT_SHADOWS != 0 {
+        flags |= flag::NO_CONTACT_SHADOWS;
     }
     flags
 }
@@ -472,6 +533,17 @@ pub mod param {
     pub const SHEEN_COLOR: usize = 48;
     /// The perceptual roughness of the sheen, from 0 to 1.
     pub const SHEEN_ROUGHNESS: usize = 51;
+    /// The color that tints the light that passes through a thin surface, linear: 3 floats, in
+    /// materials with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION_COLOR: usize = 52;
+    /// How much of the surface's diffuse light passes through it to its other side, from 0 to 1.
+    pub const DIFFUSE_TRANSMISSION: usize = 55;
+    /// Each channel's share of the scatter radius, linear: 3 floats, in materials with the
+    /// subsurface feature. Skin's red light scatters furthest.
+    pub const SUBSURFACE_COLOR: usize = 56;
+    /// How far light spreads under the surface before it leaves it, in world units, taken as
+    /// metres: the scatter distance of a channel whose share is 1.
+    pub const SUBSURFACE_RADIUS: usize = 59;
     /// A decal material's values take the place of the transmission's, which a decal never has.
     /// The cosine of the angle from the decal's direction at which it starts to fade.
     pub const DECAL_FADE_START: usize = TRANSMISSION;
@@ -484,14 +556,21 @@ pub mod param {
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         match at {
-            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR | ATTENUATION_COLOR | SHEEN_COLOR => {
-                Some(3)
-            }
+            COLOR
+            | EMISSIVE
+            | UV_U
+            | UV_V
+            | SPECULAR_COLOR
+            | ATTENUATION_COLOR
+            | SHEEN_COLOR
+            | DIFFUSE_TRANSMISSION_COLOR
+            | SUBSURFACE_COLOR => Some(3),
             NORMAL_SCALE | CLEARCOAT_NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
             | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
             | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE
-            | CLEARCOAT | CLEARCOAT_ROUGHNESS | SHEEN_ROUGHNESS => Some(1),
+            | CLEARCOAT | CLEARCOAT_ROUGHNESS | SHEEN_ROUGHNESS | DIFFUSE_TRANSMISSION
+            | SUBSURFACE_RADIUS => Some(1),
             _ => None,
         }
     }
@@ -536,6 +615,17 @@ pub enum MapSlot {
     SpecularIntensity = 6,
     /// The specular color, in sRGB, which multiplies the specular color value.
     SpecularColor = 7,
+}
+
+impl MapSlot {
+    /// The slot that holds the diffuse transmission map of a material with the translucency
+    /// feature: its alpha scales the diffuse transmission, in linear color, as the specular
+    /// intensity map's alpha scales the specular intensity.
+    pub const DIFFUSE_TRANSMISSION: MapSlot = MapSlot::SpecularIntensity;
+    /// The slot that holds the diffuse transmission color map of a material with the translucency
+    /// feature: its sRGB color scales the transmission color, as the specular color map's scales
+    /// the specular color.
+    pub const DIFFUSE_TRANSMISSION_COLOR: MapSlot = MapSlot::SpecularColor;
 }
 
 /// A map of a layered material ([`feature::COAT_SHEEN`]). Such a material has no light map and no
@@ -598,6 +688,37 @@ pub const fn texture_layer_offset(k: usize) -> usize {
     CUSTOM_FLOATS - 1 - k
 }
 
+/// Where a standard material's displacement map keeps its values: in its row of custom values,
+/// which both shader stages read, unlike the row itself on WebGPU, and which standard materials
+/// have no other use for.
+pub mod height {
+    /// The displacement map's layer, which the vertex stage samples through the map's own binding,
+    /// or [`super::NO_MAP`] until its image is on the GPU.
+    pub const LAYER: usize = 0;
+    /// The distance that the map's white moves a vertex along its normal, in the mesh's units, as
+    /// three.js's `displacementScale`.
+    pub const SCALE: usize = 1;
+    /// The distance added to every vertex's, as three.js's `displacementBias`.
+    pub const BIAS: usize = 2;
+    /// 1 when the map reads the second texture coordinates, else 0.
+    pub const SECOND_UV: usize = 3;
+    /// A copy of the row's texture coordinate transform: the row that gives u, 3 floats.
+    pub const UV_U: usize = 4;
+    /// The row of the transform that gives v, 3 floats.
+    pub const UV_V: usize = 8;
+    /// The layer that the fragment stage samples for parallax, with its shared unit times
+    /// [`super::UNIT_LAYERS`] where maps share units, or [`super::NO_MAP`] where it has none.
+    pub const PIXEL_LAYER: usize = 11;
+}
+
+/// The custom values of a material that is not custom: the displacement map's values, with no map,
+/// three.js's default scale of 1 and bias of 0, and the identity texture coordinate transform.
+const DEFAULT_HEIGHT_VALUES: [f32; 12] = [
+    NO_MAP, 1.0, 0.0, 0.0, // layer, scale, bias, second coordinates
+    1.0, 0.0, 0.0, 0.0, // the row that gives u
+    0.0, 1.0, 0.0, NO_MAP, // the row that gives v, and the fragment stage's layer
+];
+
 /// Where a material id stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
@@ -638,10 +759,12 @@ impl MapSlot {
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
 /// identity texture coordinate transform, a white specular color at full intensity with glTF's
-/// index of refraction, no maps, no transmission through a thin wall that absorbs nothing, no clear
-/// coat and a black sheen of full roughness. The metalness and roughness are three.js's
-/// `MeshStandardMaterial` defaults; the alpha cutoff, the index of refraction and the volume's
-/// values are glTF's, and the layers' values three.js's `MeshPhysicalMaterial` defaults.
+/// index of refraction, no maps, no transmission through a thin wall that absorbs nothing, no
+/// clear coat and a black sheen of full roughness, no diffuse transmission with a white
+/// transmission color, and no scatter radius with a white scatter color. The metalness and
+/// roughness are three.js's `MeshStandardMaterial` defaults; the alpha cutoff, the index of
+/// refraction, the volume's values and the diffuse transmission's values are glTF's, and the
+/// layers' values three.js's `MeshPhysicalMaterial` defaults.
 const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut row = [0.0; MATERIAL_FLOATS];
     let mut k = 0;
@@ -679,6 +802,16 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::CLEARCOAT_NORMAL_SCALE] = 1.0;
     row[param::CLEARCOAT_NORMAL_SCALE + 1] = 1.0;
     row[param::SHEEN_ROUGHNESS] = 1.0;
+    let mut k = 0;
+    while k < 3 {
+        row[param::DIFFUSE_TRANSMISSION_COLOR + k] = 1.0;
+        k += 1;
+    }
+    let mut k = 0;
+    while k < 3 {
+        row[param::SUBSURFACE_COLOR + k] = 1.0;
+        k += 1;
+    }
     row
 };
 
@@ -699,6 +832,14 @@ pub struct MaterialTable {
     maps: Vec<[Handle; MAP_SLOTS]>,
     /// The shared unit that each material's map samples, by slot (see [`MaterialTable::set_map_units`]).
     map_units: Vec<[u8; MAP_SLOTS]>,
+    /// Each material's displacement map, `Handle::NONE` where it has none.
+    heights: Vec<Handle>,
+    /// The shared unit that each material's displacement map samples in the fragment stage, where
+    /// maps share units and the material takes parallax.
+    height_units: Vec<u8>,
+    /// The farthest that each material's displacement has moved a vertex, in the mesh's units: the
+    /// margin that bounding spheres grow by. It only grows, so objects need new bounds rarely.
+    margins: Vec<f32>,
     /// Each material's custom values, in id order: zero until a custom material sets them.
     values: Vec<f32>,
     /// Each material's depth bias.
@@ -716,6 +857,14 @@ pub struct MaterialTable {
     values_changed: Range<u32>,
     /// True when a map changed since its layer was last written.
     maps_changed: bool,
+    /// The live materials whose light the subsurface blur spreads.
+    scattering: u32,
+}
+
+/// True for a material of the standard shading, with or without maps, whose features give it a
+/// scatter radius.
+fn scatters(shading: Shading, features: u32) -> bool {
+    features & feature::SUBSURFACE != 0 && matches!(shading, Shading::Lit | Shading::StandardMaps)
 }
 
 /// Why a material could not be created or changed.
@@ -737,6 +886,9 @@ impl MaterialTable {
             features: Vec::with_capacity(capacity as usize),
             maps: Vec::with_capacity(capacity as usize),
             map_units: Vec::with_capacity(capacity as usize),
+            heights: Vec::with_capacity(capacity as usize),
+            height_units: Vec::with_capacity(capacity as usize),
+            margins: Vec::with_capacity(capacity as usize),
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             biases: Vec::with_capacity(capacity as usize),
             states: Vec::with_capacity(capacity as usize),
@@ -746,6 +898,7 @@ impl MaterialTable {
             changed: 0..0,
             values_changed: 0..0,
             maps_changed: false,
+            scattering: 0,
         }
     }
 
@@ -767,6 +920,9 @@ impl MaterialTable {
                 self.features.push(0);
                 self.maps.push([Handle::NONE; MAP_SLOTS]);
                 self.map_units.push([0; MAP_SLOTS]);
+                self.heights.push(Handle::NONE);
+                self.height_units.push(0);
+                self.margins.push(0.0);
                 self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
                 self.biases.push(DepthBias::NONE);
                 self.states.push(State::Live);
@@ -787,19 +943,26 @@ impl MaterialTable {
         self.features[at] = features;
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
         self.map_units[at] = [0; MAP_SLOTS];
+        self.heights[at] = Handle::NONE;
+        self.height_units[at] = 0;
+        self.margins[at] = 0.0;
         self.biases[at] = DepthBias::NONE;
         self.states[at] = State::Live;
+        self.scattering += u32::from(scatters(shading, features));
         let values = &mut self.values[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
         values.fill(0.0);
         let textures = match shading {
             Shading::Custom(custom) => (custom.textures as usize).min(MAP_SLOTS),
-            _ => 0,
+            _ => {
+                values[..DEFAULT_HEIGHT_VALUES.len()].copy_from_slice(&DEFAULT_HEIGHT_VALUES);
+                0
+            }
         };
         for k in 0..textures {
             values[texture_layer_offset(k)] = NO_MAP;
         }
         // A new row's values start at zero on the GPU too; a reused row's hold the last material's.
-        if reused || textures > 0 {
+        if reused || !matches!(shading, Shading::Custom(_)) || textures > 0 {
             self.values_changed = marked(&self.values_changed, id);
         }
         self.mark_row(id);
@@ -814,7 +977,9 @@ impl MaterialTable {
             return Err(MaterialError::Unknown(id));
         }
         self.states[at] = State::Destroyed;
+        self.scattering -= u32::from(scatters(self.shading[at], self.features[at]));
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
+        self.heights[at] = Handle::NONE;
         self.maps_changed = true;
         self.destroyed = true;
         Ok(())
@@ -847,6 +1012,19 @@ impl MaterialTable {
     /// True when a material with this id lives: created, and not destroyed.
     pub fn is_live(&self, id: u32) -> bool {
         self.states.get(id as usize) == Some(&State::Live)
+    }
+
+    /// True when the material, by id, has a scatter radius whose light the subsurface blur
+    /// spreads: the standard material's, with or without maps.
+    pub fn scatters(&self, id: u32) -> bool {
+        let at = id as usize;
+        at < self.features.len() && scatters(self.shading[at], self.features[at])
+    }
+
+    /// True while some live material has a scatter radius, so the frame builders hold the
+    /// subsurface blur's layout.
+    pub fn any_scatters(&self) -> bool {
+        self.scattering > 0
     }
 
     /// True when a live material's shader reads the table of object ranges, which the frame
@@ -924,6 +1102,20 @@ impl MaterialTable {
         row.ok_or(MaterialError::Unknown(id))?
             .copy_from_slice(values);
         self.mark_row(id);
+        // The displacement map reads the texture coordinate transform in the vertex stage, from a
+        // copy in the custom values.
+        let copy = match at {
+            param::UV_U => Some(height::UV_U),
+            param::UV_V => Some(height::UV_V),
+            _ => None,
+        };
+        if let Some(copy) = copy
+            && !matches!(self.shading[id as usize], Shading::Custom(_))
+        {
+            let start = id as usize * MATERIAL_FLOATS + copy;
+            self.values[start..start + values.len()].copy_from_slice(values);
+            self.values_changed = marked(&self.values_changed, id);
+        }
         Ok(())
     }
 
@@ -944,14 +1136,155 @@ impl MaterialTable {
         if !self.is_live(id) {
             return Err(MaterialError::Unknown(id));
         }
-        self.maps[id as usize][slot as usize] = texture;
+        self.put_map(id, slot, texture, second_uv);
+        if slot == MapSlot::Normal {
+            self.set_flags(id, flag::BUMP | flag::HEIGHT_NORMALS, 0);
+            self.share_height_normals(id);
+        }
+        Ok(())
+    }
+
+    /// Gives a standard material a bump map, a height map in the normal map's slot, or none with
+    /// `Handle::NONE`. A wireframe material keeps the map but draws without it, as three.js's does:
+    /// its pipelines leave out the bump builds.
+    pub fn set_bump_map(
+        &mut self,
+        id: u32,
+        texture: Handle,
+        second_uv: bool,
+    ) -> Result<(), MaterialError> {
+        self.set_map(id, MapSlot::Normal, texture, second_uv)?;
+        let bits = if texture.is_none() { 0 } else { flag::BUMP };
+        self.set_flags(id, flag::BUMP, bits);
+        Ok(())
+    }
+
+    /// True when a material's normal map's slot holds a bump map.
+    pub fn bumps(&self, id: u32) -> bool {
+        self.flags(id) & flag::BUMP != 0
+    }
+
+    /// Gives a standard material a displacement map, which moves each vertex along its normal, or
+    /// none with `Handle::NONE`. Without a normal or bump map, the map also bends the normals.
+    pub fn set_displacement_map(
+        &mut self,
+        id: u32,
+        texture: Handle,
+        second_uv: bool,
+    ) -> Result<(), MaterialError> {
+        if !self.is_live(id) || matches!(self.shading[id as usize], Shading::Custom(_)) {
+            return Err(MaterialError::Unknown(id));
+        }
+        self.heights[id as usize] = texture;
+        let values = &mut self.values[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
+        values[height::SECOND_UV] = if second_uv { 1.0 } else { 0.0 };
+        let (scale, bias) = (values[height::SCALE], values[height::BIAS]);
+        let margin = &mut self.margins[id as usize];
+        *margin = margin.max(bias.abs()).max((scale + bias).abs());
+        self.values_changed = marked(&self.values_changed, id);
+        self.maps_changed = true;
+        if self.flags(id) & flag::HEIGHT_NORMALS != 0 {
+            self.put_map(id, MapSlot::Normal, Handle::NONE, false);
+            self.set_flags(id, flag::HEIGHT_NORMALS, 0);
+        }
+        self.share_height_normals(id);
+        Ok(())
+    }
+
+    /// Changes how far a standard material's displacement map moves vertices: the distance of
+    /// the map's white, and the distance added to every vertex's. Returns true when the farthest
+    /// distance grew, so the bounds of objects with the material must grow too.
+    pub fn set_displacement(
+        &mut self,
+        id: u32,
+        scale: f32,
+        bias: f32,
+    ) -> Result<bool, MaterialError> {
+        if !self.is_live(id) || matches!(self.shading[id as usize], Shading::Custom(_)) {
+            return Err(MaterialError::Unknown(id));
+        }
+        let start = id as usize * MATERIAL_FLOATS;
+        self.values[start + height::SCALE] = scale;
+        self.values[start + height::BIAS] = bias;
+        self.values_changed = marked(&self.values_changed, id);
+        let farthest = bias.abs().max((scale + bias).abs());
+        let margin = &mut self.margins[id as usize];
+        let grew = farthest > *margin;
+        *margin = margin.max(farthest);
+        Ok(grew && !self.heights[id as usize].is_none())
+    }
+
+    /// True when any material has a displacement map.
+    pub fn any_displacement(&self) -> bool {
+        self.heights.iter().any(|map| !map.is_none())
+    }
+
+    /// A material's displacement map, or `Handle::NONE`.
+    pub fn displacement_map(&self, id: u32) -> Handle {
+        self.heights
+            .get(id as usize)
+            .copied()
+            .unwrap_or(Handle::NONE)
+    }
+
+    /// How far a material's bounding spheres grow for its displacement, in the mesh's units: the
+    /// farthest that its displacement has moved a vertex, or 0 without a displacement map.
+    pub fn bounds_margin(&self, id: u32) -> f32 {
+        match self.heights.get(id as usize) {
+            Some(map) if !map.is_none() => self.margins[id as usize],
+            _ => 0.0,
+        }
+    }
+
+    /// True when a material's normal map's slot holds a normal map, not a height map.
+    pub fn normal_slot_holds_normals(&self, id: u32) -> bool {
+        self.rows
+            .get(id as usize * MATERIAL_FLOATS + param::FLAGS)
+            .is_some()
+            && self.flags(id) & (flag::BUMP | flag::HEIGHT_NORMALS) == 0
+    }
+
+    /// True for a material whose triangles draw as lines.
+    pub fn wireframe(&self, id: u32) -> bool {
+        self.features(id) & feature::WIREFRAME != 0
+    }
+
+    /// A material's row flags.
+    fn flags(&self, id: u32) -> u32 {
+        self.rows[id as usize * MATERIAL_FLOATS + param::FLAGS] as u32
+    }
+
+    /// Sets the row flags of `mask` to `bits` and keeps the others.
+    fn set_flags(&mut self, id: u32, mask: u32, bits: u32) {
         let flags = &mut self.rows[id as usize * MATERIAL_FLOATS + param::FLAGS];
+        let next = (*flags as u32 & !mask | bits) as f32;
+        if *flags != next {
+            *flags = next;
+            self.mark_row(id);
+        }
+    }
+
+    /// Puts a map in a slot, with the slot's bit for the second texture coordinates.
+    fn put_map(&mut self, id: u32, slot: MapSlot, texture: Handle, second_uv: bool) {
+        self.maps[id as usize][slot as usize] = texture;
         let bit = flag::SECOND_UV << slot as u32;
-        let bits = *flags as u32 & !bit | if second_uv { bit } else { 0 };
-        *flags = bits as f32;
+        self.set_flags(id, bit, if second_uv { bit } else { 0 });
         self.mark_row(id);
         self.maps_changed = true;
-        Ok(())
+    }
+
+    /// Puts a material's displacement map in its normal map's slot too, to bend the normals by its
+    /// slope, while the slot holds no map of its own and the material draws triangles.
+    fn share_height_normals(&mut self, id: u32) {
+        let height = self.heights[id as usize];
+        let free = self.maps[id as usize][MapSlot::Normal as usize].is_none();
+        if height.is_none() || !free || self.wireframe(id) {
+            return;
+        }
+        let at = id as usize * MATERIAL_FLOATS + height::SECOND_UV;
+        let second_uv = self.values[at] != 0.0;
+        self.put_map(id, MapSlot::Normal, height, second_uv);
+        self.set_flags(id, flag::HEIGHT_NORMALS, flag::HEIGHT_NORMALS);
     }
 
     /// Gives a material's maps the shared units that they sample, by slot, where a builder's
@@ -984,6 +1317,18 @@ impl MaterialTable {
         let on = if texture.is_none() { 0 } else { bit };
         *flags = ((*flags as u32 & !bit) | on) as f32;
         Ok(())
+    }
+
+    /// Gives a material's displacement map the shared unit that the fragment stage samples it
+    /// through, as [`MaterialTable::set_map_units`] does for the maps. The vertex stage samples it
+    /// through a binding of its own, and ignores the unit.
+    pub fn set_height_unit(&mut self, id: u32, unit: u8) {
+        if let Some(held) = self.height_units.get_mut(id as usize)
+            && *held != unit
+        {
+            *held = unit;
+            self.maps_changed = true;
+        }
     }
 
     /// A material's maps by slot, `Handle::NONE` where it has none.
@@ -1088,6 +1433,25 @@ impl MaterialTable {
             if changed {
                 self.mark_row(id);
             }
+            // A displacement map's layer goes into the custom values, which the vertex stage reads.
+            // Where the fragment stage samples it through a shared unit, the layer names the unit.
+            // Only a shader that reads those values gets them: another shading keeps its own custom
+            // values in that slot.
+            let height = self.heights[id as usize];
+            if self.shading[id as usize].displaces() {
+                let unit = self.height_units[id as usize];
+                let ready = (!height.is_none()).then(|| ready_layer(height)).flatten();
+                let vertex = ready.map_or(NO_MAP, |layer| layer as f32);
+                let pixel = ready.filter(|_| unit != NO_UNIT).map_or(NO_MAP, |layer| {
+                    (u32::from(unit) * UNIT_LAYERS + layer) as f32
+                });
+                let values = &mut self.values[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
+                if values[height::LAYER] != vertex || values[height::PIXEL_LAYER] != pixel {
+                    values[height::LAYER] = vertex;
+                    values[height::PIXEL_LAYER] = pixel;
+                    self.values_changed = marked(&self.values_changed, id);
+                }
+            }
             // A custom material reads its textures' layers from its custom values, in both stages.
             if let Shading::Custom(custom) = self.shading[id as usize] {
                 let textures = (custom.textures as usize).min(MAP_SLOTS);
@@ -1139,6 +1503,20 @@ mod tests {
         assert!(table.custom_template_unused(first + 1));
         table.destroy(id).unwrap();
         assert!(table.custom_template_unused(first));
+    }
+
+    #[test]
+    fn a_line_keeps_its_dashes_beside_the_displacement_values() {
+        let mut table = MaterialTable::with_capacity(1);
+        let line = table.create(Shading::Line, 0, [1.0; 4]).unwrap();
+        // Dash size, gap size, dash scale and dash offset, in the fourth texel of the custom values.
+        table.set_values(line, 12, &[0.25, 0.12, 1.0, 0.0]).unwrap();
+        table.update_map_layers(true, |_| None, |_| Premultiplied::No);
+        assert_eq!(
+            &table.values(0..1)[12..16],
+            &[0.25, 0.12, 1.0, 0.0],
+            "the displacement map's values leave the dashes alone"
+        );
     }
 
     #[test]
@@ -1240,6 +1618,12 @@ mod tests {
         );
         assert_eq!(&row[param::SHEEN_COLOR..param::SHEEN_COLOR + 3], &[0.0; 3]);
         assert_eq!(row[param::SHEEN_ROUGHNESS], 1.0);
+        // No diffuse transmission, and glTF's white transmission color.
+        assert_eq!(row[param::DIFFUSE_TRANSMISSION], 0.0);
+        assert_eq!(
+            &row[param::DIFFUSE_TRANSMISSION_COLOR..param::DIFFUSE_TRANSMISSION_COLOR + 3],
+            &[1.0; 3]
+        );
     }
 
     #[test]
@@ -1272,6 +1656,8 @@ mod tests {
             (param::CLEARCOAT_NORMAL_SCALE, 2),
             (param::SHEEN_COLOR, 3),
             (param::SHEEN_ROUGHNESS, 1),
+            (param::DIFFUSE_TRANSMISSION_COLOR, 3),
+            (param::DIFFUSE_TRANSMISSION, 1),
         ];
         starts.sort();
         for pair in starts.windows(2) {
@@ -1377,6 +1763,23 @@ mod tests {
         assert_eq!(row(&table, 2)[param::FLAGS], flag::NO_FOG as f32);
         let both = flag::FLAT_SHADING | flag::NO_FOG;
         assert_eq!(row(&table, 3)[param::FLAGS], both as f32);
+    }
+
+    #[test]
+    fn a_material_without_contact_shadows_flags_its_row_and_keeps_its_builds() {
+        let mut table = MaterialTable::with_capacity(2);
+        let plain = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let bare = feature::NO_CONTACT_SHADOWS | feature::DOUBLE_SIDED;
+        let without = table.create(Shading::Lit, bare, [1.0; 4]).unwrap();
+        assert_eq!(table.features(without), bare);
+        assert_eq!(row(&table, plain)[param::FLAGS], 0.0);
+        assert_eq!(
+            row(&table, without)[param::FLAGS],
+            flag::NO_CONTACT_SHADOWS as f32
+        );
+        // The flag must stay exact in the row's float, and clear of the map slots' bits.
+        const { assert!(flag::NO_CONTACT_SHADOWS < 1 << 24) };
+        const { assert!(flag::NO_CONTACT_SHADOWS > flag::SHEEN_ROUGHNESS_MAP) };
     }
 
     #[test]
@@ -1491,6 +1894,122 @@ mod tests {
         assert_eq!(table.take_changed(), Some(1..4));
         table.mark_changed();
         assert_eq!(table.take_changed(), Some(0..5));
+    }
+
+    #[test]
+    fn a_bump_map_takes_the_normal_maps_slot_and_a_normal_map_takes_it_back() {
+        let mut table = MaterialTable::with_capacity(2);
+        let id = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let wire = table
+            .create(Shading::Lit, feature::WIREFRAME, [1.0; 4])
+            .unwrap();
+        let (bumps, normals) = (Handle::new(1, 0), Handle::new(2, 0));
+        let flags = |table: &MaterialTable, id| row(table, id)[param::FLAGS] as u32;
+        table.set_bump_map(id, bumps, true).unwrap();
+        assert_eq!(table.map(id, MapSlot::Normal), bumps);
+        let second = flag::SECOND_UV << MapSlot::Normal as u32;
+        assert_eq!(flags(&table, id), flag::BUMP | second);
+        assert!(!table.normal_slot_holds_normals(id));
+        table.set_map(id, MapSlot::Normal, normals, false).unwrap();
+        assert_eq!(flags(&table, id), 0, "a normal map draws as one");
+        assert!(table.normal_slot_holds_normals(id));
+        // A wireframe keeps the bump map, so its slot never reads as a normal map, and its
+        // pipelines draw without it.
+        table.set_bump_map(wire, bumps, false).unwrap();
+        assert_eq!(flags(&table, wire), flag::BUMP);
+        assert!(!table.normal_slot_holds_normals(wire));
+    }
+
+    #[test]
+    fn a_displacement_map_keeps_its_values_where_the_vertex_stage_reads_them() {
+        let mut table = MaterialTable::with_capacity(4);
+        let plain = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let normal = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let wire = table
+            .create(Shading::Lit, feature::WIREFRAME, [1.0; 4])
+            .unwrap();
+        let custom = table
+            .create(CustomShading::standard(64), 0, [1.0; 4])
+            .unwrap();
+        let values = |table: &MaterialTable, id: u32| table.values(id..id + 1)[..12].to_vec();
+        assert_eq!(
+            values(&table, plain),
+            DEFAULT_HEIGHT_VALUES,
+            "three.js's defaults"
+        );
+        assert_eq!(table.bounds_margin(plain), 0.0, "no map moves nothing");
+        let (height, normals) = (Handle::new(1, 0), Handle::new(2, 0));
+        table
+            .set_map(normal, MapSlot::Normal, normals, false)
+            .unwrap();
+        for id in [plain, normal, wire] {
+            table.set_displacement_map(id, height, true).unwrap();
+        }
+        assert_eq!(
+            table.set_displacement_map(custom, height, false),
+            Err(MaterialError::Unknown(custom))
+        );
+        // The default scale of 1 moves vertices by up to 1.
+        assert_eq!(table.bounds_margin(plain), 1.0);
+        // Without a normal map, the displacement map bends the normals from the normal map's slot.
+        assert_eq!(table.map(plain, MapSlot::Normal), height);
+        let flags = |table: &MaterialTable, id| row(table, id)[param::FLAGS] as u32;
+        let second = flag::SECOND_UV << MapSlot::Normal as u32;
+        assert_eq!(flags(&table, plain), flag::HEIGHT_NORMALS | second);
+        assert_eq!(table.map(normal, MapSlot::Normal), normals);
+        assert_eq!(flags(&table, normal), 0);
+        assert_eq!(table.map(wire, MapSlot::Normal), Handle::NONE);
+        // The bounds grow with the farthest move, and never shrink.
+        assert_eq!(table.set_displacement(plain, 0.5, -2.0), Ok(true));
+        assert_eq!(table.bounds_margin(plain), 2.0);
+        assert_eq!(table.set_displacement(plain, 0.5, 0.0), Ok(false));
+        assert_eq!(table.bounds_margin(plain), 2.0);
+        assert_eq!(&values(&table, plain)[..4], &[NO_MAP, 0.5, 0.0, 1.0]);
+        // The texture coordinate transform goes to the custom values too.
+        table.set(plain, param::UV_U, &[2.0, 0.5, 0.25]).unwrap();
+        assert_eq!(
+            &values(&table, plain)[height::UV_U..height::UV_U + 3],
+            &[2.0, 0.5, 0.25]
+        );
+        // A ready layer goes to both stages' floats; a shared unit only to the fragment stage's.
+        table.set_height_unit(plain, 2);
+        table.set_height_unit(normal, NO_UNIT);
+        table.update_map_layers(true, |_| Some(5), |_| Premultiplied::No);
+        let layers = |id| {
+            let v = values(&table, id);
+            [v[height::LAYER], v[height::PIXEL_LAYER]]
+        };
+        assert_eq!(layers(plain), [5.0, (2 * UNIT_LAYERS + 5) as f32]);
+        assert_eq!(layers(normal), [5.0, NO_MAP]);
+        // Taking the map away leaves the normal map's slot free again.
+        table
+            .set_displacement_map(plain, Handle::NONE, false)
+            .unwrap();
+        assert_eq!(table.map(plain, MapSlot::Normal), Handle::NONE);
+        assert_eq!(flags(&table, plain), 0);
+        assert_eq!(table.bounds_margin(plain), 0.0);
+    }
+
+    #[test]
+    fn a_shading_that_reads_no_displacement_keeps_its_custom_values() {
+        let mut table = MaterialTable::with_capacity(2);
+        let line = table.create(Shading::Line, 0, [1.0; 4]).unwrap();
+        let lit = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        // The line material keeps its dash values in the slot where a standard material keeps its
+        // displacement values.
+        let dash = [0.25, 0.12, 1.0, 0.0];
+        table.set_values(line, 0, &dash).unwrap();
+        table.take_values_changed();
+        table
+            .set_displacement_map(lit, Handle::new(1, 0), false)
+            .unwrap();
+        table.update_map_layers(true, |_| Some(5), |_| Premultiplied::No);
+        assert_eq!(
+            &table.values(line..line + 1)[..4],
+            &dash,
+            "the line's values stay"
+        );
+        assert_eq!(table.values(lit..lit + 1)[height::LAYER], 5.0);
     }
 
     #[test]

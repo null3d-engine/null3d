@@ -1076,6 +1076,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'ao-calls',
 	'ao-calls-sync',
 	'dof',
+	'subsurface',
 	'contact',
 	'effects',
 	'effects-joined',
@@ -1283,6 +1284,27 @@ function addHeat(
 		from = to;
 	}
 	return byItem;
+}
+
+/**
+ * Each page's time in a runner's run, in whole seconds: from the result before it, or from the
+ * runner page's start, to its own result. The runner writes the times beside the results and prints
+ * the slowest, so the shards' model of each page's time can follow what a browser takes.
+ */
+function pageTimes(
+	run: string,
+	runner: string,
+	ids: readonly string[],
+): { id: string; seconds: number }[] {
+	const times: { id: string; seconds: number }[] = [];
+	let from = receivedAt(readDevice(run, runner));
+	for (const id of ids) {
+		const to = receivedAt(readResult(run, runner, id));
+		if (to === undefined) continue;
+		if (from !== undefined) times.push({ id, seconds: Math.round((to - from) / 1000) });
+		from = to;
+	}
+	return times;
 }
 
 /** The heat through all of a runner's readings, as one line. */
@@ -1539,6 +1561,19 @@ async function runPlan(
 			const heat = heatByRunner.get(name)?.get(item.id);
 			if (heat && item.check.kind === 'bench') console.log(`      heat: ${heatText(heat)}`);
 		}
+		const times = pageTimes(
+			run,
+			name,
+			plan.items.map(({ id }) => id),
+		);
+		if (times.length > 0) {
+			writeRunnerFile(run, name, 'page-times', times);
+			const slowest = times
+				.toSorted((a, b) => b.seconds - a.seconds)
+				.slice(0, 8)
+				.map(({ id, seconds }) => `${id} ${seconds} s`);
+			console.log(`slowest pages of ${name}: ${slowest.join(', ')}`);
+		}
 		failures += counts.fail;
 	}
 	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
@@ -1593,10 +1628,11 @@ interface PlanOutcome {
 }
 
 /**
- * Runs each page that failed in Safari, or in any browser on iOS, which draws with WebKit, in a way
- * that kept memory explains once more, each in a new runner page, and returns the run's failures: those of the first run, less the pages that passed
- * the second time. Each rerun is printed, and recorded in the first run's results as `reruns`, so
- * a fault that a second run hides stays in the record.
+ * Runs each page whose failure a new runner page can clear once more, each in a new runner page, and
+ * returns the run's failures: those of the first run, less the pages that passed the second time.
+ * Such a failure is memory that WebKit kept, in Safari or in any browser on iOS, or a worker whose
+ * files did not load (`rerunsInNewTab`). Each rerun is printed, and recorded in the first run's
+ * results as `reruns`, so a fault that a second run hides stays in the record.
  */
 async function rerunInNewTabs(
 	outcome: PlanOutcome,
@@ -1611,7 +1647,7 @@ async function rerunInNewTabs(
 		const runner = runners.find((r) => r.name === name);
 		if (!runner) continue;
 		console.log(
-			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory WebKit kept explains, in Safari or in any browser on iOS. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
+			`\nRERUN ${name}: ${pages.length} pages failed in a way that a new runner page can clear: memory that WebKit kept, in Safari or in any browser on iOS, or a worker whose files did not load. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
 		);
 		const items = pages.map(({ item }) => ({ ...item, ownTab: true as const }));
 		const again = await runPlan(options, items, [runner], launches, local, cloud, true);

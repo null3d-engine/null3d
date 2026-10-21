@@ -37,7 +37,10 @@ const PRODUCTION_BUILD = {
 	use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
 };
 
-/** The dev server, which serves every page of the repository from its source. */
+/**
+ * The dev server, which serves every page of the repository from its source. Off CI a run reuses a
+ * server that already answers on its port, and the checkout setup refuses one of another copy.
+ */
 export const DEV_SERVER = {
 	command: 'bunx vite',
 	cwd: REPO_ROOT,
@@ -49,10 +52,14 @@ export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
 	timeout: 60_000,
-	// Refuses a run that times frames at macOS background priority, before any browser starts. The
-	// path is absolute, because Playwright resolves a global setup against the config file that names
-	// it: the benchmark config spreads this one, so a relative path would resolve under bench/.
-	globalSetup: join(import.meta.dirname, 'lib/priority-setup.ts'),
+	// Refuses a run that times frames at macOS background priority, before any browser starts, and a
+	// run whose reused dev server serves another copy of the repository. The paths are absolute,
+	// because Playwright resolves a global setup against the config file that names it: the
+	// benchmark config spreads this one, so a relative path would resolve under bench/.
+	globalSetup: [
+		join(import.meta.dirname, 'lib/priority-setup.ts'),
+		join(import.meta.dirname, 'lib/checkout-setup.ts'),
+	],
 	forbidOnly: ci,
 	reporter: ci ? [['list'], ['github']] : 'list',
 	use: {
@@ -72,8 +79,9 @@ export default defineConfig({
 			reuseExistingServer: false,
 			// The chain builds seven pages before the preview serves them, and on a slow runner the
 			// default minute runs out partway through: the run then fails as if the server never
-			// started, with every build it finished in the log.
-			timeout: 300_000,
+			// started, with every build it finished in the log. A busy CI machine took the chain
+			// past five minutes on 19 October 2026 while each build was still finishing.
+			timeout: 900_000,
 		},
 	],
 	projects: [

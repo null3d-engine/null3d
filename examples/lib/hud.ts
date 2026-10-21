@@ -8,7 +8,7 @@
 // A button's tip describes what it does alone, with no input device named. The tip shows on hover,
 // keyboard focus and a press, and hides on a leave, a blur, a tap elsewhere, a scroll or after a
 // few seconds. It lives outside the scrolling panel, so it is never clipped.
-import type { HudModel } from './controls';
+import type { HudModel, HudSlider } from './controls';
 
 export type { HudButton, HudGroup, HudModel } from './controls';
 
@@ -33,6 +33,219 @@ function node<K extends keyof HTMLElementTagNameMap>(
 	if (className) element.className = className;
 	if (text !== undefined) element.textContent = text;
 	return element;
+}
+
+/**
+ * A place on a dial, in percent of its box, for a share of the way round from the bottom, turning
+ * clockwise, at `radius` percent from the middle.
+ */
+function dialPlace(share: number, radius: number): [number, number] {
+	const turn = share * Math.PI * 2;
+	return [50 - Math.sin(turn) * radius, 50 + Math.cos(turn) * radius];
+}
+
+/** The color between a dial's two stops round a value, as CSS, and its luminance from 0 to 1. */
+function dialColor(
+	colors: readonly (readonly [number, string])[],
+	value: number,
+): [string, number] {
+	const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+	for (let k = 0; k < colors.length - 1; k++) {
+		const [a, from] = colors[k] as readonly [number, string];
+		const [b, to] = colors[k + 1] as readonly [number, string];
+		if (value < a || value > b) continue;
+		const t = b > a ? (value - a) / (b - a) : 0;
+		const [x, y] = [rgb(from), rgb(to)];
+		const mixed = x.map((v, i) => Math.round(v + ((y[i] as number) - v) * t));
+		const [r, g, bl] = mixed.map((v) => v / 255) as [number, number, number];
+		return [`rgb(${mixed.join(' ')})`, 0.2126 * r + 0.7152 * g + 0.0722 * bl];
+	}
+	return [(colors[0] as readonly [number, string])[1], 0];
+}
+
+/** A value of hours as a clock time: 18.4 reads 18:24. */
+function clockTime(hours: number): string {
+	const minutes = Math.round(hours * 60) % 1440;
+	return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+/** A slider drawn as a dial, with its readout, and the box that the group's buttons go in. */
+interface Dial {
+	root: HTMLElement;
+	buttons: HTMLElement;
+	/** Shows the slider's value now, unless the user is turning the dial. */
+	update(slider: HudSlider): void;
+}
+
+/** How bright the ring's color must be for the dial's middle to show the sun rather than the moon. */
+const DAYLIGHT = 0.16;
+
+/**
+ * Makes a dial for `slider`, whose value goes to `post` as the user turns it: a drag round the
+ * ring, a tap on it, or the arrow and page keys. The value wraps round, so a drag carries on past
+ * the end into the start.
+ */
+function createDial(
+	title: string,
+	slider: HudSlider,
+	post: (value: string) => void,
+	bindTip: (element: HTMLElement) => void,
+): Dial {
+	const dial = slider.dial;
+	if (!dial) throw new Error('createDial needs a slider with a dial');
+	const { min, max } = slider;
+	const span = max - min;
+	const wrap = (value: number) => min + ((((value - min) % span) + span) % span);
+	const share = (value: number) => (wrap(value) - min) / span;
+	const root = node('div', 'hud__clock');
+	const face = node('div', 'hud__dial');
+	face.tabIndex = 0;
+	face.setAttribute('role', 'slider');
+	face.setAttribute('aria-label', title);
+	face.setAttribute('aria-valuemin', String(min));
+	face.setAttribute('aria-valuemax', String(max));
+	face.dataset.tip = slider.tip;
+	const ring = node('div', 'hud__ring');
+	const stops = dial.colors.map(([at, color]) => `${color} ${(share(at) * 100).toFixed(2)}%`);
+	// The last stop sits at the end of the ring, which wraps to its start.
+	stops[stops.length - 1] = `${dial.colors.at(-1)?.[1]} 100%`;
+	ring.style.background = `conic-gradient(from 180deg, ${stops.join(', ')})`;
+	const ticks = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	ticks.setAttribute('class', 'hud__ticks');
+	ticks.setAttribute('viewBox', '0 0 100 100');
+	ticks.setAttribute('aria-hidden', 'true');
+	// A tick at each whole step of a 24th of the way round, and a longer, darker one where each named
+	// span starts.
+	const starts = new Set(dial.names.map(([, from]) => from));
+	const at = (value: number, radius: number) => dialPlace(share(value), radius);
+	for (let k = 0; k < 24; k++) {
+		const value = min + (span * k) / 24;
+		const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+		const [x1, y1] = at(value, 49.5);
+		const [x2, y2] = at(value, 45.5);
+		line.setAttribute('x1', x1.toFixed(2));
+		line.setAttribute('y1', y1.toFixed(2));
+		line.setAttribute('x2', x2.toFixed(2));
+		line.setAttribute('y2', y2.toFixed(2));
+		line.setAttribute('class', 'hud__tick');
+		ticks.append(line);
+	}
+	for (const from of starts) {
+		const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+		const [x1, y1] = at(from, 49.5);
+		const [x2, y2] = at(from, 39);
+		line.setAttribute('x1', x1.toFixed(2));
+		line.setAttribute('y1', y1.toFixed(2));
+		line.setAttribute('x2', x2.toFixed(2));
+		line.setAttribute('y2', y2.toFixed(2));
+		line.setAttribute('class', 'hud__tick hud__tick--start');
+		ticks.append(line);
+	}
+	const numbers = node('div', 'hud__numbers');
+	numbers.setAttribute('aria-hidden', 'true');
+	for (let k = 0; k < 4; k++) {
+		const value = min + (span * k) / 4;
+		const label = node('span', undefined, String(Math.round(value)).padStart(2, '0'));
+		const [x, y] = at(value, 31);
+		label.style.left = `${x}%`;
+		label.style.top = `${y}%`;
+		numbers.append(label);
+	}
+	const middle = node('div', 'hud__face');
+	const orb = node('div', 'hud__orb');
+	middle.append(orb);
+	const knob = node('div', 'hud__knob');
+	face.append(ring, ticks, numbers, middle, knob);
+	const readout = node('div', 'hud__readout');
+	const time = node('div', 'hud__time');
+	time.setAttribute('aria-hidden', 'true');
+	const name = node('div', 'hud__name');
+	name.setAttribute('aria-hidden', 'true');
+	const dot = node('i');
+	const label = node('span');
+	name.append(dot, label);
+	const buttons = node('div', 'hud__buttons');
+	readout.append(time, name, buttons);
+	root.append(face, readout);
+
+	/** True while a finger or the pointer holds the dial, so a render does not move it back. */
+	let holding = false;
+	let value = slider.value;
+	let latest = slider;
+	const nameOf = (v: number) =>
+		dial.names.find(([, from, to]) =>
+			from < to ? v >= from && v < to : v >= from || v < to,
+		)?.[0] ?? '';
+	const show = (v: number, current: HudSlider): void => {
+		const [color, light] = dialColor(dial.colors, wrap(v));
+		const [x, y] = at(v, 44.5);
+		knob.style.left = `${x}%`;
+		knob.style.top = `${y}%`;
+		face.style.setProperty('--hud-dial-color', color);
+		name.style.setProperty('--hud-dial-color', color);
+		const off = current.dial?.off;
+		face.classList.toggle('hud__dial--off', off !== undefined);
+		face.classList.toggle('hud__dial--live', current.live);
+		orb.classList.toggle('hud__orb--moon', light < DAYLIGHT);
+		time.textContent = off === undefined ? clockTime(wrap(v)) : '--:--';
+		label.textContent = off ?? nameOf(wrap(v));
+		face.setAttribute('aria-valuenow', wrap(v).toFixed(2));
+		face.setAttribute(
+			'aria-valuetext',
+			off ?? `${clockTime(wrap(v))}, ${nameOf(wrap(v))}${current.live ? ', moving by itself' : ''}`,
+		);
+	};
+	const set = (v: number): void => {
+		value = wrap(v);
+		show(value, { ...latest, live: false, dial: { ...dial, off: undefined } as typeof dial });
+		post(String(value));
+	};
+	const fromPointer = (event: PointerEvent): number => {
+		const box = face.getBoundingClientRect();
+		const dx = event.clientX - (box.left + box.width / 2);
+		const dy = event.clientY - (box.top + box.height / 2);
+		return min + ((((Math.atan2(-dx, dy) / (Math.PI * 2)) % 1) + 1) % 1) * span;
+	};
+	face.addEventListener('pointerdown', (event) => {
+		face.setPointerCapture(event.pointerId);
+		holding = true;
+		set(fromPointer(event));
+	});
+	face.addEventListener('pointermove', (event) => {
+		if (holding && face.hasPointerCapture(event.pointerId)) set(fromPointer(event));
+	});
+	const release = (): void => {
+		holding = false;
+	};
+	face.addEventListener('pointerup', release);
+	face.addEventListener('pointercancel', release);
+	face.addEventListener('keydown', (event) => {
+		const fine = Math.max(slider.step, span / 96);
+		const coarse = span / 24;
+		const step = {
+			ArrowRight: fine,
+			ArrowUp: fine,
+			ArrowLeft: -fine,
+			ArrowDown: -fine,
+			PageUp: coarse,
+			PageDown: -coarse,
+		}[event.key];
+		if (step === undefined) return;
+		event.preventDefault();
+		set(value + step);
+	});
+	bindTip(face);
+	show(value, slider);
+	return {
+		root,
+		buttons,
+		update(next) {
+			latest = next;
+			if (holding) return;
+			value = next.value;
+			show(value, next);
+		},
+	};
 }
 
 /**
@@ -153,6 +366,10 @@ export function createHud(
 
 	/** The buttons drawn now, by their group and id, so a render only turns them on and off. */
 	let drawn = new Map<string, HTMLButtonElement>();
+	/** The sliders drawn now, by their group's name, so a render only moves their values. */
+	let sliders = new Map<string, HTMLInputElement>();
+	/** The dials drawn now, by their group's name, which a render turns to their values. */
+	let dials = new Map<string, Dial>();
 	/** The tab and the panel drawn for each group, by the group's name. */
 	let tabButtons = new Map<string, HTMLButtonElement>();
 	let tabPanels = new Map<string, HTMLElement>();
@@ -186,12 +403,14 @@ export function createHud(
 		const next = model.groups
 			.map(
 				(group) =>
-					`${group.name}|${group.title}|${group.radio}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}`,
+					`${group.name}|${group.title}|${group.radio}|${group.slider ? `${group.slider.min}~${group.slider.max}~${group.slider.step}~${group.slider.tip}~${group.slider.dial ? 'dial' : ''}~${group.slider.marks.map((m) => `${m.at}~${m.label}`).join(',')}` : ''}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}|${(group.extras ?? []).map((b) => `${b.id}~${b.label}~${b.tip}`).join(';')}`,
 			)
 			.join('||');
 		if (next !== signature) {
 			signature = next;
 			drawn = new Map();
+			sliders = new Map();
+			dials = new Map();
 			tabButtons = new Map();
 			tabPanels = new Map();
 			const names = model.groups.map((group) => group.name);
@@ -220,7 +439,49 @@ export function createHud(
 					section.id = `hud-panel-${group.name}`;
 					section.setAttribute('role', 'tabpanel');
 					section.setAttribute('aria-labelledby', `hud-tab-${group.name}`);
-					const buttons = node('div', 'hud__buttons');
+					const { slider } = group;
+					let holder: HTMLElement = section;
+					if (slider?.dial) {
+						// A value that wraps round draws as a dial, with its readout and the group's
+						// buttons beside it.
+						const dial = createDial(
+							group.title,
+							slider,
+							(value) => post(group.name, value),
+							bindTip,
+						);
+						section.append(dial.root);
+						holder = dial.buttons;
+						dials.set(group.name, dial);
+					} else if (slider) {
+						// The track sets one continuous value, and its labels name the key points along it.
+						const wrap = node('div', 'hud__slider');
+						const range = document.createElement('input');
+						range.type = 'range';
+						range.className = 'hud__range';
+						range.min = String(slider.min);
+						range.max = String(slider.max);
+						range.step = String(slider.step);
+						range.value = String(slider.value);
+						range.dataset.tip = slider.tip;
+						range.setAttribute('aria-label', group.title);
+						range.addEventListener('input', () => post(group.name, range.value));
+						bindTip(range);
+						const marks = node('div', 'hud__marks');
+						for (const mark of slider.marks) {
+							const label = node('span', 'hud__mark', mark.label);
+							const share = (mark.at - slider.min) / (slider.max - slider.min);
+							// A label near an end is anchored to that end, so it never runs past the track.
+							label.style.left = `${share * 100}%`;
+							if (share < 0.06) label.style.transform = 'translateX(0)';
+							else if (share > 0.94) label.style.transform = 'translateX(-100%)';
+							marks.append(label);
+						}
+						wrap.append(range, marks);
+						section.append(wrap);
+						sliders.set(group.name, range);
+					}
+					const buttons = holder === section ? node('div', 'hud__buttons') : holder;
 					for (const button of group.buttons) {
 						const el = node('button', `hud__btn${group.radio ? '' : ' hud__btn--toggle'}`);
 						el.type = 'button';
@@ -229,12 +490,27 @@ export function createHud(
 							document.createTextNode(button.label),
 							...(button.key ? [node('kbd', undefined, button.key)] : []),
 						);
-						el.addEventListener('click', () => post(group.name, button.id));
+						el.addEventListener('click', () => post(button.name ?? group.name, button.id));
 						bindTip(el);
 						buttons.append(el);
 						drawn.set(`${group.name}\u0000${button.id}`, el);
 					}
-					section.append(buttons);
+					if (group.extras?.length) {
+						// A group may also carry switches, such as the level of detail under Quality. They
+						// follow the row's choice after a separator, so the row stays one line.
+						buttons.append(node('span', 'hud__sep'));
+						for (const button of group.extras) {
+							const el = node('button', 'hud__btn hud__btn--toggle');
+							el.type = 'button';
+							el.dataset.tip = button.tip;
+							el.append(document.createTextNode(button.label));
+							el.addEventListener('click', () => post(button.name ?? group.name, button.id));
+							bindTip(el);
+							buttons.append(el);
+							drawn.set(`${group.name}\u0000extra:${button.id}`, el);
+						}
+					}
+					if (buttons !== holder) section.append(buttons);
 					tabPanels.set(group.name, section);
 					return section;
 				}),
@@ -242,13 +518,24 @@ export function createHud(
 			if (!tabButtons.has(active)) active = model.groups[0]?.name ?? '';
 			selectTab(active);
 		}
-		for (const group of model.groups)
-			for (const button of group.buttons) {
-				const el = drawn.get(`${group.name}\u0000${button.id}`);
+		for (const group of model.groups) {
+			if (group.slider) dials.get(group.name)?.update(group.slider);
+			const range = sliders.get(group.name);
+			if (range && group.slider) {
+				// A value that moves by itself, as the hour does in Auto, moves the thumb with it, unless
+				// the user is holding it.
+				if (document.activeElement !== range) range.value = String(group.slider.value);
+				range.setAttribute('aria-valuetext', group.slider.live ? 'Auto' : range.value);
+				range.classList.toggle('hud__range--live', group.slider.live);
+			}
+			for (const button of [...group.buttons, ...(group.extras ?? [])]) {
+				const extra = group.extras?.includes(button) ?? false;
+				const el = drawn.get(`${group.name}\u0000${extra ? 'extra:' : ''}${button.id}`);
 				if (!el) continue;
 				el.setAttribute('aria-pressed', String(button.active));
 				el.classList.toggle('hud__btn--on', button.active);
 			}
+		}
 	};
 	// The toast that names each change, at the top of the view. A new one replaces the old, and it
 	// never takes a click.
@@ -267,18 +554,28 @@ export function createHud(
 	/** Names a change in the controls, as a toast: a mode's new value, or a toggle's on and off. */
 	const toastChanges = (model: HudModel): void => {
 		const next = new Map<string, boolean>();
+		// One render can change two buttons at once, such as Auto coming on as Studio goes off. The
+		// control that the press turned on names the change; an off names it only when nothing came on.
+		let turnedOn: string | undefined;
+		let switched: string | undefined;
+		let turnedOff: string | undefined;
 		for (const group of model.groups)
-			for (const button of group.buttons) {
+			for (const button of [...group.buttons, ...(group.extras ?? [])]) {
 				const key = `${group.name}\u0000${button.id}`;
 				next.set(key, button.active);
 				const before = shown?.get(key);
 				if (shown === undefined || before === undefined || before === button.active) continue;
-				if (button.active)
-					showToast(
-						group.radio ? `${group.title}: ${button.label}`.toLowerCase() : `${button.label}: on`,
-					);
-				else if (!group.radio) showToast(`${button.label}: off`);
+				// A group's own choice outranks a switch beside it, which a preset change can flip too.
+				if (button.active) {
+					const named = group.radio
+						? `${group.title}: ${button.label}`.toLowerCase()
+						: `${button.label}: on`;
+					if (group.extras?.includes(button)) switched = named;
+					else turnedOn = named;
+				} else if (!group.radio) turnedOff = `${button.label}: off`;
 			}
+		const named = turnedOn ?? switched ?? turnedOff;
+		if (named !== undefined) showToast(named);
 		shown = next;
 	};
 	return {

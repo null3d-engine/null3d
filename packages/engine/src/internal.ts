@@ -39,3 +39,4 @@ export { texCoordsMaterial } from './scene/resources';
 export type { TextureUploads } from './scene/textures';
 export type { CoreGlue } from './shared/core';
 export { coreUrls, startCore } from './shared/core';
+export { type MemoryLimits, readMemoryLimits } from './shared/wasm';

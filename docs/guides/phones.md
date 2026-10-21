@@ -66,11 +66,11 @@ A phone closes a tab that uses too much memory, with no warning. The engine's ta
 
 | Device and browser | GPU textures | GPU buffers |
 | --- | --- | --- |
-| 11-inch iPad Pro, Safari, WebGPU | 2,016 MiB | the GPU stopped answering at 512 MiB |
+| 11-inch iPad Pro, Safari, WebGPU | 2,016 MiB | 2,528 MiB |
 | 11-inch iPad Pro, Safari, WebGL2 | 2,528 MiB | 2,496 MiB |
 | Galaxy S24+, Chrome, WebGL2 | 7,296 MiB | 7,616 MiB |
 
-No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. On an iPad's WebGPU path, keep a scene's GPU buffers under 256 MiB.
+No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. On the iPad's WebGPU path, an earlier run stopped answering at 512 MiB of GPU buffers, but that stall did not come back in a rerun on 17 October 2026. Keep a scene's GPU buffers under half the point in the table.
 
 On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 
@@ -89,6 +89,10 @@ When the tab crashes during a start, the next start of the sketch runs one prese
 ## Heat
 
 A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion. The `quality.onChange` handlers run after each step that follows the render scale, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
+
+## Power
+
+A view that holds still stops drawing after about a second. The engine first blends the still frames into a sharper picture, then the GPU rests until something changes ([Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation)). A product viewer that waits for a tap therefore uses little power between taps. A view that changes every frame, through an animation, particles or a moving camera, draws every frame as before.
 
 ## Touch input
 

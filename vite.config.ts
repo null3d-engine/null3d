@@ -3,7 +3,7 @@ import { cityServer } from './bench/lib/city-files.ts';
 import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
-import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
+import { checkoutServer, HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { coreSourcesServer } from './tools/lib/core-sources.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
@@ -23,7 +23,8 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 // images under /sample-textures/, and S6's model files, built from the sample content's city
 // layout, to modules that import them. Requests that come through BrowserStack Local's tunnel get
 // cache times and compression. The dev server gives the engine the stamp of the core's Rust
-// sources, so a page whose WebAssembly core is older than the checkout fails with E1402.
+// sources, so a page whose WebAssembly core is older than the checkout fails with E1402. It also
+// names the checkout it serves, so a test run that finds it on its port refuses another checkout's.
 
 const https = process.env.NULL3D_HTTPS === '1';
 
@@ -78,6 +79,7 @@ const config: UserConfig = {
 		sampleTexturesServer(import.meta.dirname),
 		coreSourcesServer(import.meta.dirname),
 		cityServer(import.meta.dirname),
+		checkoutServer(import.meta.dirname),
 		indexRedirect,
 	],
 	// The pages take the packages' source, not the files that their pack step builds.

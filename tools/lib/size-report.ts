@@ -5,9 +5,16 @@
 // module of the start, the module of a feature that loads on first use, or the module of a shader
 // that loads on a feature's first use as a whole, such as the texture generators'.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
-// functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
+// functions here do no file or process work of their own: tools/build-wasm.ts builds, reads and
+// prints, and hands in each file's bytes as a function that reads them.
+//
+// CI can split the measuring into parts that run at the same time: each part builds the same page
+// and measures its own share of the files, and one step merges the parts' sizes and judges them.
+import { createHash } from 'node:crypto';
+import { availableParallelism } from 'node:os';
 import { posix } from 'node:path';
-import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { brotliCompress, brotliCompressSync, constants, gzip, gzipSync } from 'node:zlib';
 
 /**
  * The ways a host can send a file, as the report's columns: as it is, with gzip, or with Brotli.
@@ -28,11 +35,173 @@ export type Budget = Readonly<Record<Column, number>>;
  * as a host that compresses its files once, when it deploys them, sends them.
  */
 export function measure(bytes: Buffer): SizeEntry {
-	const gzip = gzipSync(bytes, { level: 9 }).length;
-	const brotli = brotliCompressSync(bytes, {
-		params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
-	}).length;
-	return { raw: bytes.length, gzip, brotli };
+	const gzipped = gzipSync(bytes, GZIP_OPTIONS).length;
+	const brotli = brotliCompressSync(bytes, BROTLI_OPTIONS).length;
+	return { raw: bytes.length, gzip: gzipped, brotli };
+}
+
+const GZIP_OPTIONS = { level: 9 };
+const BROTLI_OPTIONS = { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } };
+const gzipAsync = promisify(gzip);
+const brotliAsync = promisify(brotliCompress);
+
+/** [`measure`]'s sizes, with both compressions on the runtime's worker threads. */
+async function measureAsync(bytes: Buffer): Promise<SizeEntry> {
+	const [gzipped, brotli] = await Promise.all([
+		gzipAsync(bytes, GZIP_OPTIONS),
+		brotliAsync(bytes, BROTLI_OPTIONS),
+	]);
+	return { raw: bytes.length, gzip: gzipped.length, brotli: brotli.length };
+}
+
+/** A file of a page's build that the size report measures. */
+export interface ReportFile {
+	/** The name that the report prints, such as `js/page.js` or `first-use/meshopt_decoder.wasm`. */
+	name: string;
+	/** The built file's own name, whose hash changes with its content. */
+	built: string;
+	/** The file's length, which balances the parts of a split measuring. */
+	weight: number;
+	/** Reads the file's bytes, only when the file is measured. */
+	read: () => Buffer;
+}
+
+/**
+ * The size of each of `files`, by name, in their order. `onMeasured` follows each file as it ends.
+ * The files compress on every core at once: as many at a time as the machine has cores, each read
+ * only when its turn comes, so the memory held stays a few files.
+ */
+export async function measureFiles(
+	files: readonly ReportFile[],
+	onMeasured?: (file: ReportFile) => void,
+): Promise<Map<string, SizeEntry>> {
+	const measured = new Array<SizeEntry>(files.length);
+	let next = 0;
+	const worker = async () => {
+		for (let at = next++; at < files.length; at = next++) {
+			const file = files[at] as ReportFile;
+			measured[at] = await measureAsync(file.read());
+			onMeasured?.(file);
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(availableParallelism(), files.length) }, worker));
+	return new Map(files.map(({ name }, at) => [name, measured[at] as SizeEntry]));
+}
+
+/** One part of a measuring split into `count` parts: `index` runs from 1 to `count`. */
+export interface PartSpec {
+	index: number;
+	count: number;
+}
+
+/** Reads a part as `<i>/<n>`, such as `2/6`. */
+export function parsePartSpec(text: string): PartSpec {
+	const match = /^(\d+)\/(\d+)$/.exec(text);
+	const index = Number(match?.[1]);
+	const count = Number(match?.[2]);
+	if (!match || index < 1 || index > count)
+		throw new Error(`a part is <i>/<n>, with i from 1 to n, such as 2/6, not ${text}`);
+	return { index, count };
+}
+
+/** The name of the file that a part writes its sizes to. */
+export const sizePartFile = ({ index, count }: PartSpec) => `part-${index}-of-${count}.json`;
+
+/** True for the name of a file that a part writes its sizes to. */
+export const isSizePartFile = (name: string) => /^part-\d+-of-\d+\.json$/.test(name);
+
+/**
+ * The names of the files that part `index` of `count` measures. The files go out heaviest first,
+ * each to the part with the least weight so far, so the parts take about equal time. Every part
+ * that reads the same build makes the same split, so each file falls in exactly one part.
+ */
+export function partShare(
+	files: readonly Pick<ReportFile, 'name' | 'weight'>[],
+	{ index, count }: PartSpec,
+): Set<string> {
+	const loads = new Array<number>(count).fill(0);
+	const share = new Set<string>();
+	const order = files
+		.map((file, at) => ({ file, at }))
+		.sort((a, b) => b.file.weight - a.file.weight || a.at - b.at);
+	for (const { file } of order) {
+		let lightest = 0;
+		for (let part = 1; part < count; part++) if (loads[part]! < loads[lightest]!) lightest = part;
+		loads[lightest]! += file.weight;
+		if (lightest === index - 1) share.add(file.name);
+	}
+	return share;
+}
+
+/** What one part of a split measuring writes, for the step that judges every part together. */
+export interface SizePart {
+	/** The part's number, from 1. */
+	part: number;
+	/** How many parts the measuring has. */
+	of: number;
+	/** A hash of every file's name and built name, the same only for parts of one build. */
+	build: string;
+	/** The name of every file that the build's report measures, in the report's order. */
+	files: string[];
+	/** The sizes of this part's own files, by name. */
+	sizes: Record<string, SizeEntry>;
+}
+
+/** The hash that tells the files of one build from another's. */
+function buildHash(files: readonly Pick<ReportFile, 'name' | 'built'>[]): string {
+	const lines = files.map(({ name, built }) => `${name}\t${built}`).join('\n');
+	return createHash('sha256').update(lines).digest('hex');
+}
+
+/** Measures the share of `files` that `spec` names, and returns the record that the part writes. */
+export async function measureSizePart(
+	files: readonly ReportFile[],
+	spec: PartSpec,
+	onMeasured?: (file: ReportFile) => void,
+): Promise<SizePart> {
+	const share = partShare(files, spec);
+	const own = files.filter(({ name }) => share.has(name));
+	return {
+		part: spec.index,
+		of: spec.count,
+		build: buildHash(files),
+		files: files.map(({ name }) => name),
+		sizes: Object.fromEntries(await measureFiles(own, onMeasured)),
+	};
+}
+
+/**
+ * The size of every file, from the records of every part, in the report's order: the same map as
+ * one measuring of every file gives. It throws when a part is missing or there twice, when the
+ * parts read different builds or split into different counts, and when a file has no size or more
+ * than one.
+ */
+export function mergeSizeParts(parts: readonly SizePart[]): Map<string, SizeEntry> {
+	const first = parts[0];
+	if (!first) throw new Error('there is no part of the size measuring to merge');
+	const count = first.of;
+	for (const { part, of, build } of parts) {
+		if (of !== count) throw new Error(`part ${part} of ${of} cannot merge with parts of ${count}`);
+		if (build !== first.build)
+			throw new Error(
+				`part ${part} of ${count} measured another build than part ${first.part}: every part must build the same commit`,
+			);
+	}
+	const numbers = parts.map(({ part }) => part).sort((a, b) => a - b);
+	if (numbers.join() !== Array.from({ length: count }, (_, i) => i + 1).join())
+		throw new Error(`expected parts 1 to ${count}, each once, but found ${numbers.join(', ')}`);
+	const files = new Set(first.files);
+	const merged = new Map<string, SizeEntry>();
+	for (const name of first.files) {
+		const holders = parts.filter(({ sizes }) => Object.hasOwn(sizes, name));
+		if (holders.length !== 1)
+			throw new Error(`${name} has a size in ${holders.length} parts, not in exactly one`);
+		merged.set(name, holders[0]!.sizes[name]!);
+	}
+	for (const { part, sizes } of parts)
+		for (const name of Object.keys(sizes))
+			if (!files.has(name)) throw new Error(`part ${part} measured ${name}, which no build lists`);
+	return merged;
 }
 
 /** The core's two builds: with threads and shared memory, and without. */
@@ -64,6 +233,12 @@ export interface EnginePart {
 	loadedBy?: string;
 	/** True for a part that every page may load after its first frame, with no feature to ask for it. */
 	afterFirstFrame?: boolean;
+	/**
+	 * True for a part that loads at the first call that reads it, not with a feature's first use: the
+	 * frame figures behind `measure()` and the fixes of the errors' messages. A page that makes
+	 * neither call downloads neither part.
+	 */
+	onFirstCall?: boolean;
 }
 
 /**
@@ -88,19 +263,14 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			loadedBy: drawing,
 		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
-		...(['wgsl', 'glsl'] as const).flatMap((target) =>
-			['', '-half'].map((half) => ({
-				name: `${prefix}-shaders-${target}-combos${half}.js`,
-				module: `generated/shaders-${target}-combos${half}.ts`,
-				loadedBy: drawing,
-			})),
-		),
 	];
 }
 
 /**
  * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
- * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
+ * starts the core's download, and every thread mode loads it. The probe worker's measurement of
+ * the direct drawing path loads in a file of its own when the probe runs, so a device with WebGPU
+ * downloads it whichever path the page draws with, and each start counts it. The renderer loads on demand on the
  * page and in the sketch worker, so a page downloads it only for the thread that draws. Each GPU
  * path's renderers load on demand in the thread that draws, so a page downloads one path's only
  * (`drawingParts`). The sketch runner and the scene API load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
@@ -119,6 +289,9 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
+ * The measurement's own frame figures load on the page at the first `measure()`, and the fixes of
+ * the errors' messages load in each thread at its first error, so a page that measures and throws
+ * nothing downloads neither.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
  * Each GPU path's table of the shader files of builds that need several features that load on
@@ -134,6 +307,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
 	{ name: 'page.js', module: 'page/engine.ts' },
+	{
+		name: 'page-message.js',
+		module: 'errors/message.ts',
+		loadedBy: 'page.js',
+	},
+	{ name: 'page-gpu.js', module: 'generated/gpu.ts', loadedBy: 'page.js' },
+	{ name: 'page-control.js', module: 'shared/control.ts', loadedBy: 'page.js' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
@@ -175,6 +355,24 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'page-stats-overlay.js', module: 'debug/overlay.ts', loadedBy: 'page.js' },
 	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
+	{
+		name: 'page-frame-figures.js',
+		module: 'page/frame-stats.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-error-fixes.js',
+		module: 'errors/fixes.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-error-fixes.js',
+		module: 'errors/fixes.ts',
+		loadedBy: 'sketch-worker.js',
+		onFirstCall: true,
+	},
 	{ name: 'page-label-loop.js', module: 'page/label-loop.ts', loadedBy: 'page.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
@@ -272,6 +470,15 @@ export const SHADER_PARTS: readonly string[] = [
  */
 export function isParagraphTable(name: string): boolean {
 	return /^shader-paragraphs-[a-z0-9-]+\.js$/.test(name);
+}
+
+/**
+ * True for the loader table of the combinations of one feature family, as
+ * `shaders-glsl-combos-bump.js`. A page loads the table of the family of the build it asks for, so
+ * a feature's combinations never grow another feature's file past its budget (D-190).
+ */
+export function isCombosPart(name: string): boolean {
+	return /^shaders-(wgsl|glsl)-combos(-[a-z0-9-]+)*\.js$/.test(name);
 }
 
 /**
@@ -436,7 +643,16 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 	GPU_PATHS.map((path) => ({
 		mode: `${mode}, ${path.name}`,
 		shaders: path.shaders,
-		parts: [...parts, `${drawing}-${path.part}.js`, `${drawing}-gpu-shared.js`],
+		parts: [
+			...parts,
+			// Small modules that many files share, which the bundler puts in files of their own that
+			// every page loads.
+			'page-message.js',
+			'page-gpu.js',
+			'page-control.js',
+			`${drawing}-${path.part}.js`,
+			`${drawing}-gpu-shared.js`,
+		],
 	})),
 );
 
@@ -497,7 +713,7 @@ export function findEngineParts(
 	for (const file of files) {
 		const part = claimed.has(file) ? undefined : shaderPartOf(file);
 		if (!part) continue;
-		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part))
+		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part) && !isCombosPart(part))
 			throw new Error(
 				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
 			);
@@ -547,7 +763,7 @@ export function downloadSizes(
 	return downloads.map(({ mode, parts, shaders }) => {
 		const size = totalSize(parts.flatMap((part) => sizes.get(part) ?? []));
 		const shaderSizes = [...sizes].filter(
-			([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part),
+			([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part) && !isCombosPart(part),
 		);
 		for (const column of COLUMNS)
 			size[column] += Math.max(0, ...shaderSizes.map(([, shader]) => shader[column]));
@@ -564,12 +780,26 @@ export function downloadSizes(
  *
  * The owner raised the Brotli figure from 165 KB to 166 KB on 18 October 2026, for the screen-space
  * reflections: their code adds about 1.6 KB of real start code, and the branch sat 50 bytes over
- * the old line. The owner chose the raise over trimming.
+ * the old line. The owner chose the raise over trimming. The owner raised it again to 176 KB the
+ * same day, for the still view, the surfaces that let light through and the skin scatter, with the
+ * draw probe back in its worker's script: the branch measured 170,517 bytes against 169,984 and the
+ * reflection probes still to land add about 1.4 KB. The raise comes with the reclaim the owner asked
+ * for: the frame figures behind `measure()` and the error-fix table load on their first use.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 166 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 176 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+
+/**
+ * The budget for a generated combination table, whose name holds `-combos`: the list of module
+ * addresses for the builds that need several features. The table gains a line set with every
+ * combination that a feature's bits can form, so its uncompressed size grows with the engine's
+ * features while its compressed figure, which is what a page downloads, stays small. The owner
+ * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
+ * past 64 KB; the compressed figures stay at [`LATER_BUDGET`]'s.
+ */
+export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 
 /** A column's name as a problem names it. */
 const COLUMN_NAMES: Readonly<Record<Column, string>> = {
@@ -619,16 +849,22 @@ export function budgetProblems(
 		),
 		...later.flatMap(({ name }) => {
 			const size = sizes.get(name);
-			return size ? overBudget(`js/${name}, which loads after the start,`, size, LATER_BUDGET) : [];
+			if (!size) return [];
+			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
+			// own; its compressed figure, which a page downloads, stays within the shared one.
+			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
+			return overBudget(`js/${name}, which loads after the start,`, size, budget);
 		}),
 		...[...sizes].flatMap(([name, size]) =>
-			isFirstUseShaderPart(name)
-				? overBudget(
-						`js/${name}, the shader builds of a feature that loads on first use,`,
-						size,
-						FIRST_USE_SHADER_BUDGET,
-					)
-				: [],
+			isCombosPart(name)
+				? overBudget(`js/${name}, which loads after the start,`, size, COMBOS_BUDGET)
+				: isFirstUseShaderPart(name)
+					? overBudget(
+							`js/${name}, the shader builds of a feature that loads on first use,`,
+							size,
+							FIRST_USE_SHADER_BUDGET,
+						)
+					: [],
 		),
 	];
 }

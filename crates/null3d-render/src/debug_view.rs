@@ -13,6 +13,10 @@
 //!   from black in full shadow to white in full light. The gray is the shadow factor that lit
 //!   shading multiplies the sun's light by, so tests can read shadows alone, without the lighting
 //!   and the materials. A surface that receives no shadows shows white.
+//! - motion: each pixel's whole motion since the last frame as a color: its direction as the hue,
+//!   its length as the brightness (see [`crate::motion`]). The scene draws with its materials, so
+//!   the depth and the masks are what the motion's readers see, and a full-screen step then draws
+//!   the motion over the scene color.
 //!
 //! A debug view also clears to black, hides the background texture and draws without the tone
 //! mapping and the exposure, so its colors reach the canvas as the shader writes them.
@@ -30,6 +34,7 @@ pub mod code {
     pub const OVERDRAW: u32 = 3;
     pub const WIREFRAME: u32 = 4;
     pub const SHADOWS: u32 = 5;
+    pub const MOTION: u32 = 6;
 }
 
 /// How the scene draws: with its materials, or with one debug shading.
@@ -42,6 +47,7 @@ pub enum DebugView {
     Overdraw = code::OVERDRAW as isize,
     Wireframe = code::WIREFRAME as isize,
     Shadows = code::SHADOWS as isize,
+    Motion = code::MOTION as isize,
 }
 
 impl DebugView {
@@ -54,6 +60,7 @@ impl DebugView {
             code::OVERDRAW => Self::Overdraw,
             code::WIREFRAME => Self::Wireframe,
             code::SHADOWS => Self::Shadows,
+            code::MOTION => Self::Motion,
             _ => return None,
         })
     }
@@ -70,10 +77,11 @@ impl DebugView {
     /// the debug view template, the receive shadows bit picks the shadows view, whose low bit marks
     /// a surface that shows no shadows: [`receiving`] clears it on a receiver. The high bit marks a
     /// surface whose shading takes no light, which shows no shadows even where it receives them.
+    /// The motion view keeps the material's shading, and draws over it afterwards.
     pub const fn draw_key(self, key: DrawKey) -> DrawKey {
         let faces = key.state & state_flags::CULL_NONE;
         let (bits, state) = match self {
-            Self::Lit => return key,
+            Self::Lit | Self::Motion => return key,
             Self::Normals => (0, faces),
             Self::Depth => (permutation::DEBUG_VIEW_LOW, faces),
             Self::Overdraw => (
@@ -164,10 +172,16 @@ mod tests {
 
     #[test]
     fn codes_name_each_view_once() {
-        for view in 0..6 {
+        for view in 0..7 {
             assert_eq!(DebugView::from_code(view).map(|v| v as u32), Some(view));
         }
-        assert_eq!(DebugView::from_code(6), None);
+        assert_eq!(DebugView::from_code(7), None);
+        assert!(DebugView::Motion.is_debug());
+        assert_eq!(
+            DebugView::Motion.draw_key(BLENDED),
+            BLENDED,
+            "materials keep their shading"
+        );
         assert!(!DebugView::Lit.is_debug());
         assert!(DebugView::Wireframe.is_debug());
     }

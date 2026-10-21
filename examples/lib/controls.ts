@@ -15,6 +15,41 @@ export interface HudButton {
 	key?: string;
 	/** What the button does, alone, with no input device named. */
 	tip: string;
+	/** The message that the button posts, when it is not its group's name. */
+	name?: string;
+}
+
+/** A slider of one value, with labels at key points along it. */
+export interface HudSlider {
+	/** The lowest value, the highest value and the step between them. */
+	min: number;
+	max: number;
+	step: number;
+	/** The value now. */
+	value: number;
+	/** True while the value moves by itself, as the hour does in Auto. */
+	live: boolean;
+	/** The labels under the track, each at its own value. */
+	marks: readonly { at: number; label: string }[];
+	/** What the slider sets, alone, with no input device named. */
+	tip: string;
+	/** A dial that the slider draws as instead of a track, for a value that wraps round. */
+	dial?: HudDial;
+}
+
+/**
+ * A slider drawn as a round dial, for a value that wraps round from its highest to its lowest, as
+ * the hour does past midnight. The lowest value sits at the bottom and the values run clockwise, so
+ * an hour dial has noon at the top. A readout beside the dial shows the value as a clock time and
+ * the name of the span it falls in.
+ */
+export interface HudDial {
+	/** The colors of the ring at points round it, by value, as hex. */
+	colors: readonly (readonly [number, string])[];
+	/** The names that the readout gives the value, each with the values it spans; a span may wrap. */
+	names: readonly (readonly [string, number, number])[];
+	/** A name that stands in for the value while the value does not apply, which dims the dial. */
+	off?: string;
 }
 
 /** One group of the controls, drawn as a card. */
@@ -27,6 +62,10 @@ export interface HudGroup {
 	radio: boolean;
 	/** The group's buttons, in the order that they show. */
 	buttons: readonly HudButton[];
+	/** A slider above the buttons, for a group that sets one continuous value. */
+	slider?: HudSlider;
+	/** Toggles below the buttons, for a group whose row is a choice and which also has switches. */
+	extras?: readonly HudButton[];
 }
 
 /** The whole controls model of a scene. */
@@ -53,28 +92,68 @@ export const CAMERA_OPTIONS: readonly HudOption[] = [
 	},
 ];
 
+/** The times of day that the HUD labels along its hour slider. */
+export const TIME_MARKS: readonly { at: number; label: string }[] = [
+	{ at: 6.2, label: 'Dawn' },
+	{ at: 9, label: 'Morning' },
+	{ at: 12, label: 'Midday' },
+	{ at: 15, label: 'Afternoon' },
+	{ at: 17.6, label: 'Golden' },
+	{ at: 18.4, label: 'Dusk' },
+	{ at: 23, label: 'Night' },
+];
+
 /**
- * The times of day that the showcase HUD offers, with `Auto` easing through them and looping. The
- * studio is the last entry: it is not an hour, but a backdrop and a key light of its own, and Auto
- * never eases through it.
+ * The sky's color round the hour dial, from midnight through dawn's pink and noon's blue to the
+ * golden hour, dusk's violet and night again.
  */
-export const TIMES_OF_DAY: readonly HudOption[] = [
+export const TIME_SKY: readonly (readonly [number, string])[] = [
+	[0, '#0a1230'],
+	[4, '#101a40'],
+	[5.2, '#2b2457'],
+	[6.2, '#e2735f'],
+	[7.5, '#f4b26a'],
+	[9, '#f6d98a'],
+	[10.5, '#9ccff0'],
+	[12, '#6db6f7'],
+	[15, '#8ec6ea'],
+	[16.5, '#f2c27a'],
+	[17.6, '#ff9a3d'],
+	[18.4, '#c05673'],
+	[19.3, '#5b3a86'],
+	[20.5, '#23285a'],
+	[23, '#0d1534'],
+	[24, '#0a1230'],
+];
+
+/** The names the hour dial's readout gives each hour, with the hours each spans. */
+export const TIME_NAMES: readonly (readonly [string, number, number])[] = [
+	['Midnight', 23.5, 0.5],
+	['Night', 0.5, 5],
+	['Dawn', 5, 7.5],
+	['Morning', 7.5, 10.5],
+	['Midday', 10.5, 13.5],
+	['Afternoon', 13.5, 16.8],
+	['Golden', 16.8, 18],
+	['Dusk', 18, 20.5],
+	['Night', 20.5, 23.5],
+];
+
+/**
+ * The buttons beside the hour dial. Auto moves the hour by itself and loops; the studio is not an
+ * hour but a backdrop and a key light of its own, and Auto never passes through it. Each turns on
+ * with a press and off with the next.
+ */
+export const TIME_BUTTONS: readonly HudOption[] = [
 	{
 		id: 'Auto',
 		label: 'Auto',
-		tip: 'Ease through the times of day and loop, each cross-fading into the next.',
+		tip: 'Move the hour by itself, across the whole day and round again. Press again to hold the hour.',
 	},
-	{ id: 'Dawn', label: 'Dawn', tip: 'First light: a low sun and a warm sky.' },
-	{ id: 'Morning', label: 'Morning', tip: 'A high, clear morning sun.' },
-	{ id: 'Midday', label: 'Midday', tip: 'The sun overhead and the shortest shadows.' },
-	{ id: 'Afternoon', label: 'Afternoon', tip: 'A warm, lowering sun.' },
-	{ id: 'Golden', label: 'Golden', tip: 'The golden hour: a long, amber sun.' },
-	{ id: 'Dusk', label: 'Dusk', tip: 'Blue hour: the sun just below the horizon.' },
-	{ id: 'Night', label: 'Night', tip: 'Moonlight, a navy sky and the moon\u2019s own light.' },
 	{
 		id: 'Studio',
 		label: 'Studio',
-		tip: 'A studio backdrop: the scene under a soft key light, for a look at the model.',
+		tip: 'A studio backdrop: the scene under a soft key light, for a look at the model. Press again for the sky.',
 	},
 ];
 

@@ -68,7 +68,9 @@ concurrency:
 
 env:
   BUN_VERSION: "1.4.3"
-  # Only main's runs save caches, as in CI, whose workflow says why.
+  # Only main's runs save caches here: each run saves the city's files under a key of its own, and
+  # a branch's runs would multiply those copies. The shader action still saves a branch's own shader
+  # entries, which CI's workflow saves on every run.
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:

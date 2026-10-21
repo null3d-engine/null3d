@@ -39,7 +39,7 @@
 //! such as the room's generator, has a module of its own for each target, which the feature's code
 //! imports, so no page downloads it before it uses the feature.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use null3d_gpu::drawlist::permutation;
 
@@ -263,9 +263,12 @@ interface FirstUseTarget {
 	readonly files: Readonly<Record<string, FirstUseFiles>>;
 	/** The keys of the modules of builds that need several features. */
 	readonly combined: readonly string[];
-	/** Loads the table of the modules of builds that need several features, for a device whose fixed
+	/** Loads the table of one family of builds that need several features, for a device whose fixed
 	 * bits are `bits`: the half-precision builds sit in a table of their own. */
-	readonly loadCombined: (bits: number) => Promise<Readonly<Record<string, FirstUseFiles>>>;
+	readonly loadCombined: (
+		bits: number,
+		file: string,
+	) => Promise<Readonly<Record<string, FirstUseFiles>>>;
 	/** The features whose own modules a page asked for. */
 	readonly asked: Set<string>;
 }
@@ -297,9 +300,10 @@ function loadFirstUse(target: FirstUseTarget, file: string, bits: number) {
 	if (!combined && !target.asked.has(file)) {
 		target.asked.add(file);
 		const needs = (key: string) => key.split(FEATURE_JOIN).every((one) => target.asked.has(one));
-		if (target.combined.some(needs)) target.loadCombined(bits).catch(() => undefined);
+		for (const key of target.combined)
+			if (needs(key)) target.loadCombined(bits, key).catch(() => undefined);
 	}
-	const table = combined ? target.loadCombined(bits) : Promise.resolve(target.files);
+	const table = combined ? target.loadCombined(bits, file) : Promise.resolve(target.files);
 	return table.then((loaded) => {
 		const of = loaded[file];
 		const load = of?.modules[bits & of.bits];
@@ -359,16 +363,21 @@ export async function everyShader(part = 1, parts = 1): Promise<Record<string, S
 	for (const [name, variant, build] of mine(variants)) {
 		every[name] = { ...every[name], [variant]: build };
 	}
+	// The builds of both halves of the fixed bits: a page loads the table of its own half alone,
+	// while these tests need every build. Each family's table holds a prefix of the features of
+	// the keys that it names.
 	const tables = [
 		WGSL_FIRST_USE,
 		GLSL_FIRST_USE,
-		// The builds of both halves of the fixed bits: a page loads the table of its own half alone,
-		// while these tests need every build.
 		...(await Promise.all([
-			loadWgslCombined(0),
-			loadWgslCombined(HALF),
-			loadGlslCombined(0),
-			loadGlslCombined(HALF),
+			...[...new Set(WGSL_COMBINED.map(WgslCombinedFamily))].flatMap((family) => [
+				loadWgslCombined(0, family),
+				loadWgslCombined(HALF, family),
+			]),
+			...[...new Set(GLSL_COMBINED.map(GlslCombinedFamily))].flatMap((family) => [
+				loadGlslCombined(0, family),
+				loadGlslCombined(HALF, family),
+			]),
 		])),
 	];
 	const loads = [
@@ -540,11 +549,14 @@ fn device_builds(output: &Output) -> BTreeMap<DeviceModule, Builds<'_>> {
     modules
 }
 
-/// The paragraphs that enough device modules of one kind share, and the table module that holds
-/// them. A kind is a target and one value of the permutation bits that a device fixes, which is
-/// what a device module is built for.
+/// The paragraphs that enough device modules of one kind and family share, and the table module
+/// that holds them. A kind is a target and one value of the permutation bits that a device fixes,
+/// which is what a device module is built for. A family is the feature that every module naming
+/// one of the table's paragraphs needs. The base family has no name: its paragraphs are those that
+/// modules of several features share, so no feature alone can claim them.
 struct SharedParagraphs {
-    /// The table's file name without its extension, such as `shader-paragraphs-glsl-draw-index`.
+    /// The table's file name without its extension, such as `shader-paragraphs-glsl-draw-index`, or
+    /// with its family, such as `shader-paragraphs-glsl-draw-index-bump`.
     stem: String,
     /// Each shared paragraph with the name the table exports it as, in the order the kind's
     /// modules first name them.
@@ -553,22 +565,34 @@ struct SharedParagraphs {
     names: HashMap<String, String>,
 }
 
+/// One feature-set module of a kind, as the choice of a table needs it: the features its builds
+/// need, and the paragraphs its sources hold, each once.
+struct ParagraphModule<'a> {
+    features: BTreeSet<&'a str>,
+    paragraphs: BTreeSet<&'a str>,
+}
+
 /// The paragraphs that at least [`SHARED_PARAGRAPH_MIN_USES`] feature-set device modules of one
-/// kind name, by kind. The start's modules are left out: only a module of a feature that loads on
-/// first use takes part, so the table never joins a page's first download.
+/// kind and one family name, by kind. A paragraph goes to the family of the one feature that every
+/// module naming it needs, and to the base family when no single feature covers them all. So the
+/// relief features' text sits in tables of its own, and a page that draws no relief material
+/// downloads none of it.
+///
+/// The start's modules are left out: only a module of a feature that loads on first use takes part,
+/// so a table never joins a page's first download.
 ///
 /// A table belongs to one kind and not to a whole target, because the devices differ in their bits:
 /// a table of a target's every module would be tens of times over the limit of one shader file
-/// ([D-56]). A kind with no such paragraph has no entry, and then no table and no module names one.
+/// ([D-56]). A kind or family with no such paragraph has no entry, and then no table and no module
+/// names one.
 fn shared_paragraphs(
     devices: &BTreeMap<DeviceModule, Builds<'_>>,
-) -> BTreeMap<(Target, u32), SharedParagraphs> {
-    let mut users: BTreeMap<(Target, u32), Vec<(&str, usize)>> = BTreeMap::new();
-    let mut at: BTreeMap<(Target, u32), HashMap<&str, usize>> = BTreeMap::new();
+) -> BTreeMap<(Target, u32), Vec<SharedParagraphs>> {
+    let mut kinds: BTreeMap<(Target, u32), Vec<ParagraphModule<'_>>> = BTreeMap::new();
     for (module, builds) in devices {
-        if module.file.is_none() {
+        let Some(file) = module.file.as_deref() else {
             continue;
-        }
+        };
         let held = first_use_counts(
             first_use_counts(
                 builds
@@ -579,54 +603,83 @@ fn shared_paragraphs(
             .iter()
             .flat_map(|&(source, _)| source.split(PARAGRAPH_BREAK)),
         );
-        let kind = (module.target, module.bits);
-        let counts = users.entry(kind).or_default();
-        let index = at.entry(kind).or_default();
-        // A module counts once for each paragraph it holds, however many of its sources hold it.
-        for (paragraph, _) in held {
-            let position = *index.entry(paragraph).or_insert_with(|| {
-                counts.push((paragraph, 0));
-                counts.len() - 1
+        kinds
+            .entry((module.target, module.bits))
+            .or_default()
+            .push(ParagraphModule {
+                features: file.split(FEATURE_JOIN).collect(),
+                // A module counts once for each paragraph it holds, however many of its sources
+                // hold it.
+                paragraphs: held.into_iter().map(|(paragraph, _)| paragraph).collect(),
             });
-            counts[position].1 += 1;
-        }
     }
     let mut tables = BTreeMap::new();
-    for ((target, bits), counts) in users {
-        let mut paragraphs: Vec<(String, String)> = Vec::new();
-        for (n, (paragraph, count)) in counts.into_iter().enumerate() {
+    for ((target, bits), modules) in kinds {
+        // Each paragraph's modules, in the order the kind's modules first name it, with the
+        // features that every one of them needs.
+        let mut at: HashMap<&str, usize> = HashMap::new();
+        let mut counts: Vec<(&str, usize, Option<BTreeSet<&str>>)> = Vec::new();
+        for module in &modules {
+            for &paragraph in &module.paragraphs {
+                let position = *at.entry(paragraph).or_insert_with(|| {
+                    counts.push((paragraph, 0, None));
+                    counts.len() - 1
+                });
+                let count = &mut counts[position];
+                count.1 += 1;
+                count.2 = Some(match count.2.take() {
+                    None => module.features.clone(),
+                    Some(common) => common.intersection(&module.features).copied().collect(),
+                });
+            }
+        }
+        // Each family's table, in name order: the base family first, then each feature.
+        let mut families: BTreeMap<Option<&str>, Vec<(String, String)>> = BTreeMap::new();
+        for (paragraph, count, common) in counts {
             if count < SHARED_PARAGRAPH_MIN_USES {
                 continue;
             }
-            let name = format!("SHARED_{n}");
+            let family = common.and_then(|common| common.into_iter().next());
+            let table = families.entry(family).or_default();
+            let name = match family {
+                None => format!("SHARED_{}", table.len()),
+                Some(feature) => format!("{}_SHARED_{}", feature.to_ascii_uppercase(), table.len()),
+            };
             // A paragraph no longer than its name and the `${}` around it would not shrink.
             if paragraph.len() > name.len() + 3 {
-                paragraphs.push((paragraph.to_owned(), name));
+                table.push((paragraph.to_owned(), name));
             }
         }
-        if paragraphs.is_empty() {
-            continue;
-        }
-        let names = paragraphs
-            .iter()
-            .map(|(paragraph, name)| (paragraph.clone(), name.clone()))
-            .collect();
-        // The table is named as the start's module of the same kind is, so a reader can tell which
-        // devices download it.
-        let stem = DeviceModule {
-            file: None,
-            target,
-            bits,
-        }
-        .stem_with(PARAGRAPHS_MODULE_PREFIX);
-        tables.insert(
-            (target, bits),
-            SharedParagraphs {
+        let mut kind_tables = Vec::new();
+        for (family, paragraphs) in families {
+            if paragraphs.is_empty() {
+                continue;
+            }
+            let names = paragraphs
+                .iter()
+                .map(|(paragraph, name)| (paragraph.clone(), name.clone()))
+                .collect();
+            // The table is named as the start's module of the same kind is, then its family, so a
+            // reader can tell which devices and which feature download it.
+            let mut stem = DeviceModule {
+                file: None,
+                target,
+                bits,
+            }
+            .stem_with(PARAGRAPHS_MODULE_PREFIX);
+            if let Some(feature) = family {
+                stem.push('-');
+                stem.push_str(&feature.replace('_', "-"));
+            }
+            kind_tables.push(SharedParagraphs {
                 stem,
                 paragraphs,
                 names,
-            },
-        );
+            });
+        }
+        if !kind_tables.is_empty() {
+            tables.insert((target, bits), kind_tables);
+        }
     }
     tables
 }
@@ -665,8 +718,8 @@ pub struct ModuleSet<'a> {
     output: &'a Output,
     /// The builds of the shaders that load by device, by device module.
     devices: BTreeMap<DeviceModule, Builds<'a>>,
-    /// The paragraphs that enough device modules of one kind share, by kind.
-    shared: BTreeMap<(Target, u32), SharedParagraphs>,
+    /// The tables of shared paragraphs of each kind, in the order of their families.
+    shared: BTreeMap<(Target, u32), Vec<SharedParagraphs>>,
     /// The kind of module that each file name holds.
     plan: BTreeMap<String, ModuleKind<'a>>,
 }
@@ -679,13 +732,14 @@ enum ModuleKind<'a> {
     Features,
     /// A device module, by its name and the builds it holds.
     Device(DeviceModule),
-    /// The table of shared paragraphs of one kind: a target and one value of the device's bits.
-    Paragraphs(Target, u32),
+    /// One table of shared paragraphs: a target, one value of the device's bits, and the table's
+    /// place in that kind's list.
+    Paragraphs(Target, u32, usize),
     /// A module of a shader that loads on first use, by the shader and the target.
     FirstUse(&'a str, Target),
-    /// The loader table of a target's device modules of builds that need several features, of the
-    /// half-precision builds or of the rest.
-    Combined(Target, bool),
+    /// The loader table of one family of a target's device modules of builds that need several
+    /// features, of the half-precision builds or of the rest.
+    Combined(Target, bool, String),
 }
 
 impl<'a> ModuleSet<'a> {
@@ -704,22 +758,26 @@ impl<'a> ModuleSet<'a> {
                 ModuleKind::Device(module.clone()),
             );
         }
-        for (&(target, bits), table) in &shared {
-            plan.insert(
-                format!("{}.{DEVICE_MODULE_EXTENSION}", table.stem),
-                ModuleKind::Paragraphs(target, bits),
-            );
+        for (&(target, bits), tables) in &shared {
+            for (index, table) in tables.iter().enumerate() {
+                plan.insert(
+                    format!("{}.{DEVICE_MODULE_EXTENSION}", table.stem),
+                    ModuleKind::Paragraphs(target, bits, index),
+                );
+            }
         }
         for (stem, shader, target) in first_use_modules(output) {
             plan.insert(format!("{stem}.ts"), ModuleKind::FirstUse(shader, target));
         }
         for target in [Target::Wgsl, Target::Glsl] {
             let combined = first_use_files(&devices, target, true);
+            let depths = combined_depths(target, &combined);
             for half in [false, true] {
-                if !split_by_half(&combined, half).is_empty() {
+                let files = split_by_half(&combined, half);
+                for family in combined_families(&depths, &files).keys() {
                     plan.insert(
-                        format!("{}.ts", combined_module_name(target, half)),
-                        ModuleKind::Combined(target, half),
+                        format!("{}.ts", combined_module_name(target, half, family)),
+                        ModuleKind::Combined(target, half, family.clone()),
                     );
                 }
             }
@@ -747,22 +805,29 @@ impl<'a> ModuleSet<'a> {
                 // downloads one of them before its first frame, and the table belongs to the
                 // features that load on first use. `offlineFiles` in the Vite plugin groups the
                 // table by the modules that name it.
-                let table = if module.file.is_some() {
-                    self.shared.get(&(module.target, module.bits))
+                let tables: &[SharedParagraphs] = if module.file.is_some() {
+                    self.shared
+                        .get(&(module.target, module.bits))
+                        .map_or(&[], Vec::as_slice)
                 } else {
-                    None
+                    &[]
                 };
-                Some(device_module(module, &self.devices[module], table))
+                Some(device_module(module, &self.devices[module], tables))
             }
-            ModuleKind::Paragraphs(target, bits) => {
-                Some(paragraphs_module(self.shared.get(&(*target, *bits))?))
-            }
+            ModuleKind::Paragraphs(target, bits, index) => Some(paragraphs_module(
+                self.shared.get(&(*target, *bits))?.get(*index)?,
+            )),
             ModuleKind::FirstUse(shader, target) => {
                 Some(first_use_module(self.output, shader, *target))
             }
-            ModuleKind::Combined(target, half) => {
+            ModuleKind::Combined(target, half, family) => {
                 let combined = first_use_files(&self.devices, *target, true);
-                Some(combined_module(*target, &split_by_half(&combined, *half)))
+                let depths = combined_depths(*target, &combined);
+                let files = split_by_half(&combined, *half);
+                let of_family = combined_families(&depths, &files)
+                    .remove(family)
+                    .expect("a planned family holds at least one key");
+                Some(combined_module(*target, &of_family))
             }
         }
     }
@@ -772,14 +837,50 @@ impl<'a> ModuleSet<'a> {
 /// JavaScript. A caller that writes the modules one at a time uses [`ModuleSet`] instead.
 pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
     let set = ModuleSet::new(output);
-    set.names()
-        .map(|name| {
-            let text = set
-                .text(name)
-                .expect("a module that the set names has text");
-            (name.to_owned(), text)
-        })
-        .collect()
+    let names: Vec<&str> = set.names().collect();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |count| count.get())
+        .min(names.len());
+    if threads <= 1 {
+        return names
+            .into_iter()
+            .map(|name| {
+                let text = set
+                    .text(name)
+                    .expect("a module that the set names has text");
+                (name.to_owned(), text)
+            })
+            .collect();
+    }
+    // Rendering a module reads the build without changing it, and the largest modules take
+    // seconds, so the modules render on every core. Each thread takes every nth name, which
+    // spreads the large device modules between them; the map sorts by name, so the threads leave
+    // no trace in the text.
+    let set = &set;
+    let names = &names;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|at| {
+                scope.spawn(move || {
+                    names
+                        .iter()
+                        .skip(at)
+                        .step_by(threads)
+                        .map(|name| {
+                            let text = set
+                                .text(name)
+                                .expect("a module that the set names has text");
+                            ((*name).to_owned(), text)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("a module renderer"))
+            .collect()
+    })
 }
 
 /// The device modules of `files` whose fixed bits hold the half-precision bit, or those that do
@@ -805,11 +906,93 @@ fn split_by_half<'a>(
     out
 }
 
-/// The name of the module, without its extension, that holds the loader table of a target's device
-/// modules of builds that need several features, such as `shaders-wgsl-combos`.
-fn combined_module_name(target: Target, half: bool) -> String {
+/// How large one combination loader may grow before the build splits its family further, in bytes
+/// of its rendered text. The budget of such a file is 96 KB uncompressed (D-14), so a table that
+/// the build writes stays well inside it and a later feature's keys need to add a third of the
+/// budget before a family overflows.
+const COMBINED_TABLE_TARGET: usize = 64 * 1024;
+
+/// The family of a key: its first `depth` feature names, joined. The key's names are sorted, so a
+/// family is always a prefix of every key in it.
+fn combined_family(file: &str, depth: usize) -> String {
+    file.split(FEATURE_JOIN)
+        .take(depth)
+        .collect::<Vec<_>>()
+        .join(&FEATURE_JOIN.to_string())
+}
+
+/// The number of a key's first features that name its combination table, by the key's first
+/// feature: the fewest that keep every table of that family within [`COMBINED_TABLE_TARGET`]. A
+/// family whose keys have no more features left keeps its table as it is. The runtime reads these
+/// numbers, so a page loads the table of the family of the build it asks for alone.
+fn combined_depths(
+    target: Target,
+    files: &BTreeMap<&str, (u32, Vec<&DeviceModule>)>,
+) -> BTreeMap<String, usize> {
+    let mut roots: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+    for &file in files.keys() {
+        roots
+            .entry(combined_family(file, 1))
+            .or_default()
+            .push(file);
+    }
+    let mut depths = BTreeMap::new();
+    for (root, keys) in roots {
+        let longest = keys
+            .iter()
+            .map(|file| file.split(FEATURE_JOIN).count())
+            .max()
+            .unwrap_or(1);
+        let mut depth = 1;
+        while depth < longest {
+            let mut groups: BTreeMap<String, BTreeMap<&str, (u32, Vec<&DeviceModule>)>> =
+                BTreeMap::new();
+            for &file in &keys {
+                groups
+                    .entry(combined_family(file, depth))
+                    .or_default()
+                    .insert(file, files[file].clone());
+            }
+            if groups
+                .values()
+                .all(|group| combined_module(target, group).len() <= COMBINED_TABLE_TARGET)
+            {
+                break;
+            }
+            depth += 1;
+        }
+        depths.insert(root, depth);
+    }
+    depths
+}
+
+/// `files`, grouped by the family that `depths` names for each key's first feature.
+fn combined_families<'a>(
+    depths: &BTreeMap<String, usize>,
+    files: &BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)>,
+) -> BTreeMap<String, BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)>> {
+    let mut families: BTreeMap<String, BTreeMap<&str, (u32, Vec<&DeviceModule>)>> = BTreeMap::new();
+    for (&file, (bits, modules)) in files {
+        let root = combined_family(file, 1);
+        let depth = depths.get(&root).copied().unwrap_or(1);
+        families
+            .entry(combined_family(file, depth))
+            .or_default()
+            .insert(file, (*bits, modules.clone()));
+    }
+    families
+}
+
+/// The name of the module, without its extension, that holds the loader table of one family of a
+/// target's device modules of builds that need several features, such as
+/// `shaders-wgsl-combos-bump` or `shaders-wgsl-combos-area-lights-and-bump`.
+fn combined_module_name(target: Target, half: bool, family: &str) -> String {
     let suffix = if half { "-half" } else { "" };
-    format!("{MAIN_MODULE}-{}-combos{suffix}", target.name())
+    format!(
+        "{MAIN_MODULE}-{}-combos-{}{suffix}",
+        target.name(),
+        family.replace('_', "-").replace(FEATURE_JOIN, "-and-")
+    )
 }
 
 /// A target's device modules of features that load on first use, by `firstUseFile`'s key, with the
@@ -1027,7 +1210,7 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
     ts.shared_sources(
         own.iter().flat_map(|(_, variants)| variants.values()),
         false,
-        None,
+        &[],
     );
     for &(shader, variants) in &own {
         let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
@@ -1153,28 +1336,66 @@ fn first_use_tables(
         ));
         ts.line("");
         ts.line(&format!(
-            "/** Loads the table of the {name} device modules of builds that need several features. */"
+            "/** The loader of the table of each family of the {name} builds that need several features. */"
         ));
         if combined.is_empty() {
             ts.line(&format!(
-                "const load{}Combined = (_bits: number): Promise<Readonly<Record<string, FirstUseFiles>>> => Promise.resolve({{}});",
+                "const load{}Combined = (_bits: number, _file: string): Promise<Readonly<Record<string, FirstUseFiles>>> => Promise.resolve({{}});",
                 target_word(target)
             ));
         } else {
             let mask = permutation::bit("HALF").unwrap_or(0);
-            let base = combined_module_name(target, false);
-            if split_by_half(&combined, true).is_empty() {
-                ts.line(&format!(
-                    "const load{}Combined = (_bits: number) => import('./{base}').then((module) => module.FILES);",
-                    target_word(target)
-                ));
-            } else {
-                let half = combined_module_name(target, true);
-                ts.line(&format!(
-                    "const load{}Combined = (bits: number) => (bits & {mask} ? import('./{half}') : import('./{base}')).then((module) => module.FILES);",
-                    target_word(target)
-                ));
+            let depths = combined_depths(target, &combined);
+            let halves = combined_families(&depths, &split_by_half(&combined, true));
+            let families = combined_families(&depths, &split_by_half(&combined, false));
+            ts.open(&format!(
+                "const {name}_COMBINED_TABLES: Readonly<Record<string, (bits: number) => Promise<Readonly<Record<string, FirstUseFiles>>>>> = {{"
+            ));
+            for family in families.keys() {
+                let base = combined_module_name(target, false, family);
+                let loader = if !halves.contains_key(family) {
+                    format!("(bits: number) => import('./{base}').then((module) => module.FILES)")
+                } else {
+                    let half = combined_module_name(target, true, family);
+                    format!(
+                        "(bits: number) => (bits & {mask} ? import('./{half}') : import('./{base}')).then((module) => module.FILES)"
+                    )
+                };
+                ts.line(&format!("{}: {loader},", quote(family)));
             }
+            ts.close("};");
+            ts.line("");
+            ts.line(&format!(
+                "/** How many of a key's first features name its {name} combination table. */"
+            ));
+            ts.open(&format!(
+                "const {name}_COMBINED_DEPTH: Readonly<Record<string, number>> = {{"
+            ));
+            for (root, depth) in &depths {
+                ts.line(&format!("{}: {depth},", quote(root)));
+            }
+            ts.close("};");
+            ts.line(&format!(
+                "function {}CombinedFamily(file: string): string {{",
+                target_word(target)
+            ));
+            ts.line("\tconst root = file.split(FEATURE_JOIN)[0] ?? file;");
+            ts.line(&format!(
+                "\tconst depth = {name}_COMBINED_DEPTH[root] ?? 1;"
+            ));
+            ts.line("\treturn file.split(FEATURE_JOIN).slice(0, depth).join(FEATURE_JOIN);");
+            ts.line("}");
+            ts.line(&format!(
+                "const load{}Combined = (bits: number, file: string): Promise<Readonly<Record<string, FirstUseFiles>>> => {{",
+                target_word(target)
+            ));
+            ts.line(&format!(
+                "\tconst load = {name}_COMBINED_TABLES[{}CombinedFamily(file)];",
+                target_word(target)
+            ));
+            ts.line("\tif (!load) return Promise.reject(new Error(`no shader module holds the ${{file}} builds that need several features`));");
+            ts.line("\treturn load(bits);");
+            ts.line("};");
         }
     }
     ts.line("");
@@ -1238,7 +1459,7 @@ fn first_use_tables(
 fn device_module(
     module: &DeviceModule,
     builds: &Builds<'_>,
-    table: Option<&SharedParagraphs>,
+    tables: &[SharedParagraphs],
 ) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(HEADER);
@@ -1247,7 +1468,7 @@ fn device_module(
             .values()
             .flat_map(|variants| variants.values().copied()),
         true,
-        table,
+        tables,
     );
     ts.line("");
     let bits: Vec<&str> = module.bit_names().collect();
@@ -1399,7 +1620,7 @@ impl Writer {
         &mut self,
         builds: impl Iterator<Item = &'a VariantOutput>,
         share_paragraphs: bool,
-        table: Option<&SharedParagraphs>,
+        tables: &[SharedParagraphs],
     ) {
         let uses = first_use_counts(builds.flat_map(sources));
         // The module writes each distinct source once, so each counts once.
@@ -1409,14 +1630,20 @@ impl Writer {
                 .flat_map(|&(source, _)| source.split(PARAGRAPH_BREAK)),
         );
         let mut paragraphs = Vec::new();
-        let mut imported: Vec<(&str, String)> = Vec::new();
+        let mut imported: Vec<(&str, &str, String)> = Vec::new();
         for (paragraph, count) in held {
-            match table.and_then(|table| table.names.get(paragraph)) {
-                // A paragraph the target's table holds is named there; the module imports it,
-                // however many of its sources hold it and whether or not they share it here. The
-                // loop holds each paragraph once, and the table names each of them once, so the
-                // list needs no repeat check.
-                Some(name) => imported.push((paragraph, name.clone())),
+            let shared = tables.iter().find_map(|table| {
+                table
+                    .names
+                    .get(paragraph)
+                    .map(|name| (table.stem.as_str(), name.clone()))
+            });
+            match shared {
+                // A paragraph a table holds is named there; the module imports it, however many of
+                // its sources hold it and whether or not they share it here. The loop holds each
+                // paragraph once, and a table names each of them once, so the list needs no repeat
+                // check.
+                Some((stem, name)) => imported.push((paragraph, stem, name)),
                 None => {
                     let name = format!("PART_{}", paragraphs.len());
                     // A paragraph no longer than its name and the `${}` around it would not shrink.
@@ -1426,14 +1653,19 @@ impl Writer {
                 }
             }
         }
-        if let (Some(table), false) = (table, imported.is_empty()) {
-            let names: Vec<&str> = imported.iter().map(|(_, name)| name.as_str()).collect();
+        if !imported.is_empty() {
+            // One import for each table that the module names, in the tables' order.
+            let mut by_stem: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+            for (_, stem, name) in &imported {
+                by_stem.entry(stem).or_default().push(name);
+            }
             self.line("");
-            self.line(&format!(
-                "import {{ {} }} from './{}.{DEVICE_MODULE_EXTENSION}';",
-                names.join(", "),
-                table.stem
-            ));
+            for (stem, names) in by_stem {
+                self.line(&format!(
+                    "import {{ {} }} from './{stem}.{DEVICE_MODULE_EXTENSION}';",
+                    names.join(", ")
+                ));
+            }
         }
         if !paragraphs.is_empty() {
             self.line("");
@@ -1444,7 +1676,11 @@ impl Writer {
         }
         self.paragraphs = paragraphs
             .into_iter()
-            .chain(imported)
+            .chain(
+                imported
+                    .into_iter()
+                    .map(|(paragraph, _, name)| (paragraph, name)),
+            )
             .map(|(paragraph, name)| (paragraph.to_owned(), name))
             .collect();
         let mut shared = uses.into_iter().filter(|&(_, count)| count > 1).peekable();
@@ -1863,7 +2099,8 @@ mod tests {
             "the start's main module names no module of several features"
         );
         assert!(!modules.contains_key("shaders-glsl-combos.ts"));
-        let combined = &modules["shaders-wgsl-combos.ts"];
+        // One table for each family, named after the key's first feature.
+        let combined = &modules["shaders-wgsl-combos-bloom.ts"];
         let pair = "	'bloom+hash': {
 		bits: 2,
 		modules: {
@@ -1874,6 +2111,18 @@ mod tests {
 ";
         assert!(combined.contains(pair), "{combined}");
         assert!(combined.contains("	'bloom+hash+skinning': {\n		bits: 0,\n"));
+        assert!(
+            modules["shaders-wgsl-combos-hash.ts"].contains("	'hash+sprites': {\n"),
+            "a key whose first feature is hash sits in the hash family's table"
+        );
+        assert!(
+            main.contains("	'hash': (bits: number) =>"),
+            "the main module loads the table of the family that a key names"
+        );
+        assert!(
+            main.contains("const WGSL_COMBINED_DEPTH: Readonly<Record<string, number>> = {"),
+            "the main module knows how many names a family takes"
+        );
         assert!(main.contains("export const FEATURE_JOIN = '+';"));
         assert!(main.contains("export function firstUseFile(shader: string, permutation: number)"));
     }

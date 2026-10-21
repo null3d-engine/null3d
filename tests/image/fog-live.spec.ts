@@ -4,6 +4,7 @@
 // WebGPU's image. WebGL2 counts rows from the bottom and reads the last frame's grid with code of
 // its own, so a wrong read there shows as a different image.
 import { expect, type Page, test } from '@playwright/test';
+import { ALONE } from '../lib/alone.ts';
 import { differentShare } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -48,20 +49,26 @@ async function load(page: Page, gpu: string) {
 // Both other paths against one WebGPU frame. The two tests this replaces each drew their own
 // WebGPU frame, so the scene was loaded four times over the pair where three do now, and each
 // path was judged against a different frame of a blend whose phase cycles. The comparisons are
-// soft, so one path's verdict does not hide the other's.
-test("the volumetric fog in play draws WebGPU's image on compat and webgl2", async ({ page }) => {
-	// Three loads of the heaviest live scene here, each of which may settle for as long as its own
-	// cap allows and is then captured.
-	test.setTimeout(600_000);
-	const webgpu = await load(page, 'webgpu');
-	const reference = Buffer.from(webgpu.pixels, 'base64');
-	for (const gpu of ['compat', 'webgl2'] as const) {
-		const other = await load(page, gpu);
-		expect
-			.soft(
-				differentShare(Buffer.from(other.pixels, 'base64'), reference, CHANNEL),
-				`${gpu} draws WebGPU's image`,
-			)
-			.toBeLessThanOrEqual(MAX_DIFFERENT);
-	}
-});
+// soft, so one path's verdict does not hide the other's. The page counts its frames within a bounded
+// time, so the test runs alone: in CI run 39315370327 a heavy file on the other worker held it to 19
+// frames in the page's 150 seconds.
+test(
+	"the volumetric fog in play draws WebGPU's image on compat and webgl2",
+	ALONE,
+	async ({ page }) => {
+		// Three loads of the heaviest live scene here, each of which may settle for as long as its own
+		// cap allows and is then captured.
+		test.setTimeout(600_000);
+		const webgpu = await load(page, 'webgpu');
+		const reference = Buffer.from(webgpu.pixels, 'base64');
+		for (const gpu of ['compat', 'webgl2'] as const) {
+			const other = await load(page, gpu);
+			expect
+				.soft(
+					differentShare(Buffer.from(other.pixels, 'base64'), reference, CHANNEL),
+					`${gpu} draws WebGPU's image`,
+				)
+				.toBeLessThanOrEqual(MAX_DIFFERENT);
+		}
+	},
+);

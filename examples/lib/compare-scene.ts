@@ -548,7 +548,8 @@ export type SurfaceKind =
 	| 'panels'
 	| 'bark'
 	| 'needles'
-	| 'leaves';
+	| 'leaves'
+	| 'scorch';
 
 const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 	// Painted steel, white so a material's color tints it, with scuffs where bare metal shows.
@@ -880,6 +881,25 @@ const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 			height: 0.55 + 0.1 * blot - 0.3 * chip + 0.2 * mud,
 		};
 	},
+	// A scorch mark: soot black at the middle with warm ash, a ragged edge and nothing beyond it. The
+	// alpha cuts the mark out of a box that a decal projects onto the ground.
+	scorch: (seed) => (u, v) => {
+		const reach = Math.hypot(u - 0.5, v - 0.5) * 2;
+		const ragged = fbm(u, v, 6, 4, seed) - 0.5;
+		const alpha = smoothstep((1 - reach - ragged * 0.35) * 6);
+		const soot = fbm(u, v, 5, 5, seed + 13);
+		const ash = smoothstep((0.55 - reach) * 4) * 0.3;
+		const shade = 0.03 + 0.09 * soot + ash;
+		return {
+			r: shade,
+			g: shade * 0.92,
+			b: shade * 0.82,
+			roughness: 0.92 + 0.06 * soot,
+			metalness: 0,
+			height: 0.45 + 0.2 * soot,
+			alpha,
+		};
+	},
 };
 
 /** The byte of a value from 0 to 1. */
@@ -991,6 +1011,8 @@ export const EFFECT_NAMES = [
 	'bloom',
 	'ao',
 	'grade',
+	'lens',
+	'decals',
 	'reflections',
 	'particles',
 ] as const;
@@ -1019,22 +1041,4 @@ export function effectsFromText(text: string | null): Effects {
 		effects[name as EffectName] = true;
 	}
 	return effects;
-}
-
-// How both engines build a comparison's scene.
-
-/**
- * A comparison's two ways of building its scene, the same in both engines. 'scene-graph' makes one
- * object per part in a tree of parents and children, as each engine's own examples build jointed
- * models. 'instanced' makes one batch of copies per part kind, posed by the same closed-form loop.
- */
-export const COMPARE_MODES = ['scene-graph', 'instanced'] as const;
-export type CompareMode = (typeof COMPARE_MODES)[number];
-
-/** Reads a mode from address text: null gives the scene graph, and an unknown name throws. */
-export function modeFromText(text: string | null): CompareMode {
-	if (text === null || text === '') return 'scene-graph';
-	if (!(COMPARE_MODES as readonly string[]).includes(text))
-		throw new RangeError(`"${text}" is not a mode. Use: ${COMPARE_MODES.join(', ')}.`);
-	return text as CompareMode;
 }

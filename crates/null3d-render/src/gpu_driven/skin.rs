@@ -86,7 +86,7 @@ use crate::view::ViewFrame;
 
 /// The engine's templates with SKIN builds, which skin in the vertex shader. Custom materials'
 /// templates have them too, apart from whole shaders (see `has_skin_builds`).
-const SKIN_TEMPLATES: [u32; 10] = [
+const SKIN_TEMPLATES: [u32; 11] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
     template::PROBE_GRID,
@@ -97,6 +97,7 @@ const SKIN_TEMPLATES: [u32; 10] = [
     template::SHADOW_CUTOUT,
     template::SHADOW_CUTOUT_MAP,
     template::OUTLINE_MASK,
+    template::MOTION,
 ];
 /// True for a template with SKIN builds: one of the engine's in `SKIN_TEMPLATES`, or a custom
 /// material's, unless it is a whole shader, which the caller checks by its shading. The debug
@@ -596,7 +597,11 @@ impl Skinning {
             let computed = morphed || !self.mode.vertex_shader || !vertex_skins();
             self.computed += u32::from(computed);
             let first_part = self.parts.len() as u32;
-            let parts = if computed { meshes.parts(mesh) } else { &[] };
+            let parts = if computed {
+                meshes.parts(mesh, false)
+            } else {
+                &[]
+            };
             for part in parts {
                 if !self.pages.iter().any(|&(page, _)| page == part.page) {
                     if self.pages.len() == MAX_PAGES as usize {
@@ -739,7 +744,8 @@ impl Skinning {
         {
             if *made < needed {
                 *made = grown_size(needed, binding_bytes);
-                let flags = usage::STORAGE | usage::VERTEX;
+                // The motion pass copies the regions into its own buffers each frame.
+                let flags = usage::STORAGE | usage::VERTEX | usage::COPY_SRC;
                 let id = ids::skinned(buffer as u32);
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 remade = true;
@@ -919,6 +925,20 @@ impl Skinning {
             )?;
         }
         Ok(())
+    }
+
+    /// Each skinned vertex buffer that the GPU holds: its index, the bytes that the layout's regions
+    /// take in it, and its size.
+    pub(super) fn skinned_buffers(&self) -> impl Iterator<Item = (u32, u32, u32)> + '_ {
+        (0..MAX_SKINNED_BUFFERS)
+            .zip(self.skinned_bytes.iter().zip(&self.skinned_made))
+            .filter(|(_, (_, made))| **made > 0)
+            .map(|(buffer, (&used, &made))| (buffer, used, made))
+    }
+
+    /// The joint texture.
+    pub(super) fn joints(&self) -> &JointTexture {
+        &self.joints
     }
 
     /// The vertices that the frame recorded last skins and morphs in the skinning pass.

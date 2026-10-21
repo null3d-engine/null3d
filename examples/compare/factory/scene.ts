@@ -11,7 +11,6 @@
 import {
 	boxGeometry,
 	type CameraLoop,
-	type CompareMode,
 	cylinderGeometry,
 	type GradeLook,
 	type Hex,
@@ -44,10 +43,11 @@ export const MOVING_PER_CELL = 6 + CRATES_PER_CELL;
 export const STILL_PER_CELL = 5;
 /** The spot lights over the middle of the hall, with their housings and glowing lenses. */
 export const SPOT_COUNT = 6;
-/** The hall's own objects: the floor, and a housing and a lens for each spot light. */
-export const HALL_OBJECTS = 1 + 2 * SPOT_COUNT;
-/** The kinds of part in a cell, each a batch in the instanced mode, and the sparks' batch. */
-const PART_KINDS = 12;
+/**
+ * The hall's own objects: the floor, a housing and a lens and a light cone for each spot light, and
+ * a screen and its frame under each light.
+ */
+export const HALL_OBJECTS = 1 + 5 * SPOT_COUNT;
 /** The most cells a scene can hold. */
 export const MAX_CELLS = 20_000;
 
@@ -56,12 +56,8 @@ export function factoryCells(movingParts: number): number {
 	return Math.max(1, Math.min(MAX_CELLS, Math.ceil(movingParts / MOVING_PER_CELL)));
 }
 
-/**
- * Objects in the scene for a count of moving parts: an object per part in the scene graph mode, and
- * a batch per part kind in the instanced mode.
- */
-export function factoryObjects(movingParts: number, mode: CompareMode = 'scene-graph'): number {
-	if (mode === 'instanced') return PART_KINDS + HALL_OBJECTS;
+/** Objects in the scene for a count of moving parts: one per part. */
+export function factoryObjects(movingParts: number): number {
 	return factoryCells(movingParts) * (MOVING_PER_CELL + STILL_PER_CELL) + HALL_OBJECTS;
 }
 
@@ -556,7 +552,49 @@ export type FactoryMesh =
 	| 'floor'
 	| 'housing'
 	| 'lens'
-	| 'spark';
+	| 'spark'
+	| 'panel'
+	| 'panelFrame'
+	| 'cone';
+
+/** The facets of a spot light's cone of light in the haze. */
+const POWER_CONE_SEGMENTS = 24;
+/** The cone's radius at the floor, a little inside the spot light's own angle. */
+const POWER_CONE_RADIUS = 4.4;
+
+/**
+ * A spot light's cone of light: an open cone from just under the lens to the floor, white at the
+ * lens and dark at the floor, so an unlit additive material draws haze in the light's shape.
+ */
+function powerConeMesh(): MeshData {
+	const height = SPOT_HEIGHT - 0.1;
+	const rings = POWER_CONE_SEGMENTS + 1;
+	const position = new Float32Array(rings * 2 * 3);
+	const normal = new Float32Array(rings * 2 * 3);
+	const uv = new Float32Array(rings * 2 * 2);
+	const color = new Float32Array(rings * 2 * 3);
+	const index = new Uint16Array(POWER_CONE_SEGMENTS * 6);
+	for (let i = 0; i <= POWER_CONE_SEGMENTS; i++) {
+		const angle = (i / POWER_CONE_SEGMENTS) * 2 * Math.PI;
+		const sin = Math.sin(angle);
+		const cos = Math.cos(angle);
+		const top = i * 2;
+		const bottom = top + 1;
+		position.set([sin * 0.4, 0, cos * 0.4], top * 3);
+		position.set([sin * POWER_CONE_RADIUS, -height, cos * POWER_CONE_RADIUS], bottom * 3);
+		normal.set([sin, 0, cos], top * 3);
+		normal.set([sin, 0, cos], bottom * 3);
+		uv.set([i / POWER_CONE_SEGMENTS, 0], top * 2);
+		uv.set([i / POWER_CONE_SEGMENTS, 1], bottom * 2);
+		color.set([0.28, 0.25, 0.21], top * 3);
+		color.set([0, 0, 0], bottom * 3);
+	}
+	for (let i = 0; i < POWER_CONE_SEGMENTS; i++) {
+		const a = i * 2;
+		index.set([a, a + 1, a + 3, a, a + 3, a + 2], i * 6);
+	}
+	return { position, normal, uv, index, color };
+}
 
 /** One mesh per kind of part. Setup code. */
 export function factoryMeshes(capacity: number): Record<FactoryMesh, MeshData> {
@@ -577,6 +615,9 @@ export function factoryMeshes(capacity: number): Record<FactoryMesh, MeshData> {
 		housing: translated(boxGeometry(0.9, 0.35, 0.9), 0, 0.175, 0),
 		lens: boxGeometry(0.7, 0.02, 0.7),
 		spark: boxGeometry(SPARK_SIZE, SPARK_SIZE, SPARK_SIZE),
+		panel: boxGeometry(PANEL_SIZE, PANEL_SIZE, 0.04),
+		panelFrame: boxGeometry(PANEL_SIZE + 0.1, PANEL_SIZE + 0.1, 0.1),
+		cone: powerConeMesh(),
 	};
 }
 
@@ -599,7 +640,9 @@ export function factoryTriangles(
 		triangleCount(meshes.lamp);
 	const hall =
 		triangleCount(meshes.floor) +
-		SPOT_COUNT * (triangleCount(meshes.housing) + triangleCount(meshes.lens));
+		SPOT_COUNT * (triangleCount(meshes.housing) + triangleCount(meshes.lens)) +
+		SPOT_COUNT * (triangleCount(meshes.panel) + triangleCount(meshes.panelFrame)) +
+		SPOT_COUNT * triangleCount(meshes.cone);
 	return factoryCells(movingParts) * perCell + hall;
 }
 
@@ -665,6 +708,9 @@ export const FACTORY_MATERIALS: Readonly<Record<FactoryMesh, FactoryMaterial>> =
 		emissiveIntensity: 30,
 		noShadow: true,
 	},
+	panel: { color: '#000000', roughness: 1, metalness: 0, noShadow: true },
+	panelFrame: { color: '#22262c', surface: 'brushed' },
+	cone: { color: '#000000', roughness: 1, metalness: 0, noShadow: true },
 };
 
 /** Texels on each side of each surface's maps. */
@@ -678,6 +724,108 @@ export const SPOT_POSITIONS: readonly (readonly [number, number, number])[] = [-
 	(line) =>
 		[-1, 1].map((side) => [side * CELL_PITCH * 0.5, SPOT_HEIGHT, line * CELL_PITCH] as const),
 );
+
+// The status panels.
+
+/** A screen's side in meters, how far it hangs below its light, and how far out from the middle. */
+export const PANEL_SIZE = 1.4;
+const PANEL_DROP = 1.05;
+const PANEL_INSET = 1.2;
+/** How far a screen tips up toward the camera that circles the hall, in radians. */
+const PANEL_TILT = -0.34;
+/** The screens' colors: a cool status display and a warm one. */
+export const PANEL_VARIANTS = 2;
+
+/** A status screen's place and turn: under a spot light, facing out from the hall's middle. */
+export interface PanelPlace {
+	x: number;
+	y: number;
+	z: number;
+	yaw: number;
+	variant: number;
+}
+
+export const PANELS: readonly PanelPlace[] = SPOT_POSITIONS.map(([x, , z], k) => {
+	const reach = Math.hypot(x, z);
+	return {
+		x: x + (x / reach) * PANEL_INSET,
+		y: SPOT_HEIGHT - PANEL_DROP,
+		z: z + (z / reach) * PANEL_INSET,
+		yaw: Math.atan2(x, z),
+		variant: k % PANEL_VARIANTS,
+	};
+});
+
+/** Writes a screen's turn: yaw away from the hall, then a tip up about its own side axis. */
+export function panelRotation(place: PanelPlace, out: OutArray): void {
+	const cy = Math.cos(place.yaw / 2);
+	const sy = Math.sin(place.yaw / 2);
+	const cx = Math.cos(PANEL_TILT / 2);
+	const sx = Math.sin(PANEL_TILT / 2);
+	out[0] = cy * sx;
+	out[1] = sy * cx;
+	out[2] = -sy * sx;
+	out[3] = cy * cx;
+}
+
+// The power-on wave.
+
+/** Seconds before the wave starts, its speed in meters a second, and its rise at a point. */
+const POWER_START = 0.2;
+const POWER_SPEED = 13;
+const POWER_RISE = 0.65;
+
+/**
+ * How far the hall has powered up at a place and a simulation time: 0 before the wave reaches the
+ * place, 1 after it has passed, with a short stutter at the front. Both engines multiply the same
+ * lights and glows by it, so the hall wakes in both halves the same way.
+ */
+export function hallPower(seconds: number, x: number, z: number): number {
+	const reach = Math.hypot(x, z);
+	const t = (seconds - POWER_START - reach / POWER_SPEED) / POWER_RISE;
+	if (t >= 1) return 1;
+	if (t <= 0) return 0;
+	const rise = t * t * (3 - 2 * t);
+	return rise * (Math.sin(t * Math.PI * 5) > 0.55 ? 0.55 : 1);
+}
+
+// The weld sparks' flashes.
+
+/** The pooled lights that a grip or a release flashes, its light in candela, and its reach. */
+export const SPARK_LIGHT_COUNT = 3;
+export const SPARK_LIGHT = {
+	color: '#ffb347' as Hex,
+	intensity: 260,
+	range: 9,
+	decay: 2,
+	/** Seconds that a flash lasts. */
+	seconds: 0.2,
+} as const;
+
+const flashPosition = new Float64Array(3);
+
+/**
+ * Writes the live flashes of the weld sparks, four numbers each: a place and an intensity, and
+ * returns how many. At most three flashes draw at once. Allocates nothing.
+ */
+export function sparkFlashes(state: FactoryState, out: Float32Array): number {
+	let count = 0;
+	const cells = Math.min(SPARK_CELLS, state.activeCells);
+	for (let cell = 0; cell < cells && count < SPARK_LIGHT_COUNT; cell++) {
+		const arm = state.armState[cell] as number;
+		if (arm !== ArmState.grip && arm !== ArmState.release) continue;
+		const age = state.armTime[cell] as number;
+		if (age > SPARK_LIGHT.seconds) continue;
+		const fade = 1 - age / SPARK_LIGHT.seconds;
+		gripWorld(state, cell, flashPosition);
+		out[count * 4] = flashPosition[0] as number;
+		out[count * 4 + 1] = flashPosition[1] as number;
+		out[count * 4 + 2] = flashPosition[2] as number;
+		out[count * 4 + 3] = SPARK_LIGHT.intensity * fade * fade;
+		count++;
+	}
+	return count;
+}
 
 export const FACTORY_LOOK = {
 	background: '#141921' as Hex,
@@ -718,6 +866,8 @@ export const FACTORY_LOOK = {
 		weights: [0, 0.0916, 0.2194, 0.1308, 0.1398, 0.1492, 0.1058, 0.149, 0.0145],
 	},
 	ao: { radius: 0.6, intensity: 1, scale: 0.5 },
+	/** A lens grade: fringes at the edges, an anamorphic streak on the brightest light, and grain. */
+	lens: { shift: 5, streak: 0.2, grain: 0.045 },
 	/** A cool shadow and warm highlight grade with a little more contrast. */
 	grade: {
 		contrast: 1.08,

@@ -7,20 +7,28 @@
 //! table and the cell order. The casters' layout holds the objects that cast shadows, grouped by
 //! mesh alone, as the shadow cascades draw their depth. The outlined layout holds the objects that
 //! the sketch outlines, grouped by mesh alone, as the outline view draws them into the outline
-//! mask. Each of the two has a bucket table and bucket records of its own, and its culling reads
-//! the scene layout's matrices, layer table and cell order.
+//! mask. The subsurface layout holds the objects whose material has a scatter radius, with the
+//! skin pass's builds of their pipelines and their materials, as the subsurface view draws them
+//! into the skin pass's target. The motion layout holds every opaque object and instance row,
+//! grouped by mesh and by the material of a masked or swaying pair, as the motion view draws their
+//! motion (see [`crate::motion`]). Each of the four has a bucket table and bucket records of its
+//! own, and its culling reads the scene layout's matrices, layer table and cell order.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
 
 use null3d_core::cells::CELL_SHIFT;
+use null3d_core::culling::NO_BUCKET;
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
+use null3d_core::levels::{LevelLink, NO_LINK};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::caps::{BUDGET, Limit};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes, template};
+use null3d_gpu::drawlist::{
+    DrawList, Op, buffer_usage as usage, permutation, sizes, state_flags, template,
+};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
@@ -30,11 +38,13 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
-use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
+use crate::levels::{BucketKey, KeyLinks, expand_level_keys, is_fade_key, links_of};
+use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
+use crate::subsurface::skin_key;
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -63,6 +73,12 @@ pub(super) enum Drawn {
     Casters,
     /// The objects that the sketch outlines, as the outline view draws them into the outline mask.
     Outlined,
+    /// The objects whose material has a scatter radius, as the subsurface view draws them into the
+    /// skin pass's target.
+    Subsurface,
+    /// The opaque objects and instance rows, as the motion view draws the motion of those that
+    /// move into the motion target.
+    Motion,
 }
 
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
@@ -149,13 +165,27 @@ pub(super) struct Bucket {
     /// True for a bucket of skinned objects whose vertex shaders skin them, whose first joint
     /// sends the culling pass to each source's own (see [`sizes::PER_SOURCE_JOINT`]).
     pub(super) skins: bool,
+    /// True when its material takes parallax, so its pipelines read the displacement map in the
+    /// fragment stage as well and bind the frame group of parallax in place of the frame group.
+    pub(super) parallax: bool,
     pub(super) first_joint: u32,
     /// True when its pipelines read their instances by index, so its slice holds an index entry
     /// per instance from entry `base` on, after every copy; false when it holds a copy per instance
     /// from copy `base` on.
     pub(super) indexed: bool,
+    /// In the motion layout, true when its instances move by themselves, as skinned and morphed
+    /// meshes and swaying custom materials do, so the motion view draws them in every frame.
+    pub(super) moves: bool,
     /// Its level of detail's error and links, for a bucket of a mesh with levels.
     pub(super) levels: KeyLinks,
+    /// True for a fade bucket, whose slice holds each instance as a pair: its entry, then its
+    /// fade value's bits.
+    pub(super) pairs: bool,
+    /// The id of the pipeline that draws its objects into GPU picking's id target, or 0 while
+    /// picking is off or its pair has no pick build.
+    pub(super) pick: u32,
+    /// True when that pipeline binds the material's maps, as a custom material's pick build does.
+    pub(super) pick_maps: bool,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -256,10 +286,29 @@ fn sync_rows(
     changed
 }
 
-/// A batch's part of the tables as they were last written: its bucket, the active row count its
-/// bucket table entries hold, and the mask its rows hold in the layer table.
+/// A source's bucket as the CPU culling reads it, or `NO_BUCKET` for a source that draws nowhere:
+/// its bucket-table entry without the occluder bit and the cell index.
+fn cull_entry(entry: u32) -> u32 {
+    if entry == HIDDEN {
+        NO_BUCKET
+    } else {
+        entry & (OCCLUDER - 1)
+    }
+}
+
+/// Writes the CPU culling's copy of the bucket of every source in `rows` from their entries.
+fn sync_cull(cull_buckets: &mut [u32], entries: &[u32], rows: Range<u32>) {
+    let range = rows.start as usize..rows.end as usize;
+    for (cull, &entry) in cull_buckets[range.clone()].iter_mut().zip(&entries[range]) {
+        *cull = cull_entry(entry);
+    }
+}
+
+/// A batch's part of the tables as they were last written: its raw id, its bucket, the active row
+/// count its bucket table entries hold, and the mask its rows hold in the layer table.
 #[derive(Clone, Copy, Debug)]
 struct BatchRows {
+    id: u32,
     bucket: u32,
     active: u32,
     layers: u32,
@@ -272,6 +321,9 @@ pub(super) struct Layout {
     drawn: Drawn,
     /// True when the buckets whose templates can read their instances by index do so.
     index_instances: bool,
+    /// True when a bucket's material takes parallax, so a pass records the frame group of parallax
+    /// as well as the view's.
+    parallax: bool,
     pub(super) sources: u32,
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
@@ -301,6 +353,17 @@ pub(super) struct Layout {
     /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
     /// mesh or material.
     home_buckets: Vec<u32>,
+    /// The sources that are scene slots: the rows that `home_buckets` and the scene's world
+    /// buffers hold. The sources after them are batch rows.
+    pub(super) scene_rows: u32,
+    /// The bucket of every source as the CPU culling reads it, or `NO_BUCKET` for a source that
+    /// draws nowhere. It is `instance_buckets` without the occluder bit and the cell index.
+    cull_buckets: Vec<u32>,
+    /// Each bucket's link to its next level of detail, as the CPU culling reads it.
+    level_links: Vec<LevelLink>,
+    /// The most words that the CPU culling lists for one view: a source that fades between levels
+    /// lists three words more than one that does not.
+    cull_rows: u32,
     /// Each batch's part of the tables, in `batch_bases` order.
     batch_rows: Vec<BatchRows>,
     /// The per-frame reset of every indirect draw: instance counts at zero.
@@ -337,8 +400,77 @@ impl Layout {
     /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
     /// buckets that read copies, then an index entry for each slot of those that read indices.
     pub(super) fn compacted_bytes(&self) -> u32 {
-        (self.copied * sizes::INSTANCE_STRIDE + self.indexed * sizes::INDEX_STRIDE)
-            .max(sizes::INSTANCE_STRIDE)
+        let stride = self.copy_stride();
+        (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride)
+    }
+
+    /// Bytes of each copy in a view's compacted instance buffer: the motion layout's copies hold the
+    /// last frame's matrix too.
+    pub(super) fn copy_stride(&self) -> u32 {
+        if self.drawn == Drawn::Motion {
+            sizes::MOTION_INSTANCE_STRIDE
+        } else {
+            sizes::INSTANCE_STRIDE
+        }
+    }
+
+    /// Each source's bucket as the CPU culling reads it, or `NO_BUCKET` for a source that draws
+    /// nowhere.
+    pub(super) fn cull_buckets(&self) -> &[u32] {
+        &self.cull_buckets
+    }
+
+    /// Each bucket's link to its next level of detail, as the CPU culling reads it.
+    pub(super) fn level_links(&self) -> &[LevelLink] {
+        &self.level_links
+    }
+
+    /// True when the CPU culling picks a level for rows of `bucket`.
+    pub(super) fn picks(&self, bucket: u32) -> bool {
+        self.level_links
+            .get(bucket as usize)
+            .is_some_and(LevelLink::has_next)
+    }
+
+    /// The most words that the CPU culling lists for one view of this layout.
+    pub(super) fn cull_rows(&self) -> u32 {
+        self.cull_rows.max(self.sources)
+    }
+
+    /// The layer mask of every source, which the scene's layout owns.
+    pub(super) fn layers(&self) -> &[u32] {
+        &self.source_layers
+    }
+
+    /// The first joint of the skin of every source up to the last that the vertex shaders skin,
+    /// which the scene's layout owns.
+    pub(super) fn skin_firsts(&self) -> &[u32] {
+        &self.skin_firsts
+    }
+
+    /// Each batch's raw id and the first source of its rows.
+    pub(super) fn batch_bases(&self) -> &[(u32, u32)] {
+        &self.batch_bases
+    }
+
+    /// The number of batches that the layout lists rows of.
+    pub(super) fn batch_count(&self) -> usize {
+        self.batch_rows.len()
+    }
+
+    /// The raw id of batch `index`'s rows.
+    pub(super) fn batch_id(&self, index: usize) -> u32 {
+        self.batch_rows[index].id
+    }
+
+    /// The bucket of batch `index`'s rows, or `NO_BUCKET` for a batch that draws nowhere.
+    pub(super) fn batch_bucket(&self, index: usize) -> u32 {
+        self.batch_rows[index].bucket
+    }
+
+    /// The first source of batch `index`'s rows.
+    pub(super) fn batch_base(&self, index: usize) -> u32 {
+        self.batch_bases[index].1
     }
 
     /// An empty layout of buckets that draw `drawn`, whose pipelines read their instances by index
@@ -357,7 +489,17 @@ impl Layout {
             Drawn::Scene => (ids::INSTANCE_BUCKETS, ids::BUCKETS),
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
             Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
+            Drawn::Subsurface => (ids::SUBSURFACE_BUCKETS, ids::SUBSURFACE_RECORDS),
+            Drawn::Motion => (ids::MOTION_BUCKETS, ids::MOTION_RECORDS),
         }
+    }
+
+    /// True when this layout's passes bind the frame group of parallax for the buckets whose
+    /// material takes parallax, in place of the view's frame group: the scene's layout with such a
+    /// bucket. The casters' and the outlined layout never do: their pipelines bind the depth
+    /// layout, or a mask template, under that group's id.
+    pub(super) fn parallax_frame(&self) -> bool {
+        self.drawn == Drawn::Scene && self.parallax
     }
 
     /// True for the scene's layout, which owns the matrices, the layer table and the cell order.
@@ -372,10 +514,6 @@ impl Layout {
     }
 
     /// The first source of the rows of the batch at `index` in the batch table's order.
-    pub(super) fn batch_base(&self, index: usize) -> u32 {
-        self.batch_bases[index].1
-    }
-
     fn base_of(&self, target: u32) -> Option<u32> {
         if target == SCENE_TARGET {
             return Some(0);
@@ -391,6 +529,11 @@ impl Layout {
         self.home_buckets
             .get(slot)
             .is_some_and(|&bucket| bucket != HIDDEN)
+    }
+
+    /// Bytes of the matrix buffer on the GPU, 0 before it exists.
+    pub(super) fn matrix_bytes(&self) -> u32 {
+        self.buffer_sizes[0]
     }
 
     /// The most that one frame copies into its arena for the tables: the bucket table, the layer
@@ -547,7 +690,8 @@ impl Layout {
     /// `shadows` has a pass on, the scene's receivers draw with pipelines that read the shadow maps,
     /// and the casters' buckets get a pipeline for each pass of `shadows` in place of `targets`.
     /// With a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
-    /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask.
+    /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask, and the
+    /// subsurface layout's the skin pass's pipelines.
     /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
     /// it hides get no bucket, and the layout asks only for their pipelines (see
     /// [`Self::waiting`]). It reuses the layout's tables and scratch space, which grow only with
@@ -566,6 +710,8 @@ impl Layout {
         prepass: Prepass,
         skinning: &Skinning,
         key_counts: &mut KeyCounts,
+        pick_targets: PassTargets,
+        picking: bool,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -608,16 +754,22 @@ impl Layout {
             if pipeline.decal() {
                 return None;
             }
-            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
             // bindings, apart from masked casters, which test their material's alpha.
             let depth_key = match drawn {
                 Drawn::Casters => Some(settings.caster_of(pipeline, material)),
                 Drawn::Outlined => Some((mask_keys(pipeline).0, 0)),
-                Drawn::Scene => None,
+                Drawn::Scene | Drawn::Subsurface => None,
+                Drawn::Motion => Some(settings.motion_of(pipeline, material)?),
             };
             if let Some((key, group)) = depth_key {
-                let material = if key.template == template::SHADOW_DEPTH || drawn == Drawn::Outlined
+                // The motion template reads its material only to test a mask.
+                let unmasked_motion = key.template == template::MOTION
+                    && key.permutation & permutation::ALPHA_MASK == 0;
+                let material = if key.template == template::SHADOW_DEPTH
+                    || drawn == Drawn::Outlined
+                    || unmasked_motion
                 {
                     CASTER_MATERIAL
                 } else {
@@ -637,6 +789,11 @@ impl Layout {
             };
             let pipeline = settings.area_key(pipeline);
             let group = settings.texture_group(material, pipeline);
+            // The skin pass draws the pair with its own builds, which bind the same maps.
+            let pipeline = match drawn {
+                Drawn::Subsurface => skin_key(pipeline)?,
+                _ => pipeline,
+            };
             Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
@@ -646,6 +803,8 @@ impl Layout {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
+                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
+                Drawn::Motion => false,
             };
             if left_out {
                 return None;
@@ -675,7 +834,7 @@ impl Layout {
             let bits = batch.shadows();
             match drawn {
                 Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
-                Drawn::Scene | Drawn::Casters => {
+                Drawn::Scene | Drawn::Casters | Drawn::Motion => {
                     let bounds = if batch.unculled() {
                         UNCULLED_BOUNDS
                     } else {
@@ -684,7 +843,7 @@ impl Layout {
                     let pipeline = settings.batch_pipeline_of(batch);
                     key_of(pipeline, batch.mesh(), batch.material(), bounds, bits, None)
                 }
-                Drawn::Outlined => None,
+                Drawn::Outlined | Drawn::Subsurface => None,
             }
         };
 
@@ -726,7 +885,9 @@ impl Layout {
                         )
                     }
                     Drawn::Casters => shadows.pipelines(pipelines, pipeline),
+                    Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0),
                     Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
+                    Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0),
                 };
                 self.waiting
                     .extend([pipeline, second].into_iter().filter(|&id| id != 0));
@@ -736,6 +897,7 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
+        self.parallax = false;
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
@@ -747,6 +909,7 @@ impl Layout {
             // copy, which the culling pass takes from the copy's own source, so the bucket's
             // objects may share it. The SKIN builds never read their instances by index.
             let skins = pipeline.permutation & permutation::SKIN != 0;
+            let parallax = pipeline.permutation & permutation::PARALLAX != 0;
             let by_index = self.index_instances && pipeline.reads_index();
             let pipeline = if by_index {
                 pipeline.by_index()
@@ -754,13 +917,45 @@ impl Layout {
                 pipeline
             };
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            let parts = meshes.parts(slot);
-            let (center, radius) = local_sphere(scene, bounds, slot.radius);
+            let parts = meshes.parts(slot, pipeline.state & state_flags::LINE_LIST != 0);
+            // A displaced material moves vertices past its mesh's sphere, by up to its margin.
+            let margin = settings.materials().bounds_margin(material.wrapping_sub(1));
+            let (center, radius) = local_sphere(scene, bounds, slot.radius + margin);
             let object = object_of(bounds);
-            if let Some(object) = object.filter(|&object| skinning.object(object).is_some()) {
+            let skin = object.and_then(|object| skinning.object(object));
+            if let (Some(object), Some(_)) = (object, skin) {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
+            // A bucket moves by itself when its pipeline skins or morphs in the vertex shader, when
+            // the skinning pass computes its vertices, or when a custom material's vertex offset
+            // moves them. The object's own skin data is not the test: a skinned bucket may hold
+            // objects that the skin table names by their batch's row instead, and a morphed
+            // object's pipeline has no morph build where the skinning pass morphs it.
+            let moves = drawn == Drawn::Motion
+                && (pipeline.permutation & (permutation::SKIN | permutation::MORPH) != 0
+                    || regions.is_some()
+                    || (pipeline.template >= template::CUSTOM_FIRST
+                        && pipeline.permutation & permutation::MOTION != 0));
+            // The motion template's pipelines bind a map's group after the frame's, and a blank
+            // one's where the pair has no map.
+            let group =
+                if drawn == Drawn::Motion && pipeline.template == template::MOTION && group == 0 {
+                    ids::BLANK_MAP_GROUP
+                } else {
+                    group
+                };
+            // GPU picking draws this bucket with its own template, or with a custom material's
+            // pick builds, which repeat the vertex offset. A pair without one has no pick build.
+            let (pick, pick_maps) = match (picking, drawn) {
+                (true, Drawn::Scene) => {
+                    match crate::pick::key_of(pipeline, settings.sways(material), false) {
+                        Some((key, maps)) => (pipelines.id(key.in_pass(pick_targets)), maps),
+                        None => (0, false),
+                    }
+                }
+                _ => (0, false),
+            };
             // The mask's second pipeline binds as the depth template does.
             let (pipeline, prepass, prepass_own) = match drawn {
                 Drawn::Outlined => {
@@ -775,13 +970,16 @@ impl Layout {
                     let (cascades, tiles) = shadows.pipelines(pipelines, pipeline);
                     (cascades, tiles, false)
                 }
+                Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0, false),
                 Drawn::Scene => {
                     let own = pipeline.places_own_vertices();
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
                     (pipeline, prepass, own)
                 }
+                Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0, false),
             };
             let base = if by_index { &mut indexed } else { &mut copied };
+            self.parallax |= parallax;
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
@@ -795,9 +993,14 @@ impl Layout {
                 center,
                 radius,
                 skins,
+                parallax,
                 first_joint: if skins { sizes::PER_SOURCE_JOINT } else { 0 },
                 indexed: by_index,
+                moves,
                 levels: links,
+                pairs: is_fade_key(&key),
+                pick,
+                pick_maps,
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -857,10 +1060,11 @@ impl Layout {
         }
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
-        for (_, batch) in batches.iter() {
+        for (id, batch) in batches.iter() {
             let bucket = bucket_of(batch_key(batch));
             let (active, layers) = (batch.frame_active_count(parity), batch.layers());
             self.batch_rows.push(BatchRows {
+                id: id.raw(),
                 bucket,
                 active,
                 layers,
@@ -872,6 +1076,26 @@ impl Layout {
                 self.source_layers.resize(rows, layers);
             }
         }
+
+        self.scene_rows = self.home_buckets.len() as u32;
+        // The CPU culling reads each source's bucket without the bits that the culling shader
+        // packs beside it.
+        self.cull_buckets.clear();
+        self.cull_buckets
+            .extend(self.instance_buckets.iter().copied().map(cull_entry));
+        self.level_links.clear();
+        self.level_links
+            .extend(self.buckets.iter().map(|bucket| LevelLink {
+                error: bucket.levels.error,
+                next: bucket.levels.next.unwrap_or(NO_LINK),
+                fade: bucket.levels.fade.unwrap_or(NO_LINK),
+            }));
+        let fades = self.level_links.iter().any(LevelLink::has_next);
+        self.cull_rows = if fades {
+            self.sources.saturating_mul(4)
+        } else {
+            self.sources
+        };
 
         self.fit_skinned(scene);
         self.indirect_template.clear();
@@ -896,7 +1120,9 @@ impl Layout {
                 bucket.center[1].to_bits(),
                 bucket.center[2].to_bits(),
                 bucket.first_joint,
-                u32::from(bucket.indexed),
+                // The motion layout's buckets never read by index: the word marks those whose
+                // instances move by themselves.
+                u32::from(bucket.indexed || bucket.moves),
                 // The culling shader reads a bucket as its index plus one, and 0 as none.
                 bucket.levels.error.to_bits(),
                 bucket.levels.next.map_or(0, |bucket| bucket + 1),
@@ -991,10 +1217,13 @@ impl Layout {
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
             if size > 0 && *made < size {
                 *made = grown_size(size, binding_bytes);
-                list.push(
-                    Op::CreateBuffer,
-                    &[id, *made, usage::STORAGE | usage::COPY_DST],
-                )?;
+                // The motion pass copies the matrices into its last frame's copies.
+                let flags = if id == ids::MATRICES {
+                    usage::STORAGE | usage::COPY_DST | usage::COPY_SRC
+                } else {
+                    usage::STORAGE | usage::COPY_DST
+                };
+                list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
                 self.order_uploaded &= id != ids::ORDER;
             }
@@ -1071,10 +1300,11 @@ impl Layout {
         let check_layers = owns_sources && !(all_default && self.scene_layers_default);
         self.scene_layers_default = all_default;
         let home_buckets = &self.home_buckets;
-        let (instance_buckets, source_layers, occluders) = (
+        let (instance_buckets, source_layers, occluders, cull_buckets) = (
             &mut self.instance_buckets,
             &mut self.source_layers,
             &mut self.occluders,
+            &mut self.cull_buckets,
         );
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let slots = start..(start + count).min(scene_rows);
@@ -1084,7 +1314,8 @@ impl Layout {
             let before = occluders_in(&instance_buckets[range.clone()]);
             if let Some(rows) = sync_rows(instance_buckets, slots.clone(), entry) {
                 *occluders = *occluders - before + occluders_in(&instance_buckets[range]);
-                write_rows(list, arena, entries, instance_buckets, rows)?;
+                write_rows(list, arena, entries, instance_buckets, rows.clone())?;
+                sync_cull(cull_buckets, instance_buckets, rows);
             }
             if check_layers && let Some(rows) = sync_rows(source_layers, slots, |s| layers[s]) {
                 write_rows(list, arena, ids::SOURCE_LAYERS, source_layers, rows)?;
@@ -1105,6 +1336,7 @@ impl Layout {
                 bucket,
                 active: was,
                 layers: had,
+                ..
             } = self.batch_rows[index];
             let base = self.batch_bases[index].1;
             let mask = batch.layers();
@@ -1131,7 +1363,8 @@ impl Layout {
             }
             self.batch_rows[index].active = now;
             let rows = base + low..base + high;
-            write_rows(list, arena, entries, &self.instance_buckets, rows)?;
+            write_rows(list, arena, entries, &self.instance_buckets, rows.clone())?;
+            sync_cull(&mut self.cull_buckets, &self.instance_buckets, rows);
         }
         Ok(())
     }
@@ -1186,17 +1419,27 @@ impl Layout {
     }
 
     /// Uploads changed world matrices straight from the core's world buffers of this parity, or
-    /// every matrix after the layout changed.
+    /// every matrix after the layout changed. While the motion pass draws, `changed` takes the
+    /// byte ranges of the matrix buffer that the frame writes.
     pub(super) fn upload_matrices(
         &self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
         parity: usize,
         everything: bool,
+        mut changed: Option<&mut ChangedRanges>,
     ) -> Result<(), RecordError> {
+        if (everything || input.snapshot.overflowed())
+            && let Some(changed) = changed.as_deref_mut()
+        {
+            changed.add_everything();
+        }
         let mut upload = |base: u32, matrices: &[f32], start: u32, count: u32| {
             let floats =
                 &matrices[start as usize * MATRIX_FLOATS..(start + count) as usize * MATRIX_FLOATS];
+            if let Some(changed) = changed.as_deref_mut() {
+                changed.add((base + start) * MATRIX_BYTES, count * MATRIX_BYTES);
+            }
             list.push(
                 Op::WriteBuffer,
                 &[
@@ -1323,6 +1566,8 @@ mod tests {
                 Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
+                targets,
+                false,
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;

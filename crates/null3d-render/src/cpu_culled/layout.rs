@@ -6,8 +6,10 @@
 //! a mesh and a material, as the views of cameras draw them. The casters' layout holds the scene
 //! objects that cast shadows, grouped by mesh alone, as the shadow cascades draw their depth. The
 //! outlined layout holds the scene objects that the sketch outlines, grouped by mesh alone, as the
-//! outline view draws them into the outline mask, each bucket twice. Every layout places each
-//! source at the same row of the same data texture, so the others read the matrices that the
+//! outline view draws them into the outline mask, each bucket twice. The subsurface layout holds
+//! the scene objects whose material has a scatter radius, with the skin pass's builds of their
+//! pipelines, as the subsurface view draws them into the skin pass's target. Every layout places
+//! each source at the same row of the same data texture, so the others read the matrices that the
 //! scene's layout uploads.
 
 use std::collections::TryReserveError;
@@ -22,7 +24,7 @@ use null3d_core::levels::{LevelLink, NO_LINK};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{DrawList, Op, permutation, sizes, template};
+use null3d_gpu::drawlist::{DrawList, Op, permutation, sizes, state_flags, template};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
@@ -36,6 +38,7 @@ use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
+use crate::subsurface::skin_key;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -57,6 +60,9 @@ pub(super) enum Drawn {
     /// The scene objects that the sketch outlines, as the outline view draws them into the outline
     /// mask.
     Outlined,
+    /// The scene objects whose material has a scatter radius, as the subsurface view draws them
+    /// into the skin pass's target.
+    Subsurface,
 }
 
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
@@ -77,6 +83,9 @@ pub(super) struct Bucket {
     pub(super) group: u32,
     /// Instances per index list entry, as a shift: 0 for rows, [`CLUSTER_SHIFT`] for clusters.
     pub(super) shift: u32,
+    /// While the motion pass draws, true when the bucket's instances move by themselves, as skinned
+    /// and morphed meshes and swaying custom materials do.
+    pub(super) moves: bool,
 }
 
 /// One draw: a part of a bucket's mesh, which draws every instance that the bucket lists.
@@ -91,6 +100,10 @@ pub(super) struct Draw {
     pub(super) prepass: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) textures: u32,
+    /// While the motion pass draws, the id of the render pipeline that draws its motion, or 0 for
+    /// a draw with none, and the bind group of the map that that pipeline reads, or 0.
+    pub(super) motion: u32,
+    pub(super) motion_textures: u32,
     pub(super) page: u32,
     pub(super) bucket: u32,
     pub(super) index_count: u32,
@@ -98,6 +111,12 @@ pub(super) struct Draw {
     /// True for a draw of a fade bucket, whose entries come in pairs, so it draws half as many
     /// instances as its bucket lists words.
     pub(super) pairs: bool,
+    /// The id of the pipeline that draws it into GPU picking's id target, or 0 while picking is
+    /// off or its pair has no pick build.
+    pub(super) pick: u32,
+    /// The bind group of the material's maps that the pick pipeline reads, or 0 for the pick
+    /// template, which reads none.
+    pub(super) pick_textures: u32,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
@@ -247,7 +266,8 @@ impl Layout {
     /// that `skins` skins draw with pipelines that skin in the vertex shader; those that it hides get
     /// no bucket, and the layout asks only for their pipelines. With a `prepass`, the
     /// scene's draws that the depth prepass draws get its pipelines too. The caller marks the
-    /// layout built once the room it needs is made.
+    /// layout built once the room it needs is made. While the motion pass draws into `motion`'s
+    /// targets, the scene's draws get their motion pipelines too.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -260,7 +280,10 @@ impl Layout {
         multi_draw: bool,
         shadows: CasterPasses,
         prepass: Prepass,
+        motion: Option<PassTargets>,
         key_counts: &mut KeyCounts,
+        pick_targets: PassTargets,
+        picking: bool,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -325,7 +348,7 @@ impl Layout {
             if pipeline.decal() {
                 return None;
             }
-            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             match drawn {
                 Drawn::Casters => {
                     // A masked caster tests its material's alpha; the others draw with none.
@@ -341,7 +364,7 @@ impl Layout {
                     let (every, _) = mask_keys(skin(pipeline, skinned));
                     return Some((every, 0, page, mesh, CASTER_MATERIAL, group));
                 }
-                Drawn::Scene => {}
+                Drawn::Scene | Drawn::Subsurface => {}
             }
             // Blended pairs, and pairs that let light through, draw in the transparent pass, which
             // sorts them on the job workers.
@@ -355,14 +378,12 @@ impl Layout {
             };
             let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
-            Some((
-                skin(pipeline, skinned),
-                textures,
-                page,
-                mesh,
-                material,
-                group,
-            ))
+            // The skin pass draws the pair with its own builds, which bind the same maps.
+            let pipeline = match drawn {
+                Drawn::Subsurface => skin_key(skin(pipeline, skinned))?,
+                _ => skin(pipeline, skinned),
+            };
+            Some((pipeline, textures, page, mesh, material, group))
         };
         let group_of = |batch: &InstanceBatch| {
             if batch.is_dynamic() {
@@ -377,6 +398,7 @@ impl Layout {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
+                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
             };
             if left_out {
                 return None;
@@ -409,7 +431,7 @@ impl Layout {
                     let (mesh, material) = (batch.mesh(), batch.material());
                     key_of(pipeline, mesh, material, group_of(batch), bits, None)
                 }
-                Drawn::Outlined => None,
+                Drawn::Outlined | Drawn::Subsurface => None,
             }
         };
         collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
@@ -459,6 +481,31 @@ impl Layout {
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let motion_key = motion
+                .filter(|_| drawn == Drawn::Scene)
+                .and_then(|targets| Some((settings.motion_of(pipeline, material)?, targets)));
+            let (motion_pipeline, motion_textures) = motion_key
+                .map_or((0, 0), |((key, group), targets)| {
+                    (pipelines.id(key.in_pass(targets)), group)
+                });
+            let moves = motion_key.is_some_and(|((key, _), _)| {
+                pipeline.permutation & (permutation::SKIN | permutation::MORPH) != 0
+                    || key.permutation & permutation::MOTION != 0
+            });
+            // GPU picking draws this key's parts with the pick template, or with a custom
+            // material's pick builds, which repeat its vertex offset.
+            let (pick, pick_textures) = match (picking, drawn) {
+                (true, Drawn::Scene) => {
+                    match crate::pick::key_of(pipeline, settings.sways(material), true) {
+                        Some((key, maps)) => (
+                            pipelines.id(key.in_pass(pick_targets)),
+                            if maps { textures } else { 0 },
+                        ),
+                        None => (0, 0),
+                    }
+                }
+                _ => (0, 0),
+            };
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
@@ -471,6 +518,7 @@ impl Layout {
             self.level_links.push(LevelLink::NONE);
             let second = (drawn == Drawn::Outlined)
                 .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
+            let lines = pipeline.state & state_flags::LINE_LIST != 0;
             let pipeline = first;
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
@@ -478,17 +526,22 @@ impl Layout {
                     material,
                     group,
                     shift,
+                    moves,
                 });
-                for part in meshes.parts(slot) {
+                for part in meshes.parts(slot, lines) {
                     let draw = Draw {
                         pipeline,
                         prepass,
                         textures,
+                        motion: motion_pipeline,
+                        motion_textures,
                         page: part.page,
                         bucket,
                         index_count: part.index_count,
                         first_index: part.first_index,
                         pairs,
+                        pick,
+                        pick_textures,
                     };
                     self.draws.push(draw);
                     if let Some(second) = second {
@@ -556,10 +609,12 @@ impl Layout {
         };
         self.sorted_records_at = self.draws_slot_bytes;
         // A cascade lists at most the scene's rows and the rows of the batches that cast, and the
-        // outline view the scene's rows, as batches take no outlines.
+        // outline and subsurface views the scene's rows, as batches take neither.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
-            Drawn::Casters | Drawn::Outlined => self.scene_rows.saturating_add(batch_rows),
+            Drawn::Casters | Drawn::Outlined | Drawn::Subsurface => {
+                self.scene_rows.saturating_add(batch_rows)
+            }
         };
         self.room = CullRoom {
             rows: listed.saturating_add(fading_words),
@@ -602,6 +657,9 @@ pub(super) fn run_end(draws: &[Draw], start: usize) -> usize {
             d.pipeline != first.pipeline
                 || d.prepass != first.prepass
                 || d.textures != first.textures
+                || d.motion != first.motion
+                || d.motion_textures != first.motion_textures
+                || d.pick != first.pick
                 || d.page != first.page
         })
         .map_or(draws.len(), |n| start + n)

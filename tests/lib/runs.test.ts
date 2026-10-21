@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
-import { type ShaderSet, variantInShaderSet } from '../pages/lib/shader-list.ts';
+import { inShaderSet, type ShaderSet, variantInShaderSet } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -37,6 +37,7 @@ import {
 	PLANS,
 	parityPlan,
 	REPORT_ON_TOP_PLANS,
+	SHADER_PROGRAMS_PER_PART,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -71,7 +72,13 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
-import { glslProgramCount, glslProgramCountOf, glslProgramsByVariant } from './shader-programs.ts';
+import {
+	glslProgramCount,
+	glslProgramCountOf,
+	glslProgramsByName,
+	glslProgramsByVariant,
+	shaderFileBytes,
+} from './shader-programs.ts';
 import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
@@ -266,6 +273,26 @@ describe('waitForRunners', () => {
 		);
 		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
+
+	it('runs a page once more in a new runner page, in any browser, when a worker did not load its files', () => {
+		const module =
+			'E1405: the sketch worker did not start: error loading dynamically imported module: http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js. Read the message: it names the worker that did not start, and why.';
+		const script =
+			'E1405: the render worker did not start: its script or a file it imports did not load. Read the message: it names the worker that did not start, and why.';
+		for (const browser of ['Firefox', 'Chrome', 'Safari'])
+			for (const problem of [module, script])
+				expect(rerunsInNewTab(browser, ['another problem', problem])).toBe(true);
+		// A worker that started and then failed in the sketch's own setup is the sketch's fault.
+		expect(
+			rerunsInNewTab('Firefox', [
+				'E1405: the sketch worker did not start: TypeError: setup is not a function',
+			]),
+		).toBe(false);
+		expect(unloadedModule([module])).toBe(
+			'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js',
+		);
+		expect(unloadedModule([script])).toBeUndefined();
 	});
 
 	it('runs a page once more in a new runner page on iOS, whatever the browser is called', () => {
@@ -907,20 +934,27 @@ describe('the checks plan', () => {
 		expect(reloads.map((shard) => shard.at(-1)?.id)).toEqual(['capabilities-reload']);
 	});
 
-	// CI runs the plan in each browser in the shards that its workflow names. A job should take at
-	// most about 12 minutes, and about 2 of them go to its setup, the dev server's start and the
-	// judging. .dev/devices.md says what to do when the pages need more. Safari compiles the sampled
-	// set of the shaders page, which this model counts.
+	// CI runs the plan in each browser in the shards that its workflow names. The shards run at the
+	// same time, so a run waits for the longest one: each holds at most about 10 minutes of pages,
+	// and about 2 more go to its setup, the dev server's start and the judging. .dev/devices.md says
+	// what to do when the pages need more. Safari compiles the sampled set of the shaders page, which
+	// this model counts.
 	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
-		expect(workflow).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
-		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
+		// The real-browser job's own lines, from its name to the next job: other jobs have shard
+		// lists of their own.
+		const start = workflow.indexOf('\n  real-browsers:\n');
+		expect(start).toBeGreaterThan(0);
+		const end = workflow.slice(start + 1).search(/\n {2}[\w-]+:\n/);
+		const job = end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
+		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
 		expect(count).toBeGreaterThan(0);
 		// The matrix must list every shard from 1 to the count, or a shard never runs.
-		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(workflow)?.[1]?.split(',').map(Number);
+		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
@@ -1054,37 +1088,63 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
+	/** The most bytes of shader modules that one part of the shaders page downloads. */
+	const MOST_BYTES_PER_PART = 200_000_000;
+
 	it('splits the shaders page into parts that share every program, each with time for its share', () => {
 		const all = glslProgramCount();
 		expect(all).toBeGreaterThan(100);
 		const inSet = (set: ShaderSet) => glslProgramCountOf(set);
-		const [base, coat, sample] = [inSet('base'), inSet('coat'), inSet('coat-sample')];
-		// The base and coat sets split every program, and the sample is some of the coat's.
-		expect(base + coat).toBe(all);
+		const [base, firstUse, coat, sample, firstUseSample, sampledSet] = [
+			inSet('base'),
+			inSet('first-use'),
+			inSet('coat'),
+			inSet('coat-sample'),
+			inSet('first-use-sample'),
+			inSet('sampled'),
+		];
+		// The base, first-use and coat sets split every program; each sample is some of its set's,
+		// and the sampled set holds the base set with both samples.
+		expect(base + firstUse + coat).toBe(all);
+		expect(sampledSet).toBe(base + sample + firstUseSample);
 		expect(sample).toBeGreaterThan(0);
 		expect(sample).toBeLessThanOrEqual(400);
-		// The sample pairs the coat with shadows, row values and half precision, alone and together.
+		expect(firstUseSample).toBeGreaterThan(0);
+		expect(firstUseSample).toBeLessThanOrEqual(400);
+		// The coat sample pairs the coat with shadows, row values and half precision, alone and together.
 		const sampledBuilds = [...glslProgramsByVariant()].filter(
 			([build, programs]) => programs > 0 && variantInShaderSet(build, 'coat-sample'),
 		);
-		const pairs = (bits: string[]) =>
-			sampledBuilds.some(([name]) => bits.every((bit) => name.includes(`_${bit}_`)));
+		const pairs = (builds: [string, number][], bits: string[]) =>
+			builds.some(([name]) =>
+				bits.every((bit) => `_${name.replaceAll('.', '_')}_`.includes(`_${bit}_`)),
+			);
 		for (const bit of ['receive_shadows', 'row_values', 'half', 'alpha_mask', 'vertex_tangent'])
-			expect(pairs([bit]), bit).toBe(true);
-		expect(pairs(['receive_shadows', 'row_values', 'half'])).toBe(true);
+			expect(pairs(sampledBuilds, [bit]), bit).toBe(true);
+		expect(pairs(sampledBuilds, ['receive_shadows', 'row_values', 'half'])).toBe(true);
+		// The first-use sample pairs the translucency builds with the same bits.
+		const sampledFirstUse = [...glslProgramsByName()].filter(
+			([name, programs]) => programs > 0 && inShaderSet(name, 'first-use-sample'),
+		);
+		for (const bit of ['translucency', 'receive_shadows', 'row_values', 'half'])
+			expect(pairs(sampledFirstUse, [bit]), bit).toBe(true);
+		expect(pairs(sampledFirstUse, ['translucency', 'receive_shadows', 'half'])).toBe(true);
 		const partsOf = (plan: PlanItem<Check>[], set: string) =>
 			plan.filter((item) => item.check.kind === 'shaders' && item.path.endsWith(`set=${set}`));
 		const sampled = checksPlan({ shaders: 'sampled' });
 		for (const [plan, sets] of [
-			[items, { base, coat }],
-			[sampled, { base, 'coat-sample': sample }],
+			[items, { base, 'first-use': firstUse, coat }],
+			[sampled, { sampled: sampledSet }],
 		] as const) {
 			expect(plan.filter((item) => item.check.kind === 'shaders').length).toBe(
-				Object.values(sets).reduce((sum, programs) => sum + Math.ceil(programs / 400), 0),
+				Object.values(sets).reduce(
+					(sum, programs) => sum + Math.ceil(programs / SHADER_PROGRAMS_PER_PART),
+					0,
+				),
 			);
 			for (const [set, programs] of Object.entries(sets) as [ShaderSet, number][]) {
 				const parts = partsOf(plan, set);
-				expect(parts.length).toBe(Math.ceil(programs / 400));
+				expect(parts.length).toBe(Math.ceil(programs / SHADER_PROGRAMS_PER_PART));
 				expect(parts[0]?.id).toBe(set === 'base' ? 'shaders-1' : `shaders-${set}-1`);
 				expect(parts.map(({ path }) => path)).toEqual(
 					parts.map(
@@ -1096,6 +1156,10 @@ describe('the checks plan', () => {
 				// hundred programs in one WebGL2 context. Holding the parts beside the builds they load
 				// needs the whole set: that check runs in a process of its own
 				// (`bun run test:heavy`, [Test memory](../../.dev/tests.md)).
+				// A part downloads its share of every module whatever its set holds, so a set of few
+				// programs in one part downloaded every module: 2.5 GB, which Safari on CI's Mac had not
+				// loaded after 205 s (20 October 2026).
+				expect([set, shaderFileBytes() / parts.length < MOST_BYTES_PER_PART]).toEqual([set, true]);
 				for (const part of parts) {
 					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
 					expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / parts.length / 4);

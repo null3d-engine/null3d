@@ -108,7 +108,8 @@ export async function createFlora(
 	models: Models,
 ): Promise<{
 	update(t: number): void;
-	nightLights(on: boolean): void;
+	/** Lights the share, from 0 to 1, of the fireflies that the hour's look calls for. */
+	nightLights(share: number): void;
 	clear(x: number, z: number): boolean;
 	crowns: Crown[];
 }> {
@@ -254,9 +255,10 @@ export async function createFlora(
 	return {
 		crowns: treeSpots,
 		clear: within(footprints),
-		nightLights(on) {
-			lit = on;
-			fireflies.setActiveCount(on ? FIREFLIES : 0);
+		nightLights(share) {
+			const count = Math.round(FIREFLIES * Math.min(1, Math.max(0, share)));
+			lit = count > 0;
+			fireflies.setActiveCount(count);
 		},
 		update(t) {
 			// Read the arrays in each frame: they are views of engine memory, which moves when it grows.

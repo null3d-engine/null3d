@@ -89,6 +89,10 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	subsurfaceSamples: {
+		label: 'Subsurface blur of skin',
+		print: (value) => (Number(value) > 0 ? `${value} taps each way` : 'off'),
+	},
 	ssrScale: {
 		label: 'Screen-space reflections',
 		print: (value) =>
@@ -111,6 +115,10 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	probeSize: {
+		label: 'Reflection probe maps',
+		print: (value) => `${value} x ${value}`,
+	},
 	areaLights: { label: 'Area lights per frame' },
 	lodThreshold: {
 		label: 'Level of detail threshold',
@@ -127,6 +135,7 @@ export const SETTING_DOCS: {
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
 	morphTargets: { label: 'Morph targets per object on WebGL2' },
 	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
+	parallax: { label: 'Parallax occlusion mapping', print: yesNo },
 	softParticles: { label: 'Soft particles', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {

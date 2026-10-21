@@ -91,7 +91,9 @@ export const DEMOS: readonly Demo[] = [
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
 		hold: 0.5,
-		timeoutSeconds: 60,
+		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it
+		// well past a minute on a loaded runner, and past three on an emulated Firefox GPU.
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'night-town',
@@ -103,7 +105,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
 		hold: 0.5,
-		timeoutSeconds: 60,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'generators',
@@ -196,6 +198,42 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 120,
 	},
 	{
+		name: 'translucency',
+		group: 'Light, materials and effects',
+		sketch: new URL('./translucency/sketch.ts', import.meta.url),
+		code: 'translucency/',
+		title: 'Light through leaves',
+		scene: 'Garden at golden hour',
+		summary:
+			'Broad leaves and coral petals let the low sun behind them through, with the shade of the leaves in front and darker veins, and a paper lantern glows from the lamp inside it. The pointer carries the lantern.',
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'subsurface',
+		group: 'Light, materials and effects',
+		sketch: new URL('./subsurface/sketch.ts', import.meta.url),
+		code: 'subsurface/',
+		title: 'Light under the surface',
+		scene: 'Wax, jade and soap by candlelight',
+		summary:
+			'Light spreads under the surface of wax candles, a jade knot and a soap egg, redder the further it goes, so their shadows and edges glow soft while their highlights stay sharp, on the High and Ultra presets. The pointer carries the tea light.',
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'reflection-probes',
+		group: 'Light, materials and effects',
+		sketch: new URL('./reflection-probes/sketch.ts', import.meta.url),
+		code: 'reflection-probes/',
+		title: 'Reflection probes',
+		scene: 'Two-room gallery',
+		summary:
+			"A warm room and a cool room over one polished stone floor, each with a reflection probe, so the floor reflects its own room where the walls stand. A chrome ball and a gold ring drift through the doorway and take each room's light in turn.",
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
@@ -217,6 +255,19 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"Eight panes of stained glass that cross each other, and 600 puffs of smoke from a brazier, blend in any order with the weighted blending, as three.js's OITPassNode blends them. Sorting by object cannot order them, so with normal blending they pop as the camera turns.",
 		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'relief',
+		group: 'Light, materials and effects',
+		sketch: new URL('./relief/sketch.ts', import.meta.url),
+		code: 'relief/',
+		title: 'Relief maps',
+		scene: 'Hillside at sundown',
+		summary:
+			'Hills and cut boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. A brick wall steps down the slope: parallax gives its flat faces the depth of their bricks, and bump maps give its cap stones their grain. A geodesic frame drawn as a wireframe casts a shadow of lines. Turn parallax off and on with the button or the P key.',
+		choices: [{ name: 'parallax', label: 'Parallax', options: ['On', 'Off'] }],
+		hold: 1,
 		timeoutSeconds: 60,
 	},
 	{
@@ -329,10 +380,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'post-effects',
 		group: 'Light, materials and effects',
 		sketch: new URL('./post-effects/sketch.ts', import.meta.url),
+		code: 'post-effects/',
 		title: 'Post effects',
 		scene: 'Neon alley',
 		summary:
-			'Crates in a neon alley at night on wet ground, with bloom, ambient occlusion, an outline, depth of field, a vignette and a custom lens effect. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grading table changes: none, warm, then cool.',
 		hold: 4,
 	},
 	{
@@ -362,10 +414,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'security-camera',
 		group: 'Light, materials and effects',
 		sketch: new URL('./security-camera/sketch.ts', import.meta.url),
+		code: 'security-camera/',
 		title: 'Render to texture',
 		scene: 'Security camera',
 		summary:
-			'At nightfall, a camera on a pole sweeps a wet yard behind a wall under a floodlight. A scene pass draws its view into a texture, and a monitor on the near side of the wall shows the robot that patrols there, as a night camera with scan lines.',
+			'At nightfall, a camera on a pole sweeps a wet yard behind a wall under a floodlight. A scene pass draws the camera view into a texture, and a monitor on the near side of the wall shows the robot that patrols there, as a night camera with scan lines and, up close, LCD stripes and dead cells.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -377,7 +430,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Area lights',
 		scene: 'Neon street after rain',
 		summary:
-			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot.",
+			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot, and mirrors the glowing sign and windows through screen-space reflections.",
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -444,10 +497,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'picking',
 		group: 'Motion and interaction',
 		sketch: new URL('./picking/sketch.ts', import.meta.url),
+		code: 'picking/',
 		title: 'Picking and labels',
 		scene: 'Gallery plinth',
 		summary:
-			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit.',
+			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A plan on the wall beside them marks each click where it lands.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -488,10 +542,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'instances',
 		group: 'Scale',
 		sketch: new URL('./instances/sketch.ts', import.meta.url),
+		code: 'instances/',
 		title: 'Instancing',
 		scene: '100,000 columns',
 		summary:
-			'100,000 columns in one batch at golden hour, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at golden hour, and 10,000 on phones, with lanes of hover cars streaming across the sky in two more batches. Each frame the sketch writes the height of every row, and the place of every car, into the batch arrays, with no call per row.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -506,6 +561,18 @@ export const DEMOS: readonly Demo[] = [
 			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards.',
 		hold: 2,
 		timeoutSeconds: 300,
+	},
+	{
+		name: 'impostors',
+		group: 'Scale',
+		sketch: new URL('./impostors/sketch.ts', import.meta.url),
+		code: 'impostors/',
+		title: 'Impostors',
+		scene: 'Forest three ways',
+		summary:
+			'A pine forest at golden hour, drawn three ways by distance: level-of-detail meshes near, one merged mesh per grid cell in the middle, and octahedral impostor cards far out, from an atlas made in code. Press L to draw the far band as meshes instead and compare.',
+		hold: 3,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'far-from-origin',

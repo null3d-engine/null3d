@@ -5,6 +5,7 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	LAYOUT_ACCUMULATE,
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
@@ -27,23 +28,34 @@ import {
 	LAYOUT_FINAL_EFFECTS,
 	LAYOUT_FINAL_EFFECTS_DEPTH_MS,
 	LAYOUT_FRAME,
+	LAYOUT_FRAME_PARALLAX,
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_MATERIAL_MAPS_PARALLAX,
+	LAYOUT_MOTION_FRAME,
 	LAYOUT_PARTICLE,
 	LAYOUT_PARTICLE_DEPTH_MS,
 	LAYOUT_PARTICLE_SCENE_DEPTH,
 	LAYOUT_SKIN,
 	LAYOUT_SSR_REDUCE,
 	LAYOUT_SSR_TRACE,
+	LAYOUT_SUBSURFACE_BLUR,
+	LAYOUT_SUBSURFACE_COMPOSITE,
+	LAYOUT_SUBSURFACE_COMPOSITE_MS,
 	LAYOUT_TEXTURES,
+	LAYOUT_TRANSMISSION_COPY_MS,
 	LAYOUT_VIEW_COPY,
 	LAYOUT_WEIGHTED_COMPOSITE,
 	LAYOUT_WEIGHTED_DEPTH_MS,
+	PERMUTATION_ALPHA_MASK,
 	PERMUTATION_CASTER,
 	PERMUTATION_DEPTH_MULTISAMPLED,
+	PERMUTATION_DISPLACEMENT,
 	PERMUTATION_INSTANCE_INDEX,
+	PERMUTATION_MOTION,
+	PERMUTATION_PARALLAX,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
@@ -52,6 +64,7 @@ import {
 	SIZE_INDEX_STRIDE,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
+	SIZE_MOTION_INSTANCE_STRIDE,
 	STATE_ALPHA_TO_COVERAGE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -65,6 +78,7 @@ import {
 	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
+	TEMPLATE_ACCUMULATE,
 	TEMPLATE_AO,
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
@@ -107,6 +121,8 @@ import {
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOTION,
+	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OCCLUSION_EARLY,
 	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
@@ -114,6 +130,10 @@ import {
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_DEPTH_MS,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PICK,
+	TEMPLATE_PICK_MAPS,
+	TEMPLATE_PICK_RESOLVE,
+	TEMPLATE_PICK_TEXTURE_MAPS,
 	TEMPLATE_PROBE_GRID,
 	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
@@ -125,6 +145,11 @@ import {
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_SSR_REDUCE,
 	TEMPLATE_SSR_TRACE,
+	TEMPLATE_SUBSURFACE,
+	TEMPLATE_SUBSURFACE_BLUR,
+	TEMPLATE_SUBSURFACE_COMPOSITE,
+	TEMPLATE_SUBSURFACE_COMPOSITE_MS,
+	TEMPLATE_SUBSURFACE_MAPS,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
@@ -144,6 +169,7 @@ import {
 	DEBUG_LINES_SHADER,
 	DEBUG_VIEW_SHADER,
 	type DeviceShaders,
+	MOTION_VIEW_SHADER,
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
@@ -200,6 +226,14 @@ export interface RenderTemplate {
 	 * vertices, in slot 0, where each pipeline's vertex format places them.
 	 */
 	readonly meshLocations?: readonly number[];
+	/** For a template that tests masks: the mesh locations that only its ALPHA_MASK builds read. */
+	readonly maskLocations?: readonly number[];
+	/**
+	 * True for the motion template, which reads each vertex's place in the last frame from vertex
+	 * buffer slot 2 at location 4: the last frame's copy of a skinned region, or the mesh's own
+	 * vertices.
+	 */
+	readonly lastVertices?: boolean;
 	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 	/**
@@ -230,11 +264,23 @@ const ROW_VALUES_BINDING = 16;
  */
 const OBJECT_RANGES_BINDING = 17;
 
+/**
+ * The binding of the view's list of reflection probes in the frame group, which the lit shading
+ * reads beside the probes' texture array at binding 3 (decision record D-149).
+ */
+const PROBE_LIST_BINDING = 18;
+
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
 
 /** The map slots of a standard material, one texture array and sampler each. */
 const MAP_SLOTS = Array.from({ length: SIZE_MAP_SLOTS }, (_, slot) => slot);
+
+/**
+ * The binding of the displacement map's texture array in the maps group, after every slot's array
+ * and sampler, as the frame builder binds it. Its sampler takes the next binding.
+ */
+const HEIGHT_BINDING = 2 * SIZE_MAP_SLOTS;
 
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
@@ -283,6 +329,26 @@ const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 		],
 	},
 ];
+
+/**
+ * The motion view's compacted instance: the matrix rows and the ids, then the rows of the last
+ * frame's matrix at locations 13 to 15.
+ */
+const MOTION_INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
+	{
+		arrayStride: SIZE_MOTION_INSTANCE_STRIDE,
+		stepMode: 'instance',
+		attributes: [
+			...(INSTANCE_BUFFERS[0] as GPUVertexBufferLayout).attributes,
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 4, offset: 64, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 5, offset: 80, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 6, offset: 96, format: 'float32x4' },
+		],
+	},
+];
+
+/** The location of the last frame's place of each vertex in the motion template. */
+const LAST_POSITION_LOCATION = 4;
 
 /**
  * The compacted index that a mesh draw's instances read in the builds that read their instances by
@@ -391,7 +457,9 @@ const NARROW_DIRECTIONS_ID = 1100;
 
 /** The mesh locations that a template's variant reads, or undefined for a template without meshes. */
 function meshLocations(t: RenderTemplate, permutation: number): number[] | undefined {
-	return t.meshLocations && variantLocations(t.meshLocations, permutation);
+	if (!t.meshLocations) return undefined;
+	const masked = t.maskLocations && permutation & PERMUTATION_ALPHA_MASK ? t.maskLocations : [];
+	return variantLocations([...t.meshLocations, ...masked], permutation);
 }
 
 /**
@@ -407,7 +475,12 @@ function vertexBuffers(
 ): GPUVertexBufferLayout[] {
 	const locations = meshLocations(t, permutation);
 	if (!locations) return t.vertexBuffers;
-	const instances = permutation & PERMUTATION_INSTANCE_INDEX ? INDEX_BUFFERS : t.vertexBuffers;
+	const instances =
+		permutation & PERMUTATION_INSTANCE_INDEX
+			? INDEX_BUFFERS
+			: permutation & PERMUTATION_MOTION
+				? MOTION_INSTANCE_BUFFERS
+				: t.vertexBuffers;
 	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
@@ -419,7 +492,15 @@ function vertexBuffers(
 		stepMode: 'vertex',
 		attributes,
 	};
-	return [mesh, ...instances];
+	if (!t.lastVertices) return [mesh, ...instances];
+	const position = attributes.find((attribute) => attribute.shaderLocation === 0);
+	if (!position) throw new Error(`vertex format ${vertexFormat} has no position`);
+	const last: GPUVertexBufferLayout = {
+		arrayStride: mesh.arrayStride,
+		stepMode: 'vertex',
+		attributes: [{ ...position, shaderLocation: LAST_POSITION_LOCATION }],
+	};
+	return [mesh, ...instances, last];
 }
 
 /**
@@ -469,6 +550,8 @@ export class Pipelines {
 	 * occlusion feature's shader file.
 	 */
 	private readonly occlusion: ShaderVariants;
+	/** The motion view's culling build, which arrives with the motion feature's shader file. */
+	private readonly cullMotion: ShaderVariants;
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
@@ -524,15 +607,17 @@ export class Pipelines {
 			rowValues,
 			objectRanges,
 		]);
-		// The materials' custom values, the light tables (the table of specular terms and the area
-		// lights' tables, in the layers of one array), then the shadow map, whose depths the
-		// receivers read as floats, the sampler that compares depths in the shadow atlas, the
-		// cascades, the camera's light grid and light list, the shadow atlas of point and spot lights
-		// with its tiles, the light probe grids' 3D texture, ambient occlusion's texture, which the
-		// lit shading reads with textureLoad, the environment's cube map with its filtering sampler,
-		// the sampler that reads four texels of the shadow map at once, the copy of the opaque color
-		// that surfaces which let light through sample with the environment's sampler, and the row
-		// values of instance batches and the table of object ranges, which only vertex shaders read.
+		// The materials' custom values, with the table of specular terms in the columns after the
+		// first rows, the light tables and the reflection probes' maps in the layers of one array,
+		// then the shadow map, whose depths the receivers read as floats, the sampler that compares
+		// depths in the shadow atlas, the cascades, the camera's light grid and light list, the
+		// shadow atlas of point and spot lights with its tiles, the light probe grids' 3D texture,
+		// ambient occlusion's texture, which the lit shading reads with textureLoad, the
+		// environment's cube map with its filtering sampler, the sampler that reads four texels of
+		// the shadow map at once, the copy of the opaque color that surfaces which let light through
+		// sample with the environment's sampler, the row values of instance batches and the table
+		// of object ranges, which only vertex shaders read, and the view's list of reflection
+		// probes.
 		const probeGrid: GPUBindGroupLayoutEntry = {
 			binding: 10,
 			visibility: fragment,
@@ -574,8 +659,19 @@ export class Pipelines {
 			transmission,
 			rowValues,
 			objectRanges,
+			{ binding: PROBE_LIST_BINDING, visibility: fragment, buffer: { type: 'uniform' } },
 		];
 		this.defineLayout(LAYOUT_FRAME, 'frame', frame);
+		// The frame group of the builds of parallax occlusion mapping leaves out the copy of the
+		// opaque color, which no such build reads: the draw list never pairs parallax with
+		// transmission. Their maps' group holds one sampled texture more than any other material's,
+		// so this keeps their fragment stage within the default count.
+		this.defineLayout(
+			LAYOUT_FRAME_PARALLAX,
+			'frame with parallax',
+			frame.filter((entry) => entry !== transmission),
+			true,
+		);
 		// The decals' frame group leaves out the probe grid, which no decal build reads, so that a
 		// decal with maps stays within the default count of sampled textures in the fragment stage.
 		// It carries the copy of the opaque color, which the reflections' lit code reads in every
@@ -586,14 +682,35 @@ export class Pipelines {
 			frame.filter((entry) => entry !== probeGrid),
 			true,
 		);
+		// The motion pass's frame group: the depth group's entries, then the motion block and the last
+		// frame's joints, which vertex shaders read, and the table of object ranges for custom
+		// materials that read object ids.
+		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
+			...frameEntries,
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+			{
+				binding: 5,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+			rowValues,
+			objectRanges,
+		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
-		// A texture array for each map slot, then each slot's sampler. Custom materials' vertex
-		// stages sample their textures too.
+		// A texture array for each map slot, then each slot's sampler, then the displacement map's
+		// array and sampler. Custom materials' vertex stages sample their textures too. The
+		// displacement map is the vertex stage's alone, so the fragment stage keeps a sampled
+		// texture free, apart from the layout of parallax, whose fragment stage reads it too.
 		const maps = GPUShaderStage.VERTEX | fragment;
-		this.defineLayout(LAYOUT_MATERIAL_MAPS, 'material maps', [
+		const mapEntries = (height: GPUShaderStageFlags): GPUBindGroupLayoutEntry[] => [
 			...MAP_SLOTS.map(
 				(binding): GPUBindGroupLayoutEntry => ({
 					binding,
@@ -608,7 +725,15 @@ export class Pipelines {
 					sampler: {},
 				}),
 			),
-		]);
+			{ binding: HEIGHT_BINDING, visibility: height, texture: { viewDimension: '2d-array' } },
+			{ binding: HEIGHT_BINDING + 1, visibility: height, sampler: {} },
+		];
+		this.defineLayout(LAYOUT_MATERIAL_MAPS, 'material maps', mapEntries(GPUShaderStage.VERTEX));
+		this.defineLayout(
+			LAYOUT_MATERIAL_MAPS_PARALLAX,
+			'material maps with parallax',
+			mapEntries(maps),
+		);
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
@@ -752,13 +877,23 @@ export class Pipelines {
 		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
+		// The still-camera accumulation's blend: its values, and the color it reads with textureLoad.
+		this.defineLayout(LAYOUT_ACCUMULATE, 'accumulate', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			unfiltered(1),
+		]);
 		// The weighted layer's composite reads its two sums, and its depth copy a multisampled scene
-		// depth, with textureLoad.
+		// depth, with textureLoad. The copy of the opaque color for transmission reads the scene
+		// color and depth as the composite reads its sums, or with a multisampled depth.
 		this.defineLayout(LAYOUT_WEIGHTED_COMPOSITE, 'weighted composite', [
 			unfiltered(0),
 			unfiltered(1),
 		]);
 		this.defineLayout(LAYOUT_WEIGHTED_DEPTH_MS, 'weighted depth ms', [unfiltered(0, true)]);
+		this.defineLayout(LAYOUT_TRANSMISSION_COPY_MS, 'transmission copy ms', [
+			unfiltered(0),
+			unfiltered(1, true),
+		]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -779,6 +914,19 @@ export class Pipelines {
 			...effectEntries,
 			unfiltered(3, true),
 			blurred,
+		]);
+		// The subsurface blur's steps read every texture with textureLoad: the across step the skin
+		// pass's light, and the down step that, the across step's light, the scene color and the
+		// scene's depth as plain floats.
+		this.defineLayout(LAYOUT_SUBSURFACE_BLUR, 'subsurface blur', [aoSettings, unfiltered(1)]);
+		const composite = [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)];
+		this.defineLayout(LAYOUT_SUBSURFACE_COMPOSITE, 'subsurface composite', [
+			...composite,
+			unfiltered(4),
+		]);
+		this.defineLayout(LAYOUT_SUBSURFACE_COMPOSITE_MS, 'subsurface composite ms', [
+			...composite,
+			unfiltered(4, true),
 		]);
 		// The final pass with custom effects folded into it: the pass's own entries, then every
 		// effect's block and the scene's depth, which the effects read as a group does. The effects
@@ -875,6 +1023,29 @@ export class Pipelines {
 				[LAYOUT_DEPTH, LAYOUT_TEXTURES],
 			],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_SUBSURFACE, 'subsurface', shaders.subsurface, [0, 1], [LAYOUT_FRAME]],
+			[
+				TEMPLATE_SUBSURFACE_MAPS,
+				'subsurface maps',
+				shaders.subsurface_maps,
+				[0, 1, 2, 3],
+				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
+			],
+			[TEMPLATE_PICK, 'pick', shaders.pick, [0], [LAYOUT_FRAME]],
+			[
+				TEMPLATE_PICK_MAPS,
+				'pick maps',
+				shaders.pick_maps,
+				[0, 2, 3],
+				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
+			],
+			[
+				TEMPLATE_PICK_TEXTURE_MAPS,
+				'pick texture maps',
+				shaders.pick_texture_maps,
+				[0, 2, 3],
+				[LAYOUT_FRAME, LAYOUT_TEXTURES],
+			],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],
@@ -916,6 +1087,15 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
+		// GPU picking's resolve: one triangle over the render size that copies the id target that
+		// the device resolved, at group 0 of a view copy's layout.
+		this.defineTemplate(TEMPLATE_PICK_RESOLVE, {
+			label: 'pick resolve',
+			shader: shaders.pick_resolve,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_FINAL, {
 			label: 'final',
 			shader: shaders.final,
@@ -964,6 +1144,27 @@ export class Pipelines {
 				'composite',
 				LAYOUT_DOF_COMPOSITE_MS,
 			],
+			[
+				TEMPLATE_SUBSURFACE_BLUR,
+				'subsurface across',
+				shaders.subsurface_blur,
+				'across',
+				LAYOUT_SUBSURFACE_BLUR,
+			],
+			[
+				TEMPLATE_SUBSURFACE_COMPOSITE,
+				'subsurface down',
+				shaders.subsurface_blur,
+				'down',
+				LAYOUT_SUBSURFACE_COMPOSITE,
+			],
+			[
+				TEMPLATE_SUBSURFACE_COMPOSITE_MS,
+				'subsurface down ms',
+				shaders.subsurface_blur_ms,
+				'down',
+				LAYOUT_SUBSURFACE_COMPOSITE_MS,
+			],
 			// The volumetric fog's block step and sum bind as steps of bloom, and its apply step as
 			// depth of field's composite, with the summed grid in place of the blurred image.
 			[TEMPLATE_FOG_BLOCK, 'fog block', shaders.fog_volume, 'block', LAYOUT_BLOOM],
@@ -995,11 +1196,19 @@ export class Pipelines {
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],
 		});
+		this.defineTemplate(TEMPLATE_ACCUMULATE, {
+			label: 'accumulate',
+			shader: shaders.accumulate,
+			pipeline: 'main',
+			layouts: [LAYOUT_ACCUMULATE],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_TRANSMISSION_COPY, {
 			label: 'transmission copy',
 			shader: shaders.transmission_copy,
 			pipeline: 'main',
-			layouts: [LAYOUT_VIEW_COPY],
+			layouts: [LAYOUT_WEIGHTED_COMPOSITE],
+			multisampledLayouts: [LAYOUT_TRANSMISSION_COPY_MS],
 			vertexBuffers: [],
 		});
 		this.defineTemplate(TEMPLATE_WEIGHTED_COMPOSITE, {
@@ -1036,6 +1245,19 @@ export class Pipelines {
 				vertexBuffers: [],
 			});
 		}
+		// The motion of moving objects: the last frame's matrices after each instance's copy, and the
+		// last frame's place of each vertex in slot 2. Masked builds read the texture coordinates and
+		// the base color map, whose group, or a blank one's, every build binds.
+		this.defineTemplate(TEMPLATE_MOTION, {
+			label: 'mesh motion',
+			shader: shaders.motion,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOTION_FRAME, LAYOUT_TEXTURES],
+			meshLocations: [0],
+			maskLocations: [2, 3],
+			vertexBuffers: MOTION_INSTANCE_BUFFERS,
+			lastVertices: true,
+		});
 		this.defineTemplate(TEMPLATE_SKY_TABLE, {
 			label: 'sky tables',
 			shader: shaders.sky_tables,
@@ -1051,6 +1273,14 @@ export class Pipelines {
 			vertexBuffers: [],
 		});
 		if (DEV) {
+			this.defineTemplate(TEMPLATE_MOTION_VIEW, {
+				label: 'motion view',
+				shader: MOTION_VIEW_SHADER,
+				pipeline: 'main',
+				layouts: [LAYOUT_EFFECT],
+				multisampledLayouts: [LAYOUT_EFFECT_DEPTH_MS],
+				vertexBuffers: [],
+			});
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
 				shader: DEBUG_LINES_SHADER,
@@ -1070,6 +1300,7 @@ export class Pipelines {
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
 		this.occlusion = shaders.cull_occlusion;
+		this.cullMotion = shaders.cull_motion;
 		this.pyramid = shaders.pyramid;
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
@@ -1248,7 +1479,9 @@ export class Pipelines {
 	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
-		const ownPrepass = t.ownPrepass === true && (permutation & PERMUTATION_PREPASS) !== 0;
+		// A displaced material's prepass moves its vertices as its shading does.
+		const places = t.ownPrepass === true || (permutation & PERMUTATION_DISPLACEMENT) !== 0;
+		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
 		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
 		if (!shader)
@@ -1260,19 +1493,37 @@ export class Pipelines {
 		const multisampled =
 			t.multisampledLayouts !== undefined && (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
 		// A custom material's shadow caster draws in the shadow passes, whose views bind the depth
-		// template's group in place of the frame group.
+		// template's group in place of the frame group, and its motion build in the motion pass,
+		// whose view binds the motion frame group there.
 		const caster = (permutation & PERMUTATION_CASTER) !== 0;
+		const motion = template !== TEMPLATE_MOTION && (permutation & PERMUTATION_MOTION) !== 0;
+		// Parallax reads the displacement map in the fragment stage too, through a layout of its own.
+		const parallax = (permutation & PERMUTATION_PARALLAX) !== 0;
+		// Six flags fill the low bits: five of them need 32 values, and parallax, the sixth, needs
+		// the next 32, so a template starts every 64 keys and never shares one with its neighbour.
 		const key =
-			template * 16 +
+			template * 64 +
 			(skins ? 1 : 0) +
 			(byIndex ? 2 : 0) +
 			(multisampled ? 4 : 0) +
-			(caster ? 8 : 0);
+			(caster ? 8 : 0) +
+			(motion ? 16 : 0) +
+			(parallax ? 32 : 0);
 		let layout = this.pipelineLayouts.get(key);
 		if (!layout) {
-			const own = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
+			const listed = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
+			const own = parallax
+				? listed.map((id) =>
+						id === LAYOUT_MATERIAL_MAPS
+							? LAYOUT_MATERIAL_MAPS_PARALLAX
+							: id === LAYOUT_FRAME
+								? LAYOUT_FRAME_PARALLAX
+								: id,
+					)
+				: listed;
+			const first = caster ? LAYOUT_DEPTH : motion ? LAYOUT_MOTION_FRAME : undefined;
 			const groups = [
-				...(caster ? [LAYOUT_DEPTH, ...own.slice(1)] : own),
+				...(first === undefined ? own : [first, ...own.slice(1)]),
 				...(skins ? [LAYOUT_JOINTS] : []),
 				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
 			];
@@ -1384,9 +1635,10 @@ export class Pipelines {
 	 * or one of occlusion culling's, or undefined for a template whose shader the device's module of
 	 * the start holds.
 	 */
-	computeVariants(template: number): ShaderVariants | undefined {
+	computeVariants(template: number, permutation = 0): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
@@ -1407,6 +1659,15 @@ export class Pipelines {
 				label: `skin${tangent}${color}`,
 				layout: this.skinLayout,
 				compute: { module: this.module('skin', shader), entryPoint: 'main', constants },
+			};
+		}
+		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) {
+			const shader = variantFor(this.cullMotion, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no motion culling shader");
+			return {
+				label: 'cull motion',
+				layout: this.cullLayout,
+				compute: { module: this.module('cull motion', shader), entryPoint: CULL_ENTRY_POINT },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

@@ -409,14 +409,15 @@ pub fn farthest_receiver_distance(scene: &SceneStorage, parity: usize, view: &Li
 }
 
 /// The distance that follows the farthest visible receiver: the smallest ladder step at or above
-/// `raw`, held from `held` with one step of hysteresis. A rise happens at once; a fall happens
-/// only once `raw` drops below the ladder step under the held one. `held` is 0 before the first
-/// frame that resolves the distance.
+/// `raw`, held from `held` with one whole step of hysteresis. A rise happens at once. The held
+/// step stays while `raw` lies within the step under it too, so a raw distance that hovers at a
+/// step's boundary keeps one distance; it falls to the step at `raw` only once `raw` drops below
+/// that step under the held one. `held` is 0 before the first frame that resolves the distance.
 pub fn ladder_distance(held: f32, raw: f32) -> f32 {
     let raw = raw.max(AUTO_MIN_DISTANCE);
     let step = (raw / AUTO_MIN_DISTANCE).log(AUTO_LADDER).ceil().max(0.0);
     let up = AUTO_MIN_DISTANCE * AUTO_LADDER.powf(step);
-    if held <= 0.0 || up > held || raw < held / AUTO_LADDER {
+    if held <= 0.0 || up > held || raw < held / (AUTO_LADDER * AUTO_LADDER) {
         up
     } else {
         held
@@ -1108,12 +1109,40 @@ mod tests {
         assert_eq!(ladder_distance(0.0, 1.0), 1.0);
         assert_eq!(ladder_distance(0.0, 1.1), 1.25);
         close(ladder_distance(0.0, 14.0), 14.551915);
-        // A raw distance inside the held step keeps it, on both sides.
+        // A raw distance inside the held step, or inside the step under it, keeps the held one.
         close(ladder_distance(14.551915, 14.0), 14.551915);
         close(ladder_distance(14.551915, 12.0), 14.551915);
+        close(ladder_distance(14.551915, 11.0), 14.551915);
+        close(ladder_distance(14.551915, 9.4), 14.551915);
         // A rise happens at once when the raw distance crosses the held step.
         close(ladder_distance(14.551915, 16.0), 18.189894);
-        // A fall happens only once the raw distance drops below the step under the held one.
-        close(ladder_distance(14.551915, 11.0), 11.641532);
+        // A fall happens once the raw distance drops a whole step below the held one, to the step
+        // at the raw distance.
+        close(ladder_distance(14.551915, 9.2), 9.313226);
+        close(ladder_distance(14.551915, 5.0), 5.960464);
+    }
+
+    #[test]
+    fn a_raw_distance_that_hovers_at_a_step_boundary_keeps_one_distance() {
+        // The raw distance swings just above and just below the boundary between two steps, as a
+        // receiver at the edge of the view does while the camera sways. After the first frame's
+        // rise, every frame keeps the same distance.
+        let boundary = 11.641532;
+        let mut held = 0.0;
+        let mut first = None;
+        for frame in 0..600 {
+            let swing = if frame % 2 == 0 { 1.002 } else { 0.998 };
+            let wobble = 1.0 + 0.0005 * ((frame % 7) as f32 - 3.0);
+            held = ladder_distance(held, boundary * swing * wobble);
+            let kept = *first.get_or_insert(held);
+            assert_eq!(
+                held, kept,
+                "frame {frame} moved the distance from {kept} to {held}"
+            );
+        }
+        assert!(
+            (held - 14.551915).abs() < 1e-3,
+            "the step above the boundary, got {held}"
+        );
     }
 }

@@ -764,7 +764,24 @@ class FileMaterials {
 			emissiveMap: map(m.maps.emissiveMap),
 			specularIntensityMap: map(m.maps.specularIntensityMap),
 			specularColorMap: map(m.maps.specularColorMap),
+			diffuseTransmissionMap: map(m.maps.diffuseTransmissionMap),
+			diffuseTransmissionColorMap: map(m.maps.diffuseTransmissionColorMap),
 		};
+		const volume = m.transmission ?? m.diffuseTransmission;
+		if (volume) {
+			options.thickness = volume.thickness;
+			options.attenuationColor = volume.attenuationColor;
+			options.attenuationDistance = volume.attenuationDistance;
+		}
+		if (m.transmission) options.transmission = m.transmission.factor;
+		if (m.diffuseTransmission) {
+			options.diffuseTransmission = m.diffuseTransmission.factor;
+			options.diffuseTransmissionColor = m.diffuseTransmission.color;
+		}
+		if (m.scatter) {
+			options.subsurfaceRadius = m.scatter.radius;
+			options.subsurfaceColor = m.scatter.color;
+		}
 		const layers = m.layers;
 		if (layers) {
 			const scale = layers.clearcoatNormalScale;
@@ -778,13 +795,6 @@ class FileMaterials {
 			options.clearcoatNormalMap = map(m.maps.clearcoatNormalMap);
 			options.sheenColorMap = map(m.maps.sheenColorMap);
 			options.sheenRoughnessMap = map(m.maps.sheenRoughnessMap);
-		}
-		const through = m.transmission;
-		if (through) {
-			options.transmission = through.factor;
-			options.thickness = through.thickness;
-			options.attenuationColor = through.attenuationColor;
-			options.attenuationDistance = through.attenuationDistance;
 		}
 		return materials.standard(options);
 	}

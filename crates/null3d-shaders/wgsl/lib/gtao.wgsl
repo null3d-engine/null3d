@@ -25,6 +25,19 @@ const DEPTH_TOLERANCE: f32 = 0.03;
 /// all of the sun's light.
 const NO_SCREEN_VALUES: vec4f = vec4f(1.0, 0.0, 0.0, 1.0);
 
+/// True where the texel nearest in depth speaks for a pixel that no texel shares its depth with.
+/// The depth prepass leaves out the builds that discard by their alpha or a fading level's dither.
+/// Such a surface may stand in front of every texel, as a petal stands in front of the grass: the
+/// texels then hold what lies behind it, so it takes none of them. A constant, not a branch, keeps
+/// the reading function's text the same in every build.
+#ifdef ALPHA_MASK
+const NEAREST_SPEAKS: bool = false;
+#else ifdef LOD_FADE
+const NEAREST_SPEAKS: bool = false;
+#else
+const NEAREST_SPEAKS: bool = true;
+#endif
+
 /// The screen texture's values at a pixel, and what the reflected rays of the texels around it
 /// found.
 struct ScreenRead {
@@ -84,8 +97,8 @@ fn screen_read(pixel: vec3f, blended: bool) -> ScreenRead {
         }
     }
     // Where no texel lies at the pixel's depth, as on a thin edge, the nearest one in depth speaks
-    // for it.
-    let held = select(nearest, sum / total, total > 1e-4);
+    // for it, in the builds where it may (`NEAREST_SPEAKS`).
+    let held = select(select(NO_SCREEN_VALUES, nearest, NEAREST_SPEAKS), sum / total, total > 1e-4);
     let found = vec2f(reach / max(hits, 1e-4), hits / max(total, 1e-4));
     return ScreenRead(held, select(vec2f(0.0), found, hits > 1e-4));
 }

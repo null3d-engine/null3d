@@ -7,9 +7,10 @@
 // Metal fault are listed apart. The result gives the time the GLSL programs took.
 // With `?part=k&parts=n`, the page downloads and checks only part k of n of the shader builds, so
 // that several pages can share the work. With `?set=`, it checks only one set of them, such as the
-// builds without the coat and sheen bit, or a sample of those with it.
+// builds without the coat and sheen bit, a sample of those with it, the builds of the features that
+// load on first use, or a sample of those.
 import { everyShader } from '@null3d/engine/internal';
-import { run } from './lib/result';
+import { progress, run } from './lib/result';
 import { checkGlslPrograms, checkWgslModules, type ShaderFailure } from './lib/shader-checks';
 import {
 	glslProgramsOf,
@@ -30,13 +31,16 @@ run('shaders', async () => {
 	if (!SHADER_SETS.includes(set)) throw new Error(`no set of shaders named ${set}`);
 	const inSet = ([name]: readonly [string, unknown]) => inShaderSet(name, set);
 	// This part's share of the shaders of the main module and of the device modules, kept to the
-	// set that the page checks.
+	// set that the page checks. The trail notes the download, which can outlast the compiles.
+	progress(`downloading part ${part} of ${parts} of the shader modules`);
 	const shaders = await everyShader(part, parts);
+	progress('downloaded the shader modules');
 	const failures: ShaderFailure[] = [];
 	const glslStart = performance.now();
 	const glsl = await checkGlslPrograms(glslProgramsOf(shaders).filter(inSet), failures);
 	const glslSeconds = Math.round(performance.now() - glslStart) / 1000;
-	const wgsl = await checkWgslModules(wgslModulesOf(shaders).filter(inSet), failures);
+	const modules = wgslModulesOf(shaders).filter(inSet);
+	const wgsl = await checkWgslModules(modules, failures);
 	return {
 		glslPrograms: glsl.programs,
 		glslSeconds,
@@ -49,6 +53,9 @@ run('shaders', async () => {
 		webgpu: wgsl.webgpu,
 		wgslModules: wgsl.modules,
 		wgslSkipped: wgsl.skipped,
+		// What the part's share holds, so a part whose modules all need 16-bit floats reads as
+		// checked on a GPU that has none rather than as one that drew nothing.
+		wgslExpected: modules.length,
 		failures,
 	};
 });

@@ -3,7 +3,7 @@ id: shaders/builtins
 title: Built-in shader inputs
 status: experimental
 since: "0.1"
-summary: "Camera, time, object, instance and light values available to custom shaders, with the camera's and the object's matrices and ids."
+summary: "Camera, time, object and instance values available to custom shaders, with the camera's and the object's matrices and ids."
 ---
 
 # Built-in shader inputs

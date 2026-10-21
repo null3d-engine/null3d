@@ -11,6 +11,7 @@ export const COST_VARIABLES = [
 	'NULL3D_CONTACT_COST',
 	'NULL3D_FOG_COST',
 	'NULL3D_LOD_COST',
+	'NULL3D_RELIEF_COST',
 ] as const;
 
 /** True for a run that times frames: one on the real GPU, or one that a cost variable turns on. */

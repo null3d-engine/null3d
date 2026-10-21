@@ -10,6 +10,13 @@
 //   bun tools/build-wasm.ts --prebuilt      measure the WebAssembly files and the build tools' modules
 //                                           that an earlier build made, such as CI's build job, instead
 //                                           of building them again; combines with --check-size
+//   bun tools/build-wasm.ts --check-size --prebuilt --part <i>/<n>
+//                                           build the engine test page, measure only part i of n of its
+//                                           files, write those sizes to target/size-parts/, and judge
+//                                           nothing, so CI can run the n parts at the same time
+//   bun tools/build-wasm.ts --check-size --prebuilt --judge-parts <dir> [--base <ref>]
+//                                           read every part's sizes from <dir> in place of building the
+//                                           engine test page, then report and judge as --check-size does
 //   bun tools/build-wasm.ts --print-base    print the commit that --check-size compares with, and stop
 //     [--base <ref>]
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
@@ -25,8 +32,8 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The build tools' modules run in
-// Node and Bun, never in a page, so they have no size budget. Every mode first builds the shader modules
-// when they are missing or out of date, because git does not keep them.
+// Node and Bun, never in a page, so they have no size budget. Every mode that builds first builds the
+// shader modules when they are missing or out of date, because git does not keep them.
 //
 // Each file goes in place whole, by a rename from a temporary name (tools/lib/atomic-files.ts). A
 // dev server or a browser run of the same checkout can read the files while a build runs, as the
@@ -45,7 +52,13 @@
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
 // reuses them. Every mode that measures writes the sizes to target/size-report.json, so CI can keep
-// a commit's sizes as the base of later checks.
+// a commit's sizes as the base of later checks; a part writes only its own share, and the step that
+// judges the parts writes the whole record.
+//
+// Almost all of the check's time goes into compressing the engine test page's files at the highest
+// levels, one file after another, and the first-use shader files hold nearly all of their bytes. So
+// --part splits the files: each part builds the same page and measures a share of about equal
+// weight (tools/lib/size-report.ts).
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -58,10 +71,11 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	statSync,
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
 import { memoryImportLimits } from '../packages/engine/src/shared/wasm-limits';
@@ -96,6 +110,7 @@ import {
 	type BuiltFile,
 	budgetProblems,
 	COLUMNS,
+	COMBOS_BUDGET,
 	type CORE_BUILDS,
 	CORE_FILES,
 	type Column,
@@ -104,12 +119,23 @@ import {
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findFirstUseFiles,
+	isCombosPart,
 	isFirstUseShaderPart,
+	isSizePartFile,
 	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
+	measureFiles,
+	measureSizePart,
+	mergeSizeParts,
+	type PartSpec,
+	parsePartSpec,
+	partShare,
+	type ReportFile,
 	type SizeEntry,
+	type SizePart,
 	START_BUDGET,
+	sizePartFile,
 	totalSize,
 } from './lib/size-report';
 
@@ -119,6 +145,8 @@ const OUT_DIR = 'packages/engine/dist/wasm';
 const TOOLS_DIR = 'target/tools';
 /** Where each mode that measures writes the sizes, for a size check that uses this commit as its base. */
 const SIZE_RECORD = 'target/size-report.json';
+/** Where each part of a split size check writes its share of the sizes, one file per part. */
+const SIZE_PARTS_DIR = 'target/size-parts';
 /**
  * Where the size check keeps its bases: a worktree that it reuses, and each base commit's sizes. The
  * folder is hidden because `bun test` finds the tests of a git checkout in any other folder, even an
@@ -334,10 +362,21 @@ export interface BuildOptions {
 	printBase: boolean;
 	/** Build every file again, instead of copying a file that an earlier build cached. */
 	noCache: boolean;
+	/** Build the engine test page, measure only this part of its files and write their sizes. */
+	part?: PartSpec;
+	/** Read every part's sizes from this folder in place of building the engine test page. */
+	judgeParts?: string;
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
+
+/** The options that take a value, with what each needs. */
+const VALUE_OPTIONS: Readonly<Record<string, string>> = {
+	'--base': 'a commit',
+	'--part': 'a part as <i>/<n>',
+	'--judge-parts': 'the folder that holds the parts',
+};
 
 /** Reads the command line. It throws on an unknown option and on options that exclude each other. */
 export function parseOptions(args: readonly string[]): BuildOptions {
@@ -351,7 +390,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
+		const arg = args[i] as string;
 		if (arg === '--check-size') options.checkSize = true;
 		else if (arg === '--sizes-only') options.sizesOnly = true;
 		else if (arg === '--names') options.keepNames = true;
@@ -359,12 +398,15 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
 		else if (arg === '--no-cache') options.noCache = true;
-		else if (arg === '--base' && args[i + 1] && !args[i + 1]?.startsWith('-'))
-			options.base = args[++i];
-		else
-			throw new Error(
-				`${arg === '--base' ? '--base needs a commit' : `unknown option ${arg}`}. ${USAGE}`,
-			);
+		else if (Object.hasOwn(VALUE_OPTIONS, arg)) {
+			const value = args[i + 1];
+			if (!value || value.startsWith('-'))
+				throw new Error(`${arg} needs ${VALUE_OPTIONS[arg]}. ${USAGE}`);
+			i++;
+			if (arg === '--base') options.base = value;
+			else if (arg === '--part') options.part = parsePartSpec(value);
+			else options.judgeParts = value;
+		} else throw new Error(`unknown option ${arg}. ${USAGE}`);
 	}
 	if (options.keepNames && (options.checkSize || options.sizesOnly))
 		throw new Error('--names adds the function names to the core, so it cannot measure sizes');
@@ -389,6 +431,15 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		throw new Error(`--print-base builds nothing, so it takes only --base. ${USAGE}`);
 	if (options.base !== undefined && !options.checkSize && !options.printBase)
 		throw new Error(`--base names the commit that --check-size compares with. ${USAGE}`);
+	const split = options.part !== undefined || options.judgeParts !== undefined;
+	if (split && !(options.checkSize && options.prebuilt))
+		throw new Error(
+			`--part and --judge-parts split the size check of an earlier build, so each needs --check-size --prebuilt. ${USAGE}`,
+		);
+	if (options.part && options.judgeParts !== undefined)
+		throw new Error('--part measures one part and --judge-parts judges them all, in separate runs');
+	if (options.part && options.base !== undefined)
+		throw new Error('--part judges nothing, so it takes no --base: give --base to --judge-parts');
 	return options;
 }
 
@@ -787,7 +838,13 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
 	const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
-	const build = spawnSync('bunx', args, { cwd: root, encoding: 'utf8' });
+	// The report names every file that the build writes, so a build with many first-use shader
+	// files prints more than a capture of a megabyte holds; a smaller buffer kills the build.
+	const build = spawnSync('bunx', args, {
+		cwd: root,
+		encoding: 'utf8',
+		maxBuffer: 64 * 1024 * 1024,
+	});
 	if (build.status !== 0)
 		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
 	const assets = join(root, JS_BUILD_DIR, 'assets');
@@ -807,6 +864,75 @@ function buildEngineTestPage(): BuiltFile[] {
 		const table = /^(shader-paragraphs-[a-z0-9-]+)\.js$/.exec(file)?.[1];
 		return table ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${table}.js`] }] : [];
 	});
+}
+
+/**
+ * Builds the engine test page and lists the files that the size report measures, in the report's
+ * order: the engine's JavaScript by part, then the files besides code that load on first use.
+ */
+function engineTestPageFiles(): ReportFile[] {
+	const js = [...findEngineParts(buildEngineTestPage())].map(([part, file]) => ({
+		name: `js/${part}`,
+		built: file.file,
+		weight: file.text.length,
+		read: () => Buffer.from(file.text),
+	}));
+	const assets = join(root, JS_BUILD_DIR, 'assets');
+	const firstUse = [...findFirstUseFiles(readdirSync(assets))].map(([file, built]) => {
+		const path = join(assets, built);
+		return {
+			name: `first-use/${file}`,
+			built,
+			weight: statSync(path).size,
+			read: () => readFileSync(path),
+		};
+	});
+	return [...js, ...firstUse];
+}
+
+const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+/**
+ * Builds the engine test page, measures the share of its files that `spec` names, and writes those
+ * sizes to the part's file for the run that judges every part. It prints its progress, since the
+ * compression takes minutes, and judges nothing.
+ */
+async function writeSizePart(spec: PartSpec): Promise<void> {
+	const files = engineTestPageFiles();
+	const share = partShare(files, spec);
+	const total = files.reduce((sum, file) => sum + (share.has(file.name) ? file.weight : 0), 0);
+	console.log(
+		`\nmeasuring part ${spec.index} of ${spec.count}: ${share.size} of ${files.length} files, ${mb(total)}`,
+	);
+	const started = performance.now();
+	let done = 0;
+	let tenths = 0;
+	const record = await measureSizePart(files, spec, ({ weight }) => {
+		done += weight;
+		const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
+		if (reached <= tenths) return;
+		tenths = reached;
+		const seconds = Math.round((performance.now() - started) / 1000);
+		console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
+	});
+	const path = join(root, SIZE_PARTS_DIR, sizePartFile(spec));
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(record, null, '\t')}\n`);
+	console.log(`\nwrote ${relative(root, path)}`);
+}
+
+/** The sizes of the engine test page's files, merged from every part's file in `dir`. */
+function readSizeParts(dir: string): Map<string, SizeEntry> {
+	const folder = resolve(root, dir);
+	const names = existsSync(folder) ? readdirSync(folder).filter(isSizePartFile).sort() : [];
+	if (names.length === 0)
+		throw new Error(
+			`${dir} holds no part's sizes: each --part <i>/<n> writes ${SIZE_PARTS_DIR}/part-<i>-of-<n>.json`,
+		);
+	console.log(`\nmerging the sizes of ${names.length} parts from ${dir}`);
+	return mergeSizeParts(
+		names.map((name) => JSON.parse(readFileSync(join(folder, name), 'utf8')) as SizePart),
+	);
 }
 
 const kb = (n: number) => `${(n / 1024).toFixed(1)} KB`;
@@ -991,7 +1117,8 @@ async function main(): Promise<void> {
 				process.exit(signal === 'SIGINT' ? 130 : 143);
 			});
 	}
-	ensureShaderModules(root);
+	// The step that judges the parts builds no page, so it reads no shader module.
+	if (options.judgeParts === undefined) ensureShaderModules(root);
 	if (options.prebuilt) checkPrebuilt();
 	else {
 		const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8');
@@ -1005,35 +1132,39 @@ async function main(): Promise<void> {
 		if (!options.sizesOnly) buildToolModules(tools, noCache);
 	}
 	if (options.pagesOnly) return;
+	if (options.part) return writeSizePart(options.part);
 
+	// The engine test page's sizes come from every part's file when the check runs split, and from
+	// a build here otherwise: the same sizes in the same order either way.
+	const page =
+		options.judgeParts === undefined
+			? await measureFiles(engineTestPageFiles())
+			: readSizeParts(options.judgeParts);
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
 		for (const file of CORE_FILES)
 			sizes[`${variant.name}/${file}`] = measure(
 				readFileSync(join(root, OUT_DIR, variant.name, file)),
 			);
-	const parts = new Map(
-		[...findEngineParts(buildEngineTestPage())].map(([part, file]) => [
-			part,
-			measure(Buffer.from(file.text)),
-		]),
-	);
+	const parts = new Map<string, SizeEntry>();
+	const firstUseFiles = new Map<string, SizeEntry>();
+	for (const [name, size] of page)
+		if (name.startsWith('first-use/')) firstUseFiles.set(name, size);
+		else parts.set(name.slice('js/'.length), size);
 	for (const [part, size] of parts) sizes[`js/${part}`] = size;
 	const downloads = downloadSizes(parts);
-	const assets = join(root, JS_BUILD_DIR, 'assets');
-	const firstUseFiles = new Map(
-		[...findFirstUseFiles(readdirSync(assets))].map(([file, built]) => [
-			`first-use/${file}`,
-			measure(readFileSync(join(assets, built))),
-		]),
-	);
 
-	const later = new Map(
-		LATER_PARTS.flatMap(({ name }) => {
+	const later = new Map([
+		...LATER_PARTS.flatMap(({ name }) => {
 			const size = parts.get(name);
 			return size ? [[name, size] as const] : [];
 		}),
-	);
+		// The loader table of each feature family's combinations. The build names each after its
+		// family, so the report learns them from the build rather than a fixed list (D-190).
+		...[...parts]
+			.filter(([name]) => isCombosPart(name))
+			.map(([name, size]) => [name, size] as const),
+	]);
 	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? { brotli: WASM_BUDGET_BYTES } : undefined);
@@ -1043,9 +1174,10 @@ async function main(): Promise<void> {
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET);
 	console.log(
-		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
+		`\nthe engine's JavaScript that loads after the start, on a feature's first use, at the first call that reads it, or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
 	);
-	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
+	for (const [part, size] of later)
+		printSize(`js/${part}`, size, isCombosPart(part) ? COMBOS_BUDGET : LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
 		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,

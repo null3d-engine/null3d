@@ -96,3 +96,7 @@ The owner ruled on 15 October 2026 ([D-173](D-173-addon-hooks.md), ruling 5) tha
 - The lens kit uses the core's sharpening (M3-A10), grading (M3-A8) and vignette, and adds none of its own.
 - Weather says which feature makes each part of the rain: its streaks from M3-A5's draws, and splashes and steam from the particles add-on.
 - Car paint's flakes use glints ([D-179](D-179-technique-rulings-2026-10-15.md), ruling 17).
+
+## Addendum, 19 October 2026: level of detail comes first
+
+The owner ruled on 19 October 2026 that M3's level-of-detail work comes before the tasks of this record, because it also corrects existing guidance. The work is M3-L1 to M3-L4, in [D-137](D-137-lod-groups.md)'s addendum of that day. This record's tasks follow it, in their own order.

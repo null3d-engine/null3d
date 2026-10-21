@@ -108,11 +108,6 @@ const HALVES: [u16; 2 * (SIZE * SIZE) as usize] = [
 /// Bytes that [`upload`] copies into a frame's upload arena: the table as `RGBA32_FLOAT` texels.
 pub const BYTES: usize = 16 * (SIZE * SIZE) as usize;
 
-/// The table's entries as half floats, scale then bias, row after row.
-pub(crate) fn entries() -> impl Iterator<Item = [u16; 2]> {
-    HALVES.as_chunks::<2>().0.iter().copied()
-}
-
 /// A half float's value. The table holds no infinities and no NaNs.
 pub(crate) const fn half_to_f32(half: u16) -> f32 {
     let sign = ((half as u32) & 0x8000) << 16;
@@ -126,9 +121,9 @@ pub(crate) const fn half_to_f32(half: u16) -> f32 {
     f32::from_bits(sign | ((exponent + 127 - 15) << 23) | (fraction << 13))
 }
 
-/// Records the upload of the table's texels into the first rows of an `RGBA32_FLOAT` texture,
-/// from texel `column` across, as WebGL2 keeps it beside the material table's rows. WebGPU reads
-/// it from the light tables instead ([`crate::light_tables`]).
+/// Records the upload of the table's texels into the first rows of an `RGBA32_FLOAT` texture from
+/// texel `column` across: beside the material table's rows on WebGL2, and beside the materials'
+/// custom values on WebGPU.
 pub(crate) fn upload(
     list: &mut DrawList,
     arena: &mut UploadArena,

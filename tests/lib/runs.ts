@@ -104,26 +104,43 @@ const HELD_MEMORY_FAILURE =
 	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
 
 /**
- * Whether a page's failure in a browser that draws with WebKit earns one more run in a new runner
- * page. WebKit keeps memory that pages before it dropped, in a way that a new runner page does not
- * inherit (D-92). Safari is the WebKit browser on a Mac. Every browser on iOS draws with WebKit, so
- * a phone or tablet that reports iOS counts whatever the browser's own name says.
+ * A worker that did not start because its script, or a module it imports, did not load (E1405). In
+ * CI's Firefox on Linux, a worker's load failed now and then on pages that load the same files
+ * every time, so a new runner page sorts a passing fault from a page that cannot load its files.
+ */
+const MODULE_LOAD_FAILURE =
+	/\bE1405: the (sketch|render) worker did not start: (its script or a file it imports did not load|error loading dynamically imported module)/;
+
+/**
+ * Whether a page's failure earns one more run in a new runner page. A browser that draws with WebKit
+ * keeps memory that pages before it dropped, in a way that a new runner page does not inherit
+ * (D-92). Safari is the WebKit browser on a Mac. Every browser on iOS draws with WebKit, so a phone
+ * or tablet that reports iOS counts whatever the browser's own name says. In any browser, a worker
+ * whose files did not load runs once more too, and fails only if it fails again.
  */
 export function rerunsInNewTab(
 	browser: string,
 	verdict: readonly string[],
 	device: Pick<DeviceFacts, 'userAgent' | 'maxTouchPoints'> = {},
 ): boolean {
+	if (verdict.some((problem) => MODULE_LOAD_FAILURE.test(problem))) return true;
 	return (
 		(browser === 'Safari' || webKitOnIos(device)) &&
 		verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem))
 	);
 }
 
-/** The address of the sketch module that a failure names as not loaded (E1410), if any. */
+/**
+ * The address of the module that a failure names as not loaded, if any: a sketch module (E1410), or
+ * a module that a worker could not import (E1405).
+ */
 export function unloadedModule(verdict: readonly string[]): string | undefined {
 	for (const problem of verdict) {
-		const url = /\bE1410: the sketch module (\S+) did not load/.exec(problem)?.[1];
+		const url =
+			/\bE1410: the sketch module (\S+) did not load/.exec(problem)?.[1] ??
+			/\bE1405: the \w+ worker did not start: error loading dynamically imported module: (\S+?)\.?(?:\s|$)/.exec(
+				problem,
+			)?.[1];
 		if (url) return url;
 	}
 	return undefined;

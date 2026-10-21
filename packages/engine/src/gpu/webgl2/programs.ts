@@ -14,6 +14,7 @@
 
 import {
 	PERMUTATION_PREPASS,
+	TEMPLATE_ACCUMULATE,
 	TEMPLATE_AO,
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
@@ -45,10 +46,16 @@ import {
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOTION,
+	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_PARTICLE,
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PICK,
+	TEMPLATE_PICK_MAPS,
+	TEMPLATE_PICK_RESOLVE,
+	TEMPLATE_PICK_TEXTURE_MAPS,
 	TEMPLATE_PROBE_GRID,
 	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
@@ -59,6 +66,10 @@ import {
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_SSR_REDUCE,
 	TEMPLATE_SSR_TRACE,
+	TEMPLATE_SUBSURFACE,
+	TEMPLATE_SUBSURFACE_BLUR,
+	TEMPLATE_SUBSURFACE_COMPOSITE,
+	TEMPLATE_SUBSURFACE_MAPS,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
 	TEMPLATE_WEIGHTED_DEPTH,
@@ -70,6 +81,7 @@ import {
 	type DeviceShaders,
 	type GlslProgram,
 	type GlslStage,
+	MOTION_VIEW_SHADER,
 	type ShaderVariants,
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
@@ -95,13 +107,14 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * first, with sixteen. Group 1 has six slots (the backgrounds' groups, of which the physical sky's
  * holds the most: its values, three tables and two samplers), group 2 ten (the instance textures,
  * then the two textures that skinned meshes read, the two that morphed meshes read, and the two
- * textures of the row values of instance batches) and group 3 the last sixteen: the eight map
+ * textures of the row values of instance batches) and group 3 the last eighteen: the eight map
  * textures, then their samplers, of which the standard material's shared map units take the first
- * six of each. Group 4 holds the scene depth that decals read. Slots are no texture units: each
- * program numbers the textures it reads from unit 0, so the groups' bindings never run out of
- * units. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
+ * six of each, then the displacement map's texture and sampler. Group 4 holds the scene depth that
+ * decals read. Slots are no texture units: each program numbers the textures it reads from unit 0,
+ * so the groups' bindings never run out of units. The groups' uniform blocks stay below the fewest
+ * binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 16, 22, 32, 48);
+const GROUP_BASES = Uint8Array.of(0, 16, 22, 32, 50);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -246,6 +259,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);
 	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = mesh(shaders.standard_maps);
+	templates[TEMPLATE_SUBSURFACE] = mesh(shaders.subsurface);
+	templates[TEMPLATE_SUBSURFACE_MAPS] = mesh(shaders.subsurface_maps);
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
@@ -253,6 +268,11 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_CUTOUT] = { shader: shaders.shadow_cutout, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
+	templates[TEMPLATE_MOTION] = { shader: shaders.motion, pipeline: 'main' };
+	templates[TEMPLATE_PICK] = { shader: shaders.pick, pipeline: 'main' };
+	templates[TEMPLATE_PICK_MAPS] = { shader: shaders.pick_maps, pipeline: 'main' };
+	templates[TEMPLATE_PICK_TEXTURE_MAPS] = { shader: shaders.pick_texture_maps, pipeline: 'main' };
+	templates[TEMPLATE_PICK_RESOLVE] = { shader: shaders.pick_resolve, pipeline: 'main' };
 	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
@@ -294,6 +314,10 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
 	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	templates[TEMPLATE_ACCUMULATE] = { shader: shaders.accumulate, pipeline: 'main' };
+	// The subsurface blur's down step reads the same one-sample copy of the depth.
+	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
+	templates[TEMPLATE_SUBSURFACE_COMPOSITE] = { shader: shaders.subsurface_blur, pipeline: 'down' };
 	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
 	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
@@ -313,6 +337,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 		};
 		// The debug views draw meshes in place of every material, so they draw the prepass too.
 		templates[TEMPLATE_DEBUG_VIEW] = mesh(DEBUG_VIEW_SHADER);
+		templates[TEMPLATE_MOTION_VIEW] = { shader: MOTION_VIEW_SHADER, pipeline: 'main' };
 	}
 	return templates;
 }

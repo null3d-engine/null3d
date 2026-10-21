@@ -1,0 +1,1445 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>F10 upscaler probe: two-step output at render scale 0.5</title>
+		<style>
+			html, body { margin: 0; background: #101214; color: #c8ccd0; font: 12px/1.45 ui-monospace, monospace; }
+			canvas { display: block; max-width: 100vw; max-height: 55vh; border-bottom: 1px solid #333; }
+			pre { margin: 12px; white-space: pre-wrap; }
+		</style>
+	</head>
+	<body>
+		<canvas id="canvas"></canvas>
+		<pre id="log">running</pre>
+		<script type="module">
+			// Prototype P1 of D-167: the second output step at render scale 0.5, four upscalers
+			// measured beside today's one-pass output. Raw WebGL2, no engine, so the same page runs on
+			// the Mac, the iPad and the phones with WebGL2 forced.
+			//
+			//   ?size=1920x1080   canvas size (default 1920x1080)
+			//   ?scale=0.5        render scale (default 0.5)
+			//   ?mip=0|1          scene texture mip bias: 0 none, 1 one level sharper (default 0)
+			//   ?fxaa=0|1         FXAA in the first step (default 1)
+			//   ?samples=9        timer queries for each candidate (default 9)
+			//   ?repeats=40       rounds inside each query (default 40)
+			//   ?show=gsr         image drawn on the canvas: reference, today, bilinear, nearest, gsr
+			//                     or easuRcas (default gsr)
+			//   ?gsrSharp=2       GSR 1's edge sharpness (default 2, its reference's default)
+			//   ?gsrEdge=0.031    GSR 1's edge threshold (default 8/255)
+			//
+			// The reference is the scene at the whole canvas, with the same output transform, FXAA
+			// and dither that the final pass draws at scale 1. The low-res scene is drawn at the
+			// render size into 16-bit float color, then the first step runs the output transform and
+			// FXAA at that size into an 8-bit display-color target. Each candidate draws that target
+			// at the canvas size: bilinear (today's second step), nearest (the scale-0.5 baseline),
+			// GSR 1, and FSR 1's EASU followed by RCAS. Today's one-pass output draws the 16-bit
+			// float color at the canvas size with the old four-tap loop, which runs the output
+			// transform on every tap.
+			//
+			// For each candidate the page reports the cost of its whole output sequence and how close
+			// its image is to the scale-1 reference: mean absolute error, PSNR, SSIM over 8 by 8 luma
+			// windows, and the mean luma gradient against the reference's. The dither matches at
+			// every canvas pixel, so it cancels in the comparison.
+			//
+			// Timing runs a candidate's whole output sequence inside one GPU timer query. Each round
+			// writes a different target of a pair, so the render pass ends and its tiles leave tile
+			// memory as a frame's target switch does. Every candidate takes a turn in every round, in
+			// a rotated order, so a drift of the GPU clock or of the load reaches all of them alike.
+			// Without the timer extension, the page times with gl.finish and says so.
+			//
+			// Qualcomm's GSR 1 is adapted from sgsr/v1/include/glsl/sgsr1_shader_mobile.frag
+			// (BSD-3-Clause), with textureGather replaced by four texel fetches because WebGL2
+			// exposes GLSL ES 3.00. FSR 1's EASU and RCAS follow ffx-fsr/ffx_fsr1.h (MIT), with the
+			// same replacement and the sharpness at FidelityFX's default of 0.2 stops. RCAS runs
+			// with its denoise step on. The output transform is the engine's default ACES curve.
+			//
+			// Results print here and land on window.__probe. The driver run.ts serves the page,
+			// opens it in Chrome on the real GPU, and writes its JSON beside this file.
+
+			const params = new URLSearchParams(location.search);
+			const parseSize = (text) => {
+				const match = /^(\d+)x(\d+)$/.exec(text ?? '');
+				if (!match) throw new Error(`size must be WIDTHxHEIGHT, not ${text}`);
+				return [Number(match[1]), Number(match[2])];
+			};
+			const [WIDTH, HEIGHT] = parseSize(params.get('size') ?? '1920x1080');
+			const SCALE = Number(params.get('scale') ?? '0.5');
+			const RENDER_W = Math.max(1, Math.round(WIDTH * SCALE));
+			const RENDER_H = Math.max(1, Math.round(HEIGHT * SCALE));
+			const MIP_BIAS = params.get('mip') === '1';
+			const FXAA = params.get('fxaa') !== '0';
+			const SAMPLES = Math.max(3, Number(params.get('samples') ?? '9'));
+			const REPEATS = Math.max(1, Number(params.get('repeats') ?? '40'));
+			const SHOW = params.get('show') ?? 'gsr';
+			const GSR_SHARPNESS = Number(params.get('gsrSharp') ?? '2');
+			const GSR_EDGE = Number(params.get('gsrEdge') ?? String(8 / 255));
+
+			const out = {
+				config: {
+					canvas: [WIDTH, HEIGHT],
+					render: [RENDER_W, RENDER_H],
+					scale: SCALE,
+					mipBias: MIP_BIAS ? -1 : 0,
+					fxaa: FXAA,
+					samples: SAMPLES,
+					repeats: REPEATS,
+					gsrSharpness: GSR_SHARPNESS,
+					gsrEdge: GSR_EDGE,
+				},
+				gpu: null,
+				timer: null,
+				timings: {},
+				pipelines: {},
+				metrics: {},
+				log: [],
+				done: false,
+			};
+			window.__probe = out;
+			const logEl = document.getElementById('log');
+			const lines = out.log;
+			const log = (line) => {
+				lines.push(line);
+				logEl.textContent = lines.join('\n');
+				console.log(line);
+			};
+			const median = (values) => {
+				const sorted = [...values].sort((a, b) => a - b);
+				return sorted.length ? sorted[Math.floor(sorted.length / 2)] : Number.NaN;
+			};
+
+			const canvas = document.getElementById('canvas');
+			canvas.width = WIDTH;
+			canvas.height = HEIGHT;
+			const gl = canvas.getContext('webgl2', {
+				alpha: false,
+				antialias: false,
+				depth: false,
+				preserveDrawingBuffer: false,
+				powerPreference: 'high-performance',
+			});
+			if (!gl) throw new Error('this device has no WebGL2');
+			const colorFloat = gl.getExtension('EXT_color_buffer_float');
+			const colorHalf = gl.getExtension('EXT_color_buffer_half_float');
+			if (!colorFloat && !colorHalf) throw new Error('no renderable 16-bit float color');
+			const timerExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+			const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+			out.gpu = {
+				renderer: gl.getParameter(gl.RENDERER),
+				vendor: gl.getParameter(gl.VENDOR),
+				version: gl.getParameter(gl.VERSION),
+				shadingLanguage: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+				unmaskedRenderer: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : null,
+				unmaskedVendor: debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : null,
+				timer: timerExt !== null,
+				floatTarget: colorFloat !== null,
+			};
+			out.timer = timerExt ? 'EXT_disjoint_timer_query_webgl2' : 'wall clock with gl.finish';
+			log(`gpu ${out.gpu.unmaskedRenderer ?? out.gpu.renderer}`);
+			log(`canvas ${WIDTH}x${HEIGHT}, render ${RENDER_W}x${RENDER_H}, mip bias ${out.config.mipBias}, fxaa ${FXAA}`);
+			log(`timer ${out.timer}`);
+
+			// ---------------------------------------------------------------- GLSL
+
+			const FULLSCREEN_VS = `#version 300 es
+precision highp float;
+const vec2 P[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+void main() { gl_Position = vec4(P[gl_VertexID], 0.0, 1.0); }
+`;
+
+			const COMMON_FS = `
+precision highp float;
+const vec3 LUMINANCE = vec3(0.2126, 0.7152, 0.0722);
+const mat3 ACES_INPUT = mat3(
+	0.59719, 0.07600, 0.02840,
+	0.35458, 0.90834, 0.13383,
+	0.04823, 0.01566, 0.83777);
+const mat3 ACES_OUTPUT = mat3(
+	1.60475, -0.10208, -0.00327,
+	-0.53108, 1.10813, -0.07276,
+	-0.07367, -0.00605, 1.07602);
+vec3 rrtAndOdtFit(vec3 v) {
+	vec3 a = v * (v + 0.0245786) - 0.000090537;
+	vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+	return a / b;
+}
+vec3 toneMap(vec3 c) {
+	return clamp(ACES_OUTPUT * rrtAndOdtFit(ACES_INPUT * (c / 0.6)), 0.0, 1.0);
+}
+vec3 linearToSrgb(vec3 c) {
+	vec3 low = c * 12.92;
+	vec3 high = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+	return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+uint pcg(uint v) {
+	uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+float dither(vec2 pixel) {
+	uint h = pcg(uint(pixel.x) + pcg(uint(pixel.y)));
+	return float((h & 0xffffu) + (h >> 16u)) / 65535.0 - 1.0;
+}
+`;
+
+			const SCENE_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUv;
+uniform mat4 uViewProjection;
+uniform vec3 uEye;
+out vec3 vNormal;
+out vec3 vWorld;
+out vec2 vUv;
+void main() {
+	vNormal = aNormal;
+	vWorld = aPosition;
+	vUv = aUv;
+	gl_Position = uViewProjection * vec4(aPosition, 1.0);
+}
+`;
+
+			const SCENE_FS = `#version 300 es
+precision highp float;
+in vec3 vNormal;
+in vec3 vWorld;
+in vec2 vUv;
+uniform sampler2D uTexture;
+uniform float uBias;
+uniform vec3 uEye;
+uniform vec3 uLight;
+out vec4 outColor;
+void main() {
+	vec3 n = normalize(vNormal);
+	vec3 l = normalize(uLight);
+	vec3 v = normalize(uEye - vWorld);
+	vec3 h = normalize(l + v);
+	vec3 albedo = texture(uTexture, vUv, uBias).rgb;
+	float diffuse = max(dot(n, l), 0.0);
+	float specular = pow(max(dot(n, h), 0.0), 64.0) * 0.07;
+	float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.08;
+	vec3 color = albedo * (0.15 + 0.95 * diffuse) + vec3(1.0) * specular + albedo * rim;
+	outColor = vec4(color, 1.0);
+}
+`;
+
+			// The first step: FXAA on high dynamic range color, squeezed as the engine squeezes it,
+			// then the output transform once for each render pixel. The dither waits for step two.
+			const RESOLVE_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uScene;
+uniform ivec2 uRender;
+uniform float uDither;
+out vec4 outColor;
+const float EDGE_THRESHOLD = 0.125;
+const float EDGE_THRESHOLD_MIN = 0.0625;
+const float REDUCE_MIN = 1.0 / 128.0;
+const float REDUCE_MUL = 1.0 / 8.0;
+const float SPAN_MAX = 8.0;
+vec4 squeeze(vec4 c) {
+	return vec4(c.rgb / (1.0 + dot(c.rgb, LUMINANCE)), c.a);
+}
+vec4 unsqueeze(vec4 c) {
+	float squeezed = min(dot(c.rgb, LUMINANCE), 0.999);
+	return vec4(c.rgb / (1.0 - squeezed), c.a);
+}
+vec4 texelAt(ivec2 p) {
+	p = clamp(p, ivec2(0), uRender - 1);
+	return squeeze(texelFetch(uScene, p, 0));
+}
+vec4 tap(vec2 point) {
+	vec2 corner = point - 0.5;
+	ivec2 base = ivec2(floor(corner));
+	vec2 f = fract(corner);
+	vec4 top = mix(texelAt(base), texelAt(base + ivec2(1, 0)), f.x);
+	vec4 bottom = mix(texelAt(base + ivec2(0, 1)), texelAt(base + ivec2(1, 1)), f.x);
+	return mix(top, bottom, f.y);
+}
+float squeezedLuma(vec4 c) {
+	return sqrt(dot(c.rgb, LUMINANCE));
+}
+vec4 pixelColor(vec2 position) {
+	ivec2 pixel = ivec2(position);
+	vec4 texel = texelFetch(uScene, clamp(pixel, ivec2(0), uRender - 1), 0);
+	float m = squeezedLuma(squeeze(texel));
+	float nw = squeezedLuma(texelAt(pixel + ivec2(-1, -1)));
+	float ne = squeezedLuma(texelAt(pixel + ivec2(1, -1)));
+	float sw = squeezedLuma(texelAt(pixel + ivec2(-1, 1)));
+	float se = squeezedLuma(texelAt(pixel + ivec2(1, 1)));
+	float lowest = min(m, min(min(nw, ne), min(sw, se)));
+	float highest = max(m, max(max(nw, ne), max(sw, se)));
+	if (highest - lowest < max(EDGE_THRESHOLD_MIN, highest * EDGE_THRESHOLD)) return texel;
+	vec2 along = vec2((sw + se) - (nw + ne), (nw + sw) - (ne + se));
+	float reduce = max((nw + ne + sw + se) * (0.25 * REDUCE_MUL), REDUCE_MIN);
+	float scale = 1.0 / (min(abs(along.x), abs(along.y)) + reduce);
+	vec2 span = clamp(along * scale, vec2(-SPAN_MAX), vec2(SPAN_MAX));
+	vec4 inner = 0.5 * (tap(position - span / 6.0) + tap(position + span / 6.0));
+	vec4 outer = 0.5 * inner + 0.25 * (tap(position - span * 0.5) + tap(position + span * 0.5));
+	float outerLuma = squeezedLuma(outer);
+	return unsqueeze((outerLuma < lowest || outerLuma > highest) ? inner : outer);
+}
+vec3 display(vec3 color) {
+	return clamp(linearToSrgb(toneMap(color)), 0.0, 1.0);
+}
+void main() {
+	vec4 hdr;
+#if FXAA
+	hdr = pixelColor(gl_FragCoord.xy);
+#else
+	hdr = texelFetch(uScene, clamp(ivec2(gl_FragCoord.xy), ivec2(0), uRender - 1), 0);
+#endif
+	vec3 color = display(hdr.rgb);
+	if (uDither > 0.5) color = clamp(color + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0);
+	outColor = vec4(color, 1.0);
+}
+`;
+
+			// Today's output at a render scale below 1: the four-tap loop runs the output transform
+			// on each tap at the canvas size, and dithers. It also draws the scale-1 reference.
+			const TODAY_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uScene;
+uniform ivec2 uSource;
+uniform vec2 uOutput;
+out vec4 outColor;
+vec3 display(vec3 color) {
+	return clamp(linearToSrgb(toneMap(color)), 0.0, 1.0);
+}
+void main() {
+	vec2 uv = gl_FragCoord.xy / uOutput;
+	vec2 place = clamp(uv * vec2(uSource) - 0.5, vec2(0.0), vec2(uSource) - 1.0);
+	ivec2 first = ivec2(floor(place));
+	vec2 share = place - vec2(first);
+	vec3 color = vec3(0.0);
+	for (int i = 0; i < 4; i++) {
+		vec2 corner = vec2(float(i & 1), float(i >> 1));
+		vec2 w = mix(1.0 - share, share, corner);
+		ivec2 p = min(first + ivec2(corner), uSource - 1);
+		color += w.x * w.y * display(texelFetch(uScene, p, 0).rgb);
+	}
+	color = clamp(color + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0);
+	outColor = vec4(color, 1.0);
+}
+`;
+
+			const BILINEAR_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform vec2 uOutput;
+out vec4 outColor;
+void main() {
+	vec2 uv = gl_FragCoord.xy / uOutput;
+	vec3 color = texture(uSource, uv).rgb;
+	outColor = vec4(clamp(color + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0), 1.0);
+}
+`;
+
+			const NEAREST_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform ivec2 uSourceSize;
+uniform vec2 uOutput;
+out vec4 outColor;
+void main() {
+	vec2 uv = gl_FragCoord.xy / uOutput;
+	ivec2 p = clamp(ivec2(floor(uv * vec2(uSourceSize))), ivec2(0), uSourceSize - 1);
+	vec3 color = texelFetch(uSource, p, 0).rgb;
+	outColor = vec4(clamp(color + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0), 1.0);
+}
+`;
+
+			// Snapdragon GSR 1, spatial mode. The edge vote gates the 12-tap path, so a flat area
+			// keeps a bilinear read. The taps form a 4 by 4 block without its corners around the
+			// source position; the green channel votes and sets the weights, as Qualcomm's shader
+			// does in its RGBA mode. A negative weight result is clamped to the four nearest texels.
+			const GSR_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform ivec2 uSourceSize;
+uniform vec2 uOutput;
+uniform float uEdgeThreshold;
+uniform float uSharpness;
+out vec4 outColor;
+const float TAP = 0.55;
+const float DELTA_LIMIT = 23.0 / 255.0;
+float fastLanczos2(float x) {
+	float wA = x - 4.0;
+	float wB = x * wA - wA;
+	wA *= wA;
+	return wB * wA;
+}
+vec3 texel(ivec2 p) {
+	p = clamp(p, ivec2(0), uSourceSize - 1);
+	return texelFetch(uSource, p, 0).rgb;
+}
+vec2 weightY(vec2 d, float c, float std) {
+	float x = dot(d, d) * TAP + clamp(abs(c) * std, 0.0, 1.0);
+	float w = fastLanczos2(x);
+	return vec2(w, w * c);
+}
+void main() {
+	vec2 uv = gl_FragCoord.xy / uOutput;
+	vec2 position = uv * vec2(uSourceSize) - 0.5;
+	ivec2 base = ivec2(floor(position));
+	vec2 fraction = position - vec2(base);
+	vec3 center = texture(uSource, uv).rgb;
+	vec3 t00 = texel(base);
+	vec3 t10 = texel(base + ivec2(1, 0));
+	vec3 t01 = texel(base + ivec2(0, 1));
+	vec3 t11 = texel(base + ivec2(1, 1));
+	float edgeVote = abs(t10.g - t00.g) + abs(center.g - t00.g) + abs(center.g - t10.g);
+	vec3 result = center;
+	if (edgeVote > uEdgeThreshold) {
+		float mean = (t00.g + t10.g + t01.g + t11.g) * 0.25;
+		float c00 = t00.g - mean;
+		float c10 = t10.g - mean;
+		float c01 = t01.g - mean;
+		float c11 = t11.g - mean;
+		vec3 taps[12] = vec3[12](
+			texel(base + ivec2(0, -1)), texel(base + ivec2(1, -1)),
+			texel(base + ivec2(-1, 0)), t00, t10, texel(base + ivec2(2, 0)),
+			texel(base + ivec2(-1, 1)), t01, t11, texel(base + ivec2(2, 1)),
+			texel(base + ivec2(0, 2)), texel(base + ivec2(1, 2)));
+		float c[12] = float[12](
+			taps[0].g - mean, taps[1].g - mean,
+			taps[2].g - mean, c00, c10, taps[5].g - mean,
+			taps[6].g - mean, c01, c11, taps[9].g - mean,
+			taps[10].g - mean, taps[11].g - mean);
+		vec2 offsets[12] = vec2[12](
+			vec2(0.0, -1.0), vec2(1.0, -1.0),
+			vec2(-1.0, 0.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(2.0, 0.0),
+			vec2(-1.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(2.0, 1.0),
+			vec2(0.0, 2.0), vec2(1.0, 2.0));
+		float sum = 0.0;
+		for (int i = 0; i < 12; i++) sum += abs(c[i]);
+		float std = 2.181818 / max(sum, 0.0001);
+		vec2 weighted = vec2(0.0);
+		for (int i = 0; i < 12; i++) weighted += weightY(offsets[i] - fraction, c[i], std);
+		// The kernel's negative lobes can make the weight sum negative, and the average is still
+		// the ratio; only an exactly zero sum needs a guard.
+		float weightSum = abs(weighted.x) < 1e-6 ? 1e-6 : weighted.x;
+		float finalY = weighted.y / weightSum;
+		// The bounds and the average live in the same mean-subtracted space.
+		float maxY = max(max(c00, c10), max(c01, c11));
+		float minY = min(min(c00, c10), min(c01, c11));
+		finalY = clamp(uSharpness * finalY, minY, maxY);
+		float delta = clamp(finalY - (center.g - mean), -DELTA_LIMIT, DELTA_LIMIT);
+		result = clamp(center + vec3(delta), 0.0, 1.0);
+	}
+	outColor = vec4(clamp(result + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0), 1.0);
+}
+`;
+
+			// The same shader with every tap named and the two loops written out. Some mobile
+			// drivers stall while linking the looped form, which indexes vectors and arrays inside
+			// a loop; the unrolled form gives the compiler the same work without those indexes.
+			const GSR_FS_UNROLLED = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform ivec2 uSourceSize;
+uniform vec2 uOutput;
+uniform float uEdgeThreshold;
+uniform float uSharpness;
+out vec4 outColor;
+const float TAP = 0.55;
+const float DELTA_LIMIT = 23.0 / 255.0;
+float fastLanczos2(float x) {
+	float wA = x - 4.0;
+	float wB = x * wA - wA;
+	wA *= wA;
+	return wB * wA;
+}
+vec3 texel(ivec2 p) {
+	p = clamp(p, ivec2(0), uSourceSize - 1);
+	return texelFetch(uSource, p, 0).rgb;
+}
+vec2 weightY(vec2 d, float c, float std) {
+	float x = dot(d, d) * TAP + clamp(abs(c) * std, 0.0, 1.0);
+	float w = fastLanczos2(x);
+	return vec2(w, w * c);
+}
+void main() {
+	vec2 uv = gl_FragCoord.xy / uOutput;
+	vec2 position = uv * vec2(uSourceSize) - 0.5;
+	ivec2 base = ivec2(floor(position));
+	vec2 fraction = position - vec2(base);
+	vec3 center = texture(uSource, uv).rgb;
+	vec3 t00 = texel(base);
+	vec3 t10 = texel(base + ivec2(1, 0));
+	vec3 t01 = texel(base + ivec2(0, 1));
+	vec3 t11 = texel(base + ivec2(1, 1));
+	float edgeVote = abs(t10.g - t00.g) + abs(center.g - t00.g) + abs(center.g - t10.g);
+	vec3 result = center;
+	if (edgeVote > uEdgeThreshold) {
+		float mean = (t00.g + t10.g + t01.g + t11.g) * 0.25;
+		float c00 = t00.g - mean;
+		float c10 = t10.g - mean;
+		float c01 = t01.g - mean;
+		float c11 = t11.g - mean;
+		float k0 = texel(base + ivec2(0, -1)).g - mean;
+		float k1 = texel(base + ivec2(1, -1)).g - mean;
+		float k2 = texel(base + ivec2(-1, 0)).g - mean;
+		float k3 = c00;
+		float k4 = c10;
+		float k5 = texel(base + ivec2(2, 0)).g - mean;
+		float k6 = texel(base + ivec2(-1, 1)).g - mean;
+		float k7 = c01;
+		float k8 = c11;
+		float k9 = texel(base + ivec2(2, 1)).g - mean;
+		float k10 = texel(base + ivec2(0, 2)).g - mean;
+		float k11 = texel(base + ivec2(1, 2)).g - mean;
+		float sum = abs(k0) + abs(k1) + abs(k2) + abs(k3) + abs(k4) + abs(k5)
+			+ abs(k6) + abs(k7) + abs(k8) + abs(k9) + abs(k10) + abs(k11);
+		float std = 2.181818 / max(sum, 0.0001);
+		vec2 weighted =
+			weightY(vec2(0.0, -1.0) - fraction, k0, std) +
+			weightY(vec2(1.0, -1.0) - fraction, k1, std) +
+			weightY(vec2(-1.0, 0.0) - fraction, k2, std) +
+			weightY(vec2(0.0, 0.0) - fraction, k3, std) +
+			weightY(vec2(1.0, 0.0) - fraction, k4, std) +
+			weightY(vec2(2.0, 0.0) - fraction, k5, std) +
+			weightY(vec2(-1.0, 1.0) - fraction, k6, std) +
+			weightY(vec2(0.0, 1.0) - fraction, k7, std) +
+			weightY(vec2(1.0, 1.0) - fraction, k8, std) +
+			weightY(vec2(2.0, 1.0) - fraction, k9, std) +
+			weightY(vec2(0.0, 2.0) - fraction, k10, std) +
+			weightY(vec2(1.0, 2.0) - fraction, k11, std);
+		// The kernel's negative lobes can make the weight sum negative, and the average is still
+		// the ratio; only an exactly zero sum needs a guard.
+		float weightSum = abs(weighted.x) < 1e-6 ? 1e-6 : weighted.x;
+		float finalY = weighted.y / weightSum;
+		// The bounds and the average live in the same mean-subtracted space.
+		float maxY = max(max(c00, c10), max(c01, c11));
+		float minY = min(min(c00, c10), min(c01, c11));
+		finalY = clamp(uSharpness * finalY, minY, maxY);
+		float delta = clamp(finalY - (center.g - mean), -DELTA_LIMIT, DELTA_LIMIT);
+		result = clamp(center + vec3(delta), 0.0, 1.0);
+	}
+	outColor = vec4(clamp(result + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0), 1.0);
+}
+`;
+
+			// FSR 1's EASU: 12 taps on the 4 by 4 block around the source position, each weighted
+			// by a Lanczos 2 window stretched and rotated along the edge's direction, then deringed
+			// against the four nearest texels.
+			const EASU_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform ivec2 uSourceSize;
+uniform ivec2 uOutputSize;
+uniform vec4 uCon0;
+out vec4 outColor;
+ivec2 flipRows(ivec2 p) {
+	return ivec2(p.x, uSourceSize.y - 1 - p.y);
+}
+vec3 load(ivec2 p) {
+	p = clamp(p, ivec2(0), uSourceSize - 1);
+	return texelFetch(uSource, flipRows(p), 0).rgb;
+}
+float lumaOf(vec3 c) {
+	return c.b * 0.5 + (c.r * 0.5 + c.g);
+}
+void setDirection(inout vec2 dir, inout float len, vec2 pp, float w,
+		float lA, float lB, float lC, float lD, float lE) {
+	float dc = lD - lC;
+	float cb = lC - lB;
+	float lenX = max(abs(dc), abs(cb));
+	lenX = 1.0 / max(lenX, 1e-6);
+	float dirX = lD - lB;
+	dir.x += dirX * w;
+	lenX = clamp(abs(dirX) * lenX, 0.0, 1.0);
+	lenX *= lenX;
+	len += lenX * w;
+	float ec = lE - lC;
+	float ca = lC - lA;
+	float lenY = max(abs(ec), abs(ca));
+	lenY = 1.0 / max(lenY, 1e-6);
+	float dirY = lE - lA;
+	dir.y += dirY * w;
+	lenY = clamp(abs(dirY) * lenY, 0.0, 1.0);
+	lenY *= lenY;
+	len += lenY * w;
+}
+void accumulate(inout vec3 aC, inout float aW, vec2 off, vec2 dir, vec2 len, float lob, float clp, vec3 c) {
+	vec2 v;
+	v.x = off.x * dir.x + off.y * dir.y;
+	v.y = off.x * (-dir.y) + off.y * dir.x;
+	v *= len;
+	float d2 = dot(v, v);
+	d2 = min(d2, clp);
+	float wB = (2.0 / 5.0) * d2 - 1.0;
+	float wA = lob * d2 - 1.0;
+	wB *= wB;
+	wA *= wA;
+	wB = (25.0 / 16.0) * wB - (25.0 / 16.0 - 1.0);
+	float w = wB * wA;
+	aC += c * w;
+	aW += w;
+}
+void main() {
+	ivec2 ip = ivec2(int(gl_FragCoord.x), uOutputSize.y - 1 - int(gl_FragCoord.y));
+	vec2 pp = vec2(ip) * uCon0.xy + uCon0.zw;
+	ivec2 base = ivec2(floor(pp));
+	vec2 fraction = pp - vec2(base);
+	vec3 b = load(base + ivec2(0, -1));
+	vec3 c = load(base + ivec2(1, -1));
+	vec3 e = load(base + ivec2(-1, 0));
+	vec3 f = load(base + ivec2(0, 0));
+	vec3 g = load(base + ivec2(1, 0));
+	vec3 h = load(base + ivec2(2, 0));
+	vec3 i = load(base + ivec2(-1, 1));
+	vec3 j = load(base + ivec2(0, 1));
+	vec3 k = load(base + ivec2(1, 1));
+	vec3 l = load(base + ivec2(2, 1));
+	vec3 n = load(base + ivec2(0, 2));
+	vec3 o = load(base + ivec2(1, 2));
+	float bL = lumaOf(b), cL = lumaOf(c), eL = lumaOf(e), fL = lumaOf(f), gL = lumaOf(g);
+	float hL = lumaOf(h), iL = lumaOf(i), jL = lumaOf(j), kL = lumaOf(k), lL = lumaOf(l);
+	float nL = lumaOf(n), oL = lumaOf(o);
+	vec2 dir = vec2(0.0);
+	float len = 0.0;
+	vec2 ww = vec2((1.0 - fraction.x) * (1.0 - fraction.y), fraction.x * (1.0 - fraction.y));
+	vec2 wv = vec2((1.0 - fraction.x) * fraction.y, fraction.x * fraction.y);
+	setDirection(dir, len, fraction, ww.x, bL, eL, fL, gL, jL);
+	setDirection(dir, len, fraction, ww.y, cL, fL, gL, hL, kL);
+	setDirection(dir, len, fraction, wv.x, fL, iL, jL, kL, nL);
+	setDirection(dir, len, fraction, wv.y, gL, jL, kL, lL, oL);
+	vec2 dir2 = dir * dir;
+	float dirR = dir2.x + dir2.y;
+	bool zero = dirR < (1.0 / 32768.0);
+	dirR = inversesqrt(max(dirR, 1e-12));
+	dirR = zero ? 1.0 : dirR;
+	dir = zero ? vec2(1.0, 0.0) : dir * dirR;
+	len *= 0.5;
+	len *= len;
+	float stretch = dot(dir, dir) / max(abs(dir.x), abs(dir.y));
+	vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
+	float lob = 0.5 + ((1.0 / 4.0 - 0.04) - 0.5) * len;
+	float clp = 1.0 / max(lob, 1e-3);
+	vec3 min4 = min(min(f, g), min(j, k));
+	vec3 max4 = max(max(f, g), max(j, k));
+	vec3 aC = vec3(0.0);
+	float aW = 0.0;
+	accumulate(aC, aW, vec2(0.0, -1.0) - fraction, dir, len2, lob, clp, b);
+	accumulate(aC, aW, vec2(1.0, -1.0) - fraction, dir, len2, lob, clp, c);
+	accumulate(aC, aW, vec2(-1.0, 1.0) - fraction, dir, len2, lob, clp, i);
+	accumulate(aC, aW, vec2(0.0, 1.0) - fraction, dir, len2, lob, clp, j);
+	accumulate(aC, aW, vec2(0.0, 0.0) - fraction, dir, len2, lob, clp, f);
+	accumulate(aC, aW, vec2(-1.0, 0.0) - fraction, dir, len2, lob, clp, e);
+	accumulate(aC, aW, vec2(1.0, 1.0) - fraction, dir, len2, lob, clp, k);
+	accumulate(aC, aW, vec2(2.0, 1.0) - fraction, dir, len2, lob, clp, l);
+	accumulate(aC, aW, vec2(2.0, 0.0) - fraction, dir, len2, lob, clp, h);
+	accumulate(aC, aW, vec2(1.0, 0.0) - fraction, dir, len2, lob, clp, g);
+	accumulate(aC, aW, vec2(1.0, 2.0) - fraction, dir, len2, lob, clp, o);
+	accumulate(aC, aW, vec2(0.0, 2.0) - fraction, dir, len2, lob, clp, n);
+	outColor = vec4(clamp(aC / max(aW, 1e-6), min4, max4), 1.0);
+}
+`;
+
+			// FSR 1's RCAS: a 5-tap cross sharpener whose lobe is limited so no channel clips. The
+			// denoise step lowers the lobe where the ring is noise rather than an edge.
+			const RCAS_FS = `#version 300 es
+${COMMON_FS}
+uniform sampler2D uSource;
+uniform ivec2 uOutputSize;
+uniform float uSharpness;
+out vec4 outColor;
+const float RCAS_LIMIT = 0.25 - (1.0 / 16.0);
+ivec2 flipRows(ivec2 p) {
+	return ivec2(p.x, uOutputSize.y - 1 - p.y);
+}
+vec3 load(ivec2 p) {
+	p = clamp(p, ivec2(0), uOutputSize - 1);
+	return texelFetch(uSource, flipRows(p), 0).rgb;
+}
+void main() {
+	ivec2 p = ivec2(int(gl_FragCoord.x), uOutputSize.y - 1 - int(gl_FragCoord.y));
+	vec3 b = load(p + ivec2(0, -1));
+	vec3 d = load(p + ivec2(-1, 0));
+	vec3 e = load(p);
+	vec3 f = load(p + ivec2(1, 0));
+	vec3 h = load(p + ivec2(0, 1));
+	float bL = b.b * 0.5 + (b.r * 0.5 + b.g);
+	float dL = d.b * 0.5 + (d.r * 0.5 + d.g);
+	float eL = e.b * 0.5 + (e.r * 0.5 + e.g);
+	float fL = f.b * 0.5 + (f.r * 0.5 + f.g);
+	float hL = h.b * 0.5 + (h.r * 0.5 + h.g);
+	float nz = 0.25 * bL + 0.25 * dL + 0.25 * fL + 0.25 * hL - eL;
+	nz = clamp(abs(nz) / max(max(max(max(bL, dL), max(eL, fL)), hL) - min(min(min(min(bL, dL), min(eL, fL)), hL), 1e-6), 1e-6), 0.0, 1.0);
+	nz = -0.5 * nz + 1.0;
+	vec3 mn4 = min(min(b, d), min(f, h));
+	vec3 mx4 = max(max(b, d), max(f, h));
+	vec3 hitMin = min(mn4, e) / max(vec3(4.0) * mx4, vec3(1e-6));
+	// The denominator is at most 0, so its reciprocal keeps the sign of a value near zero.
+	vec3 hitMaxDenominator = vec3(4.0) * mn4 - vec3(4.0);
+	hitMaxDenominator = sign(hitMaxDenominator) * max(abs(hitMaxDenominator), vec3(1e-6));
+	vec3 hitMax = (vec3(1.0) - max(mx4, e)) / hitMaxDenominator;
+	vec3 lobe3 = max(-hitMin, hitMax);
+	float lobe = clamp(max(max(lobe3.r, lobe3.g), lobe3.b), -RCAS_LIMIT, 0.0);
+	lobe *= uSharpness * nz;
+	float rcpL = 1.0 / (4.0 * lobe + 1.0);
+	vec3 color = (lobe * b + lobe * d + lobe * h + lobe * f + e) * rcpL;
+	outColor = vec4(clamp(color + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0), 1.0);
+}
+`;
+
+			// ---------------------------------------------------------------- programs
+
+			function compile(type, source) {
+				const shader = gl.createShader(type);
+				gl.shaderSource(shader, source);
+				gl.compileShader(shader);
+				if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+					const logText = gl.getShaderInfoLog(shader);
+					throw new Error(`shader failed:\n${logText}\n${source}`);
+				}
+				return shader;
+			}
+			function makeProgram(fragmentSource, defines = '') {
+				const program = gl.createProgram();
+				// A version directive must be the shader's first line, so the defines follow it.
+				const source = defines
+					? fragmentSource.replace('#version 300 es', `#version 300 es\n${defines}`)
+					: fragmentSource;
+				gl.attachShader(program, compile(gl.VERTEX_SHADER, FULLSCREEN_VS));
+				gl.attachShader(program, compile(gl.FRAGMENT_SHADER, source));
+				gl.linkProgram(program);
+				if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+					throw new Error(`program failed: ${gl.getProgramInfoLog(program)}`);
+				return program;
+			}
+
+			const sceneProgram = gl.createProgram();
+			{
+				gl.attachShader(sceneProgram, compile(gl.VERTEX_SHADER, SCENE_VS));
+				gl.attachShader(sceneProgram, compile(gl.FRAGMENT_SHADER, SCENE_FS));
+				gl.linkProgram(sceneProgram);
+				if (!gl.getProgramParameter(sceneProgram, gl.LINK_STATUS))
+					throw new Error(`scene program failed: ${gl.getProgramInfoLog(sceneProgram)}`);
+			}
+			// A driver can stall while it compiles or links a program, before any draw. Each program
+			// names itself first, so the last line printed is the one that stalled.
+			log('linking resolve');
+			const resolveProgram = makeProgram(RESOLVE_FS, FXAA ? '#define FXAA 1\n' : '');
+			log('linking today');
+			const todayProgram = makeProgram(TODAY_FS);
+			log('linking bilinear');
+			const bilinearProgram = makeProgram(BILINEAR_FS);
+			log('linking nearest');
+			const nearestProgram = makeProgram(NEAREST_FS);
+			// `?gsr=unrolled` links the shader without its arrays and loops, which shows whether a
+			// driver that stalls on the looped form links this one.
+			const gsrUnrolled = params.get('gsr') === 'unrolled';
+			log(`linking gsr (${gsrUnrolled ? 'unrolled' : 'looped'} form)`);
+			const gsrProgram = makeProgram(gsrUnrolled ? GSR_FS_UNROLLED : GSR_FS);
+			log('linking easu');
+			const easuProgram = makeProgram(EASU_FS);
+			log('linking rcas');
+			const rcasProgram = makeProgram(RCAS_FS);
+			log('every program is linked');
+
+			// ---------------------------------------------------------------- scene
+
+			const vertices = [];
+			const push = (p, n, uv) => vertices.push(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]);
+			function quad(a, b, c, d, n, uvs) {
+				push(a, n, uvs[0]);
+				push(b, n, uvs[1]);
+				push(c, n, uvs[2]);
+				push(a, n, uvs[0]);
+				push(c, n, uvs[2]);
+				push(d, n, uvs[3]);
+			}
+			function box(cx, cy, cz, sx, sy, sz, rotY, density) {
+				const hx = sx / 2;
+				const hy = sy / 2;
+				const hz = sz / 2;
+				const cs = Math.cos(rotY);
+				const sn = Math.sin(rotY);
+				const at = (x, y, z) => [cx + x * cs + z * sn, cy + y, cz - x * sn + z * cs];
+				const normal = (x, y, z) => [x * cs + z * sn, y, -x * sn + z * cs];
+				const u = sx * density;
+				const v = sy * density;
+				const w = sz * density;
+				quad(at(-hx, -hy, hz), at(hx, -hy, hz), at(hx, hy, hz), at(-hx, hy, hz),
+					normal(0, 0, 1), [[0, 0], [u, 0], [u, v], [0, v]]);
+				quad(at(hx, -hy, -hz), at(-hx, -hy, -hz), at(-hx, hy, -hz), at(hx, hy, -hz),
+					normal(0, 0, -1), [[0, 0], [u, 0], [u, v], [0, v]]);
+				quad(at(hx, -hy, hz), at(hx, -hy, -hz), at(hx, hy, -hz), at(hx, hy, hz),
+					normal(1, 0, 0), [[0, 0], [w, 0], [w, v], [0, v]]);
+				quad(at(-hx, -hy, -hz), at(-hx, -hy, hz), at(-hx, hy, hz), at(-hx, hy, -hz),
+					normal(-1, 0, 0), [[0, 0], [w, 0], [w, v], [0, v]]);
+				quad(at(-hx, hy, hz), at(hx, hy, hz), at(hx, hy, -hz), at(-hx, hy, -hz),
+					normal(0, 1, 0), [[0, 0], [u, 0], [u, w], [0, w]]);
+				quad(at(-hx, -hy, -hz), at(hx, -hy, -hz), at(hx, -hy, hz), at(-hx, -hy, hz),
+					normal(0, -1, 0), [[0, 0], [u, 0], [u, w], [0, w]]);
+			}
+			function sphere(cx, cy, cz, radius, segments, rings, density) {
+				for (let j = 0; j < rings; j++) {
+					const t0 = (j / rings) * Math.PI;
+					const t1 = ((j + 1) / rings) * Math.PI;
+					for (let i = 0; i < segments; i++) {
+						const p0 = (i / segments) * Math.PI * 2;
+						const p1 = ((i + 1) / segments) * Math.PI * 2;
+						const point = (t, p) => [
+							cx + radius * Math.sin(t) * Math.cos(p),
+							cy + radius * Math.cos(t),
+							cz + radius * Math.sin(t) * Math.sin(p),
+						];
+						const normal = (t, p) => [Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)];
+						const uv = (t, p) => [(p / (Math.PI * 2)) * radius * Math.PI * 2 * density, (t / Math.PI) * radius * Math.PI * density];
+						const a = point(t0, p0);
+						const bb = point(t0, p1);
+						const cc = point(t1, p1);
+						const dd = point(t1, p0);
+						push(a, normal(t0, p0), uv(t0, p0));
+						push(bb, normal(t0, p1), uv(t0, p1));
+						push(cc, normal(t1, p1), uv(t1, p1));
+						push(a, normal(t0, p0), uv(t0, p0));
+						push(cc, normal(t1, p1), uv(t1, p1));
+						push(dd, normal(t1, p0), uv(t1, p0));
+					}
+				}
+			}
+
+			// A ground, a wall of fine texture, boxes and spheres of several sizes, and a row of thin
+			// bars: edges in every direction and detail below the render pixel at scale 0.5.
+			quad([-24, 0, -8], [24, 0, -8], [24, 0, 30], [-24, 0, 30], [0, 1, 0],
+				[[0, 0], [4, 0], [4, 3], [0, 3]]);
+			quad([-14, 0, -7], [14, 0, -7], [14, 8, -7], [-14, 8, -7], [0, 0, 1],
+				[[0, 0], [2, 0], [2, 1.3], [0, 1.3]]);
+			box(-2.2, 0.9, 1.5, 2.4, 1.8, 2.2, 0.3, 0.35);
+			box(1.6, 1.5, -0.5, 1.2, 3.0, 1.2, -0.4, 0.35);
+			box(3.6, 0.35, 2.6, 1.8, 0.7, 1.3, 0.7, 0.35);
+			box(-4.2, 1.1, 3.2, 0.25, 2.2, 0.25, 0.1, 0.6);
+			box(0.4, 0.25, 3.8, 0.6, 0.5, 0.6, 1.1, 0.6);
+			sphere(-1.0, 1.15, -0.3, 1.15, 40, 20, 0.3);
+			sphere(2.9, 0.55, 1.0, 0.55, 32, 16, 0.4);
+			for (let i = 0; i < 16; i++) box(-5 + i * 0.66, 0.75, 4.4, 0.06, 1.5, 0.06, 0, 0.8);
+
+			const vertexData = new Float32Array(vertices);
+			const sceneVao = gl.createVertexArray();
+			gl.bindVertexArray(sceneVao);
+			const vertexBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+			gl.enableVertexAttribArray(0);
+			gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
+			gl.enableVertexAttribArray(1);
+			gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
+			gl.enableVertexAttribArray(2);
+			gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
+			gl.bindVertexArray(null);
+			const vertexCount = vertexData.length / 8;
+
+			// The pattern's coarse and fine parts both matter: the mips drop its fine detail at the
+			// low render size, and a negative bias recovers some of it.
+			const TEX = 512;
+			const pattern = new Uint8Array(TEX * TEX * 4);
+			let seed = 1234567;
+			const random = () => {
+				seed = (seed * 1664525 + 1013904223) >>> 0;
+				return seed / 4294967296;
+			};
+			for (let y = 0; y < TEX; y++)
+				for (let x = 0; x < TEX; x++) {
+					// Broad checks with soft edges, a warm diagonal band and a little grain.
+					const cx = (x % 128) - 64;
+					const cy = (y % 128) - 64;
+					const radial = Math.min(1, Math.hypot(cx, cy) / 80);
+					let r = 0.62 - 0.3 * radial;
+					let g = 0.6 - 0.3 * radial;
+					let b = 0.55 - 0.3 * radial;
+					if (Math.abs(x - y) % 256 < 14) {
+						r = 0.72;
+						g = 0.38;
+						b = 0.2;
+					}
+					const grain = (Math.sin(x * 0.7) * Math.sin(y * 0.9) + 1) * 0.03;
+					r += grain;
+					g += grain;
+					b += grain;
+					if (random() > 0.97) {
+						r = Math.min(1, r + 0.15);
+						g = Math.min(1, g + 0.15);
+						b = Math.min(1, b + 0.12);
+					}
+					const i = (y * TEX + x) * 4;
+					pattern[i] = Math.round(r * 255);
+					pattern[i + 1] = Math.round(g * 255);
+					pattern[i + 2] = Math.round(b * 255);
+					pattern[i + 3] = 255;
+				}
+			const texture = gl.createTexture();
+			gl.bindTexture(gl.TEXTURE_2D, texture);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, TEX, TEX, 0, gl.RGBA, gl.UNSIGNED_BYTE, pattern);
+			gl.generateMipmap(gl.TEXTURE_2D);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 9);
+
+			// ---------------------------------------------------------------- targets
+
+			function makeTarget(width, height, internal, format, type, filter, depth = false) {
+				const targetTexture = gl.createTexture();
+				gl.bindTexture(gl.TEXTURE_2D, targetTexture);
+				gl.texImage2D(gl.TEXTURE_2D, 0, internal, width, height, 0, format, type, null);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+				const framebuffer = gl.createFramebuffer();
+				gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+				gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targetTexture, 0);
+				if (depth) {
+					const depthBuffer = gl.createRenderbuffer();
+					gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
+					gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height);
+					gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthBuffer);
+				}
+				const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+				if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error(`framebuffer ${status}`);
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				return { texture: targetTexture, framebuffer, width, height, depth };
+			}
+
+			const hdrHigh = makeTarget(WIDTH, HEIGHT, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST, true);
+			const hdrLow = makeTarget(RENDER_W, RENDER_H, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST, true);
+			const resolve = makeTarget(RENDER_W, RENDER_H, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+			const resolve2 = makeTarget(RENDER_W, RENDER_H, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+			const reference = makeTarget(WIDTH, HEIGHT, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+			const scratch = makeTarget(WIDTH, HEIGHT, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+			const scratch2 = makeTarget(WIDTH, HEIGHT, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+			const rcasTarget = makeTarget(WIDTH, HEIGHT, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+			const rcasTarget2 = makeTarget(WIDTH, HEIGHT, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+
+			// ---------------------------------------------------------------- matrices
+
+			const eye = [6.5, 3.8, 10.5];
+			const target = [0, 1.2, 0.4];
+			const up = [0, 1, 0];
+			const subtract = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+			const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+			const normalize = (a) => {
+				const length = Math.hypot(...a);
+				return [a[0] / length, a[1] / length, a[2] / length];
+			};
+			const f = normalize(subtract(target, eye));
+			const s = normalize(cross(f, up));
+			const u = cross(s, f);
+			const view = [
+				s[0], u[0], -f[0], 0,
+				s[1], u[1], -f[1], 0,
+				s[2], u[2], -f[2], 0,
+				-s[0] * eye[0] - s[1] * eye[1] - s[2] * eye[2],
+				-u[0] * eye[0] - u[1] * eye[1] - u[2] * eye[2],
+				f[0] * eye[0] + f[1] * eye[1] + f[2] * eye[2],
+				1,
+			];
+			const aspect = WIDTH / HEIGHT;
+			const near = 0.1;
+			const far = 80;
+			const tanHalf = Math.tan((45 * Math.PI) / 180 / 2);
+			const projection = [
+				1 / (aspect * tanHalf), 0, 0, 0,
+				0, 1 / tanHalf, 0, 0,
+				0, 0, -(far + near) / (far - near), -1,
+				0, 0, -(2 * far * near) / (far - near), 0,
+			];
+			const multiply = (a, b) => {
+				const outMatrix = new Float32Array(16);
+				for (let column = 0; column < 4; column++)
+					for (let row = 0; row < 4; row++) {
+						let sum = 0;
+						for (let k = 0; k < 4; k++) sum += a[k * 4 + row] * b[column * 4 + k];
+						outMatrix[column * 4 + row] = sum;
+					}
+				return outMatrix;
+			};
+			const viewProjection = multiply(projection, view);
+
+			// ---------------------------------------------------------------- passes
+
+			const emptyVao = gl.createVertexArray();
+
+			function drawScene(target_, mipBias) {
+				gl.bindFramebuffer(gl.FRAMEBUFFER, target_.framebuffer);
+				gl.viewport(0, 0, target_.width, target_.height);
+				gl.enable(gl.DEPTH_TEST);
+				gl.depthFunc(gl.LEQUAL);
+				gl.clearColor(0.05, 0.07, 0.1, 1);
+				gl.clearDepth(1);
+				gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+				gl.useProgram(sceneProgram);
+				gl.bindVertexArray(sceneVao);
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, texture);
+				gl.uniform1i(gl.getUniformLocation(sceneProgram, 'uTexture'), 0);
+				gl.uniform1f(gl.getUniformLocation(sceneProgram, 'uBias'), mipBias);
+				gl.uniform3fv(gl.getUniformLocation(sceneProgram, 'uEye'), eye);
+				gl.uniform3fv(gl.getUniformLocation(sceneProgram, 'uLight'), normalize([-0.4, 0.85, 0.35]));
+				gl.uniformMatrix4fv(gl.getUniformLocation(sceneProgram, 'uViewProjection'), false, viewProjection);
+				gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+				gl.bindVertexArray(null);
+			}
+
+			function fullscreen(program, target_, setup) {
+				gl.bindFramebuffer(gl.FRAMEBUFFER, target_.framebuffer);
+				gl.viewport(0, 0, target_.width, target_.height);
+				gl.disable(gl.DEPTH_TEST);
+				gl.useProgram(program);
+				gl.bindVertexArray(emptyVao);
+				if (setup) setup(program, target_);
+			}
+
+			function bindResolve(into = resolve) {
+				fullscreen(resolveProgram, into, (program) => {
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, hdrLow.texture);
+					gl.uniform1i(gl.getUniformLocation(program, 'uScene'), 0);
+					gl.uniform2i(gl.getUniformLocation(program, 'uRender'), RENDER_W, RENDER_H);
+					gl.uniform1f(gl.getUniformLocation(program, 'uDither'), 0);
+				});
+			}
+			// The scale-1 image that every candidate is compared with: the same output transform and
+			// FXAA, at the whole canvas, with the dither that a final pass at scale 1 draws.
+			function bindReference() {
+				fullscreen(resolveProgram, reference, (program) => {
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, hdrHigh.texture);
+					gl.uniform1i(gl.getUniformLocation(program, 'uScene'), 0);
+					gl.uniform2i(gl.getUniformLocation(program, 'uRender'), WIDTH, HEIGHT);
+					gl.uniform1f(gl.getUniformLocation(program, 'uDither'), 1);
+				});
+			}
+			function bindToday(source, target_) {
+				fullscreen(todayProgram, target_, (program) => {
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, source.texture);
+					gl.uniform1i(gl.getUniformLocation(program, 'uScene'), 0);
+					gl.uniform2i(gl.getUniformLocation(program, 'uSource'), source.width, source.height);
+					gl.uniform2f(gl.getUniformLocation(program, 'uOutput'), target_.width, target_.height);
+				});
+			}
+			function bindUpscaler(program, source, target_, extra) {
+				fullscreen(program, target_, (program_) => {
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, source.texture);
+					gl.uniform1i(gl.getUniformLocation(program_, 'uSource'), 0);
+					gl.uniform2i(gl.getUniformLocation(program_, 'uSourceSize'), source.width, source.height);
+					gl.uniform2f(gl.getUniformLocation(program_, 'uOutput'), target_.width, target_.height);
+					if (extra) extra(program_);
+				});
+			}
+			function bindBilinear(into = scratch, from = resolve) {
+				bindUpscaler(bilinearProgram, from, into);
+			}
+			function bindNearest(into = scratch, from = resolve) {
+				bindUpscaler(nearestProgram, from, into);
+			}
+			function bindGsr(into = scratch, from = resolve) {
+				bindUpscaler(gsrProgram, from, into, (program) => {
+					gl.uniform1f(gl.getUniformLocation(program, 'uEdgeThreshold'), GSR_EDGE);
+					gl.uniform1f(gl.getUniformLocation(program, 'uSharpness'), GSR_SHARPNESS);
+				});
+			}
+			function bindEasu(into = scratch, from = resolve) {
+				// The output pixel's center in source texel indices, as FSR 1's FsrEasuCon gives it.
+				const con0 = new Float32Array([
+					RENDER_W / WIDTH,
+					RENDER_H / HEIGHT,
+					0.5 * (RENDER_W / WIDTH) - 0.5,
+					0.5 * (RENDER_H / HEIGHT) - 0.5,
+				]);
+				fullscreen(easuProgram, into, (program) => {
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, from.texture);
+					gl.uniform1i(gl.getUniformLocation(program, 'uSource'), 0);
+					gl.uniform2i(gl.getUniformLocation(program, 'uSourceSize'), RENDER_W, RENDER_H);
+					gl.uniform2i(gl.getUniformLocation(program, 'uOutputSize'), WIDTH, HEIGHT);
+					gl.uniform4fv(gl.getUniformLocation(program, 'uCon0'), con0);
+				});
+			}
+			function bindRcas(into = rcasTarget, from = scratch) {
+				fullscreen(rcasProgram, into, (program) => {
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, from.texture);
+					gl.uniform1i(gl.getUniformLocation(program, 'uSource'), 0);
+					gl.uniform2i(gl.getUniformLocation(program, 'uOutputSize'), WIDTH, HEIGHT);
+					gl.uniform1f(gl.getUniformLocation(program, 'uSharpness'), 2 ** -0.2);
+				});
+			}
+			// Draws one candidate's whole second step and returns the target that holds its image.
+			function drawVariant(name) {
+				if (name === 'reference') return reference;
+				switch (name) {
+					case 'today':
+						bindToday(hdrLow, scratch);
+						break;
+					case 'bilinear':
+						bindBilinear();
+						break;
+					case 'nearest':
+						bindNearest();
+						break;
+					case 'gsr':
+						bindGsr();
+						break;
+					case 'easuRcas':
+						bindEasu();
+						gl.drawArrays(gl.TRIANGLES, 0, 3);
+						bindRcas();
+						break;
+					default:
+						throw new Error(`the page shows no candidate ${name}`);
+				}
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+				return name === 'easuRcas' ? rcasTarget : scratch;
+			}
+
+			// ---------------------------------------------------------------- timing
+
+			// One pass: the state is bound once, and the loop draws it.
+			// One batch of `repeats` rounds inside one query, as milliseconds for one round, or null
+			// when the GPU reports a disjoint clock and the figure must be dropped. One query is in
+			// flight at a time: a second that starts before the first answers reads as broken.
+			async function timeQuery(repeats, drawOnce) {
+				if (!timerExt) {
+					const started = performance.now();
+					for (let i = 0; i < repeats; i++) drawOnce();
+					gl.finish();
+					return (performance.now() - started) / repeats;
+				}
+				const query = gl.createQuery();
+				gl.beginQuery(timerExt.TIME_ELAPSED_EXT, query);
+				for (let i = 0; i < repeats; i++) drawOnce();
+				gl.endQuery(timerExt.TIME_ELAPSED_EXT);
+				gl.flush();
+				let available = false;
+				for (let attempt = 0; attempt < 20000 && !available; attempt++) {
+					available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE);
+					if (!available) await new Promise((resolve) => setTimeout(resolve, 0));
+				}
+				if (!available) throw new Error('the GPU timer never answered');
+				if (gl.getParameter(timerExt.GPU_DISJOINT_EXT)) {
+					gl.deleteQuery(query);
+					return null;
+				}
+				const ms = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6 / repeats;
+				gl.deleteQuery(query);
+				return ms;
+			}
+
+			// Every candidate takes its turn in every round, in a rotated order, so a drift of the
+			// GPU's clock or of the machine's load reaches every candidate alike.
+			async function timeEach(names, draws, samples, repeats) {
+				const values = Object.fromEntries(names.map((name) => [name, []]));
+				for (let s = 0; s < samples; s++)
+					for (let k = 0; k < names.length; k++) {
+						const name = names[(s + k) % names.length];
+						// A driver that stalls inside a draw leaves no word of its own, so the page names
+						// each pass before it starts: the last line printed is the pass that stalled.
+						log(`round ${s + 1} of ${samples}: ${name}`);
+						let ms = null;
+						while (ms === null) ms = await timeQuery(repeats, draws[name]);
+						values[name].push(ms);
+					}
+				return Object.fromEntries(
+					names.map((name) => [
+						name,
+						{
+							median: median(values[name]),
+							samples: values[name],
+							method: timerExt ? 'gpu' : 'wall',
+						},
+					]),
+				);
+			}
+
+			// ---------------------------------------------------------------- image metrics
+
+			function read(target_) {
+				gl.bindFramebuffer(gl.FRAMEBUFFER, target_.framebuffer);
+				const pixels = new Uint8Array(WIDTH * HEIGHT * 4);
+				gl.readPixels(0, 0, WIDTH, HEIGHT, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				return pixels;
+			}
+			function compare(referencePixels, pixels) {
+				let absolute = 0;
+				let squared = 0;
+				let count = 0;
+				// The row order and the dither are shared, so each pixel compares with itself.
+				for (let i = 0; i < referencePixels.length; i += 4)
+					for (let channel = 0; channel < 3; channel++) {
+						const difference = referencePixels[i + channel] - pixels[i + channel];
+						absolute += Math.abs(difference);
+						squared += difference * difference;
+						count++;
+					}
+				const mse = squared / count;
+				const mae = absolute / count;
+				const psnr = mse === 0 ? Infinity : 10 * Math.log10((255 * 255) / mse);
+				return { mae, psnr, ssim: structural(referencePixels, pixels), ...gradient(referencePixels, pixels) };
+			}
+			// The mean structural similarity over 8 by 8 luma windows, 4 pixels apart. It judges a
+			// sharpened edge that lands in the right place as closer than a blur does, where a pixel
+			// error counts the sharpener's overshoot as error.
+			function structural(referencePixels, pixels) {
+				const luma = (data) => {
+					const values = new Float32Array(WIDTH * HEIGHT);
+					for (let p = 0, i = 0; p < values.length; p++, i += 4)
+						values[p] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+					return values;
+				};
+				const a = luma(referencePixels);
+				const b = luma(pixels);
+				const window = 8;
+				const step = 4;
+				const c1 = (0.01 * 255) ** 2;
+				const c2 = (0.03 * 255) ** 2;
+				let total = 0;
+				let windows = 0;
+				for (let y = 0; y + window <= HEIGHT; y += step)
+					for (let x = 0; x + window <= WIDTH; x += step) {
+						let sa = 0;
+						let sb = 0;
+						let saa = 0;
+						let sbb = 0;
+						let sab = 0;
+						for (let j = 0; j < window; j++)
+							for (let i = 0; i < window; i++) {
+								const index = (y + j) * WIDTH + x + i;
+								const va = a[index];
+								const vb = b[index];
+								sa += va;
+								sb += vb;
+								saa += va * va;
+								sbb += vb * vb;
+								sab += va * vb;
+							}
+						const n = window * window;
+						const ma = sa / n;
+						const mb = sb / n;
+						const va = saa / n - ma * ma;
+						const vb = sbb / n - mb * mb;
+						const cov = sab / n - ma * mb;
+						total += ((2 * ma * mb + c1) * (2 * cov + c2)) / ((ma * ma + mb * mb + c1) * (va + vb + c2));
+						windows++;
+					}
+				return windows ? total / windows : 0;
+			}
+			function gradient(referencePixels, pixels) {
+				const lumaAt = (data, x, y) => {
+					const i = (y * WIDTH + x) * 4;
+					return 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+				};
+				let total = 0;
+				let referenceTotal = 0;
+				let count = 0;
+				for (let y = 1; y < HEIGHT - 1; y++)
+					for (let x = 1; x < WIDTH - 1; x++) {
+						const gx = (lumaAt(pixels, x + 1, y) - lumaAt(pixels, x - 1, y)) * 0.5;
+						const gy = (lumaAt(pixels, x, y + 1) - lumaAt(pixels, x, y - 1)) * 0.5;
+						const rgx = (lumaAt(referencePixels, x + 1, y) - lumaAt(referencePixels, x - 1, y)) * 0.5;
+						const rgy = (lumaAt(referencePixels, x, y + 1) - lumaAt(referencePixels, x, y - 1)) * 0.5;
+						total += Math.hypot(gx, gy);
+						referenceTotal += Math.hypot(rgx, rgy);
+						count++;
+					}
+				return { sharpness: total / count, referenceSharpness: referenceTotal / count };
+			}
+
+			// ---------------------------------------------------------------- run
+
+			async function main() {
+				// The scene at the canvas size is the reference's source; the low render size is what
+				// the first step and every upscaler see.
+				log('drawing the reference scene');
+				drawScene(hdrHigh, 0);
+				bindReference();
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+				drawScene(hdrLow, MIP_BIAS ? -1 : 0);
+				bindResolve();
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+				log('the reference and the low scene are drawn');
+
+				// Warm every pass before timing any, so the first timed pass does not carry the
+				// GPU's clock ramp and every shader is compiled.
+				for (let round = 0; round < 6; round++) {
+					// The warm-up runs before the first timed pass, and a driver that stalls inside
+					// one of its draws prints nothing. The pass about to run names itself, so the
+					// last line printed is the draw that stalled.
+					if (round === 0) log('warm resolve');
+					bindResolve();
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) log('warm today');
+					bindToday(hdrLow, scratch);
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) log('warm bilinear');
+					bindBilinear();
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) log('warm nearest');
+					bindNearest();
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) log('warm gsr');
+					bindGsr();
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) log('warm easu');
+					bindEasu();
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					if (round === 0) log('warm rcas');
+					bindRcas();
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+				}
+				log('the warm-up drew every pass; waiting for the GPU');
+				gl.finish();
+				log('the GPU finished the warm-up');
+				out.glErrorBefore = gl.getError();
+
+				// Each round writes a different target of the pair, so the render pass ends and its
+				// tiles leave the GPU's tile memory, as a real frame's target switch does. A tight
+				// loop of the one draw would stay in tile memory and read far too cheap.
+				const draw = () => gl.drawArrays(gl.TRIANGLES, 0, 3);
+				let flip = 0;
+				const next = (a, b) => (flip++ & 1 ? b : a);
+				const step1 = () => {
+					bindResolve(next(resolve, resolve2));
+					draw();
+				};
+				const draws = {
+					resolve: step1,
+					today: () => {
+						bindToday(hdrLow, next(scratch, scratch2));
+						draw();
+					},
+					bilinear: () => {
+						bindBilinear(next(scratch, scratch2));
+						draw();
+					},
+					nearest: () => {
+						bindNearest(next(scratch, scratch2));
+						draw();
+					},
+					gsr: () => {
+						bindGsr(next(scratch, scratch2));
+						draw();
+					},
+					easu: () => {
+						bindEasu(next(scratch, scratch2));
+						draw();
+					},
+					rcas: () => {
+						bindRcas(next(rcasTarget, rcasTarget2), scratch);
+						draw();
+					},
+					easuRcas: () => {
+						const easuTarget = next(scratch, scratch2);
+						bindEasu(easuTarget);
+						draw();
+						bindRcas(next(rcasTarget, rcasTarget2), easuTarget);
+						draw();
+					},
+					pipelineToday: () => {
+						bindToday(hdrLow, next(scratch, scratch2));
+						draw();
+					},
+					pipelineBilinear: () => {
+						const resolved = next(resolve, resolve2);
+						bindResolve(resolved);
+						draw();
+						bindBilinear(next(scratch, scratch2), resolved);
+						draw();
+					},
+					pipelineNearest: () => {
+						const resolved = next(resolve, resolve2);
+						bindResolve(resolved);
+						draw();
+						bindNearest(next(scratch, scratch2), resolved);
+						draw();
+					},
+					pipelineGsr: () => {
+						const resolved = next(resolve, resolve2);
+						bindResolve(resolved);
+						draw();
+						bindGsr(next(scratch, scratch2), resolved);
+						draw();
+					},
+					pipelineEasuRcas: () => {
+						const resolved = next(resolve, resolve2);
+						bindResolve(resolved);
+						draw();
+						const easuTarget = next(scratch, scratch2);
+						bindEasu(easuTarget, resolved);
+						draw();
+						bindRcas(next(rcasTarget, rcasTarget2), easuTarget);
+						draw();
+					},
+				};
+				Object.assign(out.timings, await timeEach(Object.keys(draws), draws, SAMPLES, REPEATS));
+				const timings = out.timings;
+				out.glErrorAfter = gl.getError();
+
+				// Each result image, drawn once more and read back.
+				log('timing done; drawing the result images');
+				const referencePixels = read(reference);
+				const images = {};
+				for (const name of ['today', 'bilinear', 'nearest', 'gsr', 'easuRcas']) {
+					log(`drawing ${name}`);
+					const target_ = drawVariant(name);
+					images[name] = read(target_);
+				}
+				log('the images are read; computing the metrics');
+
+				out.pipelines.today = timings.pipelineToday.median;
+				out.pipelines.bilinear = timings.pipelineBilinear.median;
+				out.pipelines.nearest = timings.pipelineNearest.median;
+				out.pipelines.gsr = timings.pipelineGsr.median;
+				out.pipelines.easuRcas = timings.pipelineEasuRcas.median;
+
+				for (const name of ['today', 'bilinear', 'nearest', 'gsr', 'easuRcas'])
+					out.metrics[name] = compare(referencePixels, images[name]);
+				// The reference against itself must come out at no error and full similarity.
+				out.selfCheck = compare(referencePixels, referencePixels);
+
+				// Show one image on the canvas, which the driver can screenshot.
+				const shown = drawVariant(SHOW);
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				gl.viewport(0, 0, WIDTH, HEIGHT);
+				gl.disable(gl.DEPTH_TEST);
+				gl.useProgram(bilinearProgram);
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, shown.texture);
+				gl.uniform1i(gl.getUniformLocation(bilinearProgram, 'uSource'), 0);
+				gl.uniform2f(gl.getUniformLocation(bilinearProgram, 'uOutput'), WIDTH, HEIGHT);
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+				const table = ['', 'pass                 ms', '------------------------'];
+				const row = (name, value) => table.push(`${name.padEnd(20)} ${value.toFixed(3)}`);
+				for (const [name, timing] of Object.entries(timings))
+					row(name, timing.median);
+				table.push('', 'pipeline             ms      MAE    PSNR    SSIM  sharpness');
+				table.push('--------------------------------------------------------');
+				for (const [name, ms] of Object.entries(out.pipelines)) {
+					const metric = out.metrics[name];
+					table.push(
+						`${name.padEnd(20)} ${ms.toFixed(3).padStart(6)} ${metric.mae.toFixed(2).padStart(7)}` +
+							` ${metric.psnr.toFixed(2).padStart(7)} ${metric.ssim.toFixed(4).padStart(7)}` +
+							` ${(metric.sharpness / metric.referenceSharpness).toFixed(3).padStart(9)}`,
+					);
+				}
+				for (const line of table) log(line);
+				out.done = true;
+			}
+
+			main().catch((error) => {
+				out.error = error instanceof Error ? `${error.message}\n${error.stack}` : String(error);
+				log(`FAILED: ${out.error}`);
+				out.done = true;
+			});
+		</script>
+	</body>
+</html>

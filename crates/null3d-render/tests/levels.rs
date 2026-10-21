@@ -30,7 +30,7 @@ fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: bool) -> [u32; 2] {
 /// The indices that a mesh draws, by engine id: those of its first part.
 fn indices_of<B: FrameBuilder>(world: &World<B>, mesh: u32) -> u32 {
     let meshes = world.renderer.settings().meshes();
-    meshes.parts(meshes.mesh(mesh - 1).unwrap())[0].index_count
+    meshes.parts(meshes.mesh(mesh - 1).unwrap(), false)[0].index_count
 }
 
 #[test]

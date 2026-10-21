@@ -3,12 +3,12 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
+summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, custom tone curves, and still views."
 ---
 
 # Post-processing API
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects, custom tone curves and still views. The API is experimental, so it can still change between versions.
 
 `ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion, screen-space reflections and depth of field do.
 
@@ -395,6 +395,10 @@ post.set({ toneMapping: reinhard });
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
 
+## Still views
+
+A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines and automatic exposure keep a view drawing every frame, as [the post-processing chain](../concepts/post-processing.md#still-camera-accumulation) explains. `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
+
 ## Errors
 
 | Code | Cause |
@@ -409,7 +413,7 @@ post.set({ toneMapping: reinhard });
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines and custom effects work, and what they cost.
+- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines, custom effects and still views work, and what they cost.
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.

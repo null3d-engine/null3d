@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
@@ -41,8 +42,11 @@ import {
 } from './hot.ts';
 import { MATERIAL_BUILDS_ADDRESS, MaterialBuilds, ModuleBuilds } from './material-builds.ts';
 import {
+	engineModule,
 	FILES_LIST,
+	featuresOf,
 	listedFiles,
+	missingWorkerAssets,
 	offlineFiles,
 	type WorkerFile,
 	workerFilesPlugin,
@@ -709,7 +713,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		generateBundle: {
 			order: 'post',
 			handler(_options, bundle) {
-				const tables = emitParagraphTables.call(this, bundle);
+				const tables = emitParagraphTables.call(this, bundle, root);
 				if (buildingPages) {
 					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root, tables));
 					this.emitFile({
@@ -719,6 +723,55 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					});
 				}
 				if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
+			},
+		},
+		// A worker's file that another file names must reach the build, whatever Vite decided about
+		// the worker. The bundle is whole here, so a missing file is certain, and the build's files
+		// and its list of files for offline play take it as they take the others.
+		writeBundle: {
+			order: 'post',
+			handler(options, bundle) {
+				const outDir = options.dir;
+				if (!outDir) return;
+				const recovered = missingWorkerAssets(bundle, workerFiles).filter(
+					({ fileName, source }) => !existsSync(join(outDir, fileName)) && existsSync(source),
+				);
+				if (recovered.length === 0) return;
+				for (const { fileName, source } of recovered) {
+					const path = join(outDir, fileName);
+					mkdirSync(dirname(path), { recursive: true });
+					writeFileSync(path, readFileSync(source));
+				}
+				const listPath = join(outDir, FILES_LIST);
+				if (!existsSync(listPath)) return;
+				const list = JSON.parse(readFileSync(listPath, 'utf8')) as {
+					start: string[];
+					features: Record<string, string[]>;
+				};
+				for (const { fileName } of recovered) {
+					const modules = workerFiles.get(fileName)?.moduleIds ?? [];
+					const feature = modules.flatMap((id) => {
+						const module = engineModule(id, packageOf);
+						return module === undefined ? [] : featuresOf(module);
+					})[0];
+					if (feature === undefined) {
+						if (!list.start.includes(fileName)) list.start.push(fileName);
+						continue;
+					}
+					list.features[feature] ??= [];
+					const files = list.features[feature];
+					if (!files.includes(fileName)) files.push(fileName);
+					files.sort();
+				}
+				list.start.sort();
+				const version = createHash('sha256')
+					.update(JSON.stringify({ start: list.start, features: list.features }))
+					.digest('hex')
+					.slice(0, 16);
+				writeFileSync(
+					listPath,
+					`${JSON.stringify({ version, start: list.start, features: list.features }, null, '\t')}\n`,
+				);
 			},
 		},
 		configureServer(server) {

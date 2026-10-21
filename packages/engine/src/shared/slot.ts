@@ -112,7 +112,8 @@ export const ReplayDelayMs = 32;
 /**
  * In hold mode, the first frame that the thread that draws draws, up to the frame published. The
  * sketch thread records the held frame twice when a feature draws with what the frame before it
- * drew, as screen-space reflections read the frame before's color, so the held frame has one.
+ * drew, as screen-space reflections read the frame before's color and a reflection probe that
+ * captures in one frame lights surfaces from then on, so the held frame has it.
  */
 export const HeldFrom = 35;
 /**
@@ -121,3 +122,23 @@ export const HeldFrom = 35;
  * so idle job workers let their threads run the measurement instead of blocking.
  */
 export const JobsYieldAddress = 36;
+/**
+ * Nonzero while the thread that draws must take a frame without drawing it, by frame parity: a still
+ * view that has accumulated enough frames rests until the scene changes. The thread that draws
+ * takes the frame anyway, so the sketch keeps stepping and can see the change that ends the rest.
+ */
+export const FrameRest0 = 33;
+export const FrameRest1 = 34;
+/**
+ * Nonzero where the page turns the still-camera accumulation off, such as in hold mode and the
+ * image tests: a still view then draws every frame as it moves.
+ */
+export const StillOff = 35;
+/**
+ * Each read of GPU picking's ring: the thread that draws adds one once the read's bytes are in
+ * engine memory. The sketch takes a read's answer when its slot is not 0.
+ */
+export const PickRead0 = 37;
+export const PickRead1 = 38;
+export const PickRead2 = 39;
+export const PickRead3 = 40;

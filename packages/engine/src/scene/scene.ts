@@ -78,6 +78,7 @@ import { type LightProbeGridOptions, SceneLightProbeGrid } from './light-probes'
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { ParticleBuffer, ParticleBufferOptions } from './particles';
+import { type PickHit, ScenePicks } from './picks';
 import {
 	type ObjectEventHandler,
 	type ObjectEventType,
@@ -88,8 +89,15 @@ import {
 } from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
+	type ProbeHost,
+	type ReflectionProbe,
+	type ReflectionProbeOptions,
+	ReflectionProbes,
+} from './probes';
+import {
 	type OverlapHit,
 	type QueryOptions,
+	type QueryTargets,
 	type RaycastBatchHits,
 	type RaycastHit,
 	type RaycastOptions,
@@ -1328,6 +1336,14 @@ export class Mesh extends Object3D {
 			checkLive('setMaterial', this);
 			checkSameEngine('setMaterial', 'material', material.core, this.scene);
 		}
+		// A displaced material moves vertices past the mesh's sphere, so the bounds grow to hold them.
+		const margin = material.boundsMargin;
+		const { mesh } = this;
+		const own = this.flags & C.FLAG_CUSTOM_BOUNDS;
+		if (mesh && !own && margin !== (this.material?.boundsMargin ?? 0)) {
+			this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + margin);
+			if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
+		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
 		this.material = material;
 	}
@@ -1341,7 +1357,7 @@ export class Mesh extends Object3D {
 			checkLive('setMesh', this);
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
-		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius);
+		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + (this.material?.boundsMargin ?? 0));
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
@@ -2766,6 +2782,11 @@ export class Scene implements ViewHolder {
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** GPU picking's queries, made on the first pick. */
+	private scenePicks: ScenePicks | undefined;
+	/** The ray and hit that a pick's raycast reuses. */
+	private pickRay: Ray | undefined;
+	private pickHit: RaycastHit | undefined;
 	/** The command batches that the world took before the runner's first frame, or -1. */
 	private settledCommands = -1;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
@@ -2840,7 +2861,7 @@ export class Scene implements ViewHolder {
 	/** @internal Pointer events on objects, made on the first call. */
 	get pointerEvents(): PointerEvents {
 		this.objectEvents ??= new PointerEvents(
-			{ pick: (frame, numbers, ray) => this.pick(frame, numbers, ray) },
+			{ pick: (frame, numbers, ray) => this.pickForEvent(frame, numbers, ray) },
 			this.pointerInput,
 		);
 		return this.objectEvents;
@@ -2850,7 +2871,7 @@ export class Scene implements ViewHolder {
 	 * Casts the ray of a pointer event from the camera of engine frame `frame`, or from the active
 	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
 	 */
-	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
+	private pickForEvent(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
 		const camera = this.activeCamera;
 		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
 		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
@@ -3285,7 +3306,7 @@ export class Scene implements ViewHolder {
 			Mesh,
 			options,
 			mesh.id,
-			mesh.radius,
+			mesh.radius + material.boundsMargin,
 			flags,
 			material.id,
 			'createMesh',
@@ -3465,7 +3486,7 @@ export class Scene implements ViewHolder {
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
 				v.radii[slot] = bounds[3] as number;
-			} else v.radii[slot] = n.mesh?.radius ?? 0;
+			} else v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
 			const up = n.parent < 0 ? (parent?.handle ?? 0) : (handles[n.parent] as number);
 			const mesh = n.mesh?.id ?? C.CORE_NO_MESH;
 			this.writeCommand(write++, C.COMMAND_CREATE | (flags << 8), handle, up, mesh);
@@ -4122,6 +4143,29 @@ export class Scene implements ViewHolder {
 		this.sceneEnvironment.set(environment, options);
 	}
 
+	/** @internal What reflection probes need from the sketch, which the sketch runner gives. */
+	probeHost?: ProbeHost;
+	/** The scene's reflection probes, made with the first. */
+	private reflectionProbes?: ReflectionProbes;
+
+	/**
+	 * Makes a reflection probe: the scene around a point, which the engine captures on the GPU and
+	 * filters for each roughness, as an environment's map. It lights the surfaces inside its box in
+	 * place of the environment, with reflections that meet the box's sides, as a room's walls or a
+	 * street's houses stand. A probe captures in a frame soon after it is made, and frames before
+	 * that draw with the environment. A scene has at most 16 probes. Their captures take 6 of the
+	 * 32 views that the scene and its passes share. Throws E1430 past those limits, E1203 for a
+	 * number that is not finite, E1108 for a negative blend or intensity or a box whose min does not
+	 * lie below its max, and E1213 for an option that probes do not take.
+	 */
+	createReflectionProbe(options: ReflectionProbeOptions): ReflectionProbe {
+		this.reflectionProbes ??= new ReflectionProbes(
+			this.core,
+			this.probeHost ?? { sendGenerator: () => {}, floatTargets: true, time: this.time },
+		);
+		return this.reflectionProbes.create(options, 'scene.createReflectionProbe');
+	}
+
 	/**
 	 * Lights the scene with a grid of irradiance probes, or with none for null. The grid's light
 	 * takes the place of the environment's diffuse light where `environmentWeight` says so, so
@@ -4165,24 +4209,106 @@ export class Scene implements ViewHolder {
 
 	/** Makes the raycasts and overlap queries. */
 	private makeQueries(): SceneQueries {
-		this.sceneQueries = new SceneQueries(
-			this.core,
-			{
-				objectAt: (slot) => this.objectSlots[slot],
-				batchAt: (id) => {
-					const batch = this.batchSlots[id & SLOT_MASK];
-					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
-				},
-				writeCamera: (input) => {
-					const camera = this.activeCamera;
-					const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
-					this.frameCameras.queryCamera(live, input);
-				},
-				writeRayCamera: (input) => this.frameCameras.rayCamera(input),
-			},
-			() => this.settleWorld(),
-		);
+		this.sceneQueries = new SceneQueries(this.core, this.queryTargets(), () => this.settleWorld());
 		return this.sceneQueries;
+	}
+
+	/**
+	 * The objects and batches that queries and picks name by their ids, and the cameras that their
+	 * rays read.
+	 */
+	private queryTargets(): QueryTargets {
+		return {
+			objectAt: (slot) => this.objectSlots[slot],
+			batchAt: (id) => {
+				const batch = this.batchSlots[id & SLOT_MASK];
+				return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+			},
+			writeCamera: (input) => {
+				const camera = this.activeCamera;
+				const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+				this.frameCameras.queryCamera(live, input);
+			},
+			writeRayCamera: (input) => this.frameCameras.rayCamera(input),
+		};
+	}
+
+	/** GPU picking's queries, made on the first pick. */
+	private get picks(): ScenePicks {
+		if (!this.scenePicks) {
+			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y) =>
+				this.pickByRay(x, y),
+			);
+		}
+		return this.scenePicks;
+	}
+
+	/**
+	 * Finds the object that the camera draws at a point of the canvas, or `null` where it draws
+	 * nothing there. `x` and `y` are CSS pixels from the canvas's top-left corner, as
+	 * `camera.screenToRay` takes them, and the point is tested at the pixel that the camera draws,
+	 * not at a projected triangle: a cut-out material's holes and a surface thinner than a pixel
+	 * answer as the image shows them.
+	 *
+	 * The answer arrives one or more frames later, through a promise, and a pick in every frame
+	 * waits in a queue of its own. The frame that records the pick draws it, so the camera of that
+	 * frame answers, and a camera that moves between the click and the frame can differ from the
+	 * frame that the click saw. A scene with a source that the id target cannot hold, such as a
+	 * custom material without a vertex offset, a blended surface or a sprite, answers with a
+	 * raycast instead, which tests triangles and so ignores alpha masks.
+	 */
+	pick(x: number, y: number): Promise<PickHit | null> {
+		if (DEV) {
+			if (!Number.isFinite(x)) throw new EngineError('E1203', `pick() got ${x} for x.`);
+			if (!Number.isFinite(y)) throw new EngineError('E1203', `pick() got ${y} for y.`);
+		}
+		return this.picks.pick(x, y);
+	}
+
+	/** @internal Answers each pick whose read landed, at the end of a frame. */
+	pollPicks(slots: Int32Array): void {
+		this.scenePicks?.poll(slots);
+	}
+
+	/** @internal Gives the picks the engine's control block, when the frame loop starts. */
+	attachPickControl(slots: Int32Array): void {
+		this.picks.attach(slots);
+	}
+
+	/** @internal Fails the picks that wait, when the engine stops. */
+	stopPicks(): void {
+		this.scenePicks?.stop();
+	}
+
+	/** Casts a ray through a point of the canvas, for a pick that the GPU pass cannot draw. */
+	private pickByRay(x: number, y: number): PickHit | null {
+		const camera = this.activeCamera;
+		if (!camera || camera.destroyedFrame !== -1) return null;
+		// The ray and hit are made once, when the first pick needs them.
+		if (!this.pickRay) this.pickRay = { origin: [0, 0, 0], direction: [0, 0, 0] };
+		if (!this.pickHit) {
+			this.pickHit = {
+				object: null,
+				instance: -1,
+				point: [0, 0, 0],
+				normal: [0, 0, 0],
+				distance: 0,
+				triangle: -1,
+			};
+		}
+		const ray = this.pickRay;
+		const hit = this.pickHit;
+		camera.screenToRay(x, y, ray);
+		// A camera that has not drawn cannot project the point, so the frame it would have answered
+		// showed nothing there.
+		if (!Number.isFinite(ray.direction[0])) return null;
+		if (!Number.isFinite(ray.direction[1])) return null;
+		if (!Number.isFinite(ray.direction[2])) return null;
+		const layers = camera.layers;
+		if (!this.raycast(ray.origin, ray.direction, { layers }, hit) || hit.object === null) {
+			return null;
+		}
+		return { object: hit.object, instance: hit.instance };
 	}
 
 	/**

@@ -3,12 +3,12 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, fog, sky; warmUp."
+summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; the light probe grid; warmUp."
 ---
 
 # Scene
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, the light probe grid, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -317,7 +317,47 @@ export default defineSketch(async ({ scene, assets, textures }) => {
 });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
+
+## Reflection probes
+
+`createReflectionProbe` lights the surfaces inside a box with the scene around a point, in place of the environment. A polished floor then reflects the room's walls where they stand. [Lighting and environment](../concepts/lighting.md#reflection-probes) says how probes capture, blend and cost.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, input }) => {
+  scene.setEnvironment(await assets.builtinEnvironment('room'));
+  // The hall, and the smaller shop inside it, which wins where the boxes overlap.
+  scene.createReflectionProbe({ box: { min: [-10, 0, -6], max: [10, 5, 6] }, blend: 2 });
+  const shop = scene.createReflectionProbe({
+    box: { min: [2, 0, -2], max: [6, 3, 2] },
+    position: [4, 1.2, 0],
+    blend: 0.5,
+  });
+  return {
+    onUpdate() {
+      // The shop's window display changes on a key: capture it again in a frame soon.
+      if (input.wasPressed('KeyR')) shop.capture();
+    },
+  };
+});
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `box` | Required | `{ min, max }`: the box that the probe lights, from its corner of least x, y and z to the opposite one, in meters in the world |
+| `position` | The box's center | The point that the probe captures the scene from |
+| `blend` | 1 | How far beyond the box's sides the probe fades out, in meters. The probe lights its whole box. 0 gives a hard edge |
+| `intensity` | 1 | The factor of the probe's light |
+| `boxProjection` | true | Reflections meet the box's sides. false reads the probe as light from far away |
+| `refresh` | `'once'` | `'once'` captures when the probe is made or moved, and on `probe.capture()`. `'always'` captures again and again, one probe a frame in turns |
+| `layers` | The default layer | The layers of the objects that the captures draw |
+| `priority` | 0 | Where boxes overlap, the higher priority wins, then the smaller box |
+
+`probe.set(options)` sets every option again: a new position or new layers capture again. `probe.capture()` captures again after objects around the probe moved. `probe.destroy()` removes the probe, and its box takes the light of other probes or of the environment from the next frame.
+
+A scene has at most 16 probes, and their captures take 6 of the 32 views that the scene and its [passes](render.md) share. Each throws E1430 past its limit. Development builds throw E1213 for an option that probes do not take, E1203 for a number that is not finite, and E1108 for a negative blend or intensity, or a box whose `min` does not lie below its `max`. They also throw E1101 for a call on a probe that was destroyed.
 
 ## Fog
 
@@ -352,7 +392,7 @@ scene.setFog({ color: '#b8c4d0', density: 0.04, sunGlow: 1.5 });
 
 Height fog sums the fog along each line of sight. A view down into the mist then sees thick fog, and a view up sees clear air. The sun glow takes the color and the intensity of the scene's main directional light, so it follows the light as it moves. Shadows do not block the glow.
 
-The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for an unknown curve, a `far` that is not above `near`, a negative `density`, `heightFalloff` or `sunGlow`, and a `sunGlowExponent` that is not above 0. They throw E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
+The fog does not cover the background, so give the background the fog's color to fade far objects into it. Past the edge of an outdoor scene's land, the background shows with no fog at all. [Where the land ends](../concepts/lighting.md#where-the-land-ends) says how to hide that edge. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for an unknown curve, a `far` that is not above `near`, a negative `density`, `heightFalloff` or `sunGlow`, and a `sunGlowExponent` that is not above 0. They throw E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
 
 ### Volumetric fog
 
@@ -398,7 +438,7 @@ export default defineSketch(async ({ scene, assets, post }) => {
 });
 ```
 
-With `{ model: 'physical' }`, the light, the ambient light and the exposure match the physical sky, and `day.atmosphere` holds its sun, its moon and its stars. The exposure then follows the sky's light, as an eye adapts: it rises through dusk and settles at night.
+With `{ model: 'physical' }`, the light, the ambient light and the exposure match the physical sky, and `day.atmosphere` holds its sun, its moon and its stars. The exposure then follows the sky's light, as an eye adapts: it rises through dusk and settles at night. The moon gives its most light at midnight, where it stands highest, and fades as it sinks toward dusk and dawn.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';

@@ -338,7 +338,7 @@ const brick = materials.standard({ metalnessRoughnessMap: orm, aoMap: orm });
 
 ## Normal maps from bump maps
 
-A bump map gives each texel a height. A normal map gives the slope that the heights make, which the GPU reads with no extra work. The engine reads normal maps only. `assets normal-from-bump` makes one from a bump map, such as a three.js material's `bumpMap`:
+A bump map gives each texel a height. A normal map gives the slope that the heights make, which the GPU reads with no extra work. The engine draws bump maps too ([materials](../api/materials.md)), at three texture reads per pixel, and a normal map saves those. `assets normal-from-bump` makes one from a bump map, such as a three.js material's `bumpMap`:
 
 ```sh
 bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_normal.ktx2 --scale 2

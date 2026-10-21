@@ -3,12 +3,12 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion and screen-space reflections at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas."
+summary: "HDR scene color, ambient occlusion and screen-space reflections at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas; still views that blend and then rest the GPU."
 ---
 
 # The post-processing chain
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves. A still view blends and then rests the GPU.
 
 ```mermaid
 flowchart LR
@@ -60,7 +60,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). Below the whole canvas's scale, the final pass runs in two steps, while the render scale can drop below 1, which the default presets allow. At the whole canvas's scale, and while the scale cannot drop below 1, one pass does that work, exactly as before the split.
 
 1. The first step draws at the render size, one pixel for each render pixel. It adds bloom's light, darkens the edges with the vignette, and runs the output transform, which is the tone curve and the sRGB encode. It smooths edges with FXAA too. It writes an 8-bit target the size of the canvas, with the image in its corner at the render scale. The second step reads that target as display color. The first step leaves the dither to the second step: that step draws canvas pixels, so the noise lands at the canvas's size.
-2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas, with a bilinear filter. Then it darkens the edges with the vignette, draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge. Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend; a flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass darkens the edges with the vignette, draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
 
 Two costs come with the split. Both go away while the render scale cannot drop, which `quality.set({ minRenderScale: 1 })` keeps:
 
@@ -242,6 +242,7 @@ post.set({ ao: { radius: 0.5, intensity: 1 } });
 - The settings mean what `GTAOPass`'s settings mean, with the same search and blur. In the engine's parity tests, with `GTAOPass`'s defaults, null3D's image differs from three.js's in under 0.1% of the pixels on every GPU path. With a wider, darker search, under 1% differ, along the soft edges of the darkened areas.
 - `GTAOPass` darkens the whole image, direct light and highlights included. null3D darkens only the ambient light, and the light that light maps add. A surface in the sun keeps its sunlight in a corner, as it would in the real world. In a scene that only ambient light lights, the two give the same image.
 - Blended objects draw over the surfaces that ambient occlusion saw, so they take none.
+- The depth prepass leaves out masked surfaces and levels of detail while they fade, so ambient occlusion may see only what lies behind them. Such a surface takes the occlusion only where ambient occlusion saw a surface at its own depth, such as a leaf on the ground. A petal in front of grass takes none of the grass's occlusion.
 - `post.set({ ao: false })` turns ambient occlusion off. The settings keep their values, so `post.set({ ao: {} })` turns it on again with them.
 
 ### Where ambient occlusion draws
@@ -346,6 +347,18 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 - The noise is the same in every frame, so a still picture does not shimmer.
 - The dither comes after every other step, so no later step shrinks it. In the dark corners of a vignette, where bands show first, it keeps its full step.
 - On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table.
+
+## Still-camera accumulation
+
+When nothing in the view changes, the engine sharpens the picture and then stops drawing. Each frame draws the scene with the camera moved by a fraction of a pixel, and blends into a kept 16-bit history. After 63 blended frames, about a second at 60 frames per second, the history holds their average. Its edges and fine detail are smoother than any one frame's. The thread that draws then takes frames without drawing them, so the GPU rests, and the canvas keeps the sharp picture. The first frame that changes draws at once, as a moving view does, and the blending starts again.
+
+The engine finds a still view by comparing each frame's draw commands and uploaded values with those of the frame two frames before. It leaves out only the values that change on their own in every frame: the clock, the sub-pixel offset and the blend's weight. Anything else that changes counts as a change, so the picture never freezes while something moves. The sketch keeps running while the view rests, so `onUpdate` sees input and time as before.
+
+- While the view blends, the final pass skips FXAA: the blended frames smooth the edges instead. With MSAA, each blended frame keeps its 4 samples.
+- Meshes and sprites move by the sub-pixel offset. Lines, points and particles draw without it.
+- Some views never blend. Their picture can change on the GPU alone, or with the clock alone, or the blend would mix what it cannot average. Those views draw every frame as before. Views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials or the physical sky never blend either. Nor does a canvas that keeps its alpha, or the 8-bit color path.
+- The history is one 16-bit target the size of the canvas: 8 bytes per pixel, about 17 MB at 1920 × 1080.
+- Hold mode, and so the image tests, draws without it. The option `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
 
 ## Effects on devices without HDR color
 

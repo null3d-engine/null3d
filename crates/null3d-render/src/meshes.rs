@@ -9,10 +9,12 @@
 //! their order, that each use at most that many vertices. Each part holds its own copy of the
 //! vertices it uses, sits in one page, and draws with its own draw.
 //!
-//! The wireframe debug view draws lines, and WebGL2 has no line fill mode, so each part can also
-//! keep an edge list: two indices for each edge of each of its triangles, in its page after the
-//! indices it had then. The storage makes the edge lists the first time the view asks for them,
-//! and from then on gives each new part its own.
+//! Wireframe materials and the wireframe debug view draw lines, and WebGL2 has no line fill mode,
+//! so each part can also keep an edge list: two indices for each edge of each of its triangles, in
+//! its page after the indices it had then. The storage makes the edge lists the first time a
+//! wireframe asks for them, and from then on gives each new part its own. Each draw takes a part's
+//! triangles or its edge list by its own pipeline, so lines and triangles of one mesh draw side by
+//! side.
 //!
 //! Removing meshes packs the storage again: the parts, joint spheres, reaches and delta texels of
 //! the meshes that stay move down over those of the removed ones, in each page and in each list,
@@ -166,8 +168,6 @@ pub struct MeshStorage {
     edge_parts: Vec<MeshPart>,
     /// True once every part has an edge list, so each new part gets one too.
     edges: bool,
-    /// True while draws take each part's edge list in place of its triangles.
-    drawing_edges: bool,
     /// True for each id whose mesh is live.
     live: Vec<bool>,
     /// The ids of removed meshes, which the next meshes take lowest first.
@@ -264,7 +264,6 @@ impl MeshStorage {
             reaches: Vec::new(),
             edge_parts: Vec::new(),
             edges: false,
-            drawing_edges: false,
             live: Vec::new(),
             free: Vec::new(),
             sources: Vec::new(),
@@ -437,27 +436,28 @@ impl MeshStorage {
         &self.updated
     }
 
-    /// The parts of a mesh, in triangle order: their triangles, or their edge lists while draws
-    /// take those.
-    pub fn parts(&self, mesh: &MeshSlot) -> &[MeshPart] {
+    /// The parts of a mesh, in triangle order: their triangles, or their edge lists for a draw of
+    /// `lines`. A mesh drawn as lines before [`MeshStorage::keep_edges`] made the lists draws
+    /// nothing.
+    pub fn parts(&self, mesh: &MeshSlot, lines: bool) -> &[MeshPart] {
         let first = mesh.first_part as usize;
-        let parts = if self.drawing_edges {
+        let parts = if !lines {
+            &self.parts
+        } else if self.edges {
             &self.edge_parts
         } else {
-            &self.parts
+            return &[];
         };
         &parts[first..first + mesh.part_count as usize]
     }
 
-    /// Makes draws take each part's edge list in place of its triangles, or its triangles again.
-    /// The first call that turns them on makes every part's edge list, which the pages upload as
-    /// new indices.
-    pub fn draw_edges(&mut self, on: bool) {
-        if on && !self.edges {
+    /// Makes every part's edge list, which the pages upload as new indices, and from now on each
+    /// new part's, for draws of lines. Calls after the first change nothing.
+    pub fn keep_edges(&mut self) {
+        if !self.edges {
             self.edges = true;
             self.add_edge_parts();
         }
-        self.drawing_edges = on;
     }
 
     /// Makes the edge list of each part that has none yet.
@@ -1096,7 +1096,7 @@ mod tests {
         let slot = storage.mesh(id).unwrap();
         let stride = vertex::stride(slot.format) as usize;
         storage
-            .parts(slot)
+            .parts(slot, false)
             .iter()
             .flat_map(|part| {
                 let page = &storage.pages()[part.page as usize];
@@ -1177,7 +1177,7 @@ mod tests {
             if packing == Packing::Pages {
                 let parts = ids
                     .iter()
-                    .flat_map(|&id| storage.parts(storage.mesh(id).unwrap()));
+                    .flat_map(|&id| storage.parts(storage.mesh(id).unwrap(), false));
                 assert!(parts.into_iter().all(|part| part.base_vertex == 0));
             }
         }
@@ -1204,7 +1204,7 @@ mod tests {
             for (id, mesh) in &ids {
                 let slot = storage.mesh(*id).unwrap();
                 assert_eq!(slot.format, mesh.format);
-                let parts = storage.parts(slot);
+                let parts = storage.parts(slot, false);
                 assert_eq!(parts.len(), 1);
                 assert_eq!(storage.pages()[parts[0].page as usize].format, mesh.format);
                 assert_eq!(resolved_vertices(&storage, *id), original_vertices(mesh));
@@ -1242,7 +1242,7 @@ mod tests {
             let small = storage.add(&grid(2, 2, vertex::UV0)).unwrap();
             let id = storage.add(&big).unwrap();
             let slot = *storage.mesh(id).unwrap();
-            let parts = storage.parts(&slot).to_vec();
+            let parts = storage.parts(&slot, false).to_vec();
             assert_eq!(parts.len(), 2, "{packing:?}");
             assert_eq!(slot.vertex_count, 301 * 301);
             // Every triangle lands in exactly one part, in order, and reaches the same vertices.
@@ -1305,7 +1305,7 @@ mod tests {
             let id = storage.add_morphed(&big, &targets).unwrap();
             let slot = *storage.mesh(id).unwrap();
             assert!(has_targets(slot.format));
-            assert_eq!(storage.parts(&slot).len(), 2, "{packing:?}");
+            assert_eq!(storage.parts(&slot, false).len(), 2, "{packing:?}");
             // Each vertex keeps the attribute that names its own entries, in whichever part.
             assert_eq!(
                 resolved_vertices(&storage, id),
@@ -1334,7 +1334,7 @@ mod tests {
             let mut storage = MeshStorage::new(packing);
             let fits = storage.add(&strip(65_535)).unwrap();
             let splits = storage.add(&strip(65_536)).unwrap();
-            let parts = |id: u32| storage.parts(storage.mesh(id).unwrap()).len();
+            let parts = |id: u32| storage.parts(storage.mesh(id).unwrap(), false).len();
             assert_eq!((parts(fits), parts(splits)), (1, 2), "{packing:?}");
             for page in storage.pages() {
                 assert!(page.indices.iter().all(|&i| i < u16::MAX), "{packing:?}");
@@ -1349,7 +1349,7 @@ mod tests {
         let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, 4096);
         let id = storage.add(&mesh).unwrap();
         let slot = *storage.mesh(id).unwrap();
-        assert!(storage.parts(&slot).len() > 1);
+        assert!(storage.parts(&slot, false).len() > 1);
         assert_eq!(resolved_vertices(&storage, id), original_vertices(&mesh));
         for page in storage.pages() {
             let (vertex_bytes, index_bytes) = page.buffer_bytes();
@@ -1367,10 +1367,10 @@ mod tests {
         let mesh = grid(20, 20, 0);
         for packing in [Packing::SharedBuffers, Packing::Pages] {
             let mut storage = MeshStorage::with_page_limit(packing, 4096);
-            storage.draw_edges(true);
+            storage.keep_edges();
             storage.add(&first).unwrap();
             let id = storage.add(&mesh).unwrap();
-            assert!(storage.parts(storage.mesh(id).unwrap()).len() > 1);
+            assert!(storage.parts(storage.mesh(id).unwrap(), false).len() > 1);
             let triangles = storage.triangles(id).unwrap();
             assert_eq!(triangles.count() as usize, mesh.indices.len() / 3);
             for t in 0..triangles.count() {
@@ -1460,7 +1460,7 @@ mod tests {
         let slot = storage.mesh(id).unwrap();
         let stride = vertex::stride(slot.format) as usize;
         storage
-            .parts(slot)
+            .parts(slot, true)
             .iter()
             .flat_map(|part| {
                 let page = &storage.pages()[part.page as usize];
@@ -1486,15 +1486,16 @@ mod tests {
             let first = storage
                 .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
                 .unwrap();
-            let triangles = storage.parts(storage.mesh(first).unwrap()).to_vec();
-            storage.draw_edges(true);
+            let triangles = storage.parts(storage.mesh(first).unwrap(), false).to_vec();
+            storage.keep_edges();
             // A mesh added later gets its edge list too.
             let second = storage.add(&sphere(1.0, [8, 4])).unwrap();
-            storage.draw_edges(false);
-            // Turned off, the parts draw their triangles from where they always were.
-            assert_eq!(storage.parts(storage.mesh(first).unwrap()), triangles);
+            // Draws of triangles still take them from where they always were.
+            assert_eq!(
+                storage.parts(storage.mesh(first).unwrap(), false),
+                triangles
+            );
             let corners = [first, second].map(|id| resolved_vertices(&storage, id));
-            storage.draw_edges(true);
             for (id, corners) in [first, second].into_iter().zip(corners) {
                 let expected: Vec<[Vec<u8>; 2]> = corners
                     .as_chunks::<3>()
@@ -1515,11 +1516,11 @@ mod tests {
         let triangles = |count: usize| zeros(3, (0..count).flat_map(|_| [0, 1, 2]).collect());
         let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, 256);
         let full = storage.add(&triangles(40)).unwrap();
-        storage.draw_edges(true);
+        storage.keep_edges();
         // With edge lists on, a new part goes to a page with room for its edges too.
         let small = storage.add(&triangles(1)).unwrap();
         let counts =
-            [full, small].map(|id| storage.parts(storage.mesh(id).unwrap())[0].index_count);
+            [full, small].map(|id| storage.parts(storage.mesh(id).unwrap(), true)[0].index_count);
         assert_eq!(counts, [0, 6]);
         assert_eq!(storage.pages().len(), 2);
         for page in storage.pages() {
@@ -1569,7 +1570,9 @@ mod tests {
         for packing in [Packing::SharedBuffers, Packing::Pages] {
             for edges in [false, true] {
                 let mut storage = MeshStorage::new(packing);
-                storage.draw_edges(edges);
+                if edges {
+                    storage.keep_edges();
+                }
                 let ids: Vec<u32> = meshes.iter().map(|m| storage.add(m).unwrap()).collect();
                 let moves = storage.remove(&[ids[1], ids[3]]);
                 assert!(!moves.pages.is_empty(), "{packing:?}");
@@ -1577,7 +1580,9 @@ mod tests {
                 assert!(storage.mesh(ids[1]).is_none() && storage.triangles(ids[3]).is_none());
                 // The same pages as a storage that never held the removed meshes.
                 let mut kept = MeshStorage::new(packing);
-                kept.draw_edges(edges);
+                if edges {
+                    kept.keep_edges();
+                }
                 for k in [0, 2, 4] {
                     kept.add(&meshes[k]).unwrap();
                 }
@@ -1592,12 +1597,10 @@ mod tests {
                         let lines = drawn_lines(&storage, id).len();
                         assert_eq!(lines, meshes[k].indices.len());
                     }
-                    storage.draw_edges(false);
                     assert_eq!(
                         resolved_vertices(&storage, id),
                         original_vertices(&meshes[k])
                     );
-                    storage.draw_edges(edges);
                     let slot = storage.mesh(id).unwrap();
                     assert_eq!(storage.joint_spheres(slot), joint_spheres(&meshes[k]));
                 }
@@ -1605,7 +1608,6 @@ mod tests {
                 storage.release(&[ids[3], ids[1], ids[0]]);
                 assert_eq!(storage.add(&meshes[3]).unwrap(), ids[1]);
                 assert_eq!(storage.add(&meshes[1]).unwrap(), ids[3]);
-                storage.draw_edges(false);
                 assert_eq!(
                     resolved_vertices(&storage, ids[3]),
                     original_vertices(&meshes[1])
@@ -1797,7 +1799,7 @@ mod tests {
                 .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
                 .unwrap();
             let id = storage.add(&mesh).unwrap();
-            let part = storage.parts(storage.mesh(id).unwrap())[0];
+            let part = storage.parts(storage.mesh(id).unwrap(), false)[0];
             let bytes = moved_positions(3..7);
             assert_eq!(storage.update_vertices(id, 0, 3, 3, 4, &bytes), Ok(true));
             assert_eq!(storage.update_vertices(id, 0, 3, 3, 4, &bytes), Ok(false));
@@ -1837,7 +1839,7 @@ mod tests {
             let gone = storage.add(&big).unwrap();
             let id = storage.add(&big).unwrap();
             storage.remove(&[gone]);
-            assert!(storage.parts(storage.mesh(id).unwrap()).len() > 1);
+            assert!(storage.parts(storage.mesh(id).unwrap(), false).len() > 1);
             let bytes = moved_positions(moved.clone());
             let count = moved.end - moved.start;
             assert_eq!(
@@ -1851,7 +1853,7 @@ mod tests {
             );
             assert_eq!(
                 storage.updated().len(),
-                storage.parts(storage.mesh(id).unwrap()).len()
+                storage.parts(storage.mesh(id).unwrap(), false).len()
             );
         }
     }

@@ -1,7 +1,16 @@
 // The stage writes the sky, the fog and the environment light every frame, so a part that the HUD
 // turns off must stay off in every later frame and mood, and come back when it turns on again.
 import { expect, test } from 'bun:test';
-import { createMoods, type Mood, nearestMood, type StagePart } from './stage';
+import {
+	createMoods,
+	HOURS,
+	lampShare,
+	type Mood,
+	moodMix,
+	moodShare,
+	nearestMood,
+	type StagePart,
+} from './stage';
 
 const SKY = { name: 'sky' };
 const ROOM = { name: 'room' };
@@ -13,6 +22,8 @@ function staged() {
 		background?: unknown;
 		environment?: unknown;
 		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
+		dir?: readonly number[];
+		exposure?: number;
 	} = {};
 	const scene = {
 		setBackground: (background: unknown) => {
@@ -25,8 +36,22 @@ function staged() {
 			last.fog = fog;
 		},
 	};
-	const sun = { setDirection() {}, setColor() {}, setIntensity() {} };
-	const context = { scene, post: { set() {} }, time: { now: 0 } };
+	const sun = {
+		setDirection(x: number, y: number, z: number) {
+			last.dir = [x, y, z];
+		},
+		setColor() {},
+		setIntensity() {},
+	};
+	const context = {
+		scene,
+		post: {
+			set(settings: { exposure?: number }) {
+				last.exposure = settings.exposure;
+			},
+		},
+		time: { now: 0 },
+	};
 	const stage = createMoods(context as never, sun as never, SKY as never, ROOM as never, {
 		heading: 0,
 		fogDensity: 0.01,
@@ -99,7 +124,98 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
 });
 
-test('the fixed mood nearest an hour carries the look of the moment', () => {
+test('the light travels downward from above through every fixed mood', () => {
+	const { stage, last, frames } = staged();
+	// The engine gives a light's direction as the path its light takes, so a sun above the scene
+	// points down. A sign flip lights the scene from below and leaves it dark.
+	for (const mood of ['Dawn', 'Morning', 'Midday', 'Afternoon', 'Golden', 'Dusk', 'Night']) {
+		stage.set(mood as Mood);
+		frames(240);
+		expect(last.dir?.[1]).toBeLessThan(0);
+	}
+	stage.set('Midday');
+	frames(240);
+	expect(last.dir?.[1]).toBeLessThan(-0.5);
+});
+
+test("a town's own lights follow the sun", () => {
+	// The sun's height is the sine of its elevation: 0 is the horizon, and 1 is overhead.
+	expect(lampShare(0.9)).toBe(0);
+	expect(lampShare(0)).toBeCloseTo(0.32, 2);
+	expect(lampShare(-0.9)).toBe(1);
+	// The lamps warm up as the sun sinks and stand down as it climbs.
+	expect(lampShare(0.1)).toBeGreaterThan(0);
+	expect(lampShare(0.1)).toBeLessThan(0.32);
+	expect(lampShare(-0.2)).toBeGreaterThan(0.32);
+	expect(lampShare(-0.2)).toBeLessThan(1);
+});
+
+test("the stage's lamps are out at midday, full at night, and full in the studio", () => {
+	const { stage, frames } = staged();
+	stage.set('Midday');
+	frames(240);
+	expect(stage.lamps).toBeCloseTo(0, 3);
+	stage.set('Night');
+	frames(240);
+	expect(stage.lamps).toBeCloseTo(1, 3);
+	stage.set('Studio');
+	expect(stage.lamps).toBe(1);
+});
+
+test('the daylight hours hold midday’s exposure, and a low sun opens it up', () => {
+	const { stage, last, frames } = staged();
+	stage.set('Midday');
+	frames(240);
+	const midday = last.exposure as number;
+	// Morning and afternoon hold the same exposure, so the sun's own height sets how bright each
+	// hour reads. The exposure must not even them out, or every hour reads as bright as the next.
+	for (const mood of ['Morning', 'Afternoon'] as const) {
+		stage.set(mood);
+		frames(240);
+		expect(last.exposure).toBeCloseTo(midday, 4);
+	}
+	// A camera opens up for a low sun, at dawn and at golden hour.
+	for (const mood of ['Dawn', 'Golden'] as const) {
+		stage.set(mood);
+		frames(240);
+		expect(last.exposure as number).toBeGreaterThan(midday);
+	}
+	// Night takes the physical model's own exposure, which lights the moonlit scene.
+	stage.set('Night');
+	frames(240);
+	expect(last.exposure as number).toBeGreaterThan(midday);
+});
+
+test('the slider holds any hour, and Auto moves it again', () => {
+	const { stage, frames } = staged();
+	stage.setHour(18.4);
+	frames(240);
+	expect(stage.hours).toBeCloseTo(18.4, 3);
+	expect(stage.auto).toBe(false);
+	stage.set('Auto');
+	frames(60);
+	expect(stage.auto).toBe(true);
+	expect(stage.hours).not.toBeCloseTo(18.4, 3);
+});
+
+test('Auto carries on from the hour on show, so turning it on never jumps the sky', () => {
+	const { stage, frames } = staged();
+	stage.setHour(7.05);
+	frames(30);
+	stage.set('Auto');
+	expect(stage.hours).toBeCloseTo(7.05, 3);
+	frames(60);
+	// A whole day takes 80 seconds of Auto, so a second moves the hour on about 18 minutes from
+	// where it started, never hours away.
+	expect(stage.hours).toBeGreaterThan(7.05);
+	expect(stage.hours).toBeLessThan(8);
+	// From a fixed mood, it starts at that mood's hour.
+	stage.set('Dusk');
+	stage.set('Auto');
+	expect(stage.hours).toBeCloseTo(18.4, 3);
+});
+
+test('the fixed mood nearest an hour is the one the stage names', () => {
 	expect(nearestMood(6.2)).toBe('Dawn');
 	expect(nearestMood(12)).toBe('Midday');
 	expect(nearestMood(17.6)).toBe('Golden');
@@ -107,4 +223,28 @@ test('the fixed mood nearest an hour carries the look of the moment', () => {
 	expect(nearestMood(23.5)).toBe('Night');
 	expect(nearestMood(0.5)).toBe('Night');
 	expect(nearestMood(8)).toBe('Morning');
+});
+
+test('a look moves between the moods with the light, never at once', () => {
+	// At each fixed mood's own hour, the look is that mood's alone.
+	for (const [mood, hours] of Object.entries(HOURS))
+		expect(moodShare(moodMix(hours), mood as Mood)).toBe(1);
+	// Through the dark hours the look holds the night, so nothing of the dawn shows after midnight.
+	for (const hours of [20, 23, 0, 2.6, 4]) expect(moodShare(moodMix(hours), 'Night')).toBe(1);
+	// The dawn's look comes in through the morning twilight, a little at first and whole at Dawn.
+	const dawn = (hours: number) => moodShare(moodMix(hours), 'Dawn');
+	expect(dawn(5)).toBeGreaterThan(0);
+	expect(dawn(5)).toBeLessThan(0.25);
+	expect(dawn(5.5)).toBeGreaterThan(dawn(5));
+	expect(dawn(6)).toBeGreaterThan(dawn(5.5));
+	// No mood's share steps between samples a minute apart, around the whole clock. The shortest
+	// blend, golden hour's 48 minutes into dusk, moves at most 3 percent a minute.
+	const moods: Mood[] = ['Dawn', 'Morning', 'Midday', 'Afternoon', 'Golden', 'Dusk', 'Night'];
+	let before = moodMix(0);
+	for (let hours = 1 / 60; hours <= 24.0001; hours += 1 / 60) {
+		const now = moodMix(hours);
+		for (const mood of moods)
+			expect(Math.abs(moodShare(now, mood) - moodShare(before, mood))).toBeLessThan(0.035);
+		before = now;
+	}
 });

@@ -154,7 +154,7 @@ On an `InstancedMesh`, three.js r186 applies the instance matrix before `positio
 
 ## 8. Vertex displacement and displacement maps
 
-A displacement computed from the vertex, such as wind or waves, works (section 9 shows one). So does a height map, through the textures of custom materials (0.2):
+A displacement computed from the vertex, such as wind or waves, works (section 9 shows one). For three.js's `displacementMap`, use the standard material's own `displacementMap`, `displacementScale` and `displacementBias` (0.2): shadows, the depth prepass and culling bounds follow the moved vertices, and the normals follow the map's slope. Write a vertex offset only for a height map that a standard material cannot take, such as one that moves along another direction, through the textures of custom materials (0.2):
 
 ```ts
 const terrain = materials.shader({

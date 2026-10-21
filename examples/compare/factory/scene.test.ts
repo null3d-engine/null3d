@@ -1,23 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	effectsFromText,
-	effectsToText,
-	gradeTable,
-	modeFromText,
-	quatMultiply,
-	rotateVector,
-	stepsUntil,
-	surfaceMaps,
-	triangleCount,
-} from '../../lib/compare-scene';
-import {
-	type FactoryMatrices,
-	type FactoryRows,
-	poseFactory,
-	poseFactoryRows,
-	type Rows,
-	writeQuaternionMatrix,
-} from './pose';
+import { quatMultiply, rotateVector, stepsUntil, triangleCount } from '../../lib/compare-scene';
 import {
 	ARM_PARENT,
 	ARM_PART,
@@ -108,8 +90,7 @@ describe('Factory layout and counts', () => {
 		expect(factoryCells(10_000)).toBe(1_000);
 		expect(factoryCells(10_001)).toBe(1_001);
 		expect(factoryCells(0)).toBe(1);
-		expect(factoryObjects(10_000)).toBe(1_000 * 15 + 13);
-		expect(factoryObjects(10_000, 'instanced')).toBe(12 + 13);
+		expect(factoryObjects(10_000)).toBe(1_000 * 15 + 31);
 	});
 
 	test('the ramps top out between 20,000 and 50,000 moving parts', () => {
@@ -127,7 +108,12 @@ describe('Factory layout and counts', () => {
 		expect(two - one).toBeGreaterThan(0);
 		expect(one - (two - one)).toBe(
 			triangleCount(meshes.floor) +
-				6 * (triangleCount(meshes.housing) + triangleCount(meshes.lens)),
+				6 *
+					(triangleCount(meshes.housing) +
+						triangleCount(meshes.lens) +
+						triangleCount(meshes.panel) +
+						triangleCount(meshes.panelFrame) +
+						triangleCount(meshes.cone)),
 		);
 	});
 
@@ -265,138 +251,5 @@ describe('Factory simulation', () => {
 			}
 		}
 		expect(flying).toBeGreaterThan(100);
-	});
-});
-
-describe("the instanced mode's closed-form poses", () => {
-	test("three.js's matrices match the parent-first walk of each arm's tree, for every moving part and crate", () => {
-		const cells = 16;
-		const state = createFactory(cells);
-		const out: FactoryMatrices = {
-			turntable: new Float32Array(cells * 16),
-			upperArm: new Float32Array(cells * 16),
-			forearm: new Float32Array(cells * 16),
-			wrist: new Float32Array(cells * 16),
-			finger: new Float32Array(cells * 32),
-			crate: new Float32Array(cells * CRATES_PER_CELL * 16),
-		};
-		const matrixOf = (pose: Pose) => {
-			const matrix = new Float32Array(16);
-			const [x, y, z, w] = pose.rotation as [number, number, number, number];
-			const [px, py, pz] = pose.position as [number, number, number];
-			writeQuaternionMatrix(matrix, 0, x, y, z, w, px, py, pz);
-			return matrix;
-		};
-		const expectSame = (actual: Float32Array, offset: number, expected: Float32Array) => {
-			for (let e = 0; e < 16; e++) expect(actual[offset + e]!).toBeCloseTo(expected[e]!, 4);
-		};
-		let held = 0;
-		for (let moment = 0; moment < 40; moment++) {
-			run(state, stepsUntil(0.5));
-			poseFactory(state, cells, out);
-			for (let c = 0; c < cells; c++) {
-				const world = armWorld(state, c);
-				expectSame(out.turntable, c * 16, matrixOf(world[ARM_PART.turntable]!));
-				expectSame(out.upperArm, c * 16, matrixOf(world[ARM_PART.upperArm]!));
-				expectSame(out.forearm, c * 16, matrixOf(world[ARM_PART.forearm]!));
-				expectSame(out.wrist, c * 16, matrixOf(world[ARM_PART.wrist]!));
-				expectSame(out.finger, c * 32, matrixOf(world[ARM_PART.fingerLeft]!));
-				expectSame(out.finger, c * 32 + 16, matrixOf(world[ARM_PART.fingerRight]!));
-				for (let k = 0; k < CRATES_PER_CELL; k++) {
-					expectSame(out.crate, (c * CRATES_PER_CELL + k) * 16, matrixOf(crateWorld(state, c, k)));
-					if (state.crateState[c * CRATES_PER_CELL + k] === CrateState.held) held++;
-				}
-			}
-		}
-		expect(held).toBeGreaterThan(20);
-	});
-
-	test("null3D's rows match the same walk, for every moving part and crate", () => {
-		const cells = 16;
-		const state = createFactory(cells);
-		const rows = (perCell: number): Rows => ({
-			positions: new Float32Array(cells * perCell * 3),
-			rotations: new Float32Array(cells * perCell * 4),
-		});
-		const out: FactoryRows = {
-			turntable: rows(1),
-			upperArm: rows(1),
-			forearm: rows(1),
-			wrist: rows(1),
-			finger: rows(2),
-			crate: rows(CRATES_PER_CELL),
-		};
-		const expectSame = (actual: Rows, row: number, expected: Pose) => {
-			for (let e = 0; e < 3; e++)
-				expect(actual.positions[row * 3 + e]!).toBeCloseTo(expected.position[e]!, 4);
-			const rotation = Array.from(actual.rotations.subarray(row * 4, row * 4 + 4));
-			expect(sameRotation(rotation, expected.rotation)).toBeCloseTo(1, 5);
-		};
-		let held = 0;
-		for (let moment = 0; moment < 40; moment++) {
-			run(state, stepsUntil(0.5));
-			poseFactoryRows(state, cells, out);
-			for (let c = 0; c < cells; c++) {
-				const world = armWorld(state, c);
-				expectSame(out.turntable, c, world[ARM_PART.turntable]!);
-				expectSame(out.upperArm, c, world[ARM_PART.upperArm]!);
-				expectSame(out.forearm, c, world[ARM_PART.forearm]!);
-				expectSame(out.wrist, c, world[ARM_PART.wrist]!);
-				expectSame(out.finger, c * 2, world[ARM_PART.fingerLeft]!);
-				expectSame(out.finger, c * 2 + 1, world[ARM_PART.fingerRight]!);
-				for (let k = 0; k < CRATES_PER_CELL; k++) {
-					expectSame(out.crate, c * CRATES_PER_CELL + k, crateWorld(state, c, k));
-					if (state.crateState[c * CRATES_PER_CELL + k] === CrateState.held) held++;
-				}
-			}
-		}
-		expect(held).toBeGreaterThan(20);
-	});
-});
-
-describe('surfaces, grade and effects', () => {
-	test('the maps are the same for the same seed, and tile at their edges', () => {
-		const a = surfaceMaps('concrete', 64, 3);
-		const b = surfaceMaps('concrete', 64, 3);
-		expect(a.color.data).toEqual(b.color.data);
-		expect(a.normal.data).toEqual(b.normal.data);
-		// The first and last columns of the height-built normal map differ no more than neighbours do.
-		const at = (x: number, y: number) => a.color.data[(y * 64 + x) * 4]!;
-		let edge = 0;
-		let inside = 0;
-		for (let y = 0; y < 64; y++) {
-			edge += Math.abs(at(63, y) - at(0, y));
-			inside += Math.abs(at(31, y) - at(32, y));
-		}
-		expect(edge).toBeLessThan(inside * 3 + 64);
-	});
-
-	test('the grade table keeps the corners of a neutral look', () => {
-		const table = gradeTable({}, 17);
-		expect(table.data.length).toBe(17 ** 3 * 4);
-		expect([...table.data.subarray(0, 4)]).toEqual([0, 0, 0, 255]);
-		expect([...table.data.subarray(table.data.length - 4)]).toEqual([255, 255, 255, 255]);
-	});
-
-	test('effects read and write as address text', () => {
-		expect(effectsToText(effectsFromText(null))).toBe(
-			'shadows,fog,bloom,ao,grade,reflections,particles',
-		);
-		expect(effectsFromText('fog,bloom')).toEqual({
-			shadows: false,
-			fog: true,
-			bloom: true,
-			ao: false,
-			grade: false,
-			reflections: false,
-			particles: false,
-		});
-		expect(() => effectsFromText('glow')).toThrow('"glow" is not an effect');
-	});
-
-	test('modes read as address text, with the scene graph by default', () => {
-		expect(modeFromText(null)).toBe('scene-graph');
-		expect(modeFromText('instanced')).toBe('instanced');
-		expect(() => modeFromText('batched')).toThrow('"batched" is not a mode');
 	});
 });

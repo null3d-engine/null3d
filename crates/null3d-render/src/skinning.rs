@@ -46,6 +46,7 @@ use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, texture_usage, vertex, view};
 
 use crate::frame::{RecordError, address, floats_as_bytes};
+use crate::materials::MaterialTable;
 use crate::meshes::{MeshSlot, MeshStorage};
 use crate::morph::{morph_of, posed_weights, reach};
 use crate::pipelines::DrawKey;
@@ -230,14 +231,15 @@ pub fn skinned_in_vertex_shader(key: DrawKey) -> DrawKey {
 
 /// Writes the bounding sphere of every skinned or morphed object, in the object's space, for the
 /// transform update that follows (see the module documentation): from its pose in the animation
-/// table's last step, grown by how far its morph weights move its vertices. Joints past the
-/// instance's skeleton are left out. A sphere that did not change leaves the object as it is. It
-/// allocates nothing.
+/// table's last step, grown by how far its morph weights and its material's displacement move its
+/// vertices. Joints past the instance's skeleton are left out. A sphere that did not change leaves
+/// the object as it is. It allocates nothing.
 pub fn update_bounds(
     scene: &mut SceneStorage,
     animations: Option<&Animations>,
     morphs: &MorphWeights,
     meshes: &MeshStorage,
+    materials: &MaterialTable,
 ) {
     // Without clips or morph weights, no object is posed.
     if animations.is_none() && morphs.values().is_empty() {
@@ -255,11 +257,15 @@ pub fn update_bounds(
         else {
             continue;
         };
-        let extra = morph_of(scene, morphs, meshes, slot).map_or(0.0, |block| {
-            let weights = &mut weights[..block.count as usize];
-            posed_weights(block, morphs, animations, weights);
-            reach(meshes, mesh, weights)
-        });
+        let displaced = scene.materials()[slot]
+            .checked_sub(1)
+            .map_or(0.0, |material| materials.bounds_margin(material));
+        let extra = displaced
+            + morph_of(scene, morphs, meshes, slot).map_or(0.0, |block| {
+                let weights = &mut weights[..block.count as usize];
+                posed_weights(block, morphs, animations, weights);
+                reach(meshes, mesh, weights)
+            });
         let pose = animations
             .zip(skin.checked_sub(1))
             .and_then(|(animations, instance)| {
@@ -429,13 +435,19 @@ impl JointTexture {
                 self.rows,
                 1,
                 format::RGBA32_FLOAT,
-                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST | texture_usage::COPY_SRC,
                 1,
                 1,
                 view::D2,
             ],
         )?;
         Ok(true)
+    }
+
+    /// The texture's rows, 0 before it exists. The motion pass's copies of the last frame's joints
+    /// take the same size.
+    pub(crate) fn rows(&self) -> u32 {
+        self.rows
     }
 
     /// Uploads the joints in use, from the matrix buffer of the animation table's last step,
@@ -738,7 +750,14 @@ mod tests {
         );
 
         // At rest the column stands from y = -0.5 to 2.5 around its middle ring.
-        update_bounds(&mut scene, Some(&animations), &MorphWeights::new(), &meshes);
+        let materials = MaterialTable::with_capacity(1);
+        update_bounds(
+            &mut scene,
+            Some(&animations),
+            &MorphWeights::new(),
+            &meshes,
+            &materials,
+        );
         assert_eq!(
             &scene.local_centers()[slot * 3..slot * 3 + 3],
             &[0.0, 1.0, 0.0]

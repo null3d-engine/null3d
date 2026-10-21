@@ -19,6 +19,28 @@ import * as Role from './role';
 // record, what a GPU record's counter slots hold, and the memory figures in the header.
 export { Counter, GpuCounter, MemoryFigure, Phase, Role };
 
+/**
+ * The thread each role runs on in an engine mode, keyed by thread name. The sketch runs in the
+ * sketch worker unless the mode names the page's thread for it, as the single-threaded build does.
+ */
+export function threadRoles(mode: {
+	latency: string;
+	renderThread: string;
+	jobWorkers: number;
+	sketchThread?: string;
+}): Map<string, number[]> {
+	const threads = new Map<string, number[]>();
+	const sketch =
+		mode.latency === 'single' || mode.sketchThread === 'main' ? 'main' : 'sketch-worker';
+	if (mode.renderThread === sketch) threads.set(sketch, [Role.Sketch, Role.Render]);
+	else {
+		threads.set(sketch, [Role.Sketch]);
+		threads.set(mode.renderThread, [Role.Render]);
+	}
+	for (let k = 0; k < mode.jobWorkers; k++) threads.set(`job-${k}`, [Role.Job + k]);
+	return threads;
+}
+
 export const PHASE_NAMES = [
 	'update',
 	'commands',
@@ -248,6 +270,20 @@ export class FrameRecorder {
 		const { floats } = this.views;
 		const at = this.at + PHASES + phase;
 		floats[at] = (floats[at] as number) + ms;
+	}
+
+	/**
+	 * The record's float view and the place of a phase's time in the record being written. A frame
+	 * ends eight phases, and a time handed to a call can cost an allocation that the allocation
+	 * check counts, so the caller that ends a phase adds it here instead.
+	 */
+	phaseFloats(): Float32Array {
+		return this.views.floats;
+	}
+
+	/** The float index of a phase's time in the record being written. */
+	phaseIndex(phase: number): number {
+		return this.at + PHASES + phase;
 	}
 
 	count(counter: number, value: number): void {

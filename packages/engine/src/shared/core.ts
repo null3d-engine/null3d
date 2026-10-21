@@ -45,6 +45,7 @@ export interface CoreGlue extends CoreErrors {
 		indexInstances: boolean,
 		largeWorld: boolean,
 		gpuOcclusion: boolean,
+		directDraws: boolean,
 		shadowDepthBits: number,
 	): number;
 	/**
@@ -161,6 +162,13 @@ export interface CoreGlue extends CoreErrors {
 	occludedEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
+	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
+	frameRests(): boolean;
+	/**
+	 * Says whether a still view may accumulate its frames and rest. The image tests and hold mode
+	 * turn the accumulation off, so a captured frame is the frame the sketch drew once.
+	 */
+	setStillEnabled(enabled: boolean): void;
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
@@ -266,6 +274,21 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	overlap(kind: number, layers: number): number;
 	/**
+	 * Asks the next recorded frame to answer which object draws at a point of the canvas: `x` and
+	 * `y` in CSS pixels, `ring` the read of the pick ring, and `slot` the control slot that the
+	 * read raises. Returns 0 when the frame will draw the pick, and another number when a pick
+	 * already waits.
+	 */
+	requestPick(x: number, y: number, ring: number, slot: number): number;
+	/** The address in engine memory of the pick ring's results, four words for each read. */
+	pickResultAddress(): number;
+	/** True when GPU picking finds every source that the scene draws. */
+	pickCoversScene(): number;
+	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
+	pickTargetId(key: number): number;
+	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
+	pickTargetRow(key: number): number;
+	/**
 	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
 	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
 	 */
@@ -370,6 +393,11 @@ export interface CoreGlue extends CoreErrors {
 	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
 	 */
 	setMaterialMap(material: number, slot: number, texture: number, secondUv: number): number;
+	/**
+	 * Changes how far a standard material's displacement map moves vertices: `scale` for the
+	 * map's white, plus `bias` for every vertex, in the mesh's units.
+	 */
+	setMaterialDisplacement(material: number, scale: number, bias: number): number;
 	/** Destroys a material: objects that still use it draw nothing. */
 	destroyMaterial(material: number): number;
 	/**
@@ -427,6 +455,42 @@ export interface CoreGlue extends CoreErrors {
 	 * values, which TypeScript writes first.
 	 */
 	addSkyMap(texture: number, stages: number): number;
+	/**
+	 * Sets reflection probe `slot`, adding it when the slot is empty: its box from the low corner to
+	 * the high one, the point it captures from, its blend and intensity, its flags
+	 * (`REFLECTION_PROBE_*`), the layers its captures draw and its priority. The first probe adds
+	 * the six capture views, and fails when the view list has no room for them.
+	 */
+	setReflectionProbe(
+		slot: number,
+		lowX: number,
+		lowY: number,
+		lowZ: number,
+		highX: number,
+		highY: number,
+		highZ: number,
+		captureX: number,
+		captureY: number,
+		captureZ: number,
+		blend: number,
+		intensity: number,
+		flags: number,
+		layers: number,
+		priority: number,
+	): number;
+	/** Removes reflection probe `slot`. The last probe takes the capture views with it. */
+	removeReflectionProbe(slot: number): number;
+	/** Makes reflection probe `slot` capture the scene again, in a frame soon. */
+	captureReflectionProbe(slot: number): number;
+	/** Sets the texels across each reflection probe map's largest level, 128, 256 or 512. */
+	setProbeSize(size: number): number;
+	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
+	probesWaiting(): number;
+	/**
+	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
+	 * filters, once.
+	 */
+	probeGenerator(): number;
 	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
@@ -624,6 +688,8 @@ export interface CoreGlue extends CoreErrors {
 	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
+	setSubsurfaceTaps(taps: number): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -647,6 +713,8 @@ export interface CoreGlue extends CoreErrors {
 	setSoftParticles(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
+	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
+	setParallax(on: boolean): number;
 	/**
 	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
 	 * on, or 0 for the core's default, where the path culls on the CPU.
@@ -722,6 +790,16 @@ export interface CoreGlue extends CoreErrors {
 	 * code, from the next frame on.
 	 */
 	setCanvasOutput(sceneColor: number, antialias: number): number;
+	/**
+	 * Says whether the device draws the motion target with one sample, and with MSAA's samples, as
+	 * the page's device check found.
+	 */
+	allowMotion(oneSample: boolean, multisampled: boolean): number;
+	/**
+	 * 1 when the frame's passes read the motion since the frame before, as the motion debug view
+	 * does, so a held frame needs the frame before it drawn first, else 0.
+	 */
+	holdsFrameBefore(): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
 	/**
@@ -955,6 +1033,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'raycast',
 	'raycastBatch',
 	'overlap',
+	'requestPick',
+	'pickResultAddress',
+	'pickCoversScene',
+	'pickTargetId',
+	'pickTargetRow',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
@@ -971,6 +1054,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMaterialValue',
 	'setMaterialValues',
 	'setMaterialMap',
+	'setMaterialDisplacement',
 	'destroyMaterial',
 	'createTexture',
 	'createVolumeTexture',
@@ -979,6 +1063,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setCubeImages',
 	'generateTexture',
 	'addSkyMap',
+	'setReflectionProbe',
+	'removeReflectionProbe',
+	'captureReflectionProbe',
+	'setProbeSize',
+	'probesWaiting',
+	'probeGenerator',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
@@ -1020,9 +1110,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'allowMotion',
+	'holdsFrameBefore',
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'setSubsurfaceTaps',
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
@@ -1036,6 +1129,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'markParticleValues',
 	'setSoftParticles',
 	'setSoftwareOcclusion',
+	'setParallax',
 	'setOcclusionBuffer',
 	'setLut',
 	'setVignette',

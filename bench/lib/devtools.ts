@@ -180,6 +180,7 @@ async function attachPage(
 	devtools: DevTools,
 	targetId: string,
 	enough: (workers: readonly AttachedWorker[]) => boolean,
+	timeoutMs = WORKERS_TIMEOUT_MS,
 ): Promise<{ page: string; workers: AttachedWorker[] }> {
 	const { sessionId } = await devtools.send<{ sessionId: string }>('Target.attachToTarget', {
 		targetId,
@@ -199,7 +200,7 @@ async function attachPage(
 		{ autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
 		sessionId,
 	);
-	const deadline = Date.now() + WORKERS_TIMEOUT_MS;
+	const deadline = Date.now() + timeoutMs;
 	while (!enough(workers) && Date.now() < deadline) await sleep(100);
 	return { page: sessionId, workers };
 }
@@ -256,14 +257,27 @@ export async function limitWorkerNetworks(devtools: DevTools, page: string): Pro
 	return stop;
 }
 
-/** Attaches to a page and to every one of its workers, of which `count` must appear. */
+/**
+ * Attaches to a page and to every one of its workers, of which `count` must appear. `timeoutMs`
+ * lengthens the wait for a page whose workers start slowly: the engine grows its job workers over
+ * frames, and a software GPU draws so few that the growth can take minutes.
+ */
 export async function attachEveryWorker(
 	devtools: DevTools,
 	targetId: string,
 	count: number,
+	timeoutMs?: number,
+	allowFewer = false,
 ): Promise<{ page: string; workers: AttachedWorker[] }> {
-	const attached = await attachPage(devtools, targetId, (workers) => workers.length >= count);
-	if (attached.workers.length < count)
+	const attached = await attachPage(
+		devtools,
+		targetId,
+		(workers) => workers.length >= count,
+		timeoutMs,
+	);
+	if (attached.workers.length < 2)
+		throw new Error(`${attached.workers.length} of the page's ${count} workers appeared`);
+	if (attached.workers.length < count && !allowFewer)
 		throw new Error(`${attached.workers.length} of the page's ${count} workers appeared`);
 	return attached;
 }

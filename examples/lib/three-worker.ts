@@ -9,7 +9,8 @@
 //   the GTAO node, the bloom node, the output transform and the 3D LUT node. The environment is
 //   three.js's RoomEnvironment through PMREMGenerator. Height fog has no class in three.js, so the
 //   worker gives the scene the formula of null3D's fog: GLSL in place of FogExp2's chunks on
-//   WebGLRenderer, and a fog node on WebGPURenderer.
+//   WebGLRenderer, and a fog node on WebGPURenderer. A comparison that sets a lens grade gets a
+//   shader pass, or a node, on the linear color before the bloom, as null3D's custom effects run.
 // - Each frame runs the simulation steps that fell due, as null3D's fixed steps do, poses the
 //   scene and draws it, and records the frame's interval and CPU time in rings that allocate
 //   nothing. The page asks for measurements and, while its stats panel is open, for the figures
@@ -17,6 +18,8 @@
 
 import type * as ThreeModule from 'three';
 import { FixedClock, type GradeTable, type Hex } from './compare-scene';
+import type { LensSettings } from './lens';
+import { type LensPass, makeLensNode, makeLensPass } from './lens-three';
 import type { FromThree, ThreeFigures, ThreeStart, ToThree } from './three-protocol';
 
 /** The three.js version that the comparisons pin. */
@@ -128,6 +131,11 @@ export interface ThreeLook {
 	/** Ambient occlusion's search radius in meters, and its targets' share of the render size. */
 	ao: { radius: number; scale: number };
 	grade: GradeTable;
+	/**
+	 * A lens grade on the linear color, before bloom and tone mapping, as null3D's custom effects run.
+	 * Absent leaves the frame ungraded by it.
+	 */
+	lens?: LensSettings;
 }
 
 /** A built scene, ready to step and draw. */
@@ -207,6 +215,8 @@ interface GpuTimer {
 interface Drawer {
 	render(): void;
 	setSize(width: number, height: number, pixelRatio: number): void;
+	/** Moves a time-dependent effect to the frame's simulation time, for a repeatable held frame. */
+	setTime?(seconds: number): void;
 }
 
 /** Frame records in rings: time, interval, CPU time, the scene's code and the render calls. */
@@ -380,6 +390,7 @@ class ThreeRuntime {
 		const skipped = this.clock.skipTo(options.hold ?? 0);
 		for (let i = 0; i < skipped; i++) build.step();
 		build.pose(this.clock.time);
+		this.drawer.setTime?.(this.clock.time);
 		// Build every GPU program before the first frame, so none builds during a measurement.
 		await (
 			renderer as unknown as { compileAsync(s: unknown, c: unknown): Promise<void> }
@@ -410,11 +421,8 @@ class ThreeRuntime {
 				antialias: true,
 				powerPreference: 'high-performance',
 				trackTimestamp: options.gpuTimer,
-				forceWebGL: options.forceWebGL === true,
 			}) as unknown as AnyRenderer;
 			await renderer.init?.();
-			if (options.forceWebGL)
-				return { three: webgpu as unknown as Three, renderer, name: 'WebGPURenderer (WebGL2)' };
 			// WebGPURenderer falls back to WebGL 2 when WebGPU fails to start. A WebGPU run must never
 			// measure WebGL by mistake, so that counts as an error.
 			if (!renderer.backend?.isWebGPUBackend)
@@ -690,6 +698,7 @@ class ThreeRuntime {
 		const steps = this.clock.advance(interval / 1000);
 		for (let i = 0; i < steps; i++) build.step();
 		build.pose(this.clock.time);
+		drawer.setTime?.(this.clock.time);
 		const posed = performance.now();
 		renderer.info.reset();
 		this.objects = 0;
@@ -951,6 +960,12 @@ async function makeDrawer(
 			);
 			scenePass.contextNode = tsl.builtinAOContext(smooth.sample(tsl.screenUV).r);
 		}
+		let lens: { setTime(seconds: number): void } | null = null;
+		if (effects.lens && look.lens) {
+			const made = makeLensNode(tsl, color, look.lens);
+			color = made.node as typeof color;
+			lens = made;
+		}
 		if (effects.bloom) {
 			const { bloom } = await import('three/addons/tsl/display/BloomNode.js');
 			const { strength, radius, threshold } = look.bloom;
@@ -970,7 +985,11 @@ async function makeDrawer(
 			);
 		} else pipeline.outputNode = color;
 		// The pipeline's pass follows the renderer's size by itself.
-		return { render: () => pipeline.render(), setSize: () => {} };
+		return {
+			render: () => pipeline.render(),
+			setSize: () => {},
+			...(lens && { setTime: (seconds: number) => lens.setTime(seconds) }),
+		};
 	}
 	const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
 	const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js');
@@ -993,6 +1012,12 @@ async function makeDrawer(
 		gtao.setSize = (w: number, h: number) => resize(w * scale, h * scale);
 		composer.addPass(gtao);
 	}
+	let lens: LensPass | null = null;
+	if (effects.lens && look.lens) {
+		const { ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js');
+		lens = makeLensPass(three, ShaderPass, look.lens, width * pixelRatio, height * pixelRatio);
+		composer.addPass(lens.pass as never);
+	}
 	if (effects.bloom) {
 		const { UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js');
 		const { strength, radius, threshold } = look.bloom;
@@ -1010,7 +1035,11 @@ async function makeDrawer(
 		composer.setSize(w, h);
 	};
 	setSize(width, height, pixelRatio);
-	return { render: () => composer.render(), setSize };
+	return {
+		render: () => composer.render(),
+		setSize,
+		...(lens && { setTime: (seconds: number) => lens.setTime(seconds) }),
+	};
 }
 
 /**

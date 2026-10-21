@@ -3,12 +3,12 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; sky and environment backgrounds; the sky's light and time of day."
+summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; light probe grids; sky and environment backgrounds; the sky's light and time of day."
 ---
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, rectangle and tube lights, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, and rectangle and tube lights. It also adds the light probe grid, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -260,7 +260,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 13 of them, the cube map, the area lights' tables and the copy of the opaque colors that screen-space reflections read included, so three stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
+- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 13 of them, the cube map, the area lights' tables and the reflection probes' maps, which share one array, and the copy of the opaque colors that screen-space reflections read included, so three stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
@@ -274,7 +274,78 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 ### Differences from three.js
 
 - three.js takes `scene.environmentIntensity` in place of a material's `envMapIntensity` when the material has no map of its own. The engine multiplies the two, so `envIntensity` keeps its meaning with a scene environment.
-- Each material can have its own `envMap` in three.js. The engine has one environment per scene.
+- Each material can have its own `envMap` in three.js. The engine has one environment per scene. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
+
+## Reflection probes
+
+An environment map holds light from infinitely far away. In a room, a polished floor then reflects the sky, not the walls. A reflection probe holds the light around one point of the scene, and lights the surfaces inside its box in place of the environment:
+
+```mermaid
+flowchart LR
+  capture["Six views from the probe's point"] --> filter["Filter for each roughness"]
+  filter --> map["The probe's map"]
+  map --> surface["Surfaces inside the box"]
+  env["The environment"] -->|"the rest"| surface
+```
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  scene.setEnvironment(await assets.skyEnvironment());
+  // A room 8 m wide, 3 m tall and 10 m deep. Its floor reflects its walls where they stand.
+  scene.createReflectionProbe({ box: { min: [-4, 0, -5], max: [4, 3, 5] }, position: [0, 1.5, 0] });
+  return {};
+});
+```
+
+The engine captures the scene from the probe's point on the GPU, through six square views, and filters it for each roughness as it filters an environment's map. A probe captures in a frame soon after you make it. Frames before that draw with the environment.
+
+- **Box projection.** A reflection ray meets the box's sides, and the probe reads its light in the direction from its point to that place. So a wall reflects in the floor at its own distance, and a reflection moves right as the camera moves. `boxProjection: false` reads the probe as light from far away, for open ground.
+- **Blending.** A probe lights its whole box, a floor on its bottom side included, and fades out over `blend` meters beyond its sides. So make each box the shape of its room or street. Where boxes overlap, the probe with the higher `priority` lights the surface, or the smaller box at the same priority, and the next probe takes the rest. A surface takes light from at most two probes. The environment lights what the probes leave.
+- **Diffuse light.** A probe also gives the diffuse light of its surfaces, from its roughest level, as three.js reads an environment map's.
+- **Refresh.** `refresh: 'once'` captures when the probe is made or moved, and when `probe.capture()` asks. `refresh: 'always'` captures again and again, so moving objects show. One probe captures per frame, in turns.
+- **What a capture sees.** Objects on the probe's `layers`, the sun and its shadows, the ambient, hemisphere and environment light, fog and the background. A probe sees the environment, not other probes.
+
+Mirror reflections win over probes: a [reflection pass](../api/render.md#reflection-passes) lights the surfaces that read it, and probes and the environment light the rest.
+
+### Cost of probes
+
+- A captured probe costs only its surfaces' shading: each pixel inside a box reads two levels of the probe's map, and one more for the diffuse light. A scene without probes pays one test per pixel.
+- A capture draws the scene six times, at half the map's size, and its filter draws about 50 small passes in the same frame, before the camera's view draws. A probe that refreshes always pays this in turns with the other such probes.
+- Each probe's map takes 0.7 MB of GPU memory at 256 x 256, the size from Medium up, and 0.2 MB at 128 x 128 on Low. The six views and the filter's chain take about 1.5 MB more while the scene has a probe. The quality setting `probeSize` sets the size.
+- Probes need half-float render targets. WebGPU always has them. WebGL2 devices without them keep the environment's light, and development builds warn once.
+- On the 8-bit path, which compatibility mode with antialiasing takes, the captures hold display color, so reflections in probes look a little grayer.
+
+## Light probe grid
+
+An environment map lights every surface the same way. A light probe grid varies the light by place. Its probes hold the light that arrives at each point, so light bounced from a red wall or blocked by a corner reaches the surfaces near it. `scene.setLightProbeGrid` sets one. [Scene](../api/scene.md#the-light-probe-grid) gives its options, and the calls that make a grid.
+
+Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. Standard materials read the grid per pixel, with three filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
+
+`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`. A direction that reaches the sky takes the environment's light. A direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, the scene's occlusion of it, and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
+
+### What takes the grid's light
+
+A mesh draws with the grid's light unless it uses one of these features, which the grid's shaders leave out to keep the download small:
+
+- a custom material
+- area lights
+- transmission
+- weighted blending
+- clear coat or sheen
+- level-of-detail fades
+
+Such a mesh keeps the environment's diffuse light, and takes no light from the grid.
+
+### Limits and cost
+
+- The grid's texture is a 3D texture of half floats, at most 256 texels along each side on every device. `LightProbeGridData.toTexture()` makes it.
+- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture holds one sub-volume for each direction of L1. Each sub-volume has a padding slice at either end.
+- `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit. Use a larger spacing, or a smaller box.
+- The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes 110 KB.
+- Each lit pixel of a standard material reads the grid three times.
+- The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
 
 ## Sky and backgrounds
 
@@ -330,6 +401,68 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
 - three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 
+### Where the land ends
+
+The background takes no fog. So where an outdoor scene's land ends, the camera sees the plain background below the horizon, with no haze to blend it in. Fog cannot hide that edge. Hide it with geometry, and keep the camera where the geometry hides it:
+
+- Put a ring of hills or mountains around the land. Make its lowest crest stand above the highest point that the camera can reach. Then every line of sight below the horizon meets ground.
+- Limit the camera. With [orbit controls](../api/controls.md), set `maxDistance` and `maxPolarAngle`, and keep `controls.target` inside the land.
+- Keep the camera above the ground. Lift it along its orbit, at the same distance from the target, so a push against the ground does not pull it closer.
+- Where a valley must run out of the scene, fade its far end into haze. Stand a row of thin sheets across the valley, each unlit and blended in the air's color, such as the fog's. Each sheet hides a little more than the one before, and the last hides everything.
+
+This keeps the camera above the ground after the controls move it:
+
+```ts
+const eye = vec3.create();
+
+// In onUpdate, after controls.update(dt):
+camera.getPosition(eye);
+const tx = controls.target[0];
+const ty = controls.target[1];
+const tz = controls.target[2];
+const floor = groundHeight(eye[0], eye[2]) + 1.5;
+if (eye[1] < floor) {
+  // Rise along the orbit: keep the distance to the target and the bearing around it.
+  const distance = vec3.distance(eye, controls.target);
+  const rise = Math.min(distance, floor - ty);
+  const out = Math.sqrt(distance * distance - rise * rise);
+  const across = Math.hypot(eye[0] - tx, eye[2] - tz) || 1;
+  camera.setPosition(tx + ((eye[0] - tx) / across) * out, ty + rise, tz + ((eye[2] - tz) / across) * out);
+  camera.lookAt(tx, ty, tz);
+}
+```
+
+A haze sheet thins over its upper half, so the sky shows above the haze with no hard line. Its WGSL gives the air's color as emitted light and hides what lies behind by its share:
+
+```ts
+const haze = /* wgsl */ `
+struct Uniforms { air: vec3f, share: f32, top: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = vec3f(0.0);
+    s.roughness = 1.0;
+    s.emissive = material.air;
+    s.alpha = material.share * (1.0 - smoothstep(0.5 * material.top, material.top, input.worldPosition.y));
+    return s;
+}
+`;
+
+// Sheets across a valley that runs out along -z, from 300 m to 500 m away.
+const sheet = geometry.plane({ width: 200, height: 40 });
+const SHEETS = 6;
+for (let k = 0; k < SHEETS; k++) {
+  const t = k / (SHEETS - 1);
+  const material = materials.shader({
+    wgsl: haze, fog: false, doubleSided: true, alphaMode: 'blend', depthWrite: false,
+    uniforms: { air: '#b8c4d0', share: k === SHEETS - 1 ? 1 : 0.06 + 0.22 * t * t, top: 40 },
+  });
+  scene.createMesh({ mesh: sheet, material, position: [0, 20, -(300 + 200 * t)] });
+}
+```
+
+Give the sheets the fog's color, and change it with `material.set({ air })` when the sky's color changes, such as at each hour of a day cycle.
+
 ### The physical sky
 
 The physical sky models the earth's air: a layer 100 km deep over a planet of the earth's size. Its molecules scatter blue light more than red (Rayleigh scattering), its haze scatters every color and mostly forward (Mie scattering), and its ozone absorbs some orange. The engine follows Hillaire's method of 2020, which Unreal Engine and Bevy use. Three small tables hold what each pixel would otherwise work out along its ray:
@@ -379,7 +512,7 @@ The sky's environment shows the physical sky too. When a refresh starts, the eng
 
 ## Time of day
 
-`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background, so the fog fades into the sky's horizon.
+`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background. The fog takes the sky's mean light at every hour, the same light that the exposure follows, so it stays as dim as the sky around it. A fog of the sky's horizon instead carries the sky's brightest band over the whole scene and washes out its shaded surfaces, and a low sun makes that band its own glow.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';
@@ -421,9 +554,9 @@ With `{ model: 'physical' }`, the values match the physical sky instead, from a 
 | --- | --- |
 | `atmosphere` | `scene.setBackground({ atmosphere })`: the real sun, its light above the air, and at night the moon and the stars. Add your scene's clouds and haze: `{ ...day.atmosphere, aerialPerspective: 2 }` |
 | `skyIntensity` | 1: the physical sky dims by itself after sunset |
-| `light` | The sun through the air, which reddens as it sets. As night falls the light sweeps to the moon and turns cool, while the sun's own light fades |
+| `light` | The sun through the air, which reddens as it sets. Its light goes out as its disc sets, and the glowing sky lights the scene through the ambient light and the sky's environment. The light turns to the moon's place while it gives none, then the moon's light rises as night falls: no light sweeps across the scene. The moon stands opposite the sun, so it is highest at midnight. Its light and its sky are brightest then, and fade as it sinks toward dawn |
 | `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
-| `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.1 once night has fallen |
+| `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.1 once night has fallen. It holds at 1.1 until dawn, so the night is brightest under the midnight moon |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 

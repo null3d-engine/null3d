@@ -623,6 +623,11 @@ impl ShadowTiles {
             .try_reserve(slots.saturating_sub(self.posed.len()))
     }
 
+    /// Makes every tile draw again in this frame, as after a material moved its casters' vertices.
+    pub fn forget_drawn(&mut self) {
+        self.slots.iter_mut().for_each(|slot| slot.clean = false);
+    }
+
     /// Forgets what the GPU holds, after the thread that draws replaced the GPU: every tile draws
     /// again as a tile that holds no depth, and the uniform block uploads again.
     pub fn forget_gpu(&mut self) {

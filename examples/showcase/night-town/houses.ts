@@ -393,7 +393,13 @@ export interface Home {
 export function createHouses(
 	{ scene, geometry, materials, textures }: SketchContext,
 	textureSize: number,
-): { homes: Home[]; windows: number; clear(x: number, z: number): boolean } {
+): {
+	homes: Home[];
+	windows: number;
+	/** Sets the share of the windows' light that the hour allows: none by day, all at night. */
+	power(share: number): void;
+	clear(x: number, z: number): boolean;
+} {
 	const wallMaps = textureSet(textures, textureSize, timberTexel, 4);
 	const roofMaps = textureSet(textures, Math.max(128, textureSize >> 1), roofTexel);
 	const stoneMaps = textureSet(textures, Math.max(128, textureSize >> 1), stoneTexel);
@@ -525,6 +531,17 @@ export function createHouses(
 	});
 	windows.markDirty();
 
+	/** The share of the windows' light that the hour allows: none by day, all at night. */
+	let glow = 1;
+	const setGlow = (share: number): void => {
+		if (Math.abs(share - glow) < 0.02) return;
+		glow = share;
+		const values = windows.values as Float32Array;
+		for (let k = 0; k < windowRows.length; k++)
+			values[k * 4] = (windowRows[k]?.lit as number) * share;
+		windows.markDirty();
+	};
+
 	const doors = scene.createInstances(
 		geometry.box({ width: 0.95, height: 2.1, depth: 0.12 }),
 		doorRows.length,
@@ -593,6 +610,7 @@ export function createHouses(
 	return {
 		homes,
 		windows: windowRows.filter((row) => row.lit > 0).length,
+		power: setGlow,
 		clear: (px, pz) => footprints.some((f) => (px - f.x) ** 2 + (pz - f.z) ** 2 < f.r * f.r),
 	};
 }

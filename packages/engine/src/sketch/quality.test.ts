@@ -240,11 +240,13 @@ describe('SketchQuality.lower', () => {
 			aoScale: low.aoScale,
 			contactShadowSteps: low.contactShadowSteps,
 			dofSamples: low.dofSamples,
+			subsurfaceSamples: low.subsurfaceSamples,
 			ssrScale: low.ssrScale,
 			ssrSteps: low.ssrSteps,
 			exposureMeter: low.exposureMeter,
 			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
+			probeSize: low.probeSize,
 			areaLights: low.areaLights,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
@@ -252,6 +254,7 @@ describe('SketchQuality.lower', () => {
 			lodFade: low.lodFade,
 			physicalSky: low.physicalSky,
 			softwareOcclusion: low.softwareOcclusion,
+			parallax: low.parallax,
 			governor: true,
 			maxAnisotropy: 16,
 			textureMemoryMiB: low.textureMemoryMiB,
@@ -268,7 +271,8 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size, the cap of area lights, soft particles and the levels of detail did.
+		// the reflections' size, the probes' size, the cap of area lights, soft particles, the levels
+		// of detail and parallax did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -281,12 +285,14 @@ describe('SketchQuality.lower', () => {
 			'exposureMeter',
 			'fogSlices',
 			'reflectionScale',
+			'probeSize',
 			'areaLights',
 			'softParticles',
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
 			'physicalSky',
+			'parallax',
 		]);
 	});
 });
@@ -318,7 +324,7 @@ describe('SketchQuality.setPreset', () => {
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
 		// Low and Medium share the highest render scale, following of moving casters, the far
 		// characters' update interval, cascade blend, software occlusion culling and governor, and on
-		// WebGPU the ambient occlusion scale and contact shadow steps too.
+		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
@@ -326,6 +332,7 @@ describe('SketchQuality.setPreset', () => {
 			'shadowCascadeBlend',
 			'aoScale',
 			'contactShadowSteps',
+			'subsurfaceSamples',
 			'softwareOcclusion',
 			'governor',
 		];

@@ -66,6 +66,14 @@ function pine(segments: number, rings: number) {
 	return { ...out, computeNormals: true };
 }
 
+/** A pine 1 high at `level` of [`PINE_LEVELS`], as arrays to merge into far geometry. */
+export function pineArrays(level: number) {
+	const [segments, rings] = PINE_LEVELS[
+		Math.min(Math.max(level, 0), PINE_LEVELS.length - 1)
+	] as readonly [number, number, number];
+	return pine(segments, rings);
+}
+
 /** A pine 1 high whose base mesh names its three coarser levels, each with its error. */
 export function pineWithLevels(geometry: Geometry): MeshGeometry {
 	const [full, ...coarser] = PINE_LEVELS.map(([segments, rings]) =>

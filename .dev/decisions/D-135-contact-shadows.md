@@ -182,3 +182,15 @@ The branch merged main through `8055ac743`. Its build, size check, lint and type
 The affected image tests passed all 71 cases on the Mac's GPU and all 71 on SwiftShader. This includes every changed reference and S5. S5's Mac references still matched, so only its SwiftShader reference changed.
 
 The quality and stats browser tests passed 76 cases on the Mac's GPU. SwiftShader passed 73 and skipped three pipeline warm-up cases. The stats checks included the production build.
+
+## Addendum, 20 October 2026: masked surfaces and the screen texture
+
+The owner saw dark, blocky streaks on the Creek's flower petals. The petals are masked, double-sided cards (a cutoff of 0.5). The depth prepass leaves out every draw that discards by its alpha or by a fading level's dither (`DrawKey::prepass`). So the half-size screen texture of ambient occlusion and contact shadows holds the grass behind each petal, with the grass's contact shadows. The petal still read that texture. No texel lay within 3% of the petal's depth, so the nearest texel in depth spoke for it ([D-21](D-21-effect-chain.md#ambient-occlusion)), and the petal took the grass's darkening in blocks of the texture's texels. A petal against the sky read empty texels and looked clean.
+
+The rule now: a surface that the prepass leaves out, the ALPHA_MASK builds (the hashed and covered builds carry that bit) and the LOD_FADE builds, takes no screen values and no reflection hit where no texel lies at its depth. A masked surface that lies at a texel's depth, such as a leaf on the ground, still takes the texel's values. Surfaces in the prepass keep the nearest texel for their thin edges. Surfaces that let light through count as blended and take none, as before. A constant that the build's bits set, `NEAREST_SPEAKS` in `lib/gtao.wgsl`, picks the rule. So `screen_read` keeps one text in every build, and the builds keep sharing their shader text.
+
+The image test `alpha-mask-ao` guards it. A masked card stands 0.35 m to 0.65 m in front of thin blades, about 2 m from the camera, with ambient occlusion and contact shadows on. The gap is 15% or more of the card's depth, past the 3% within which a texel speaks for it. Its references show the card evenly lit, with no blocks. No other image test moved with this rule, on the Mac's GPU or on SwiftShader: the `alpha-*`, `ao-*`, `contact-shadows*`, `shadows-contact*` and `lod-fade*` tests kept their pictures.
+
+## Addendum, 20 October 2026: thin surfaces
+
+[D-198](D-198-contact-shadows-on-thin-surfaces.md) adds two rules after the owner saw the Creek's grass shimmer. A face that the camera sees from the side away from the sun takes no contact shadow, as the march from it runs through the surface itself. A material with `contactShadows: false` takes none, and keeps the shadow map's shadows. The Creek's grass uses it, since the march takes each thin blade for a solid wall and swaying blades switched its hits on and off.

@@ -114,7 +114,7 @@ interface LoadingMessage {
 }
 
 /** The loading overlay of a starting demo. */
-interface Loader {
+export interface Loader {
 	/** Shows the engine's start stage: `core`, `sketch` or `first-frame`. */
 	stage(stage: StartupStage): void;
 	/** Shows the progress that a scene posts while it loads its files. */
@@ -130,7 +130,7 @@ interface Loader {
  * progress a scene posts, in the style of the showcase HUD. It fades out when the first frame is
  * drawn, and shows the error instead when the start fails.
  */
-function createLoader(canvas: HTMLCanvasElement): Loader {
+export function createLoader(canvas: HTMLCanvasElement): Loader {
 	const host = canvas.parentElement ?? document.body;
 	const overlay = document.createElement('div');
 	overlay.className = 'loader';

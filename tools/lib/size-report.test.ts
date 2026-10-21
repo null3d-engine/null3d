@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	type BuiltFile,
 	budgetProblems,
+	COMBOS_BUDGET,
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_PARTS,
@@ -11,12 +12,21 @@ import {
 	findFirstUseFiles,
 	isFirstUseShaderPart,
 	isParagraphTable,
+	isSizePartFile,
 	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
+	measureFiles,
+	measureSizePart,
+	mergeSizeParts,
+	parsePartSpec,
+	partShare,
 	REPORTED_FILES,
+	type ReportFile,
 	type SizeEntry,
+	type SizePart,
 	START_BUDGET,
+	sizePartFile,
 } from './size-report';
 
 /** A size with the same figure in each column, or a figure for each. */
@@ -42,6 +52,85 @@ describe('measure', () => {
 		const measured = measure(Buffer.concat([block, block]));
 		expect(measured.gzip).toBeGreaterThan(70_000);
 		expect(measured.brotli).toBeLessThan(measured.gzip / 1.8);
+	});
+});
+
+describe('a measuring split into parts', () => {
+	/** A small fake build: files of mixed weights, in the report's order, each with its own bytes. */
+	const specs: [name: string, built: string, length: number][] = [
+		['js/early-core.js', 'early-core-AbCd1234.js', 300],
+		['js/page.js', 'page-Ef567890.js', 9_000],
+		['js/render-worker.js', 'render-worker-Gh123456.js', 7_000],
+		['js/shaders-wgsl.js', 'shaders-wgsl-Ij789012.js', 20_000],
+		['js/shaders-bloom-wgsl.js', 'shaders-bloom-wgsl-Kl345678.js', 12_000],
+		['js/shaders-bloom-glsl.js', 'shaders-bloom-glsl-Mn901234.js', 12_000],
+		['js/page-gltf.js', 'page-gltf-Op567890.js', 2_500],
+		['first-use/meshopt_decoder.wasm', 'meshopt_decoder-Qr123456.wasm', 4_000],
+		['first-use/area-light-tables.bin', 'area-light-tables-St789012.bin', 6_000],
+	];
+	const files: ReportFile[] = specs.map(([name, built, length], at) => {
+		const bytes = Buffer.from(Array.from({ length }, (_, i) => (i * (at + 3)) % 251));
+		return { name, built, weight: length, read: () => bytes };
+	});
+	/** Each part's record as the judge reads it back from the part's file. */
+	const records = (count: number): Promise<SizePart[]> =>
+		Promise.all(
+			Array.from({ length: count }, async (_, i) =>
+				JSON.parse(JSON.stringify(await measureSizePart(files, { index: i + 1, count }))),
+			),
+		);
+
+	it('merges the parts into the sizes, in the order, that one measuring of every file gives', async () => {
+		const whole = [...(await measureFiles(files))];
+		expect(whole).toEqual(files.map(({ name, read }) => [name, measure(read())]));
+		for (const count of [1, 2, 3, 4, files.length, files.length + 3])
+			expect([...mergeSizeParts(await records(count))]).toEqual(whole);
+	});
+
+	it('puts each file in exactly one part, and keeps the parts close in weight', () => {
+		const heaviest = Math.max(...files.map(({ weight }) => weight));
+		for (const count of [2, 3, 4]) {
+			const shares = Array.from({ length: count }, (_, i) =>
+				partShare(files, { index: i + 1, count }),
+			);
+			for (const { name } of files)
+				expect(shares.filter((share) => share.has(name))).toHaveLength(1);
+			const loads = shares.map((share) =>
+				files.reduce((sum, file) => sum + (share.has(file.name) ? file.weight : 0), 0),
+			);
+			expect(Math.max(...loads) - Math.min(...loads)).toBeLessThanOrEqual(heaviest);
+		}
+	});
+
+	it('refuses a missing part, a part there twice, parts of other counts or builds, and a stray size', async () => {
+		const three = await records(3);
+		const [one, two, last] = three as [SizePart, SizePart, SizePart];
+		expect(() => mergeSizeParts([])).toThrow('no part of the size measuring');
+		expect(() => mergeSizeParts([one, two])).toThrow('expected parts 1 to 3, each once');
+		expect(() => mergeSizeParts([one, two, two])).toThrow('expected parts 1 to 3, each once');
+		const fourth = (await records(4))[2] as SizePart;
+		expect(() => mergeSizeParts([one, two, fourth])).toThrow(
+			'part 3 of 4 cannot merge with parts of 3',
+		);
+		expect(() => mergeSizeParts([one, two, { ...last, build: 'another' }])).toThrow(
+			'part 3 of 3 measured another build than part 1',
+		);
+		const name = Object.keys(one.sizes)[0] as string;
+		expect(() =>
+			mergeSizeParts([one, { ...two, sizes: { ...two.sizes, [name]: one.sizes[name]! } }, last]),
+		).toThrow(`${name} has a size in 2 parts, not in exactly one`);
+		expect(() =>
+			mergeSizeParts([one, two, { ...last, sizes: { ...last.sizes, 'js/stray.js': size(1) } }]),
+		).toThrow('part 3 measured js/stray.js, which no build lists');
+	});
+
+	it('reads a part as <i>/<n> and names its file', () => {
+		expect(parsePartSpec('2/6')).toEqual({ index: 2, count: 6 });
+		for (const text of ['0/6', '7/6', '2', '2/', 'two/6', '-1/6'])
+			expect(() => parsePartSpec(text)).toThrow('a part is <i>/<n>');
+		expect(sizePartFile({ index: 2, count: 6 })).toBe('part-2-of-6.json');
+		expect(isSizePartFile('part-2-of-6.json')).toBe(true);
+		expect(isSizePartFile('size-report.json')).toBe(false);
 	});
 });
 
@@ -347,7 +436,7 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(166 * 1024);
+		expect(START_BUDGET.brotli).toBe(176 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
@@ -385,6 +474,37 @@ describe('budgetProblems', () => {
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
 			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+		]);
+	});
+
+	it('gives a generated combination table more raw room and the same compressed limits', () => {
+		const tables = [
+			{
+				name: 'page-shaders-glsl-combos.js',
+				module: 'generated/shaders-glsl-combos.ts',
+				loadedBy: 'page.js',
+			},
+		];
+		expect(COMBOS_BUDGET.raw).toBe(96 * 1024);
+		expect(COMBOS_BUDGET.gzip).toBe(LATER_BUDGET.gzip);
+		expect(COMBOS_BUDGET.brotli).toBe(LATER_BUDGET.brotli);
+		// A table past the shared raw figure is within its own, which is what the translucency
+		// builds asked for.
+		const within = new Map([
+			['page-shaders-glsl-combos.js', size(LATER_BUDGET.raw + 12 * 1024, 8 * 1024, 7 * 1024)],
+		]);
+		expect(budgetProblems(within, downloads, tables)).toEqual([]);
+		// Its compressed figures stay at the shared limits.
+		const over = new Map([
+			[
+				'page-shaders-glsl-combos.js',
+				size(COMBOS_BUDGET.raw + 1, COMBOS_BUDGET.gzip + 1, COMBOS_BUDGET.brotli + 1),
+			],
+		]);
+		expect(budgetProblems(over, downloads, tables)).toEqual([
+			`js/page-shaders-glsl-combos.js, which loads after the start, is ${(COMBOS_BUDGET.raw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${COMBOS_BUDGET.raw / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/page-shaders-glsl-combos.js, which loads after the start, is ${(COMBOS_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${COMBOS_BUDGET.gzip / 1024} KB budget set in tools/lib/size-report.ts`,
+			`js/page-shaders-glsl-combos.js, which loads after the start, is ${(COMBOS_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${COMBOS_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 

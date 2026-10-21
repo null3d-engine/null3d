@@ -26,6 +26,7 @@
 import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
+import { coreInitialPages } from './lib/core-memory';
 import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/memory-holder';
 import { expectEnd, progress, run, sharedMemories } from './lib/result';
 import {
@@ -176,7 +177,10 @@ let coreModule: Promise<WebAssembly.Module> | undefined;
 
 /** Gives a new memory to a worker that holds it the way `kind` says, then stops the worker. */
 async function holdAndStop(kind: HoldKind): Promise<void> {
-	const memory = allocateMemory(MAXIMUM_PAGES);
+	const memory = allocateMemory(
+		MAXIMUM_PAGES,
+		CORE_KINDS.includes(kind) ? await coreInitialPages() : undefined,
+	);
 	const flags = new Int32Array(new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT));
 	coreModule ??= WebAssembly.compileStreaming(fetch(coreUrls('threaded').wasm));
 	const message: HoldMessage = {

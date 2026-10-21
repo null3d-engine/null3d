@@ -1,10 +1,10 @@
 // Checks that the page is cross-origin isolated and that the threaded WebAssembly build loads with
 // shared memory. Open it in any browser; the result also goes to the dev server's collector.
 import { coreUrls, startCore } from '@null3d/engine/internal';
+import { coreInitialPages } from './lib/core-memory';
 import { run } from './lib/result';
 
-/** Initial and maximum sizes, in 64 KB pages, of the shared memory this check creates. */
-const INITIAL_PAGES = 18;
+/** The maximum size, in 64 KB pages, of the shared memory this check creates: 1 GiB. */
 const MAXIMUM_PAGES = 16384;
 
 run('isolation', async () => {
@@ -12,7 +12,7 @@ run('isolation', async () => {
 	let threaded = false;
 	if (isolated) {
 		const memory = new WebAssembly.Memory({
-			initial: INITIAL_PAGES,
+			initial: await coreInitialPages(),
 			maximum: MAXIMUM_PAGES,
 			shared: true,
 		});

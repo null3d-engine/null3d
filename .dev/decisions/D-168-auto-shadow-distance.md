@@ -88,3 +88,12 @@ count low over normal camera motion.
 - The API is `shadow: { distance: 'auto' }`, the new default. A number fixes it.
 - [Shadows](../../docs/concepts/shadows.md#settings) and [Lights](../../docs/api/lights.md#shadows)
   describe the setting.
+
+## Addendum, 20 October 2026: the hold now holds a whole step
+
+The hold did nothing. `ladder_distance` kept the held step only while the step at the raw distance was the held one. Inside the held step, that is always so. So the distance fell as soon as the raw distance crossed below the step under the held one. It rose again as soon as the raw distance crossed back. A receiver at the edge of the view that swayed across a step's boundary flipped the distance between two steps every frame. The shadow texels changed size with it.
+
+Now the held step stays while the raw distance lies within it or within the step under it: a whole step of hysteresis. Once the raw distance drops below that lower step, the distance falls to the step at the raw distance. A rise stays immediate. The manual ladder in the Shadows concept page already worked this way.
+
+A unit test swings the raw distance just above and just below a step's boundary for 600 frames. The distance must never change after the first rise. The ladder's other test checks an immediate rise, a hold one step down, and a fall once the raw distance is a whole step lower.
+

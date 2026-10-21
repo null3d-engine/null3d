@@ -17,6 +17,7 @@ interface CapabilitiesResult {
 				rgba16f: FloatTargetTest;
 				rgba32f: FloatTargetTest;
 				r11fG11fB10f: FloatTargetTest;
+				rg16f: FloatTargetTest;
 			} | null;
 		};
 	};
@@ -39,5 +40,6 @@ test('the capability report says which float textures WebGL2 renders into', asyn
 		rgba16f: half ? works : refused,
 		rgba32f: full ? works : refused,
 		r11fG11fB10f: full ? works : refused,
+		rg16f: half ? works : refused,
 	});
 });

@@ -221,6 +221,41 @@ export interface WorkerFile {
 	chunk: boolean;
 }
 
+/**
+ * The files that a worker build made and that a file in the bundle still names, but that the
+ * bundle lacks, each with the source that the worker copied. Vite drops a worker's files when it
+ * reads the worker as dead, even when another file names one of them: a page then fails to
+ * download an engine shader module at run time, although the build succeeded. The caller emits
+ * these back, so a build's files always hold every file that its files name.
+ */
+export function missingWorkerAssets(
+	bundle: Rollup.OutputBundle,
+	workerFiles: ReadonlyMap<string, WorkerFile>,
+): { fileName: string; source: string }[] {
+	const names = [...workerFiles].flatMap(([fileName, file]) =>
+		bundle[fileName] === undefined && !file.chunk ? [fileName] : [],
+	);
+	if (names.length === 0) return [];
+	// Only the files that the bundle lacks are searched for, which costs nothing in a whole build.
+	const pattern = new RegExp(
+		`${names
+			.sort((a, b) => b.length - a.length)
+			.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+			.join('|')}`,
+		'g',
+	);
+	const named = new Set<string>();
+	for (const file of Object.values(bundle)) {
+		const text =
+			file.type === 'chunk' ? file.code : typeof file.source === 'string' ? file.source : '';
+		for (const [name] of text.matchAll(pattern)) named.add(name);
+	}
+	return [...named].flatMap((fileName) => {
+		const source = workerFiles.get(fileName)?.moduleIds[0];
+		return source === undefined ? [] : [{ fileName, source }];
+	});
+}
+
 /** A plugin for each worker build that records what each of its files holds, by file name. */
 export function workerFilesPlugin(record: Map<string, WorkerFile>): Plugin {
 	return {
@@ -255,17 +290,18 @@ function textOf(fileName: string, source: string | Uint8Array): string | undefin
 /**
  * The files of a client build's bundle as the list reads them, with what the worker builds
  * recorded for the files that they made. A file copied from the engine's source, such as a shader
- * module, holds no script that names another file, so its text is left out; `tables` names the one
- * file such a module does load, its target's shared table of shader paragraphs. A module of a
- * feature that loads on first use names it, so the table joins that feature's files and never the
- * start's, which is what keeps a page's first download free of it.
+ * module, holds no script that names another file, so its text is left out; `tables` names the
+ * files such a module does load, its kind's shared table of shader paragraphs and one for each
+ * feature family whose paragraphs it holds. A module of a feature that loads on first use names
+ * them, so the tables join that feature's files and never the start's, which is what keeps a
+ * page's first download free of them.
  */
 export function listedFiles(
 	bundle: Rollup.OutputBundle,
 	workerFiles: ReadonlyMap<string, WorkerFile>,
 	packageOf: (file: string) => Null3dPackage | undefined,
 	root: string,
-	tables: ReadonlyMap<string, string> = new Map(),
+	tables: ReadonlyMap<string, readonly string[]> = new Map(),
 ): ListedFile[] {
 	const modulesOf = (ids: readonly string[]) =>
 		ids.flatMap(
@@ -284,13 +320,12 @@ export function listedFiles(
 		const worker = workerFiles.get(file.fileName);
 		const modules = modulesOf(worker?.moduleIds ?? file.originalFileNames);
 		const copied = !worker?.chunk && modules.length > 0;
-		const table = tables.get(file.fileName);
 		return {
 			fileName: file.fileName,
 			entry: file.fileName.endsWith('.html'),
 			modules,
 			imports: worker?.imports ?? [],
-			loads: [...(worker?.loads ?? []), ...(table ? [table] : [])],
+			loads: [...(worker?.loads ?? []), ...(tables.get(file.fileName) ?? [])],
 			text: copied ? undefined : textOf(file.fileName, file.source),
 		};
 	});

@@ -174,3 +174,59 @@ unnoticed: the camera slides along the surface instead.
 
 A glide back onto the route follows the route while it eases onto it, so the route's own speed is
 what the camera has when the glide ends, rather than the route setting off again from a standstill.
+
+## Addendum: the Manual camera stays inside the scene's mountains (owner, 20 October 2026)
+
+The owner zoomed the night town's Manual camera far out on 20 October 2026. The town shrank to a
+patch of land in a plain brown field: the background below the horizon showed past the land's edge.
+The owner ruled that every showcase scene sits inside a ring of mountains. The Manual camera can
+never zoom out past them, and can never turn to below the ground, so the plain background never
+shows. Creek gets the same ring and the same bounds.
+
+This replaces two rules above. "A dolly out always works" now holds only up to the scene's bounds.
+"The limits are wide, so a user can dolly well out and swing below the horizon" is gone.
+
+- **The geometry.** A camera that stays inside the ring, below its lowest crest and above the ground
+  never sees the background. Every view ray that falls hits the land or a mountain. Every one that
+  rises hits a mountain or the sky. `examples/lib/mountains.ts` builds the ring from each scene's
+  settings in its `land.ts`. Every bearing's crest stands at least as high as the scene's lowest crest.
+- **The bounds.** A scene passes `bounds` to `createCinematic`. They hold the farthest distance from
+  the point the camera turns around, which is the orbit controls' own `maxDistance`. They also hold a
+  disc and a band of heights for that point, and the ground's height. The camera's highest reach is
+  that point's highest plus the distance. Each lowest crest stands at least 10 m above it: 95 m
+  against 74 m in the night town, and 65 m against 51 m in Creek. Each distance is above the Auto
+  route's farthest pose: 62 m in the night town and 34 m in Creek. So a takeover never moves the
+  camera. The orbit's lowest angle stays a little past level, 1.85 rad from straight up, so the
+  night town's look up at its tower is still in reach. The ground stops anything lower.
+- **No ratchet.** The clamp that the owner removed on 14 October shortened the orbit distance each
+  frame and walked the camera inward. The new ground check lifts the camera along its orbit instead:
+  same distance, same bearing, a higher angle. Pushing against the ground therefore never draws the
+  camera in. A pan that would carry the point past the disc's edge moves the camera back with it, so
+  the view does not turn.
+- **Tests.**
+  - `examples/lib/mountains.test.ts` checks the crests against the camera's reach and height, and that
+    the ring passes under the land's edge, so the two never overlap.
+  - `examples/lib/bounds.test.ts` drives the bounded camera through a dolly, a push against the ground
+    and a pan. It checks that the distance holds through 400 frames of pushing.
+  - `examples/lib/showcase-routes.test.ts` checks every one of 2,000 poses of each route against its
+    bounds.
+
+Later the same day the owner asked for three more changes in Creek:
+
+- **The stream runs on through the mountains.** The stream continues into the distance both ways,
+  through a gap in the range, and fog lies beyond. The ring takes a gorge along each end of the
+  stream: the valley's own floor, with walls that climb to the mountains either side. The land and
+  the water run on to 720 m. The engine's fog never covers the background, so ten thin haze sheets
+  across each gorge fade the far end into the air's color and hide the end of the world.
+- **The camera may go under the water.** The bounds take a `clearance` above the ground. Creek's is
+  0.15 m, and its ground under the water is the stream's bed, so the camera dips under the surface
+  but never through the bed.
+- **The petals must be solid.** They looked see-through: the grass behind them showed as dark
+  blocks. That is the masked-surface fault of the ambient occlusion pass, fixed in the engine
+  ([D-135](D-135-contact-shadows.md)).
+
+The same recording showed the night town's shadows appearing all at once as the camera zoomed in.
+The sun's shadows reached a fixed 70 m and faded over their last 7 m. A quick zoom carried the whole
+town across that fade in about a fifth of a second. Each scene now gives `createShowcaseEffects` the
+sphere of its core. The range follows the camera on a ladder of 1.25 times per step, so the core
+never leaves it ([Examples](../examples.md#showcase-scenes) gives the rule).

@@ -31,6 +31,12 @@
 /** Entries along each side of the table. */
 export const DFG_SIZE = 16;
 
+/**
+ * The first column of the table in the texture that holds a material's custom values: one past a
+ * material's texels, where the engine keeps it.
+ */
+export const DFG_COLUMN = 15;
+
 /** The table as three.js stores it: half floats, scale then bias, row after row. */
 // biome-ignore format: rows of the table
 export const DFG_HALVES = new Uint16Array([

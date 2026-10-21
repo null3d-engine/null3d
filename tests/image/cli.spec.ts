@@ -25,6 +25,12 @@ import { manifestRun } from './manifest.ts';
 const PROJECT = join(REPO_ROOT, 'tests/fixtures/project');
 /** A page that fails must say so long before the command's own 60 seconds run out. */
 const FAST_FAILURE_MS = 30_000;
+/**
+ * The same limit for a bench run, whose command builds the project for production first. On CI that
+ * build takes about a minute, so the limit must leave room for the build and stay under the build
+ * plus the command's own 60 seconds for a page that does not start.
+ */
+const BENCH_FAILURE_MS = 120_000;
 
 /**
  * Runs a command of the command-line tool in the project, with its output in the test's folder.
@@ -158,6 +164,8 @@ test("null3d bench reports the figures of the project's production build on both
 });
 
 test('null3d bench stops a run at once when the page throws before it starts the engine', async () => {
+	// The command builds the project for production before it opens the page.
+	test.setTimeout(180_000);
 	const started = Date.now();
 	const { code, output, report } = await run<BenchReport>('bench', [
 		...SHORT_BENCH,
@@ -166,7 +174,7 @@ test('null3d bench stops a run at once when the page throws before it starts the
 		'--page',
 		'/broken.html',
 	]);
-	expect(Date.now() - started).toBeLessThan(FAST_FAILURE_MS);
+	expect(Date.now() - started).toBeLessThan(BENCH_FAILURE_MS);
 	expect(code, output).toBe(1);
 	expect(report.paths[0]?.runs).toEqual([
 		{

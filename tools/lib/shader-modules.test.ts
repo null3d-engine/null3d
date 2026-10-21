@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
+	buildEntriesShard,
+	compilerStamp,
 	crateFolders,
 	ensureShaderModules,
+	entryCacheDir,
 	folderIsComplete,
 	inputHash,
 	isShaderModule,
@@ -19,14 +30,15 @@ import {
 /**
  * Runs a test with the shared caches in a scratch folder and a stub `cargo` first on the `PATH`. A
  * test then never reads or writes the caches of the machine it runs on, and never runs the real
- * toolchain: the stub prints and exits, which is how a test drives a build that fails.
+ * toolchain: the stub prints and exits, which is how a test drives a build that fails. `script`,
+ * when given, runs in the stub before it exits, with cargo's arguments.
  */
-function withScratchCaches(run: () => void, cargoStatus = 3): void {
+function withScratchCaches(run: () => void, cargoStatus = 3, script = ''): void {
 	const folder = mkdtempSync(join(tmpdir(), 'null3d-shaders-test-'));
 	const bin = join(folder, 'bin');
 	mkdirSync(bin);
 	const cargo = join(bin, 'cargo');
-	writeFileSync(cargo, `#!/bin/sh\necho "stub cargo" >&2\nexit ${cargoStatus}\n`);
+	writeFileSync(cargo, `#!/bin/sh\necho "stub cargo" >&2\n${script}\nexit ${cargoStatus}\n`);
 	chmodSync(cargo, 0o755);
 	const before = { cache: process.env.NULL3D_BUILD_CACHE, path: process.env.PATH };
 	process.env.NULL3D_BUILD_CACHE = join(folder, 'cache');
@@ -187,6 +199,40 @@ describe('the shader modules', () => {
 				expect(() => ensureShaderModules(root)).toThrow(/shader-paragraphs-wgsl\.js/);
 			} finally {
 				delete process.env.NULL3D_REQUIRE_FRESH_SHADERS;
+			}
+		});
+	});
+});
+
+describe('a shard of the shader entries', () => {
+	// The stub stands in for the shader build: it stores one new entry in the folder it is given.
+	const storeOne =
+		'while [ $# -gt 0 ]; do if [ "$1" = --cache ]; then mkdir -p "$2"; echo {} > "$2/lit.new.json"; fi; shift; done';
+
+	it('copies the entries that it stored, and none that the cache held before', () => {
+		withScratchCaches(
+			() => {
+				const root = repository();
+				const folder = join(entryCacheDir(), compilerStamp(root));
+				mkdirSync(folder, { recursive: true });
+				writeFileSync(join(folder, 'pick.old.json'), '{}');
+				const out = join(root, 'target', 'shader-entries');
+				expect(buildEntriesShard(root, '0/2', out)).toEqual(['lit.new.json']);
+				expect(readdirSync(out)).toEqual(['lit.new.json']);
+				expect(readdirSync(folder).sort()).toEqual(['lit.new.json', 'pick.old.json']);
+			},
+			0,
+			storeOne,
+		);
+	});
+
+	it('refuses to run while the caches are off', () => {
+		withScratchCaches(() => {
+			process.env.NULL3D_NO_CACHE = '1';
+			try {
+				expect(() => buildEntriesShard(repository(), '0/2')).toThrow(/per-entry shader cache/);
+			} finally {
+				delete process.env.NULL3D_NO_CACHE;
 			}
 		});
 	});

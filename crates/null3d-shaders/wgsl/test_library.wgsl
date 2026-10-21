@@ -246,42 +246,43 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 75u: {
             return triple(null3d::depth::view_position(f[0].xy, f[0].z, mat4x4f(f[1], f[2], f[3], f[4])));
         }
+        case 76u: { return scalar(null3d::depth::distance_code(f[0].x)); }
 #endif
 #ifdef SDF
-        case 76u: { return scalar(null3d::sdf::sphere(f[0].xyz, f[0].w)); }
-        case 77u: { return scalar(null3d::sdf::box(f[0].xyz, f[1].xyz)); }
-        case 78u: { return scalar(null3d::sdf::round_box(f[0].xyz, f[1].xyz, f[1].w)); }
-        case 79u: { return scalar(null3d::sdf::torus(f[0].xyz, f[1].x, f[1].y)); }
-        case 80u: { return scalar(null3d::sdf::capsule(f[0].xyz, f[1].xyz, f[2].xyz, f[2].w)); }
-        case 81u: { return scalar(null3d::sdf::cylinder(f[0].xyz, f[1].x, f[1].y)); }
-        case 82u: { return scalar(null3d::sdf::plane(f[0].xyz, f[1].xyz, f[1].w)); }
-        case 83u: { return scalar(null3d::sdf::circle(f[0].xy, f[0].z)); }
-        case 84u: { return scalar(null3d::sdf::rect(f[0].xy, f[0].zw)); }
-        case 85u: { return scalar(null3d::sdf::segment(f[0].xy, f[0].zw, f[1].xy)); }
-        case 86u: { return scalar(null3d::sdf::merge(f[0].x, f[0].y)); }
-        case 87u: { return scalar(null3d::sdf::subtract(f[0].x, f[0].y)); }
-        case 88u: { return scalar(null3d::sdf::intersect(f[0].x, f[0].y)); }
-        case 89u: { return scalar(null3d::sdf::smooth_merge(f[0].x, f[0].y, f[0].z)); }
-        case 90u: { return scalar(null3d::sdf::smooth_subtract(f[0].x, f[0].y, f[0].z)); }
-        case 91u: { return scalar(null3d::sdf::smooth_intersect(f[0].x, f[0].y, f[0].z)); }
-        case 92u: { return scalar(null3d::sdf::rounded(f[0].x, f[0].y)); }
-        case 93u: { return scalar(null3d::sdf::onion(f[0].x, f[0].y)); }
+        case 77u: { return scalar(null3d::sdf::sphere(f[0].xyz, f[0].w)); }
+        case 78u: { return scalar(null3d::sdf::box(f[0].xyz, f[1].xyz)); }
+        case 79u: { return scalar(null3d::sdf::round_box(f[0].xyz, f[1].xyz, f[1].w)); }
+        case 80u: { return scalar(null3d::sdf::torus(f[0].xyz, f[1].x, f[1].y)); }
+        case 81u: { return scalar(null3d::sdf::capsule(f[0].xyz, f[1].xyz, f[2].xyz, f[2].w)); }
+        case 82u: { return scalar(null3d::sdf::cylinder(f[0].xyz, f[1].x, f[1].y)); }
+        case 83u: { return scalar(null3d::sdf::plane(f[0].xyz, f[1].xyz, f[1].w)); }
+        case 84u: { return scalar(null3d::sdf::circle(f[0].xy, f[0].z)); }
+        case 85u: { return scalar(null3d::sdf::rect(f[0].xy, f[0].zw)); }
+        case 86u: { return scalar(null3d::sdf::segment(f[0].xy, f[0].zw, f[1].xy)); }
+        case 87u: { return scalar(null3d::sdf::merge(f[0].x, f[0].y)); }
+        case 88u: { return scalar(null3d::sdf::subtract(f[0].x, f[0].y)); }
+        case 89u: { return scalar(null3d::sdf::intersect(f[0].x, f[0].y)); }
+        case 90u: { return scalar(null3d::sdf::smooth_merge(f[0].x, f[0].y, f[0].z)); }
+        case 91u: { return scalar(null3d::sdf::smooth_subtract(f[0].x, f[0].y, f[0].z)); }
+        case 92u: { return scalar(null3d::sdf::smooth_intersect(f[0].x, f[0].y, f[0].z)); }
+        case 93u: { return scalar(null3d::sdf::rounded(f[0].x, f[0].y)); }
+        case 94u: { return scalar(null3d::sdf::onion(f[0].x, f[0].y)); }
 #endif
 #ifdef FOG
-        case 94u: {
+        case 95u: {
             return scalar(null3d::fog::fog_factor(test_fog(u, f), f[4].xyz));
         }
 #endif
 #ifdef VERTEX
-        case 95u: { return triple(null3d::vertex::mesh_position(f[0].xyz)); }
-        case 96u: { return pair(null3d::vertex::mesh_uv(f[0].xy)); }
-        case 97u: { return pair(null3d::vertex::mesh_second_uv(f[0].xy)); }
+        case 96u: { return triple(null3d::vertex::mesh_position(f[0].xyz)); }
+        case 97u: { return pair(null3d::vertex::mesh_uv(f[0].xy)); }
+        case 98u: { return pair(null3d::vertex::mesh_second_uv(f[0].xy)); }
 #endif
 #ifdef COLOR
-        case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
+        case 99u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
 #endif
 #ifdef LIGHTING
-        case 99u: {
+        case 100u: {
             let m = null3d::lighting::with_specular(material(f), f[2].x, f[2].yzw, f[3].x);
             return floats(
                 vec4f(m.base_color, m.specular_grazing),
@@ -292,41 +293,41 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         }
 #endif
 #ifdef FOG
-        case 100u: { return scalar(null3d::fog::fog_height_ratio(f[0].x)); }
-        case 101u: {
+        case 101u: { return scalar(null3d::fog::fog_height_ratio(f[0].x)); }
+        case 102u: {
             return triple(null3d::fog::fog_color(test_fog(u, f), f[4].xyz, f[5].xyz, f[6].xyz));
         }
 #endif
 #ifdef REFLECTION
-        case 102u: { return pair(null3d::reflection::reflection_uv(f[0], f[1].xy)); }
+        case 103u: { return pair(null3d::reflection::reflection_uv(f[0], f[1].xy)); }
 #endif
 #ifdef LIGHTING
-        case 103u: {
+        case 104u: {
             return triple(null3d::lighting::ambient_irradiance(f[0].xyz, f[1].xyz, f[2].xyz, f[3].xyz, f[4].xyz));
         }
 #endif
 #ifdef VERTEX
-        case 104u: {
+        case 105u: {
             let m = null3d::vertex::affine_matrix(f[0], f[1], f[2]);
             return floats(m[0], m[1], m[2], m[3]);
         }
-        case 105u: {
+        case 106u: {
             let n = null3d::vertex::affine_normal_matrix(f[0], f[1], f[2]);
             return floats(vec4f(n[0], 0.0), vec4f(n[1], 0.0), vec4f(n[2], 0.0), vec4f(0.0));
         }
 #endif
 #ifdef ATMOSPHERE
-        case 106u: {
+        case 107u: {
             let w = null3d::atmosphere::sky_whole(f[0].xyz, f[1]);
             return floats(vec4f(w.sun_direction, 0.0), vec4f(w.beta_r, 0.0), vec4f(w.beta_m, 0.0), vec4f(w.sun, 0.0));
         }
 #endif
 #ifdef COLOR
-        case 107u: { return triple(null3d::color::tone_map_agx_punchy(f[0].xyz)); }
+        case 108u: { return triple(null3d::color::tone_map_agx_punchy(f[0].xyz)); }
 #endif
 #ifdef LIGHTING
-        case 108u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
-        case 109u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
+        case 109u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
+        case 110u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.

@@ -277,7 +277,7 @@ impl Transparent {
                     list.push(Op::SetPipeline, &[pass])?;
                     pipeline = Some(pass);
                 }
-                for (k, part) in storage.parts(mesh).iter().enumerate() {
+                for (k, part) in storage.parts(mesh, bucket.lines).iter().enumerate() {
                     let (page_vertices, page_indices) = meshes.ids(part.page);
                     // A skinned part draws its region of skinned vertices with its page's indices.
                     let region = regions.and_then(|regions| regions.get(k));

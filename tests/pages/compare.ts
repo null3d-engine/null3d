@@ -1,11 +1,10 @@
 // Runs a comparison with three.js through the shared shell, with one engine: `?compare=` names the
-// comparison, `?engine=` the engine, `?mode=` the mode, the scene graph by default, and `?effects=`
-// the effects, every one by default. With `?hold=<seconds>`, the engine draws the comparison's
+// comparison, `?engine=` the engine, and `?effects=` the effects, every one by default. With `?hold=<seconds>`, the engine draws the comparison's
 // held frame at its hold count, or at `?count=`, and the page publishes the frame, as the image
 // tests read it. Without
 // it, the engine runs live, and the page runs a short ramp and publishes its steps; `?ramp=full`
-// runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
-// WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`
+// runs the device class's whole ramp instead, and `?renderer=webgpu` or `?renderer=webgl` puts
+// three.js on that renderer in place of the one that the GPU path names. `?measure=<count>`
 // runs at that count in place of a ramp, and measures the frames over `?seconds=` (5 by default)
 // and then the whole page's memory, which `?memory=off` leaves out, as the browser can take a
 // minute or more to measure it. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
@@ -17,7 +16,7 @@ import { measurePageMemory } from '@null3d/engine/stats';
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import type { SceneSignature } from '../../examples/compare/scene-signature';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
-import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
+import { effectsFromText } from '../../examples/lib/compare-scene';
 import { run, toBase64 } from './lib/result';
 
 /** A ramp of three steps, which shows that the shell raises the count and measures each step. */
@@ -61,22 +60,13 @@ run('compare', async () => {
 	const full = params.get('ramp') === 'full';
 	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
 	const warmup = params.has('warmup') ? Number(params.get('warmup')) : undefined;
-	// The image tests and the short ramp draw three.js with the renderer of the tier; the full ramp
-	// and a measurement take the faster one unless the address names one.
+	// three.js draws on the renderer of the GPU path unless the address names one.
 	const named = params.get('renderer');
-	const threeRenderer =
-		named === 'webgpu' || named === 'webgl'
-			? named
-			: full || fixed !== undefined
-				? undefined
-				: gpu === 'webgpu'
-					? 'webgpu'
-					: 'webgl';
+	const threeRenderer = named === 'webgpu' || named === 'webgl' ? named : undefined;
 	const started = await startComparison({
 		canvas,
 		comparison,
 		engine,
-		mode: modeFromText(params.get('mode')),
 		effects: effectsFromText(params.get('effects')),
 		gpu,
 		count:
@@ -92,7 +82,6 @@ run('compare', async () => {
 		engine,
 		label: started.label,
 		tier: started.gpu,
-		build: started.mode,
 		limit: started.limit ?? null,
 		mode: { hold: hold ?? null },
 	};

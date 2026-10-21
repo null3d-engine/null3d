@@ -211,7 +211,7 @@ impl Transparent {
             } else {
                 bucket.pipeline
             };
-            for part in storage.parts(mesh) {
+            for part in storage.parts(mesh, bucket.lines) {
                 let joins = !alone
                     && state.calls.last().is_some_and(|call| {
                         call.pipeline == pipeline

@@ -63,7 +63,7 @@ level j draws when  error[j] × scale × k < threshold × d,  with k = render he
 | Geomorphing (moving vertices toward the coarser level) | Rejected. It needs vertex-to-vertex links between levels, which the simplifier does not keep, and a custom vertex path for every template |
 | A plain switch at the distance | Kept for Low, where the fade is off, and for groups that turn the fade off |
 
-The band starts at the switch distance and is 15% of it long. In it, the source draws its new level with a fade amount `t` from 0 to 1 and its old level with `1 - t`. A pixel draws the new level where its dither value is under `t`, and the old level elsewhere.
+The band starts at the switch distance and is 8% of it long. In it, the source draws its new level with a fade amount `t` from 0 to 1 and its old level with `1 - t`. A pixel draws the new level where its dither value is under `t`, and the old level elsewhere.
 
 `discard` turns off hidden-surface removal on tile GPUs (Apple, PowerVR), so the fading builds must not draw the sources that do not fade. Each level's bucket therefore has a fade bucket beside it, whose pipelines are the `LOD_FADE` builds. Only sources inside a band land there. Their builds are a first-use shader set, so a page without fading levels downloads none.
 
@@ -168,3 +168,34 @@ Ship the design as above. The data shows a clear saving on every path and preset
 3. Fading builds for custom materials, which double their builds, and for the alpha hash.
 4. Levels as index ranges of the base mesh's vertices, so a file's levels take no copy of them.
 5. Levels for trees with leaf cards in the asset tool. The step keeps a share of the cards and grows them ("Trees with leaf cards" above). Creek needs this step before its trees from files can use levels.
+
+
+## Addendum: the band is narrower (19 October 2026)
+
+The owner saw the 4 × 4 dither as a grid of dots on foliage close to the camera in Creek. The band
+was 15% of the switch distance, which at a short switch distance covers a wide part of a tree. It is
+now 8%, so less of the tree dithers at once while the hand-over stays smooth. The band's test reads
+`FADE_BAND` rather than fixed distances, so the share can change again without rewriting the test.
+
+## Addendum: M3's level-of-detail work (owner, 19 October 2026)
+
+A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-rive-city-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
+
+The review found five weak points in what this record describes:
+
+- The fade goes where it shows least. The asset tool's levels change the picture by less than a pixel at the switch. D-91 found no wider change at 502 of 518 switches. Yet they pay for the double draw, the discard and the fade lists. Hand-made levels, such as Creek's leaf-card trees, change the picture far more. On Low, which turns the fade off, they pop. The fade becomes a choice per level. It is off for a measured error, and on for a level given by distance or by a hand-set error, on Low too.
+- The rule measures to the center of the bounds. An object whose radius is half its distance then shows twice the allowed error on its near side. The rule moves to the nearest point of the bounds, as meshoptimizer, Godot and `clusterlod.h` do.
+- Each level and each fade list reserves room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades take about 61 MB of copy lists, plus growth room. One list per view would take about 13 MB. The main view's list passes WebGPU's default 128 MiB binding limit near 260,000 copies with four fading levels. These are estimates to measure. The lists will follow what draws.
+- Every copy uses the same 4 × 4 pattern, so neighbouring copies line up into one grid. The pattern will differ per copy.
+- A distance or a screen coverage becomes an error for a screen 1,080 pixels high. So on a screen 2,160 pixels high, the level switches at twice the distance. Levels can then be picked by distance or by coverage beside error.
+
+Cluster levels (M3-L3) serve large static meshes that do not bend, such as scans, cliffs, buildings and CAD models:
+
+- The asset tool builds a tree of patches of about 128 triangles with `clusterlod.h`. A patch draws when its own error is under the threshold and the error of the coarser patch above it is over it. The test needs no state from earlier frames, so both GPU paths can run it. Patches in a group switch together, so no gaps open.
+- On WebGPU, a compute pass tests the patches in each view and draws the chosen ones with one indirect draw.
+- On WebGL2 with `WEBGL_multi_draw` (Chrome and Safari), the job workers test them, and each chosen patch is one range of a multi-draw call.
+- On WebGL2 without it (Firefox), the mesh draws whole levels cut from its tree, through this record's levels.
+- Meshes with many copies, skinned meshes and leaf-card trees stay on this record's levels on both paths. Unreal's docs say its cluster method thins tree crowns with distance, because each leaf is a separate piece with open edges.
+- Multi-draw indirect and 64-bit atomics wait for browsers, as [D-179](D-179-technique-rulings-2026-10-15.md) ruling 27 says. Cluster levels need neither.
+
+Follow-ups 1, 4 and 5 come in M3, in M3-L2. Follow-ups 2 and 3 stay open. Live simplification of meshes while the program runs is not planned: it costs CPU time and uploads every frame, and cluster levels give its result.

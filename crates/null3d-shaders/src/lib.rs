@@ -27,11 +27,13 @@ mod literals;
 mod manifest;
 mod material;
 mod names;
+mod narrow;
 mod output;
 mod pieces;
 mod position;
 mod problem;
 mod scan;
+mod shards;
 mod textures;
 mod typescript;
 mod uniforms;
@@ -57,6 +59,7 @@ pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
 pub use manifest::{BUILD_BUDGET, BuildCounts, Manifest, Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
+pub use narrow::narrowed;
 pub use output::{
     Binding, FEATURE_JOIN, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock,
     Output, Response, VariantOutput, WgslOutput,
@@ -64,6 +67,7 @@ pub use output::{
 pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
 pub use problem::{BuildError, Problem};
+pub use shards::{Part, Shard, ShardPlan, entry_costs};
 pub use textures::Texture;
 pub use typescript::ModuleSet;
 pub use uniforms::Uniform;
@@ -102,6 +106,12 @@ pub struct Inputs {
     /// WGSL sources by path relative to the shader folder, with `/` separators. Library modules
     /// are the files in `lib/`.
     pub files: BTreeMap<String, String>,
+    /// Entries that build one part of their builds alone, by name, as a shard of a split by build
+    /// ([`ShardPlan::by_build`]) holds them. Every other entry builds whole. Such an entry's
+    /// output lacks the other parts' builds, so the build neither reads nor stores it in the
+    /// per-entry cache, whose key covers the whole entry.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub parts: BTreeMap<String, Part>,
 }
 
 impl Inputs {
@@ -111,7 +121,11 @@ impl Inputs {
         let manifest = read_text(root, MANIFEST_PATH)?;
         let mut files = BTreeMap::new();
         collect_wgsl(root, SHADER_DIR, "", &mut files)?;
-        Ok(Self { manifest, files })
+        Ok(Self {
+            manifest,
+            files,
+            parts: BTreeMap::new(),
+        })
     }
 }
 
@@ -175,12 +189,7 @@ pub fn build_with_cache_reporting(
     cache: &Cache,
     progress: Progress<'_>,
 ) -> Result<(Output, CacheStats), BuildError> {
-    let manifest = Manifest::parse(&inputs.manifest).map_err(|messages| {
-        messages
-            .into_iter()
-            .map(|message| Problem::in_file(MANIFEST_PATH, message))
-            .collect::<BuildError>()
-    })?;
+    let manifest = parse_manifest(inputs)?;
     let mut compiler = Compiler::new(&inputs.files)?;
     compiler.engine = true;
     check_files(inputs, &manifest).or(())?;
@@ -252,6 +261,33 @@ pub fn build_with_cache_reporting(
     errors.or(output).map(|output| (output, stats))
 }
 
+/// The names of the builds that each entry of `inputs` makes, in build order, by entry: every
+/// build, or its part's builds when the inputs give the entry a part.
+pub fn build_names(inputs: &Inputs) -> Result<BTreeMap<String, Vec<String>>, BuildError> {
+    let manifest = parse_manifest(inputs)?;
+    Ok(manifest
+        .shaders
+        .iter()
+        .map(|(name, shader)| {
+            let part = inputs.parts.get(name).copied().unwrap_or(Part::WHOLE);
+            let builds = planned_builds(&shader.variants, |place, _, _| part.holds(place));
+            let names = builds.into_iter().map(|(_, build)| build.name).collect();
+            (name.clone(), names)
+        })
+        .collect())
+}
+
+/// The manifest of `inputs`, parsed and checked, with each problem named against the manifest's
+/// file.
+fn parse_manifest(inputs: &Inputs) -> Result<Manifest, BuildError> {
+    Manifest::parse(&inputs.manifest).map_err(|messages| {
+        messages
+            .into_iter()
+            .map(|message| Problem::in_file(MANIFEST_PATH, message))
+            .collect::<BuildError>()
+    })
+}
+
 /// One build of a manifest entry: the entry's place in the manifest, its variant and the build.
 struct Job<'a> {
     entry: usize,
@@ -273,6 +309,7 @@ struct Built {
 
 /// The variants of every entry, in the manifest's order. An entry comes from the cache when it
 /// holds it; the builds of the other entries compile together, spread over the machine's cores.
+/// An entry that the inputs give a part builds only that part's builds, and skips the cache.
 /// Problems go to `errors` in the order that building one entry after another gives. An entry
 /// with a problem returns whatever it built, which the caller discards; it is never stored, so a
 /// later run compiles it again.
@@ -289,25 +326,33 @@ fn build_entries(
     let mut found = Vec::with_capacity(shaders.len());
     let mut jobs = Vec::new();
     for (entry, (shader_name, shader)) in shaders.iter().enumerate() {
+        let part = inputs.parts.get(shader_name.as_str()).copied();
         // The cache is off in the shader compiler, which a page or a bundler loads, so its key and
-        // its manifest table leave no trace there.
+        // its manifest table leave no trace there. An entry that builds one part of its builds
+        // has no key: the key covers the whole entry, so the part is neither read nor stored.
         #[cfg(not(target_arch = "wasm32"))]
-        let cached = {
+        let cached = if part.is_some() {
+            Err(None)
+        } else {
             let table = toml::to_string(shader).unwrap_or_default();
             let source = &inputs.files[&shader.file];
             let key = cache.key(shader_name, &shader.file, source, &table);
-            cache.load(shader_name, &key, &inputs.files).ok_or(key)
+            cache
+                .load(shader_name, &key, &inputs.files)
+                .ok_or(Some(key))
         };
         #[cfg(target_arch = "wasm32")]
         let cached = {
             let _ = (shader_name, cache);
-            Err::<BTreeMap<String, VariantOutput>, String>(String::new())
+            Err::<BTreeMap<String, VariantOutput>, Option<String>>(None)
         };
         match cached {
             Ok(_) => stats.reused += 1,
             Err(_) => {
                 stats.compiled += 1;
-                let builds = planned_builds(&shader.variants, None).into_iter();
+                let part = part.unwrap_or(Part::WHOLE);
+                let builds =
+                    planned_builds(&shader.variants, |place, _, _| part.holds(place)).into_iter();
                 jobs.extend(builds.map(|(variant, build)| Job {
                     entry,
                     variant,
@@ -351,7 +396,7 @@ fn build_entries(
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if !failed && cache.is_on() {
+        if let Some(key) = key.filter(|_| !failed && cache.is_on()) {
             // A build reads the modules its own definitions pull in. The entry's text also names
             // every module it imports, with the ones behind definitions that no build sets, so the
             // entry's own imports join them.
@@ -445,20 +490,20 @@ fn threads(_jobs: usize) -> usize {
     1
 }
 
-/// The builds of an entry's variants in build order, each with its variant: all of them, or the
-/// builds that `share` holds.
+/// The builds of an entry's variants in build order, each with its variant, that `keep` takes. It
+/// gets each build's place in that order, counted from 0, its variant and its permutation word.
 fn planned_builds(
     variants: &BTreeMap<String, Variant>,
-    share: Option<Share>,
+    keep: impl Fn(usize, &Variant, u32) -> bool,
 ) -> Vec<(&Variant, Build)> {
     let mut planned = Vec::new();
     let mut place = 0;
     for (name, variant) in variants {
         for build in variant.builds(name) {
-            place += 1;
-            if share.is_none_or(|share| share.holds(place - 1, variant, build.permutation)) {
+            if keep(place, variant, build.permutation) {
                 planned.push((variant, build));
             }
+            place += 1;
         }
     }
     planned
@@ -587,7 +632,10 @@ impl Compiler {
         errors: &mut BuildError,
     ) -> BTreeMap<String, VariantOutput> {
         let mut built = BTreeMap::new();
-        for (variant, build) in planned_builds(variants, share) {
+        let held = |place, variant: &Variant, permutation| {
+            share.is_none_or(|share| share.holds(place, variant, permutation))
+        };
+        for (variant, build) in planned_builds(variants, held) {
             match self.variant(path, source, pipelines, variant, &build) {
                 Ok(Built {
                     output, warnings, ..

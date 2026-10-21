@@ -1,6 +1,8 @@
 // The clearance guard of the Auto route, and the manual camera's freedom. The guard stops the route
 // entering a solid and never stops a move away from one; the manual camera may pass through
-// anything and may always dolly out ([D-170](../../.dev/decisions/D-170-showcase-camera.md)).
+// anything, and with no bounds it may always dolly out
+// ([D-170](../../.dev/decisions/D-170-showcase-camera.md)). A scene's bounds stop it at their edge,
+// which `bounds.test.ts` checks.
 import { expect, test } from 'bun:test';
 import { createOrbitControls } from '@null3d/controls';
 import { type RaycastHit, type SketchContext, vec3 } from '@null3d/engine';

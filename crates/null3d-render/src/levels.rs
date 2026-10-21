@@ -204,7 +204,8 @@ const NO_FADE: u32 = permutation::SKIN
     | permutation::MORPH
     | permutation::INSTANCE_INDEX
     | permutation::TRANSMISSION
-    | permutation::ALPHA_HASH;
+    | permutation::ALPHA_HASH
+    | permutation::DISPLACEMENT;
 
 /// True when a pipeline has builds of a fading level: the engine's standard and unlit templates,
 /// opaque or with a mask tested by its cutoff or by coverage. Custom materials, masks tested by the
@@ -242,7 +243,7 @@ fn level_bucket_key(
     meshes: &MeshStorage,
 ) -> Option<BucketKey> {
     let mesh = meshes.mesh(set.mesh(level).checked_sub(1)?)?;
-    let page = meshes.parts(mesh).first()?.page;
+    let page = meshes.parts(mesh, false).first()?.page;
     Some((
         key.0,
         key.1,
@@ -363,6 +364,7 @@ mod tests {
         assert!(fades_its_way(key(coverage | permutation::SAMPLE_MASK)));
         assert!(!fades_its_way(key(mask | permutation::ALPHA_HASH)));
         assert!(!fades_its_way(key(permutation::SKIN)));
+        assert!(!fades_its_way(key(permutation::DISPLACEMENT)));
         // Every key that fades has its fading build.
         for word in [0, mask, coverage, coverage | permutation::SAMPLE_MASK] {
             assert!(

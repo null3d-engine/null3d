@@ -4,7 +4,12 @@
 // scene keeps every other such feature out: no sun that casts shadows unless the feature needs one,
 // and then no contact shadows, which would load ambient occlusion's file on a desktop. A feature
 // with no case here fails the test, so a new first-use table needs a case.
-import { defineSketch, type SketchContext, type StandardOptions } from '@null3d/engine';
+import {
+	defineSketch,
+	type SketchCallbacks,
+	type SketchContext,
+	type StandardOptions,
+} from '@null3d/engine';
 import {
 	animateObject,
 	createAnimationRig,
@@ -28,6 +33,19 @@ function roundCard({ textures }: SketchContext) {
 			);
 		}
 	return textures.fromData({ width: size, height: size, data, colorSpace: 'srgb' });
+}
+
+/** Heights that rise and fall in waves, for the cards that bend or move their surface. */
+function waves({ textures }: SketchContext) {
+	const size = 32;
+	const data = new Uint8Array(size * size * 4);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const height =
+				128 + 100 * Math.sin((x / size) * Math.PI * 4) * Math.cos((y / size) * Math.PI * 4);
+			data.set([height, height, height, 255], (y * size + x) * 4);
+		}
+	return textures.fromData({ width: size, height: size, data, colorSpace: 'linear' });
 }
 
 /** A card that the camera faces, with a material of the given alpha options. */
@@ -84,7 +102,7 @@ function morphedCard({ scene, geometry, materials }: SketchContext) {
 }
 
 /** The cases, by the shader manifest's names of the features. */
-const CASES: Record<string, (context: SketchContext) => void> = {
+const CASES: Record<string, (context: SketchContext) => SketchCallbacks | void> = {
 	ao: ({ post }) => post.set({ ao: {} }),
 	bloom: ({ post }) => post.set({ bloom: { intensity: 0.4 } }),
 	dof: ({ post }) => post.set({ dof: { focusDistance: 4, aperture: 4 } }),
@@ -128,6 +146,30 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 	},
 	coverage: (context) =>
 		card(context, { alphaMode: 'mask', alphaCutoff: 0.5, alphaToCoverage: true }),
+	bump: (context) => {
+		const { scene, geometry, materials } = context;
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.5, height: 1.5, widthSegments: 16, heightSegments: 16 }),
+			material: materials.standard({
+				color: '#b8b0a8',
+				bumpMap: waves(context),
+				bumpScale: 1,
+			}),
+			position: [0, 1, 0],
+		});
+	},
+	displacement: (context) => {
+		const { scene, geometry, materials } = context;
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.5, height: 1.5, widthSegments: 32, heightSegments: 32 }),
+			material: materials.standard({
+				color: '#b8b0a8',
+				displacementMap: waves(context),
+				displacementScale: 0.15,
+			}),
+			position: [0, 1, 0],
+		});
+	},
 	hash: (context) => card(context, { alphaMode: 'hash' }),
 	sky: ({ scene }) => scene.setBackground({ sky: { sunPosition: [0, 0.2, -1] } }),
 	physical_sky: ({ scene }) => scene.setBackground({ atmosphere: { sunPosition: [0, 0.2, -1] } }),
@@ -160,6 +202,34 @@ const CASES: Record<string, (context: SketchContext) => void> = {
 		batch.markDirty();
 	},
 	lod_fade: fadingLevels,
+	// A pick draws the scene into the pass's id target, whose builds load with its first call. The
+	// call needs a frame that the camera has drawn, so the case asks on the frame after the first
+	// one: a pick during setup has none and answers with a ray, which loads no shader. The live
+	// first-use page hears the outcome, and a later update throws the error the runner reports.
+	picking: ({ scene, page, time }) => {
+		let picked = false;
+		let failure: unknown = null;
+		return {
+			onUpdate() {
+				if (failure !== null) {
+					const error = failure;
+					failure = null;
+					throw error;
+				}
+				if (picked || time.frame < 2) return;
+				picked = true;
+				void scene.pick(160, 90).then(
+					() => page.post('picked', {}),
+					(error: unknown) => {
+						failure = error;
+						page.post('picked', {
+							error: error instanceof Error ? error.message : String(error),
+						});
+					},
+				);
+			},
+		};
+	},
 	// The page's ?occlusion=on switch runs GPU occlusion culling, which a marked occluder starts.
 	occlusion: ({ scene, geometry, materials }) => {
 		scene.createMesh({
@@ -198,6 +268,5 @@ export default defineSketch((context) => {
 		receiveShadows: true,
 	});
 	ground.setRotationEuler(-Math.PI / 2, 0, 0);
-	use(context);
-	return {};
+	return use(context) ?? {};
 });

@@ -3,7 +3,7 @@
 // that show each file's growth. The base is main's own build, so no size record is committed. The
 // functions here do no file or process work: tools/build-wasm.ts builds the base, reads the
 // commits and prints.
-import type { SizeEntry } from './size-report';
+import { isCombosPart, isFirstUseShaderPart, type SizeEntry } from './size-report';
 
 /** Growth after Brotli over the base build that fails the check unless a trailer explains it. */
 export const MAX_GROWTH = 0.02;
@@ -156,6 +156,16 @@ export function growthSummary(
 	].join('\n');
 }
 
+/**
+ * True when a new file loads only on the first use of a feature: one of the shader families' tables
+ * or combination loaders. Such a file adds nothing to a page's start download, and its own budget
+ * caps it, so it needs no Size-Growth trailer that names it.
+ */
+function firstUseShaderFile(file: string): boolean {
+	const name = file.startsWith('js/') ? file.slice(3) : file;
+	return isFirstUseShaderPart(name) || isCombosPart(name);
+}
+
 /** A problem for each file that grew past the limit with no trailer to explain it. */
 export function growthProblems(
 	changes: readonly SizeChange[],
@@ -163,6 +173,7 @@ export function growthProblems(
 ): string[] {
 	return grownFiles(changes)
 		.filter((change) => !explainedBy.has(change.file))
+		.filter((change) => !(change.base === undefined && firstUseShaderFile(change.file)))
 		.map((change) =>
 			change.base === undefined
 				? `${change.file} is new, ${bytes(change.head)} bytes after Brotli, and no Size-Growth trailer names it`

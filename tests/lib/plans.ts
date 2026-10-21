@@ -460,26 +460,39 @@ const SHADERS_SECONDS_PER_PROGRAM = 0.5;
  * The most GLSL programs that one part of the shaders page compiles. Each part is a page of its
  * own, with a WebGL2 context of its own that it gives up at its end. Safari on CI's Mac lost the
  * context of a page that compiled every program in one context, after 2,240 programs and 266 s.
+ *
+ * The relief materials add many builds of the standard material, and the modules that hold them
+ * are uneven in size: at 400 a part of the first-use set reached 638 programs, since a part loads
+ * every `parts`-th module and a few large modules can meet in one. At 350 the same set's largest
+ * part holds 432, so each page stays near its share ([Test memory](tests.md)).
  */
-export const SHADER_PROGRAMS_PER_PART = 400;
+export const SHADER_PROGRAMS_PER_PART = 350;
 
 /** The parts of a set of programs: enough that none holds more than that many programs. */
 const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_PROGRAMS_PER_PART);
 
 /**
  * Which builds the checks plan compiles. `all` compiles every one: the builds without the coat and
- * sheen bit in their parts, then those with it in theirs. `sampled` compiles the builds without it
- * and one part of a sample of those with it, which keeps Safari's shards on CI's few Macs short
- * (D-147).
+ * sheen bit in their parts, the builds of the features that load on first use in theirs, then those
+ * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
+ * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
+ * short (D-147, D-189). Its samples share the parts of the other builds, since a part downloads its
+ * share of every module: a sample with a part of its own downloaded every module, about 2.5 GB on
+ * 20 October 2026, and Safari had not compiled one program of it after 205 s.
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
 
 /** The sets of the shaders page that each kind of plan compiles, each in its parts. */
 const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
-	all: ['base', 'coat'],
-	sampled: ['base', 'coat-sample'],
+	all: ['base', 'first-use', 'coat'],
+	sampled: ['sampled'],
 };
+
+/** Every set of the shaders page that a plan compiles. */
+export const PLANNED_SHADER_SETS: readonly ShaderSet[] = [
+	...new Set(Object.values(SHADER_PLAN_SETS).flat()),
+];
 
 /**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
@@ -491,9 +504,7 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 	SHADERS_BASE_SECONDS +
 		SHADERS_SECONDS_PER_PROGRAM *
 			Math.max(
-				...(['base', 'coat', 'coat-sample'] as const).map((set) =>
-					Math.ceil(glslProgramCountOf(set) / partsOf(set)),
-				),
+				...PLANNED_SHADER_SETS.map((set) => Math.ceil(glslProgramCountOf(set) / partsOf(set))),
 			),
 );
 
@@ -1113,9 +1124,18 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, the volumetric fog, 4 custom effects, or the physical sky.
+ * sun's contact shadows, the subsurface blur of skin, the volumetric fog, 4 custom effects, or
+ * the physical sky.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'fog' | 'effects' | 'sky';
+export type CostedEffect =
+	| 'bloom'
+	| 'ao'
+	| 'dof'
+	| 'subsurface'
+	| 'contact'
+	| 'fog'
+	| 'effects'
+	| 'sky';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1135,9 +1155,10 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * steps, the steps of Medium on WebGL2 and of High, with the prepass on in both halves too, as for
  * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
  * with the sun still and with the sun moving in every frame, which draws the sky view table again
- * in each frame. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * in each frame. The subsurface plan times the skin blur at 17 and 25 taps, High's and
+ * Ultra's. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
  * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
- * contact plan, and D-143 those of the physical sky plan.
+ * contact plan, D-143 those of the physical sky plan, and D-153 those of the subsurface plan.
  */
 export function effectPlan(
 	effect: CostedEffect,
@@ -1152,6 +1173,9 @@ export function effectPlan(
 		ao: [
 			['', []],
 			['-prepass', ['prepass=on']],
+			// A quarter of the drawn area at the same allocation, which tells a fixed cost from one
+			// that follows the pixels.
+			['-quarter', ['aoscale=0.25']],
 		],
 		dof: [
 			['-16', ['taps=16']],
@@ -1172,6 +1196,10 @@ export function effectPlan(
 		sky: [
 			['', []],
 			['-moving', ['moving']],
+		],
+		subsurface: [
+			['-17', ['taps=17']],
+			['-25', ['taps=25']],
 		],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
@@ -1207,7 +1235,31 @@ export function effectPlan(
 			),
 		),
 	);
-	return [...pages, ...twin];
+	// The engine's own occlusion shaders in a small stand-alone page, for a browser report.
+	const repro: PlanItem<Check>[] =
+		effect === 'ao'
+			? ['ao', 'ao-quarter', 'copy', 'opaque', 'msaa', 'high'].map((variant) => {
+					const switches =
+						variant === 'copy'
+							? '?mode=copy&aoscale=0.5'
+							: variant === 'ao-quarter'
+								? '?mode=ao&aoscale=0.25'
+								: variant === 'opaque'
+									? '?mode=ao&aoscale=0.5&opaque=400'
+									: variant === 'msaa'
+										? '?mode=ao&aoscale=0.5&msaa=on'
+										: variant === 'high'
+											? '?mode=ao&aoscale=0.5&power=high'
+											: '?mode=ao&aoscale=0.5';
+					return {
+						id: `ao-fixed-cost-webgl2-${variant}`,
+						path: `/bench/probes/ao-fixed-cost/index.html${switches}`,
+						timeoutSeconds: 180,
+						check: { kind: 'effect' as const, effect, tier: 'webgl2' as const, scale: 1 },
+					};
+				})
+			: [];
+	return [...pages, ...twin, ...repro];
 }
 
 /**
@@ -1814,6 +1866,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	dof: () => effectPlan('dof'),
+	subsurface: () => effectPlan('subsurface'),
 	contact: () => effectPlan('contact'),
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
@@ -1836,7 +1889,100 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	governor: governorPlan,
 	'texture-cache': textureCachePlan,
 	'object-growth': objectGrowthPlan,
+	'compare-bench': compareBenchPlan,
+	'compare-effects': compareEffectsPlan,
 };
+
+/**
+ * A device run of the comparisons against three.js: one engine per page, measured for a while at a
+ * fixed count. Every page runs twice, so the session's first, cold page does not decide a pair.
+ */
+function compareBenchPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const scene of ['battle', 'factory']) {
+		for (const gpu of ['webgpu', 'webgl2'] as const) {
+			for (const engine of ['null3d', 'threejs'] as const) {
+				items.push({
+					id: `compare-${scene}-${engine}-${gpu}`,
+					path: `/examples/index.html?compare=${scene}&engine=${engine}&gpu=${gpu}&walkthrough=off&count=100&measure=8&stats=off`,
+					timeoutSeconds: 120,
+					check: { kind: 'effect', effect: 'ao', tier: gpu, scale: 1 },
+				});
+			}
+		}
+	}
+	// The pair at the ramp's new first step.
+	for (const engine of ['null3d', 'threejs'] as const) {
+		items.push({
+			id: `compare-battle-${engine}-webgpu-200`,
+			path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=200&measure=8&stats=off`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	// The pair at the phone ramp's heavier end, where the crossing between the engines shows.
+	for (const engine of ['null3d', 'threejs'] as const) {
+		items.push({
+			id: `compare-battle-${engine}-webgpu-1000`,
+			path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=1000&measure=8&stats=off`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	// One cascade count at a time on the null3D page, to measure what each shadow cascade costs.
+	for (const cascades of [1, 2]) {
+		items.push({
+			id: `compare-battle-null3d-webgpu-500-cascades${cascades}`,
+			path: `/examples/index.html?compare=battle&engine=null3d&gpu=webgpu&walkthrough=off&count=500&measure=8&stats=off&cascades=${cascades}`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	// The same pair at a count that pushes the phone below the display cap, where a gap shows.
+	for (const engine of ['null3d', 'threejs'] as const) {
+		items.push({
+			id: `compare-battle-${engine}-webgpu-500`,
+			path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=500&measure=8&stats=off`,
+			timeoutSeconds: 180,
+			check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+		});
+	}
+	const first = items.map((item) => ({ ...item }));
+	const warm = items.map((item) => ({ ...item, id: `${item.id}-warm` }));
+	return [...first, ...warm];
+}
+
+/**
+ * A device run that turns the Battle scene's effects off one at a time, to name the pass that
+ * costs the most on this device.
+ */
+function compareEffectsPlan(): PlanItem<Check>[] {
+	const all = ['shadows', 'fog', 'bloom', 'ao', 'grade', 'lens', 'decals'];
+	const variants: [string, string[]][] = [
+		['all', all],
+		['no-shadows', all.filter((effect) => effect !== 'shadows')],
+		['no-ao', all.filter((effect) => effect !== 'ao')],
+		['no-fog', all.filter((effect) => effect !== 'fog')],
+		['no-bloom', all.filter((effect) => effect !== 'bloom')],
+		['plain', ['shadows', 'fog', 'bloom', 'ao']],
+	];
+	const pages = variants.map(([suffix, effects]) => ({ suffix, engine: 'null3d', effects }));
+	// three.js with its shadows on and off, to compare what its own shadow path costs it.
+	pages.push(
+		{ suffix: 'threejs-all', engine: 'threejs', effects: all },
+		{
+			suffix: 'threejs-no-shadows',
+			engine: 'threejs',
+			effects: all.filter((effect) => effect !== 'shadows'),
+		},
+	);
+	return pages.map(({ suffix, engine, effects }) => ({
+		id: `compare-effects-${suffix}`,
+		path: `/examples/index.html?compare=battle&engine=${engine}&gpu=webgpu&walkthrough=off&count=100&measure=8&stats=off&effects=${effects.join(',')}`,
+		timeoutSeconds: 120,
+		check: { kind: 'effect' as const, effect: 'ao' as const, tier: 'webgpu' as const, scale: 1 },
+	}));
+}
 
 /**
  * What is wrong with a room light page's result: a failure, an environment that never resolved, or
@@ -1935,24 +2081,24 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
- * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
- * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
- * counts at their mean. A part with a set's own share of the programs counts by that share: the
- * sampled coat page compiles about 190 programs against a base part's 380, and it runs after the
- * base parts, so it counts at about 15 seconds, half a later part's time. The WebGPU pages of the
- * same names skip there.
+ * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
+ * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard. A
+ * shard holds three or four parts, so each one compiles first or second, and counts at that time.
+ * The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
-	[/^shaders-coat-sample-/, 15],
-	[/^shaders-/, 48],
-	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
-	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
+	[/^shaders-/, 120],
+	[/^image-compare-battle-(null3d|threejs)-webgl2$/, 25],
 	[/^image-demo-creek-webgl2-/, 22],
 	[/restarts/, 20],
 ];
 
-/** The mean time of every other page of the plan there, the skipped pages among them. */
-const PAGE_SECONDS = 1.5;
+/**
+ * The mean time of every other page of the plan there, the skipped pages among them. In run
+ * 39291513923 the shards held about 80 other pages each and took 8 to 16 minutes, about twice what
+ * a mean of 1.5 seconds gave.
+ */
+const PAGE_SECONDS = 2.5;
 
 /** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
 export function expectedSeconds({ id }: { id: string }): number {

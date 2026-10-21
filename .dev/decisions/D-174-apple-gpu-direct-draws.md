@@ -1,8 +1,10 @@
 # D-174: The Apple GPU gap, the measured start-up probe and the direct-draw path
 
-Status: the owner chose the direct-draw path on 2026-10-14. The probe and the path are designed, and the path is not built. The probe runs have since shown the clamp is a fixed cost for each draw in each pass. So the draws the engine makes across its passes set the path's ceiling. Battle's own figures are below.
+Status: built and measured on the Mac. The owner chose the direct-draw path on 2026-10-14. The probe and the path are implemented, and their figures are below. The probe runs have shown the clamp is a fixed cost for each draw in each pass. So the draws the engine makes across its passes set the path's ceiling. Battle's own figures are below. The same-path run on the cloud iPhone 17 holds the bar on WebGL2 and misses it on WebGPU.
 
-Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The cost is a fixed amount for each draw in each pass it lands in. It does not grow with the instances per draw. On the Mac in Safari, 1,024 draws cost 27.0 ms of indirect time in three passes against 9.8 ms in one. That is about 8.5 us for each draw in each pass. Battle draws 324.6 times a frame, so the clamp may hold about 2.8 ms of its 12.68 ms on the Mac. On the iPhone 17 it may hold about 0.8 ms of its 23.2 ms. Battle now beats three.js on the iPhone 17; Factory does not, and Factory's cost is not the draw call.
+Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The cost is a fixed amount for each draw in each pass it lands in. It does not grow with the instances per draw. On the Mac in Safari, 1,024 draws cost 27.0 ms of indirect time in three passes against 9.8 ms in one. That is about 8.5 us for each draw in each pass. Battle draws 324.6 times a frame, so the clamp may hold about 2.8 ms of its 12.68 ms on the Mac. On the iPhone 17 it may hold about 0.8 ms of its 23.2 ms. On the cloud iPhone 17 the bar holds on WebGL2 and misses on WebGPU, where three.js's WebGPURenderer holds more frames. Factory's cost is not the draw call.
+
+The path is built. On the Mac in Safari on 2026-10-18 the probe chose it, and Battle's GPU time fell from 15.55 ms to 7.79 ms, which took the frame from 51.2 to 59.9 fps; three.js held 44.1. Factory did not move, as this record expected: it draws 49 to 115 times, so the clamp is not its cost. Chrome kept the indirect path, and there null3D beat three.js on both Battle backends while Factory tied at the display's 120 frames.
 
 ## Question
 
@@ -10,7 +12,7 @@ Battle on the iPhone 17 runs at 13 fps in null3D and 40 fps in three.js, both on
 
 ## Rule
 
-- Choose the draw path only from a measurement of a real draw, never from a browser or GPU name (hard rule 14).
+- Choose the draw path only from a measurement of a real draw, never from a browser or GPU name (hard rule 14). One exception, added on 2026-10-18 by the coordinator's ruling: a software renderer identified from the adapter's reported description never takes the direct path. Its slow indirect draws say nothing about the per-draw GPU cost that the path removes, and its held frames must stay the ones the current path draws. The stop is a capability exclusion, not a way to pick between real GPUs; the choice among those stays measured.
 - Keep per-instance data in vertex buffers (hard rule 7).
 - Never draw wrongly. The probe picks from a real first-frame draw, and the current path stays the fallback.
 
@@ -48,19 +50,22 @@ A later run on main (2026-10-14, the same device and settings, with M2-EX41's dr
 
 ## The probe
 
-The probe runs on the render worker's device, in the first pass that hard rule 22 already asks for. That pass draws one point by a direct draw before the first frame. The probe records a small fixed workload twice on that device. The same buckets draw once with `drawIndexedIndirect` and once with `drawIndexed`, with the same pipelines, vertex buffers, attachments and drawn geometry. It times each arm with timestamp queries where the device has them. Otherwise it times several back-to-back frames to completion. The probe picks the direct path only when the direct arm is faster by a margin that covers the noise. The engine's current path stays the fallback, so an inconclusive device draws as it does today.
+The probe runs on a device of its own, in the probe worker that already checks what a worker can draw. The engine picks its GPU tier before its core starts, so the choice must be known then: the answer travels with the capability report into `initEngine`, and the core builds its frame builder for it. The probe worker's device is a dedicated worker's, like the render worker's own, and the per-draw cost it measures is a browser and driver property, so the answer holds for the device that draws.
 
-The probe reads a real first-frame draw, so it needs no browser name, no GPU name and no user agent. It runs once per device, and its answer is kept for the session.
+The probe draws a fixed workload twice: 512 indexed draws of a small mesh with a vertex buffer, once with the engine's indirect draws and once with direct draws, into a 64 pixel target. The indirect arm has the shape the engine records on this browser: an argument buffer for each draw on Apple's WebKit, whose indirect draws from one buffer race ([D-87](D-87-webkit-indirect-arguments.md)), and one buffer for every draw elsewhere. Each arm runs six frames, three times, and its fastest run is its figure; both arms warm up first, so a driver that drops a device's first indirect pass misleads neither. An arm whose warm-up frame takes over 50 ms ends the probe, so a very slow device keeps the current path instead of spending seconds in it. A software renderer, named by the adapter's reported description, never takes the direct path at all. The probe worker requests its adapter without a power preference, as the capability probe does, so a machine with two GPUs measures the browser's own pick.
+
+The probe picks the direct path only when the direct arm is at least 25 percent faster and at least 0.15 ms a frame faster. Any other answer, a failure or a device lost during the probe keeps the engine's current path. The engine reads no browser or GPU name for the choice, and the answer is kept for the session.
 
 ## The direct-draw path
 
-The engine cannot keep GPU culling and draw directly. The instance count is what the culling shader computes, a readback costs a frame of latency, and a late count draws the wrong instances. So the direct path culls on the CPU, as the WebGL2 builder already does. It keeps per-instance data in a vertex buffer, so hard rule 7 holds. In outline:
+The engine cannot keep GPU culling and draw directly. The instance count is what the culling shader computes, a readback costs a frame of latency, and a late count draws the wrong instances. So the direct path culls on the CPU, as the WebGL2 builder already does. It keeps per-instance data in a vertex buffer, so hard rule 7 holds. As built:
 
-1. The job workers cull the same layout that the WebGPU builder draws. Each bucket's visible instances go into that view's instance vertex buffer, in the layout the mesh shaders already read.
-2. Each bucket draws with `drawIndexed(indexCount, visibleCount, firstIndex, baseVertex)`, with no indirect buffer in the pass.
+1. The CPU culling is `null3d_core::culling::cull_into_buckets`, the job workers' culling that the WebGL2 builder uses, against the WebGPU layout's own bucket table and levels of detail. It writes each view's compacted instance buffer: one 64-byte copy per visible source, in the layout the mesh shaders already read, with the cell offset added to its matrix as the culling shader adds it.
+2. Each bucket draws with `drawIndexed(indexCount, visibleCount, firstIndex, baseVertex)`, with no indirect buffer in the pass. A direct draw's count changes every frame, so the direct path records these draws in the pass itself, not in a render bundle. The traffic is one upload of each view's instance buffer a frame.
 3. No mesh shader changes. Its vertex shader already reads each instance's matrix rows and ids from instance-rate vertex attributes. The culling shader's cell offset step moves to the CPU.
+4. GPU occlusion culling and the `?instances=index` test switch are off on this path: both need the counts that the GPU culls.
 
-This reuses every WebGPU shader build, so it adds no shader variant and no download size.
+This reuses every WebGPU shader build, so it adds no shader variant and no download size. `engine.capabilities.directDraws` reports the choice.
 
 The shortcut is to run the WebGL2 CPU-culled builder on the WebGPU backend. That needs WebGPU builds of its shaders, which read instance data from data textures under the `WEBGL2` shader def. The manifest builds those for GLSL alone. Adding them would double the mesh shader builds in the start module. The start's JavaScript is already at 141 KB of its 145 KB budget, so the shortcut is blocked on size. The path above changes no shader, and it is the one to build.
 
@@ -117,6 +122,72 @@ Factory's own graph on the same main holds 39 passes with the same shape. Eight 
 
 The owner chose option (b) on 2026-10-14: the direct-draw path, chosen by a measured start-up probe. This record keeps that ruling and settles the probe and the path as above. The three-pass run widens the path's ceiling to tens of milliseconds at 1,024 draws. So the passes that the engine's own draws land in decide whether a dedicated session is worth it. The short slices and the iPhone run measure that number.
 
+## The measured result
+
+On 2026-10-18 the comparison pages ran on this Mac, in Safari 26.6.2 and Chrome 155, at High with the governor off. Both engines drew into a 1040 by 848 canvas in Safari, so the work was equal. Chrome drew null3D into 2080 by 1600 and three.js into 1040 by 800, so its null3D figures do four times the pixels.
+
+Safari chose the direct path and Chrome kept the indirect one, as their probes measured. Battle and Factory against three.js, in frames a second, at the canvas given beside each figure:
+
+| Page | Safari, null3D | Safari, three.js | Chrome, null3D | Chrome, three.js |
+| --- | --- | --- | --- | --- |
+| Battle, WebGPU | 59.9 fps, 7.79 ms GPU, 1040x848 | 44.1 fps, 1040x848 | 91.1 fps, 15.84 ms, 2080x1600 | 38.6 fps, 1040x800 |
+| Battle, WebGL2 | 58.9 fps, 1040x848 | 43.5 fps, 1040x848 | 52.1 fps, 19.99 ms, 2080x1600 | 39.2 fps, 1040x800 |
+| Factory, WebGPU | 59.8 fps, 5.60 ms, 1040x848 | 52.6 fps, 1040x848 | 120.0 fps, 5.41 ms, 2080x1600 | 120.0 fps, 1040x800 |
+| Factory, WebGL2 | 60.3 fps, 1040x848 | 52.5 fps, 1040x848 | 120.0 fps, 6.16 ms, 2080x1600 | 120.0 fps, 1040x800 |
+
+Safari with the same pages forced to the indirect path, `?direct=off`: Battle 51.2 fps and 15.55 ms of GPU time at 1040x848, Factory 59.8 fps and 5.03 ms at 1040x848. So the direct path halved Battle's GPU time and took the frame from 51.2 to 59.9 fps. Factory did not move, and its GPU time stayed within the noise either way. The loads were 6.4 to 8.9, recorded beside each figure.
+
+The three.js WebGPU columns of that table came from WebGLRenderer, which was the comparison's default until 2026-10-18 ([D-121](D-121-comparison-tier.md#addendum-18-october-2026-threejss-renderer-follows-the-gpu-path)). The same-path Mac figures are not measured. The phone run below measures them on a cloud device.
+
+So the bar holds on the Mac: null3D beats three.js on Battle and Factory on both backends in Safari, where every run drew 1040 by 848. In Chrome null3D beats three.js on both Battle backends at four times the pixels, and Factory reaches the display's 120 frames like three.js. Factory's remaining gap on the iPhone 17 is pass and pixel work that no draw path removes.
+
+## The two paths draw one frame
+
+A forced comparison on SwiftShader held one scene at 320 by 180 and drew it with `?direct=on` and with `?direct=off`. The first run differed by 0.2153% of pixels, against a 0.1% limit, on two crates.
+
+The direct path recorded every shadow view with the opaque pipeline. A view of one shadow atlas tile draws with the tile pipeline. The opaque pipeline draws nothing where the scene has no sun cascades, so the tile's casters went missing. After the fix both paths draw 33 calls, and the frames differ in no pixel.
+
+`tests/image/direct-draws.spec.ts` now draws one scene both ways in one browser and compares the two frames. It reads the path from `HeldFrame.directDraws`, so it proves its switch took effect. It needs no reference pictures, so a divergence fails even on a device whose pictures were never saved. The fix changed no reference.
+
+## The iPhone 17's own run
+
+On 2026-10-18 the same comparison pages ran on a cloud iPhone 17 in Safari 26.5, with every page at 603 by 1009. The probe chose the direct path on both scenes, and the forced pages reported the path asked for.
+
+| Page | Indirect | Direct | Gain |
+| --- | --- | --- | --- |
+| Battle, WebGPU | 26.1 fps, 29.10 ms GPU | 26.4 fps, 27.84 ms | 1.26 ms |
+| Factory, WebGPU | 22.3 fps, 35.03 ms | 22.4 fps, 34.27 ms | 0.76 ms |
+
+The clamp holds about a millisecond of Battle's frame there, which matches this record's estimate of 0.8 ms.
+
+## The same-path run
+
+The comparison pages now put three.js on the renderer of the GPU path, as [D-121](D-121-comparison-tier.md#addendum-18-october-2026-threejss-renderer-follows-the-gpu-path) records. On 2026-10-18 the pages ran again on the cloud iPhone 17 in Safari 26.5, every page at 603 by 1009. Each page warmed for 15 seconds, then measured 8 seconds with the page's own measure. Every three.js page reported the renderer that its GPU path names.
+
+| Page | null3D | three.js |
+| --- | --- | --- |
+| Battle, WebGPU | 26.0 fps, 29.09 ms GPU, 295 draws, direct | 31.5 fps, WebGPURenderer |
+| Battle, WebGL2 | 49.7 fps, 217 draws | 33.8 fps, WebGLRenderer |
+| Factory, WebGPU | 24.0 fps, 31.91 ms GPU, 115 draws, direct | 41.1 fps, WebGPURenderer |
+| Factory, WebGL2 | 60.0 fps, 115 draws | 59.2 fps, WebGLRenderer |
+
+With `?renderer=webgl` on the WebGPU query, three.js drew Battle at 34.1 fps and Factory at 59.4, on WebGLRenderer. Those are the figures that the earlier WebGPU column measured.
+
+So the bar holds on the iPhone 17's WebGL2 path, where null3D wins Battle and ties Factory at the screen's rate. It misses on its WebGPU path in this run. three.js holds 31.5 frames on Battle to null3D's 26.0, and 41.1 on Factory to null3D's 24.0. Battle's WebGPU result moves between sessions: on 2026-10-14 null3D held 32 frames and three.js 31 on WebGPURenderer. Factory's does not.
+
+The cloud Galaxy S25 in Chrome 152 ran the four bar pages. Every page drew at a canvas backing size of 540 by 907 (360 by 604 CSS pixels). Its screen runs at 30 Hz, so the cap is 30 frames. Every null3D page held the cap.
+
+| Page | null3D | three.js |
+| --- | --- | --- |
+| Battle, WebGPU | 30.0 fps, 25.34 ms GPU, 294 draws | 25.5 fps, WebGPURenderer |
+| Battle, WebGL2 | 30.0 fps, 221 draws | 28.0 fps, WebGLRenderer |
+| Factory, WebGPU | 30.0 fps, 19.07 ms GPU, 115 draws | 29.1 fps, WebGPURenderer |
+| Factory, WebGL2 | 30.0 fps, 115 draws | 30.0 fps, WebGLRenderer |
+
+On the S25 the bar holds for both scenes and both paths, as far as a 30 frame cap can show. three.js misses the cap on Battle on both renderers, and on Factory on WebGPURenderer. The cap bounds every win above 30 frames, so Factory's WebGL2 result is a tie.
+
+So the direct path helps the phone as far as the clamp reaches, and the phone's gap is other work: pass and pixel cost, as Factory's figures have shown since the first device run.
+
 ## What this changes
 
-Nothing in the engine yet. The probe and the path are the design above, and the instance-count probe has run. The Mac figures come from the R34 micro-probe runs, and the iPhone 17 figures from the R34 comparison run of 2026-10-14.
+The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the Mac comparisons above ran on the Mac, and the same pages ran on a cloud iPhone 17 and Galaxy S25.

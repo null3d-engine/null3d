@@ -49,3 +49,28 @@ M2-R25 closes with no engine change. The task's rule allows either a measured sa
 - The plane's cost on the owner's iPad stays as accepted on 6 October 2026 ([D-83](D-83-gate-rulings-2026-10-06.md), ruling 13).
 - The levers stay open for a later scene that shows the cost again. A uniform that precomputes the cascades' light axes is the only one that keeps the images; it needs a measured saving first, as design principle 1 asks. Turning the plane off at Low alone trades the flat-caster acne, which the owner rejected.
 - The breakdown's M2-R25 entry is closed. Its "Done when" is met by this record.
+
+## Addendum, 2026-10-19: the filter's square on an iPhone 17, and a cold first page
+
+The iPhone 17's Safari ran Battle's comparison on 19 October 2026, at 100 units on a 603 x 1009 canvas at a pixel ratio of 1.5, on the direct path. The first session's pages suggested that the phone's filter cost far more than a desktop GPU's:
+
+| Page | Presented fps | GPU time | Draws |
+| --- | --- | --- | --- |
+| Battle, the square of 5 | 24.4 | 32.01 ms | 304 |
+| Battle, the square of 3 | 30.3 | 24.11 ms | 267 |
+
+The next session showed that those 7.9 ms belonged to the page's place in the session, not to the filter. The first page of a cloud session is about 5 ms slower than every page after it with the same settings. A later run alternated the two squares in one session:
+
+| Page | Presented fps | GPU time | Draws |
+| --- | --- | --- | --- |
+| The square of 3, first page of the session | 25.1 | 29.90 ms | 298 |
+| The square of 3 | 30.0 | 23.81 ms | 266 |
+| The square of 3 | 29.8 | 24.06 ms | 266 |
+| The square of 5 | 29.7 | 24.32 ms | 267 |
+| The square of 5 | 29.5 | 24.67 ms | 265 |
+
+- Warm, the two squares differ by less than the session's drift of about 1 ms. The smaller square saves nothing measurable on this phone, and it makes edges harder, so no default changed.
+- On the Mac's Safari at 1,000 units the same change saved about 1.1 ms of 14.2, and 1.4 ms with the other effects off. Neither device justifies a device default.
+- What was tried and rejected: one read of each 2 x 2 block through the comparison sampler's own filter, with the block's weights and the plane at the sample's place. WebGPU refuses it: the cascades bind as a float texture, so that compatibility mode can read four texels at once, and a comparison sample needs a depth texture. The shader build refused all 45 affected variants.
+
+The per-texel receiver plane and the preset's square stay as they were. The comparison's own measurement needs the correction instead: the first page of a session is not a page to judge an engine by ([Battle's figures on the iPhone](../benchmarks.md#battles-iphone-webgpu-figure-and-the-cold-first-page)).

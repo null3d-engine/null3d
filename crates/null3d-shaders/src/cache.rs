@@ -38,18 +38,22 @@ const FORMAT: &str = "2";
 /// How many bytes one cache folder may hold before its oldest entries go. The build tools bound the
 /// caches under their one root with the same figure (tools/lib/build-cache.ts), so one rule covers
 /// the machine.
+#[cfg(not(target_arch = "wasm32"))]
 const LIMIT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 
 /// An entry written this recently stays when the folder is pruned, because the build that reads it
 /// may still be running.
+#[cfg(not(target_arch = "wasm32"))]
 const IN_USE_SECS: u64 = 2 * 60 * 60;
 
 /// A text at least this long is stored once per entry and referenced by the builds that use it. One
 /// entry holds thousands of builds, and the same library text runs through all of them: storing each
 /// of them whole made a single entry 1.5 GB (code review M-32).
+#[cfg(not(target_arch = "wasm32"))]
 const MIN_SHARED_TEXT: usize = 40;
 
 /// The field a shared text is referenced by, as `{"$text": index}`.
+#[cfg(not(target_arch = "wasm32"))]
 const TEXT_REF: &str = "$text";
 
 /// How many entries a run compiled and how many it reused.

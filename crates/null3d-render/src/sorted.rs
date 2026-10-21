@@ -79,6 +79,8 @@ pub(crate) struct SortedBucket {
     pub(crate) back: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(crate) textures: u32,
+    /// True when its pipelines draw lines, from each part's edge list.
+    pub(crate) lines: bool,
     /// The engine mesh id, which gives the parts it draws.
     pub(crate) mesh: u32,
     /// The engine material id.
@@ -426,7 +428,7 @@ impl SortedLayout {
             };
             let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
-            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             Some((pipeline, textures, page, mesh, material, group))
         };
         // A skinned object draws from a bucket of its own, with the pipeline that `skin` gives.
@@ -522,7 +524,8 @@ impl SortedLayout {
             self.weighs |= weighted != 0;
             // A weighted bucket draws its runs once more, in the camera's weighted layer.
             let passes = if back == 0 { 1 } else { 2 } + u32::from(weighted != 0);
-            most_parts = most_parts.max(meshes.parts(slot).len() as u32 * passes);
+            let lines = pipeline.state & state_flags::LINE_LIST != 0;
+            most_parts = most_parts.max(meshes.parts(slot, lines).len() as u32 * passes);
             // A particle system's pipeline reads no draw index, so of the pass's bits it takes
             // only tone mapping.
             let in_pass = if group & PARTICLE_GROUP != 0 && group & SKINNED_GROUP == 0 {
@@ -534,6 +537,7 @@ impl SortedLayout {
                 pipeline: pipelines.id(front.in_pass(in_pass)),
                 back,
                 textures,
+                lines,
                 mesh,
                 material,
                 group,

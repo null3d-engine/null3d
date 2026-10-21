@@ -201,12 +201,25 @@ pub enum Op {
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
     SkyMapStep = 55,
+    /// [probes texture id, chain texture id, layer, image id, then the six faces' texture ids]:
+    /// makes one reflection probe's map from what its six capture views drew (decision record
+    /// D-149), in the frame's commands, ahead of its passes, with the code of the generator that
+    /// the backend holds under the image id. The probes texture is a 2D array of `RGBA16_FLOAT`
+    /// with mip levels down to 4 texels across, and the chain a 2D array of six layers of
+    /// `RGBA16_FLOAT` with every mip level, both with `RENDER_ATTACHMENT` and `TEXTURE_BINDING`
+    /// usage. Each face texture is a one-layer array that a capture view drew into, its first row
+    /// at the view's bottom edge. The backend copies face `k` into layer `k` of the chain, in the
+    /// cube map table that every GPU path shares, makes the chain's levels, then fills each level
+    /// of the probe's layer with the chain's light filtered for the level's roughness, as an
+    /// octahedral map. Level `i` of `n` holds perceptual roughness `1 - sqrt(1 - i / (n - 1))`,
+    /// as an environment map's levels do.
+    ProbeFilter = 56,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 43] = [
+    pub const ALL: [Op; 44] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -249,6 +262,7 @@ impl Op {
         Op::ReadBuffer,
         Op::GenerateTexture,
         Op::SkyMapStep,
+        Op::ProbeFilter,
         Op::Submit,
     ];
 
@@ -300,6 +314,7 @@ impl Op {
             Op::ReadBuffer => "READ_BUFFER",
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
+            Op::ProbeFilter => "PROBE_FILTER",
             Op::Submit => "SUBMIT",
         }
     }
@@ -398,13 +413,17 @@ pub mod format {
     /// Four 32-bit unsigned integers per texel: data of several kinds in one data texture, such as
     /// WebGL2's light grid and light records, which shaders read as integers or turn into floats.
     pub const RGBA32_UINT: u32 = 23;
+    /// Two 16-bit floats per texel: the screen motion of each pixel's surface, which the motion
+    /// pass draws. Multisampled, it needs `Capabilities::MSAA_FLOAT16`, as `RGBA16_FLOAT` does.
+    /// WebGL2 calls it `RG16F`, and draws into it with `EXT_color_buffer_float`.
+    pub const RG16_FLOAT: u32 = 24;
     /// One 16-bit float per texel, which draws and blends: the coverage of weighted blended
     /// transparency. WebGL2 calls it `R16F`, and draws into it with `EXT_color_buffer_float` or
     /// `EXT_color_buffer_half_float`.
     pub const R16_FLOAT: u32 = 25;
 
     /// Every format.
-    pub const ALL: [u32; 25] = [
+    pub const ALL: [u32; 26] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -429,6 +448,7 @@ pub mod format {
         BC6H_RGB_UFLOAT,
         DEPTH16_UNORM,
         RGBA32_UINT,
+        RG16_FLOAT,
         R16_FLOAT,
     ];
 
@@ -502,7 +522,7 @@ pub mod format {
     pub const fn block_bytes(format: u32) -> u32 {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
-            | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
+            | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT | RG16_FLOAT => 4,
             DEPTH16_UNORM | R16_FLOAT => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
@@ -705,6 +725,17 @@ pub mod layout {
     /// texture at each binding from 0, then each one's sampler at the bindings after every
     /// texture. It sits where [`TEXTURES`] sits.
     pub const MATERIAL_MAPS: u32 = 6;
+    /// [`MATERIAL_MAPS`] with the displacement map visible to the fragment stage too, for the
+    /// builds of parallax occlusion mapping. The fragment stage then reads every sampled texture
+    /// that WebGPU's default limits give it, so only materials with parallax take it.
+    pub const MATERIAL_MAPS_PARALLAX: u32 = 34;
+    /// [`FRAME`] for the builds of parallax occlusion mapping: the same groups without the copy of
+    /// the opaque color. A parallax material reads the displacement map in the fragment stage as
+    /// well as the vertex stage, so its maps' group holds one more sampled texture than any other
+    /// material's. The draw list never pairs [`permutation::PARALLAX`] with
+    /// [`permutation::TRANSMISSION`], so those builds read no copy. Only WebGPU has this layout:
+    /// the parallax passes bind it in place of [`FRAME`].
+    pub const FRAME_PARALLAX: u32 = 48;
     /// Group 0 of depth-only pipelines, such as shadow casters': per-frame constants and the
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
@@ -768,10 +799,12 @@ pub mod layout {
     /// [`FINAL_EFFECTS`] with a multisampled scene depth, whose sample 0 the effects read. Only
     /// WebGPU has it.
     pub const FINAL_EFFECTS_DEPTH_MS: u32 = 24;
-    /// Group 0 of the copy of a view's image into its target, and of the copy of the camera's
-    /// opaque color for transmission: the image, which it reads with `textureLoad`, as plain
-    /// floats.
+    /// Group 0 of the copy of a view's image into its target: the image, which it reads with
+    /// `textureLoad`, as plain floats.
     pub const VIEW_COPY: u32 = 25;
+    /// Group 0 of the still-camera accumulation's blend: its values, then the scene color that it
+    /// reads with `textureLoad`, as plain floats.
+    pub const ACCUMULATE: u32 = 26;
     /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
     /// blurred image at half the render size, which the step reads with the linear sampler.
     pub const DOF_COMPOSITE: u32 = 27;
@@ -785,11 +818,25 @@ pub mod layout {
     /// copy and the pyramid's six levels above it, which it reads with `textureLoad`.
     pub const SSR_TRACE: u32 = 31;
     /// The weighted layer's blend: the weighted color sum and the coverage, both read with
-    /// `textureLoad` as unfilterable floats.
+    /// `textureLoad` as unfilterable floats. The copy of the camera's opaque color for
+    /// transmission binds its scene color and depth the same way.
     pub const WEIGHTED_COMPOSITE: u32 = 41;
     /// The copy of a multisampled scene depth for the weighted layer: the depth, read with
     /// `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
     pub const WEIGHTED_DEPTH_MS: u32 = 42;
+    /// [`WEIGHTED_COMPOSITE`] for the copy of the camera's opaque color from a multisampled scene
+    /// depth, whose sample 0 it reads. Only WebGPU has it.
+    pub const TRANSMISSION_COPY_MS: u32 = 49;
+    /// Group 0 of the subsurface blur's across step: its block at binding 0 and the skin pass's
+    /// target at binding 1, which it reads with `textureLoad` as plain floats.
+    pub const SUBSURFACE_BLUR: u32 = 43;
+    /// Group 0 of the subsurface blur's down step: [`SUBSURFACE_BLUR`]'s bindings, then the across
+    /// step's target, the scene color and the scene's depth at bindings 2 to 4, each read with
+    /// `textureLoad` as plain floats.
+    pub const SUBSURFACE_COMPOSITE: u32 = 44;
+    /// [`SUBSURFACE_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads.
+    /// Only WebGPU has it.
+    pub const SUBSURFACE_COMPOSITE_MS: u32 = 45;
     /// The group of the decal pass's scene depth: the depth target, which the decal templates read
     /// with `textureLoad` as plain floats. It is group 1 of [`super::template::DECAL`] and group 2
     /// of [`super::template::DECAL_MAPS`] on WebGPU, and group 4 on WebGL2, which reads a copy of
@@ -814,6 +861,11 @@ pub mod layout {
     /// first sample it reads with `textureLoad`. Only WebGPU has it: the one-sample copy binds as
     /// [`VIEW_COPY`] does.
     pub const PARTICLE_DEPTH_MS: u32 = 35;
+    /// Group 0 of the motion pass's pipelines: [`DEPTH`]'s bindings, then the motion block at
+    /// binding 4 and the last frame's joint texture at 5. On WebGL2 the texture at 5 also holds
+    /// the last frame's morph weights after its joints, and the group holds the last frame's
+    /// matrix rows at 7 and 9, resident and streamed.
+    pub const MOTION_FRAME: u32 = 47;
     /// The physical sky's group: at binding 0 its uniform block, at bindings 1, 2 and 3 its
     /// transmittance, multiple scattering and sky view tables, at binding 4 a linear sampler that
     /// clamps, and at binding 5 one that repeats across the width. Group 0 of its tables' steps,
@@ -841,8 +893,10 @@ pub mod permutation {
     pub const TONE_MAP: u32 = 2;
     /// The mesh's vertex colors multiply the material's base color.
     pub const VERTEX_COLOR: u32 = 4;
-    /// A normal map bends the surface's normals.
-    pub const NORMAL_MAP: u32 = 8;
+    /// The standard material's bump map bends the normal by the change of a height map's red
+    /// channel from one pixel to the next, as three.js's `bumpMap` does. The height map sits in the
+    /// normal map's slot.
+    pub const BUMP: u32 = 8;
     /// Fragments whose alpha is below the material's cutoff draw nothing.
     pub const ALPHA_MASK: u32 = 16;
     /// The surface reads the shadow maps, so shadows fall on it.
@@ -929,6 +983,27 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The standard material's displacement map moves each vertex along its normal, as three.js's
+    /// `displacementMap` does. The vertex shader samples it from its own binding of the maps group,
+    /// with its values from the material's custom values.
+    pub const DISPLACEMENT: u32 = 1 << 26;
+    /// The fragment shader shifts where it reads the maps by parallax occlusion mapping: it steps
+    /// along the view ray through the displacement map's relief, so finer relief than the vertices
+    /// hides and shows the surface behind it. Its pipelines bind the maps group with the
+    /// displacement map visible to the fragment stage too.
+    pub const PARALLAX: u32 = 1 << 27;
+    /// The surface lets light through to its other side, as glTF's diffuse transmission does: the
+    /// light that reaches its back shows on its front through the material's transmission color,
+    /// as leaves, petals and ears show the sun behind them. The material's row holds its values in
+    /// one more `vec4f`.
+    pub const TRANSLUCENCY: u32 = 1 << 28;
+    /// The build draws or culls for the motion pass. A custom material's template draws a moving
+    /// object's motion: the vertex shader places each vertex in this frame and in the last, moved
+    /// by the material's vertex offset at each frame's time, and the fragment shader writes the
+    /// difference. Only custom materials with a vertex offset build it. The culling shader keeps
+    /// the instances whose world matrix changed since the last frame, and writes both matrices.
+    pub const MOTION: u32 = 1 << 29;
+
     /// The surface has a clear coat, a sheen or both above its base, as three.js's
     /// `MeshPhysicalMaterial` draws them: a second GGX lobe at the coat's normal and roughness,
     /// and the Charlie lobe of cloth. The material's row holds their values in two more `vec4f`s.
@@ -941,11 +1016,11 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 30] = [
+    pub const NAMES: [(&str, u32); 34] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
-        ("NORMAL_MAP", NORMAL_MAP),
+        ("BUMP", BUMP),
         ("ALPHA_MASK", ALPHA_MASK),
         ("RECEIVE_SHADOWS", RECEIVE_SHADOWS),
         ("SKIN", SKIN),
@@ -970,6 +1045,10 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("DISPLACEMENT", DISPLACEMENT),
+        ("PARALLAX", PARALLAX),
+        ("TRANSLUCENCY", TRANSLUCENCY),
+        ("MOTION", MOTION),
         ("COAT_SHEEN", COAT_SHEEN),
         ("WEIGHTED", WEIGHTED),
     ];
@@ -987,10 +1066,11 @@ pub mod permutation {
 
     /// Bits that only make sense beside another bit, as (bit, the bit it needs). The shader build
     /// writes no build that has the first without the second, and no pipeline asks for one.
-    pub const NEEDS: [(u32, u32); 3] = [
+    pub const NEEDS: [(u32, u32); 4] = [
         (SAMPLE_MASK, ALPHA_COVERAGE),
         (ALPHA_COVERAGE, ALPHA_MASK),
         (ALPHA_HASH, ALPHA_MASK),
+        (PARALLAX, DISPLACEMENT),
     ];
     /// Pairs of bits that no build holds together, so the shader build makes no build with both.
     /// A mask tests its alpha one way, by coverage or by the hash. A mesh that WebGPU skins in the
@@ -1001,14 +1081,25 @@ pub mod permutation {
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
+    /// Displacement and bump builds load on first use, so the test switch's builds do without them.
+    /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
+    /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
+    /// displaced level of detail switches at once, so the fading builds stay small.
+    /// Transmission wins over light through a thin surface, as glTF orders them, and only the test
+    /// switch reads instances by index, which no build of such a surface needs. Layers win over
+    /// light through a thin surface, whose maps would take their slots, and a weighted surface lets
+    /// no light through a thin surface either, so neither doubles the builds of the other.
+    /// A motion build writes motion alone: it has none of those bits either, and a skinned or
+    /// morphed custom material draws its motion through the motion template, without its vertex
+    /// offset.
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
-    /// that tests its alpha by the hash switches its levels at once.
+    /// that tests its alpha by the hash switches its levels at once. A motion build never fades.
     /// The layers shade, so casters never have them, and only the test switch reads instances by
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
     /// instances by index.
-    pub const APART: [(u32, u32); 32] = [
+    pub const APART: [(u32, u32); 54] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1027,6 +1118,27 @@ pub mod permutation {
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
         (CASTER, AREA_LIGHTS),
+        (DISPLACEMENT, INSTANCE_INDEX),
+        (BUMP, INSTANCE_INDEX),
+        (BUMP, VERTEX_TANGENT),
+        (PARALLAX, TRANSMISSION),
+        (PARALLAX, TRANSLUCENCY),
+        (TRANSLUCENCY, TRANSMISSION),
+        (TRANSLUCENCY, CASTER),
+        (TRANSLUCENCY, INSTANCE_INDEX),
+        (TRANSLUCENCY, COAT_SHEEN),
+        (TRANSLUCENCY, WEIGHTED),
+        (MOTION, TONE_MAP),
+        (MOTION, VERTEX_COLOR),
+        (MOTION, ALPHA_MASK),
+        (MOTION, RECEIVE_SHADOWS),
+        (MOTION, SKIN),
+        (MOTION, MORPH),
+        (MOTION, TRANSMISSION),
+        (MOTION, PREPASS),
+        (MOTION, INSTANCE_INDEX),
+        (MOTION, CASTER),
+        (MOTION, LOD_FADE),
         (LOD_FADE, SKIN),
         (LOD_FADE, MORPH),
         (LOD_FADE, INSTANCE_INDEX),
@@ -1041,6 +1153,7 @@ pub mod permutation {
         (WEIGHTED, CASTER),
         (WEIGHTED, OUTLINE_VISIBLE),
         (WEIGHTED, LOD_FADE),
+        (LOD_FADE, DISPLACEMENT),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1481,6 +1594,9 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
+    /// Bytes per compacted instance of the motion view: [`INSTANCE_STRIDE`]'s, then the three rows
+    /// of the last frame's world matrix.
+    pub const MOTION_INSTANCE_STRIDE: u32 = 112;
     /// Bytes per compacted instance that a vertex shader reads by index: the source's index in a
     /// whole 16-byte entry, which the culling shader writes as one vector.
     pub const INDEX_STRIDE: u32 = 16;
@@ -1489,10 +1605,10 @@ pub mod sizes {
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
     /// shadow lookups, the camera's view and projection matrices, which custom materials read,
-    /// screen-space reflections' matrix into the frame before's view and their two vectors, the
-    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
-    /// fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 976;
+    /// screen-space reflections' matrix into the frame before's view and their two vectors, a
+    /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
+    /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 992;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1546,9 +1662,11 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: thirteen `vec4f`s. On WebGL2 each row
-    /// is a row of thirteen `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 208;
+    /// Bytes of one material's row in the material table: fifteen `vec4f`s. The row holds the base
+    /// values, the transmission's values, the attenuation's, the clear coat's, the sheen's, the
+    /// diffuse transmission's and the subsurface scatter's. On WebGL2 each row is a row of fifteen
+    /// `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 240;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1714,6 +1832,10 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// The still-camera accumulation's blend: one triangle over the render size, which blends the
+    /// scene color into the history of a still view. It binds as
+    /// [`layout::ACCUMULATE`](super::layout::ACCUMULATE) does.
+    pub const ACCUMULATE: u32 = 48;
     /// The exposure meter's adaptation from the histogram: a compute shader that meters the bins,
     /// moves the stored exposure toward the result and writes the new exposure. WebGPU only.
     pub const EXPOSURE_ADAPT_HISTOGRAM: u32 = 40;
@@ -1736,15 +1858,40 @@ pub mod template {
     pub const DOF_COMPOSITE_MS: u32 = 46;
     /// The copy of the camera's opaque color that surfaces which let light through sample: one
     /// triangle over the first level of its target, which reads one texel of the scene color per
-    /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
-    /// does.
+    /// pixel, and writes the code of the scene depth's distance in its alpha. Its TONE_MAP build
+    /// decodes display color, and its DEPTH_MULTISAMPLED builds read sample 0 of a multisampled
+    /// depth. It binds as [`layout::WEIGHTED_COMPOSITE`](super::layout::WEIGHTED_COMPOSITE), or
+    /// [`layout::TRANSMISSION_COPY_MS`](super::layout::TRANSMISSION_COPY_MS) from a multisampled
+    /// depth.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// The motion of moving objects, from the motion view: each vertex placed in this frame and in
+    /// the last, and the difference of the two places on the screen, beyond what the camera's
+    /// move explains, as two half floats. Masked materials test their alpha as masked casters
+    /// do, with their base color map where it has an image. Its group 0 is
+    /// [`super::layout::MOTION_FRAME`], and group 1 the map's.
+    pub const MOTION: u32 = 73;
     /// One level of screen-space reflections' depth pyramid: one triangle over the level's drawn
     /// corner, each texel the nearest depth of the 2 x 2 texels of the level below it.
     pub const SSR_REDUCE: u32 = 49;
     /// Screen-space reflections' trace: one triangle over the grid of the screen texture, which
     /// marches each texel's mirror ray through the depth pyramid and writes the ray's length.
     pub const SSR_TRACE: u32 = 50;
+    /// The skin pass's build of the standard material, from the lit template's file: it writes the
+    /// diffuse light that scatters under the surface, with the view distance and the material's
+    /// scatter distances, for the subsurface blur. It binds as [`INSTANCED_LIT`] does.
+    pub const SUBSURFACE: u32 = 51;
+    /// [`SUBSURFACE`] with the standard material's maps. It binds as [`INSTANCED_STANDARD_MAPS`]
+    /// does.
+    pub const SUBSURFACE_MAPS: u32 = 52;
+    /// The subsurface blur's across step: one triangle over its target, which blurs the skin pass's
+    /// light along the rows.
+    pub const SUBSURFACE_BLUR: u32 = 66;
+    /// The subsurface blur's down step: one triangle over its target, which blurs the across
+    /// step's light along the columns and adds the change to a copy of the scene color.
+    pub const SUBSURFACE_COMPOSITE: u32 = 67;
+    /// [`SUBSURFACE_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads.
+    /// Only WebGPU has it.
+    pub const SUBSURFACE_COMPOSITE_MS: u32 = 68;
     /// The blend of weighted blended transparency's layer over the scene color: one triangle that
     /// reads the weighted color sum and the coverage, each one texel per pixel, with the layout
     /// [`WEIGHTED_COMPOSITE`](super::layout::WEIGHTED_COMPOSITE), and writes their average color
@@ -1793,6 +1940,10 @@ pub mod template {
     /// [`PARTICLE_DEPTH`] from a multisampled depth, whose first sample it reads, with the layout
     /// [`PARTICLE_DEPTH_MS`](super::layout::PARTICLE_DEPTH_MS). Only WebGPU has it.
     pub const PARTICLE_DEPTH_MS: u32 = 56;
+    /// The motion debug view: one triangle over the scene color, which shows each pixel's whole
+    /// motion, the camera's part from the depth and the surface's own from the motion target. It
+    /// binds as a custom effect that reads depth does.
+    pub const MOTION_VIEW: u32 = 74;
     /// The volumetric fog's light step: one triangle over the grid's texture, which lights each cell
     /// of the grid. It binds the camera's frame group at group 0, as the background does, and at
     /// group 1 its settings, the last frame's grid and a sampler, as a step of bloom binds them.
@@ -1814,6 +1965,15 @@ pub mod template {
     /// no depth, so it never matches, and picking follows the mask. Binds as the frame's group
     /// does, and reads the table of object ranges for each instance's id.
     pub const PICK: u32 = 70;
+    /// GPU picking's resolve: one triangle over the render size that copies the id target, which
+    /// the device resolved into one sample per pixel, into a target that a copy reads. It binds
+    /// the resolved target at group 0, of [`super::layout::VIEW_COPY`].
+    pub const PICK_RESOLVE: u32 = 75;
+    /// GPU picking with a masked standard material: the pick template that binds the material's map
+    /// slots, so the mask cuts the same pixels that the shading cuts.
+    pub const PICK_MAPS: u32 = 76;
+    /// GPU picking with a masked unlit map: the pick template that binds its single base color map.
+    pub const PICK_TEXTURE_MAPS: u32 = 77;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1821,7 +1981,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 66] = [
+    pub const NAMES: [(&str, u32); 77] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -1858,6 +2018,7 @@ pub mod template {
         ("SHADOW_CUTOUT", SHADOW_CUTOUT),
         ("SHADOW_CUTOUT_MAP", SHADOW_CUTOUT_MAP),
         ("VIEW_COPY", VIEW_COPY),
+        ("ACCUMULATE", ACCUMULATE),
         ("DOF_SETUP", DOF_SETUP),
         ("DOF_SETUP_MS", DOF_SETUP_MS),
         ("DOF_BLUR", DOF_BLUR),
@@ -1887,6 +2048,16 @@ pub mod template {
         ("FOG_APPLY_MS", FOG_APPLY_MS),
         ("FOG_BLOCK", FOG_BLOCK),
         ("PICK", PICK),
+        ("SUBSURFACE", SUBSURFACE),
+        ("SUBSURFACE_MAPS", SUBSURFACE_MAPS),
+        ("SUBSURFACE_BLUR", SUBSURFACE_BLUR),
+        ("SUBSURFACE_COMPOSITE", SUBSURFACE_COMPOSITE),
+        ("SUBSURFACE_COMPOSITE_MS", SUBSURFACE_COMPOSITE_MS),
+        ("MOTION", MOTION),
+        ("MOTION_VIEW", MOTION_VIEW),
+        ("PICK_RESOLVE", PICK_RESOLVE),
+        ("PICK_MAPS", PICK_MAPS),
+        ("PICK_TEXTURE_MAPS", PICK_TEXTURE_MAPS),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2012,6 +2183,7 @@ pub mod groups {
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),
         (template::VIEW_COPY, own!(layout::VIEW_COPY)),
+        (template::ACCUMULATE, own!(layout::ACCUMULATE)),
         (template::EXPOSURE_ADAPT_HISTOGRAM, own!(layout::EXPOSURE)),
         (template::DOF_SETUP, own!(layout::EFFECT)),
         (template::DOF_SETUP_MS, own!(layout::EFFECT_DEPTH_MS)),
@@ -2019,7 +2191,10 @@ pub mod groups {
         (template::DOF_FILTER, own!(layout::BLOOM)),
         (template::DOF_COMPOSITE, own!(layout::DOF_COMPOSITE)),
         (template::DOF_COMPOSITE_MS, own!(layout::DOF_COMPOSITE_MS)),
-        (template::TRANSMISSION_COPY, own!(layout::VIEW_COPY)),
+        (
+            template::TRANSMISSION_COPY,
+            own!(layout::WEIGHTED_COMPOSITE, layout::TRANSMISSION_COPY_MS),
+        ),
         (template::SSR_REDUCE, own!(layout::SSR_REDUCE)),
         (template::SSR_TRACE, own!(layout::SSR_TRACE)),
         (template::PARTICLE, PARTICLE_MESH),
@@ -2037,10 +2212,40 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::SUBSURFACE, MESH),
+        (template::SUBSURFACE_MAPS, MESH),
+        (template::SUBSURFACE_BLUR, own!(layout::SUBSURFACE_BLUR)),
+        (
+            template::SUBSURFACE_COMPOSITE,
+            own!(layout::SUBSURFACE_COMPOSITE),
+        ),
+        (
+            template::SUBSURFACE_COMPOSITE_MS,
+            own!(layout::SUBSURFACE_COMPOSITE_MS),
+        ),
         (template::FOG_BLOCK, own!(layout::BLOOM)),
         (template::PICK, MESH),
+        (template::PICK_RESOLVE, own!(layout::VIEW_COPY)),
+        (template::PICK_MAPS, MESH),
+        (template::PICK_TEXTURE_MAPS, MESH),
         (template::PROBE_GRID, MESH),
         (template::PROBE_GRID_MAPS, MESH),
+        (
+            // A WebGL2 build reads the draw table at group 1 and the instances at 2, as every
+            // mesh template does, then its maps at 3. A WebGPU build has no draw table and binds
+            // its maps at group 1, after the frame group.
+            template::MOTION,
+            &[
+                &[layout::MOTION_FRAME],
+                &[layout::DRAWS, layout::TEXTURES],
+                &[layout::INSTANCES],
+                &[layout::TEXTURES],
+            ],
+        ),
+        (
+            template::MOTION_VIEW,
+            &[&[layout::EFFECT, layout::EFFECT_DEPTH_MS]],
+        ),
     ];
 
     /// The groups of a template's pipeline, group by group from group 0 on: each entry lists the
@@ -2242,6 +2447,7 @@ pub fn typescript_constants() -> String {
                 ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
                 ("DEPTH16_UNORM", format::DEPTH16_UNORM),
                 ("RGBA32_UINT", format::RGBA32_UINT),
+                ("RG16_FLOAT", format::RG16_FLOAT),
                 ("R16_FLOAT", format::R16_FLOAT),
             ],
         ),
@@ -2322,6 +2528,8 @@ pub fn typescript_constants() -> String {
                 ("FINAL", layout::FINAL),
                 ("TEXTURES", layout::TEXTURES),
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
+                ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
+                ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
                 ("DEPTH", layout::DEPTH),
                 ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
                 ("BLOOM", layout::BLOOM),
@@ -2339,12 +2547,18 @@ pub fn typescript_constants() -> String {
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),
+                ("ACCUMULATE", layout::ACCUMULATE),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("MOTION_FRAME", layout::MOTION_FRAME),
                 ("SSR_REDUCE", layout::SSR_REDUCE),
                 ("SSR_TRACE", layout::SSR_TRACE),
                 ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
+                ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
+                ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
+                ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
+                ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
                 ("DECAL_DEPTH", layout::DECAL_DEPTH),
                 ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
                 ("DECAL_FRAME", layout::DECAL_FRAME),
@@ -2431,6 +2645,7 @@ pub fn typescript_constants() -> String {
             "SIZE",
             &[
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
+                ("MOTION_INSTANCE_STRIDE", sizes::MOTION_INSTANCE_STRIDE),
                 ("INDEX_STRIDE", sizes::INDEX_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
                 ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),

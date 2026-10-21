@@ -175,12 +175,12 @@ for (const mode of ENGINE_MODES) {
 const COPY_LOADED = /null3d-render: a second copy of the worker loaded/;
 
 // With the sketch on the main thread, the setup can wait for frames of the render worker, as the
-// preset check after the first frame does. When the render worker's script does not load, as over
-// a network that drops a request, the start rejects at once with the reason, instead of waiting for
-// frames that never come. The page's trail notes the failure, and that a second copy of the worker
-// loads. Once that copy has stopped, the page reaches none of the engine's memory and workers.
+// preset check after the first frame does. A network that drops a request can keep a worker's
+// script from loading now and then, so the engine starts one more copy before it gives up: a first
+// copy that does not load costs the start nothing when the next one does. The page's own trail
+// notes the failed first copy, and that its own second copy of the worker loads too.
 for (const gpu of ['webgpu', 'webgl2'] as const) {
-	test(`a start whose render worker does not load rejects at once, sketch on the main thread on ${gpu}`, async ({
+	test(`a start whose render worker does not load once starts it again, sketch on the main thread on ${gpu}`, async ({
 		page,
 	}) => {
 		let renderLoads = 0;
@@ -192,12 +192,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		await page.goto(`shared-memory.html?room=off&cycles=1&gpu=${gpu}&sketch-thread=main`);
 		const result = await pageResult<RestartResult>(page, 30_000);
 		const engine = result.kinds.engine;
-		expect(engine?.error).toMatch(
-			/^E1405: the render worker did not start: its script or a file it imports did not load\./,
-		);
-		expect(engine?.trail?.join('\n')).toContain(
-			'null3d-render: failed: its script or a file it imports did not load',
-		);
+		expect(engine?.error).toBeUndefined();
+		expect(engine?.cycles).toBe(1);
 		await expect
 			.poll(() =>
 				page.evaluate(() =>
@@ -205,6 +201,25 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 				),
 			)
 			.toMatch(COPY_LOADED);
+		// The engine started and stopped on the same canvas, so it kept the one memory for the next.
+		await expectReleased(page, 1);
+	});
+
+	// A network that keeps a worker's script from loading ends the start with the reason, instead
+	// of waiting for frames that never come. The page reaches none of the engine's memory.
+	test(`a start whose render worker never loads rejects, sketch on the main thread on ${gpu}`, async ({
+		page,
+	}) => {
+		await page.context().route(/\/render-worker\.ts/, (route) => route.abort('connectionreset'));
+		await page.goto(`shared-memory.html?room=off&cycles=1&gpu=${gpu}&sketch-thread=main`);
+		const result = await pageResult<RestartResult>(page, 30_000);
+		const engine = result.kinds.engine;
+		expect(engine?.error).toMatch(
+			/^E1405: the render worker did not start: its script or a file it imports did not load\./,
+		);
+		expect(engine?.trail?.join('\n')).toContain(
+			'null3d-render: failed: its script or a file it imports did not load',
+		);
 		await expectReleased(page, 0);
 	});
 }

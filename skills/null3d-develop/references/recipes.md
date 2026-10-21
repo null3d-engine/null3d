@@ -25,6 +25,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 19. Water and mirror floors with a reflection
 20. Fire, smoke and sparks with particles
 21. Terrain from a height field
+22. Outdoor land with an edge the camera never sees
 
 ## 1. Start a new project
 
@@ -221,6 +222,18 @@ if (input.wasPressed('Mouse0')) {
 
 The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
+For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera draws, such as a thin wire or a leaf with a cut-out mask. It answers one or more frames later:
+
+```ts
+if (input.wasPressed('Mouse0')) {
+  void scene.pick(input.pointer.x, input.pointer.y).then((hit) => {
+    if (hit?.object === target) { /* the click landed on the target's pixels */ }
+  });
+}
+```
+
+A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+
 ## 7. HTML labels above objects (0.2)
 
 ```ts
@@ -393,7 +406,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come in 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come in 0.3 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -600,7 +613,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. For a camera that dips under the water, see "Water that the camera can go under" in `references/shaders.md` section 7. Docs: `api/render`, `shaders/surface-functions`.
 
 ## 20. Fire, smoke and sparks with particles
 
@@ -728,3 +741,25 @@ export default defineSketch((ctx) => {
 ```
 
 The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
+
+## 22. Outdoor land with an edge the camera never sees
+
+The background takes no fog. So past the edge of the land, the camera sees the plain background below the horizon, and fog cannot hide it. Hide the edge with geometry, and keep the camera inside it:
+
+```ts
+import { createOrbitControls } from '@null3d/controls';
+
+const controls = createOrbitControls(ctx, camera, {
+  target: [0, 2, 0],
+  enableDamping: true,
+  maxDistance: 60,       // the target's highest point plus this stays below the ring's lowest crest
+  maxPolarAngle: 1.85,   // a little past level; the ground clamp stops the camera lower down
+});
+```
+
+- A ring of hills or mountains stands around the land. Its lowest crest stands above the highest point the camera can reach, so every line of sight below the horizon meets ground.
+- After `controls.update(dt)`, move `controls.target` back inside the land when a pan takes it out, and move the camera by the same amount. Lift a camera that dips under the ground along its orbit, at the same distance from the target. Then a push against the ground never pulls it closer.
+- Where a valley must run out of the scene, stand a row of unlit, blended sheets across its far end, in the fog's color. Each hides more than the one before. Give them `fog: false` and `depthWrite: false`.
+- Give far scenery `receiveShadows: false`. The automatic shadow distance measures to the far side of each receiver's bounds, so a far mountain that receives shadows makes the near shadows coarse.
+
+Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.

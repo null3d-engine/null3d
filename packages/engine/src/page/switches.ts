@@ -68,6 +68,13 @@ const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
 export type ShadowDepthBits = 16 | 32;
 
 /**
+ * Which draw path WebGPU takes, which ?direct= picks: `auto`, the default, takes the start-up
+ * probe's measured choice; `on` and `off` force the direct path or the indirect one, so a test
+ * can compare the two on one device.
+ */
+export type DirectSwitch = 'auto' | 'on' | 'off';
+
+/**
  * How WebGPU skins, which ?skinning= picks to measure the ways against each other: `vertex`, the
  * default, skins in the vertex shader of each pass that draws a character, as WebGL2 does.
  * `compute` skins in the skinning pass, once per frame, which skips characters whose pose held
@@ -186,6 +193,12 @@ export interface Switches {
 	 */
 	indexInstances: boolean;
 	/**
+	 * Which WebGPU draw path to take: `?direct=on` forces the direct path and `?direct=off` the
+	 * indirect one, and `auto` takes the start-up probe's measured choice. WebGL2 always draws
+	 * directly.
+	 */
+	direct: DirectSwitch;
+	/**
 	 * The bits per texel of the shadow cascades' depth: 32 when ?shadowdepth=32 asks for 32-bit
 	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
 	 */
@@ -232,6 +245,13 @@ export interface Switches {
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
 	hold: string | undefined;
+	/**
+	 * True while ?still-camera lets a still view accumulate its frames, which is the default, and
+	 * false with ?still-camera=off. The image tests and hold mode draw the frame the sketch drew
+	 * once, without the accumulation. A sketch may take `?still` itself, as the crowd benchmark
+	 * does, to hold an animation still.
+	 */
+	still: boolean;
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
@@ -348,6 +368,7 @@ export function parseSwitches(search: string): Switches {
 		skinning:
 			oneOf(params.get('skinning'), ['compute', 'full', 'skip', 'narrow'] as const) ?? 'vertex',
 		indexInstances: params.get('instances') === 'index',
+		direct: oneOf(params.get('direct'), ['on', 'off'] as const) ?? 'auto',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
@@ -357,6 +378,7 @@ export function parseSwitches(search: string): Switches {
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
+		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
 		stats: statsSwitch(params.get('stats')),
 		glTiming: !params.has('gl-timing')

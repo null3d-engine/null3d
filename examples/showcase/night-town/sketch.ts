@@ -10,23 +10,26 @@
 // among them a "DSLR" lens with depth of field. For held frames, the sketch's address takes the
 // mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
-import { createCinematic, type Shot } from '../../lib/cinematic';
-import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
-import { createShowcaseEffects } from '../../lib/showcase-effects';
+import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
+import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
+import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
 import { createAir } from './air';
-import { createHouses } from './houses';
+import { createHouses, LOTS, TOWER } from './houses';
 import { createLamps } from './lamps';
-import { createLand } from './land';
+import { createLand, createMountains, groundHeight } from './land';
 import { createProps } from './props';
 import { createTrees } from './trees';
 
-/** The detail that each preset builds at the start. */
-const DETAIL: Record<QualityPreset, { land: number; texture: number }> = {
-	low: { land: 224, texture: 256 },
-	medium: { land: 288, texture: 512 },
-	high: { land: 340, texture: 512 },
-	ultra: { land: 400, texture: 1024 },
+/** The detail that each preset builds at the start: the land, its textures and the mountains. */
+const DETAIL: Record<
+	QualityPreset,
+	{ land: number; texture: number; ring: readonly [number, number] }
+> = {
+	low: { land: 224, texture: 256, ring: [160, 32] },
+	medium: { land: 288, texture: 512, ring: [224, 40] },
+	high: { land: 340, texture: 512, ring: [288, 48] },
+	ultra: { land: 400, texture: 1024, ring: [320, 56] },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -35,6 +38,46 @@ const DSLR_FOCAL_LENGTH = 50;
 const HEADING = 2.3;
 /** The point that the camera looks at, over the square. */
 const TARGET = [0, 1.4, 0] as const;
+
+/**
+ * The town's core: the sphere around every house and the tower, which keeps its shadows wherever
+ * the camera stands. The sun's shadows reach this far close up, and further as the camera draws
+ * back.
+ */
+export const SHADOW_REACH: ShadowReach = (() => {
+	const corners = LOTS.flatMap(([x, z, , width, depth]) => {
+		const r = Math.hypot(width, depth) / 2;
+		return [
+			[x - r, z - r],
+			[x + r, z + r],
+		];
+	});
+	corners.push(
+		[TOWER.x - TOWER.width, TOWER.z - TOWER.width],
+		[TOWER.x + TOWER.width, TOWER.z + TOWER.width],
+	);
+	const xs = corners.map(([x]) => x as number);
+	const zs = corners.map(([, z]) => z as number);
+	const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+	const cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+	const height = TOWER.height + TOWER.width * 1.6;
+	const across = Math.max(
+		...corners.map(([x, z]) => Math.hypot((x as number) - cx, (z as number) - cz)),
+	);
+	return { distance: 70, center: [cx, height / 2, cz], radius: Math.hypot(across, height / 2) };
+})();
+
+/**
+ * Where the Manual camera may go: around the town, no farther back than the opening view stands,
+ * and above the ground and the mountains' slopes. Its highest reach, the focus's top plus the
+ * distance, stays under the mountains' lowest crest.
+ */
+export const BOUNDS: Omit<CameraBounds, 'ground'> = {
+	center: [SHADOW_REACH.center[0], SHADOW_REACH.center[2]],
+	focus: 25,
+	focusHeight: [0.5, 9],
+	distance: 65,
+};
 
 /**
  * The cinematic route. It opens high and back, showing the whole town, the square and the clock
@@ -72,7 +115,8 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
-		shadow: { distance: 70, normalBias: 0.05, contactDistance: 0.25 },
+		layers: SUN_LAYERS,
+		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.05, contactDistance: 0.25 },
 	});
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 	// occlusion starts on, so the scene's shadows read.
@@ -87,6 +131,7 @@ export default defineSketch(async (ctx) => {
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
+	const mountains = createMountains(ctx, detail.ring[0], detail.ring[1]);
 	const houses = createHouses(ctx, detail.texture);
 	const props = createProps(ctx, houses.clear);
 	page.post('loading', 'Growing the pines');
@@ -110,6 +155,7 @@ export default defineSketch(async (ctx) => {
 		heading: HEADING,
 		fogDensity: 0.0075,
 		cloudCoverage: 0.35,
+		haze: { Golden: 0.7 },
 		backdrop: [0.02, 0.025, 0.04],
 	});
 	const start = params.get('mood');
@@ -121,10 +167,11 @@ export default defineSketch(async (ctx) => {
 	const controls = createShowcaseEffects(ctx, {
 		camera,
 		sun,
+		shadowReach: SHADOW_REACH,
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: false,
 			snow: true,
 			shadows: true,
 			contact: true,
@@ -145,6 +192,10 @@ export default defineSketch(async (ctx) => {
 				case 'snow':
 					air.setSnow(on);
 					break;
+				case 'fog':
+					// The mist that lies over the square is haze too, so the fog switch hides it.
+					air.setMist(on);
+					break;
 				case 'contact':
 					sun.setShadow({ contactDistance: on ? 0.25 : 0 });
 					break;
@@ -157,6 +208,7 @@ export default defineSketch(async (ctx) => {
 			}
 		},
 		mood: (picked) => stage.set(picked),
+		hour: (hours) => stage.setHour(hours),
 		film: () => film,
 		fov: FOV,
 		focalLength: DSLR_FOCAL_LENGTH,
@@ -168,12 +220,22 @@ export default defineSketch(async (ctx) => {
 		shots: SHOTS,
 		target,
 		groups: controls.groups,
+		bounds: {
+			...BOUNDS,
+			ground: (x, z) => Math.max(groundHeight(x, z), mountains.heightAt(x, z)),
+		},
 	});
+	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
+	controls.fitShadows();
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			controls.update(t);
+			// The town's own lights follow the sun: out by day, a little at dusk, all at night.
+			lamps.power(stage.lamps);
+			houses.power(stage.lamps);
 			film.update(dt);
 			const lens = controls.lens();
 			if (lens) post.set(lens);

@@ -20,7 +20,7 @@ import {
 import type { Comparison } from '../compare/comparisons';
 import { type SceneSignature, SIGNATURE_MESSAGE } from '../compare/scene-signature';
 import { threeBuildOf } from '../compare/three-builds';
-import { allEffects, type CompareMode, type Effects, effectsToText } from './compare-scene';
+import { allEffects, type Effects, effectsToText } from './compare-scene';
 import {
 	type DeviceClass,
 	deviceClass,
@@ -42,19 +42,13 @@ export const ENGINE_TITLES: Readonly<Record<EngineName, string>> = {
 	threejs: 'three.js',
 };
 
-/** Each mode's name as a page shows it. */
-export const MODE_TITLES: Readonly<Record<CompareMode, string>> = {
-	'scene-graph': 'Scene graph',
-	instanced: 'Instanced',
-};
-
 /** The rules that keep a comparison fair, for a page's "about this comparison" panel. */
 export const FAIRNESS_RULES: readonly string[] = [
 	'Both engines run the same scene description: the same seed, layout, meshes, surfaces, lights, camera path and fixed-step simulation, so they show the same state at the same time.',
-	'Both engines build the scene the same way in each mode: the same tree of one object per part in the scene graph mode, and one batch of copies per part kind, posed by the same loop, in the instanced mode.',
+	'Both engines build the scene the same way: one object per part, in the same tree of parents and children.',
 	"Both draw at the same pixel ratio, the device class's cap, with 4x MSAA, the same effects and the high-performance GPU.",
 	"null3D runs with its quality governor off and a fixed preset, High or WebGL2's Medium, and draws every pixel. Ambient occlusion draws at half the size in each direction in both engines.",
-	'three.js 0.186.1 runs on the faster of its two renderers for the GPU path, in one worker with an OffscreenCanvas, with its add-ons and the methods of its official examples.',
+	'three.js 0.186.1 runs on the renderer of the GPU path, WebGPURenderer on WebGPU and WebGLRenderer on WebGL2, in one worker with an OffscreenCanvas, with its add-ons and the methods of its official examples.',
 	'One engine runs at a time: the page loads again for the other one.',
 	"Memory has one definition: the browser's measurement of the whole page and its workers, with null3D's shared memory counted once.",
 	"The ramp runs with the stats panel collapsed in both engines, so the figures carry none of the panel's cost.",
@@ -68,8 +62,6 @@ export interface ComparisonOptions {
 	canvas: HTMLCanvasElement;
 	comparison: Comparison;
 	engine: EngineName;
-	/** How both engines build the scene; the scene graph by default. */
-	mode?: CompareMode;
 	/** The count to start at; the ramp's start count by default. */
 	count?: number;
 	/** The effects to draw; every one by default. */
@@ -81,8 +73,8 @@ export interface ComparisonOptions {
 	/** Draw one frame at this simulation time and keep it, for image tests. */
 	hold?: number;
 	/**
-	 * The most the count reaches, in place of the device class's ramp maximum. The instanced mode
-	 * makes room for this many at its start, so a measurement at a fixed count can hold no more.
+	 * The most the count reaches, in place of the device class's ramp maximum, so a measurement at
+	 * a fixed count can hold no more.
 	 */
 	maxCount?: number;
 	/**
@@ -125,7 +117,6 @@ export interface ComparisonMeasurement {
 /** A comparison that runs, with one engine. */
 export interface ComparisonRun {
 	engine: EngineName;
-	mode: CompareMode;
 	/** The engine, its version and its renderer, such as `three.js 0.186.1, WebGLRenderer`. */
 	label: string;
 	/** The GPU path that the engine draws with. */
@@ -232,18 +223,13 @@ async function gpuPath(choice: GpuChoice): Promise<'webgpu' | 'webgl2'> {
 }
 
 /**
- * three.js's renderer on a GPU path: WebGLRenderer on WebGL2, and the faster of its two renderers
- * for the comparison on WebGPU, which `?renderer=` can change. In Chrome on the Mac, WebGLRenderer
- * took a quarter of WebGPURenderer's CPU time per frame on Factory. Night town needs
- * WebGPURenderer's clustered lighting for its hundreds of lights.
+ * three.js's renderer on a GPU path: WebGLRenderer on WebGL2 and WebGPURenderer on WebGPU, so an
+ * engine on a path meets the other engine on the same path. `?renderer=webgl` puts the WebGPU path
+ * on WebGLRenderer, to compare the two renderers.
  */
-function threeRendererFor(
-	comparison: Comparison,
-	gpu: 'webgpu' | 'webgl2',
-	asked?: ThreeRenderer,
-): ThreeRenderer {
+function threeRendererFor(gpu: 'webgpu' | 'webgl2', asked?: ThreeRenderer): ThreeRenderer {
 	if (gpu === 'webgl2') return 'webgl';
-	return asked ?? comparison.fasterThree;
+	return asked ?? 'webgpu';
 }
 
 /** Starts a comparison with one engine, and resolves once it draws. */
@@ -258,19 +244,13 @@ export async function startComparison(options: ComparisonOptions): Promise<Compa
 	const gpu = await gpuPath(options.gpu ?? 'auto');
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
-	const mode = options.mode ?? 'scene-graph';
-	const common = { comparison, mode, count, effects, plan, pixelRatio, cls, gpu };
+	const common = { comparison, count, effects, plan, pixelRatio, cls, gpu };
 	if (options.engine === 'null3d') return startNull3d(canvas, options, common);
-	// A mode that only WebGPURenderer can draw takes it on both GPU paths: in its WebGL2 mode on
-	// the WebGL2 path.
-	const needed = comparison.threeRenderers?.[mode];
-	const renderer = needed ?? threeRendererFor(comparison, gpu, options.threeRenderer);
-	return startThree(canvas, options, common, renderer, needed !== undefined && gpu === 'webgl2');
+	return startThree(canvas, options, common, threeRendererFor(gpu, options.threeRenderer));
 }
 
 interface Common {
 	comparison: Comparison;
-	mode: CompareMode;
 	count: number;
 	effects: Effects;
 	plan: RampPlan;
@@ -282,15 +262,17 @@ interface Common {
 async function startNull3d(
 	canvas: HTMLCanvasElement,
 	options: ComparisonOptions,
-	{ comparison, mode, count, effects, plan, pixelRatio, cls, gpu }: Common,
+	{ comparison, count, effects, plan, pixelRatio, cls, gpu }: Common,
 ): Promise<ComparisonRun> {
 	// The sketch reads its settings from its own address; the plugin ships it by the literal one.
 	const sketch = new URL(comparison.sketch);
 	const capacity = options.hold === undefined ? plan.max : count;
 	sketch.searchParams.set('capacity', String(capacity));
 	sketch.searchParams.set('count', String(count));
-	sketch.searchParams.set('mode', mode);
 	sketch.searchParams.set('effects', effectsToText(effects));
+	// A developer's switch for the sun's shadow cascades, which the sketch reads.
+	const cascades = new URLSearchParams(location.search).get('cascades');
+	if (cascades !== null) sketch.searchParams.set('cascades', cascades);
 	const stats = options.stats ?? true;
 	// The last error that the sketch's own code threw, which a step whose update failed reports.
 	let sketchError: string | undefined;
@@ -308,7 +290,7 @@ async function startNull3d(
 		shadowTiles: comparison.shadowTiles,
 		shadowTileSize: 1024,
 		// Room for the objects at the start count: the scene grows with the count.
-		expectedObjects: comparison.objectsAt(count, mode) + 1024,
+		expectedObjects: comparison.objectsAt(count) + 1024,
 		stats: stats !== false && { collapsed: stats !== 'open' },
 		hold: options.hold,
 	});
@@ -326,7 +308,6 @@ async function startNull3d(
 	});
 	const run: ComparisonRun = {
 		engine: 'null3d',
-		mode,
 		label: `null3D, ${engine.capabilities.tier}, ${engine.mode.preset}`,
 		gpu: engine.capabilities.tier === 'webgl2' ? 'webgl2' : 'webgpu',
 		deviceClass: cls,
@@ -453,9 +434,8 @@ async function threeThread(comparison: Comparison): Promise<ThreeThread> {
 async function startThree(
 	canvas: HTMLCanvasElement,
 	options: ComparisonOptions,
-	{ comparison, mode, count, effects, plan, pixelRatio, cls, gpu }: Common,
+	{ comparison, count, effects, plan, pixelRatio, cls, gpu }: Common,
 	renderer: ThreeRenderer,
-	forceWebGL: boolean,
 ): Promise<ComparisonRun> {
 	const worker = await threeThread(comparison);
 	const send = (message: ToThree, transfer: Transferable[] = []) =>
@@ -476,10 +456,8 @@ async function startThree(
 	const start: ThreeStart = {
 		capacity: held ? count : plan.max,
 		count,
-		mode,
 		effects,
 		renderer,
-		forceWebGL,
 		width,
 		height,
 		pixelRatio: held ? 1 : pixelRatio,
@@ -558,7 +536,6 @@ async function startThree(
 	let shown = Math.min(count, runPlan.max);
 	return {
 		engine: 'threejs',
-		mode,
 		label: result.label,
 		gpu,
 		deviceClass: cls,
@@ -613,7 +590,11 @@ export async function rampComparison(
 	run.collapseStats(true);
 	const plan = options.plan ?? run.plan;
 	run.setCount(plan.start);
-	await new Promise((resolve) => setTimeout(resolve, (options.warmupSeconds ?? 2) * 1000));
+	// The warm-up takes the caller's wait, so a page's stop ends it at once.
+	const wait =
+		options.wait ??
+		((seconds: number) => new Promise<void>((resolve) => setTimeout(resolve, seconds * 1000)));
+	await wait(options.warmupSeconds ?? 2);
 	const result = await runRamp(run, plan, options);
 	if (result.stopReason === 'no-frame')
 		result.failure = run.failure ?? 'it drew no frame within the step';

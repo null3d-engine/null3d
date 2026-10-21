@@ -47,13 +47,6 @@ export interface BattleShaders {
 	ground(maps: GroundMaps): ThreeModule.Material;
 	/** A unit's surface: a soldier's or a mech's in an army's tint, or a rifle's. */
 	unit(look: UnitSurfaceLook, tint: Hex, maps: DetailMaps): ThreeModule.Material;
-	/** The unit surface's nodes, for a crowd's own material, on WebGPURenderer only. */
-	unitNodes?(
-		look: UnitSurfaceLook,
-		maps: DetailMaps,
-		tint: WebGPU.Node<'vec3'>,
-		feet: WebGPU.Node<'vec3'>,
-	): ReturnType<typeof unitNodes>;
 	grass(options: {
 		color: Hex;
 		roughness: number;
@@ -200,10 +193,7 @@ const UNIT_EMISSIVE_GLSL = /* glsl */ `
 	totalEmissiveRadiance += unitGlowColor * ( unitGlow * unitPulse ) + unitRim * ( pow( 1.0 - unitFacing, 3.0 ) * ( 1.0 - unitGlow ) );
 `;
 
-/**
- * The units' surfaces as TSL nodes, from the unit's tint and the place of its feet, which a crowd
- * reads from its tables and a single unit from its model matrix.
- */
+/** The units' surfaces as TSL nodes, from the unit's tint and the place of its feet. */
 export function unitNodes(
 	tsl: typeof TSL,
 	look: UnitSurfaceLook,
@@ -538,9 +528,6 @@ async function nodeShaders(three: Three): Promise<BattleShaders> {
 			material.normalNode = nodes.normal;
 			material.emissiveNode = nodes.emissive;
 			return material as unknown as ThreeModule.Material;
-		},
-		unitNodes(look, maps, tint, feet) {
-			return unitNodes(tsl, look, maps, tint, feet, time);
 		},
 		ground(maps) {
 			const material = new webgpu.MeshStandardNodeMaterial();

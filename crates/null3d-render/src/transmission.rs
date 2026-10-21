@@ -12,10 +12,16 @@
 //! camera's transparent pass then reads the target: pairs that let light through draw there, back
 //! to front with the blended ones, so the copy holds what lies behind them and none of them.
 //!
+//! The copy also reads the scene depth as the opaque pass leaves it, with the masked surfaces that
+//! the depth prepass leaves out, and keeps a code of its distance in the first level's alpha. A
+//! multisampled depth gives its sample 0 on WebGPU, and WebGL2's backend binds a copy of one
+//! sample in its place.
+//!
 //! The target has the render size's texture, whose corner the frame draws into at a render scale
-//! below 1. Its format is the scene color's on the HDR path. On the 8-bit path, where the scene
-//! color holds display color, it is an sRGB texture, and the copy writes the decoded color, as the
-//! copies of views' images do: the levels then average linear color, and materials read it.
+//! below 1. Its format is the scene color's on the HDR path, or 16-bit floats where the scene
+//! color's packed format has no alpha. On the 8-bit path, where the scene color holds display
+//! color, it is an sRGB texture, and the copy writes the decoded color, as the copies of views'
+//! images do: the levels then average linear color, and materials read it.
 //!
 //! # How a surface reads it
 //!
@@ -23,9 +29,12 @@
 //! the frame's values say which. The surface's shader follows three.js's
 //! `getIBLVolumeRefraction`: the light leaves the volume after its thickness along the refracted
 //! direction, and the shader samples the copy where that point lands on the screen, at a mip
-//! level that the roughness sets. Views other than the camera's have no copy: there such
-//! surfaces show the environment's light through them.
+//! level that the roughness sets. Where the opaque surface under that point stands in front of the
+//! surface, as the depth code in the alpha says, the shader samples the surface's own pixel
+//! instead. Views other than the camera's have no copy: there such surfaces show the environment's
+//! light through them.
 
+use null3d_gpu::drawlist::permutation::DEPTH_MULTISAMPLED;
 use null3d_gpu::drawlist::{
     DrawList, Op, format, layout as bind_layout, resource_kind, state_flags, template,
 };
@@ -52,8 +61,8 @@ pub(crate) struct TransmissionCopy {
     ids: TransmissionIds,
     /// The copy's pipeline, for targets of the format and the permutation it was asked for.
     pipeline: Option<(u32, u32, u32)>,
-    /// The texture that the bind group reads, or 0 before it has a group.
-    bound: u32,
+    /// The scene color and depth textures that the bind group reads, or 0 before it has a group.
+    bound: (u32, u32),
 }
 
 impl TransmissionCopy {
@@ -62,18 +71,25 @@ impl TransmissionCopy {
         Self {
             ids,
             pipeline: None,
-            bound: 0,
+            bound: (0, 0),
         }
     }
 
     /// Asks `pipelines` for the copy's pipeline into targets of `color_format`, and returns its
-    /// id. The TONE_MAP bit of `permutation` builds the copy that decodes display color.
+    /// id. The TONE_MAP bit of `permutation` builds the copy that decodes display color, and
+    /// `multisampled` the one that reads sample 0 of a multisampled depth.
     pub(crate) fn request_pipeline(
         &mut self,
         pipelines: &mut PipelineCache,
         color_format: u32,
         permutation: u32,
+        multisampled: bool,
     ) -> u32 {
+        let permutation = if multisampled {
+            permutation | DEPTH_MULTISAMPLED
+        } else {
+            permutation
+        };
         match self.pipeline {
             Some((id, format, bits)) if format == color_format && bits == permutation => id,
             _ => {
@@ -93,31 +109,44 @@ impl TransmissionCopy {
         }
     }
 
-    /// Binds the copy to `source`, the draw list's texture of the scene color that it reads, when
-    /// its group is new, the source moved, or the frame made the plan's textures again.
+    /// Binds the copy to `color` and `depth`, the draw list's textures of the scene color and
+    /// depth that it reads, when its group is new, a source moved, or the frame made the plan's
+    /// textures again.
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
-        source: u32,
+        color: u32,
+        depth: u32,
         textures_made: bool,
     ) -> Result<(), RecordError> {
-        if !textures_made && self.bound == source {
+        if !textures_made && self.bound == (color, depth) {
             return Ok(());
         }
+        let layout = match self.pipeline {
+            Some((.., permutation)) if permutation & DEPTH_MULTISAMPLED != 0 => {
+                bind_layout::TRANSMISSION_COPY_MS
+            }
+            _ => bind_layout::WEIGHTED_COMPOSITE,
+        };
         list.push(
             Op::CreateBindGroup,
             &[
                 self.ids.group,
-                bind_layout::VIEW_COPY,
-                1,
+                layout,
+                2,
                 0,
                 resource_kind::TEXTURE,
-                source,
+                color,
+                0,
+                0,
+                1,
+                resource_kind::TEXTURE,
+                depth,
                 0,
                 0,
             ],
         )?;
-        self.bound = source;
+        self.bound = (color, depth);
         Ok(())
     }
 
@@ -140,7 +169,7 @@ impl TransmissionCopy {
     /// Forgets the bind group, so the next frame makes it again, after the thread that draws
     /// replaced the GPU. The pipeline keeps its id, which the cache creates again.
     pub(crate) fn reset_gpu(&mut self) {
-        self.bound = 0;
+        self.bound = (0, 0);
     }
 }
 

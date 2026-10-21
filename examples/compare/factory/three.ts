@@ -1,17 +1,10 @@
-// Factory, the three.js half, which runs in its worker. It builds the scene one of two ways, which
-// the page's mode picks:
-//
-// - The scene graph, the default. Each cell's arm is a tree of Object3D nodes, one Mesh per part,
-//   as three.js's own examples build jointed models: the base stands on the hall, and each joint
-//   turns or slides under its parent. Every node keeps its local matrix until a write changes it
-//   (matrixAutoUpdate off, then updateMatrix), the method three.js's docs advise for objects that
-//   do not move in every frame, and the renderer's walk of the graph works out the world matrices.
-//   A crate hangs under its cell's base, and under the wrist while the arm holds it: reparenting is
-//   cheap in three.js. The scene holds only the cells that show.
-// - Instanced: each part kind is one InstancedMesh, the batch of copies that three.js's docs advise
-//   for many copies of a mesh. Every frame, one loop of game code (poseFactory) works out the world
-//   matrix of every moving part in closed form, in place of a walk of a scene graph, and only the
-//   copies in use upload.
+// Factory, the three.js half, which runs in its worker. Each cell's arm is a tree of Object3D nodes,
+// one Mesh per part, as three.js's own examples build jointed models: the base stands on the hall,
+// and each joint turns or slides under its parent. Every node keeps its local matrix until a write
+// changes it (matrixAutoUpdate off, then updateMatrix), the method three.js's docs advise for objects
+// that do not move in every frame, and the renderer's walk of the graph works out the world matrices.
+// A crate hangs under its cell's base, and under the wrist while the arm holds it: reparenting is
+// cheap in three.js. The scene holds only the cells that show.
 //
 // The meshes, surfaces, lights and simulation come from the shared scene description, and the
 // worker (examples/lib/three-worker.ts) draws the effects.
@@ -25,7 +18,8 @@ import {
 	surfaceMaps,
 } from '../../lib/compare-scene';
 import { runThreeWorker, type Three } from '../../lib/three-worker';
-import { type FactoryMatrices, poseFactory, writeMatrix } from './pose';
+import { CONE_FRAGMENT, CONE_STRENGTH, CONE_VERTEX } from './cone';
+import { panelTexture } from './panels';
 import {
 	ARM_PARENT,
 	ARM_PART,
@@ -44,17 +38,63 @@ import {
 	type FactoryMesh,
 	factoryCells,
 	factoryMeshes,
+	hallPower,
 	JOINTS,
 	lampIntensity,
+	PANEL_SIZE,
+	PANEL_VARIANTS,
+	PANELS,
+	panelRotation,
 	SPARK_COUNT,
+	SPARK_LIGHT,
+	SPARK_LIGHT_COUNT,
 	SPOT_POSITIONS,
 	STILL_PART,
 	SURFACE_SIZE,
 	setActiveCells,
+	sparkFlashes,
 	sparkPosition,
 	stepFactory,
 	stillPartLocal,
 } from './scene';
+
+/**
+ * Writes a transform matrix in three.js's order, column after column, from a rotation given as its
+ * three columns (x axis, y axis, z axis) and a position.
+ */
+function writeMatrix(
+	out: Float32Array,
+	offset: number,
+	xx: number,
+	xy: number,
+	xz: number,
+	yx: number,
+	yy: number,
+	yz: number,
+	zx: number,
+	zy: number,
+	zz: number,
+	px: number,
+	py: number,
+	pz: number,
+): void {
+	out[offset] = xx;
+	out[offset + 1] = xy;
+	out[offset + 2] = xz;
+	out[offset + 3] = 0;
+	out[offset + 4] = yx;
+	out[offset + 5] = yy;
+	out[offset + 6] = yz;
+	out[offset + 7] = 0;
+	out[offset + 8] = zx;
+	out[offset + 9] = zy;
+	out[offset + 10] = zz;
+	out[offset + 11] = 0;
+	out[offset + 12] = px;
+	out[offset + 13] = py;
+	out[offset + 14] = pz;
+	out[offset + 15] = 1;
+}
 
 /** A BufferGeometry that holds the shared mesh data as it is. */
 function toGeometry(three: Three, mesh: MeshData): ThreeModule.BufferGeometry {
@@ -62,6 +102,7 @@ function toGeometry(three: Three, mesh: MeshData): ThreeModule.BufferGeometry {
 	geometry.setAttribute('position', new three.BufferAttribute(mesh.position, 3));
 	geometry.setAttribute('normal', new three.BufferAttribute(mesh.normal, 3));
 	geometry.setAttribute('uv', new three.BufferAttribute(mesh.uv, 2));
+	if (mesh.color) geometry.setAttribute('color', new three.BufferAttribute(mesh.color, 3));
 	geometry.setIndex(new three.BufferAttribute(mesh.index, 1));
 	geometry.computeBoundingSphere();
 	return geometry;
@@ -75,7 +116,15 @@ function uploadCopies(batch: ThreeModule.InstancedMesh, count: number): void {
 	matrices.needsUpdate = true;
 }
 
-runThreeWorker(({ three, options, anisotropy }) => {
+/** The call that sets a cone of haze's light at the power-on wave's level. */
+interface ConeLight {
+	setStrength(value: number): void;
+}
+
+runThreeWorker(async ({ three, options, anisotropy }) => {
+	// WebGPURenderer draws its own node materials, not GLSL shader materials, so the cone of haze
+	// takes a TSL twin there.
+	const tsl = options.renderer === 'webgpu' ? await import('three/tsl') : null;
 	const capacity = factoryCells(options.capacity);
 	const state = createFactory(capacity);
 	const meshes = factoryMeshes(capacity);
@@ -85,7 +134,7 @@ runThreeWorker(({ three, options, anisotropy }) => {
 	scene.background = new three.Color(look.background);
 	scene.add(new three.AmbientLight(look.ambient.color, look.ambient.intensity));
 	const { spot } = look;
-	for (const [x, y, z] of SPOT_POSITIONS) {
+	const spots = SPOT_POSITIONS.map(([x, y, z]) => {
 		const light = new three.SpotLight(
 			spot.color,
 			spot.intensity,
@@ -103,7 +152,8 @@ runThreeWorker(({ three, options, anisotropy }) => {
 		light.shadow.bias = -0.0005;
 		light.shadow.normalBias = spot.normalBias;
 		scene.add(light, light.target);
-	}
+		return light;
+	});
 
 	// Surfaces: each kind's maps are made once; a material with another repeat takes copies of the
 	// textures that share their texels.
@@ -207,78 +257,138 @@ runThreeWorker(({ three, options, anisotropy }) => {
 		return mesh;
 	};
 	node('floor', scene, 0, 0, 0);
-	for (const [x, y, z] of SPOT_POSITIONS) {
-		node('housing', scene, x, y, z);
-		node('lens', scene, x, y - 0.01, z);
-	}
-
-	/** The instanced mode: a batch per part kind, with room for every cell of the run. */
-	const instancedCells = (): Cells => {
-		const base = batch('base', capacity, false);
-		const still = {
-			belt: batch('belt', capacity, false),
-			pallet: batch('pallet', capacity, false),
-			line: batch('line', capacity, false),
-			lamp: batch('lamp', capacity, false),
-		};
-		const turntable = batch('turntable', capacity, true);
-		const upperArm = batch('upperArm', capacity, true);
-		const forearm = batch('forearm', capacity, true);
-		const wrist = batch('wrist', capacity, true);
-		const finger = batch('finger', capacity * 2, true);
-		const crate = batch('crate', capacity * CRATES_PER_CELL, true);
-
-		// Still parts: written once for every cell.
-		const at = new Float64Array(3);
-		const identity = (out: Float32Array, i: number, x: number, y: number, z: number) =>
-			writeMatrix(out, i * 16, 1, 0, 0, 0, 1, 0, 0, 0, 1, x, y, z);
-		for (let c = 0; c < capacity; c++) {
-			const ox = state.origin[c * 2] as number;
-			const oz = state.origin[c * 2 + 1] as number;
-			identity(base.instanceMatrix.array as Float32Array, c, ox, 0, oz);
-			for (const [name, kind] of Object.entries(STILL_PART) as [keyof typeof still, number][]) {
-				stillPartLocal(kind, at);
-				identity(
-					still[name].instanceMatrix.array as Float32Array,
-					c,
-					ox + (at[0] as number),
-					at[1] as number,
-					oz + (at[2] as number),
-				);
-			}
+	// The lamps' lenses, the cones of haze under them and the screens, each with its own material, so
+	// the power-on wave raises them one place at a time.
+	const lensMaterials: ThreeModule.MeshStandardMaterial[] = [];
+	const coneLights: ConeLight[] = [];
+	/** The cone's material on the renderer at hand, with the call that sets its light. */
+	const makeConeMaterial = (): { material: ThreeModule.Material; light: ConeLight } => {
+		if (tsl) {
+			const strength = tsl.uniform(0);
+			const facing = tsl.abs(
+				tsl.dot(tsl.normalize(tsl.normalView), tsl.normalize(tsl.positionViewDirection)),
+			);
+			const nodeMaterial = new (
+				three as unknown as typeof import('three/webgpu')
+			).MeshBasicNodeMaterial({
+				transparent: true,
+				blending: three.AdditiveBlending,
+				depthWrite: false,
+				side: three.DoubleSide,
+			});
+			nodeMaterial.colorNode = tsl
+				.vertexColor()
+				.rgb.mul(facing.mul(facing).mul(facing))
+				.mul(strength);
+			return {
+				material: nodeMaterial as unknown as ThreeModule.Material,
+				light: {
+					setStrength: (value) => {
+						strength.value = value;
+					},
+				},
+			};
 		}
-		for (const mesh of [base, ...Object.values(still)]) mesh.instanceMatrix.needsUpdate = true;
-
-		const perCell = [base, ...Object.values(still), turntable, upperArm, forearm, wrist];
-		const matrices: FactoryMatrices = {
-			turntable: turntable.instanceMatrix.array as Float32Array,
-			upperArm: upperArm.instanceMatrix.array as Float32Array,
-			forearm: forearm.instanceMatrix.array as Float32Array,
-			wrist: wrist.instanceMatrix.array as Float32Array,
-			finger: finger.instanceMatrix.array as Float32Array,
-			crate: crate.instanceMatrix.array as Float32Array,
-		};
-		let cells = 0;
+		const cone = new three.ShaderMaterial({
+			uniforms: { strength: { value: 0 } },
+			vertexShader: CONE_VERTEX,
+			fragmentShader: CONE_FRAGMENT,
+			vertexColors: true,
+			transparent: true,
+			blending: three.AdditiveBlending,
+			depthWrite: false,
+			side: three.DoubleSide,
+		});
 		return {
-			show(next) {
-				cells = next;
-				for (const mesh of perCell) mesh.count = cells;
-				finger.count = cells * 2;
-				crate.count = cells * CRATES_PER_CELL;
-			},
-			pose() {
-				poseFactory(state, cells, matrices);
-				uploadCopies(turntable, cells);
-				uploadCopies(upperArm, cells);
-				uploadCopies(forearm, cells);
-				uploadCopies(wrist, cells);
-				uploadCopies(finger, cells * 2);
-				uploadCopies(crate, cells * CRATES_PER_CELL);
+			material: cone,
+			light: {
+				setStrength: (value) => {
+					cone.uniforms.strength.value = value;
+				},
 			},
 		};
 	};
+	for (const [x, y, z] of SPOT_POSITIONS) {
+		node('housing', scene, x, y, z);
+		const lens = new three.MeshStandardMaterial({
+			color: 0x000000,
+			roughness: 1,
+			metalness: 0,
+			emissive: FACTORY_MATERIALS.lens.emissive,
+			emissiveIntensity: 0,
+		});
+		lensMaterials.push(lens);
+		const lensMesh = new three.Mesh(geometry('lens'), lens);
+		lensMesh.position.set(x, y - 0.01, z);
+		lensMesh.updateMatrix();
+		lensMesh.matrixAutoUpdate = false;
+		scene.add(lensMesh);
+		const cone = makeConeMaterial();
+		coneLights.push(cone.light);
+		const coneMesh = new three.Mesh(geometry('cone'), cone.material);
+		coneMesh.position.set(x, y - 0.05, z);
+		coneMesh.updateMatrix();
+		coneMesh.matrixAutoUpdate = false;
+		scene.add(coneMesh);
+	}
+	const panelTextures = Array.from({ length: PANEL_VARIANTS }, (_, variant) => {
+		const texels = panelTexture(variant);
+		const texture = new three.DataTexture(texels.data, texels.size, texels.size, three.RGBAFormat);
+		texture.colorSpace = three.SRGBColorSpace;
+		texture.wrapS = texture.wrapT = three.ClampToEdgeWrapping;
+		texture.minFilter = three.LinearMipmapLinearFilter;
+		texture.magFilter = three.LinearFilter;
+		texture.generateMipmaps = true;
+		// A box's texture coordinates run in meters, so the map takes one texel across the screen's
+		// side rather than one for each meter.
+		texture.repeat.set(1 / PANEL_SIZE, 1 / PANEL_SIZE);
+		texture.needsUpdate = true;
+		return texture;
+	});
+	const panelMaterials: ThreeModule.MeshStandardMaterial[] = [];
+	const panelTurn = new Float64Array(4);
+	const frameMaterial = material('panelFrame');
+	for (const place of PANELS) {
+		panelRotation(place, panelTurn);
+		const qx = panelTurn[0] as number;
+		const qy = panelTurn[1] as number;
+		const qz = panelTurn[2] as number;
+		const qw = panelTurn[3] as number;
+		const fx = 2 * (qx * qz + qw * qy);
+		const fy = 2 * (qy * qz - qw * qx);
+		const fz = 1 - 2 * (qx * qx + qy * qy);
+		const frame = new three.Mesh(geometry('panelFrame'), frameMaterial);
+		frame.position.set(place.x, place.y, place.z);
+		frame.quaternion.set(qx, qy, qz, qw);
+		frame.updateMatrix();
+		frame.matrixAutoUpdate = false;
+		scene.add(frame);
+		const screen = new three.MeshStandardMaterial({
+			color: 0x000000,
+			roughness: 1,
+			metalness: 0,
+			emissive: 0xffffff,
+			emissiveMap: panelTextures[place.variant] as ThreeModule.Texture,
+			emissiveIntensity: 0,
+		});
+		panelMaterials.push(screen);
+		const panel = new three.Mesh(geometry('panel'), screen);
+		panel.position.set(place.x + fx * 0.05, place.y + fy * 0.05, place.z + fz * 0.05);
+		panel.quaternion.set(qx, qy, qz, qw);
+		panel.updateMatrix();
+		panel.matrixAutoUpdate = false;
+		scene.add(panel);
+	}
+	const sparkLights = Array.from(
+		{ length: SPARK_LIGHT_COUNT },
+		() => new three.PointLight(SPARK_LIGHT.color, 0, SPARK_LIGHT.range, SPARK_LIGHT.decay),
+	);
+	for (const light of sparkLights) {
+		light.position.set(0, -10, 0);
+		scene.add(light);
+	}
 
-	/** The scene-graph mode: a tree of meshes per cell, for the cells that show. */
+	/** A tree of meshes per cell, for the cells that show. */
 	const sceneGraphCells = (): Cells => {
 		const hall = new three.Group();
 		scene.add(hall);
@@ -395,7 +505,7 @@ runThreeWorker(({ three, options, anisotropy }) => {
 		};
 	};
 
-	const cells = options.mode === 'instanced' ? instancedCells() : sceneGraphCells();
+	const cells = sceneGraphCells();
 	let shown = 0;
 	const setCount = (count: number) => {
 		shown = Math.min(capacity, factoryCells(count));
@@ -409,7 +519,9 @@ runThreeWorker(({ three, options, anisotropy }) => {
 	const sparkMatrices = sparks.instanceMatrix.array as Float32Array;
 	const spark = new Float64Array(3);
 	const lamp = material('lamp');
+	const line = material('line');
 	const belt = (surface('rubber', 1) as ThreeModule.Texture[]).map((texture) => texture.offset);
+	const flashRows = new Float32Array(SPARK_LIGHT_COUNT * 4);
 	const camera = new three.PerspectiveCamera(
 		look.camera.fov,
 		16 / 9,
@@ -429,6 +541,7 @@ runThreeWorker(({ three, options, anisotropy }) => {
 			bloom: look.bloom,
 			ao: look.ao,
 			grade: gradeTable(look.grade),
+			lens: look.lens,
 		},
 		setCount,
 		step: () => stepFactory(state),
@@ -454,7 +567,36 @@ runThreeWorker(({ three, options, anisotropy }) => {
 				);
 			}
 			uploadCopies(sparks, SPARK_COUNT);
-			lamp.emissiveIntensity = lampIntensity(seconds);
+			// The hall wakes in a wave from the middle, as null3D's half does.
+			for (let i = 0; i < SPOT_POSITIONS.length; i++) {
+				const [x, , z] = SPOT_POSITIONS[i] as readonly [number, number, number];
+				const power = hallPower(seconds, x, z);
+				(spots[i] as ThreeModule.SpotLight).intensity = look.spot.intensity * power;
+				(lensMaterials[i] as ThreeModule.MeshStandardMaterial).emissiveIntensity = 8 * power;
+				(coneLights[i] as ConeLight).setStrength(CONE_STRENGTH * power);
+			}
+			for (let i = 0; i < PANELS.length; i++) {
+				const place = PANELS[i] as (typeof PANELS)[number];
+				(panelMaterials[i] as ThreeModule.MeshStandardMaterial).emissiveIntensity =
+					2.2 * hallPower(seconds, place.x, place.z);
+			}
+			const centre = hallPower(seconds, 0, 0);
+			lamp.emissiveIntensity = lampIntensity(seconds) * centre;
+			line.emissiveIntensity = 2.5 * centre;
+			const flashes = sparkFlashes(state, flashRows);
+			for (let i = 0; i < SPARK_LIGHT_COUNT; i++) {
+				const light = sparkLights[i] as ThreeModule.PointLight;
+				if (i < flashes) {
+					light.position.set(
+						flashRows[i * 4] as number,
+						flashRows[i * 4 + 1] as number,
+						flashRows[i * 4 + 2] as number,
+					);
+					light.intensity = flashRows[i * 4 + 3] as number;
+				} else {
+					light.intensity = 0;
+				}
+			}
 			const offset = -beltOffset(seconds);
 			for (const texture of belt) texture.x = offset;
 			sampleCameraLoop(FACTORY_CAMERA, seconds, cameraPosition, cameraTarget);

@@ -9,6 +9,12 @@ import { run } from './lib/result';
 
 /** How long each measurement runs. */
 const SECONDS = 0.5;
+/**
+ * How many measurements may pass before a resized canvas shows its new targets. A loaded software
+ * GPU can take several seconds over a frame, so the window after the resize often holds none: the
+ * measurement then runs again, so the check reads the resize rather than the machine's pace.
+ */
+const RESIZE_MEASUREMENTS = 8;
 
 run('render-scale', async () => {
 	const canvas = document.querySelector('canvas');
@@ -36,7 +42,9 @@ run('render-scale', async () => {
 	const scales = await drawn;
 	const scaled = await scaling;
 	canvas.style.width = '400px';
-	const resized = await engine.measure(SECONDS);
+	let resized = await engine.measure(SECONDS);
+	for (let tries = 1; resized.gpuObjects === 0 && tries < RESIZE_MEASUREMENTS; tries++)
+		resized = await engine.measure(SECONDS);
 	await engine.destroy();
 	return {
 		mode: engine.mode,

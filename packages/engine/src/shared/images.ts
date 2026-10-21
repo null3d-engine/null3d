@@ -117,9 +117,10 @@ export interface CustomShader {
 
 /**
  * What a generator makes on the GPU: `room`, the built-in room, `sky`, a map of the scene's sky
- * that the engine core fills in stages, or the environment map of a panorama from an HDR file.
+ * that the engine core fills in stages, the environment map of a panorama from an HDR file, or
+ * `probes`, the filters of reflection probes' maps, which the engine core runs on each capture.
  */
-export type GeneratorSource = 'room' | 'sky' | Panorama;
+export type GeneratorSource = 'room' | 'sky' | 'probes' | Panorama;
 
 /** True for a generator's source, false for an image. */
 function isGenerator(image: ImageBitmap | GeneratorSource): image is GeneratorSource {

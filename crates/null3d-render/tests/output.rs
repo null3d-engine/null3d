@@ -115,8 +115,9 @@ fn check_hdr_frame<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBacke
     let set = operands(&commands, Op::SetPipeline);
     assert_eq!(set.last().map(|o| o[0]), Some(final_pipeline[0]));
 
-    // The multisampled color and the depth, then the texture the color resolves into.
-    assert_eq!(targets_made(&commands), 3);
+    // The multisampled color and the depth, the texture the color resolves into, and the shared
+    // array of the light tables and the probes' maps with its filter's chain.
+    assert_eq!(targets_made(&commands), 5);
     let passes = operands(&commands, Op::BeginRenderPass);
     let [scene_pass, final_pass] = &passes[..] else {
         panic!("two render passes: {passes:?}");
@@ -281,7 +282,7 @@ fn check_eight_bit_frame<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(passes.len(), 1);
     assert_eq!(passes[0][1], 0);
     assert_eq!(count(&commands, Op::Draw), 0);
-    assert_eq!(targets_made(&commands), 2);
+    assert_eq!(targets_made(&commands), 4);
 }
 
 #[test]
@@ -394,7 +395,7 @@ fn check_one_sample_frame<B: FrameBuilder>(world: &mut World<B>, scene: u32, ant
         .iter()
         .filter(|o| o[5] & texture_usage::RENDER_ATTACHMENT != 0)
         .collect();
-    assert_eq!(targets.len(), 2);
+    assert_eq!(targets.len(), 4);
     assert!(targets.iter().all(|o| o[6] == 1));
     let passes = operands(&commands, Op::BeginRenderPass);
     let [scene_pass, final_pass] = &passes[..] else {
@@ -470,7 +471,7 @@ fn target_usages(transient_attachments: bool, device: &mut MockBackend) -> Vec<u
 fn the_draw_list_asks_for_transient_attachments_only_when_the_device_has_them() {
     let transient = texture_usage::RENDER_ATTACHMENT | texture_usage::TRANSIENT_ATTACHMENT;
     let usages = target_usages(false, &mut hdr_device());
-    assert_eq!(usages.len(), 3);
+    assert_eq!(usages.len(), 5);
     assert!(
         usages
             .iter()
@@ -483,7 +484,7 @@ fn the_draw_list_asks_for_transient_attachments_only_when_the_device_has_them() 
     );
     let usages = target_usages(true, &mut device);
     assert_eq!(usages.iter().filter(|&&u| u == transient).count(), 2);
-    assert_eq!(usages.len(), 3);
+    assert_eq!(usages.len(), 5);
     // A device without them rejects the list that asks for them.
     let mut world = World::with_config(RendererConfig {
         canvas: canvas(format::RGBA16_FLOAT, Antialias::Msaa, false),

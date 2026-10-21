@@ -611,6 +611,14 @@ struct SamplerSlot {
 /// The maps of one map set's bind group, in the order of the material's map slots.
 pub const MAP_SET_SLOTS: usize = crate::materials::MAP_SLOTS;
 
+/// The binding of the displacement map's array in a map set's bind group, after every slot's
+/// array and sampler. Its sampler takes the next binding.
+pub const HEIGHT_BINDING: u32 = 2 * MAP_SET_SLOTS as u32;
+
+/// The shared unit of each map slot's map, then of the displacement map in the fragment stage,
+/// or none where a map found no unit (see [`TextureStore::shared_map_group`]).
+pub type SharedUnits = [Option<u8>; MAP_SET_SLOTS + 1];
+
 /// What a bind group binds: one array and its sampler, or a map set of an array and a sampler
 /// for each map slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -619,15 +627,34 @@ enum GroupKey {
         array: u32,
         sampler: u32,
     },
-    /// Each slot's array, then its sampler.
-    Maps([(u32, u32); MAP_SET_SLOTS]),
+    /// Each slot's array, then its sampler, and the displacement map's.
+    Maps(MapSetKey),
+}
+
+/// What the bind group of a material's maps binds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MapSetKey {
+    /// Each slot's array and sampler.
+    slots: [(u32, u32); MAP_SET_SLOTS],
+    /// The displacement map's array and sampler, which the vertex stage reads.
+    height: (u32, u32),
+    /// True when the fragment stage reads the displacement map too, for parallax: the group then
+    /// has a layout of its own.
+    parallax: bool,
+}
+
+impl MapSetKey {
+    /// Every array and sampler that the group binds.
+    fn pairs(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.slots.iter().copied().chain([self.height])
+    }
 }
 
 impl GroupKey {
     fn binds_array(&self, array: u32) -> bool {
         match self {
             GroupKey::Single { array: a, .. } => *a == array,
-            GroupKey::Maps(slots) => slots.iter().any(|&(a, _)| a == array),
+            GroupKey::Maps(key) => key.pairs().any(|(a, _)| a == array),
         }
     }
 }
@@ -925,9 +952,9 @@ impl TextureStore {
         };
         match slot.key {
             GroupKey::Single { array, .. } => view_of(array),
-            GroupKey::Maps(slots) => slots
-                .iter()
-                .fold(0, |mask, &(array, _)| mask | view_of(array)),
+            GroupKey::Maps(key) => key
+                .pairs()
+                .fold(0, |mask, (array, _)| mask | view_of(array)),
         }
     }
 
@@ -1044,14 +1071,26 @@ impl TextureStore {
     /// texture's array with its sampler, and a white texel where a slot has none. Materials whose
     /// maps share arrays and samplers share the group. A texture that moves to another array needs
     /// its material's group again.
-    pub fn map_set_group(&mut self, maps: &[Handle; MAP_SET_SLOTS]) -> Result<u32, TextureError> {
-        let mut slots = [self.placeholder()?; MAP_SET_SLOTS];
+    pub fn map_set_group(
+        &mut self,
+        maps: &[Handle; MAP_SET_SLOTS],
+        height: Handle,
+        parallax: bool,
+    ) -> Result<u32, TextureError> {
+        let empty = self.placeholder()?;
+        let mut slots = [empty; MAP_SET_SLOTS];
         for (slot, &map) in slots.iter_mut().zip(maps) {
             if let Some(pair) = self.map_pair(map) {
                 *slot = pair;
             }
         }
-        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(slots)))
+        let height = self.map_pair(height).unwrap_or(empty);
+        let key = MapSetKey {
+            slots,
+            height,
+            parallax,
+        };
+        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(key)))
     }
 
     /// The bind group of a standard material's maps where they share the group's first `units`
@@ -1061,16 +1100,25 @@ impl TextureStore {
     /// by others gets none, and so does a slot without a live map. The group's other bindings hold
     /// the white texel. Materials whose maps share arrays and samplers in the same order share the
     /// group.
+    ///
+    /// The displacement map has a binding of its own, which the vertex stage reads. With parallax,
+    /// the fragment stage reads it through a shared unit, which it takes after every map, as the
+    /// last entry of the returned units.
     pub fn shared_map_group(
         &mut self,
         maps: &[Handle; MAP_SET_SLOTS],
+        height: Handle,
+        parallax: bool,
         units: usize,
-    ) -> Result<(u32, [Option<u8>; MAP_SET_SLOTS]), TextureError> {
-        let mut slots = [self.placeholder()?; MAP_SET_SLOTS];
-        let mut slot_units = [None; MAP_SET_SLOTS];
+    ) -> Result<(u32, SharedUnits), TextureError> {
+        let empty = self.placeholder()?;
+        let mut slots = [empty; MAP_SET_SLOTS];
+        let mut slot_units = [None; MAP_SET_SLOTS + 1];
         let mut used = 0;
-        for slot in MapSlot::SHARING_ORDER.map(|slot| slot as usize) {
-            let Some(pair) = self.map_pair(maps[slot]) else {
+        let order = MapSlot::SHARING_ORDER.map(|slot| (slot as usize, maps[slot as usize]));
+        let pixel_height = [(MAP_SET_SLOTS, if parallax { height } else { Handle::NONE })];
+        for (slot, map) in order.into_iter().chain(pixel_height) {
+            let Some(pair) = self.map_pair(map) else {
                 continue;
             };
             let unit = match slots[..used].iter().position(|&taken| taken == pair) {
@@ -1084,7 +1132,12 @@ impl TextureStore {
             };
             slot_units[slot] = Some(unit as u8);
         }
-        let group = self.ids.first_group + self.group_of_key(GroupKey::Maps(slots));
+        let key = MapSetKey {
+            slots,
+            height: self.map_pair(height).unwrap_or(empty),
+            parallax: false,
+        };
+        let group = self.ids.first_group + self.group_of_key(GroupKey::Maps(key));
         Ok((group, slot_units))
     }
 
@@ -1398,6 +1451,12 @@ impl TextureStore {
         (slot.group != NO_GROUP).then(|| self.ids.first_group + slot.group)
     }
 
+    /// True when `texture` is a live 3D texture, whether its texels are on the GPU yet or not.
+    pub fn is_volume(&self, texture: Handle) -> bool {
+        self.slot(texture)
+            .is_ok_and(|slot| self.arrays[slot.array as usize].key.kind == Kind::Volume)
+    }
+
     /// The GPU id of a 3D texture and its size in texels along each axis, once its texels are on
     /// the GPU.
     pub fn ready_volume(&self, texture: Handle) -> Option<(u32, [u32; 3])> {
@@ -1534,6 +1593,19 @@ impl TextureStore {
     pub fn sync(&mut self, images_arrived: u32, frames_taken: u32) {
         self.arrived = images_arrived;
         self.frames_taken = frames_taken;
+    }
+
+    /// Takes the next image id for a generator whose code the thread that draws runs on textures
+    /// that the store does not hold, such as the reflection probes' maps. The caller sends the
+    /// generator under that id, in the order of the ids, as it sends images.
+    pub fn take_image_id(&mut self) -> u32 {
+        self.last_image = next_frame(self.last_image);
+        self.last_image
+    }
+
+    /// True once the thread that draws holds the image or generator of id `id`.
+    pub fn has_arrived(&self, id: u32) -> bool {
+        id != 0 && !frame_after(id, self.arrived)
     }
 
     /// The last image id handed out, or 0 before the first.
@@ -2048,19 +2120,34 @@ impl TextureStore {
                         ],
                     )?;
                 }
-                GroupKey::Maps(slots) => {
-                    if slots.iter().any(|&(array, _)| without_texture(array)) {
+                GroupKey::Maps(key) => {
+                    if key.pairs().any(|(array, _)| without_texture(array)) {
                         continue;
                     }
                     // Each slot's array at the binding of its slot, then each slot's sampler
-                    // after every array.
-                    let mut words = [0; 3 + 2 * MAP_SET_SLOTS * 5];
-                    words[..3].copy_from_slice(&[
-                        id,
-                        layout::MATERIAL_MAPS,
-                        2 * MAP_SET_SLOTS as u32,
+                    // after every array, then the displacement map's array and sampler.
+                    let mut words = [0; 3 + (2 * MAP_SET_SLOTS + 2) * 5];
+                    let layout = if key.parallax {
+                        layout::MATERIAL_MAPS_PARALLAX
+                    } else {
+                        layout::MATERIAL_MAPS
+                    };
+                    words[..3].copy_from_slice(&[id, layout, 2 * MAP_SET_SLOTS as u32 + 2]);
+                    let (array, sampler) = key.height;
+                    let height = 3 + 5 * 2 * MAP_SET_SLOTS;
+                    words[height..height + 10].copy_from_slice(&[
+                        HEIGHT_BINDING,
+                        resource_kind::TEXTURE,
+                        self.array_id(array),
+                        0,
+                        0,
+                        HEIGHT_BINDING + 1,
+                        resource_kind::SAMPLER,
+                        self.ids.first_sampler + sampler,
+                        0,
+                        0,
                     ]);
-                    for (k, &(array, sampler)) in slots.iter().enumerate() {
+                    for (k, &(array, sampler)) in key.slots.iter().enumerate() {
                         let texture = 3 + 5 * k;
                         words[texture..texture + 5].copy_from_slice(&[
                             k as u32,
@@ -2478,7 +2565,9 @@ mod tests {
         maps[MapSlot::Normal as usize] = normal;
         maps[MapSlot::MetalRough as usize] = metal_rough;
         maps[MapSlot::Occlusion as usize] = occlusion;
-        let (group, units) = store.shared_map_group(&maps, 6).unwrap();
+        let (group, units) = store
+            .shared_map_group(&maps, Handle::NONE, false, 6)
+            .unwrap();
         let unit = |slot: MapSlot| units[slot as usize];
         // The sRGB maps share unit 0, the two linear maps of one size unit 1, and the smaller map
         // takes a unit of its own.
@@ -2492,10 +2581,14 @@ mod tests {
             None,
             "a slot without a map has no unit"
         );
-        let again = store.shared_map_group(&maps, 6).unwrap();
+        let again = store
+            .shared_map_group(&maps, Handle::NONE, false, 6)
+            .unwrap();
         assert_eq!(again, (group, units), "the same maps share the group");
         // With two units, the maps that come last in the sharing order lose theirs.
-        let (fewer, units) = store.shared_map_group(&maps, 2).unwrap();
+        let (fewer, units) = store
+            .shared_map_group(&maps, Handle::NONE, false, 2)
+            .unwrap();
         assert_ne!(fewer, group);
         assert_eq!(units[MapSlot::BaseColor as usize], Some(0));
         assert_eq!(units[MapSlot::MetalRough as usize], Some(1));

@@ -76,11 +76,25 @@ struct Frame {
     /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
     /// spans at a distance of one unit in its view, along y, and a spare.
     reflection_corner: vec4f,
+    /// The sub-pixel jitter of a still view's accumulated sample, in clip space: `xy` is the offset
+    /// a scene's vertex shaders add to a position's clip position, scaled by its `w`. A still view
+    /// draws each frame with a different offset, and the frames average to a sharper image. Zero
+    /// while the view moves, in the views of lights, and in every frame a moving view draws.
+    jitter: vec4f,
     /// The physical sky's air between the camera and each surface, all zero without one.
     aerial: Aerial,
     /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
     /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
     vignette: vec4f,
+}
+
+/// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter
+/// `jitter` added: a still view shifts by a fraction of a pixel, so its accumulated samples spread
+/// over the pixel. Use this in place of `view_proj * vec4f(relative_position, 1.0)` in a scene's
+/// vertex shaders, which read the jitter from the frame's values.
+fn clip_with_jitter(view_proj: mat4x4f, jitter: vec2f, relative_position: vec3f) -> vec4f {
+    let clip = view_proj * vec4f(relative_position, 1.0);
+    return clip + vec4f(jitter * clip.w, 0.0, 0.0);
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every
@@ -129,7 +143,9 @@ struct ProbeGrid {
 /// One material's whole row of the material table, as the core writes it (`materials.rs` in the
 /// renderer crate names each float): the values that every shader reads, which `Material` holds,
 /// then the values of a material that lets light through, which only the builds that let light
-/// through read. Colors are linear.
+/// through read, then the clear coat and sheen of a layered material, then the values of a
+/// material that lets light through a thin surface, then the scatter distances of the subsurface
+/// blur. Colors are linear.
 struct MaterialRow {
     color: vec4f,
     emissive: vec4f,
@@ -150,6 +166,12 @@ struct MaterialRow {
     coat: vec4f,
     /// The sheen's linear color and its roughness.
     sheen: vec4f,
+    /// The linear color that tints the light that passes through a thin surface, and how much of
+    /// the surface's diffuse light passes through it.
+    translucency: vec4f,
+    /// Each channel's share of the scatter radius under the surface, linear, and the radius in
+    /// world units, which only the skin pass's builds read.
+    subsurface: vec4f,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

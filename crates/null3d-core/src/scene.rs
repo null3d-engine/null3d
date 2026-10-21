@@ -22,7 +22,10 @@
 //! object is recomputed only when its dirty bit is set (by a setter, by TypeScript, or by a
 //! command), or when its parent's world matrix changed in the same frame. Every recomputed
 //! object records the frame number in its changed stamp; [`SceneStorage::changed`] turns this
-//! frame's stamps into a bitset for uploads.
+//! frame's stamps into a bitset for uploads, and a recomputed object's children read its stamp to
+//! know that they recompute too. A recomputed row that holds what its parity already has also
+//! leaves [`SceneStorage::rows_changed`] clear, so a dynamic object that keeps its pose does not
+//! read as moved.
 //!
 //! # Hidden subtrees
 //!
@@ -507,6 +510,7 @@ macro_rules! update_context {
             flags: &$scene.flags,
             dirty: $scene.dirty.words(),
             changed_frames: SharedMut::new(&mut $scene.changed_frames),
+            rows_changed: SharedMut::new($scene.rows_changed.words_mut()),
             out: $scene.world[$parity].ptrs(),
             previous: $scene.world[$parity ^ 1].ptrs(),
             cells: &$scene.cells,
@@ -565,6 +569,10 @@ pub struct SceneStorage {
     retired: Vec<(u32, [WorldArrays; 2])>,
     changed_frames: Vec<u32>,
     changed: Bitset,
+    /// The slots whose world row differs from the row this frame parity held before the update,
+    /// cleared at the start of each transform update. Unlike `changed`, this leaves out an object
+    /// that was recomputed but holds its pose, which is what the still-camera comparison reads.
+    rows_changed: Bitset,
     dead_pending: Bitset,
     dead_pending_any: bool,
     order: Vec<u32>,
@@ -628,6 +636,7 @@ impl SceneStorage {
             retired: Vec::new(),
             changed_frames: vec![0; rows],
             changed: Bitset::new(rows as u32),
+            rows_changed: Bitset::new(rows as u32),
             dead_pending: Bitset::new(rows as u32),
             dead_pending_any: false,
             order: vec![0; rows],
@@ -707,6 +716,7 @@ impl SceneStorage {
             &mut self.tracked,
             &mut self.late,
             &mut self.changed,
+            &mut self.rows_changed,
             &mut self.dead_pending,
         ] {
             bits.grow(rows as u32);
@@ -762,6 +772,7 @@ impl SceneStorage {
             &mut self.tracked,
             &mut self.late,
             &mut self.changed,
+            &mut self.rows_changed,
             &mut self.dead_pending,
         ] {
             bits.try_reserve(rows as u32)?;
@@ -1031,6 +1042,13 @@ impl SceneStorage {
     /// that frame. Its runs are the upload ranges.
     pub fn changed(&self) -> &Bitset {
         &self.changed
+    }
+
+    /// The slots whose world row differs from the row their parity held before the last update.
+    /// Unlike [`SceneStorage::changed`], this leaves out an object that a dynamic update
+    /// recomputed but that holds its pose, which the still-camera comparison reads.
+    pub fn rows_changed(&self) -> &Bitset {
+        &self.rows_changed
     }
 
     /// Writes a position and marks the object dirty.
@@ -1349,6 +1367,8 @@ impl SceneStorage {
             op::SET_MATERIAL => {
                 let slot = self.created_slot(command.handle)?;
                 self.materials[slot as usize] = command.a;
+                // A displaced material grows the object's bounds, which TypeScript wrote.
+                self.dirty.set(slot);
             }
             op::SET_DYNAMIC => {
                 let slot = self.created_slot(command.handle)?;
@@ -1610,6 +1630,8 @@ impl SceneStorage {
             self.rebuild_order();
         }
         let parity = self.parity();
+        let used_words = self.slots.high_water().div_ceil(64) as usize;
+        self.rows_changed.words_mut()[..used_words].fill(0);
         for index in 0..self.level_count {
             let level = self.levels[index];
             let count = level.end - level.start;
@@ -1799,6 +1821,8 @@ struct UpdateContext<'a> {
     flags: &'a [u32],
     dirty: &'a [u64],
     changed_frames: SharedMut<u32>,
+    /// The words of the bitset of rows that differ from the row their parity held.
+    rows_changed: SharedMut<u64>,
     out: WorldPtrs,
     previous: WorldPtrs,
     /// Each object's cell, which the loop only reads.
@@ -1953,11 +1977,21 @@ impl UpdateContext<'_> {
         if !visible {
             sphere[3] = HIDDEN_RADIUS;
         }
-        // SAFETY: each slot appears once in the order, so only this call writes row `s` and its
-        // stamp.
+        // A dynamic object is recomputed every frame, but a row that holds what this parity
+        // already has did not change: the still-camera comparison reads `rows_changed` to tell a
+        // scene that moves from one whose dynamic objects hold their pose. The stamp still
+        // records every recompute, because an object's children recompute from it.
+        //
+        // SAFETY: each slot appears once in the order, so only this call reads and writes row `s`
+        // and its stamp.
         unsafe {
+            let moved = self.out.matrix(s) != world || self.out.radius(s) != sphere[3];
             self.out.write(s, &world, sphere);
             self.changed_frames.write(s, self.frame);
+            if moved {
+                // Two chunks can share a word, so the bit is set atomically.
+                self.rows_changed.fetch_or(s / 64, 1 << (s % 64));
+            }
         }
     }
 }
@@ -2251,6 +2285,62 @@ mod tests {
         assert_eq!(translation(&scene, h), [50.0, 0.0, 0.0]);
         assert!(!scene.changed().get(slot as u32));
         assert_eq!(scene.world(0).matrix(slot), scene.world(1).matrix(slot));
+    }
+
+    #[test]
+    fn a_dynamic_object_that_holds_its_pose_does_not_change_its_row() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [0.0, 0.0, 10.0], Handle::NONE, MOVING);
+        scene.apply_commands(&[c], 1).unwrap();
+        let slot = scene.resolve(h).unwrap();
+        // Each parity holds the row after its first frame, so it reads as moved twice and then
+        // not again while the pose holds.
+        scene.update_transforms(&jobs);
+        assert!(scene.rows_changed().get(slot));
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        assert!(
+            scene.rows_changed().get(slot),
+            "the other parity writes the row"
+        );
+        for frame in 3..6 {
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+            assert!(
+                !scene.rows_changed().get(slot),
+                "frame {frame}: the pose held"
+            );
+            // The stamp still records the recompute, which the object's children read.
+            assert!(recomputed(&scene, h), "frame {frame}");
+        }
+        scene.set_position(h, [1.0, 0.0, 10.0]).unwrap();
+        scene.begin_frame(6);
+        scene.update_transforms(&jobs);
+        assert!(scene.rows_changed().get(slot), "a moved dynamic object");
+    }
+
+    #[test]
+    fn growing_the_scene_marks_the_new_rows_as_changed() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(2);
+        scene.begin_frame(1);
+        scene.update_transforms(&jobs);
+        // More objects than the first capacity, which grows every array and the bitsets with it.
+        scene.try_grow(16).unwrap();
+        let mut commands = Vec::new();
+        let mut handles = Vec::new();
+        for k in 0..8 {
+            let (h, c) = object(&mut scene, [k as f32, 0.0, 0.0], Handle::NONE, MOVING);
+            handles.push(h);
+            commands.push(c);
+        }
+        scene.apply_commands(&commands, 2).unwrap();
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        for h in handles {
+            assert!(scene.rows_changed().get(scene.resolve(h).unwrap()));
+        }
     }
 
     #[test]

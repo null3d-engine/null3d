@@ -6,6 +6,9 @@ import { run } from './lib/result';
 
 const sketch = new URL('./sketches/empty-sketch.ts', import.meta.url);
 
+/** How many measurements may pass before a running engine shows the frames that its start drew. */
+const MEASUREMENTS = 8;
+
 function freshCanvas(): HTMLCanvasElement {
 	const canvas = document.createElement('canvas');
 	document.body.append(canvas);
@@ -42,7 +45,11 @@ run('abort', async () => {
 	);
 	const engine = await createEngine({ canvas: freshCanvas(), sketch });
 	await engine.firstFrame;
-	const stats = await engine.measure(0.5);
+	// A loaded software GPU can take seconds over one frame, so a measurement of the frames that
+	// followed a start runs again until it holds one, and the check reads the start and not the pace.
+	let stats = await engine.measure(0.5);
+	for (let tries = 1; stats.frames === 0 && tries < MEASUREMENTS; tries++)
+		stats = await engine.measure(0.5);
 	await engine.destroy();
 	// A worker that drew keeps its canvas for the next engine while the canvas is on the page.
 	for (const canvas of document.querySelectorAll('canvas')) canvas.remove();

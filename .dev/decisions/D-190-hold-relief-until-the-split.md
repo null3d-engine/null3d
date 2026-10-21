@@ -33,3 +33,11 @@ The owner held the feature on 2026-10-18 until the split lands. The branch `feat
 - M2-J4 stays paused after its content is finished; its task row records the ruling and this record.
 - The shader build's split is a task of its own, and every later feature that adds permutation bits depends on it.
 - No size limit changes. A page's start weight stays as measured on main.
+
+## Addendum 2026-10-19: the split landed and the feature merged
+
+The shader build now writes the shared paragraph tables and the combination loaders per device
+kind and feature family, so a page downloads only the combinations it can ask for. The build count
+still grows with the relief bits, as measured above: the merged manifest makes 53,762 GLSL builds
+and 19,227 WGSL builds, and `BUILD_BUDGET` records those figures. The growth stays out of a page's
+start. The owner's hold therefore ends, and the relief materials merge into the integration branch.

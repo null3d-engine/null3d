@@ -10,6 +10,7 @@ import {
 	featuresOf,
 	type ListedFile,
 	listedFiles,
+	missingWorkerAssets,
 	offlineFiles,
 	type WorkerFile,
 	workerFilesPlugin,
@@ -318,5 +319,70 @@ describe('listedFiles', () => {
 				text: 'x',
 			},
 		]);
+	});
+
+	it('gives a copied module every shared table that it loads', () => {
+		const bundle = {
+			'assets/shaders-skinning-wgsl-d.js': asset(
+				'assets/shaders-skinning-wgsl-d.js',
+				'const PART_0 = 1;',
+				['node_modules/@null3d/engine/lib/generated/shaders-skinning-wgsl.js'],
+			),
+		} as Rollup.OutputBundle;
+		const tables = new Map([
+			[
+				'assets/shaders-skinning-wgsl-d.js',
+				['assets/shader-paragraphs-wgsl.js', 'assets/shader-paragraphs-wgsl-skinning.js'],
+			],
+		]);
+		const [file] = listedFiles(bundle, new Map(), null3dPackages(), root, tables);
+		expect(file?.loads).toEqual([
+			'assets/shader-paragraphs-wgsl.js',
+			'assets/shader-paragraphs-wgsl-skinning.js',
+		]);
+	});
+});
+
+describe('missingWorkerAssets', () => {
+	/** A bundle that holds one worker chunk, which names `named` in its code. */
+	const bundleOf = (named: string): Rollup.OutputBundle =>
+		({
+			'assets/worker.js': { type: 'chunk', fileName: 'assets/worker.js', code: `load("${named}")` },
+		}) as unknown as Rollup.OutputBundle;
+
+	const worker = (source: string, chunk = false): WorkerFile => ({
+		moduleIds: [source],
+		imports: [],
+		loads: [],
+		chunk,
+	});
+
+	it('finds a worker asset that a file names but the bundle lacks', () => {
+		const workers = new Map<string, WorkerFile>([
+			['assets/shaders-skinning-wgsl-a1.js', worker('/repo/shaders-skinning-wgsl.js')],
+			['assets/unused-b2.js', worker('/repo/unused.js')],
+			['assets/worker.js', worker('/repo/worker.ts', true)],
+		]);
+		expect(missingWorkerAssets(bundleOf('./assets/shaders-skinning-wgsl-a1.js'), workers)).toEqual([
+			{
+				fileName: 'assets/shaders-skinning-wgsl-a1.js',
+				source: '/repo/shaders-skinning-wgsl.js',
+			},
+		]);
+	});
+
+	it('finds nothing when the bundle holds every file that a file names', () => {
+		const workers = new Map<string, WorkerFile>([
+			['assets/shaders-skinning-wgsl-a1.js', worker('/repo/shaders-skinning-wgsl.js')],
+		]);
+		const bundle = {
+			'assets/worker.js': { type: 'chunk', fileName: 'assets/worker.js', code: 'load("a")' },
+			'assets/shaders-skinning-wgsl-a1.js': {
+				type: 'asset',
+				fileName: 'assets/shaders-skinning-wgsl-a1.js',
+				source: '',
+			},
+		} as unknown as Rollup.OutputBundle;
+		expect(missingWorkerAssets(bundle, workers)).toEqual([]);
 	});
 });

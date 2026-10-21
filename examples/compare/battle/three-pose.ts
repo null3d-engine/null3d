@@ -1,9 +1,8 @@
 // Poses a unit's bones in three.js from the shared simulation: an AnimationMixer with one action per
 // clip, whose two clips in play take their times and weights from the unit's state, then
 // `mixer.update(0)`. The mixer then samples and blends the clips into the bones, the same work as
-// `mixer.update(delta)` with a cross-fade, and a held frame shows the state's exact pose. The scene
-// graph mode runs it on each unit's own mixer, and the crowd of the instanced mode on one mixer per
-// model, unit after unit, as three.js's crowd example does.
+// `mixer.update(delta)` with a cross-fade, and a held frame shows the state's exact pose. Each unit
+// has a mixer of its own.
 
 import type * as ThreeModule from 'three';
 import { type BattleState, Clip } from './scene';

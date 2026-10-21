@@ -181,6 +181,23 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(templates.flatMap((id) => templateFaults(pipelines, id))).toEqual([]);
 	}, 120_000);
 
+	it('never reuse one template’s pipeline layout for another template’s build', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		// The final pass makes its layout as the engine starts, before any material's build.
+		const last = layoutOf(renderDescriptor(pipelines, G.TEMPLATE_FINAL, 0));
+		const relief = G.PERMUTATION_DISPLACEMENT | G.PERMUTATION_PARALLAX;
+		const descriptor = renderDescriptor(pipelines, G.TEMPLATE_INSTANCED_STANDARD_MAPS, relief);
+		const layout = layoutOf(descriptor);
+		expect(layout).not.toBe(last);
+		const groups = [...layout.bindGroupLayouts] as unknown as GPUBindGroupLayoutDescriptor[];
+		expect(groups.map((group) => group.label)).toEqual([
+			'frame with parallax',
+			'material maps with parallax',
+		]);
+		const entries = groups.flatMap((group) => [...group.entries]);
+		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
+	});
+
 	it('keep custom materials and effects with textures within the default limits', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
 		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_INSTANCE_INDEX | G.PERMUTATION_CASTER;
@@ -251,6 +268,7 @@ const WEBGPU_ONLY: readonly (readonly [number, string])[] = [
 	[G.TEMPLATE_DOF_COMPOSITE_MS, 'WebGL2 reads one sample of the depth through a copy'],
 	[G.TEMPLATE_PARTICLE_DEPTH_MS, 'WebGL2 reads one sample of the depth through a copy'],
 	[G.TEMPLATE_FOG_APPLY_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_SUBSURFACE_COMPOSITE_MS, 'WebGL2 reads one sample of the depth through a copy'],
 ];
 
 /** The template ids that a backend registers, below the id where custom materials start. */

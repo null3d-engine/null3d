@@ -4,7 +4,6 @@
 // it is here, so when the engine stops, the worker keeps it: it frees its GPU device and lets go of
 // the engine's memory, and the next engine on the same canvas starts it again with its own.
 
-import { setErrorFixes } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { captureFrame, captureImage, preloadDeviceFiles, startDrawing } from '../render/draw';
 import { controlViews } from '../shared/control';
@@ -44,7 +43,6 @@ startWorker(
 				imagePort = message.imagePort;
 				controlSlots = controlViews(message.control).slots;
 				setWakeByMessage(message.wakeByMessage);
-				setErrorFixes(message.errorFixes);
 				const drawing = await host.start(
 					startDrawing({
 						...message,

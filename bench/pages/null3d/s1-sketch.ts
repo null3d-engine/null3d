@@ -22,6 +22,8 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
 // changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `probes` switch sets a small light probe grid over the swarm, for the allocation sample of
+// the lit draws' reads of the grid.
 // The `areaLights` switch adds eight rectangle lights, two of which show images, and four tube
 // lights, which circle the swarm and change their intensities every frame, for the allocation
 // sample of area lights.
@@ -41,7 +43,11 @@
 // the switch alone takes the preset's.
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
-// shading.
+// shading. The `translucency` switch makes the swarm's boxes let half their diffuse light through
+// to their other side, for the allocation sample and the cost of the builds that light their backs.
+// The `subsurface` switch adds 64 spheres whose material spreads its light under the surface, and
+// gives the subsurface blur taps, for the allocation sample and the cost of the skin pass and the
+// blur's steps.
 // The `ssr` switch puts a polished floor under the swarm and turns screen-space reflections on, for
 // the allocation sample and the cost of their steps, the copy of the opaque colors that they read,
 // and the floor's shading: the camera orbits, so the reflections move every frame. `ssr=half` and
@@ -72,6 +78,10 @@
 // frame's figures, for the allocation sample of each.
 // The `timeOfDay` switch moves a day cycle's hour in every frame, through the object that its
 // first call made, for the allocation sample of the helper's per-frame form.
+// The `reflectionProbes` switch places two reflection probes whose boxes split the swarm's space
+// in half and blend across the middle, for the probes' cost on every lit pixel.
+// `reflectionProbes=always` captures them again in turns in every frame, for the allocation sample
+// and the cost of the captures and their filters while the swarm moves.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -88,6 +98,7 @@ import {
 	defineSketch,
 	type Environment,
 	emptyTimeOfDay,
+	LightProbeGridData,
 	type PerspectiveCamera,
 	type RaycastHit,
 	type SketchContext,
@@ -117,6 +128,7 @@ export default defineSketch(async (context) => {
 			: createSwarm(context, count, true, undefined, switches.has('blend'), {
 					shadows: switches.has('batchShadows'),
 					rowValues: switches.has('rowValues'),
+					translucent: switches.has('translucency'),
 					levels: switches.has('levels'),
 					layers: readCoatSheen(switches.get('coatSheen')),
 				}).pose;
@@ -139,6 +151,8 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const probes = switches.get('reflectionProbes');
+	if (probes !== null) createProbes(context, probes === 'always');
 	const ssr = switches.get('ssr');
 	if (ssr !== null) createPolishedFloor(context, ssr);
 	const weighted = switches.get('weighted');
@@ -205,6 +219,7 @@ export default defineSketch(async (context) => {
 	if (skyMode === 'texture') context.scene.setBackground(createGradient(context));
 	if (switches.has('backgroundFirst')) addSmallBox(context, false);
 	if (switches.has('extraBox')) addSmallBox(context, true);
+	if (switches.has('subsurface')) addSkinSpheres(context);
 	const sun: [number, number, number] = [0, 0.2, -1];
 	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
 	const physical = skyMode === 'physical' || skyMode === 'physical-light';
@@ -225,6 +240,7 @@ export default defineSketch(async (context) => {
 	const now = new Float64Array(1);
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
 	const areas = switches.has('areaLights') ? createAreaLights(context, now) : undefined;
+	if (switches.has('probes')) createProbeGrid(context);
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
 	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
 	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
@@ -413,6 +429,33 @@ fn effect(input: EffectInput) -> vec4f {
     return vec4f(input.color.rgb + glow * input.color.a, input.color.a);
 }
 `;
+
+/**
+ * The `probes` switch: a small light probe grid of flat coefficients over the swarm's places, so
+ * the lit draws take the grid's templates and read it each pixel. Nothing steps it: the frame's
+ * cost of a grid is the point of the sample.
+ */
+function createProbeGrid({ scene, textures }: SketchContext): void {
+	const counts: [number, number, number] = [4, 2, 4];
+	const coefficients = new Float32Array(counts[0] * counts[1] * counts[2] * 12);
+	for (let at = 0; at < coefficients.length; at += 12) {
+		coefficients[at] = 0.3;
+		coefficients[at + 1] = 0.35;
+		coefficients[at + 2] = 0.4;
+	}
+	const grid = new LightProbeGridData(
+		new Float32Array([-S1_EXTENT, 0, -S1_EXTENT]),
+		new Float32Array([(2 * S1_EXTENT) / 3, S1_EXTENT, (2 * S1_EXTENT) / 3]),
+		counts,
+		coefficients,
+	);
+	scene.setLightProbeGrid({
+		texture: grid.toTexture(textures),
+		origin: grid.origin,
+		spacing: grid.spacing,
+		counts: grid.counts,
+	});
+}
 
 /**
  * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
@@ -705,6 +748,21 @@ function readCoatSheen(value: string | null): SwarmCoatSheen | undefined {
 	throw new Error(`coatSheen=${value} names no layers: take coat, sheen or both`);
 }
 
+/** Adds the `reflectionProbes` switch's two reflection probes, which split the swarm's space in half. */
+function createProbes({ scene }: SketchContext, always: boolean) {
+	const reach = S1_EXTENT + S1_BOB_HEIGHT + 4;
+	for (const side of [-1, 1])
+		scene.createReflectionProbe({
+			box: {
+				min: [side < 0 ? -reach : -2, -reach, -reach],
+				max: [side < 0 ? 2 : reach, reach, reach],
+			},
+			position: [(side * reach) / 2, 0, 0],
+			blend: 4,
+			refresh: always ? 'always' : 'once',
+		});
+}
+
 /** Adds the `transmission` switch's clear water under the swarm, which lets the light below through. */
 function createClearWater({ scene, geometry, materials }: SketchContext) {
 	const water = scene.createMesh({
@@ -941,6 +999,31 @@ function addSmallBox({ scene, geometry, materials }: SketchContext, depthWrite: 
 		mesh: geometry.box({ width: 0.5, height: 0.5, depth: 0.5 }),
 		material: materials.unlit({ color: '#ffffff', depthWrite }),
 	});
+}
+
+/**
+ * 64 spheres through the swarm whose material spreads its light under the surface, and taps for
+ * the subsurface blur, which draws them a second time in its skin pass.
+ */
+function addSkinSpheres({ scene, geometry, materials, quality }: SketchContext): void {
+	quality.set({ subsurfaceSamples: 17 });
+	const mesh = geometry.sphere({ radius: 1.5, widthSegments: 24, heightSegments: 16 });
+	const material = materials.standard({
+		color: '#e0b49c',
+		roughness: 0.45,
+		subsurfaceRadius: 0.4,
+		subsurfaceColor: [1, 0.4, 0.25],
+	});
+	for (let k = 0; k < 64; k++) {
+		const angle = k * 2.399963;
+		const reach = S1_EXTENT * 0.5 * Math.sqrt((k + 0.5) / 64);
+		const position: [number, number, number] = [
+			Math.cos(angle) * reach,
+			S1_BOB_HEIGHT * Math.sin(k),
+			Math.sin(angle) * reach,
+		];
+		scene.createMesh({ mesh, material, position });
+	}
 }
 
 /** A texture of a smooth gradient, made from data, about as large as the view it fills. */

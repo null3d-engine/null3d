@@ -61,8 +61,7 @@ describe('the smoke plan', () => {
 		for (const id of [
 			'capabilities',
 			'isolation',
-			'shaders-1',
-			'shaders-coat-sample-1',
+			'shaders-sampled-1',
 			'uploads',
 			'mip-levels',
 			'shader-library-webgpu',

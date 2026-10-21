@@ -42,7 +42,11 @@ pub fn project(source: &str, variants: &[(&str, &str)], library: &[(&str, &str)]
     for (file, text) in library {
         files.insert(format!("lib/{file}"), (*text).to_owned());
     }
-    Inputs { manifest, files }
+    Inputs {
+        manifest,
+        files,
+        parts: BTreeMap::new(),
+    }
 }
 
 /// Builds the inputs natively, and through the shader compiler when `NULL3D_SHADER_COMPILER` is
@@ -67,52 +71,58 @@ pub fn build_in_shader_compiler(inputs: &Inputs) -> Value {
     result.expect("the shader compiler's result")
 }
 
-/// The most shader compiler processes that run at once. Each holds its own compiler and the
-/// result it is writing, so the count stays within a CI runner's memory as well as its cores.
-const MAX_COMPILERS: usize = 8;
+/// The memory that one shader compiler process may take: its WebAssembly module holds at most
+/// 4 GiB, of which its compiler and the result it is writing fill most for the costliest entries.
+/// The processes run beside the test, which holds the native build, so each counts as half the
+/// module's room. Most entries take far less.
+const MEMORY_PER_COMPILER: u64 = 2 << 30;
 
-/// An estimate of the work that a build does: for each variant, the combinations of its
-/// permutation bits, which the build tries and keeps the buildable ones of. It ranks the entries,
-/// which is all that spreading them over processes needs.
-fn build_cost(inputs: &Inputs) -> u128 {
-    let manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
-    let Some(shaders) = manifest.get("shaders").and_then(toml::Value::as_table) else {
-        return 0;
-    };
-    shaders
-        .values()
-        .flat_map(|shader| shader.get("variants").and_then(toml::Value::as_table))
-        .flat_map(toml::Table::values)
-        .map(|variant| {
-            let bits = variant
-                .get("permutations")
-                .and_then(toml::Value::as_array)
-                .map_or(0, Vec::len);
-            1u128 << bits.min(64)
-        })
-        .sum()
+/// How many shader compiler processes run at once: one for each core, and no more than the
+/// memory available now holds at [`MEMORY_PER_COMPILER`] each. Linux reports that memory in
+/// `/proc/meminfo`. Elsewhere the count is the core count alone.
+pub fn compiler_processes() -> usize {
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    let memory = available_memory().map_or(usize::MAX, |bytes| {
+        usize::try_from(bytes / MEMORY_PER_COMPILER).unwrap_or(usize::MAX)
+    });
+    cores.min(memory).max(1)
+}
+
+/// The memory available to new processes, in bytes, from `/proc/meminfo`, or `None` where the
+/// system has no such file.
+fn available_memory() -> Option<u64> {
+    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = info
+        .lines()
+        .find(|line| line.starts_with("MemAvailable:"))?;
+    let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kib * 1024)
+}
+
+/// The estimated work of a build: the builds that its entries make, as the shader library counts
+/// them for splitting CI's shards. A manifest that does not parse counts nothing, which is
+/// enough for ranking.
+fn build_cost(inputs: &Inputs) -> u64 {
+    null3d_shaders::entry_costs(inputs).map_or(0, |costs| costs.iter().map(|(_, cost)| cost).sum())
 }
 
 /// Runs a list of builds through the shader compiler and gives each result and the index of its
-/// input to `check`. The builds are split over several processes, one for each core up to
-/// [`MAX_COMPILERS`], and each process composes the shader library once and reuses it for the
-/// builds that follow. Each process writes its results as lines, which are read one at a time, so
-/// a result that would not fit in memory beside every other one still works.
+/// input to `check`. The builds are split over several processes ([`compiler_processes`]), and
+/// each process composes the shader library once and reuses it for the builds that follow. Each
+/// process writes its results as lines, which are read one at a time, so a result that would not
+/// fit in memory beside every other one still works.
 pub fn build_each_in_shader_compiler(inputs: &[Inputs], mut check: impl FnMut(usize, Value)) {
     if inputs.is_empty() {
         return;
     }
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/shader-compiler.ts");
-    let jobs = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(MAX_COMPILERS)
-        .min(inputs.len());
+    let jobs = compiler_processes().min(inputs.len());
     // The largest entries go to different processes, each with small entries beside it, so no
     // process spends the whole run on one entry while the others hold small ones.
-    let costs: Vec<u128> = inputs.iter().map(build_cost).collect();
+    let costs: Vec<u64> = inputs.iter().map(build_cost).collect();
     let mut order: Vec<usize> = (0..inputs.len()).collect();
     order.sort_by_key(|&index| std::cmp::Reverse(costs[index]));
-    let mut loads = vec![0u128; jobs];
+    let mut loads = vec![0u64; jobs];
     let mut groups: Vec<Vec<usize>> = vec![Vec::new(); jobs];
     for index in order {
         let job = loads

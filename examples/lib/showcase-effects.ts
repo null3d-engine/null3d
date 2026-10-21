@@ -7,11 +7,13 @@
 // shadows, the camera and the post pass for the lens, and the post pass for automatic exposure and the
 // vignette. Everything else, such as a scene's snow, light shafts, ambient occlusion or bloom, goes to
 // the scene's own `apply`.
-import type {
-	DirectionalLight,
-	PerspectiveCamera,
-	QualityPreset,
-	SketchContext,
+import {
+	type DirectionalLight,
+	type PerspectiveCamera,
+	type QualityPreset,
+	quat,
+	type SketchContext,
+	vec3,
 } from '@null3d/engine';
 import type { Cinematic } from './cinematic';
 import {
@@ -21,7 +23,10 @@ import {
 	POST,
 	QUALITY,
 	radioGroup,
-	TIMES_OF_DAY,
+	TIME_BUTTONS,
+	TIME_MARKS,
+	TIME_NAMES,
+	TIME_SKY,
 	toggleGroup,
 } from './controls';
 import { isMood, type Stage } from './stage';
@@ -32,6 +37,8 @@ export interface ShowcaseEffectsOptions {
 	camera: PerspectiveCamera;
 	/** The scene's sun: the shadows switch casts them or not. */
 	sun: DirectionalLight;
+	/** How far the sun's shadows reach, which follows the camera as it draws back from the scene. */
+	shadowReach: ShadowReach;
 	/** The scene's stage, which owns the sky, the fog and the environment light switches. */
 	stage: Stage;
 	/** The effects that start on, with every id that the scene answers. */
@@ -46,6 +53,8 @@ export interface ShowcaseEffectsOptions {
 	apply(id: string, on: boolean): void;
 	/** The scene's own choice of a mood, such as the look its caustics and its air take. */
 	mood(mood: import('./stage').Mood): void;
+	/** The scene's own answer to a new hour from the slider, such as the look its air takes. */
+	hour(hours: number): void;
 	/** The scene's route player, which the router drives and refreshes. */
 	film(): Cinematic;
 	/** The fov the camera holds with no lens, and the focal length of the lens. */
@@ -67,7 +76,48 @@ export interface ShowcaseEffects {
 	groups(): readonly HudGroup[];
 	/** The post settings of the lens while it is on, or null while it is off. */
 	lens(): Record<string, unknown> | null;
+	/**
+	 * Fits the sun's shadow range to where the camera stands now. `update` does it every frame; a
+	 * scene calls it once its camera takes its opening pose, so a held frame has the right range.
+	 */
+	fitShadows(): void;
+	/**
+	 * Fits the shadow range, and sends the controls to the page while Auto moves the hour, so its
+	 * slider follows. Call each frame.
+	 */
+	update(t: number): void;
 }
+
+/**
+ * The sun's shadow range of a scene. Close up it holds the range the scene asks for, which keeps
+ * the near shadows sharp. As the camera draws back it grows, so the scene's core never passes the
+ * range's far edge and its shadows never vanish at once.
+ */
+export interface ShadowReach {
+	/** The range close up, in meters, and the least it ever is. */
+	distance: number;
+	/** The middle of the part of the scene that must always have its shadows. */
+	center: readonly [number, number, number];
+	/** That part's radius, in meters. */
+	radius: number;
+}
+
+/** How much longer each step of the shadow range is than the one before, as the engine's own. */
+const SHADOW_LADDER = 1.25;
+
+/**
+ * The shadow range for a need of `raw` meters, from a held range of `held`: the shortest step of the
+ * ladder up from `base` that reaches the need. It rises at once, and falls only once the need is a
+ * whole step below the held range, so a need that hovers at a step never flickers between two.
+ */
+export function shadowStep(raw: number, held: number, base: number): number {
+	const steps = Math.max(0, Math.ceil(Math.log(raw / base) / Math.log(SHADOW_LADDER) - 1e-9));
+	const up = base * SHADOW_LADDER ** steps;
+	return up > held || raw < held / SHADOW_LADDER ** 2 ? up : held;
+}
+
+/** The direction a camera looks along, before its rotation. */
+const AHEAD: readonly [number, number, number] = [0, 0, -1];
 
 /** The aperture and blur of the lens, which both scenes share. */
 const DSLR_LENS = { aperture: 1.8, maxBlur: 0.025 };
@@ -81,11 +131,47 @@ export function createShowcaseEffects(
 	options: ShowcaseEffectsOptions,
 ): ShowcaseEffects {
 	const { page, post, quality } = ctx;
-	const { camera, sun, stage, start, supported, apply, mood, film, fov, focalLength, focus } =
+	const { camera, sun, stage, start, supported, apply, mood, hour, film, fov, focalLength, focus } =
 		options;
+	const { shadowReach } = options;
+	// The shadow range in use, and the camera's place and direction that it is fitted to.
+	let shadowRange = shadowReach.distance;
+	sun.setShadow({ distance: shadowRange });
+	const eye = vec3.create();
+	const turn = quat.create();
+	const ahead = vec3.create();
+	/** Fits the shadow range to how far the camera looks past the far side of the scene's core. */
+	const fitShadows = (): void => {
+		camera.getPosition(eye);
+		camera.getRotation(turn);
+		vec3.transformQuat(ahead, AHEAD, turn);
+		const [cx, cy, cz] = shadowReach.center;
+		const along =
+			(cx - (eye[0] as number)) * (ahead[0] as number) +
+			(cy - (eye[1] as number)) * (ahead[1] as number) +
+			(cz - (eye[2] as number)) * (ahead[2] as number);
+		const next = shadowStep(along + shadowReach.radius, shadowRange, shadowReach.distance);
+		if (next === shadowRange) return;
+		shadowRange = next;
+		sun.setShadow({ distance: next });
+	};
 	const on: Record<string, boolean> = { ...start };
+	// The level of detail starts off, so every mesh draws at its fullest until the Quality tab turns
+	// it on; a threshold of 0 picks every mesh's base level. The switch turns it on again at the
+	// preset's own threshold, or at a default threshold when the page started with it off.
+	let lodThreshold = quality.settings.lodThreshold || 1;
+	if (quality.settings.lodThreshold > 0) void quality.set({ lodThreshold: 0 });
+	// The stage starts with every part on, so a part that the scene starts with off must be turned
+	// off now; the HUD state and the scene then agree, and the button reads the scene's real state.
+	for (const part of ['sky', 'fog', 'environment'] as const)
+		if (start[part] === false) {
+			stage.show(part, false);
+			apply(part, false);
+		}
 	const settings = { dof: { ...DSLR_LENS, focusPoint: focus } };
 
+	/** The time of the last controls post that Auto asked for. */
+	let postedAt = Number.NEGATIVE_INFINITY;
 	/** Turns the lens on or off: a long lens wide open, or the scene's own fov. */
 	const setLens = (lit: boolean): void => {
 		on.dof = lit;
@@ -100,8 +186,10 @@ export function createShowcaseEffects(
 			case 'sky':
 			case 'fog':
 			case 'environment':
-				// The stage writes the look every frame, so it owns these three switches.
+				// The stage writes the look every frame, so it owns these three switches. A scene may
+				// hang its own haze on the fog switch, such as the mist over its water.
 				stage.show(id, lit);
+				apply(id, lit);
 				break;
 			case 'shadows':
 				sun.setCastShadows(lit);
@@ -121,18 +209,40 @@ export function createShowcaseEffects(
 	};
 
 	if (options.dslr) setLens(true);
+	/** The hour the studio took the place of, which a second press on Studio gives back. */
+	let beforeStudio = stage.hours;
 
 	page.onMessage((name, value) => {
 		const picked = String(value);
 		if (name === 'camera') film().select(picked);
-		else if (name === 'mood' && isMood(value)) {
-			mood(value);
+		else if (name === 'hour') {
+			hour(Number(value));
+			film().refresh();
+		} else if (name === 'mood' && isMood(value)) {
+			// Auto and Studio each turn off with a second press: Auto holds the hour it reached, and
+			// the studio gives back the hour it took the place of.
+			if (value === 'Auto' && stage.auto) hour(stage.hours);
+			else if (value === 'Studio' && stage.mood === 'Studio') hour(beforeStudio);
+			else {
+				if (value === 'Studio') beforeStudio = stage.hours;
+				mood(value);
+			}
 			film().refresh();
 		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
 			set(picked, !(on[picked] ?? false));
 			film().refresh();
 		} else if (name === 'quality') {
-			void quality.setPreset(picked as QualityPreset);
+			const lod = quality.settings.lodThreshold > 0;
+			if (picked === 'lod') {
+				if (lod) lodThreshold = quality.settings.lodThreshold;
+				void quality.set({ lodThreshold: lod ? 0 : lodThreshold });
+			} else {
+				// A preset gives every setting its own value, so the switch keeps the new preset's
+				// threshold for its next turn on, and stays off when it was off.
+				void quality.setPreset(picked as QualityPreset);
+				lodThreshold = quality.settings.lodThreshold || lodThreshold;
+				if (!lod) void quality.set({ lodThreshold: 0 });
+			}
 			film().refresh();
 		}
 	});
@@ -141,7 +251,33 @@ export function createShowcaseEffects(
 		on,
 		set,
 		groups: (): readonly HudGroup[] => [
-			radioGroup('mood', 'Time of day', TIMES_OF_DAY, stage.mood),
+			{
+				name: 'hour',
+				title: 'Time of day',
+				radio: false,
+				buttons: TIME_BUTTONS.map((option) => ({
+					id: option.id,
+					label: option.label,
+					tip: option.tip,
+					// The slider posts hours; the two buttons beside it pick a mood instead.
+					name: 'mood',
+					active: option.id === 'Auto' ? stage.auto : stage.mood === 'Studio',
+				})),
+				slider: {
+					min: 0,
+					max: 24,
+					step: 0.05,
+					value: stage.hours,
+					live: stage.auto,
+					marks: TIME_MARKS,
+					tip: 'Turn the dial to any hour of the day, round past midnight. Auto moves it by itself and loops.',
+					dial: {
+						colors: TIME_SKY,
+						names: TIME_NAMES,
+						...(stage.mood === 'Studio' && { off: 'Studio' }),
+					},
+				},
+			},
 			toggleGroup(
 				'atmosphere',
 				'Atmosphere',
@@ -151,8 +287,28 @@ export function createShowcaseEffects(
 			),
 			toggleGroup('lighting', 'Lighting', LIGHTING, supported.lighting, (id) => on[id] ?? false),
 			toggleGroup('post', 'Post', POST, supported.post, (id) => on[id] ?? false),
-			radioGroup('quality', 'Quality', QUALITY, quality.preset),
+			{
+				...radioGroup('quality', 'Quality', QUALITY, quality.preset),
+				// The level of detail is a quality setting, and a threshold of 0 draws every mesh at
+				// its fullest, which is what turning it off means.
+				extras: [
+					{
+						id: 'lod',
+						label: 'LOD',
+						tip: 'Draw simpler meshes in the distance. Off draws every mesh at its fullest.',
+						active: quality.settings.lodThreshold > 0,
+					},
+				],
+			},
 		],
 		lens: () => (on.dof ? settings : null),
+		fitShadows,
+		update(t) {
+			fitShadows();
+			// Auto moves the hour, so the page's slider follows it; a fixed hour posts nothing.
+			if (!stage.auto || t - postedAt < 0.15) return;
+			postedAt = t;
+			film().refresh();
+		},
 	};
 }

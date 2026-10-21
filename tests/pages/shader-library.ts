@@ -3,14 +3,15 @@
 // draws one row of four rgba32uint texels per case, and the page compares the bits it reads back
 // with the TypeScript references of `lib/shader-library-cases.ts`. The values are numbers, not an
 // image, so the page reads them straight from the GPU objects it made. The page binds three.js's
-// table of specular terms where the engine binds it, for `lighting::dfg_lut`.
+// table of specular terms where the engine binds it, in the texture of a material's custom values
+// at binding 2, for `lighting::dfg_lut`.
 //
 // The test shader has one variant per library module, and the page draws each variant over the
 // rows of its module's cases. A variant that does not compile, link or build a pipeline is a
 // failure that names the module and the GPU's own message, in the result and in the page's
 // trail. The page still draws the other modules and compares their results.
 import { type GlslProgram, SHADERS, type ShaderVariant } from '@null3d/engine/internal';
-import { DFG_SIZE, dfgTexels } from './lib/dfg-table';
+import { DFG_COLUMN, DFG_SIZE, dfgTexels } from './lib/dfg-table';
 import { progress, run } from './lib/result';
 import {
 	allCases,
@@ -33,6 +34,8 @@ const CASE_TEXELS = INPUT_TEXELS + 1;
 const RESULT_TEXELS = RESULT_VALUES / 4;
 /** WebGPU copies texture rows into buffers at offsets aligned to this many bytes. */
 const COPY_ROW_ALIGNMENT = 256;
+/** The frame group's binding of the texture that holds a material's custom values. */
+const CUSTOM_VALUES_BINDING = 2;
 
 /** The test shader's variants, one per library module, by the module's name. */
 const VARIANTS: [string, ShaderVariant<'main'>][] = Object.entries(SHADERS.test_library);
@@ -168,16 +171,15 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 		progress(`uncaptured ${event.error.constructor.name}: ${event.error.message}`),
 	);
 	const fragment = GPUShaderStage.FRAGMENT;
-	// The split-sum table is layer 0 of the frame's light tables array, whose later layers carry the
-	// area lights' tables and their images, so the layout and the view are of an array rather than of
-	// one 2D texture.
+	// The split-sum table sits in the texture of a material's custom values, in the columns that
+	// follow a material's texels, as the engine keeps it.
 	const layout = device.createBindGroupLayout({
 		entries: [
 			{ binding: 0, visibility: fragment, texture: { sampleType: 'uint' } },
 			{
-				binding: 3,
+				binding: CUSTOM_VALUES_BINDING,
 				visibility: fragment,
-				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+				texture: { sampleType: 'unfilterable-float' },
 			},
 		],
 	});
@@ -197,17 +199,18 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 	}
 
 	const bits = await scoped(device, async () => {
-		const dfg = device.createTexture({
-			size: [DFG_SIZE, DFG_SIZE],
+		// One row per material, its texels then the split-sum table in the columns from DFG_COLUMN.
+		const values = device.createTexture({
+			size: [DFG_COLUMN + DFG_SIZE, DFG_SIZE],
 			format: 'rgba32float',
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-			// Compatibility mode fixes a texture's binding dimension when it is made.
-			...({ textureBindingViewDimension: '2d-array' } as object),
 		});
-		device.queue.writeTexture({ texture: dfg }, dfgTexels(), { bytesPerRow: DFG_SIZE * 16 }, [
-			DFG_SIZE,
-			DFG_SIZE,
-		]);
+		device.queue.writeTexture(
+			{ texture: values, origin: { x: DFG_COLUMN, y: 0 } },
+			dfgTexels(),
+			{ bytesPerRow: DFG_SIZE * 16 },
+			[DFG_SIZE, DFG_SIZE],
+		);
 		const inputs = device.createTexture({
 			size: [CASE_TEXELS, rows],
 			format: 'rgba32uint',
@@ -240,7 +243,7 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 				layout,
 				entries: [
 					{ binding: 0, resource: inputs.createView() },
-					{ binding: 3, resource: dfg.createView({ dimension: '2d-array' }) },
+					{ binding: CUSTOM_VALUES_BINDING, resource: values.createView() },
 				],
 			}),
 		);
@@ -298,9 +301,12 @@ function linkProgram(gl: WebGL2RenderingContext, vertex: string, fragment: strin
 /** Links a module's program, makes it current, and points its samplers at their units. */
 function useProgram(gl: WebGL2RenderingContext, glsl: GlslProgram): void {
 	const program = linkProgram(gl, glsl.vertex.source, glsl.fragment.source);
-	// The cases go in unit 0 and the table of specular terms in unit 1.
+	// The cases go in unit 0 and the texture of a material's custom values in unit 1.
 	for (const texture of glsl.fragment.textures)
-		gl.uniform1i(gl.getUniformLocation(program, texture.name), texture.binding === 3 ? 1 : 0);
+		gl.uniform1i(
+			gl.getUniformLocation(program, texture.name),
+			texture.binding === CUSTOM_VALUES_BINDING ? 1 : 0,
+		);
 }
 
 /**
@@ -342,25 +348,22 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 		gl.UNSIGNED_INT,
 		withProbeRow(input),
 	);
-	// The table of specular terms is read with texelFetch, from layer 0 of the frame's light tables
-	// array, as it is on WebGPU.
-	const dfg = gl.createTexture();
+	// The split-sum table sits in the texture of a material's custom values, in the columns after a
+	// material's texels, as it does on WebGPU.
+	const values = gl.createTexture();
 	gl.activeTexture(gl.TEXTURE1);
-	gl.bindTexture(gl.TEXTURE_2D_ARRAY, dfg);
-	gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	gl.texImage3D(
-		gl.TEXTURE_2D_ARRAY,
-		0,
-		gl.RGBA32F,
-		DFG_SIZE,
-		DFG_SIZE,
-		1,
-		0,
-		gl.RGBA,
-		gl.FLOAT,
-		dfgTexels(),
-	);
+	gl.bindTexture(gl.TEXTURE_2D, values);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	const width = DFG_COLUMN + DFG_SIZE;
+	const table = dfgTexels();
+	const texels = new Float32Array(width * DFG_SIZE * 4);
+	for (let row = 0; row < DFG_SIZE; row++)
+		texels.set(
+			table.subarray(row * DFG_SIZE * 4, (row + 1) * DFG_SIZE * 4),
+			(row * width + DFG_COLUMN) * 4,
+		);
+	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, DFG_SIZE, 0, gl.RGBA, gl.FLOAT, texels);
 
 	const { target, deviceFault, precisionFault } = integerTarget(gl, rows + 1);
 	const structFault = structPrecisionFault(gl);

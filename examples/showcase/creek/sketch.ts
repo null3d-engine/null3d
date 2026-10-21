@@ -9,36 +9,49 @@
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
-import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
-import { createCinematic, type Shot } from '../../lib/cinematic';
-import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { defineSketch, math, type QualityPreset, timeOfDay } from '@null3d/engine';
+import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
+import { createHaze } from '../../lib/haze';
+import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
-import { createShowcaseEffects } from '../../lib/showcase-effects';
-import { createMoods, isMood, type Mood, nearestMood } from '../../lib/stage';
+import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
+import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
-import { createLand, streamZ, UNREFLECTED_LAYER } from './land';
+import {
+	createLand,
+	createMountains,
+	GORGE,
+	groundHeight,
+	streamZ,
+	UNREFLECTED_LAYER,
+	WATER,
+} from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
+import { createUnderwater } from './underwater';
 import { createWater } from './water';
 
 /** The detail that each preset builds at the start: the land's quads, texture sizes and more. */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; water: number }
+	{ land: number; texture: number; rock: number; water: number; ring: readonly [number, number] }
 > = {
-	low: { land: 192, texture: 256, rock: 2, water: 200 },
-	medium: { land: 256, texture: 512, rock: 3, water: 300 },
-	high: { land: 320, texture: 512, rock: 3, water: 400 },
-	ultra: { land: 384, texture: 1024, rock: 3, water: 400 },
+	low: { land: 192, texture: 256, rock: 2, water: 200, ring: [160, 32] },
+	medium: { land: 256, texture: 512, rock: 3, water: 300, ring: [224, 40] },
+	high: { land: 320, texture: 512, rock: 3, water: 400, ring: [288, 48] },
+	ultra: { land: 384, texture: 1024, rock: 3, water: 400, ring: [320, 56] },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
-/** The turn of the sun's path, so that it sets low over the stream, ahead of the camera. */
-const HEADING = Math.PI + 0.5;
+/**
+ * The turn of the sun's path, so that it rises out of the gorge at one end of the stream and sets
+ * into the gorge at the other, over the water.
+ */
+const HEADING = Math.PI;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -51,8 +64,33 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Night: [0, 0, 0],
 	Studio: [0.08, 0.08, 0.08],
 };
+/** The color of the shafts of light at golden hour. */
+const SHAFT_TINT = [1.0, 0.62, 0.3] as const;
+/** The least change of a look's share that Auto writes to the scene. */
+const LOOK_STEP = 0.005;
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
+/**
+ * The creek's core: the sphere around the stream, its banks and their trees, which keeps its
+ * shadows wherever the camera stands. The sun's shadows reach this far close up, and further as
+ * the camera draws back.
+ */
+export const SHADOW_REACH: ShadowReach = { distance: 60, center: [0, 4, 0], radius: 34 };
+/**
+ * Where the Manual camera may go: around the creek, a little farther back than the opening view
+ * stands, and above the ground and the mountains' slopes. Its highest reach, the focus's top plus
+ * the distance, stays under the mountains' lowest crest.
+ */
+export const BOUNDS: Omit<CameraBounds, 'ground'> = {
+	center: [0, 0],
+	focus: 30,
+	// The point it turns around may sink under the water too, as the route's dip along the bed does.
+	focusHeight: [-0.5, 6],
+	distance: 45,
+	// The stream's bed is the ground under the water, so the camera may dip under the surface but
+	// never through the bed.
+	clearance: 0.15,
+};
 /**
  * The cinematic route. It opens high over the whole valley, showing the stream, both banks and the
  * trees at once. It glides down behind the near bank's trees and runs along them to the end of the
@@ -79,9 +117,13 @@ export const SHOTS: readonly Shot[] = [
 	{ position: [6, 5, 14.5], target: [10, 1, -6], seconds: 6 },
 	// The end of the near tree line: it turns to face back down the valley here.
 	{ position: [26, 5, 15.5], target: [28, 1, -4], seconds: 7 },
-	// Down to the water, tracing the stream's own winding line back down the valley.
-	{ position: [26, 2.4, streamZ(26)], target: [10, 0.5, streamZ(10)], seconds: 8 },
-	{ position: [6, 2.2, streamZ(6)], target: [-8, 0.5, streamZ(-8)], seconds: 7 },
+	// Down to the water, tracing the stream's own winding line back down the valley. The camera
+	// sinks under the surface and glides along the bed for about six seconds, between the stones,
+	// then rises out of the water again. The dip passes through the surface on purpose.
+	{ position: [26, 1, streamZ(26)], target: [14, -0.1, streamZ(14)], seconds: 4, through: true },
+	{ position: [17, -0.15, streamZ(17)], target: [5, -0.2, streamZ(5)], seconds: 5, through: true },
+	{ position: [8, -0.16, streamZ(8)], target: [-4, -0.16, streamZ(-4)], seconds: 4, through: true },
+	{ position: [1.5, 1.8, streamZ(1.5)], target: [-10.5, 0.5, streamZ(-10.5)], seconds: 6 },
 	{ position: [-12.5, 2.2, streamZ(-12.5)], target: [-22, 0.6, streamZ(-22)], seconds: 7 },
 	// Right to the far bank, behind its trees and facing back over the water.
 	{ position: [-12.5, 4.5, -18], target: [-6, 1, 6], seconds: 7 },
@@ -104,11 +146,17 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
-		shadow: { distance: 40, normalBias: 0.04 },
+		layers: SUN_LAYERS,
+		// Two cascades over a wider distance: one box fitted to the camera dropped casters at its
+		// edge as the camera moved, which made the shadows under the trees change.
+		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.04, cascades: 2 },
 	});
 	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 	// occlusion starts on, so the scene's shadows read.
-	post.set({ ao: { radius: 0.5 } });
+	post.set({
+		ao: { radius: 0.5 },
+		bloom: { blend: 'add', intensity: 0.2, threshold: 1 },
+	});
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.05,
@@ -123,10 +171,25 @@ export default defineSketch(async (ctx) => {
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
+	const mountains = createMountains(ctx, detail.ring[0], detail.ring[1]);
+	// Haze fills the far ends of the gorges, where the land and the stream run out.
+	const hazes = [0, Math.PI].map((bearing) =>
+		createHaze(ctx, {
+			bearing,
+			from: GORGE.haze[0],
+			to: GORGE.haze[1],
+			halfWidth: 160,
+			solid: 60,
+			fade: 120,
+			floor: GORGE.floorHaze,
+			sheets: 10,
+		}),
+	);
 	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
-	const water = createWater(ctx, detail.water, stones.obstacles);
+	const water = createWater(ctx, detail.water, stones.obstacles, GORGE.end);
+	const underwater = createUnderwater(ctx, camera, WATER);
 	const flora = await createFlora(ctx, models);
 	const air = await createAir(ctx, flora.crowns);
 	const shafts = createShafts(ctx, camera);
@@ -144,37 +207,52 @@ export default defineSketch(async (ctx) => {
 		heading: HEADING,
 		fogDensity: 0.006,
 		cloudCoverage: 0.3,
-		haze: { Golden: 2.2, Dusk: 1.5 },
+		haze: { Golden: 1.2, Dusk: 1.5 },
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
-	/** The mood whose look the scene shows. In Auto it is the fixed mood nearest to the hour. */
-	let current: Mood = 'Afternoon';
-	// Shafts of light at golden hour, at High and above: below, their march costs too much.
+	/**
+	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
+	 * the moods on either side, so the fireflies, the air and the caustics change with the light.
+	 */
+	const look: MoodMix = { from: 'Afternoon', to: 'Afternoon', share: 0 };
+	/** The hour's look, which Auto works out in each frame before it compares it with the one shown. */
+	const next: MoodMix = { ...look };
+	/** The studio's own look. */
+	const STUDIO: MoodMix = { from: 'Studio', to: 'Studio', share: 0 };
+	/** The light of the caustics on the stream's bed, blended between the look's moods. */
+	const caustics: [number, number, number] = [0, 0, 0];
+	// Shafts of light at golden hour, at High and above: below, their march costs too much. They
+	// fade with golden hour's share of the look.
+	const shaftTint: [number, number, number] = [0, 0, 0];
 	const light = () => {
+		const share = moodShare(look, 'Golden');
 		const on =
-			controls.on.shafts &&
-			current === 'Golden' &&
-			(quality.preset === 'high' || quality.preset === 'ultra');
-		shafts.set(on ? golden.light.direction : undefined, [1.0, 0.62, 0.3]);
+			controls.on.shafts && share > 0 && (quality.preset === 'high' || quality.preset === 'ultra');
+		for (let c = 0; c < 3; c++) shaftTint[c] = (SHAFT_TINT[c] as number) * share;
+		shafts.set(on ? golden.light.direction : undefined, shaftTint);
 	};
 	quality.onChange(() => {
 		fit();
 		light();
 	});
-	/** Gives the scene the look of a mood: its fireflies, its air and its water. */
-	const showLook = (mood: Mood): void => {
-		current = mood;
-		flora.nightLights(mood === 'Night' || mood === 'Dusk');
-		air.setMood(mood);
-		water.setCaustics(CAUSTICS[mood]);
+	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
+	const showLook = (mix: MoodMix): void => {
+		look.from = mix.from;
+		look.to = mix.to;
+		look.share = mix.share;
+		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
+		air.setLook(look);
+		const a = CAUSTICS[look.from];
+		const b = CAUSTICS[look.to];
+		for (let c = 0; c < 3; c++) caustics[c] = math.lerp(a[c] as number, b[c] as number, look.share);
+		water.setCaustics(caustics);
 		light();
 	};
 	const choose = (mood: Mood) => {
 		stage.set(mood);
-		// Auto moves the hour through the day, so it takes the look of the hour rather than one look
-		// that then sits under a moonlit sky.
-		showLook(mood === 'Auto' ? nearestMood(stage.hours) : mood);
+		// A fixed mood shows its own look, and Auto the look of the hour it starts from.
+		showLook(mood === 'Studio' ? STUDIO : moodMix(stage.hours, next));
 	};
 	// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
 	// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
@@ -182,16 +260,17 @@ export default defineSketch(async (ctx) => {
 	const controls = createShowcaseEffects(ctx, {
 		camera,
 		sun,
+		shadowReach: SHADOW_REACH,
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: false,
 			shafts: false,
 			fireflies: false,
 			shadows: true,
 			ao: true,
 			environment: true,
-			bloom: false,
+			bloom: true,
 			dof: false,
 			exposure: false,
 			vignette: false,
@@ -209,6 +288,10 @@ export default defineSketch(async (ctx) => {
 				case 'fireflies':
 					air.setFireflies(on);
 					break;
+				case 'fog':
+					// The mist over the water is haze too, so the fog switch hides it with the fog.
+					air.setMist(on);
+					break;
 				case 'ao':
 					post.set({ ao: on ? { radius: 0.5 } : false });
 					break;
@@ -218,6 +301,11 @@ export default defineSketch(async (ctx) => {
 			}
 		},
 		mood: choose,
+		hour(hours) {
+			stage.setHour(hours);
+			// The slider holds any hour, so the scene takes the look of that hour.
+			showLook(moodMix(hours, next));
+		},
 		film: () => film,
 		fov: FOV,
 		focalLength: DSLR_FOCAL_LENGTH,
@@ -226,24 +314,41 @@ export default defineSketch(async (ctx) => {
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
+	// The haze takes the air's color now too, since a held frame runs no update.
+	for (const haze of hazes) haze.update(stage.airColor, stage.light);
 
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
 		groups: controls.groups,
+		bounds: {
+			...BOUNDS,
+			ground: (x, z) => Math.max(groundHeight(x, z), mountains.heightAt(x, z)),
+		},
 	});
+	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
+	controls.fitShadows();
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
-			// In Auto the look follows the hour: the fireflies, the mist and the caustics cross to the
-			// next time of day as the sun does.
+			for (const haze of hazes) haze.update(stage.airColor, stage.light);
+			controls.update(t);
+			// In Auto the look follows the hour: the fireflies, the mist and the caustics move to the
+			// next time of day as the light does. A change too small to see is not written.
 			if (stage.auto) {
-				const at = nearestMood(stage.hours);
-				if (at !== current) showLook(at);
+				moodMix(stage.hours, next);
+				if (
+					next.from !== look.from ||
+					next.to !== look.to ||
+					Math.abs(next.share - look.share) > LOOK_STEP
+				)
+					showLook(next);
 			}
 			film.update(dt);
+			// After the camera moves, so the view under the water turns the frame the camera dips.
+			underwater.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
 			if (lens) post.set(lens);
 			flora.update(t);

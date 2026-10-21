@@ -14,7 +14,7 @@
  * dark wet tar.
  */
 export const FACADE_WGSL = /* wgsl */ `
-struct Uniforms { time: f32, litShare: f32, windowLight: f32, shopLight: f32, neonLight: f32 }
+struct Uniforms { time: f32, litShare: f32, windowLight: f32, shopLight: f32, neonLight: f32, winU0: f32, winU1: f32, winV0: f32, winV1: f32, roomDepth: f32 }
 
 var colorMap: texture_2d<f32>;
 var ormMap: texture_2d<f32>;
@@ -120,7 +120,23 @@ fn surface(input: SurfaceInput) -> Surface {
     let strength = select(material.windowLight * (0.5 + pick), material.shopLight, ground);
     // A shop shows rows of shelves, with goods of uneven brightness along each.
     let shelves = select(1.0, (0.45 + 0.55 * step(0.14, fract(coord.y * 4.0))) * (0.75 + 0.25 * sin(coord.x * 37.0 + pick * 20.0)), ground);
-    let glow = room * strength * lit * curtain * depth * shelves * (0.7 + 0.6 * kind);
+    // The room behind the window: the eye's ray reaches the back wall of a box that starts at the
+    // glass, so a window shows more of its room from the side of the street than from in front.
+    let win = select(vec4f(0.06, 0.94, 0.06, 0.68), vec4f(material.winU0, material.winU1, material.winV0, material.winV1), !ground);
+    let floor_height = select(4.2, 3.2, !ground);
+    let floor_y = select(coord.y, fract(coord.y), !ground);
+    let span_u = max((win.y - win.x) * 2.6, 0.01);
+    let span_v = max((win.w - win.z) * floor_height, 0.01);
+    let eye = normalize(camera.position - input.worldPosition);
+    let reach = material.roomDepth / max(dot(eye, n), 0.18);
+    let room_u = (fract(coord.x) * 2.6 - win.x * 2.6) / span_u + dot(eye, along) * reach / span_u;
+    let room_v = (floor_y * floor_height - win.z * floor_height) / span_v + eye.y * reach / span_v;
+    let outside = max(max(-room_u, room_u - 1.0), max(-room_v, room_v - 1.0));
+    let inside = 1.0 - smoothstep(-0.06, 0.04, outside);
+    let side_shade = 0.55 + 0.2 * clamp(1.0 - outside * 2.0, 0.0, 1.0);
+    let back_shade = 0.82 + 0.18 * smoothstep(0.55, 0.8, room_v) + 0.07 * step(0.5, fract(room_u * 4.0 + pick * 9.0));
+    let room_shade = mix(side_shade, back_shade, inside);
+    let glow = room * strength * lit * curtain * depth * shelves * (0.7 + 0.6 * kind) * room_shade;
 
     let roof = n.y > 0.5;
     let grain = vec2i(floor(input.worldPosition.xz * 2.0));

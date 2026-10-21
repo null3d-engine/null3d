@@ -1,8 +1,6 @@
 // Messages between the page and the engine's workers.
 
 import type { StatsRequest } from '../debug/stats-options';
-import { setErrorFixes } from '../errors/engine-error';
-import type { ErrorFixes } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
@@ -26,8 +24,6 @@ export interface CoreHandoff {
 	metrics: ArrayBufferLike;
 	/** The device the engine draws with, as the core and the renderer use it. */
 	device: CoreDevice;
-	/** The page's table of error fixes, so a worker's errors carry the same messages as the page's. */
-	errorFixes: ErrorFixes;
 	/**
 	 * True when the threads wake each other with messages, where the browser lacks
 	 * `Atomics.waitAsync` or ?wake=message acts that out.
@@ -35,15 +31,11 @@ export interface CoreHandoff {
 	wakeByMessage: boolean;
 }
 
-/**
- * Starts the engine core in a worker from what the page handed it. The worker takes the page's
- * error fixes first, so every error it raises from then on carries its full message.
- */
+/** Starts the engine core in a worker from what the page handed it. */
 export function startWorkerCore(
 	handoff: CoreHandoff,
 	step: (name: string) => void,
 ): Promise<StartedCore> {
-	setErrorFixes(handoff.errorFixes);
 	return startCore(handoff.build, handoff.module, handoff.memory, step);
 }
 

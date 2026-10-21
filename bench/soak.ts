@@ -56,6 +56,12 @@ const START_TIMEOUT_MS = 120_000;
 
 /** How long a scene that streams in may take to be whole. */
 const WHOLE_TIMEOUT_MS = 300_000;
+/**
+ * How long the page's job workers may take to start. The engine grows them over frames, by the
+ * work each window hands out, so a software GPU that draws a frame in seconds reaches the full set
+ * only after minutes. On 20 October 2026 S6 showed 6 of its 18 workers at the default limit.
+ */
+const WORKERS_START_MS = 300_000;
 
 /** The scenes that the soak runs. S4 has a fixed count of objects and ignores `--n`. */
 const SOAK_SCENES = ['s1', 's4', 's5', 's6'] as const;
@@ -223,7 +229,20 @@ async function main(): Promise<void> {
 			const [target] = await pagesAt(devtools, url);
 			if (!target) throw new Error(`no page target for ${url}`);
 			const { jobWorkers, latency } = started.mode;
-			const attached = await attachEveryWorker(devtools, target.targetId, 2 + jobWorkers);
+			// The engine grows its job workers over frames, so a software GPU may not reach the full
+			// set inside the wait. The judged threads are the sketch and render workers, which start
+			// with the engine, so the run samples those workers that did start.
+			const attached = await attachEveryWorker(
+				devtools,
+				target.targetId,
+				2 + jobWorkers,
+				WORKERS_START_MS,
+				true,
+			);
+			if (attached.workers.length < 2 + jobWorkers)
+				console.log(
+					`Soak: ${attached.workers.length - 2} of the ${jobWorkers} job workers had started; the rest grow later.`,
+				);
 			console.log(
 				`Soak: ${options.scene.toUpperCase()}${options.scene === 's4' ? '' : ` with ${options.n.toLocaleString('en-US')} objects`} on ${started.tier}, ${latency}, with ${jobWorkers} job workers, ${pagesText(options.dev)}, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
 			);

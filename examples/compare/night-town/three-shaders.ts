@@ -142,6 +142,10 @@ export interface FacadeSettings {
 	windowLight: number;
 	shopLight: number;
 	neonLight: number;
+	/** An upper floor's window across the bay and up the floor: u0, u1, v0, v1. */
+	window: readonly [number, number, number, number];
+	/** How far the room behind a window reaches back from its glass, in meters. */
+	roomDepth: number;
 }
 
 /** A facade kind's material: the bay texture, lit windows, and the roof. */
@@ -161,6 +165,8 @@ export async function facadeMaterial(
 		townWindowLight: { value: settings.windowLight },
 		townShopLight: { value: settings.shopLight },
 		townNeonLight: { value: settings.neonLight },
+		townWin: { value: new three.Vector4(...settings.window) },
+		townRoomDepth: { value: settings.roomDepth },
 		townColor: { value: maps.color },
 		townOrm: { value: maps.orm },
 		townNormal: { value: maps.normal },
@@ -176,6 +182,8 @@ uniform float townLitShare;
 uniform float townWindowLight;
 uniform float townShopLight;
 uniform float townNeonLight;
+uniform vec4 townWin;
+uniform float townRoomDepth;
 uniform sampler2D townColor;
 uniform sampler2D townOrm;
 uniform sampler2D townNormal;`,
@@ -221,7 +229,23 @@ uniform sampler2D townNormal;`,
 	roughnessFactor = roof ? 0.45 : orm.g;
 	metalnessFactor = roof ? 0.0 : orm.b;
 	vec3 along = normalize( vec3( n.z, 0.0, - n.x ) + vec3( 0.0001, 0.0, 0.0 ) );
-	vec3 townWorldNormal = roof ? n : normalize( along * bump.x + vec3( 0.0, 1.0, 0.0 ) * bump.y + n * bump.z );`,
+	vec3 townWorldNormal = roof ? n : normalize( along * bump.x + vec3( 0.0, 1.0, 0.0 ) * bump.y + n * bump.z );
+	// The room behind the window: the eye's ray reaches the back wall of a box that starts at the
+	// glass, so a window shows more of its room from the side of the street than from in front.
+	vec4 win = ground ? vec4( 0.06, 0.94, 0.06, 0.68 ) : townWin;
+	float floorHeight = ground ? 4.2 : 3.2;
+	float floorY = ground ? coord.y : fract( coord.y );
+	float spanU = max( ( win.y - win.x ) * 2.6, 0.01 );
+	float spanV = max( ( win.w - win.z ) * floorHeight, 0.01 );
+	vec3 eye = normalize( cameraPosition - vTownWorld );
+	float reach = townRoomDepth / max( dot( eye, n ), 0.18 );
+	float roomU = ( fract( coord.x ) * 2.6 - win.x * 2.6 ) / spanU + dot( eye, along ) * reach / spanU;
+	float roomV = ( floorY * floorHeight - win.z * floorHeight ) / spanV + eye.y * reach / spanV;
+	float outside = max( max( - roomU, roomU - 1.0 ), max( - roomV, roomV - 1.0 ) );
+	float inside = 1.0 - smoothstep( - 0.06, 0.04, outside );
+	float sideShade = 0.55 + 0.2 * clamp( 1.0 - outside * 2.0, 0.0, 1.0 );
+	float backShade = 0.82 + 0.18 * smoothstep( 0.55, 0.8, roomV ) + 0.07 * step( 0.5, fract( roomU * 4.0 + pick * 9.0 ) );
+	townGlow *= mix( sideShade, backShade, inside );`,
 			)
 			.replace(
 				'#include <normal_fragment_maps>',
@@ -350,6 +374,7 @@ function facadeNodes(three: Three, tsl: Tsl, maps: ShaderMaps, settings: FacadeS
 		step,
 		sin,
 		mod,
+		cameraPosition,
 		cameraViewMatrix,
 		vec4,
 	} = tsl;
@@ -451,6 +476,41 @@ function facadeNodes(three: Three, tsl: Tsl, maps: ShaderMaps, settings: FacadeS
 	material.roughnessNode = select(roof, float(0.45), orm.g);
 	material.metalnessNode = select(roof, float(0), orm.b);
 	const along = normalize(vec3(n.z, 0, n.x.negate()).add(vec3(0.0001, 0, 0)));
+	// The room behind the window: the eye's ray reaches the back wall of a box that starts at the
+	// glass, so a window shows more of its room from the side of the street than from in front.
+	const win = select(
+		ground,
+		vec4(0.06, 0.94, 0.06, 0.68),
+		vec4(settings.window[0], settings.window[1], settings.window[2], settings.window[3]),
+	);
+	const floorHeight = select(ground, float(4.2), float(3.2));
+	const floorY = select(ground, coord.y, fract(coord.y));
+	const spanU = tsl.max(win.y.sub(win.x).mul(2.6), float(0.01));
+	const spanV = tsl.max(win.w.sub(win.z).mul(floorHeight), float(0.01));
+	const eye = normalize(cameraPosition.sub(positionWorld));
+	const reach = float(settings.roomDepth).div(tsl.max(tsl.dot(eye, n), float(0.18)));
+	const roomU = fract(coord.x)
+		.mul(2.6)
+		.sub(win.x.mul(2.6))
+		.div(spanU)
+		.add(tsl.dot(eye, along).mul(reach).div(spanU));
+	const roomV = floorY
+		.mul(floorHeight)
+		.sub(win.z.mul(floorHeight))
+		.div(spanV)
+		.add(eye.y.mul(reach).div(spanV));
+	const outside = tsl.max(
+		tsl.max(roomU.negate(), roomU.sub(1)),
+		tsl.max(roomV.negate(), roomV.sub(1)),
+	);
+	const inside = float(1).sub(smoothstep(-0.06, 0.04, outside));
+	const sideShade = float(0.55).add(
+		tsl.clamp(float(1).sub(outside.mul(2)), float(0), float(1)).mul(0.2),
+	);
+	const backShade = float(0.82)
+		.add(smoothstep(0.55, 0.8, roomV).mul(0.18))
+		.add(step(0.5, fract(roomU.mul(4).add(pick.mul(9)))).mul(0.07));
+	const roomShade = tsl.mix(sideShade, backShade, inside);
 	const worldNormal = select(
 		roof,
 		n,
@@ -465,7 +525,10 @@ function facadeNodes(three: Three, tsl: Tsl, maps: ShaderMaps, settings: FacadeS
 	material.emissiveNode = select(
 		roof,
 		vec3(0),
-		glow.mul(texel.a).add(tint.mul(neon.mul(stutter).mul(settings.neonLight))),
+		glow
+			.mul(roomShade)
+			.mul(texel.a)
+			.add(tint.mul(neon.mul(stutter).mul(settings.neonLight))),
 	);
 	return { material, setTime: (seconds) => (time.value = seconds) };
 }

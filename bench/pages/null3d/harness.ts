@@ -78,6 +78,8 @@ export interface Null3dPageOptions {
  * - `extraBox` adds a small box to S1.
  * - `reflection` puts water under S1's swarm that a reflection pass mirrors S1 into.
  * - `transmission` puts clear water under S1's swarm that lets light through.
+ * - `translucency` makes S1's boxes let light through to their other side.
+ * - `subsurface` adds spheres whose light spreads under their surface and gives the blur its taps.
  * - `ssr` puts a polished floor under S1's swarm with screen-space reflections on.
  * - `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them with `coatSheen=coat` or
  *   `coatSheen=sheen`.
@@ -98,6 +100,8 @@ export interface Null3dPageOptions {
  * - `terrain` puts the terrain add-on's ground under S1, whose blocks follow the camera every frame.
  * - `impostors` puts a field of the impostors add-on's cards around S1, which pick their views from
  *   the camera every frame.
+ * - `reflectionProbes` places two reflection probes over S1, and `reflectionProbes=always`
+ *   captures them again every frame.
  * - `setters` calls each per-frame setter in S1, colors included.
  * - `frames` makes S1 count the frames it steps, which the page publishes for the allocation check.
  */
@@ -126,11 +130,14 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
+	'translucency',
+	'subsurface',
 	'ssr',
 	'coatSheen',
 	'weighted',
 	'particles',
 	'passes',
+	'reflectionProbes',
 	'still',
 	'anim',
 	'inertial',
@@ -144,6 +151,7 @@ const SKETCH_SWITCHES = [
 	'decals',
 	'setters',
 	'calls',
+	'probes',
 	'timeOfDay',
 	'frames',
 ] as const;

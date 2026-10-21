@@ -69,7 +69,8 @@
 //! the list, so switching passes on and off never moves them.
 //!
 //! The graph works out each texture's usage from how the passes use it, and each attachment's load
-//! and store operations. A target is cleared at its first write in the frame and loaded after
+//! and store operations. A target is cleared at its first write in the frame, unless its writer
+//! draws every texel that a later pass reads ([`Pass::creates_overwriting`]), and loaded after
 //! that, and a render pass stores it only when a later pass or frame needs it. When a later pass
 //! samples a multisampled color target, each of the target's layers is resolved at the end of the
 //! last render pass that draws into that layer. A resolve pass ([`PassKind::Resolve`]) resolves
@@ -395,6 +396,9 @@ pub struct Target {
     /// so its texture can always be sampled: a full-screen pass's texture, whose image of the frame
     /// before the camera's passes show.
     pub shown: bool,
+    /// True for a target that a copy reads into a buffer, as GPU picking's result does: its
+    /// texture takes the copy usage, and it cannot live in tile memory alone.
+    pub copy_source: bool,
 }
 
 impl Target {
@@ -408,6 +412,7 @@ impl Target {
             array: false,
             mipmapped: false,
             shown: false,
+            copy_source: false,
         }
     }
 
@@ -421,6 +426,7 @@ impl Target {
             array: false,
             mipmapped: false,
             shown: false,
+            copy_source: false,
         }
     }
 
@@ -447,6 +453,15 @@ impl Target {
         Self {
             mipmapped: true,
             ..self.array()
+        }
+    }
+
+    /// The same target, which a copy reads into a buffer: a target of the frame's result that no
+    /// pass samples, as GPU picking's resolved ids.
+    pub const fn copy_source(self) -> Self {
+        Self {
+            copy_source: true,
+            ..self
         }
     }
 
@@ -513,6 +528,9 @@ struct Use {
     resource: Cow<'static, str>,
     mode: Mode,
     layer: Option<u32>,
+    /// True when the pass draws every texel that a later pass reads, so the frame's first render
+    /// pass into the resource need not clear it.
+    overwrites: bool,
 }
 
 /// A pass's declaration: its name, kind, size and layer mask, and the resources it uses by name.
@@ -573,6 +591,15 @@ impl Pass {
         self.with(name, Mode::CreateTexture(target), None)
     }
 
+    /// Creates a frame target and draws every texel of it that a later pass reads, so the frame's
+    /// first render pass into it need not clear it. A pass that draws only a corner of a target
+    /// uses this when every read clamps inside that corner: the rest keeps what an earlier frame
+    /// left, which nothing reads. Skipping the clear saves a call that can cost Safari a
+    /// millisecond for a large target on an iPhone.
+    pub fn creates_overwriting(self, name: impl Into<Cow<'static, str>>, target: Target) -> Self {
+        self.with_overwriting(name, Mode::CreateTexture(target), None)
+    }
+
     /// Creates a buffer and fills it, every frame the pass runs.
     pub fn creates_buffer(self, name: impl Into<Cow<'static, str>>) -> Self {
         self.with(name, Mode::CreateBuffer, None)
@@ -606,11 +633,31 @@ impl Pass {
         self.with(name, Mode::ReadSoFar, None)
     }
 
-    fn with(mut self, name: impl Into<Cow<'static, str>>, mode: Mode, layer: Option<u32>) -> Self {
+    fn with(self, name: impl Into<Cow<'static, str>>, mode: Mode, layer: Option<u32>) -> Self {
+        self.push_use(name, mode, layer, false)
+    }
+
+    fn with_overwriting(
+        self,
+        name: impl Into<Cow<'static, str>>,
+        mode: Mode,
+        layer: Option<u32>,
+    ) -> Self {
+        self.push_use(name, mode, layer, true)
+    }
+
+    fn push_use(
+        mut self,
+        name: impl Into<Cow<'static, str>>,
+        mode: Mode,
+        layer: Option<u32>,
+        overwrites: bool,
+    ) -> Self {
         self.uses.push(Use {
             resource: name.into(),
             mode,
             layer,
+            overwrites,
         });
         self
     }
@@ -645,6 +692,9 @@ pub(crate) struct Access {
     pub(crate) resource: u16,
     pub(crate) mode: Mode,
     pub(crate) layer: Option<u32>,
+    /// True when the pass draws every texel that a later pass reads, so the frame's first render
+    /// pass into the resource need not clear it.
+    pub(crate) overwrites: bool,
 }
 
 /// Where a resource comes from.
@@ -753,11 +803,13 @@ impl RenderGraph {
                         earlier.mode = used.mode;
                     }
                     earlier.layer = used.layer.or(earlier.layer);
+                    earlier.overwrites |= used.overwrites;
                 }
                 None => self.accesses.push(Access {
                     resource,
                     mode: used.mode,
                     layer: used.layer,
+                    overwrites: used.overwrites,
                 }),
             }
         }

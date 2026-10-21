@@ -8,7 +8,7 @@ summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointe
 
 # Raycasting and spatial queries
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Pixel-exact GPU picking is not built yet, so coding agents must not use it. Queries test a skinned character in its bind pose, not in its animated pose.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Queries test a skinned character in its bind pose, not in its animated pose. Pixel-exact picking draws each character as it is posed.
 
 ```mermaid
 flowchart LR
@@ -127,6 +127,32 @@ const hitCount = scene.raycastBatch(rays, { maxDistance: 100 }, out);
 
 Each ray's result is the closest hit that `raycast` gives for it. Use a batch for many rays in one frame, such as sensors, lidar or visibility checks for a crowd.
 
+## Pixel-exact picking
+
+`scene.pick(x, y)` finds the object that the camera draws there. It answers through a promise. The engine draws the pick in a frame. The result comes back from the GPU later. Give `x` and `y` as CSS pixels from the canvas's top-left corner. `camera.screenToRay` takes them the same way.
+
+```ts
+// In a click handler: the answer arrives one or more frames later.
+scene.pick(240, 180).then((hit) => {
+  if (hit) console.log(hit.object, hit.instance);
+});
+```
+
+The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. A material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
+
+A pick finds these sources:
+
+- Meshes of the engine's materials, on the camera's layers, where they draw opaque.
+- Custom materials with a vertex offset, whose pick builds move each vertex as the surface draws.
+- Each row of an instance batch, named by `object` and `instance`.
+- Skinned and morphed characters, as their last frame's pose places them.
+
+A scene with a source that the pick's id target cannot hold answers the whole pick with a raycast instead. That source is a whole shader of your own, a material with `blending` or `transmission`, or a sprite, point or line. The raycast tests triangles, so it ignores masks, and it uses the camera of the frame that last ran.
+
+A pick before the first frame answers `null`. The engine has not drawn the camera yet, so no pixel of a frame shows anything.
+
+A pick costs one more draw of the camera's opaque objects and one read of four bytes. Picks wait in a queue of their own. Each answers in a frame after the one that records it. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null`.
+
 ## Overlap queries
 
 | Call | Returns |
@@ -203,6 +229,7 @@ Every query checks its input before the engine runs it, in development and produ
 | A negative `maxDistance` or radius, or a box whose lowest corner lies above its highest | [E1108](../errors/E1108.md) |
 | A `rays` array whose length is not a multiple of 6, or an `out` array too short for the rays | [E1108](../errors/E1108.md) |
 | A layer mask that does not fit 32 bits | [E1207](../errors/E1207.md) |
+| A point of `scene.pick` that is NaN or infinite | [E1203](../errors/E1203.md) |
 
 A direction can have any length above 0, from 10^-300 to 10^300. The engine makes it a unit vector in 64-bit numbers before the ray runs.
 
@@ -235,6 +262,7 @@ The trees give the same hits as testing every triangle of every object in turn. 
 | `intersection.instanceId` | `hit.instance` |
 | `intersection.faceIndex` | `hit.triangle` |
 | `three-mesh-bvh` | Built in: delete its setup |
+| three.js has no pixel pick: its `Raycaster` tests triangles | `scene.pick(x, y)` tests the pixel that the image shows, through the GPU, and returns a promise |
 
 three.js tests hidden objects unless you filter them out; null3D never hits them. three.js gives a `Line`'s hit point on the line; null3D gives the point on the ray, as three.js does for `Line2`. three.js's `Line2` ignores `raycaster.far`; null3D's `maxDistance` limits every hit. three.js tests a skinned mesh's animated vertices; null3D tests its bind pose. three.js returns a new array of new objects for each raycast; null3D writes into the objects you pass. three.js tests each object's bounding sphere in turn, so a ray costs more as the scene grows. null3D walks its trees, so a ray costs about the same in a large scene.
 

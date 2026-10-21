@@ -2,9 +2,10 @@
 // it answers. Plain HTTP stays on localhost, which phones reach through adb; HTTPS on the local
 // network serves tablets and phones that reach the Mac by its .local name.
 import { type ChildProcess, spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, realpathSync } from 'node:fs';
 import { constants } from 'node:os';
 import { join } from 'node:path';
+import type { Plugin } from 'vite';
 import { localHostName } from '../../tools/lib/host.ts';
 import { RUNS_DIR } from './report-collector.ts';
 
@@ -25,6 +26,30 @@ export const PREVIEW_PORT = HTTP_PORT + 2;
  */
 export const DEBUG_PORT = HTTP_PORT + 3;
 export const REPO_ROOT = join(import.meta.dirname, '../..');
+
+/**
+ * The address at which the dev server names the copy of the repository that it serves, and the
+ * header of the answer that holds that copy's folder, encoded as a URI component.
+ */
+const CHECKOUT_PATH = '/__null3d/checkout';
+const CHECKOUT_HEADER = 'X-Null3d-Checkout';
+
+/**
+ * The dev server's plugin that names the copy of the repository at `root` as the one it serves, so
+ * a tool that finds a server already answering on its port can refuse another copy's.
+ */
+export function checkoutServer(root: string): Plugin {
+	return {
+		name: 'null3d-checkout',
+		configureServer(server) {
+			const own = encodeURIComponent(realpathSync(root));
+			server.middlewares.use(CHECKOUT_PATH, (_req, res) => {
+				res.setHeader(CHECKOUT_HEADER, own);
+				res.end();
+			});
+		},
+	};
+}
 
 /** The port NULL3D_PORT names, or 5173 without it. */
 export function devServerPort(value: string | undefined): number {
@@ -183,13 +208,39 @@ async function refuseTaken(url: string): Promise<void> {
 		);
 }
 
-/** Starts the dev server, or reuses one that already runs, and waits until it answers. */
+/**
+ * Throws unless the dev server at `url` serves the copy of the repository at `root`. Every copy
+ * starts its dev server on the same port unless NULL3D_PORT names another, so a server that already
+ * answers there may serve another copy's code: its pictures then pass or fail against this copy's
+ * references. A server too old to name its copy is refused too.
+ */
+export async function refuseOtherCopy(url: string, root = REPO_ROOT): Promise<void> {
+	const own = realpathSync(root);
+	const answer = await localFetch(`${url}${CHECKOUT_PATH}`).catch(() => undefined);
+	const header = answer?.ok ? answer.headers.get(CHECKOUT_HEADER) : null;
+	const served = header === null ? undefined : decodeURIComponent(header);
+	if (served === own) return;
+	const what = served
+		? `serves another copy of the repository, ${served}`
+		: 'does not name the copy of the repository that it serves, so it may be another copy or an older server';
+	throw new Error(
+		`the dev server at ${url} ${what}, not ${own}. Stop that server, or give this copy its own ports with NULL3D_PORT`,
+	);
+}
+
+/**
+ * Starts the dev server, or reuses one that already runs and serves this copy of the repository,
+ * and waits until it answers.
+ */
 export async function startServer(https = false): Promise<DevServer> {
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
 	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
-	if (await answers(`${selfUrl}${DEV_PROBE}`)) return { url, selfUrl, stop: () => {} };
+	if (await answers(`${selfUrl}${DEV_PROBE}`)) {
+		await refuseOtherCopy(selfUrl);
+		return { url, selfUrl, stop: () => {} };
+	}
 	return spawnServer(REPO_ROOT, [], { NULL3D_HTTPS: https ? '1' : '0' }, url, selfUrl);
 }
 

@@ -40,12 +40,14 @@ import {
 	CAR_PAINTS,
 	CARS_PER_BLOCK,
 	carPose,
-	carToWorld,
 	createNightTown,
 	drawNightSprites,
 	FACADE_KINDS,
 	FACADE_LIT_SHARE,
+	FACADE_WINDOW,
+	FLYER_COUNT,
 	facadeMaps,
+	flyerPose,
 	groundSide,
 	HEADLAMPS,
 	HEADLIGHT_AIM,
@@ -66,6 +68,7 @@ import {
 	nightMeshes,
 	PARKED_PER_BLOCK,
 	parkedPose,
+	ROOM_DEPTH,
 	SIDEWALK_TILE,
 	SIGN,
 	SIGNS_PER_BLOCK,
@@ -285,6 +288,8 @@ export async function buildNightTown({
 				windowLight: look.windows.intensity,
 				shopLight: look.windows.shops,
 				neonLight: look.windows.neon,
+				window: FACADE_WINDOW[facade],
+				roomDepth: ROOM_DEPTH,
 			},
 			setup,
 		);
@@ -374,7 +379,6 @@ export async function buildNightTown({
 		emissiveIntensity: look.lamp.lens,
 	});
 	const paints = CAR_PAINTS.map((color) => standard({ color, roughness: 0.28, metalness: 0.55 }));
-	const whitePaint = standard({ color: '#ffffff', roughness: 0.28, metalness: 0.55 });
 	const cabin = standard({ color: '#0b0d10', roughness: 0.12, metalness: 0.2 });
 	const headlamp = standard({
 		color: '#000000',
@@ -663,216 +667,46 @@ export async function buildNightTown({
 		};
 	};
 
-	/** The instanced mode: an InstancedMesh per part kind, copies in block order. */
-	const instanced = (): Blocks => {
-		const batches: { mesh: ThreeModule.InstancedMesh; rowsAt: (blocks: number) => number }[] = [];
-		const matrix = new three.Matrix4();
-		const position = new three.Vector3();
-		const turn = new three.Quaternion();
-		const unit = new three.Vector3(1, 1, 1);
-		const up = new three.Vector3(0, 1, 0);
-		const place = (
-			mesh: ThreeModule.InstancedMesh,
-			i: number,
-			x: number,
-			y: number,
-			z: number,
-			yaw: number,
-		) => {
-			matrix.compose(position.set(x, y, z), turn.setFromAxisAngle(up, yaw), unit);
-			mesh.setMatrixAt(i, matrix);
-		};
-		const batch = (
-			name: NightMesh,
-			material: ThreeModule.Material,
-			count: number,
-			rowsAt: (blocks: number) => number,
-			moving: boolean,
-			cast = true,
-		) => {
-			const mesh = shadows(new three.InstancedMesh(geometry(name), material, count), cast);
-			mesh.instanceMatrix.setUsage(moving ? three.DynamicDrawUsage : three.StaticDrawUsage);
-			mesh.frustumCulled = false;
-			scene.add(mesh);
-			batches.push({ mesh, rowsAt });
-			return mesh;
-		};
-		for (let d = 0; d < town.designs.length; d++) {
-			const rowsBefore = new Uint32Array(capacity + 1);
-			const places: number[] = [];
-			for (let b = 0; b < capacity; b++) {
-				rowsBefore[b] = places.length / 3;
-				for (let l = 0; l < LOTS_PER_BLOCK; l++)
-					if (town.lotDesign[b * LOTS_PER_BLOCK + l] === d) {
-						lotPlace(town, b, l, at);
-						places.push(at[0] as number, at[1] as number, at[2] as number);
-					}
-			}
-			rowsBefore[capacity] = places.length / 3;
-			const count = places.length / 3;
-			if (count === 0) continue;
-			const facade = FACADE_KINDS.indexOf(town.designs[d]?.facade ?? 'brick');
-			for (const [name, material] of [
-				[`facade${d}`, facades[facade]],
-				[`trim${d}`, trim],
-			] as const) {
-				const mesh = batch(
-					name as NightMesh,
-					material as ThreeModule.Material,
-					count,
-					(blocks) => rowsBefore[blocks] as number,
-					false,
-				);
-				for (let i = 0; i < count; i++)
-					place(
-						mesh,
-						i,
-						places[i * 3] as number,
-						SLAB_HEIGHT,
-						places[i * 3 + 1] as number,
-						places[i * 3 + 2] as number,
-					);
-			}
-		}
-		const slabs = batch('slab', slab, capacity, (blocks) => blocks, false);
-		const posts = batch(
-			'lampPost',
-			darkMetal,
-			capacity * LAMPS_PER_BLOCK,
-			(blocks) => blocks * LAMPS_PER_BLOCK,
-			false,
-		);
-		const lenses = batch(
-			'lampLens',
-			lens,
-			capacity * LAMPS_PER_BLOCK,
-			(blocks) => blocks * LAMPS_PER_BLOCK,
-			false,
-			false,
-		);
-		for (let b = 0; b < capacity; b++) {
-			place(slabs, b, town.center[b * 2] as number, 0, town.center[b * 2 + 1] as number, 0);
-			for (let k = 0; k < LAMPS_PER_BLOCK; k++) {
-				lampPlace(town, b, k, at);
-				place(
-					posts,
-					b * LAMPS_PER_BLOCK + k,
-					at[0] as number,
-					SLAB_HEIGHT,
-					at[1] as number,
-					at[2] as number,
-				);
-				place(
-					lenses,
-					b * LAMPS_PER_BLOCK + k,
-					at[0] as number,
-					SLAB_HEIGHT,
-					at[1] as number,
-					at[2] as number,
-				);
-			}
-		}
-		const carRows = CARS_PER_BLOCK + PARKED_PER_BLOCK;
-		const bodies = batch(
-			'carBody',
-			whitePaint,
-			capacity * carRows,
-			(blocks) => blocks * carRows,
-			true,
-		);
-		const cabins = batch('carCabin', cabin, capacity * carRows, (blocks) => blocks * carRows, true);
-		const heads = batch(
-			'headlamps',
-			headlamp,
-			capacity * CARS_PER_BLOCK,
-			(blocks) => blocks * CARS_PER_BLOCK,
-			true,
-			false,
-		);
-		const tails = batch(
-			'tailLamps',
-			tailLamp,
-			capacity * CARS_PER_BLOCK,
-			(blocks) => blocks * CARS_PER_BLOCK,
-			true,
-			false,
-		);
-		const paintColors = CAR_PAINTS.map((hex) => new three.Color(hex));
-		for (let b = 0; b < capacity; b++)
-			for (let k = 0; k < carRows; k++) {
-				const paint =
-					k < CARS_PER_BLOCK
-						? town.carPaint[b * CARS_PER_BLOCK + k]
-						: town.parkedPaint[b * PARKED_PER_BLOCK + k - CARS_PER_BLOCK];
-				bodies.setColorAt(b * carRows + k, paintColors[paint as number] as ThreeModule.Color);
-			}
-		const blockGroups: ThreeModule.Group[] = [];
-		const carLightsOf: ReturnType<typeof carLights>[][] = [];
-		const show = (blocks: number) => {
-			while (blockGroups.length < blocks) {
-				const b = blockGroups.length;
-				const group = new three.Group();
-				group.matrixAutoUpdate = false;
-				signLights[b] = makeLights(b, group).signs;
-				makeShops(b, group);
-				carLightsOf[b] = Array.from({ length: CARS_PER_BLOCK }, () => carLights(group));
-				scene.add(group);
-				blockGroups.push(group);
-			}
-			while (blockGroups.length > blocks) {
-				scene.remove(blockGroups.pop() as ThreeModule.Group);
-				carLightsOf.pop();
-			}
-			for (const { mesh, rowsAt } of batches) mesh.count = rowsAt(blocks);
-		};
-		show(startBlocks);
-		const lamp = new Float64Array(3);
-		const moving = [bodies, cabins, heads, tails];
-		return {
-			show,
-			pose(seconds) {
-				const shown = blockGroups.length;
-				for (let b = 0; b < shown; b++)
-					for (let k = 0; k < carRows; k++) {
-						if (k < CARS_PER_BLOCK) carPose(town, b, k, seconds, at);
-						else parkedPose(town, b, k - CARS_PER_BLOCK, at);
-						const x = at[0] as number;
-						const z = at[1] as number;
-						const yaw = at[2] as number;
-						place(bodies, b * carRows + k, x, 0, z, yaw);
-						place(cabins, b * carRows + k, x, 0, z, yaw);
-						if (k >= CARS_PER_BLOCK) continue;
-						place(heads, b * CARS_PER_BLOCK + k, x, 0, z, yaw);
-						place(tails, b * CARS_PER_BLOCK + k, x, 0, z, yaw);
-						const lights = carLightsOf[b]?.[k];
-						if (!lights) continue;
-						for (let h = 0; h < HEADLAMPS.length; h++) {
-							const [hx, hy, hz] = HEADLAMPS[h] as readonly [number, number, number];
-							const light = lights.heads[h] as ThreeModule.SpotLight;
-							carToWorld(at, hx, hy, hz, lamp);
-							light.position.set(lamp[0] as number, lamp[1] as number, lamp[2] as number);
-							carToWorld(
-								at,
-								hx + headDirection.x * 10,
-								hy + headDirection.y * 10,
-								hz + headDirection.z * 10,
-								lamp,
-							);
-							light.target.position.set(lamp[0] as number, lamp[1] as number, lamp[2] as number);
-						}
-						carToWorld(at, TAIL_LIGHT[0], TAIL_LIGHT[1], TAIL_LIGHT[2], lamp);
-						lights.tail.position.set(lamp[0] as number, lamp[1] as number, lamp[2] as number);
-					}
-				for (const mesh of moving) {
-					mesh.instanceMatrix.clearUpdateRanges();
-					mesh.instanceMatrix.addUpdateRange(0, mesh.count * 16);
-					mesh.instanceMatrix.needsUpdate = true;
-				}
-			},
-		};
-	};
+	const blocks = sceneGraph();
 
-	const blocks = options.mode === 'instanced' ? instanced() : sceneGraph();
+	// The flying cars cross the town's sky in both modes, as scenery of its own: their batches keep
+	// the measured scene graph to the town's blocks.
+	const flyerPaint = standard({ color: '#363c46', roughness: 0.3, metalness: 0.7 });
+	const flyers = (
+		[
+			['flyerBody', flyerPaint],
+			['flyerHead', headlamp],
+			['flyerTail', tailLamp],
+		] as const
+	).map(([name, material]) => {
+		const made = new three.InstancedMesh(toGeometry(three, data[name]), material, FLYER_COUNT);
+		made.instanceMatrix.setUsage(three.DynamicDrawUsage);
+		made.frustumCulled = false;
+		scene.add(made);
+		return made;
+	});
+	const flyerMatrix = new three.Matrix4();
+	const flyerPosition = new three.Vector3();
+	const flyerTurn = new three.Quaternion();
+	const flyerUnit = new three.Vector3(1, 1, 1);
+	const flyerUp = new three.Vector3(0, 1, 0);
+	const flyerAt = new Float64Array(4);
+	const poseFlyers = (seconds: number) => {
+		for (let i = 0; i < FLYER_COUNT; i++) {
+			flyerPose(seconds, i, flyerAt);
+			flyerMatrix.compose(
+				flyerPosition.set(flyerAt[0] as number, flyerAt[1] as number, flyerAt[2] as number),
+				flyerTurn.setFromAxisAngle(flyerUp, flyerAt[3] as number),
+				flyerUnit,
+			);
+			for (const batch of flyers) batch.setMatrixAt(i, flyerMatrix);
+		}
+		for (const batch of flyers) {
+			batch.instanceMatrix.clearUpdateRanges();
+			batch.instanceMatrix.addUpdateRange(0, FLYER_COUNT * 16);
+			batch.instanceMatrix.needsUpdate = true;
+		}
+	};
 
 	// Particles: an instanced quad for each layer of the town's sprite rows.
 	const sprites = effects.particles
@@ -913,6 +747,7 @@ export async function buildNightTown({
 			bloom: look.bloom,
 			ao: { radius: look.ao.radius, scale: look.ao.scale },
 			grade: gradeTable(look.grade),
+			lens: look.lens,
 		},
 		limit:
 			limitBlocks < capacity
@@ -929,6 +764,7 @@ export async function buildNightTown({
 		step() {},
 		pose(seconds) {
 			blocks.pose(seconds);
+			poseFlyers(seconds);
 			for (const material of timed) material.setTime(seconds);
 			for (let b = 0; b < town.activeBlocks; b++)
 				for (const sign of signLights[b] ?? [])

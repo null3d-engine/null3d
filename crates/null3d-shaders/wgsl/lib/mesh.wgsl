@@ -2,7 +2,7 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission}
+#import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission, clip_with_jitter}
 #import null3d::lighting::{ambient_irradiance}
 #import null3d::sky_scattering::{aerial_perspective}
 #import null3d::tonemap
@@ -10,6 +10,8 @@ enable draw_index;
 #import null3d::vertex::{transform_normal, transform_point}
 #ifdef WEBGL2
 #import null3d::tables::{materials}
+#else
+#import null3d::tables::{custom_values}
 #endif
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
@@ -147,9 +149,6 @@ struct CellOffsets {
 #endif
 #else
 @group(0) @binding(1) var<storage, read> materials: array<MaterialRow>;
-/// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
-/// shaders read them too, and read no storage buffers, so they have a data texture of their own.
-@group(0) @binding(2) var custom_values: texture_2d<f32>;
 #ifdef ROW_VALUES
 /// The row values of every source, two texels each, which the vertex stage reads.
 @group(0) @binding(16) var row_values: texture_2d<f32>;
@@ -374,9 +373,33 @@ fn material_of(id: u32) -> Material {
 #endif
 }
 
-#ifdef TRANSMISSION
-/// The values of material `id` that let light through, which only the builds that let light
-/// through read.
+#ifdef TRANSLUCENCY
+/// The diffuse transmission's values of material `id`: the linear color that tints the light that
+/// passes through a thin surface, then how much of its diffuse light passes. Only the builds that
+/// let light through a thin surface read them.
+fn material_translucency(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(13u, id), 0);
+#else
+    return materials[id].translucency;
+#endif
+}
+#endif
+
+#ifdef SUBSURFACE
+/// The scatter distances of material `id`: each channel's share of the scatter radius, then the
+/// radius. Only the skin pass's builds read them.
+fn material_subsurface(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(14u, id), 0);
+#else
+    return materials[id].subsurface;
+#endif
+}
+#endif
+
+/// The values of material `id` that let light through, and its volume's: only the builds that let
+/// light through, or through a thin surface, call it, and the build drops it from the others.
 fn material_transmission(id: u32) -> MaterialTransmission {
 #ifdef WEBGL2
     return MaterialTransmission(
@@ -387,7 +410,6 @@ fn material_transmission(id: u32) -> MaterialTransmission {
     return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
 #endif
 }
-#endif
 
 #ifdef COAT_SHEEN
 /// The values of material `id`'s clear coat and sheen, which only the builds of layered
@@ -652,7 +674,7 @@ fn clip_of(found: Instance, relative: vec3f) -> vec4f {
     if !found.drawn {
         return OUTSIDE_CLIP;
     }
-    return to_clip(frame.view_proj, relative);
+    return clip_with_jitter(frame.view_proj, frame.jitter.xy, relative);
 }
 
 /// A position from the mesh into the world, relative to the camera.
@@ -706,6 +728,16 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
     return transform_direction(transform_of(found), direction);
+}
+
+/// The instance's scale along each of its object's axes: the length that its world matrix gives
+/// each unit axis.
+fn axis_scales(found: Instance) -> vec3f {
+    return vec3f(
+        length(world_direction(found, vec3f(1.0, 0.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 1.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 0.0, 1.0))),
+    );
 }
 
 /// How far a caster's back face that faces straight away from the light moves toward it, in

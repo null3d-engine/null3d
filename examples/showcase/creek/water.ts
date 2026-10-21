@@ -22,6 +22,32 @@ const FOAM = { x: 30, z: 6.5, width: 1024, height: 224 } as const;
  */
 const REFLECT_EVERY: Record<QualityPreset, number> = { low: 2, medium: 2, high: 1, ultra: 1 };
 
+/** How fast the current carries the ripples and the caustics downstream, toward +x. */
+export const FLOW = 0.35;
+/** How tall the water's waves stand, as a factor of their base height. */
+const RIPPLE = 1;
+/**
+ * The long waves that move the water's vertices: each one's direction, wave number, and how fast it
+ * runs against the current. The WGSL's `waves` holds the same three first in its list.
+ */
+const LONG_WAVES = [
+	[1.0, 0.15, 2.3, 0.9],
+	[0.8, -0.6, 3.7, 0.7],
+	[0.6, 0.8, 5.9, 0.5],
+] as const;
+
+/** The height of the water's surface at a point and sketch time, as its long waves move it. */
+export function surfaceHeight(x: number, z: number, t: number): number {
+	let h = WATER;
+	for (const [dx, dz, k, speed] of LONG_WAVES) {
+		const length = Math.hypot(dx, dz);
+		const along = (dx * x + dz * z) / length;
+		const phase = k * (along - FLOW * t * (dx / length)) - speed * t;
+		h += ((RIPPLE * 0.05) / k) * Math.sin(phase);
+	}
+	return h;
+}
+
 const wgsl = /* wgsl */ `
 #import null3d::noise::{value2}
 #import null3d::reflection::{reflection_uv}
@@ -32,8 +58,9 @@ var mirror: texture_2d<f32>;
 var foamMap: texture_2d<f32>;
 
 /// Caustics: bright, thin ridges where the ripples focus the light, which drift with the current.
-fn caustics(p: vec2f, t: f32) -> f32 {
-    let q = p * 4.6 + vec2f(material.flow * t * 4.0, 0.0);
+/// The view from under the water draws the same ones, from its own copy of this function.
+fn caustics(p: vec2f, t: f32, flow: f32) -> f32 {
+    let q = p * 4.6 + vec2f(flow * t * 4.0, 0.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
@@ -41,6 +68,10 @@ fn caustics(p: vec2f, t: f32) -> f32 {
     // Patches of brighter and fainter light keep the net from looking even.
     return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
+
+/// The cosine of the angle from straight up, under the water, inside which the world above shows:
+/// past it the surface turns every ray back down, as total internal reflection does.
+const WINDOW: f32 = 0.66;
 
 /// The water's height at a point, and its slopes along x and z: long waves that the current carries
 /// downstream, and with fine set, shorter ripples across them.
@@ -103,23 +134,37 @@ fn surface(input: SurfaceInput) -> Surface {
     // The caustics show on the bed, under clear water that is not too deep, and not under foam.
     let bed = p + w.yz * depth * 0.6;
     let reach = smoothstep(0.02, 0.15, depth) * exp(-depth * 1.4) * (1.0 - foam);
-    s.emissive += material.caustics * caustics(bed, frame.time) * reach;
-    s.transmission = 1.0 - 0.7 * foam;
     s.baseColor = mix(s.baseColor, vec3f(0.8), foam);
     s.roughness = mix(s.roughness, 0.6, foam);
+    if !input.frontFacing {
+        // Seen from under the water: the world above shows through, bent by the ripples, clearest in
+        // a window overhead and dimmer past its edge, where the surface turns some of the light back
+        // down as a faint mirror of the water. The planar reflection holds the world above the
+        // water, so it takes no part here.
+        s.normal = -s.normal;
+        let overhead = max(input.viewDirection.y * -1.0, 0.0);
+        let window = smoothstep(WINDOW - 0.05, WINDOW + 0.05, overhead);
+        s.reflection = vec4f(0.0);
+        s.thickness = 0.05;
+        s.transmission = mix(0.8, 1.0, window) * (1.0 - 0.7 * foam);
+        s.baseColor = mix(vec3f(0.08, 0.16, 0.15), s.baseColor, window);
+        return s;
+    }
+    s.emissive += material.caustics * caustics(bed, frame.time, material.flow) * reach;
+    s.transmission = 1.0 - 0.7 * foam;
     return s;
 }
 `;
 
-/** The water's grid: finer near the middle of the land, where the camera looks. */
-function waterGrid(length: number, width: number, quadsX: number, quadsZ: number): MeshArrays {
+/** The water's grid, along x at each of `xs` and across a band `width` wide. */
+function waterGrid(xs: readonly number[], width: number, quadsZ: number): MeshArrays {
+	const quadsX = xs.length - 1;
 	const row = quadsX + 1;
 	const count = row * (quadsZ + 1);
 	const positions = new Float32Array(count * 3);
 	const uvs = new Float32Array(count * 2);
 	for (let v = 0; v < count; v++) {
-		const s = ((v % row) / quadsX) * 2 - 1;
-		const x = (length / 2) * (0.25 * s + 0.75 * s * s * s);
+		const x = xs[v % row] as number;
 		const z = (Math.floor(v / row) / quadsZ - 0.5) * width;
 		positions.set([x, 0, z], v * 3);
 		uvs.set([x / 4, z / 4], v * 2);
@@ -175,15 +220,22 @@ export interface Water {
 	update(): void;
 }
 
+/** The water's length in the middle of the land, whose grid is finer toward the middle. */
+const MIDDLE = 140;
+/** The meters between the columns of the water that runs on down the valley past the middle. */
+const FAR_STEP = 8;
+
 /**
  * Makes the water and the reflection pass that mirrors the creek's banks in it. The pass draws layer
  * 0 alone, which leaves out the grass far from the water and what lies on or under the water. The
- * stones that break the water give it its foam.
+ * stones that break the water give it its foam. Past the middle the stream runs on along x to
+ * `reach` meters either way, down the valley and into the haze at its ends.
  */
 export function createWater(
 	ctx: SketchContext,
 	quadsX: number,
 	obstacles: readonly Obstacle[],
+	reach: number,
 ): Water {
 	const { scene, geometry, materials, textures, render } = ctx;
 	const plane = { point: [0, WATER, 0] } as const;
@@ -201,18 +253,30 @@ export function createWater(
 		metalness: 0,
 		ior: 1.33,
 		transmission: 1,
+		// Both faces draw, so the surface shows from under the water too.
+		doubleSided: true,
 		thickness: 0.5,
 		attenuationColor: '#93b59a',
 		attenuationDistance: 0.9,
 		textures: { mirror, foamMap: foamMap(ctx, obstacles) },
-		uniforms: { flow: 0.35, ripple: 1, caustics: [0, 0, 0] },
+		uniforms: { flow: FLOW, ripple: RIPPLE, caustics: [0, 0, 0] },
 	});
-	scene.createMesh({
-		mesh: geometry.fromArrays(waterGrid(140, 2 * STREAM_REACH + 2, quadsX, 48)),
-		material,
-		position: [0, WATER, 0],
-		receiveShadows: true,
+	const width = 2 * STREAM_REACH + 2;
+	// The middle: finer toward the middle of the land, where the camera looks.
+	const middle = Array.from({ length: quadsX + 1 }, (_, k) => {
+		const s = (k / quadsX) * 2 - 1;
+		return (MIDDLE / 2) * (0.25 * s + 0.75 * s * s * s);
 	});
+	// The far reaches: even steps out to the haze, on each side.
+	const steps = Math.ceil((reach - MIDDLE / 2) / FAR_STEP);
+	const far = Array.from({ length: steps + 1 }, (_, k) => MIDDLE / 2 + k * FAR_STEP);
+	for (const xs of [middle, far, far.map((x) => -x).reverse()])
+		scene.createMesh({
+			mesh: geometry.fromArrays(waterGrid(xs, width, xs === middle ? 48 : 12)),
+			material,
+			position: [0, WATER, 0],
+			receiveShadows: true,
+		});
 	const light: [number, number, number] = [0, 0, 0];
 	let every = 1;
 	let frame = 0;

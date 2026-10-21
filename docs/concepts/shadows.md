@@ -151,6 +151,32 @@ The quality preset gives the default cascade count and map size: the lighter pre
 
 A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene. The default, `'auto'`, does this for you. The engine finds the farthest surface that receives shadows in the camera's view each frame. It rounds that distance up on a ladder of 1.25 times per step. Shadows in a small scene then get much finer texels than a fixed 200 m. The distance holds for one step before it falls, so a raw distance that moves across a step does not flicker. A light that names a number keeps it, as a port of a scene with a fixed shadow distance does.
 
+`'auto'` grows with the farthest receiver in view. It measures to the far side of each receiver's bounding sphere. So one large ground mesh sets a long distance, even when the camera sees only a small part of it. Where the ground stretches far, such as a valley seen end to end, the shadows near the camera then turn coarse. Give far scenery that needs no shadows, such as distant hills, `receiveShadows: false`. Split a large ground into tiles, so that only the tiles in view count.
+
+### A fixed distance and a camera that zooms
+
+A fixed `distance` suits a camera that stays near its subject. An orbit camera that zooms out carries the whole subject past the distance at once. Its shadows then vanish, and they come back when the camera zooms in again. Use `'auto'` for such a camera, or set the distance in every frame from the camera's distance to the subject. Round it up on a ladder of steps, and let it fall only a whole step later, as `'auto'` does. Then a camera that hovers at a step does not flicker between two distances:
+
+```ts
+const BASE = 30; // The distance close up, in meters.
+const STEP = 1.25;
+let held = BASE;
+
+/** The shortest step up from the base that reaches `need`; it falls only a whole step below the held step. */
+function shadowStep(need: number): number {
+  const steps = Math.max(0, Math.ceil(Math.log(need / BASE) / Math.log(STEP) - 1e-9));
+  const up = BASE * STEP ** steps;
+  return up > held || need < held / STEP ** 2 ? up : held;
+}
+
+// In onUpdate: the distance along the view to the subject's far side.
+const next = shadowStep(alongView + subjectRadius);
+if (next !== held) {
+  held = next;
+  sun.setShadow({ distance: held });
+}
+```
+
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
 The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
@@ -305,18 +331,35 @@ They follow these rules:
 - Only the first directional light draws them, and only while it casts shadows. Spot and point lights draw none.
 - The quality setting `contactShadowSteps` sets the steps of each ray: 8 on High and 16 on Ultra. Low draws none. Medium draws 4 on WebGL2 and none on WebGPU. `quality.set({ contactShadowSteps: 4 })` turns them on for any preset.
 - They darken the light's direct light only, on surfaces that receive shadows. Ambient and environment light stay as they are.
+- They darken only a face that the camera sees from the light's side. The ray starts from the face that the camera sees. On a face that looks away from the light, it would run through the surface itself.
+- A material with `contactShadows: false` takes none of them, and keeps the shadow map's shadows. Its surfaces still block rays, so the surfaces under them keep their contact shadows.
 - Every opaque object in the depth can block a ray, whether it casts shadows or not. Blended objects, sprites and particles block none.
 - They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.
 - A longer `contactDistance` finds larger contacts, with the same steps further apart. Keep it short, under a meter, and use the cascades for long shadows.
 
-The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+
+### Grass and other thin surfaces
+
+A ray cannot tell a thin blade from a solid wall. A step that lies behind a blade counts as blocked, up to half of `contactDistance` behind it. So in dense grass, most blades take a contact shadow from the blades in front of them, and the grass turns dark and grainy. As the blades sway, the steps that land on a blade change from frame to frame, and the grass shimmers. Leaf cards, petals and other thin surfaces that crowd together do the same.
+
+Give such materials `contactShadows: false`. They keep the shadow map's shadows, and the ground under them keeps the short shadows at their roots.
+
+```ts
+const grass = materials.standard({
+  color: '#5f9a2a',
+  doubleSided: true,
+  // Thin blades that sway: no contact shadows on them.
+  contactShadows: false,
+});
+```
 
 ## Which objects cast and receive
 
 - The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
 - Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
-- The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. [Render layers](render-layers.md) explains masks.
+- The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
 - A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
 - A custom material casts its mesh's whole shape: its alpha comes from its own WGSL, which the shadow pass does not run.
@@ -326,7 +369,7 @@ The rays run at half the render size each way, in the same full-screen step as [
 
 Each cascade that draws in a frame has a render pass that draws its casters' depth. It culls its casters too:
 
-- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters.
+- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. On a device that draws directly, the job workers test the casters on the CPU, as on WebGL2.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
 A masked caster runs a fragment shader that tests its alpha, where other casters run none. So cut-out foliage costs more GPU time in each shadow pass than solid shapes. Its shader builds load the first time a masked caster draws, and it casts no shadow until they are ready. To load them before the first frame instead, pass `preload: ['cutout']` to `createEngine`.

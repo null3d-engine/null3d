@@ -13,7 +13,6 @@
 
 import {
 	type CameraLoop,
-	type CompareMode,
 	clamp,
 	cylinderGeometry,
 	type GradeLook,
@@ -459,6 +458,36 @@ export const WRECKS: readonly (Placed & { tilt: number })[] = [
 	{ ...placeAt(-8, 26, 0.7, 1), tilt: 0.12 },
 	{ ...placeAt(22, -34, 2.5, 1), tilt: -0.18 },
 	{ ...placeAt(-44, -18, 4.2, 1), tilt: 0.08 },
+];
+
+/** A scorch mark on the ground: its middle, its reach and its turn about +Y. */
+export interface Scorch {
+	x: number;
+	y: number;
+	z: number;
+	reach: number;
+	yaw: number;
+}
+
+/**
+ * The scorch marks: one at every crater, which still holds the shell's soot, and one round each
+ * burnt wreck. The marks are scenery, so they take no part in the count.
+ */
+export const SCORCHES: readonly Scorch[] = [
+	...CRATERS.map((crater, k) => ({
+		x: crater.x,
+		y: terrainHeight(crater.x, crater.z),
+		z: crater.z,
+		reach: crater.radius * 1.25,
+		yaw: hash01(BATTLE_SEED, k, 9) * TAU,
+	})),
+	...WRECKS.map((wreck, k) => ({
+		x: wreck.x,
+		y: terrainHeight(wreck.x, wreck.z),
+		z: wreck.z,
+		reach: 3.4,
+		yaw: hash01(BATTLE_SEED, k, 10) * TAU,
+	})),
 ];
 
 /** A fire that burns all through the battle: its base, and its size against a wreck's fire. */
@@ -1077,12 +1106,12 @@ export function barrelRecoil(s: BattleState, t: number): number {
 }
 
 /** Objects in the null3D scene at a count: one per unit and its rifle, three per tank, and the rest. */
-export function battleObjects(count: number, mode: CompareMode = 'scene-graph'): number {
+export function battleObjects(count: number): number {
 	const units = battleUnits(count);
 	const tanks = tanksPerArmy(units / 2) * 2;
 	const perUnit = units * 3;
 	const fixed = STILL_OBJECTS + FLAGS.length * 2;
-	return perUnit + (mode === 'instanced' ? 0 : tanks * TANK_PARTS) + fixed;
+	return perUnit + tanks * TANK_PARTS + fixed;
 }
 
 /** Objects that stand still whatever the count: the terrain, the ruins, the tower and the wrecks. */
@@ -1375,7 +1404,9 @@ export const BATTLE_LOOK = {
 		turbidity: 8,
 		rayleigh: 3.2,
 		mieCoefficient: 0.003,
-		mieDirectionalG: 0.85,
+		// How tightly the haze gathers ahead of the sun. A tight gather sets the sky beside the low
+		// sun far above the field's light, where bloom then spreads it over the battle.
+		mieDirectionalG: 0.7,
 		// A broken deck of heavy cloud, low and large, dark against the last light.
 		cloudCoverage: 0.62,
 		cloudDensity: 0.8,
@@ -1404,17 +1435,24 @@ export const BATTLE_LOOK = {
 		density: 0.0014,
 		height: 0,
 		heightFalloff: 0.03,
-		sunGlow: 0.35,
+		// A warm lift toward the sun, kept low so the far hills and the smoke keep their shape.
+		sunGlow: 0.22,
 		sunGlowExponent: 16,
 	},
-	/** Bloom, as UnrealBloomPass's settings; null3D's chain takes the mapped settings below. */
-	bloom: { threshold: 1, strength: 0.45, radius: 0.35 },
+	/**
+	 * Bloom, as UnrealBloomPass's settings; null3D's chain takes the mapped settings below. The
+	 * threshold sits above the sky's light and the fog's glow, so the sun, the fires and the tracer
+	 * glints bloom while the battle below them keeps its contrast.
+	 */
+	bloom: { threshold: 4, strength: 0.45, radius: 0.35 },
 	bloomChain: {
 		intensity: 3.6,
 		knee: 0.01,
 		weights: [0, 0.0916, 0.2194, 0.1308, 0.1398, 0.1492, 0.1058, 0.149, 0.0145],
 	},
 	ao: { radius: 0.9, intensity: 1, scale: 0.5 },
+	/** A lens grade: fringes at the edges, an anamorphic streak on the brightest light, and grain. */
+	lens: { shift: 7, streak: 0.3, grain: 0.05 },
 	/** Warm highlights and teal shadows, with more contrast: the dusk of a war film. */
 	grade: {
 		contrast: 1.12,
@@ -1490,13 +1528,26 @@ export function particleCapacity(s: BattleState): { fire: number; smoke: number 
 			s.blasts * (FIREBALLS_PER_BLAST + SPARKS_PER_BLAST) +
 			FIRES.length * (EMBERS_PER_FIRE + 2) +
 			tanks +
-			Math.min(s.flights, 4096),
+			// A muzzle flash and a glint for each flight in use.
+			Math.min(s.flights, 4096) * 2,
 		smoke:
 			s.blasts * SMOKE_PER_BLAST +
 			FIRES.length * SMOKE_PER_FIRE +
 			tanks * DUST_PER_TANK +
 			HAZE_SPRITES,
 	};
+}
+
+const glintPosition = new Float64Array(3);
+const glintRotation = new Float64Array(4);
+
+/**
+ * The color of a smoke puff that firelight reaches: the puff keeps its own shade and takes the
+ * fire's warm light, which falls with the puff's rise above the flame.
+ */
+function fireLit(shade: number, rise: number, reach: number): [number, number, number] {
+	const lit = Math.max(0, 1 - rise / reach) ** 2;
+	return [shade + lit * 1.5, shade * 0.95 + lit * 0.58, shade * 0.9 + lit * 0.2];
 }
 
 /** Writes every live particle at `seconds` into the fire and smoke rows. Allocates nothing. */
@@ -1529,6 +1580,25 @@ export function writeParticles(
 			glow * 0.45,
 			1,
 			FIRE_FRAMES.flash + (f % FIRE_FRAMES.flashFrames),
+		);
+	}
+	// Tracer glints: a small bright head on each tracer in flight, which the lens grade streaks.
+	for (let f = 0; f < s.flights; f++) {
+		if (s.flightActive[f] === 0 || s.flightKind[f] !== 0) continue;
+		flightTransform(s, f, glintPosition, glintRotation);
+		const glow = 11;
+		addSprite(
+			fire,
+			glintPosition[0] as number,
+			glintPosition[1] as number,
+			glintPosition[2] as number,
+			0.34,
+			0,
+			glow,
+			glow * 0.62,
+			glow * 0.28,
+			1,
+			FIRE_FRAMES.flash,
 		);
 	}
 	for (let b = 0; b < s.blasts; b++) {
@@ -1635,6 +1705,7 @@ function writeBlast(s: BattleState, b: number, fire: SpriteRows, smoke: SpriteRo
 		const out = 1.2 * hash01(serial, k, 22) + t * 3;
 		const alpha = 0.75 * smoothstep(clamp((age - start) * 3, 0, 1)) * (1 - t) ** 1.3;
 		const shade = 0.08 + 0.12 * t;
+		const [red, green, blue] = fireLit(shade, 1.5 + t * 9, 12);
 		addSprite(
 			smoke,
 			x + Math.cos(angle) * out + t * 4,
@@ -1642,9 +1713,9 @@ function writeBlast(s: BattleState, b: number, fire: SpriteRows, smoke: SpriteRo
 			z + Math.sin(angle) * out,
 			3.2 + t * 9,
 			hash01(serial, k, 23) * TAU + t * (hash01(serial, k, 24) - 0.5) * 2,
-			shade,
-			shade * 0.95,
-			shade * 0.9,
+			red,
+			green,
+			blue,
 			alpha,
 			k % 4,
 		);
@@ -1693,6 +1764,7 @@ function writeFire(f: number, seconds: number, fire: SpriteRows, smoke: SpriteRo
 		const wobble = hash01(f * 1000 + k, born, 1) - 0.5;
 		const alpha = 0.7 * smoothstep(t * 6) * (1 - t) ** 1.1;
 		const shade = 0.05 + 0.1 * t;
+		const [red, green, blue] = fireLit(shade, t * 22 * size, 18 * size);
 		addSprite(
 			smoke,
 			x + (t * 14 + wobble * 2) * size,
@@ -1700,9 +1772,9 @@ function writeFire(f: number, seconds: number, fire: SpriteRows, smoke: SpriteRo
 			z + (t * 5 + wobble * 1.5) * size,
 			(1.6 + t * 9) * size,
 			hash01(f, k, born) * TAU + t * wobble,
-			shade,
-			shade * 0.95,
-			shade * 0.9,
+			red,
+			green,
+			blue,
 			alpha,
 			(k + born) % 4,
 		);
@@ -1759,11 +1831,15 @@ export const BATTLE_CAMERA: CameraLoop = {
 	targets: [0, 2, -10, 10, 3, 0, -10, 3, -6, 0, 4, -10, -20, 2, 0, 0, 2, 0],
 };
 
-/** Ramps of each device class: the units of both armies. Each row is a first guess. */
+/**
+ * Ramps of each device class: the units of both armies. Each row is a first guess. The desktop ramp
+ * stops below the engine's animation table, which holds about a million joints: a unit of either
+ * army takes about eighty, so the table fills just past thirteen thousand units.
+ */
 export const BATTLE_RAMPS = {
-	desktop: { start: 200, factor: 1.2, max: 20_000 },
-	tablet: { start: 100, factor: 1.2, max: 8_000 },
-	phone: { start: 100, factor: 1.2, max: 4_000 },
+	desktop: { start: 200, factor: 1.2, max: 10_000 },
+	tablet: { start: 200, factor: 1.2, max: 8_000 },
+	phone: { start: 200, factor: 1.2, max: 4_000 },
 } as const satisfies Record<DeviceClass, RampPlan>;
 
 /** The frame that the image tests hold: the lines have met and the guns fire. */

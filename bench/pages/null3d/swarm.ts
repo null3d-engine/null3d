@@ -66,16 +66,27 @@ export function createSwarm(
 	{
 		shadows = false,
 		rowValues = false,
+		translucent = false,
 		levels = false,
 		layers,
-	}: { shadows?: boolean; rowValues?: boolean; levels?: boolean; layers?: SwarmCoatSheen } = {},
+	}: {
+		shadows?: boolean;
+		rowValues?: boolean;
+		translucent?: boolean;
+		levels?: boolean;
+		layers?: SwarmCoatSheen;
+	} = {},
 ): Swarm {
 	const data = createS1(count);
+	// The boxes that let light through to their other side light their backs too.
+	const through = translucent
+		? { diffuseTransmission: 0.5, diffuseTransmissionColor: S1_COLOR }
+		: {};
 	const material = rowValues
 		? materials.shader({ wgsl: SWAY, color: S1_COLOR })
 		: blend
 			? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
-			: materials.standard({ color: S1_COLOR, ...layerOptions(layers) });
+			: materials.standard({ color: S1_COLOR, ...through, ...layerOptions(layers) });
 	const box = () => geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE });
 	const mesh = box();
 	if (levels)

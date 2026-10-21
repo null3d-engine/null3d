@@ -3,9 +3,13 @@ import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_BUMP,
 	MAP_SLOT_COAT,
 	MAP_SLOT_COAT_NORMAL,
 	MAP_SLOT_COAT_ROUGHNESS,
+	MAP_SLOT_DIFFUSE_TRANSMISSION,
+	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
+	MAP_SLOT_DISPLACEMENT,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_SHEEN_COLOR,
@@ -22,13 +26,18 @@ import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_SUBSURFACE,
+	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_FEATURE_WEIGHTED,
+	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_CLEARCOAT,
 	MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
@@ -37,6 +46,8 @@ import {
 	MATERIAL_PARAM_DECAL_EDGE_FADE,
 	MATERIAL_PARAM_DECAL_FADE_END,
 	MATERIAL_PARAM_DECAL_FADE_START,
+	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
+	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -51,6 +62,8 @@ import {
 	MATERIAL_PARAM_SHEEN_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
+	MATERIAL_PARAM_SUBSURFACE_COLOR,
+	MATERIAL_PARAM_SUBSURFACE_RADIUS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
@@ -64,6 +77,7 @@ import {
 } from '../generated/core';
 import {
 	PERMUTATION_COAT_SHEEN,
+	PERMUTATION_TRANSLUCENCY,
 	SIZE_MATERIAL_BYTES,
 	TEMPLATE_CUSTOM_FIRST,
 	VERTEX_COLOR,
@@ -102,6 +116,10 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_REFLECTANCE, 1],
 	[MATERIAL_PARAM_SPECULAR_COLOR, 3],
 	[MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
+	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR, 3],
+	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION, 1],
+	[MATERIAL_PARAM_SUBSURFACE_COLOR, 3],
+	[MATERIAL_PARAM_SUBSURFACE_RADIUS, 1],
 	[MATERIAL_PARAM_CLEARCOAT, 1],
 	[MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
 	[MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, 2],
@@ -131,6 +149,8 @@ function fakeCore() {
 	const biases: [number, number][] = [];
 	/** The ids of the destroyed materials, in order. */
 	const destroyed: number[] = [];
+	/** Each displacement's material, scale and bias, as the core got them. */
+	const displacements: number[][] = [];
 	let failure = { code: 0, details: [0, 0] };
 	/** Runs a change on a known material, or reports the core's error for an unknown one. */
 	const change = (material: number, apply: (values: number[]) => void) => {
@@ -173,6 +193,10 @@ function fakeCore() {
 			change(material, () => {
 				maps.push([material, slot, handle, second]);
 			}),
+		setMaterialDisplacement: (material: number, scale: number, bias: number) =>
+			change(material, () => {
+				displacements.push([material, scale, bias]);
+			}),
 		setMaterialValues: (material: number, at: number, count: number, ...xyzw: number[]) => {
 			custom[material - 1]?.splice(at, count, ...xyzw.slice(0, count));
 			return 0;
@@ -197,6 +221,7 @@ function fakeCore() {
 		maps,
 		destroyed,
 		biases,
+		displacements,
 		materials: new Materials(
 			core,
 			new ShaderTemplates((template, shader) => sent.push([template, shader])),
@@ -330,12 +355,16 @@ describe('Material.set', () => {
 		materials.standard({ fog: true });
 		materials.standard({ fog: false });
 		materials.standard();
+		materials.standard({ contactShadows: true });
+		materials.standard({ contactShadows: false, doubleSided: true });
 		expect(features).toEqual([
 			MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING,
 			MATERIAL_FEATURE_VERTEX_COLORS | MATERIAL_FEATURE_NO_FOG,
 			0,
 			MATERIAL_FEATURE_NO_FOG,
 			0,
+			0,
+			MATERIAL_FEATURE_NO_CONTACT_SHADOWS | MATERIAL_FEATURE_DOUBLE_SIDED,
 		]);
 	});
 
@@ -405,6 +434,101 @@ describe('Material.set', () => {
 		expect(shadings.slice(1)).toEqual([SHADING_UNLIT_MAP, SHADING_UNLIT]);
 	});
 
+	test('a bump map takes the normal slot unless a normal map or a wireframe does', () => {
+		const { maps, table, materials } = fakeCore();
+		const rock = materials.standard({ bumpMap: texture(5, 1), bumpScale: 3 });
+		materials.standard({ bumpMap: texture(6), normalMap: texture(7) });
+		materials.standard({ bumpMap: texture(8), wireframe: true });
+		expect(maps).toEqual([
+			[1, MAP_SLOT_BUMP, 5, 1],
+			[2, MAP_SLOT_NORMAL, 7, 0],
+		]);
+		const scale = () =>
+			(table[0] as number[]).slice(MATERIAL_PARAM_NORMAL_SCALE, MATERIAL_PARAM_NORMAL_SCALE + 2);
+		expect(scale()).toEqual([3, 3]);
+		// The bump scale takes the normal scale's place, which then has no effect.
+		rock.set({ normalScale: [0.5, 0.5] });
+		expect(scale()).toEqual([3, 3]);
+		rock.set({ bumpScale: -1 });
+		expect(scale()).toEqual([-1, -1]);
+	});
+
+	test('a displacement map sends its scale and bias, and grows the bounds by its farthest move', () => {
+		const { maps, displacements, materials } = fakeCore();
+		const plain = materials.standard({ displacementMap: texture(5) });
+		const hills = materials.standard({
+			displacementMap: texture(6, 1),
+			displacementScale: 4,
+			displacementBias: -3,
+		});
+		const flat = materials.standard({ displacementScale: 2 });
+		expect(maps).toEqual([
+			[1, MAP_SLOT_DISPLACEMENT, 5, 0],
+			[2, MAP_SLOT_DISPLACEMENT, 6, 1],
+		]);
+		expect(displacements).toEqual([[2, 4, -3]]);
+		expect([plain.boundsMargin, hills.boundsMargin, flat.boundsMargin]).toEqual([1, 3, 0]);
+		// set keeps the value that it does not get, and the margin never shrinks.
+		hills.set({ displacementBias: 0 });
+		expect(displacements.at(-1)).toEqual([2, 4, 0]);
+		expect(hills.boundsMargin).toBe(4);
+		hills.set({ displacementScale: 1 });
+		expect(displacements.at(-1)).toEqual([2, 1, 0]);
+		expect(hills.boundsMargin).toBe(4);
+		flat.set({ displacementScale: 5 });
+		expect(displacements).toHaveLength(3);
+	});
+
+	test('wireframe and parallax are features', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ wireframe: true });
+		materials.unlit({ wireframe: true });
+		materials.standard({ displacementMap: texture(5), parallax: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_WIREFRAME,
+			MATERIAL_FEATURE_WIREFRAME,
+			MATERIAL_FEATURE_PARALLAX,
+		]);
+	});
+
+	test('parallax needs a displacement map and an opaque or masked surface', () => {
+		const { table, materials } = fakeCore();
+		const alone = thrown(() => materials.standard({ parallax: true }));
+		expect(alone.code).toBe('E1217');
+		expect(alone.message).toStartWith(
+			"E1217: materials.standard() got parallax without a displacementMap; parallax reads the displacement map's heights.",
+		);
+		const blended = thrown(() =>
+			materials.standard({ displacementMap: texture(5), parallax: true, alphaMode: 'blend' }),
+		);
+		expect(blended.code).toBe('E1217');
+		expect(blended.message).toStartWith(
+			"E1217: materials.standard() got parallax with the alpha mode 'blend'; parallax takes an opaque or masked surface.",
+		);
+		const glass = thrown(() =>
+			materials.standard({ displacementMap: texture(5), parallax: true, transmission: 1 }),
+		);
+		expect(glass.message).toStartWith(
+			'E1217: materials.standard() got parallax with transmission;',
+		);
+		// A surface that lets light through reads the view's copy, which would take a parallax
+		// build's fragment stage one texture past the limit that WebGPU gives it.
+		const thin = thrown(() =>
+			materials.standard({
+				displacementMap: texture(5),
+				parallax: true,
+				diffuseTransmission: 0,
+			}),
+		);
+		expect(thin.code).toBe('E1217');
+		expect(thin.message).toStartWith(
+			'E1217: materials.standard() got parallax with diffuseTransmission;',
+		);
+		const bump = thrown(() => materials.standard({ bumpScale: Number.POSITIVE_INFINITY }));
+		expect(bump.code).toBe('E1108');
+		expect(table).toHaveLength(0);
+	});
+
 	test('writes map values, and the transform as three.js places a texture', () => {
 		const { table, materials } = fakeCore();
 		const stone = materials.standard({ normalScale: [0.5, -1], aoMapIntensity: 0.25 });
@@ -455,6 +579,104 @@ describe('Material.set', () => {
 		expect(row().slice(MATERIAL_PARAM_SPECULAR_COLOR, MATERIAL_PARAM_SPECULAR_COLOR + 3)).toEqual([
 			1, 1, 1,
 		]);
+	});
+
+	test('lets light through to the other side when created with diffuseTransmission', () => {
+		const { table, features, maps, materials } = fakeCore();
+		const leaf = materials.standard({
+			diffuseTransmission: 0.5,
+			diffuseTransmissionColor: [0.25, 0.5, 0],
+			diffuseTransmissionMap: texture(5),
+			diffuseTransmissionColorMap: texture(6, 1),
+		});
+		materials.standard({ diffuseTransmission: 0 });
+		materials.standard();
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_DIFFUSE_TRANSMISSION]).toBe(0.5);
+		expect(
+			row().slice(
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR + 3,
+			),
+		).toEqual([0.25, 0.5, 0]);
+		// Given at all, even as 0, it fixes the feature, so set changes it later.
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_TRANSLUCENCY)).toEqual([
+			MATERIAL_FEATURE_TRANSLUCENCY,
+			MATERIAL_FEATURE_TRANSLUCENCY,
+			0,
+		]);
+		// Its maps take the specular maps' slots, which read the same channels.
+		expect(maps).toEqual([
+			[1, MAP_SLOT_DIFFUSE_TRANSMISSION, 5, 0],
+			[1, MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR, 6, 1],
+		]);
+		expect([MAP_SLOT_DIFFUSE_TRANSMISSION, MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR]).toEqual([
+			MAP_SLOT_SPECULAR_INTENSITY,
+			MAP_SLOT_SPECULAR_COLOR,
+		]);
+		leaf.set({ diffuseTransmission: 1, diffuseTransmissionColor: '#ffffff' });
+		expect(row()[MATERIAL_PARAM_DIFFUSE_TRANSMISSION]).toBe(1);
+		expect(
+			row().slice(
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+				MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR + 3,
+			),
+		).toEqual([1, 1, 1]);
+		expect(thrown(() => leaf.set({ diffuseTransmission: 1.5 })).code).toBe('E1108');
+	});
+
+	test('spreads light under the surface when created with subsurfaceRadius', () => {
+		const { table, features, materials } = fakeCore();
+		const skin = materials.standard({ subsurfaceRadius: 0.012, subsurfaceColor: [1, 0.4, 0.25] });
+		materials.standard({ subsurfaceRadius: 0 });
+		materials.standard();
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_SUBSURFACE_RADIUS]).toBe(0.012);
+		const color = () =>
+			row().slice(MATERIAL_PARAM_SUBSURFACE_COLOR, MATERIAL_PARAM_SUBSURFACE_COLOR + 3);
+		expect(color()).toEqual([1, 0.4, 0.25]);
+		// Given at all, even as 0, it fixes the feature, so set changes it later.
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_SUBSURFACE)).toEqual([
+			MATERIAL_FEATURE_SUBSURFACE,
+			MATERIAL_FEATURE_SUBSURFACE,
+			0,
+		]);
+		skin.set({ subsurfaceRadius: 0.03, subsurfaceColor: '#ffffff' });
+		expect(row()[MATERIAL_PARAM_SUBSURFACE_RADIUS]).toBe(0.03);
+		expect(color()).toEqual([1, 1, 1]);
+		expect(thrown(() => skin.set({ subsurfaceRadius: -1 })).code).toBe('E1108');
+	});
+
+	test('refuses maps that would share a slot with the diffuse transmission maps', () => {
+		const { table, materials } = fakeCore();
+		const shiny = thrown(() =>
+			materials.standard({ diffuseTransmission: 1, specularColorMap: texture(5) }),
+		);
+		expect(shiny.message).toStartWith(
+			'E1217: materials.standard() got specularColorMap with diffuseTransmission;',
+		);
+		const opaque = thrown(() => materials.standard({ diffuseTransmissionMap: texture(5) }));
+		expect(opaque.message).toStartWith(
+			'E1217: materials.standard() got diffuseTransmissionMap without diffuseTransmission;',
+		);
+		expect(table).toEqual([]);
+	});
+
+	test('refuses diffuse transmission beside layers and the weighted blending', () => {
+		const { table, materials } = fakeCore();
+		const velvet = thrown(() =>
+			materials.standard({ diffuseTransmission: 0.5, sheenColor: '#ff7a8f' }),
+		);
+		expect(velvet.message).toStartWith(
+			'E1217: materials.standard() got diffuseTransmission with a clear coat or a sheen;',
+		);
+		const smoke = thrown(() =>
+			materials.standard({ diffuseTransmission: 0.5, alphaMode: 'blend', blending: 'weighted' }),
+		);
+		expect(smoke.message).toStartWith(
+			"E1217: materials.standard() got diffuseTransmission with the 'weighted' blending;",
+		);
+		expect(table).toEqual([]);
 	});
 
 	test('refuses an index of refraction below 1 and a specular intensity above 1', () => {
@@ -800,6 +1022,33 @@ describe('materials.shader', () => {
 		);
 		expect(covered.message).toStartWith('E1217: materials.shader() got alphaToCoverage;');
 		expect(shadings).toEqual([]);
+	});
+
+	test('lets light through to the other side only where its WGSL names the diffuse transmission', () => {
+		const { features, materials } = fakeCore();
+		const plain = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), diffuseTransmission: 0.5 }),
+		);
+		expect(plain.message).toStartWith(
+			"E1217: materials.shader() got diffuseTransmission, but its WGSL never names the surface's diffuseTransmission",
+		);
+		const leaf = {
+			...compiledMaterial(),
+			variants: { translucent: { permutation: PERMUTATION_TRANSLUCENCY, wgsl: null, glsl: null } },
+		};
+		materials.shader({ wgsl: leaf, diffuseTransmission: 0.5 });
+		expect(features).toEqual([MATERIAL_FEATURE_TRANSLUCENCY]);
+	});
+
+	test('refuses a scatter radius, which custom materials do not blur', () => {
+		const { features, materials } = fakeCore();
+		const skin = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), subsurfaceRadius: 0.01 }),
+		);
+		expect(skin.message).toStartWith(
+			'E1217: materials.shader() got subsurfaceRadius; custom materials draw no subsurface blur.',
+		);
+		expect(features).toEqual([]);
 	});
 
 	test('passes a full shader the vertex attributes it reads, without vertex colors', () => {

@@ -102,11 +102,8 @@ export default defineSketch(async (ctx) => {
 		material: materials.standard({ color: '#e0b060', roughness: 0.6 }),
 	});
 
-	const seen: [number, number, number] = [0, 0, 0];
-	return {
-		onUpdate() {
-			camera.getWorldPosition(seen);
-			cards.update(seen);
-		},
-	};
+	// The camera never moves, so the views picked from its known position above stay right. Reading
+	// its world position every frame would pick the world origin on the first one, because the
+	// engine reports the matrix of the frame that last ran, and no frame has run yet.
+	return {};
 });

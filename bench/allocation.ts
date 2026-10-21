@@ -47,7 +47,9 @@
 // boxes levels of detail, so each frame picks a level for every row, and fades rows between two.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
+// turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
+// S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
+// adds two hemisphere lights to S1,
 // one of them tilted, and changes their intensities every frame. `--area-lights` adds eight
 // rectangle lights, two with images, and four tube lights to S1, which circle the swarm and change
 // their intensities every frame. `--setters` calls, every frame, each setter that a sketch may
@@ -61,9 +63,14 @@
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--particles` adds two particle systems to S1, whose emitters write
 // births every frame, one of them soft, so the frame copies the opaque depth for it.
+// `--translucency` makes S1's boxes let light through to their other side, which lights their
+// backs, and `--subsurface` adds 64 spheres to S1 whose light spreads under their surface, which the
+// skin pass draws again and the subsurface blur's steps spread.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
+// frame. `--reflection-probes` places two reflection probes over S1 that capture again in turns in
+// every frame, so each frame draws six capture views and runs a probe's filter.
+// `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
 // depth pyramid, trace it and copy the opaque colors in every frame.
 // `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
 // materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
@@ -136,6 +143,9 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --reflection-probes --gpu webgl2
+//   bun run bench:allocation --translucency --gpu webgl2
+//   bun run bench:allocation --subsurface --gpu webgl2
 //   bun run bench:allocation --ssr --gpu webgl2
 //   bun run bench:allocation --weighted --gpu webgl2
 //   bun run bench:allocation --decals --gpu webgl2
@@ -165,7 +175,7 @@ import {
 	steadyPlaces,
 	totalSize,
 } from './lib/allocation';
-import { attachWorkers, DevTools, pagesAt, sleep, within } from './lib/devtools';
+import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
@@ -344,6 +354,30 @@ export const SETTER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, num
 };
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with
+ * `--reflection-probes`: the encoders of the six capture views' culling passes, render passes and
+ * the passes that copy their images upright, at bloom's allowance per pass.
+ */
+const PROBES_REPLAY_BUDGET = 6 * 3 * 64;
+
+/**
+ * The bytes per frame that a reflection probe's filter may allocate on WebGPU with
+ * `--reflection-probes`: the encoder of each of its render passes, at bloom's allowance per pass. A
+ * filter of probes 256 texels across draws 6 passes that copy the views' images, 42 that make the
+ * chain's levels and 7 that fill the probe's levels.
+ */
+const PROBE_FILTER_BUDGET = 55 * 64;
+
+/** The budgets that `--reflection-probes` adds to a frame's places. */
+const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': {
+		'replay webgpu/backend.ts': PROBES_REPLAY_BUDGET,
+		'draw webgpu/probes.ts': PROBE_FILTER_BUDGET,
+	},
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -377,11 +411,52 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
  */
 export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
-	'render-worker': { '(IDLE)': 512, '(JS)': 256, 'giveUpStalled gpu/completion.ts': 256 },
+	'render-worker': {
+		// The fallback when a worker gives no call count: the figures that two slow runners read,
+		// with room above them.
+		'(IDLE)': 1024,
+		'(JS)': 640,
+		'giveUpStalled gpu/completion.ts': 256,
+		// The frame's own work is paid at each call of the render worker, which the browser makes at
+		// the display's rate, while the check counts the frames that S1 steps. A slower runner
+		// therefore steps fewer frames for the same calls: a healthy CI run read 110.7 bytes per
+		// frame at 430a851c9, a local run in CI's mode 157.7 to 173.6 (most 190.5), and one slow
+		// runner 444.4, which failed the real-GPU budget of 192. The Mac's gate keeps that 192.
+		'drawFrame render/webgpu-renderers.ts': 512,
+	},
 };
 
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
+
+/**
+ * Places whose allocation follows the browser's calls into the worker rather than the engine's
+ * frames, and the bytes each may allocate per call. The browser calls the render worker at the
+ * display's rate, so a slow GPU steps fewer frames per call: on SwiftShader a frame that takes a
+ * second takes about 50 calls, and the browser's own per-call objects then weigh about 50 times as
+ * much per frame. On 20 October 2026 two runs read 865 and 965 bytes per frame at (IDLE) and 470
+ * and 560 at (JS), while a run of the same code whose warm-up was 2.6 times faster read 698 in all.
+ * Judging these two per call removes the runner's speed from the figure. The budgets equal the
+ * per-frame budgets of a real GPU, where each call draws one frame.
+ */
+const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 24 };
+
+/**
+ * The budget of `place` in `worker` for a run: the tables' figure, SwiftShader's own where it has
+ * one, plus what the run's switches and scene add. A run on SwiftShader judges a place by the
+ * SwiftShader figure when the table names one.
+ */
+export function placeBudget(
+	worker: string,
+	place: string,
+	options: { swiftShader: boolean; extra?: number },
+): number {
+	const table = {
+		...BUDGETS[worker as (typeof WORKERS)[number]],
+		...(options.swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
+	};
+	return (table[place] ?? OTHER_BUDGET) + (options.extra ?? 0);
+}
 
 /** The place of the WebGPU replay, which makes the browser's objects of each pass. */
 const REPLAY = 'replay webgpu/backend.ts';
@@ -497,6 +572,11 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--row-values', query: '&rowValues' },
 	{ flag: '--levels', query: '&levels' },
 	{ flag: '--environment', query: '&environment' },
+	{
+		flag: '--reflection-probes',
+		query: '&reflectionProbes=always',
+		budgets: PROBE_BUDGETS,
+	},
 	{ flag: '--hemisphere', query: '&hemisphere', budgets: SETTER_BUDGETS },
 	{ flag: '--area-lights', query: '&areaLights' },
 	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },
@@ -516,6 +596,10 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 		passes: 1,
 		budgets: TRANSMISSION_MIPS_BUDGETS,
 	},
+	{ flag: '--translucency', query: '&translucency' },
+	// The skin pass, the culling pass that follows it on the GPU-driven path, and the blur's two
+	// steps.
+	{ flag: '--subsurface', query: '&subsurface', passes: 4 },
 	{
 		flag: '--ssr',
 		query: '&ssr',
@@ -544,7 +628,8 @@ const INERTIAL_CROWD = 64;
 
 /**
  * What S4, S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
- * - S4's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each;
+ * - S4's and S5's WebGPU replay: the passes of the contact shadows, at `PASS_REPLAY_BYTES` each.
+ *   S5's sun casts them too, at the preset that the Mac picks;
  * - S5's camera path, which the browser runs beside 500 knights' moves without inlining the
  *   camera's setters, so it boxes up to all seven numbers that it passes to them: 46 to 84 bytes
  *   per frame on the Mac;
@@ -565,7 +650,11 @@ const SCENE_BUDGETS: Partial<Record<(typeof ALLOCATION_SCENES)[number], WorkerBu
 	},
 	s5: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 48 },
-		'render-worker': { 'write webgpu/staging.ts': 8 * 64, 'giveUpStalled gpu/completion.ts': 12 },
+		'render-worker': {
+			'replay webgpu/backend.ts': CONTACT_PASSES * PASS_REPLAY_BYTES,
+			'write webgpu/staging.ts': 8 * 64,
+			'giveUpStalled gpu/completion.ts': 12,
+		},
 	},
 	s6: {
 		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 16 },
@@ -738,6 +827,20 @@ async function main(): Promise<void> {
 				STEP_MS,
 				'reading the frame count',
 			);
+		/**
+		 * The render worker's count of the browser's calls into it so far, or null where the engine
+		 * gives none. The check judges the browser's own places per call, so a runner's speed does
+		 * not change their bytes.
+		 */
+		const callsSoFar = async (): Promise<number | null> => {
+			const session = sessions.get('render-worker');
+			if (!session) return null;
+			return evaluate<number | null>(
+				devtools,
+				session,
+				'globalThis.__null3dBrowserCalls?.() ?? null',
+			).catch(() => null);
+		};
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		const [target] = await pagesAt(devtools, url);
 		if (!target) throw new Error(`no page target for ${url}`);
@@ -790,6 +893,7 @@ async function main(): Promise<void> {
 				);
 			}
 			const startFrames = await framesSoFar();
+			const startCalls = await callsSoFar();
 			await sleep(seconds * 1000);
 			const profiles = new Map<string, HeapProfile>();
 			for (const [name, sessionId] of sessions) {
@@ -802,11 +906,17 @@ async function main(): Promise<void> {
 				profiles.set(name, profile);
 			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
+			const endCalls = await callsSoFar();
 			frames += sampleFrames;
+			const calls = startCalls === null || endCalls === null ? undefined : endCalls - startCalls;
 			for (const [name, profile] of profiles) {
 				samples.set(name, [
 					...(samples.get(name) ?? []),
-					{ places: profilePlaces(profile), frames: sampleFrames },
+					{
+						places: profilePlaces(profile),
+						frames: sampleFrames,
+						...(calls !== undefined && { calls }),
+					},
 				]);
 				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
 			}
@@ -836,12 +946,14 @@ async function main(): Promise<void> {
 		const over: string[] = [];
 		const unsampled: string[] = [];
 		for (const [worker, workerSamples] of samples) {
-			const budgets = {
-				...BUDGETS[worker as (typeof WORKERS)[number]],
-				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
-			};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
+			// The fewest calls the browser made for a frame in any sample: the strictest per-call
+			// figure, on the same sample that each place's least per-frame figure comes from.
+			const counted = workerSamples
+				.filter((sample) => sample.calls !== undefined)
+				.map((sample) => (sample.calls as number) / Math.max(1, sample.frames));
+			const callsPerFrame = counted.length > 0 ? Math.max(1, Math.min(...counted)) : null;
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
 			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
 			if (!bytes.get(worker)) unsampled.push(worker);
@@ -853,7 +965,17 @@ async function main(): Promise<void> {
 						0,
 					) +
 					(sceneBudgets[name] ?? 0);
-				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
+				// Only the render worker counts the browser's calls, so only its places are judged so.
+				const callBudget = worker === 'render-worker' ? CALL_BUDGETS[name] : undefined;
+				if (callBudget !== undefined && callsPerFrame !== null) {
+					const perCall = perFrame / callsPerFrame;
+					if (perCall > callBudget) over.push(`${worker}: ${name}`);
+					console.log(
+						`  ${perCall.toFixed(1).padStart(6)} of ${String(callBudget).padStart(3)} per call, ${callsPerFrame.toFixed(1)} a frame (${perFrame.toFixed(1).padStart(6)} a frame)  ${name}${callers ? ` < ${callers}` : ''}`,
+					);
+					continue;
+				}
+				const budget = placeBudget(worker, name, { swiftShader, extra });
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
 					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,

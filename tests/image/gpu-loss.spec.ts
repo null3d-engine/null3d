@@ -27,7 +27,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine draws on after a GPU loss on ${gpu}, ${mode.name}`, async ({ page }) => {
 			await page.goto(`gpu-loss.html?gpu=${gpu}&simulate&${mode.query}`);
-			const result = await pageResult<LossResult>(page, 30_000);
+			// A lost device rebuilds every pipeline, which a software GPU takes more than half a
+			// minute to do: on 20 October 2026 one run reached the wait without reporting.
+			const result = await pageResult<LossResult>(page, 60_000);
 			expect(result.error).toBeUndefined();
 			expect(result.code).toBeNull();
 			expect(result.framesAfter ?? 0).toBeGreaterThan(0);

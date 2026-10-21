@@ -58,7 +58,7 @@ describe('the ramp', () => {
 		const result = tracker.result();
 		expect(result).toMatchObject({ held: 400, stopReason: 'maximum' });
 		expect(stopText('null3D', result, 'units')).toBe(
-			'null3D reached the maximum of 400 units at 57 fps: the top of this ramp, not a limit of null3D.',
+			'null3D reached the maximum of 400 units at 57.4 fps: the top of this ramp, not a limit of null3D.',
 		);
 	});
 

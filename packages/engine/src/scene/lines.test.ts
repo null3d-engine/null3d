@@ -44,7 +44,10 @@ function fakeCore() {
 		setMaterialValue: () => 0,
 		setMaterialValues: (material: number, at: number, count: number, ...values: number[]) => {
 			const custom = materials[material - 1]?.custom;
-			custom?.splice(at, count, ...values.slice(0, count));
+			if (custom) {
+				while (custom.length < at) custom.push(0);
+				custom.splice(at, count, ...values.slice(0, count));
+			}
 			return 0;
 		},
 		setMaterialMap: () => 0,
@@ -108,8 +111,8 @@ describe('line parts', () => {
 		const features = material?.features ?? 0;
 		expect(features & MATERIAL_FEATURE_DOUBLE_SIDED).toBe(MATERIAL_FEATURE_DOUBLE_SIDED);
 		expect(features & MATERIAL_FEATURE_BLEND).toBe(0);
-		// Dash size, gap size, dash scale and dash offset.
-		expect(material?.custom).toEqual([0.5, 1, 1, 2]);
+		// Dash size, gap size, dash scale and dash offset, in the fourth texel of the custom values.
+		expect(material?.custom.slice(12, 16)).toEqual([0.5, 1, 1, 2]);
 	});
 
 	test('lit lines take the lit shading, and blended ones blend', () => {
@@ -152,7 +155,7 @@ describe('line parts', () => {
 			'createLines',
 		);
 		material.set({ dashOffset: 0.25 });
-		expect(materials[0]?.custom).toEqual([1, 3, 1, 0.25]);
+		expect(materials[0]?.custom.slice(12, 16)).toEqual([1, 3, 1, 0.25]);
 		expect(log).toEqual(['lines.material.set values']);
 	});
 });
