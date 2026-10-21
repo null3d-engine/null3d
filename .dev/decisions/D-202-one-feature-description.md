@@ -212,6 +212,7 @@ The stats have the same gap. `FrameStats` reports the engine's threads, passes a
 - `packages/engine/src/scene/feature-host.test.ts` writes one feature with a `'scale'` setting, a `'double'` setting, a budget and a memory figure. It checks the value on each preset and the WebGL2 column. It checks the quality callback's arguments and a budget step's effect on both words. It also checks the budget's time on a new preset, the range's cap, the figures, and the removal of a feature and its budget.
 - `tests/image/stats.spec.ts` opens the stats page with `feature`: the sketch adds the feature, and the overlay shows its row with the preset's value, its budget and its memory. A switch to Low moves both, and the row follows.
 
+
 ## Addendum, 21 October 2026: how scene inputs bind (H7)
 
 Status: decided. Task: M3-E4. The "How each hook fits" table above says that H7's

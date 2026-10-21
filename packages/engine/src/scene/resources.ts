@@ -3016,6 +3016,8 @@ export class Materials {
 			layered,
 			sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0,
 		);
+		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
+		// with the material, before its first frame.
 		if (sceneDepth) this.shaders.need('particles');
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
 		const { core } = this;

@@ -1,8 +1,9 @@
 // A water-like surface whose custom material reads the copy of the opaque scene's depth. The
-// water lies above a bed of boxes and a sand floor: it takes its color from the distance to the
-// surface behind it, so the shallow edges stay pale and the deep middle darkens, and it takes a
-// foam line where an opaque surface nearly touches it. Without the bound depth the distance reads
-// the far plane everywhere, and the whole sheet draws its deepest color.
+// water lies above a bed of boxes and a sand floor: it takes its color from the gap between the
+// sheet and the surface behind it along the view ray, so the shallow edges stay pale and the deep
+// middle darkens, and it takes a foam line where an opaque surface nearly touches it. Without the
+// bound depth the gap reads as the far plane everywhere, and the whole sheet draws its deepest
+// color with no foam.
 import { defineSketch } from '@null3d/engine';
 
 /** The surface function: the water's color, its foam and its alpha come from the scene depth. */
@@ -13,16 +14,26 @@ struct Uniforms {
     foam: vec3f,
 }
 
+/// The distance in front of the camera of a depth value. Both GPU paths store reversed depth, so
+/// 1 lies at the near plane and 0 at the far plane; an orthographic camera's rises evenly.
+fn sheet_distance(depth: f32) -> f32 {
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return near * far / (near + depth * (far - near));
+    }
+    return far - depth * (far - near);
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let uv = input.fragCoord.xy / frame.resolution;
-    let behind = sceneDistance(uv);
-    let deep = smoothstep(1.2, 8.0, behind);
-    s.baseColor = mix(material.shallow, material.deep, deep);
+    // The gap between this sheet and the opaque scene behind the pixel, along the view ray.
+    let gap = max(sceneDistance(uv) - sheet_distance(input.fragCoord.z), 0.0);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(0.3, 2.5, gap));
     // An opaque surface that nearly touches the sheet shows as foam along its edge.
-    let near = 1.0 - smoothstep(0.15, 0.9, behind);
-    s.baseColor = mix(s.baseColor, material.foam, near * 0.7);
-    s.alpha = mix(0.45, 0.9, deep);
+    s.baseColor = mix(s.baseColor, material.foam, (1.0 - smoothstep(0.05, 0.35, gap)) * 0.7);
+    s.alpha = mix(0.4, 0.92, smoothstep(0.3, 2.5, gap));
     s.roughness = 0.2;
     return s;
 }
@@ -46,10 +57,11 @@ export default defineSketch(({ scene, materials, geometry }) => {
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.5 });
 
 	const sand = materials.standard({ color: '#cbb27a', roughness: 0.9 });
+	// Boxes of heights that reach from below the sheet to above it, so the gap spans zero.
 	const bed = [
 		{ position: [-2.6, 0.45, -1.2], color: '#b0533f', height: 0.9 },
-		{ position: [0.2, 0.85, 0.4], color: '#4f7f9e', height: 1.7 },
-		{ position: [2.8, 0.6, -2.2], color: '#8a6fae', height: 1.2 },
+		{ position: [0.2, 0.6, 0.4], color: '#4f7f9e', height: 1.2 },
+		{ position: [2.8, 0.75, -2.2], color: '#8a6fae', height: 1.5 },
 		{ position: [1.4, 1.15, 2.6], color: '#c99a3e', height: 2.3 },
 	] as const;
 	scene.createMesh({
