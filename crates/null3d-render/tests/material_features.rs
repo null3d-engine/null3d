@@ -74,8 +74,8 @@ fn triangle_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
 }
 
 /// The triangles: colored ones with vertex colors on the standard and the unlit material, one
-/// that is double-sided too, one without the feature, and an uncolored one that asks for vertex
-/// colors it cannot have.
+/// that is double-sided too, one without the feature, one that keeps its display color, and an
+/// uncolored one that asks for vertex colors it cannot have.
 fn feature_world<B: FrameBuilder>(world: &mut World<B>) {
     let colored = triangle(true);
     add(world, &colored, Shading::Lit, feature::VERTEX_COLORS);
@@ -83,6 +83,14 @@ fn feature_world<B: FrameBuilder>(world: &mut World<B>) {
     let both = feature::VERTEX_COLORS | feature::DOUBLE_SIDED;
     add(world, &colored, Shading::Lit, both);
     add(world, &colored, Shading::Lit, 0);
+    // A material that keeps its display color is a row flag, so it draws with the same pipeline
+    // as the material beside it and adds none.
+    add(
+        world,
+        &colored,
+        Shading::Lit,
+        feature::VERTEX_COLORS | feature::NO_TONE_MAP,
+    );
     add(world, &triangle(false), Shading::Lit, both);
 }
 

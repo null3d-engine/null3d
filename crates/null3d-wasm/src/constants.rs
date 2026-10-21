@@ -1022,6 +1022,7 @@ pub fn typescript() -> String {
                 ("DECAL", feature::DECAL),
                 ("WIREFRAME", feature::WIREFRAME),
                 ("PARALLAX", feature::PARALLAX),
+                ("NO_TONE_MAP", feature::NO_TONE_MAP),
             ],
         ),
         // The debug views that `setDebugView` takes.

@@ -30,6 +30,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_NO_TONE_MAP,
 	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
@@ -357,6 +358,9 @@ describe('Material.set', () => {
 		materials.standard();
 		materials.standard({ contactShadows: true });
 		materials.standard({ contactShadows: false, doubleSided: true });
+		materials.unlit({ toneMapped: false });
+		materials.standard({ toneMapped: true, fog: false });
+		materials.standard();
 		expect(features).toEqual([
 			MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING,
 			MATERIAL_FEATURE_VERTEX_COLORS | MATERIAL_FEATURE_NO_FOG,
@@ -365,6 +369,9 @@ describe('Material.set', () => {
 			0,
 			0,
 			MATERIAL_FEATURE_NO_CONTACT_SHADOWS | MATERIAL_FEATURE_DOUBLE_SIDED,
+			MATERIAL_FEATURE_NO_TONE_MAP,
+			MATERIAL_FEATURE_NO_FOG,
+			0,
 		]);
 	});
 

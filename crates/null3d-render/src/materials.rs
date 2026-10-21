@@ -346,6 +346,11 @@ pub mod feature {
     /// occlusion mapping, so relief finer than the mesh's vertices hides and shows the surface
     /// behind it. Only opaque and masked surfaces take it.
     pub const PARALLAX: u32 = 32768;
+    /// The surface keeps its color as the display shows it: the tone curve leaves it alone in the
+    /// material's own shader, which applies the output transform on the 8-bit path. The HDR path
+    /// tone maps the whole image in its final pass, which has no per-pixel flag of this kind yet,
+    /// so there the curve still maps the surface.
+    pub const NO_TONE_MAP: u32 = 8_388_608;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -369,7 +374,8 @@ pub mod feature {
         | TRANSLUCENCY
         | SUBSURFACE
         | WIREFRAME
-        | PARALLAX;
+        | PARALLAX
+        | NO_TONE_MAP;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -435,6 +441,9 @@ pub mod flag {
     pub const SHEEN_ROUGHNESS_MAP: u32 = 1 << 19;
     /// The shader takes none of the main directional light's contact shadows.
     pub const NO_CONTACT_SHADOWS: u32 = 1 << 20;
+    /// The shader encodes its color without the tone curve on the 8-bit path, where it applies the
+    /// output transform itself.
+    pub const NO_TONE_MAP: u32 = 1 << 21;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
@@ -455,6 +464,9 @@ const fn row_flags(features: u32) -> u32 {
     }
     if features & feature::NO_CONTACT_SHADOWS != 0 {
         flags |= flag::NO_CONTACT_SHADOWS;
+    }
+    if features & feature::NO_TONE_MAP != 0 {
+        flags |= flag::NO_TONE_MAP;
     }
     flags
 }
@@ -1763,6 +1775,23 @@ mod tests {
         assert_eq!(row(&table, 2)[param::FLAGS], flag::NO_FOG as f32);
         let both = flag::FLAT_SHADING | flag::NO_FOG;
         assert_eq!(row(&table, 3)[param::FLAGS], both as f32);
+    }
+
+    #[test]
+    fn a_material_without_the_tone_curve_flags_its_row_and_keeps_its_builds() {
+        let mut table = MaterialTable::with_capacity(2);
+        let plain = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let bare = feature::NO_TONE_MAP | feature::DOUBLE_SIDED;
+        let unmapped = table.create(Shading::Lit, bare, [1.0; 4]).unwrap();
+        assert_eq!(table.features(unmapped), bare);
+        assert_eq!(row(&table, plain)[param::FLAGS], 0.0);
+        assert_eq!(
+            row(&table, unmapped)[param::FLAGS],
+            flag::NO_TONE_MAP as f32
+        );
+        // The flag stays exact in the row's float, and clear of the map slots' bits.
+        const { assert!(flag::NO_TONE_MAP < 1 << 24) };
+        const { assert!(flag::NO_TONE_MAP > flag::SHEEN_ROUGHNESS_MAP) };
     }
 
     #[test]

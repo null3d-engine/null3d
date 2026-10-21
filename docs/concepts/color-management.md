@@ -70,6 +70,14 @@ Effects that need HDR color, such as bloom, move compatibility mode to HDR color
 
 `engine.capabilities.hdr` says which path the engine started on. Both paths show the same colors, and differ only at the edges of objects. With MSAA, the 8-bit path averages the samples of an edge after tone mapping, and the HDR path before it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) lists the path of each tier and anti-aliasing mode.
 
+### Materials that keep their display color
+
+A material with `toneMapped: false` keeps its color as the display shows it, as three.js's `toneMapped: false` does. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
+
+The 8-bit path honours it in each material's own shader, which tone maps there: the shader encodes the color without the curve. The HDR path tone maps the whole image once, in its final pass. That pass has no per-pixel flag that says which surface skipped the curve, so there the curve still maps this material's color. To show the exact color on such a device, draw the scene on the 8-bit path: `createEngine({ hdr: false })` starts there. [The post-processing chain](post-processing.md) explains what else that path changes.
+
+The vignette and the sRGB encoding still apply to such a material. The exposure scales its colors before them, as it scales every other color.
+
 ## Exposure and tone mapping
 
 Set both from the sketch with [`post.set`](../api/post.md):

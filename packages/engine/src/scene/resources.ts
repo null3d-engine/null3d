@@ -35,6 +35,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_NO_TONE_MAP,
 	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
@@ -1260,6 +1261,15 @@ export interface MaterialFeatures {
 	vertexColors?: boolean;
 	/** Takes the scene's fog. False keeps the material's color at every distance. The default is true. */
 	fog?: boolean;
+	/**
+	 * Keeps the color as the display shows it, as three.js's `toneMapped: false` does: the tone
+	 * curve leaves it alone in the shader of the material's own build, which tone maps on the
+	 * 8-bit path. The vignette and the sRGB encoding still apply, and the exposure already scales
+	 * the material's colors, so the color shows brighter than the same color tone mapped. The HDR
+	 * path tone maps the whole image in its final pass, which still maps this material's color.
+	 * The default is true.
+	 */
+	toneMapped?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */
 	alphaMode?: AlphaMode;
 	/**
@@ -2248,6 +2258,7 @@ function featureBits(options: StandardOptions): number {
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
 		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0) |
+		(options.toneMapped === false ? MATERIAL_FEATURE_NO_TONE_MAP : 0) |
 		(options.contactShadows === false ? MATERIAL_FEATURE_NO_CONTACT_SHADOWS : 0) |
 		(options.alphaMode === 'mask' && options.alphaToCoverage !== false
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE

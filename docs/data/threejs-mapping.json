@@ -1187,8 +1187,8 @@
       "three": "material.toneMapped = false",
       "status": "changed",
       "since": "0.3",
-      "target": "Tune the color so that tone mapping gives the value you want, or draw the item in the page's HTML",
-      "notes": "A per-material flag comes in 0.3. Until then, tone mapping runs once for the whole image.",
+      "target": "toneMapped: false in the material's options, fixed when the material is created",
+      "notes": "The material's own shader keeps the color as the display shows it, which is where the 8-bit path tone maps. The HDR path tone maps the whole image in its final pass, so it still maps the material there; a scene that needs the exact color on such a device draws with hdr: false.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\btoneMapped\\s*[:=]\\s*false"
     },
