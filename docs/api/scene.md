@@ -59,6 +59,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createSprites(options)` | A batch of camera-facing quads, after an `await`: [Sprites](sprites.md) |
 | `createPoints(options)` | A batch of points, after an `await`: [Points](points.md) |
 | `createLines(options)` | A batch of wide lines, after an `await`: [Lines](lines.md) |
+| `addFeatureDraw(description, options)` | A draw that an add-on's feature description declares, after an `await`: [Add-on feature draws](feature-draws.md) |
 
 Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. It takes `occluder` too, which [Culling](../concepts/culling.md) explains. `createInstances` takes `colors: true` and `values: true` for a color and four values per row: [Instances and batching](../concepts/instances.md). Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
