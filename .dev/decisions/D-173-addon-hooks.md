@@ -262,3 +262,18 @@ and Medium. The H8 sky-layers hook (M3-E10) keeps its place: it is how another d
 own clouds behind these settings, not a second way for the engine to draw them.
 
 The rule of one place per feature holds. Clouds stay in the core, and no cloud add-on is planned.
+
+## Addendum, 21 October 2026: the shape of H9, glTF extension handlers
+
+M3-E3 builds H9, with M3-D3's hint for files that load without it. The shape:
+
+- `assets.registerGltfExtension(handler)` registers a handler for one or more extension names, for the engine that the `assets` object belongs to. It returns a function that unregisters the handler. A second handler for one extension fails with E1213.
+- A handler is `{ extensions, load(data, context) }`, close to three.js's `GLTFLoader.register()`. The loader calls `load` once for each primitive that carries one of the handler's extensions.
+- `data` holds the extension's `name` and its `json` as the file gives them. It holds the `node`'s name and place, and the `primitive`'s attributes as floats by their glTF names. It also holds the `count`, `indices`, `mode` and file material. The loader reads attribute names that the engine does not know, so the splat rotation, scale, opacity and spherical-harmonic names arrive.
+- `context` holds the engine's public `geometry` and `materials` makers, so a handler makes its parts through the public API alone.
+- `load` returns one `{ mesh, material }` part, a list of them, or nothing, which draws nothing. The loader places the parts at the node. They join the prefab's template and instance parts, so `scene.instantiate`, `scene.createInstances` and `prefab.destroy()` treat them as the model's own. A handler may return a promise.
+- A primitive that a handler claims draws only what the handler returns. The mesh's other primitives draw as usual. The parser reads claimed primitives in the worker, and their arrays move to the sketch thread with the model's own arrays.
+- The loader sends the registered extension names with each file. A file's `extensionsRequired` passes for a name that a handler reads, so a registered add-on loads a file that requires its extension.
+- Without a handler, a required extension that a foundation add-on reads fails with E1417, whose message names the package: `KHR_gaussian_splatting` names `@null3d/splats`. The table in `gltf-parse.ts` holds that list, so a new add-on's extensions join it with the add-on's handler.
+
+Not in this shape: extensions on materials, nodes or the file itself, and a handler that runs before the file's other objects exist. The first user, splats, carries its data on a mesh primitive, and its own draw uses H3 and H5. The handler also gives no bounds; the model's bounds hold a part's mesh by its radius around the node.

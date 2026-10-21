@@ -3,7 +3,7 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadJson, loadBinary, preload, onProgress."
+summary: "loadGltf, registerGltfExtension, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadJson, loadBinary, preload, onProgress."
 ---
 
 # Assets
@@ -30,6 +30,7 @@ export default defineSketch(async ({ assets, page }) => {
 | Call | Gives |
 | --- | --- |
 | `loadGltf(url)` | A `Prefab`: a glTF model, whose objects `scene.instantiate` copies |
+| `registerGltfExtension(handler)` | A function that unregisters the handler. The loader draws the primitives of the extension through it: [Extensions that add-ons read](#extensions-that-add-ons-read) |
 | `loadTexture(url, options)` | A texture from a PNG, JPEG, WebP or AVIF file, or a KTX2 file of ETC1S, UASTC or UASTC HDR data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
@@ -104,6 +105,44 @@ const next = await assets.loadGltf('/levels/two.glb');
 The next model takes the memory that the old one gave back, so a game that loads and drops levels keeps the same memory. While an object or batch still uses one of the model's meshes or materials, or plays its clips, `destroy` throws [E1111](../errors/E1111.md) and keeps the model. That covers objects of your own that you made with a mesh or material from `prefab.find`. Your own materials that map one of the model's textures draw with their colors alone after it. Calls that pass a destroyed model throw [E1101](../errors/E1101.md).
 
 A load that fails frees everything that it made before the failure.
+
+## Extensions that add-ons read
+
+An add-on can read a glTF extension that the engine leaves out. It registers a handler before it loads a model. The loader then hands each primitive that carries one of the handler's extensions to the handler. The handler returns the meshes and materials that draw the primitive, and they join the model.
+
+```ts
+// A handler draws a marker at each primitive that carries the example extension.
+const remove = assets.registerGltfExtension({
+  extensions: ['EXT_example_marker'],
+  load(data, makers) {
+    const mesh = makers.geometry.box();
+    const material = makers.materials.unlit({ color: [1, 0.6, 0] });
+    return { mesh, material };
+  },
+});
+remove(); // the handler reads no more files
+```
+
+`registerGltfExtension(handler)` returns a function that unregisters the handler. Two handlers cannot read one extension. The call throws [E1213](../errors/E1213.md) for that case, for a handler that names no extension, and for a handler without a `load` function.
+
+The loader calls `load` once for each primitive that carries one of the handler's extensions. It gets `data`, which describes the primitive, and `context`, which holds the engine's makers:
+
+| Member | Gives |
+| --- | --- |
+| `data.extension` | The extension's name |
+| `data.json` | The extension's JSON, as the file gives it |
+| `data.node` | The node's `name`, `position`, `rotation` and `scale` |
+| `data.primitive.attributes` | Every attribute as a `Float32Array`, by its glTF name. The loader reads names that the engine does not know, such as `KHR_gaussian_splatting:ROTATION` |
+| `data.primitive.count` | The number of elements in each attribute |
+| `data.primitive.indices` | The primitive's indices, or undefined |
+| `data.primitive.mode` | glTF's mode: 0 for points, 4 for triangles |
+| `data.primitive.material` | The material that the file gives the primitive, or undefined |
+| `context.geometry` | The engine's `geometry`, for the meshes that the handler returns |
+| `context.materials` | The engine's `materials`, for the materials that the handler returns |
+
+`load` returns one part, a list of parts, or nothing, which draws nothing. A part is `{ mesh, material }`. The loader places the parts at the primitive's node, so copies of the model draw them, and `prefab.destroy()` frees them. A primitive that a handler claims draws only what the handler returns. The other primitives of the same mesh draw as usual. `load` may return a promise.
+
+A file that requires an extension which an add-on reads loads with that add-on's handler. Without it, the load fails with [E1417](../errors/E1417.md), and the message names the package to import. For example, the message for `KHR_gaussian_splatting` names `@null3d/splats`. A file that only uses such an extension, and does not require it, draws without that extension's data when no handler reads it.
 
 ## Color grading tables
 

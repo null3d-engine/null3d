@@ -3,12 +3,13 @@
 //
 // The glTF worker (workers/gltf-worker.ts) parses each file off the sketch's frames, and hands
 // back plain data: vertex arrays in the types the file holds them in, the node tree, materials,
-// textures, lights and instancing. This thread then downloads what the file names by address
-// through `assets`, so the loading counts and preloads cover those files too, and makes the
-// engine's meshes, materials and textures, once each. The prefab it returns is a template of the
-// file's objects, which `scene.instantiate` copies with one batch of commands. The loader keeps no
-// copy of the arrays: the engine copies them into its memory, and the garbage collector frees
-// them.
+// textures, lights, instancing, and the primitives of the extensions that add-ons registered
+// handlers for. This thread then downloads what the file names by address through `assets`, so the
+// loading counts and preloads cover those files too, and makes the engine's meshes, materials and
+// textures, once each. It hands each registered extension its primitives, and draws what the
+// handler returns. The prefab it returns is a template of the file's objects, which
+// `scene.instantiate` copies with one batch of commands. The loader keeps no copy of the arrays:
+// the engine copies them into its memory, and the garbage collector frees them.
 //
 // Like the KTX2 loader, this module imports no engine module but constants, types and the prefab
 // class, which only it uses. The bundler would move a module that it shares with its thread's
@@ -36,7 +37,12 @@ import type { WasmError } from '../shared/wasm';
 import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
 import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
-import type { FileSource } from './assets';
+import type {
+	FileSource,
+	GltfExtensionData,
+	GltfExtensionHandler,
+	GltfExtensionPart,
+} from './assets';
 import { affineOf, growBox, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
@@ -107,9 +113,11 @@ export interface GltfContext {
 	): void;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
 	error(
-		code: Parameters<WasmError>[0] | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1420',
+		code: Parameters<WasmError>[0] | 'E1213' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1420',
 		message: string,
 	): EngineError;
+	/** The handlers that add-ons registered for glTF extensions, if the page loaded any. */
+	extensionHandlers: readonly GltfExtensionHandler[];
 }
 
 /**
@@ -263,7 +271,15 @@ function parse(
 						),
 				),
 		);
-		worker.send({ id, file, url: address.href }, [file]);
+		worker.send(
+			{
+				id,
+				file,
+				url: address.href,
+				extensions: [...new Set(context.extensionHandlers.flatMap((h) => h.extensions))],
+			},
+			[file],
+		);
 	});
 }
 
@@ -275,6 +291,20 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
+	return makePrefab(context, data, bitmaps, address, call);
+}
+
+/**
+ * Makes the prefab of a parsed file: its textures, materials, extension handlers' parts and
+ * objects. Exported for its tests.
+ */
+export async function makePrefab(
+	context: GltfContext,
+	data: GltfData,
+	bitmaps: (ImageBitmap | undefined)[],
+	address: URL,
+	call: string,
+): Promise<Prefab> {
 	// The thread that draws downloads the shader files of the features that the asset tool
 	// recorded with the file (its `NULL3D_shaders` list), and then the skinning and morph shader
 	// files of a file without such a list, while the textures decode. So a model waits less for
@@ -288,7 +318,8 @@ export async function loadGltf(
 	const made: Made = { meshes: [] };
 	try {
 		materials.makeBase();
-		return await buildPrefab(context, data, textures, materials, made, address, call);
+		const parts = await makeExtensionParts(context, data, materials, made, call);
+		return await buildPrefab(context, data, textures, materials, made, parts, address, call);
 	} catch (error) {
 		// A load that fails frees everything it made. No object uses any of it yet.
 		materials.destroy();
@@ -303,6 +334,86 @@ export async function loadGltf(
 interface Made {
 	meshes: MeshGeometry[];
 	rig?: AnimationRig;
+}
+
+/** A part that an add-on's extension handler draws at a node. */
+interface HandlerPart {
+	mesh: MeshGeometry;
+	material: Material;
+}
+
+/**
+ * The parts that the add-ons' extension handlers draw, by the index of the node that holds them.
+ * A handler gets each primitive that carries one of its extensions, with the node's place, the
+ * primitive's attributes and material, and the engine's geometry and material makers. The meshes
+ * and materials that it returns join the model, so a copy draws them and `destroy` frees them.
+ */
+async function makeExtensionParts(
+	context: GltfContext,
+	data: GltfData,
+	materials: FileMaterials,
+	made: Made,
+	call: string,
+): Promise<Map<number, HandlerPart[]>> {
+	const handlers = new Map<string, GltfExtensionHandler>();
+	for (const handler of context.extensionHandlers)
+		for (const name of handler.extensions) handlers.set(name, handler);
+	const parts = new Map<number, HandlerPart[]>();
+	if (handlers.size === 0) return parts;
+	for (const [index, node] of data.nodes.entries()) {
+		const mesh = node.mesh < 0 ? undefined : data.meshes[node.mesh];
+		for (const primitive of mesh?.extensionPrimitives ?? []) {
+			for (const { name, json } of primitive.extensions) {
+				const handler = handlers.get(name);
+				if (!handler) continue;
+				const returned = await handler.load(
+					{
+						extension: name,
+						json,
+						node: nodeOf(node),
+						primitive: {
+							attributes: primitive.attributes,
+							count: primitive.count,
+							indices: primitive.indices,
+							mode: primitive.mode,
+							material: materials.ofExtension(primitive.material),
+						},
+					},
+					{ geometry: context.geometry, materials: context.materials },
+				);
+				const returnedParts: readonly GltfExtensionPart[] =
+					returned === undefined
+						? []
+						: Array.isArray(returned)
+							? returned
+							: [returned as GltfExtensionPart];
+				const at = parts.get(index) ?? [];
+				for (const part of returnedParts) {
+					if (!part.mesh || !part.material)
+						throw context.error(
+							'E1213',
+							`${call}() got a part from the handler for ${name} without a mesh or a material. Return the mesh and material that the part draws.`,
+						);
+					if (!made.meshes.includes(part.mesh)) made.meshes.push(part.mesh);
+					materials.own(part.material);
+					at.push({ mesh: part.mesh, material: part.material });
+				}
+				if (at.length > 0) parts.set(index, at);
+			}
+		}
+	}
+	return parts;
+}
+
+/** A parsed node's name and place, as an extension handler gets them. */
+function nodeOf(node: NodeData): GltfExtensionData['node'] {
+	const t = node.transform;
+	return {
+		name: node.name,
+		position: [t[0] as number, t[1] as number, t[2] as number],
+		rotation: [t[3] as number, t[4] as number, t[5] as number, t[6] as number],
+		scale: [t[7] as number, t[8] as number, t[9] as number],
+	};
 }
 
 /** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
@@ -348,6 +459,7 @@ async function buildPrefab(
 	textures: readonly (Texture | undefined)[],
 	materials: FileMaterials,
 	made: Made,
+	extensionParts: ReadonlyMap<number, HandlerPart[]>,
 	address: URL,
 	call: string,
 ): Promise<Prefab> {
@@ -384,13 +496,16 @@ async function buildPrefab(
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
 		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
-		const parts = (mesh?.primitives ?? []).map((p, k) => ({
-			mesh: made[k] as MeshGeometry,
-			material: materials.of(p),
-			...morphOf(mesh as MeshData, p, n),
-			// The asset tool marks the primitives that block the view, as `setOccluder` does.
-			...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
-		}));
+		const parts = [
+			...(mesh?.primitives ?? []).map((p, k) => ({
+				mesh: made[k] as MeshGeometry,
+				material: materials.of(p),
+				...morphOf(mesh as MeshData, p, n),
+				// The asset tool marks the primitives that block the view, as `setOccluder` does.
+				...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
+			})),
+			...(extensionParts.get(index) ?? []),
+		];
 		const light = n.light < 0 ? undefined : lights[n.light];
 		if (n.skinned) {
 			// Joints move the mesh in the space of the copy's group, where the parser boxed it.
@@ -679,6 +794,8 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
  */
 class FileMaterials {
 	private readonly made = new Map<string, Material>();
+	/** The materials that the extension handlers made, which the model frees too. */
+	private readonly extra: Material[] = [];
 
 	private base: Material[] = [];
 
@@ -698,20 +815,36 @@ class FileMaterials {
 		return this.base;
 	}
 
-	/** Every material made so far: the file's, and the other ways that primitives draw them. */
+	/** Every material made so far: the file's, the other ways that primitives draw them, and the
+	 * handlers' materials. */
 	all(): Material[] {
-		return [...this.made.values()];
+		return [...this.made.values(), ...this.extra];
+	}
+
+	/** Takes a material that an extension handler made, so the model frees it once. */
+	own(material: Material): void {
+		if (this.extra.includes(material) || [...this.made.values()].includes(material)) return;
+		this.extra.push(material);
 	}
 
 	/** Destroys every material made so far, for a load that fails. */
 	destroy(): void {
-		for (const material of this.made.values()) material.destroy();
+		for (const material of new Set([...this.made.values(), ...this.extra])) material.destroy();
 		this.made.clear();
+		this.extra.length = 0;
 	}
 
 	/** The material that draws a primitive. */
 	of(p: PrimitiveData): Material {
 		return this.variant(p.material, p.colors !== undefined, !p.normals, p.tangents !== undefined);
+	}
+
+	/**
+	 * The material that the file gives a primitive which an extension handler reads, or undefined
+	 * when it gives none. The handler may draw with it or with a material of its own.
+	 */
+	ofExtension(material: number): Material | undefined {
+		return material < 0 ? undefined : this.variant(material, false, false, true);
 	}
 
 	private variant(k: number, vertexColors: boolean, flat: boolean, tangents: boolean): Material {
@@ -842,6 +975,12 @@ function partsOf(
 	const grow = (m: Float64Array, mesh: MeshGeometry) => {
 		const p = primitives.get(mesh);
 		if (p) growBox(m, p.min, p.max, min, max);
+		else {
+			// A mesh that an extension handler made gives no box of its own, so its radius around
+			// the node's origin holds it.
+			const r = mesh.radius;
+			growBox(m, [-r, -r, -r], [r, r, r], min, max);
+		}
 	};
 	const parts: PartTemplate[] = [];
 	template.forEach((node, k) => {
