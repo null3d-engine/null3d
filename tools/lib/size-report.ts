@@ -320,6 +320,13 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-fog.js', module: 'scene/fog.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-picks.js', module: 'scene/picks.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-pointer-events.js',
+		module: 'scene/pointer-events.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{
 		name: 'page-shader-features.js',
 		module: 'generated/shader-features.ts',
@@ -398,6 +405,13 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-assets.js', module: 'scene/assets.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-fog.js', module: 'scene/fog.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-picks.js', module: 'scene/picks.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-pointer-events.js',
+		module: 'scene/pointer-events.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{
 		name: 'sketch-worker-shader-features.js',
 		module: 'generated/shader-features.ts',
