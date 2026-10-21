@@ -39,3 +39,13 @@ three.js applies the tone curve in each material's shader, so `material.toneMapp
 - To finish the HDR path, the final pass needs a per-pixel mask of the surfaces that skip the curve: either a second color target on the scene passes that the flagged materials write, or a mask pass that draws the flagged objects again against the scene depth, as the outline mask pass draws outlined objects (D-36). Both cost work per frame only while a material uses the flag.
 - Tests: unit tests of the feature bits and of the row flag. An image test needs GPU references for the 8-bit path, which are not drawn yet.
 - Docs: `api/materials`, `concepts/color-management`, the mapping's `tone-mapped-flag` entry and the porting skill's materials reference.
+
+## Addendum 21 October 2026: the image test, the demo and the engine option
+
+Built: the flag's image test and demo are drawn. `createEngine({ hdr: false })` takes the 8-bit path, as the decision above and the concepts page promised.
+
+- The image test `tone-mapped` draws one bright unlit color on two panels, the left with `toneMapped: false`, on every tier. The 8-bit path keeps the flagged panel's display color and maps the other. The HDR path maps both in its final pass, so there the panels match. `tests/image/tone-mapped.spec.ts` reads a square of pixels inside each panel and checks each path's promise, so it fails even before the test has references.
+- The engine offered only the page switch `?hdr=off`, which a shipped build ignores. The option `hdr: false` now takes the same path. It chooses the device's path during the start, and changes no shader and no pipeline.
+- The demo `examples/tone-mapped` draws seven bright colors twice, on the 8-bit path that its start asks for. The top row keeps each color as the display shows it, and the bottom row takes the curve.
+- On the Mac's GPU on 21 October 2026, the 8-bit path drew the flagged panel at (255, 204, 102), the material's own sRGB color, and the mapped panel at (198, 158, 79): 57 steps apart in red. The HDR path drew both panels at (198, 158, 79). WebGL2 drew HDR color on that machine, so the spec checks the 8-bit promise on compatibility mode, and the HDR promise on WebGPU and WebGL2. The spec passed on all three tiers.
+- The test `tone-mapped-8-bit` draws the same scene with the switch that turns HDR color off, on WebGPU and WebGL2. The WebGL2 build of the material shaders is not the build that compatibility mode runs, so both must keep the flagged panel's color. On SwiftShader on 22 October 2026, those two copies drew (255, 204, 102) and (198, 158, 79), as compatibility mode did.

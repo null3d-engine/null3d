@@ -78,6 +78,8 @@ The 8-bit path honours it in each material's own shader, which tone maps there: 
 
 The vignette and the sRGB encoding still apply to such a material. The exposure scales its colors before them, as it scales every other color.
 
+[The tone mapping opt-out demo](https://github.com/null3d-engine/null3d/tree/main/examples/tone-mapped) draws the same seven bright colors twice, with the flag and without, on the 8-bit path.
+
 ## Exposure and tone mapping
 
 Set both from the sketch with [`post.set`](../api/post.md):

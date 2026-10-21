@@ -56,6 +56,7 @@ const engine = await createEngine({
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
+  hdr: true,             // false draws the 8-bit path, where toneMapped: false keeps a material's exact color
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
   preload: ['skinning', 'bloom'],  // (0.2) features whose shaders load before the first frame, for games that fetch nothing in play (E1421 for an unknown name)
@@ -341,6 +342,7 @@ const paint = materials.standard({
   depthWrite: true, depthTest: true,           // fixed at creation
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
   wireframe: false,                            // (0.2) each triangle's edges as lines, any material
+  toneMapped: true,                            // false keeps the display color; works on the 8-bit path, which hdr: false takes
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; set() is for setup, several values at once
@@ -384,7 +386,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
 - `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher({ color, opacity })` (0.2) makes a ground plane that shows only the main directional light's shadow, where the mesh sets `setReceiveShadows(true)`. The default color is black, as three.js's.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog`, `contactShadows` and the depth options. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog`, `toneMapped`, `contactShadows` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 

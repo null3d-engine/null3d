@@ -75,6 +75,7 @@ export async function startDemo({
 			canvas,
 			sketch: demo.sketch,
 			largeWorld: demo.largeWorld,
+			hdr: demo.hdr,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
 			onProgress: (stage) => loader.stage(stage),
