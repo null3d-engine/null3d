@@ -108,3 +108,14 @@ fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -
     return vec4f(limit_hdr(c), 1.0);
 #endif
 }
+
+/// The color that a scene shader writes for exposed linear color `c` at framebuffer position
+/// `pixel` of a material that keeps its color as the display shows it: `finish` without the tone
+/// curve. The vignette darkens it as it darkens every other surface.
+fn finish_unmapped(c: vec3f, pixel: vec2f, size: vec2f, shape: vec4f) -> vec4f {
+#ifdef TONE_MAP
+    return vec4f(encode(c * vignette(pixel, size, shape), pixel), 1.0);
+#else
+    return vec4f(limit_hdr(c), 1.0);
+#endif
+}

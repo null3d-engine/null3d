@@ -455,6 +455,15 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 /// The bit of a material's flags that keeps the scene's fog off its color.
 const NO_FOG: u32 = 4u;
 
+/// The bit of a material's flags that keeps the output transform's tone curve off its color: the
+/// color reaches the display as the material gives it.
+const NO_TONE_MAP: u32 = 2097152u;
+
+/// True when material `m` keeps its color as the display shows it.
+fn keeps_display_color(m: Material) -> bool {
+    return (u32(m.strengths.z) & NO_TONE_MAP) != 0u;
+}
+
 /// Exposed linear color `c` of a fragment at `relative`, its position relative to the camera, seen
 /// through the scene's fog, whose color the core exposes and the sun may light. A material with fog
 /// off keeps its color.
@@ -723,6 +732,25 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
         frame.target_size.xy,
         frame.vignette,
     );
+}
+
+/// The color a fragment of material `m` writes for linear color `c` in the scene's units at
+/// framebuffer position `pixel`: `finish`, apart from the tone curve for a material whose color
+/// is the display's already.
+fn finish_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
+    return finish_exposed_material(m, exposed(c), pixel);
+}
+
+/// The color a fragment of material `m` writes for exposed linear color `c` at framebuffer
+/// position `pixel`: `finish_exposed`, apart from the tone curve for a material whose color is the
+/// display's already, which the vignette still darkens.
+fn finish_exposed_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
+#ifdef TONE_MAP
+    if (keeps_display_color(m)) {
+        return null3d::tonemap::finish_unmapped(c, pixel, frame.target_size.xy, frame.vignette);
+    }
+#endif
+    return finish_exposed(c, pixel);
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.

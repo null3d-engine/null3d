@@ -21,7 +21,7 @@ enable draw_index;
 // size, the gap size, the dash scale and the dash offset. The color is the material's color times
 // the segment's color at the nearer end, and a blended material writes premultiplied color.
 #import null3d::color::{srgb_to_linear}
-#import null3d::mesh::{InstanceIn, custom_value, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{InstanceIn, custom_value, exposed, find_instance, finish_exposed_material, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{ambient_light, frame as engine_frame, material_of}
 #import null3d::vertex::{OUTSIDE_CLIP, mesh_position, to_clip}
@@ -240,6 +240,6 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
 #else
     shaded = exposed(shaded);
 #endif
-    let finished = finish_exposed(fogged(shaded, in.relative, m), in.clip.xy);
+    let finished = finish_exposed_material(m, fogged(shaded, in.relative, m), in.clip.xy);
     return fragment_color(m, finished.rgb, m.color.a);
 }
