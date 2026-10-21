@@ -50,6 +50,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		normal: vec3.create(),
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	const hits: RaycastHit[] = [];
 	const found: OverlapHit[] = [];

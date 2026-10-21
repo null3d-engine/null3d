@@ -324,6 +324,8 @@ fn queries_give_brute_force_answers_as_the_scene_changes() {
                 );
                 if let Some(hit) = got {
                     checked[0] += 1;
+                    // These meshes keep no texture coordinates, so their hits carry none.
+                    assert_eq!(hit.uv, None);
                     // The point lies on the ray at the hit's distance, and the normal faces the
                     // ray's origin.
                     let along: f64 = (0..3)
@@ -724,4 +726,167 @@ fn a_removed_mesh_gives_its_tree_to_the_next_mesh_with_its_id() {
     queries.store_mesh_bvh(1, tree).unwrap();
     sync(&mut queries, &meshes);
     assert_eq!(queries.mesh_bvh(1).unwrap().to_bytes(), stored);
+}
+
+/// A square in the XY plane, its two triangles, and the texture coordinates of its corners.
+struct UvMesh {
+    positions: Vec<f32>,
+    indices: Vec<u32>,
+    uvs: Vec<f32>,
+}
+
+/// The square as a mesh for queries, with its texture coordinates.
+struct UvTriangles<'a> {
+    positions: &'a [f32],
+    indices: &'a [u32],
+    uvs: &'a [f32],
+}
+
+impl Triangles for UvTriangles<'_> {
+    fn count(&self) -> u32 {
+        (self.indices.len() / 3) as u32
+    }
+
+    fn triangle(&self, i: u32) -> [[f32; 3]; 3] {
+        IndexedTriangles {
+            positions: self.positions,
+            indices: self.indices,
+        }
+        .triangle(i)
+    }
+
+    fn uv(&self, i: u32) -> Option<[[f32; 2]; 3]> {
+        let at = i as usize * 3;
+        let corner = |c: usize| {
+            let v = self.indices[at + c] as usize;
+            [self.uvs[v * 2], self.uvs[v * 2 + 1]]
+        };
+        Some([corner(0), corner(1), corner(2)])
+    }
+}
+
+/// One mesh, the square that carries texture coordinates.
+struct UvMeshes(UvMesh);
+
+impl QueryMeshes for UvMeshes {
+    type Mesh<'a> = UvTriangles<'a>;
+
+    fn count(&self) -> u32 {
+        1
+    }
+
+    fn mesh(&self, id: u32) -> Option<UvTriangles<'_>> {
+        if id != 1 {
+            return None;
+        }
+        Some(UvTriangles {
+            positions: &self.0.positions,
+            indices: &self.0.indices,
+            uvs: &self.0.uvs,
+        })
+    }
+
+    fn side(&self, _material: u32) -> Side {
+        Side::Front
+    }
+}
+
+/// The texture coordinates at a hit lie where the triangle's own coordinates say they do: at the
+/// centres, at points near the corners and inside the edge, through a move, a turn and a scale.
+#[test]
+fn hits_carry_texture_coordinates_across_a_transformed_triangle() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mesh = UvMesh {
+        // A unit square in the plane z = 0, and each corner's coordinates: u follows x, v follows y.
+        positions: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        uvs: vec![0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0],
+    };
+    let mut scene = SceneStorage::with_capacity(4);
+    let h = scene.reserve().unwrap();
+    scene.set_position(h, [10.0, -4.0, 3.0]).unwrap();
+    // A quarter turn about y, and a different scale on each axis.
+    let quarter = std::f32::consts::FRAC_PI_4;
+    scene
+        .set_rotation(h, [0.0, quarter.sin(), 0.0, quarter.cos()])
+        .unwrap();
+    scene.set_scale(h, [2.0, 3.0, 1.5]).unwrap();
+    scene.set_local_radius(h, 10.0).unwrap();
+    scene
+        .apply_commands(&[Command::create(h, Handle::NONE, 1, flags::VISIBLE)], 1)
+        .unwrap();
+    scene.update_transforms(jobs);
+    let batches = BatchTable::with_capacity(1);
+    let meshes = UvMeshes(mesh);
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+        rows: Default::default(),
+    };
+    let mut queries = SceneQueries::new();
+    queries.sync(&view, jobs).unwrap();
+    let matrix = *scene
+        .world(scene.parity())
+        .matrix(scene.resolve(h).unwrap() as usize);
+    let moved = |p: [f32; 3]| -> [f64; 3] {
+        std::array::from_fn(|r| {
+            f64::from(matrix[r * 4]) * f64::from(p[0])
+                + f64::from(matrix[r * 4 + 1]) * f64::from(p[1])
+                + f64::from(matrix[r * 4 + 2]) * f64::from(p[2])
+                + f64::from(matrix[r * 4 + 3])
+        })
+    };
+    // The square's own normal, moved to the world; the ray comes from its front.
+    let (a, b, c) = (
+        moved([0.0, 0.0, 0.0]),
+        moved([1.0, 0.0, 0.0]),
+        moved([0.0, 1.0, 0.0]),
+    );
+    let cross = |u: [f64; 3], v: [f64; 3]| {
+        [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ]
+    };
+    let n = cross(
+        std::array::from_fn(|k| b[k] - a[k]),
+        std::array::from_fn(|k| c[k] - a[k]),
+    );
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    let normal: [f64; 3] = n.map(|v| v / len);
+    let cast = |local: [f32; 2]| {
+        let point = moved([local[0], local[1], 0.0]);
+        let start = std::array::from_fn(|k| point[k] + normal[k] * 5.0);
+        let direction = normal.map(|v| -v as f32);
+        let ray = WorldRay::new(start, direction);
+        queries.raycast(&view, &ray, u32::MAX)
+    };
+    let near = |uv: [f32; 2], want: [f32; 2]| {
+        (uv[0] - want[0]).abs() < 1e-5 && (uv[1] - want[1]).abs() < 1e-5
+    };
+    // The centres of the two triangles and points near their corners, which no rounding can put
+    // outside a triangle. On this square the coordinates are the point itself.
+    for (local, want) in [
+        ([2.0 / 3.0, 1.0 / 3.0], [2.0 / 3.0, 1.0 / 3.0]),
+        ([1.0 / 3.0, 2.0 / 3.0], [1.0 / 3.0, 2.0 / 3.0]),
+        ([0.999, 0.99], [0.999, 0.99]),
+        ([0.001, 0.999], [0.001, 0.999]),
+        ([0.5, 0.25], [0.5, 0.25]),
+    ] {
+        let hit = cast(local).unwrap_or_else(|| panic!("no hit at {local:?}"));
+        let uv = hit
+            .uv
+            .unwrap_or_else(|| panic!("no coordinates at {local:?}"));
+        assert!(near(uv, want), "{local:?}: {uv:?}, not {want:?}");
+    }
+    // The hit point moves with the object while its coordinates stay the surface's own.
+    let hit = cast([0.25, 0.5]).expect("a hit");
+    assert!(near(hit.uv.expect("coordinates"), [0.25, 0.5]));
+    assert!(
+        (hit.point[0], hit.point[1], hit.point[2]) != (0.25, 0.5, 0.0),
+        "the point is in the world, not the mesh's own space"
+    );
 }

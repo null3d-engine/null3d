@@ -105,6 +105,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
     normal: vec3.create(),
     distance: 0,
     triangle: -1,
+    uv: null,
   };
   const options = { layers: GROUND };
   let x = 0;

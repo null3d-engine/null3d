@@ -49,7 +49,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
   // Made once, reused in every frame.
   const from = vec3.create();
   const down = vec3.set(vec3.create(), 0, -1, 0);
-  const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
+  const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1, uv: null };
   const options = { maxDistance: 50 };
 
   return {
@@ -92,12 +92,24 @@ A hit has these fields:
 | `normal` | The unit normal of the hit triangle in world space, on the side that faces the ray's origin |
 | `distance` | The distance from the origin to the point, in meters |
 | `triangle` | The index of the hit triangle in its mesh, as three.js's `faceIndex`. -1 for a sprite, a point or a line |
+| `uv` | The texture coordinates at the point on the triangle, as three.js's `intersection.uv`: the mesh's first set, blended across the triangle. `null` when the mesh has none, and for a sprite, a point or a line |
+
+Give `uv` a two-number array, as `[0, 0]`, to keep a raycast from making one. The engine then writes each hit's coordinates into it. A hit on an in-world screen gives the texel that the click landed on, so a decal or a screen takes clicks without plane math:
+
+```ts
+if (scene.raycast(ray.origin, ray.direction, { layers: SCREENS }, hit) && hit.uv) {
+  const [u, v] = hit.uv;   // the texel under the ray, from 0 to 1 in each direction
+  drawMarker(u, v);
+}
+```
+
+The coordinates come from the mesh's first texture coordinate set, even when the material samples the second one. A mesh without texture coordinates, such as one from a color-only geometry, gives `null`.
 
 `raycast` sets `hit.object` to `null` after a miss, and leaves the other fields as they were. `raycastAll` fills the first entries of `hits` and returns how many it filled. When the array is too short, it adds hit objects to it. It leaves the entries after the hits as they were, so read only the first ones.
 
 ## Rays from the pointer
 
-For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it. For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event.
+For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it. The event carries the hit's `point`, `normal`, `triangle` and `uv`, as a raycast does. For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event.
 
 ```ts
 const ray = { origin: vec3.create(), direction: vec3.create() };   // made once
@@ -110,7 +122,7 @@ if (input.wasPressed('Mouse0')) {
 
 ## Batches of rays
 
-The call `scene.raycastBatch(rays, options, out)` casts many rays at once, on the job workers. Its `rays` array holds six numbers per ray: its origin, then its direction. Its `out` object holds typed arrays with one entry per ray, or three numbers per ray for points and normals. Only `distances` is required, and the call fills each other array that you give. It returns how many rays hit something.
+The call `scene.raycastBatch(rays, options, out)` casts many rays at once, on the job workers. Its `rays` array holds six numbers per ray: its origin, then its direction. Its `out` object holds typed arrays with one entry per ray, or three numbers per ray for points and normals, or two for texture coordinates. Only `distances` is required, and the call fills each other array that you give. It returns how many rays hit something.
 
 ```ts
 const COUNT = 1000;
@@ -121,6 +133,7 @@ const out = {
   instances: new Int32Array(COUNT),
   points: new Float32Array(COUNT * 3),
   normals: new Float32Array(COUNT * 3),
+  uvs: new Float32Array(COUNT * 2),          // NaN where a hit has no coordinates
 };
 const hitCount = scene.raycastBatch(rays, { maxDistance: 100 }, out);
 ```
@@ -139,6 +152,8 @@ scene.pick(240, 180).then((hit) => {
 ```
 
 The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. A material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
+
+A pick names the object and its row, and nothing else. It gives no point, normal, triangle or texture coordinates, because the GPU answers it from a pixel. Cast a ray through the same point when you need those.
 
 A pick finds these sources:
 
@@ -261,6 +276,7 @@ The trees give the same hits as testing every triangle of every object in turn. 
 | `raycaster.camera`, for sprites and `Line2` | The active camera, or the camera of the frame on screen at a pointer event |
 | `intersection.instanceId` | `hit.instance` |
 | `intersection.faceIndex` | `hit.triangle` |
+| `intersection.uv` | `hit.uv`, which is `null` where three.js leaves it undefined |
 | `three-mesh-bvh` | Built in: delete its setup |
 | three.js has no pixel pick: its `Raycaster` tests triangles | `scene.pick(x, y)` tests the pixel that the image shows, through the GPU, and returns a promise |
 

@@ -4294,6 +4294,7 @@ export class Scene implements ViewHolder {
 				normal: [0, 0, 0],
 				distance: 0,
 				triangle: -1,
+				uv: null,
 			};
 		}
 		const ray = this.pickRay;

@@ -55,6 +55,7 @@ export default defineSketch(({ scene, assets, geometry, textures, page }) => {
 		normal: vec3.create(),
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	const down = vec3.set(vec3.create(), 0, -1, 0);
 

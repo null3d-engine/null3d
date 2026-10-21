@@ -80,6 +80,7 @@ export class Interaction {
 		normal: vec3.create(),
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	private readonly ray = { origin: vec3.create(), direction: vec3.create() };
 	/** The camera's position. A plain array keeps the full precision of large-world mode. */

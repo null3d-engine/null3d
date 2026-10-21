@@ -256,7 +256,8 @@ for (const mode of ENGINE_MODES)
 			(globalThis as { objectEventsSetup?: { go: () => void } }).objectEventsSetup?.go(),
 		);
 		const send = await started(page);
-		await expectLines(send, ['click right', 'ray right']);
+		// The click carried the texture coordinates at the point, and the ray finds the same ones.
+		await expectLines(send, ['click right', 'ray right uv']);
 	});
 
 test('pointer events allocate nothing', ALONE, async ({ page }) => {

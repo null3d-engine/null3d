@@ -45,6 +45,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		normal: vec3.create(),
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	const height = () => (scene.raycast(origin, down, {}, hit) ? (hit.point[1] as number) : -1);
 

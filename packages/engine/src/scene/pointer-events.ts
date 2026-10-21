@@ -80,6 +80,12 @@ export interface ObjectPointerEvent {
 	 * point or a line.
 	 */
 	readonly triangle: number;
+	/**
+	 * The texture coordinates at the point on the triangle, as three.js's `intersection.uv`: the
+	 * mesh's first texture coordinate set, blended across the triangle. null when the mesh has
+	 * none, and for a sprite, a point or a line.
+	 */
+	readonly uv: Vec3Like | null;
 	/** The ray from the camera through the pointer, from the frame that was on screen at the event. */
 	readonly ray: Ray;
 	/** The pointer's distance from the canvas's left edge in CSS pixels. */
@@ -154,7 +160,8 @@ export const EVENT_TRIANGLE = 3;
 export const EVENT_ROW = 4;
 export const EVENT_POINT = 5;
 export const EVENT_NORMAL = 8;
-const EVENT_NUMBERS = 11;
+export const EVENT_UV = 11;
+const EVENT_NUMBERS = 13;
 
 /**
  * How far a pointer may move between its press and its release, in CSS pixels, for the release to
@@ -248,6 +255,7 @@ class PointerEventState implements ObjectPointerEvent {
 	readonly numbers = new Float64Array(EVENT_NUMBERS);
 	readonly point = this.numbers.subarray(EVENT_POINT, EVENT_POINT + 3);
 	readonly normal = this.numbers.subarray(EVENT_NORMAL, EVENT_NORMAL + 3);
+	private readonly uvValues = this.numbers.subarray(EVENT_UV, EVENT_UV + 2);
 	readonly ray: Ray = { origin: new Float64Array(3), direction: new Float64Array(3) };
 
 	get distance(): number {
@@ -256,6 +264,11 @@ class PointerEventState implements ObjectPointerEvent {
 
 	get triangle(): number {
 		return this.numbers[EVENT_TRIANGLE] as number;
+	}
+
+	/** A NaN first number marks a hit without texture coordinates, as the core writes it. */
+	get uv(): Vec3Like | null {
+		return Number.isNaN(this.numbers[EVENT_UV] as number) ? null : this.uvValues;
 	}
 
 	get x(): number {

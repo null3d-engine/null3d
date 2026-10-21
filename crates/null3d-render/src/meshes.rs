@@ -40,6 +40,9 @@ use crate::morph::{MORPH_LOCATION, MorphError, MorphTargets, with_ranges};
 pub const MAX_PAGE_VERTICES: u32 = u16::MAX as u32;
 /// No page's vertex or index buffer grows past this, the portable limit on buffer size.
 pub const MAX_BUFFER_BYTES: u64 = 256 * 1024 * 1024;
+/// The first texture coordinates' place in the vertex attribute order, after the position and the
+/// normal.
+const UV0_LOCATION: usize = 2;
 
 /// How meshes are packed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +121,19 @@ impl Page {
         let ty = vertex::type_of(self.format, vertex::POSITION).unwrap_or(vertex::Type::F32);
         let size = ty.bytes() as usize;
         [0, 1, 2].map(|c| ty.decode(&self.vertices[at + c * size..]))
+    }
+
+    /// The first texture coordinates of vertex `v`, or `None` when the page's format has none.
+    #[inline(always)]
+    pub fn uv(&self, v: u32) -> Option<[f32; 2]> {
+        let location = UV0_LOCATION;
+        let ty = vertex::type_of(self.format, location)?;
+        let offset = vertex::offset(self.format, location)? as usize;
+        let at = v as usize * vertex::stride(self.format) as usize + offset;
+        let size = ty.bytes() as usize;
+        let first = self.vertices.get(at..at + size)?;
+        let second = self.vertices.get(at + size..at + 2 * size)?;
+        Some([ty.decode(first), ty.decode(second)])
     }
 
     /// Bytes of the page's vertex buffer and index buffer, whose writes are whole 4-byte words.
@@ -214,6 +230,26 @@ pub struct MeshTriangles<'a> {
     count: u32,
 }
 
+impl MeshTriangles<'_> {
+    /// The page that holds triangle `i`, its first index there, and the page vertex where the
+    /// part's vertices start. `None` past the mesh's last triangle.
+    #[inline(always)]
+    fn locate(&self, i: u32) -> Option<(&Page, usize, u32)> {
+        // Most meshes have one part; a mesh too large for one has a few.
+        let mut local = i;
+        for part in self.parts {
+            let triangles = part.index_count / 3;
+            if local < triangles {
+                let page = &self.pages[part.page as usize];
+                let at = (part.first_index + local * 3) as usize;
+                return Some((page, at, part.base_vertex));
+            }
+            local -= triangles;
+        }
+        None
+    }
+}
+
 impl Triangles for MeshTriangles<'_> {
     #[inline(always)]
     fn count(&self) -> u32 {
@@ -222,20 +258,17 @@ impl Triangles for MeshTriangles<'_> {
 
     #[inline(always)]
     fn triangle(&self, i: u32) -> [[f32; 3]; 3] {
-        // Most meshes have one part; a mesh too large for one has a few.
-        let mut local = i;
-        for part in self.parts {
-            let triangles = part.index_count / 3;
-            if local < triangles {
-                let page = &self.pages[part.page as usize];
-                let at = (part.first_index + local * 3) as usize;
-                return std::array::from_fn(|c| {
-                    page.position(u32::from(page.indices[at + c]) + part.base_vertex)
-                });
-            }
-            local -= triangles;
-        }
-        [[f32::NAN; 3]; 3]
+        let Some((page, at, base)) = self.locate(i) else {
+            return [[f32::NAN; 3]; 3];
+        };
+        std::array::from_fn(|c| page.position(u32::from(page.indices[at + c]) + base))
+    }
+
+    #[inline(always)]
+    fn uv(&self, i: u32) -> Option<[[f32; 2]; 3]> {
+        let (page, at, base) = self.locate(i)?;
+        let corner = |c: usize| page.uv(u32::from(*page.indices.get(at + c)?) + base);
+        Some([corner(0)?, corner(1)?, corner(2)?])
     }
 }
 
@@ -1383,6 +1416,93 @@ mod tests {
             assert_eq!(storage.count(), 2);
             assert!(storage.triangles(2).is_none());
         }
+    }
+
+    #[test]
+    fn queries_read_texture_coordinates_as_shaders_do() {
+        // A box brings the first texture coordinates, and pages split it into parts when they are
+        // small, so every triangle finds its corners' values through its part.
+        let boxed = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        assert!(vertex::has(boxed.format, UV0_LOCATION));
+        let uv = |v: usize| {
+            let values = boxed.values(v, UV0_LOCATION);
+            [values[0], values[1]]
+        };
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::with_page_limit(packing, 256);
+            let id = storage.add(&boxed).unwrap();
+            let count = boxed.indices.len() as u32 / 3;
+            assert!(count > 1);
+            let triangles = storage.triangles(id).unwrap();
+            for t in 0..count {
+                let want: [[f32; 2]; 3] =
+                    std::array::from_fn(|c| uv(boxed.indices[t as usize * 3 + c] as usize));
+                assert_eq!(triangles.uv(t), Some(want), "{packing:?}, triangle {t}");
+                assert_ne!(want[0], want[1], "each corner carries its own coordinates");
+            }
+            assert_eq!(triangles.uv(count), None);
+        }
+        // A mesh without them answers none, as a hit on it carries none.
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&grid(1, 1, 0)).unwrap();
+        let triangles = storage.triangles(id).unwrap();
+        assert!(vertex::type_of(storage.mesh(id).unwrap().format, UV0_LOCATION).is_none());
+        assert_eq!(triangles.uv(0), None);
+        // Packed coordinates read as shaders read them: the largest 16-bit value is 1.
+        let format = vertex::with(0, UV0_LOCATION, vertex::Type::Unorm16).unwrap();
+        let stride = vertex::stride(format) as usize;
+        let at = vertex::offset(format, UV0_LOCATION).unwrap() as usize;
+        let mut vertices = vec![0u8; 3 * stride];
+        for (v, uv) in [[0u16, 0], [u16::MAX, 0], [0, u16::MAX]].iter().enumerate() {
+            for (c, value) in uv.iter().enumerate() {
+                let start = v * stride + at + c * 2;
+                vertices[start..start + 2].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        let mesh = Geometry {
+            format,
+            vertices,
+            indices: vec![0, 1, 2],
+        };
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&mesh).unwrap();
+        assert_eq!(
+            storage.triangles(id).unwrap().uv(0),
+            Some([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        );
+    }
+
+    #[test]
+    fn queries_read_texture_coordinates_of_a_skinned_mesh() {
+        // A skinned vertex carries its texture coordinates before its joints and weights, so those
+        // never shift them.
+        let format = vertex::UV0 | vertex::JOINTS | vertex::WEIGHTS;
+        // The attribute locations after the texture coordinates: the joint numbers, then their
+        // weights.
+        let (joints, weights) = (6, 7);
+        assert_eq!(
+            (
+                vertex::offset(format, UV0_LOCATION),
+                vertex::offset(format, joints),
+                vertex::offset(format, weights),
+            ),
+            (Some(24), Some(32), Some(36)),
+            "after the position and the normal, then the joint words"
+        );
+        let corners = [[0.0f32, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let mut floats = Vec::new();
+        for uv in corners {
+            // The position, the normal, then the texture coordinates.
+            floats.extend_from_slice(&[uv[0], uv[1], 0.0, 0.0, 0.0, 1.0]);
+            floats.extend_from_slice(&uv);
+            // Four joint numbers of zero, which fill the attribute's word, then the weights.
+            floats.extend_from_slice(&[0.0, 1.0, 0.0, 0.0, 0.0]);
+        }
+        let mesh = Geometry::from_floats(format, &floats, vec![0, 1, 2]);
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&mesh).unwrap();
+        let triangles = storage.triangles(id).unwrap();
+        assert_eq!(triangles.uv(0), Some(corners));
     }
 
     #[test]

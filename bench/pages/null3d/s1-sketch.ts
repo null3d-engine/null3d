@@ -604,6 +604,7 @@ function createCalls(
 		normal: [0, 0, 0],
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	return () => {
 		const t = now[0] as number;

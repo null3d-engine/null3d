@@ -25,7 +25,12 @@ export default defineSketch(async ({ scene, geometry, materials, input, page }) 
 		position: [2.5, 0, 0],
 	});
 	const lines: string[] = [];
-	right.on('click', (event) => lines.push(`click ${nameOf(event.object)}`));
+	/** The texture coordinates at the click, which its ray must find again. */
+	let clicked: [number, number] | null = null;
+	right.on('click', (event) => {
+		clicked = event.uv ? [event.uv[0] as number, event.uv[1] as number] : null;
+		lines.push(`click ${nameOf(event.object)}`);
+	});
 	page.onMessage(() => page.post('reply', { lines }));
 	const channel = new BroadcastChannel(CHANNEL);
 	const started = new Promise<void>((resolve) => {
@@ -53,13 +58,21 @@ export default defineSketch(async ({ scene, geometry, materials, input, page }) 
 		normal: [0, 0, 0],
 		distance: 0,
 		triangle: 0,
+		uv: null,
 	};
 	return {
 		onUpdate() {
 			if (!input.wasReleased('Mouse0')) return;
 			camera.screenToRay(input.pointer.x, input.pointer.y, ray);
 			const found = scene.raycast(ray.origin, ray.direction, undefined, hit);
-			lines.push(`ray ${found ? nameOf(hit.object) : 'nothing'}`);
+			// The event's texture coordinates are the click's, which the ray finds again.
+			const uv = found ? hit.uv : null;
+			const same =
+				clicked !== null &&
+				uv !== null &&
+				Math.abs((clicked[0] as number) - (uv[0] as number)) < 1e-5 &&
+				Math.abs((clicked[1] as number) - (uv[1] as number)) < 1e-5;
+			lines.push(`ray ${found ? nameOf(hit.object) : 'nothing'}${same ? ' uv' : ''}`);
 		},
 	};
 });

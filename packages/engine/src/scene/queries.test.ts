@@ -44,6 +44,8 @@ interface Scripted {
 	triangle?: number;
 	point?: number[];
 	normal?: number[];
+	/** The texture coordinates; left out means the hit has none. */
+	uv?: [number, number];
 }
 
 /**
@@ -93,6 +95,8 @@ function fakeCore() {
 			r[C.QUERY_HIT_ROW] = -1;
 			r[C.QUERY_HIT_TRIANGLE] = -1;
 			r[C.QUERY_HIT_DISTANCE] = -1;
+			r[C.QUERY_HIT_UV] = Number.NaN;
+			r[C.QUERY_HIT_UV + 1] = Number.NaN;
 			if (!hit) return;
 			r[C.QUERY_HIT_SLOT] = hit.slot ?? 0;
 			r[C.QUERY_HIT_BATCH] = hit.batch ?? 0;
@@ -101,6 +105,7 @@ function fakeCore() {
 			r[C.QUERY_HIT_DISTANCE] = hit.distance ?? 0;
 			r.set(hit.point ?? [0, 0, 0], C.QUERY_HIT_POINT);
 			r.set(hit.normal ?? [0, 0, 0], C.QUERY_HIT_NORMAL);
+			if (hit.uv) r.set(hit.uv, C.QUERY_HIT_UV);
 		});
 		return hits.filter((hit) => hit !== null).length;
 	};
@@ -200,6 +205,7 @@ const newHit = (): RaycastHit => ({
 	normal: [0, 0, 0],
 	distance: 0,
 	triangle: -1,
+	uv: null,
 });
 
 /** The error that `call` throws. */
@@ -218,9 +224,17 @@ describe('raycasts', () => {
 		scene.createMesh({ mesh: box, material: paint });
 		const target = scene.createMesh({ mesh: box, material: paint });
 		script([
-			{ slot: target.slot, distance: 4.5, triangle: 7, point: [1, 2, 3], normal: [0, 0, 1] },
+			{
+				slot: target.slot,
+				distance: 4.5,
+				triangle: 7,
+				point: [1, 2, 3],
+				normal: [0, 0, 1],
+				uv: [0.25, 0.75],
+			},
 		]);
 		const hit = newHit();
+		hit.uv = [0, 0];
 		expect(scene.raycast([1, 2, 7.5], [0, 0, -2], { maxDistance: 10, layers: 0b110 }, hit)).toBe(
 			true,
 		);
@@ -231,11 +245,31 @@ describe('raycasts', () => {
 			normal: [0, 0, 1],
 			distance: 4.5,
 			triangle: 7,
+			uv: [0.25, 0.75],
 		});
 		const [call] = calls;
 		expect(call?.kind).toBe(C.QUERY_CLOSEST);
 		expect(call?.layers).toBe(0b110);
 		expect(call?.input.slice(0, 7)).toEqual([1, 2, 7.5, 0, 0, -2, 10]);
+	});
+
+	test('a hit carries texture coordinates when its mesh has them, and null otherwise', () => {
+		const { scene, box, paint, script } = fakeCore();
+		const target = scene.createMesh({ mesh: box, material: paint });
+		const hit = newHit();
+		// A mesh without them, as for a sprite, a point or a line.
+		script([{ slot: target.slot, distance: 1, triangle: 0 }]);
+		scene.raycast([0, 0, 0], [0, 1, 0], undefined, hit);
+		expect(hit.uv).toBeNull();
+		// The engine makes the array once and writes into it after.
+		script([{ slot: target.slot, distance: 1, triangle: 3, uv: [0.5, 0.25] }]);
+		scene.raycast([0, 0, 0], [0, 1, 0], undefined, hit);
+		expect(hit.uv).toEqual([0.5, 0.25]);
+		const first = hit.uv;
+		script([{ slot: target.slot, distance: 1, triangle: 4, uv: [0.75, 0.125] }]);
+		scene.raycast([0, 0, 0], [0, 1, 0], undefined, hit);
+		expect(hit.uv).toBe(first);
+		expect(hit.uv).toEqual([0.75, 0.125]);
 	});
 
 	test('the default options test layer 0 with no far limit', () => {
@@ -390,7 +424,13 @@ describe('batches of rays', () => {
 		const batch = scene.createInstances(box, 4, { material: paint });
 		const rays = new Float64Array([0, 0, 0, 0, 0, -1, 5, 0, 0, 0, -1, 0, 9, 9, 9, 1, 0, 0]);
 		script([
-			{ slot: target.slot, distance: 2, point: [0, 0, -2], normal: [0, 0, 1] },
+			{
+				slot: target.slot,
+				distance: 2,
+				point: [0, 0, -2],
+				normal: [0, 0, 1],
+				uv: [0.5, 0.5],
+			},
 			{ batch: batch.id, row: 3, distance: 0.5, point: [5, -0.5, 0], normal: [0, 1, 0] },
 			null,
 		]);
@@ -400,6 +440,7 @@ describe('batches of rays', () => {
 			instances: new Int32Array(3),
 			points: new Float64Array(9),
 			normals: new Float32Array(9),
+			uvs: new Float32Array(6),
 		};
 		out.objects.length = 3;
 		const found = scene.raycastBatch(rays, { maxDistance: 50 }, out as never);
@@ -411,6 +452,11 @@ describe('batches of rays', () => {
 		expect([...out.instances]).toEqual([-1, 3, -1]);
 		expect([...out.points]).toEqual([0, 0, -2, 5, -0.5, 0, 0, 0, 0]);
 		expect([...out.normals]).toEqual([0, 0, 1, 0, 1, 0, 0, 0, 0]);
+		// A hit without texture coordinates writes NaN, as a ray that hits nothing does.
+		expect(out.uvs[0]).toBe(0.5);
+		expect(out.uvs[1]).toBe(0.5);
+		expect(Number.isNaN(out.uvs[2])).toBe(true);
+		expect(Number.isNaN(out.uvs[4] as number)).toBe(true);
 		// Only the distances are required.
 		const distances = new Float64Array(3);
 		scene.raycastBatch(rays, undefined, { distances });

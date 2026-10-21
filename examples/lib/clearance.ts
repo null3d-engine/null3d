@@ -44,6 +44,7 @@ export function createClearance(ctx: SketchContext, options: ClearanceOptions = 
 		normal: vec3.create(),
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	const solids = { layers: SOLID_LAYERS };
 	/** The raycast along a unit direction, up to a distance. True with the nearest hit. */

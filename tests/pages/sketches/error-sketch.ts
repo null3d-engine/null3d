@@ -55,6 +55,7 @@ export default defineSketch(({ scene, materials, geometry, page, render }) => {
 		normal: [0, 0, 0],
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	const eye = [0, 3, 0];
 	page.onMessage((name) => {

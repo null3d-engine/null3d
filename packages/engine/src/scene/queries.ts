@@ -22,6 +22,7 @@ import {
 	EVENT_POINT,
 	EVENT_ROW,
 	EVENT_TRIANGLE,
+	EVENT_UV,
 } from './pointer-events';
 import type { InstanceBatch, Object3D } from './scene';
 import type { PointBatch, SpriteBatch } from './sprites';
@@ -105,6 +106,13 @@ export interface RaycastHit extends OverlapHit {
 	 * point or a line.
 	 */
 	triangle: number;
+	/**
+	 * The texture coordinates at the point on the triangle, as three.js's `intersection.uv`: the
+	 * mesh's first texture coordinate set, blended across the triangle. `null` when the mesh has
+	 * none, and for a sprite, a point or a line. Give a two-number array to avoid the engine making
+	 * one on the first hit that has coordinates.
+	 */
+	uv: [number, number] | null;
 }
 
 /**
@@ -124,6 +132,11 @@ export interface RaycastBatchHits {
 	points?: Float32Array | Float64Array;
 	/** Each hit triangle's unit normal in world space, facing the ray, three numbers per ray. */
 	normals?: Float32Array | Float64Array;
+	/**
+	 * Each hit's texture coordinates, two numbers per ray, as `hit.uv`. NaN where a ray hits
+	 * nothing, or hits a mesh without them.
+	 */
+	uvs?: Float32Array | Float64Array;
 }
 
 /** The objects and batches that hit records name, by their slots, and the cameras of queries. */
@@ -251,6 +264,7 @@ function newHit(): RaycastHit {
 		normal: [0, 0, 0],
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 }
 
@@ -371,6 +385,18 @@ export class SceneQueries implements ViewHolder {
 			point[k] = r[at + C.QUERY_HIT_POINT + k] as number;
 			normal[k] = r[at + C.QUERY_HIT_NORMAL + k] as number;
 		}
+		// A NaN u marks a hit without texture coordinates, as the core writes it.
+		const u = r[at + C.QUERY_HIT_UV] as number;
+		if (Number.isNaN(u)) out.uv = null;
+		else {
+			let uv = out.uv;
+			if (uv === null) {
+				uv = [0, 0];
+				out.uv = uv;
+			}
+			uv[0] = u;
+			uv[1] = r[at + C.QUERY_HIT_UV + 1] as number;
+		}
 	}
 
 	/** Fills `out` with the first `count` hit records, adding hit objects where it is too short. */
@@ -423,6 +449,8 @@ export class SceneQueries implements ViewHolder {
 			out[EVENT_POINT + k] = r[C.QUERY_HIT_POINT + k] as number;
 			out[EVENT_NORMAL + k] = r[C.QUERY_HIT_NORMAL + k] as number;
 		}
+		out[EVENT_UV] = r[C.QUERY_HIT_UV] as number;
+		out[EVENT_UV + 1] = r[C.QUERY_HIT_UV + 1] as number;
 		return this.targetAt(0);
 	}
 
@@ -464,6 +492,7 @@ export class SceneQueries implements ViewHolder {
 		if (out.instances) checkLength(call, 'instances', out.instances.length, count);
 		if (out.points) checkLength(call, 'points', out.points.length, count * 3);
 		if (out.normals) checkLength(call, 'normals', out.normals.length, count * 3);
+		if (out.uvs) checkLength(call, 'uvs', out.uvs.length, count * 2);
 		const { core } = this;
 		if (count > this.rayCapacity) {
 			core.checkGrowth(core.glue.reserveRays(count), 'raycastBatch', undefined, true);
@@ -474,7 +503,7 @@ export class SceneQueries implements ViewHolder {
 		this.rays.set(rays);
 		const found = this.finish(core.glue.raycastBatch(count, layersOf(options)), 'raycastBatch');
 		const r = this.hits;
-		const { distances, objects, instances, points, normals } = out;
+		const { distances, objects, instances, points, normals, uvs } = out;
 		for (let i = 0; i < count; i++) {
 			const at = i * C.QUERY_HIT_FLOATS;
 			distances[i] = r[at + C.QUERY_HIT_DISTANCE] as number;
@@ -483,6 +512,10 @@ export class SceneQueries implements ViewHolder {
 			for (let k = 0; k < 3; k++) {
 				if (points) points[i * 3 + k] = r[at + C.QUERY_HIT_POINT + k] as number;
 				if (normals) normals[i * 3 + k] = r[at + C.QUERY_HIT_NORMAL + k] as number;
+			}
+			if (uvs) {
+				uvs[i * 2] = r[at + C.QUERY_HIT_UV] as number;
+				uvs[i * 2 + 1] = r[at + C.QUERY_HIT_UV + 1] as number;
 			}
 		}
 		return found;

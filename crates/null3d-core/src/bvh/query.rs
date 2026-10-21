@@ -16,6 +16,10 @@
 //! - The rows of sprite, point and line batches as they draw, through the query's camera and
 //!   three.js's thresholds ([`RowQuery`]); see [`super::rows`]. Overlap queries do not find them.
 //!
+//! A hit carries the texture coordinates of the mesh's first set at the ray's point on the
+//! triangle, blended by the barycentric weights as three.js blends `intersection.uv`, when the
+//! mesh's triangles give them ([`Triangles::uv`]).
+//!
 //! An overlap query finds the items with a triangle inside the volume or crossing its
 //! surface. A volume inside a closed mesh, which touches none of its triangles, does not find
 //! it.
@@ -32,7 +36,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::mesh::{MeshBvh, Side, Triangles};
+use super::mesh::{MeshBvh, Side, TriangleHit, Triangles};
 use super::rows::{RowQuery, RowShape, row_raycast};
 use super::scene::{NO_MESH, SceneBvh, Source};
 use super::top::{WorldRay, cell_centre};
@@ -95,6 +99,10 @@ pub struct QueryHit {
     pub point: [f64; 3],
     /// The unit normal of the triangle in the world, on the side that faces the ray's origin.
     pub normal: [f32; 3],
+    /// The texture coordinates at the hit on the triangle, from the mesh's first set, blended
+    /// across the triangle as three.js blends `intersection.uv`. `None` when the hit is not on a
+    /// triangle or the mesh has no texture coordinates.
+    pub uv: Option<[f32; 2]>,
 }
 
 impl QueryHit {
@@ -106,6 +114,7 @@ impl QueryHit {
             triangle: 0,
             point: [0.0; 3],
             normal: [0.0; 3],
+            uv: None,
         }
     }
 }
@@ -137,6 +146,8 @@ struct RawHit {
     id: u32,
     t: f32,
     triangle: u32,
+    /// The texture coordinates at the hit, when the item's mesh has them.
+    uv: Option<[f32; 2]>,
 }
 
 /// The scene's trees, each mesh's tree, and the reused lists that queries fill. See the module
@@ -270,6 +281,18 @@ pub fn box_touches_triangle(b: &Aabb, v: &[[f64; 3]; 3]) -> bool {
 fn local_box(m: &Affine, b: &Aabb) -> Option<Aabb> {
     let inverse = invert64(&m.map(f64::from))?;
     Some(b.transformed(&inverse.map(|v| v as f32)))
+}
+
+/// The texture coordinates at a triangle hit, blended by the hit's barycentric weights as
+/// three.js blends them: the first corner counts `1 - u - v`, the second `u` and the third `v`.
+/// `None` for a mesh without texture coordinates.
+fn hit_uv(mesh: &impl Triangles, hit: &TriangleHit) -> Option<[f32; 2]> {
+    let [a, b, c] = mesh.uv(hit.triangle)?;
+    let first = 1.0 - hit.u - hit.v;
+    Some([
+        a[0] * first + b[0] * hit.u + c[0] * hit.v,
+        a[1] * first + b[1] * hit.u + c[1] * hit.v,
+    ])
 }
 
 /// The unit normal in the world of a triangle that `m` moves, on the side that faces against
@@ -563,20 +586,25 @@ impl SceneQueries {
         Some((self.mesh_bvh(mesh)?, meshes.mesh(mesh)?))
     }
 
-    /// The ray's closest hit on an item, within the ray's limits: its distance and triangle.
+    /// The ray's closest hit on an item, within the ray's limits.
     fn item_raycast<M: QueryMeshes>(
         &self,
         view: &QueryScene<'_, M>,
         id: u32,
         ray: &Ray,
         layers: u32,
-    ) -> Option<(f32, u32)> {
+    ) -> Option<RawHit> {
         match self.item(view, id, layers)? {
             Target::Mesh(item) => {
                 let (tree, mesh) = self.mesh_of(view.meshes, item.mesh)?;
                 let local = ray.to_local(item.matrix)?;
-                tree.raycast(&mesh, &local, item.side)
-                    .map(|hit| (hit.t, hit.triangle))
+                let hit = tree.raycast(&mesh, &local, item.side)?;
+                Some(RawHit {
+                    id,
+                    t: hit.t,
+                    triangle: hit.triangle,
+                    uv: hit_uv(&mesh, &hit),
+                })
             }
             Target::Row {
                 matrix,
@@ -584,7 +612,12 @@ impl SceneQueries {
                 centre,
             } => {
                 let eye = Self::eye_in(&view.rows, centre);
-                row_raycast(&shape, matrix, ray, &view.rows, eye).map(|t| (t, NO_TRIANGLE))
+                row_raycast(&shape, matrix, ray, &view.rows, eye).map(|t| RawHit {
+                    id,
+                    t,
+                    triangle: NO_TRIANGLE,
+                    uv: None,
+                })
             }
         }
     }
@@ -612,6 +645,7 @@ impl SceneQueries {
             triangle: hit.triangle,
             point: std::array::from_fn(|k| ray.origin[k] + t * f64::from(ray.direction[k])),
             normal,
+            uv: hit.uv,
         }
     }
 
@@ -637,12 +671,23 @@ impl SceneQueries {
         reach: &Reach,
     ) -> Option<QueryHit> {
         let mut triangle = 0;
+        let mut uv = None;
         let (id, t) = self.bvh.raycast(ray, reach, |id, ray| {
-            let (t, tri) = self.item_raycast(view, id, ray, layers)?;
-            triangle = tri;
-            Some(t)
+            let hit = self.item_raycast(view, id, ray, layers)?;
+            triangle = hit.triangle;
+            uv = hit.uv;
+            Some(hit.t)
         })?;
-        Some(self.finish(view, ray, RawHit { id, t, triangle }))
+        Some(self.finish(
+            view,
+            ray,
+            RawHit {
+                id,
+                t,
+                triangle,
+                uv,
+            },
+        ))
     }
 
     /// True when the ray hits any item on `layers`. It stops at the first hit it finds.
@@ -698,6 +743,7 @@ impl SceneQueries {
                                 id,
                                 t: hit.t,
                                 triangle: hit.triangle,
+                                uv: hit_uv(&mesh, &hit),
                             });
                         });
                     }
@@ -713,6 +759,7 @@ impl SceneQueries {
                             id,
                             t,
                             triangle: NO_TRIANGLE,
+                            uv: None,
                         });
                     }
                 }
@@ -909,5 +956,54 @@ mod tests {
         let moved = triangle_in_cell(&shear, &tilted);
         assert!(dot(n, sub(moved[1], moved[0])).abs() < 1e-6);
         assert!(dot(n, sub(moved[2], moved[0])).abs() < 1e-6);
+    }
+
+    #[test]
+    fn texture_coordinates_blend_the_three_corners() {
+        struct Corners([[f32; 2]; 3]);
+        impl Triangles for Corners {
+            fn count(&self) -> u32 {
+                1
+            }
+            fn triangle(&self, _i: u32) -> [[f32; 3]; 3] {
+                [[0.0; 3]; 3]
+            }
+            fn uv(&self, _i: u32) -> Option<[[f32; 2]; 3]> {
+                Some(self.0)
+            }
+        }
+        let mesh = Corners([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
+        let at = |u: f32, v: f32| {
+            hit_uv(
+                &mesh,
+                &TriangleHit {
+                    t: 0.0,
+                    triangle: 0,
+                    u,
+                    v,
+                    front: true,
+                },
+            )
+            .unwrap()
+        };
+        // Each corner counts alone at a barycentric weight of 1.
+        assert_eq!(at(0.0, 0.0), [0.0, 0.0]);
+        assert_eq!(at(1.0, 0.0), [1.0, 0.0]);
+        assert_eq!(at(0.0, 1.0), [0.0, 1.0]);
+        // The middle of the triangle averages the three equally.
+        let centre = at(1.0 / 3.0, 1.0 / 3.0);
+        assert!((centre[0] - 1.0 / 3.0).abs() < 1e-6);
+        assert!((centre[1] - 1.0 / 3.0).abs() < 1e-6);
+        // A mesh without texture coordinates gives none.
+        use crate::bvh::mesh::TriangleSoup;
+        let plain = TriangleSoup { positions: &[] };
+        let hit = TriangleHit {
+            t: 0.0,
+            triangle: 0,
+            u: 0.0,
+            v: 0.0,
+            front: true,
+        };
+        assert_eq!(hit_uv(&plain, &hit), None);
     }
 }

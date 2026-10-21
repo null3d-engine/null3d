@@ -674,7 +674,7 @@ pub mod query {
     pub const RAY_FLOATS: u32 = 6;
 
     /// Numbers per hit record.
-    pub const HIT_FLOATS: u32 = 11;
+    pub const HIT_FLOATS: u32 = 13;
     /// The object's slot, or 0 for a batch row.
     pub const HIT_SLOT: u32 = 0;
     /// The batch's id, or 0 for an object.
@@ -689,6 +689,8 @@ pub mod query {
     pub const HIT_POINT: u32 = 5;
     /// The triangle's unit normal in the world, facing the ray's origin, three numbers.
     pub const HIT_NORMAL: u32 = 8;
+    /// The texture coordinates at the hit, two numbers, or NaN for a hit without them.
+    pub const HIT_UV: u32 = 11;
 
     /// The closest hit.
     pub const CLOSEST: u32 = 0;
@@ -856,6 +858,7 @@ pub fn typescript() -> String {
                 ("HIT_DISTANCE", query::HIT_DISTANCE),
                 ("HIT_POINT", query::HIT_POINT),
                 ("HIT_NORMAL", query::HIT_NORMAL),
+                ("HIT_UV", query::HIT_UV),
                 ("CLOSEST", query::CLOSEST),
                 ("ANY", query::ANY),
                 ("ALL", query::ALL),

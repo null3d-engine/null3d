@@ -51,6 +51,8 @@ import type { RaycastResults } from '../lib/raycast';
 const BATCH_RAYS = 10_000;
 /** Distances and points may differ by this much: 32-bit floats against three.js's 64-bit. */
 const TOLERANCE = 2e-4;
+/** Texture coordinates lie from 0 to 1, so this is an absolute tolerance. */
+const UV_TOLERANCE = 1e-3;
 /** Where the scene stands: the origin, or with ?far a point at the Earth's radius, off any cell. */
 const OFFSET = new URL(import.meta.url).searchParams.has('far')
 	? [1_234.5678, 6_378_137.3, -98_765.4321]
@@ -308,6 +310,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		normal: [0, 0, 0],
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	const hits: RaycastHit[] = [];
 	const found: OverlapHit[] = [];
@@ -355,6 +358,18 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 					mismatch(
 						`ray ${r}: ${describeThree(first)} distance ${hit.distance} / ${first.distance}, triangle ${hit.triangle} / ${first.faceIndex}, point ${[...(hit.point as number[])]} / ${p.toArray()}, normal ${[...(hit.normal as number[])]} / ${n.toArray()}`,
 					);
+				// The hit's texture coordinates are the triangle's own, blended at the point.
+				const uv = first.uv;
+				const got = hit.uv;
+				const uvOff =
+					!got ||
+					!uv ||
+					Math.abs((got[0] as number) - uv.x) > UV_TOLERANCE ||
+					Math.abs((got[1] as number) - uv.y) > UV_TOLERANCE;
+				if (uvOff)
+					mismatch(
+						`ray ${r}: ${describeThree(first)} uv ${got ? [...got] : 'none'} / ${uv ? [uv.x, uv.y] : 'none'}`,
+					);
 			}
 			project(hit.point);
 			// Overlap queries at the hit's point find the hit object.
@@ -393,6 +408,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		distances: new Float32Array(BATCH_RAYS),
 		objects: new Array<QueryTarget | null>(BATCH_RAYS).fill(null),
 		instances: new Int32Array(BATCH_RAYS),
+		uvs: new Float32Array(BATCH_RAYS * 2),
 	};
 	for (let i = 0; i < BATCH_RAYS; i++) batchRays.set(newRay(), i * 6);
 	const allLayers: RaycastOptions = { layers: 0xffffffff };
@@ -417,10 +433,17 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 					const ray = batchRays.subarray(i * 6, i * 6 + 6);
 					const one = scene.raycast(ray.subarray(0, 3), ray.subarray(3), allLayers, hit);
 					const distance = one ? Math.fround(hit.distance) : -1;
+					// A hit without texture coordinates writes NaN, as a miss does.
+					const uv = one ? hit.uv : null;
+					const uvOff = uv
+						? Math.abs((batchOut.uvs[i * 2] as number) - (uv[0] as number)) > UV_TOLERANCE ||
+							Math.abs((batchOut.uvs[i * 2 + 1] as number) - (uv[1] as number)) > UV_TOLERANCE
+						: !Number.isNaN(batchOut.uvs[i * 2] as number);
 					if (
 						batchOut.distances[i] !== distance ||
 						batchOut.objects[i] !== (one ? hit.object : null) ||
-						batchOut.instances[i] !== (one ? hit.instance : -1)
+						batchOut.instances[i] !== (one ? hit.instance : -1) ||
+						uvOff
 					)
 						results.batchMismatches++;
 				}

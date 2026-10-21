@@ -354,6 +354,7 @@ export default defineSketch(async ({ scene, page, post }) => {
 		normal: [0, 0, 0],
 		distance: 0,
 		triangle: -1,
+		uv: null,
 	};
 	/**
 	 * The canvas points over a sprite, a point and a line, and what a ray through each hits: the

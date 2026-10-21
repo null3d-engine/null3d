@@ -210,7 +210,7 @@ for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so camer
 for (const wall of walls) wall.setLayers(1 | WORLD);
 const unitSet = new Set(units);
 const ray = { origin: vec3.create(), direction: vec3.create() };
-const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
+const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1, uv: null };
 // in onUpdate:
 if (input.wasPressed('Mouse0')) {
   camera.screenToRay(input.pointer.x, input.pointer.y, ray);
@@ -220,7 +220,7 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
-The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
+The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. A hit's `uv` holds the texture coordinates at the point, from the mesh's first set. A click on an in-world screen or a decal takes its texel without plane math. It is `null` for a mesh without texture coordinates, and for a sprite, a point or a line. Pointer events carry the same `uv`. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
 For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera draws, such as a thin wire or a leaf with a cut-out mask. It answers one or more frames later:
 

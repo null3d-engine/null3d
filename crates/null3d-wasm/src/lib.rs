@@ -4711,6 +4711,9 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
         out[query::HIT_ROW as usize] = -1.0;
         out[query::HIT_TRIANGLE as usize] = -1.0;
         out[query::HIT_DISTANCE as usize] = -1.0;
+        let uv = query::HIT_UV as usize;
+        out[uv] = f64::NAN;
+        out[uv + 1] = f64::NAN;
         return;
     };
     let (slot, batch, row) = match hit.source {
@@ -4731,6 +4734,17 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
     let normal = query::HIT_NORMAL as usize;
     for k in 0..3 {
         out[normal + k] = f64::from(hit.normal[k]);
+    }
+    let uv = query::HIT_UV as usize;
+    match hit.uv {
+        Some(values) => {
+            out[uv] = f64::from(values[0]);
+            out[uv + 1] = f64::from(values[1]);
+        }
+        None => {
+            out[uv] = f64::NAN;
+            out[uv + 1] = f64::NAN;
+        }
     }
 }
 

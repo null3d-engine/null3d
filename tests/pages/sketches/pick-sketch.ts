@@ -99,6 +99,7 @@ export default defineSketch(({ scene, materials, geometry, textures, post, page,
 					normal: [0, 0, 0],
 					distance: 0,
 					triangle: -1,
+					uv: null,
 				};
 				for (const probe of points) {
 					let hit: { object: unknown } | null = null;
