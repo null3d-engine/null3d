@@ -222,7 +222,7 @@ const DOCS = {
 	E1223: {
 		title: 'Invalid feature description',
 		cause:
-			'defineFeature() or FeatureRegistry.add() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, or a lighting slot that another feature provides.',
+			'defineFeature() or FeatureRegistry.add() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a setting with a value that its own values do not take or a governor without a budget, a budget whose times are not four numbers above 0, a feature name or output name that another feature has, or a lighting slot that another feature provides.',
 		example:
 			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
 		since: '0.3',

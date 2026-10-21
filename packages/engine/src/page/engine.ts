@@ -32,10 +32,12 @@ import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
+import type { FeatureStats } from '../scene/features';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
+import { FEATURE_STATS_MESSAGE } from '../shared/feature-stats';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
@@ -1414,10 +1416,16 @@ async function startEngine(
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
+	// The add-on features' figures, which the stats overlay shows beside the engine's own.
+	let features: readonly FeatureStats[] = [];
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
 	// sketch sends many.
 	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
 	const onSketchMessage = (name: string, data: unknown) => {
+		if (name === FEATURE_STATS_MESSAGE) {
+			features = data as readonly FeatureStats[];
+			return;
+		}
 		if (earlyMessages) {
 			if (earlyMessages.push([name, data]) > MAX_EARLY_MESSAGES) earlyMessages.shift();
 			return;
@@ -1513,6 +1521,7 @@ async function startEngine(
 		maxTargetFps: maxTarget,
 		gpuFeatures,
 		mode,
+		features: () => features,
 	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**
