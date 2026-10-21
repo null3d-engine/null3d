@@ -727,3 +727,42 @@ move, and the setters could not.
 `budgetWarnings` in `tools/lib/size-report.ts` now prints a warning for each start past 97% of the
 budget, so a start that is about to pass it is named while the build still passes. M3-T1 asked for
 that guard.
+
+### What a first-use file costs the report, 22 October 2026
+
+Moving the file loader out of the start showed that a deferral is not free for the size report. The
+bundler put the loader's dependencies in files of their own and kept second copies of three shared
+modules that the start still needs. The report names one built file for each part. It finds the
+file that a part loads by reading the text of the part that loads it, one level deep. So a loader
+whose dependencies load from the loader's own file needs a part for each of them. Each part must
+come after it in the list, and each copy needs a part of its own.
+
+The measurement of that attempt: the sketch worker's file fell from 212,171 to 195,829 bytes. The
+page's fell from 93,189 to 90,546, about 4.7 KB and 0.8 KB after Brotli. The change waits until the
+report can follow a chunk graph, so that the copies and the nested loaders need no part of their
+own. The guard and every other finding of this section stand.
+
+### The file loader's first use, measured, 22 October 2026
+
+The build of the milestone branch with the file loader loading on first use measured these starts,
+in bytes after Brotli:
+
+| Start | Before | After |
+| --- | --- | --- |
+| pipelined, WebGL2 | 183,810 | 178,096 |
+| low latency, WebGL2 | 180,422 | 174,848 |
+| drawing on the main thread, WebGL2 | 181,689 | 176,007 |
+| sketch on the main thread, WebGL2 | 174,261 | 170,842 |
+| single-threaded, WebGL2 | 170,426 | 167,039 |
+| pipelined, WebGPU | 167,753 | 162,039 |
+| drawing on the main thread, WebGPU | 165,801 | 160,165 |
+| low latency, WebGPU | 164,452 | 158,817 |
+| sketch on the main thread, WebGPU | 158,204 | 154,785 |
+| single-threaded, WebGPU | 154,538 | 151,197 |
+
+Every start passes the 176 KB budget, and every WebGPU start passes 160 KB. The WebGL2 starts still
+sit above 160 KB, because of the shader file that this section measured.
+
+That build also held an experiment that moved the sky's write out of the start, which measured
+about 860 bytes and is not part of the change: without it, the figure above for each start that
+loads the sketch worker rises by about that much.
