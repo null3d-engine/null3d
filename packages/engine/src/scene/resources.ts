@@ -1590,6 +1590,9 @@ const RANGED: readonly (readonly [Ranged, number])[] = [
 	['edgeFade', 1],
 ];
 
+/** The highest value that each ranged value takes, by its name. */
+const ONE_VALUE_MAX: ReadonlyMap<string, number> = new Map(RANGED);
+
 /** Each whole-number value's name, in `RANGED`'s order, for the development checks. */
 const RANGED_NAMES: readonly string[] = [
 	'opacity',
@@ -2004,6 +2007,18 @@ const COLOR_VALUES: ReadonlySet<string> = new Set([
 	'attenuationColor',
 	'sheenColor',
 ]);
+
+/**
+ * Numbers per key that a material value takes: 3 for a color, 1 for a number, and 0 for a name
+ * that the value has none. It reads the tables that `setUniform` uses, so a name that it takes is
+ * a name that `setUniform` takes.
+ *
+ * @internal
+ */
+export function materialValueComponents(name: string): number {
+	if (!ONE_VALUE_PARAMS.has(name)) return 0;
+	return COLOR_VALUES.has(name) ? 3 : 1;
+}
 
 /** The name that messages give `setUniform`, from a material's `set` call string. */
 function setUniformCall(call: string): string {
@@ -2606,6 +2621,20 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		value: NonNullable<Values[Name]>,
 	): void {
 		writeOneValue(this.core, this.id, this.oneCall, name, value as unknown as number | ColorInput);
+	}
+
+	/**
+	 * @internal Writes one value by name, for a property animation: a number, or a linear color as
+	 * three numbers. A number stays within the range that the value takes, because a cubic key can
+	 * overshoot. It allocates nothing, so a track writes a value in every frame.
+	 */
+	writeUniform(name: string, value: number | readonly [number, number, number]): void {
+		if (typeof value === 'number') {
+			const most = ONE_VALUE_MAX.get(name) ?? Number.POSITIVE_INFINITY;
+			writeOneValue(this.core, this.id, this.oneCall, name, Math.max(0, Math.min(value, most)));
+			return;
+		}
+		writeOneValue(this.core, this.id, this.oneCall, name, value);
 	}
 
 	/**

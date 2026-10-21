@@ -175,6 +175,11 @@ export type {
 export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type { ReflectionProbe, ReflectionProbeOptions } from './scene/probes';
 export type {
+	PropertyAnimation,
+	PropertyInterpolation,
+	PropertyKeyframes,
+} from './scene/property-animation';
+export type {
 	OverlapHit,
 	QueryOptions,
 	QueryTarget,

@@ -62,6 +62,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_clearcoat',
 	'KHR_materials_sheen',
 	'KHR_lights_punctual',
+	'KHR_animation_pointer',
+	'KHR_node_visibility',
 	'EXT_mesh_gpu_instancing',
 	'MSFT_lod',
 	'KHR_meshopt_compression',
@@ -710,6 +712,11 @@ export interface NodeData {
 	mesh: number;
 	/** The light's index in the light list, or -1. */
 	light: number;
+	/**
+	 * False when `KHR_node_visibility` hides the node. The copy draws nothing on it until a clip
+	 * shows it.
+	 */
+	visible?: false;
 	instancing?: InstancingData;
 	/** The skin's index in the file, or -1. */
 	skin: number;
@@ -1444,7 +1451,16 @@ export function parseGltf(
 	});
 
 	const { nodes, place } = parseNodes(json, meshes, lights.length, read, budget);
-	const animation = parseAnimation(json, nodes, meshes, place, read, budget, notes);
+	const animation = parseAnimation(
+		json,
+		nodes,
+		meshes,
+		place,
+		{ materials: materials.length, lights: lights.length },
+		read,
+		budget,
+		notes,
+	);
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
 	if (draco) data.draco = true;
@@ -1918,6 +1934,8 @@ function parseNodes(
 			light: lightRef === undefined ? -1 : index(lightRef, lights, `${what}'s light`),
 			skin: node.skin === undefined ? -1 : index(node.skin, skins, `${what}'s skin`),
 		};
+		const visibility = (extensions.KHR_node_visibility as Entry | undefined)?.visible;
+		if (visibility === false) data.visible = false;
 		const instancing = extensions.EXT_mesh_gpu_instancing as Entry | undefined;
 		if (instancing && data.mesh >= 0)
 			data.instancing = parseInstancing(instancing, what, read, budget);

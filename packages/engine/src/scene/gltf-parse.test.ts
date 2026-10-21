@@ -960,6 +960,86 @@ describe('skins and clips', () => {
 		]);
 	});
 
+	test('KHR_animation_pointer moves nodes, materials and lights, and notes what it cannot', () => {
+		const b = new GltfBuilder();
+		b.json.extensionsUsed = ['KHR_animation_pointer', 'KHR_lights_punctual'];
+		b.json.extensions = {
+			KHR_lights_punctual: {
+				lights: [{ type: 'spot', color: [0.5, 0.5, 0.5], intensity: 3, range: 5 }],
+			},
+		};
+		const material = b.material({
+			name: 'glow',
+			pbrMetallicRoughness: { baseColorFactor: [0.2, 0.4, 0.6, 0.8], metallicFactor: 0 },
+		});
+		const mesh = b.mesh([boxPrimitive(b, material)], 'box');
+		const box = b.node({ name: 'Box', mesh });
+		const lamp = b.node({ name: 'Lamp', translation: [0, 2, 0] });
+		b.json.nodes[lamp].extensions = { KHR_lights_punctual: { light: 0 } };
+		b.json.scenes[0].nodes = [box, lamp];
+		const at = (seconds: number[]) =>
+			b.accessor(new Float32Array(seconds), 1, { min: [0], max: [seconds.at(-1) ?? 0] });
+		const pointer = (path: string) => ({
+			path: 'pointer',
+			extensions: { KHR_animation_pointer: { pointer: path } },
+		});
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0, 1, 1, 1]), 3) },
+					{
+						input: at([0, 1]),
+						output: b.accessor(new Float32Array([1, 1, 1, 1, 0, 0, 0, 0.5]), 4),
+					},
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([1, 4]), 1) },
+					{
+						input: at([0, 1]),
+						output: b.accessor(new Float32Array([1, 0]), 1),
+						interpolation: 'STEP',
+					},
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0, 1, 1, 1]), 3) },
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0.5, 1]), 1) },
+				],
+				channels: [
+					{ sampler: 0, target: pointer('/nodes/0/translation') },
+					{ sampler: 1, target: pointer('/materials/0/pbrMetallicRoughness/baseColorFactor') },
+					{ sampler: 2, target: pointer('/extensions/KHR_lights_punctual/lights/0/intensity') },
+					{ sampler: 3, target: pointer('/nodes/1/extensions/KHR_node_visibility/visible') },
+					{
+						sampler: 4,
+						target: pointer(
+							'/materials/0/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset',
+						),
+					},
+					{ sampler: 5, target: pointer('/cameras/0/perspective/yfov') },
+				],
+			},
+		];
+		const data = parse(b.glb());
+		const clip = data.animation?.clips[0];
+		// A pointer to a node's transform becomes that node's track, as a channel of its own does.
+		expect(clip?.tracks.map((t) => [t.channel, t.interpolation])).toEqual([
+			['translation', 'linear'],
+		]);
+		expect(
+			clip?.properties?.map((p) => [p.target.kind, p.target.index, p.target.value, p.components]),
+		).toEqual([
+			['material', 0, 'color', 3],
+			['material', 0, 'opacity', 1],
+			['light', 0, 'intensity', 1],
+			['node', 1, 'visible', 1],
+		]);
+		// A base color factor's fourth number becomes the opacity, key by key.
+		const [color, opacity] = clip?.properties ?? [];
+		expect(Array.from(color?.values ?? [])).toEqual([1, 1, 1, 0, 0, 0]);
+		expect(Array.from(opacity?.values ?? [])).toEqual([1, 0.5]);
+		expect(data.notes).toEqual([
+			"animation 0 moves a material's pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset, which the engine does not animate",
+			'animation 0 moves a camera property, and the engine reads no cameras from files',
+		]);
+	});
+
 	test('two clips of one name both stay, the second with a number', () => {
 		const b = armBuilder();
 		b.json.animations[1].name = 'Wave';

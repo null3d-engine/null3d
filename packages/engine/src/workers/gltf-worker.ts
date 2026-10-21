@@ -188,11 +188,16 @@ async function finish(
 					for (const array of deltas ?? []) transfer.add(array.buffer as ArrayBuffer);
 			}
 		// Key times and values can be views of the file's own bytes, which then go along once.
-		for (const clip of data.animation?.clips ?? [])
+		for (const clip of data.animation?.clips ?? []) {
 			for (const track of clip.tracks) {
 				transfer.add((track.times as Float32Array).buffer as ArrayBuffer);
 				transfer.add((track.values as Float32Array).buffer as ArrayBuffer);
 			}
+			for (const track of clip.properties ?? []) {
+				transfer.add((track.times as Float32Array).buffer as ArrayBuffer);
+				transfer.add((track.values as Float32Array).buffer as ArrayBuffer);
+			}
+		}
 		for (const node of data.nodes)
 			if (node.instancing)
 				for (const array of [
