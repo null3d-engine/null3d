@@ -319,6 +319,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
@@ -384,6 +385,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	...drawingParts('sketch-worker', 'sketch-worker-renderer.js'),
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-assets.js', module: 'scene/assets.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
@@ -838,6 +840,32 @@ export const FIRST_USE_SHADER_BUDGET: Budget = {
 	gzip: 320 * 1024,
 	brotli: 49 * 1024,
 };
+
+/**
+ * The share of the start budget that a start may reach before the build prints a warning: 97%. A
+ * start that passes it has little room for the next feature, so the report names it while the
+ * build still passes. The owner asked for this warning in M3-T1.
+ */
+export const NEAR_BUDGET_SHARE = 0.97;
+
+/**
+ * A warning for each start that passes [`NEAR_BUDGET_SHARE`] of its Brotli budget without passing
+ * the budget itself, which [`budgetProblems`] reports instead. The warning names the bytes left, so
+ * a person can see how much room the next feature has.
+ */
+export function budgetWarnings(
+	sizes: ReadonlyMap<string, SizeEntry>,
+	downloads: readonly Download[] = DOWNLOADS,
+): string[] {
+	const near = Math.floor(START_BUDGET.brotli * NEAR_BUDGET_SHARE);
+	return downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
+		size.brotli > near && size.brotli <= START_BUDGET.brotli
+			? [
+					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, past ${Math.round(NEAR_BUDGET_SHARE * 100)}% of its ${START_BUDGET.brotli / 1024} KB budget, with ${(START_BUDGET.brotli - size.brotli).toLocaleString('en-US')} bytes left`,
+				]
+			: [],
+	);
+}
 
 /**
  * A problem for each thread mode whose start passes the start budget in a column, for each part
