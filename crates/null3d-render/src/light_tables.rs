@@ -1,5 +1,5 @@
 //! The light tables: three.js's split-sum table (WebGL2 only), the two tables of area lights and
-//! the images of rectangle lights, kept in the frame group's shared texture array ([`crate::probes`]
+//! the images of lights, kept in the frame group's shared texture array ([`crate::probes`]
 //! owns that array; its module notes describe the layers). The array is one 2D array texture of
 //! half floats at binding 3 of the frame's group on both GPU paths (`null3d::tables`), which the
 //! environment's filtering sampler reads.
@@ -13,8 +13,9 @@
 //!   arrive both layers hold zeros, and the core lists no area light
 //!   ([`null3d_core::lights::LightTable::set_area_ready`]).
 //! - The reflection probes' maps take the layers from [`FIRST_IMAGE_LAYER`] on, one each.
-//! - Each layer after the probes holds the image of a rectangle light, 128 x 128 texels with every
-//!   mip level, in linear light, in its corner.
+//! - Each layer after the probes holds a light's image, 128 x 128 texels with every mip level, in
+//!   linear light, in its corner: the picture that a rectangle light shows over its area, or the
+//!   map that a spot light projects over its cone.
 //!
 //! The texture starts at 64 x 64 texels and 3 layers with one level, and grows on demand: a probe
 //! or a light's first image makes it again at the size and layers that both need. A regrow copies
@@ -59,7 +60,7 @@ pub struct Shape {
     pub levels: u32,
 }
 
-/// A rectangle light's image in engine memory.
+/// A light's image in engine memory.
 #[derive(Debug)]
 struct Image {
     /// The light's row in the light table, or 0 for a free place.

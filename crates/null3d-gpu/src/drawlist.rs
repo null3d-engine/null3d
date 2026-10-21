@@ -1645,15 +1645,17 @@ pub mod sizes {
     /// block that every WebGL2 device and WebGPU's compatibility mode allow.
     pub const OBJECT_RANGE_BYTES: u32 = 16384;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
-    /// list: four vectors of four 32-bit values.
-    pub const LIGHT_RECORD_BYTES: u32 = 64;
-    /// Light records per row of WebGL2's light data texture, four texels each, from its first
-    /// column. A power of two.
+    /// list: five vectors of four 32-bit values.
+    pub const LIGHT_RECORD_BYTES: u32 = 80;
+    /// Texels of an `RGBA32_UINT` data texture per light record: one per vector.
+    pub const LIGHT_RECORD_TEXELS: u32 = LIGHT_RECORD_BYTES / 16;
+    /// Light records per row of WebGL2's light data texture, from its first column. A power of
+    /// two.
     pub const LIGHTS_PER_TEXTURE_ROW: u32 = 256;
     /// Words of the light grid per row of WebGL2's light data texture, four to a texel, in the
-    /// columns after the light records'. A power of two. The texture is 2,048 texels wide, the
-    /// width that every WebGL2 device allows.
-    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 4096;
+    /// columns after the light records'. A power of two. The texture is 1,792 texels wide, inside
+    /// the 2,048 that every WebGL2 device allows.
+    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 2048;
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;

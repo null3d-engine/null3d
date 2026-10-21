@@ -512,6 +512,12 @@ export interface SpotLightOptions extends PointLightOptions {
 	 */
 	penumbra?: number;
 	/**
+	 * A picture that the light projects over its cone, such as a window frame, a gobo pattern or a
+	 * projected texture, as `setMap` takes it. The color and intensity tint it. Without it, the
+	 * light has one color in the cone.
+	 */
+	map?: LightImagePixels;
+	/**
 	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
 	 * quality preset's `shadowTiles` caps the lights that cast them at once.
 	 */
@@ -1796,6 +1802,11 @@ export class Light extends Object3D {
 	 * `setIntensity` reads it without boxing a number.
 	 */
 	readonly unitScale = new Float64Array(1).fill(1);
+	/**
+	 * @internal The picture that `setImage` or `setMap` set and that is not written yet, if any, so
+	 * a task that writes it can tell whether a later call has replaced it.
+	 */
+	pendingImage: LightImagePixels | null = null;
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -2027,6 +2038,37 @@ export class SpotLight extends Light {
 		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
 	}
 
+	/**
+	 * Projects a picture over the light's cone, such as a window frame or a gobo pattern, or `null`
+	 * to go back to one color. The color and intensity tint it. The picture fills the square around
+	 * the cone: a circle in its middle lands on the cone's edge, where the light ends. The picture's
+	 * top row lies along the world's up, as three.js aims a spot light's map. The engine resamples it
+	 * to 128 x 128 texels, so a surface far from the light shows it blurred. Up to 32 lights show
+	 * pictures at once, and rectangle and spot lights share those places. A new picture allocates
+	 * and takes a few milliseconds, so set it at setup or now and then, not in every frame.
+	 */
+	setMap(map: LightImagePixels | null): void {
+		const call = 'setMap';
+		if (DEV) checkLive(call, this);
+		if (map !== null && DEV) checkLightImage(call, map, this);
+		this.pendingImage = map;
+		writeLightImage(this, map, call);
+	}
+
+	/** @internal A copy starts without the picture, which `setMap` gives it. */
+	override twin(handle: number): Object3D {
+		const twin = super.twin(handle) as SpotLight;
+		twin.writeValue('twin', C.LIGHT_VALUE_IMAGE, 0);
+		return twin;
+	}
+
+	/** Removes the light at the next frame, and frees its picture's place. */
+	override destroy(): void {
+		this.pendingImage = null;
+		if (this.id !== 0) this.scene.core.glue.removeLightImage(this.id);
+		super.destroy();
+	}
+
 	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
 	setDirection(x: number, y: number, z: number): void {
 		this.aim('setDirection', x, y, z);
@@ -2108,30 +2150,10 @@ export class RectAreaLight extends Light {
 	setImage(image: LightImagePixels | null): void {
 		const call = 'setImage';
 		if (DEV) checkLive(call, this);
-		const { scene } = this;
-		const { core } = scene;
-		if (image === null) {
-			this.pendingImage = null;
-			core.check(core.glue.removeAreaLightImage(this.id), call, this.label, true);
-			return;
-		}
-		if (DEV) checkLightImage(call, image, this);
-		// The resampler loads on first use, so a page that sets no picture downloads none of it.
-		// The light keeps the pixels; a task writes them, which `imagesSettled` waits for.
+		if (image !== null && DEV) checkLightImage(call, image, this);
 		this.pendingImage = image;
-		const id = this.id;
-		scene.queueImage(
-			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
-				if (this.id !== id || this.pendingImage !== image) return;
-				const at = core.checkGrowth(core.glue.areaLightImage(id), call, this.label);
-				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
-				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
-			}),
-		);
+		writeLightImage(this, image, call);
 	}
-
-	/** The picture that `setImage` set and that is not written yet, if any. */
-	private pendingImage: LightImagePixels | null = null;
 
 	/** @internal A copy starts without the picture, which `setImage` gives it. */
 	override twin(handle: number): Object3D {
@@ -2143,9 +2165,32 @@ export class RectAreaLight extends Light {
 	/** Removes the light at the next frame, and frees its picture's place. */
 	override destroy(): void {
 		this.pendingImage = null;
-		if (this.id !== 0) this.scene.core.glue.removeAreaLightImage(this.id);
+		if (this.id !== 0) this.scene.core.glue.removeLightImage(this.id);
 		super.destroy();
 	}
+}
+
+/**
+ * Writes `image` into the light tables for `light`, or frees its place for `null`. The resampler
+ * loads on first use, so a page that sets no picture downloads none of it. The light keeps the
+ * pixels; a task writes them, which `imagesSettled` waits for.
+ */
+function writeLightImage(light: Light, image: LightImagePixels | null, call: string): void {
+	const { scene } = light;
+	const { core } = scene;
+	if (image === null) {
+		core.check(core.glue.removeLightImage(light.id), call, light.label, true);
+		return;
+	}
+	const id = light.id;
+	scene.queueImage(
+		import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
+			if (light.id !== id || light.pendingImage !== image) return;
+			const at = core.checkGrowth(core.glue.lightImage(id), call, light.label);
+			prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
+			core.check(core.glue.finishLightImage(id), call, light.label, true);
+		}),
+	);
 }
 
 /** Throws E1108 for pixels whose size or data a light's image cannot take. */
@@ -2686,7 +2731,7 @@ export class Scene implements ViewHolder {
 	private areaTablesLoad: Promise<AreaLightTables> | undefined;
 	/** @internal The area lights' tables' failure before the code arrived, once: the frame loop reports it. */
 	private areaTablesFailure: EngineError | undefined;
-	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` set. */
+	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` and `SpotLight.setMap` set. */
 	private readonly imageTasks = new Set<Promise<void>>();
 	/** @internal The picture that failed to write, once: the frame loop reports it. */
 	private imageFailure: unknown;
@@ -2725,7 +2770,7 @@ export class Scene implements ViewHolder {
 		);
 	}
 
-	/** @internal Settles when every picture that `setImage` set has been written to engine memory. */
+	/** @internal Settles when every picture that `setImage` or `setMap` set has been written to engine memory. */
 	async imagesSettled(): Promise<void> {
 		while (this.imageTasks.size > 0) await Promise.all(this.imageTasks);
 	}
@@ -4039,7 +4084,9 @@ export class Scene implements ViewHolder {
 
 	/** Light from a point in a cone, out to `range` meters, which it needs. */
 	createSpotLight(options: SpotLightOptions): SpotLight {
-		return this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+		const light = this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+		if (options.map) light.setMap(options.map);
+		return light;
 	}
 
 	/**

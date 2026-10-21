@@ -593,8 +593,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come in 0.3.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, map, castShadows, shadow, intensityUnit })",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. light.map becomes map: sRGB pixels as { width, height, data }, or setMap(pixels), resampled to 128 x 128 texels and projected by the cone as three.js projects it; its top row follows the world's up, as three.js aims its map's camera, so a light rolled about its axis shows the same map. Up to 32 lights show a map at once.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },

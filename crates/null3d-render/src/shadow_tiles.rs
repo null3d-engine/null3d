@@ -561,9 +561,8 @@ impl ShadowTiles {
     }
 
     /// Writes each light's first tile into its record of `lights`, the lights that the light grid
-    /// lists in the frame planned last. A rectangle or tube light records its image's layer where a
-    /// point or spot light records its tile ([`VisibleLight::area`]), so its record keeps that
-    /// layer: the atlas holds tiles of point and spot lights alone.
+    /// lists in the frame planned last. An area light keeps its image's layer in its record's own
+    /// place, so this writes no tile there: the atlas holds tiles of point and spot lights alone.
     pub fn mark_lights(&self, lights: &mut [VisibleLight], shadows: &[LightShadow]) {
         for light in lights {
             if light.kind != kind::POINT && light.kind != kind::SPOT {

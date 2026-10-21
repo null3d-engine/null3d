@@ -11,6 +11,7 @@ use std::thread;
 use null3d_core::culling::Frustum;
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
+use null3d_gpu::drawlist::sizes;
 use null3d_render::camera::{Affine, Lens, Orthographic, Perspective};
 use null3d_render::light_grid::{
     ClusterParams, DEFAULT_GRID, FADE_FRAMES, GridShape, GridView, LightGrid, LightLimits,
@@ -108,6 +109,8 @@ fn light(position: [f32; 3], range: f32, spot: bool, row: u32) -> VisibleLight {
         kind: light_kind,
         light: row,
         shadow: 0.0,
+        up: [0.0; 3],
+        image: 0.0,
     }
 }
 
@@ -550,7 +553,8 @@ fn gpu_fixture() -> (Vec<u32>, Vec<Range<usize>>) {
         out.push(listed.len() as u32);
         for light in listed {
             // SAFETY: a light record is `repr(C)` and made of 32-bit values only.
-            let words: [u32; 16] = unsafe { std::mem::transmute(*light) };
+            let words: [u32; sizes::LIGHT_RECORD_BYTES as usize / 4] =
+                unsafe { std::mem::transmute(*light) };
             out.extend_from_slice(&words);
         }
         out.push(grid.words().len() as u32);

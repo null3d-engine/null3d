@@ -10,7 +10,7 @@ use common::World;
 use null3d_core::handle::Handle;
 use null3d_core::lights::{LightTable, color, kind, value};
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{Op, format, layout};
+use null3d_gpu::drawlist::{Op, format, layout, sizes};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::fog::{self, Fog};
@@ -300,6 +300,46 @@ fn a_frame_that_finds_the_area_tables_lists_its_area_light_on_webgl2() {
     a_frame_that_finds_the_area_tables_lists_its_area_light(World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
+}
+
+/// The light data texture that WebGL2 reads holds each light's record as five texels of four
+/// values: the last vector carries the up axis and the map layer that a spot light's map needs.
+#[test]
+fn the_webgl2_light_texture_holds_five_texels_for_each_light() {
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    world.add_spot([0.0, 3.0, -2.0], 8.0);
+    // The first frame lists the light, and the frame after it writes the records: the texture
+    // moves on only once the light grid has listed what the shaders read.
+    world.record(true);
+    let lit = world
+        .lights
+        .first()
+        .copied()
+        .expect("one spot light is visible");
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_value(lit.light, value::IMAGE, 6.0)
+        .unwrap();
+    world.frame += 1;
+    world.record(true);
+    let commands = world.commands();
+    let writes = operands(&commands, Op::WriteTexture);
+    let records: Vec<Vec<u32>> = writes
+        .iter()
+        .filter(|o| {
+            o[3] == 0 && o[5] == sizes::LIGHT_RECORD_TEXELS && o[9] == sizes::LIGHT_RECORD_BYTES
+        })
+        .cloned()
+        .collect();
+    assert_eq!(
+        records.len(),
+        1,
+        "one light record of {} texels and {} bytes, among {writes:?}",
+        sizes::LIGHT_RECORD_TEXELS,
+        sizes::LIGHT_RECORD_BYTES
+    );
 }
 
 /// The operands of each command of `op`.

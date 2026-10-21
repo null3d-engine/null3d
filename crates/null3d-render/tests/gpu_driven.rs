@@ -1072,6 +1072,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
         kind: kind::POINT,
         light: 1,
         shadow: 0.0,
+        ..VisibleLight::default()
     };
     let dispatches = |world: &World| -> Vec<Vec<u32>> {
         world
@@ -1096,7 +1097,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
             .map(|pair| [pair[0], pair[1]])
             .collect()
     };
-    let both = vec![[CLUSTER_PARAMS_BYTES, 2 * 64]];
+    let both = vec![[CLUSTER_PARAMS_BYTES, 2 * sizes::LIGHT_RECORD_BYTES]];
     let mut world = World::new();
     let mut mock = MockBackend::default();
     world.lights = vec![light(-5.0), light(-9.0)];

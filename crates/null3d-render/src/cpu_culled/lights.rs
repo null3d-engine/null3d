@@ -1,7 +1,7 @@
 //! The point and spot lights of each camera view on WebGL2: the light records and the light grid's
 //! words in one data texture of 32-bit integers, so they take one texture unit of the fragment
-//! stage. The records fill the columns of the texture's first half, four texels each, and the
-//! words the columns of its second half, four to a texel. Fragment shaders read both with
+//! stage. The records fill the columns from the first, five texels each, and the words come in the
+//! columns after them, four to a texel. Fragment shaders read both with
 //! `texelFetch`, and turn the records' bits into floats. Each view's texture has a ring of three,
 //! as the index lists do, so a frame never writes a texture that the GPU may still read for an
 //! earlier frame. Every view has a frame group for each ring slot, which binds that slot's
