@@ -527,7 +527,7 @@ The owner reviews each scene's look before its references are remade. Every scen
 
 ### Creek
 
-Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 October 2026, built everything that code makes, with stand-ins for the organic models. The second phase, on 11 October 2026, put in the trees, the plants and the cave mouth, built by script in Blender. The third phase, the same day, is a beauty pass, after the owner asked for a very beautiful scene. It adds more and denser trees, wildflowers, a deeper cave, wet stones, foam, caustics, things that drift in the air, mist and shafts of light. The owner reviews its look before its pull request opens.
+Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 October 2026, built everything that code makes, with stand-ins for the organic models. The second phase, on 11 October 2026, put in the trees, the plants and the cave mouth, built by script in Blender. The third phase, the same day, is a beauty pass, after the owner asked for a very beautiful scene. It adds more and denser trees, wildflowers, a deeper cave, wet stones, foam, caustics, things that drift in the air, mist and shafts of light. The owner reviews its look before its pull request opens. The owner approved the look of 21 October 2026: the mountain ring and its gorges with the sun rising and setting down them, the view under the water, the look that blends with the light, the midnight moon, and the grass, leaves and petals without grain.
 
 | Part | How it is made |
 | --- | --- |
