@@ -14,6 +14,7 @@ import {
 	TEXTURE_STAT_RELOAD_LEVEL,
 	TEXTURE_STAT_RELOAD_TEXTURE,
 	TEXTURE_STAT_TEXTURE_BYTES,
+	TEXTURE_STAT_UPLOADING,
 	TEXTURE_WRAP_CLAMP,
 	TEXTURE_WRAP_MIRROR,
 	TEXTURE_WRAP_REPEAT,
@@ -40,19 +41,29 @@ function image(width = 32, height = 16): ImageBitmap {
 
 /** Where the fake core puts texture data in its memory. */
 const DATA_ADDRESS = 1024;
+/** Where the fake core puts a rectangle of new texels in its memory. */
+const REGION_ADDRESS = DATA_ADDRESS + 4096;
 
 /**
  * A core that records its texture calls, the images that went to the thread that draws, and the
  * data calls, with a largest texture of 64 texels. `arrived` stands for the wait until the thread
  * that draws holds an image or generator.
  */
-function fakeCore(arrived?: (id: number) => Promise<void>) {
+function fakeCore(
+	arrived?: (id: number) => Promise<void>,
+	clock: { frame: number; now: number } = { frame: 3, now: 0 },
+) {
 	const created: number[][] = [];
 	const images: number[][] = [];
 	const data: number[][] = [];
+	const regions: number[][] = [];
 	const destroyed: number[] = [];
 	const sent: [number, ImageBitmap | GeneratorSource][] = [];
 	let nextImage = 0;
+	/** True while a texture of the fake core waits for its texels. */
+	let uploading = false;
+	/** False while the fake core has no texels of a texture, as before its first upload. */
+	let regionReady = true;
 	const glue = {
 		createTexture: (...args: (number | boolean)[]) => {
 			created.push(args.map(Number));
@@ -74,12 +85,18 @@ function fakeCore(arrived?: (id: number) => Promise<void>) {
 			data.push(args);
 			return DATA_ADDRESS;
 		},
+		setTextureRegion: (...args: number[]) => {
+			regions.push(args);
+			return regionReady ? REGION_ADDRESS : 0;
+		},
 		textureStat: (field: number, texture: number) =>
 			field === TEXTURE_STAT_TEXTURE_BYTES
 				? texture * 100
 				: field === TEXTURE_STAT_MAX_SIZE
 					? 64
-					: 0,
+					: field === TEXTURE_STAT_UPLOADING
+						? Number(uploading)
+						: 0,
 		destroyTexture: (texture: number) => {
 			destroyed.push(texture);
 			return 0;
@@ -90,8 +107,58 @@ function fakeCore(arrived?: (id: number) => Promise<void>) {
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue, memory);
 	const send = (id: number, bitmap: ImageBitmap | GeneratorSource) => sent.push([id, bitmap]);
-	const textures = new Textures(core, send, { frame: 3 }, 0, undefined, arrived);
-	return { textures, created, images, data, destroyed, sent, memory };
+	const textures = new Textures(core, send, clock, 0, undefined, arrived);
+	return {
+		textures,
+		created,
+		images,
+		data,
+		regions,
+		destroyed,
+		sent,
+		memory,
+		clock,
+		setUploading: (value: boolean) => {
+			uploading = value;
+		},
+		setRegionReady: (value: boolean) => {
+			regionReady = value;
+		},
+	};
+}
+
+/** RGBA8 pixels of a canvas, with `color` at each texel, from its top row to its last. */
+function canvasPixels(width: number, height: number, color: (x: number, y: number) => number[]) {
+	return Uint8ClampedArray.from(
+		Array.from({ length: width * height }, (_, k) =>
+			color(k % width, Math.floor(k / width)),
+		).flat(),
+	);
+}
+
+/**
+ * A canvas as `textures.fromCanvas` reads one: its pixels, from its top row to its last, and a 2D
+ * context that returns a rectangle of them as `getImageData` does.
+ */
+function canvas(width: number, height: number, color: (x: number, y: number) => number[]) {
+	const pixels = canvasPixels(width, height, color);
+	const context = {
+		getImageData(x: number, y: number, w: number, h: number) {
+			const data = new Uint8ClampedArray(w * h * 4);
+			for (let row = 0; row < h; row++)
+				data.set(
+					pixels.subarray(((y + row) * width + x) * 4, ((y + row) * width + x + w) * 4),
+					row * w * 4,
+				);
+			return { data, width: w, height: h };
+		},
+	};
+	return { width, height, getContext: () => context } as unknown as OffscreenCanvas;
+}
+
+/** The bytes at an address of the fake core's memory. */
+function memoryBytes(memory: WebAssembly.Memory, address: number, length: number): number[] {
+	return [...new Uint8Array(memory.buffer, address, length)];
 }
 
 /**
@@ -178,6 +245,110 @@ describe('textures.fromImageBitmap', () => {
 		const uvSet = 2 as unknown as 0;
 		fails(() => textures.fromImageBitmap(image(), { uvSet }), 'got the uvSet 2: give 0 or 1');
 		expect(created).toEqual([]);
+	});
+});
+
+describe('textures.fromCanvas and texture.refresh', () => {
+	/** A texel whose red channel names its place, so a test can tell the rows and columns apart. */
+	const place = (x: number, y: number) => [y * 10 + x + 1, 0, 0, 255];
+
+	test('makes a texture of the canvas, with its rows turned over so it stands upright', () => {
+		const { textures, created, data, memory } = fakeCore();
+		const drawn = canvas(2, 2, place);
+		const texture = textures.fromCanvas(drawn);
+		expect(created[0]).toEqual([2, 2, 1, ...DEFAULT_CODES]);
+		expect(data).toEqual([[7, 2, 2]]);
+		// The canvas's last row comes first, as v = 0 is the bottom of a plane.
+		expect(memoryBytes(memory, DATA_ADDRESS, 16)).toEqual([
+			11, 0, 0, 255, 12, 0, 0, 255, 1, 0, 0, 255, 2, 0, 0, 255,
+		]);
+		expect([texture.width, texture.height, texture.format]).toEqual([2, 2, 'rgba8unorm']);
+	});
+
+	test('refreshes only the rectangle that changed, with its rows turned over', () => {
+		const { textures, data, regions, memory } = fakeCore();
+		const texture = textures.fromCanvas(canvas(4, 4, place));
+		texture.refresh({ x: 1, y: 1, width: 2, height: 2 });
+		// The canvas's rectangle rows 1 and 2 are texture rows 1 and 2, counted from the bottom.
+		expect(regions).toEqual([[7, 1, 1, 2, 2]]);
+		expect(data.length).toBe(1);
+		expect(memoryBytes(memory, REGION_ADDRESS, 16)).toEqual([
+			22, 0, 0, 255, 23, 0, 0, 255, 12, 0, 0, 255, 13, 0, 0, 255,
+		]);
+	});
+
+	test('refreshes the whole canvas when no rectangle is given', () => {
+		const { textures, data, regions, memory } = fakeCore();
+		const texture = textures.fromCanvas(canvas(2, 1, place));
+		texture.refresh();
+		expect(regions).toEqual([]);
+		expect(data).toEqual([
+			[7, 2, 1],
+			[7, 2, 1],
+		]);
+		expect(memoryBytes(memory, DATA_ADDRESS, 8)).toEqual([1, 0, 0, 255, 2, 0, 0, 255]);
+	});
+
+	test('refreshes no faster than the texture says, and covers every rectangle it skipped', () => {
+		const { textures, regions, clock, setUploading } = fakeCore();
+		const texture = textures.fromCanvas(canvas(8, 8, place), { refreshHz: 30 });
+		expect(regions.length).toBe(0);
+		clock.now = 1;
+		expect(texture.refresh({ x: 0, y: 0, width: 2, height: 2 })).toBe(true);
+		expect(regions.length).toBe(1);
+		// A refresh that comes too soon changes only the rectangle that the next one covers.
+		clock.now = 1.01;
+		expect(texture.refresh({ x: 5, y: 5, width: 2, height: 2 })).toBe(false);
+		expect(regions.length).toBe(1);
+		// A refresh still waiting to upload is read again with the next one's rectangle.
+		setUploading(true);
+		clock.now = 2;
+		expect(texture.refresh({ x: 4, y: 4, width: 2, height: 2 })).toBe(true);
+		expect(regions.length).toBe(2);
+		expect(regions[1]).toEqual([7, 0, 1, 7, 7]);
+	});
+
+	test('sends the whole canvas when the texture holds no texels yet', () => {
+		const { textures, data, regions, setRegionReady, memory } = fakeCore();
+		const texture = textures.fromCanvas(canvas(4, 4, place));
+		setRegionReady(false);
+		texture.refresh({ x: 1, y: 1, width: 2, height: 2 });
+		expect(regions).toEqual([[7, 1, 1, 2, 2]]);
+		expect(data.length).toBe(2);
+		expect(memoryBytes(memory, DATA_ADDRESS, 4)).toEqual([31, 0, 0, 255]);
+	});
+
+	test('throws E1208 for a texture that follows no canvas, and for a rectangle outside it', () => {
+		const { textures, created } = fakeCore();
+		const plain = textures.fromData({ width: 1, height: 1, data: new Uint8Array(4) });
+		expect(() => plain.refresh()).toThrow('E1208');
+		expect(() => plain.refresh()).toThrow('does not follow a canvas');
+		const texture = textures.fromCanvas(canvas(4, 4, place));
+		for (const rect of [
+			{ x: 3, y: 0, width: 2, height: 1 },
+			{ x: -1, y: 0, width: 1, height: 1 },
+			{ x: 0, y: 0, width: 0, height: 1 },
+			{ x: 0.5, y: 0, width: 1, height: 1 },
+		])
+			expect(() => texture.refresh(rect)).toThrow('inside the canvas');
+		expect(created.length).toBe(2);
+	});
+
+	test('throws E1208 for a canvas without a 2D context, and for a bad refresh rate', () => {
+		const { textures, created } = fakeCore();
+		const bare = { width: 4, height: 4, getContext: () => null } as unknown as OffscreenCanvas;
+		expect(() => textures.fromCanvas(bare)).toThrow('without a 2D context');
+		expect(() => textures.fromCanvas(canvas(4, 4, place), { refreshHz: -1 })).toThrow(
+			'give 0 or a positive number',
+		);
+		expect(created).toEqual([]);
+	});
+
+	test('throws E1101 after destroy', () => {
+		const { textures } = fakeCore();
+		const texture = textures.fromCanvas(canvas(2, 2, place));
+		texture.destroy();
+		expect(() => texture.refresh()).toThrow('E1101');
 	});
 });
 
@@ -348,7 +519,7 @@ describe('loads of textures again for the texture memory budget', () => {
 			lastErrorDetail: () => 0,
 		} as unknown as CoreGlue;
 		const core = new CoreMemory(glue, new WebAssembly.Memory({ initial: 1 }));
-		const textures = new Textures(core, () => {}, { frame: 3 }, 0);
+		const textures = new Textures(core, () => {}, { frame: 3, now: 0 }, 0);
 		return { textures, reloadable, failed, core, bump: () => epoch++ };
 	}
 

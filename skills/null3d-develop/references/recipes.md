@@ -18,14 +18,15 @@ Each recipe states the goal, gives the code, explains why it is written that way
 12. Minimap with a second camera (0.2)
 13. Screenshots
 14. Video on a surface, with frames from the page
-15. Custom full-screen effect (0.2)
-16. Very large worlds (0.2)
-17. Move a player with keys, a gamepad or touch
-18. Camera that follows a moving object
-19. Water and mirror floors with a reflection
-20. Fire, smoke and sparks with particles
-21. Terrain from a height field
-22. Outdoor land with an edge the camera never sees
+15. A screen drawn on a canvas (0.2)
+16. Custom full-screen effect (0.2)
+17. Very large worlds (0.2)
+18. Move a player with keys, a gamepad or touch
+19. Camera that follows a moving object
+20. Water and mirror floors with a reflection
+21. Fire, smoke and sparks with particles
+22. Terrain from a height field
+23. Outdoor land with an edge the camera never sees
 
 ## 1. Start a new project
 
@@ -464,7 +465,27 @@ export default defineSketch(({ scene, geometry, materials, textures, page }) => 
 
 Each frame costs one decode-and-resize on the page and one upload in the render worker, so keep frames small. Docs: `guides/video-textures`, `api/textures`.
 
-## 15. Custom full-screen effect (0.2)
+## 15. A screen drawn on a canvas (0.2)
+
+An `OffscreenCanvas` is a texture, and a refresh uploads only the rectangle that changed. A score board is 512 square texels, and the score's rectangle refreshes at most 30 times a second.
+
+```ts
+const canvas = new OffscreenCanvas(512, 512);
+const context = canvas.getContext('2d', { willReadFrequently: true })!;   // cheap pixel reads
+const board = textures.fromCanvas(canvas, { refreshHz: 30 });
+context.fillStyle = '#0c1420';
+context.fillRect(0, 0, 512, 512);
+context.font = 'bold 88px sans-serif';
+scene.createMesh({ mesh: geometry.plane({ width: 2.2, height: 2.2 }), material: materials.unlit({ map: board }) });
+// In onUpdate, when the score changes, paint the score's rectangle and refresh only that part:
+context.fillRect(32, 32, 448, 96);
+context.fillText(String(score), 32, 32);
+board.refresh({ x: 32, y: 32, width: 448, height: 96 });                  // uploads only those texels
+```
+
+The rectangle counts from the canvas's top-left corner. `fromCanvas` puts the canvas's last row at the bottom of a plane, so the canvas stands upright. `refreshHz` caps the canvas reads. A call that comes sooner reads nothing. The next read covers both rectangles. A 256 x 256 rectangle is 256 KiB, well within the upload budget at 30 Hz. Ask for the 2D context with `willReadFrequently: true`. Docs: `api/textures#canvases`, `cookbook/index`.
+
+## 16. Custom full-screen effect (0.2)
 
 ```ts
 const pixelate = /* wgsl */ `
@@ -482,7 +503,7 @@ post.setEffectUniform(blocks, 'size', 8);
 
 The effect runs on HDR color before bloom and the tone curve. The engine joins an effect that reads only its own pixel into the pass of the effect before it, and folds the last pass into the final pass when bloom and FXAA are off, so per-pixel looks can stay separate effects. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
-## 16. Very large worlds (0.2)
+## 17. Very large worlds (0.2)
 
 ```ts
 // page.ts
@@ -501,7 +522,7 @@ const trees = scene.createInstances(treeMesh, 5000, { material: bark, origin: ti
 
 The engine stores positions relative to cells 1,024 m wide, and each frame it sends the GPU one camera-to-cell offset per cell in use. So objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. With `largeWorld: true`, setters keep each position exact: without it, a position you set moves in steps of 0.5 m at the Earth's radius. Batch origins work in both modes. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. At most 512 cells are in use at once: keep thinly spread content under a few parents, which share their root's cell. When they run out, the console warns once, and new far content jitters. Docs: `concepts/large-worlds`.
 
-## 17. Move a player with keys, a gamepad or touch
+## 18. Move a player with keys, a gamepad or touch
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -541,7 +562,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 An action names the keys and buttons for one move, so keyboard and gamepad players share one code path. With `value`, a stick pushed part of the way steers slowly, and a key steers at full speed. Touch has no keys: the first finger presses `Mouse0` and moves `input.pointer`, and `input.touches` lists every finger. Give the canvas `touch-action: none` in the page's CSS, or the browser scrolls the page and cancels the touches. Input changes once per frame, before `onUpdate`, and a tap shorter than a frame still counts as a press. Docs: `api/input`.
 
-## 18. Camera that follows a moving object
+## 19. Camera that follows a moving object
 
 ```ts
 import { defineSketch, vec3 } from '@null3d/engine';
@@ -578,7 +599,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 `onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
 
-## 19. Water and mirror floors with a reflection
+## 20. Water and mirror floors with a reflection
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -624,7 +645,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 
 The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` and `sceneDistance(uv)` (0.3), or the height-field water recipe in `guides/custom-passes`. For a camera that dips under the water, see "Water that the camera can go under" in `references/shaders.md` section 7. Docs: `api/render`, `shaders/surface-functions`.
 
-## 20. Fire, smoke and sparks with particles
+## 21. Fire, smoke and sparks with particles
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -694,7 +715,7 @@ export default defineSketch(async (ctx) => {
 
 Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
 
-## 21. Terrain from a height field
+## 22. Terrain from a height field
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -751,7 +772,7 @@ export default defineSketch((ctx) => {
 
 The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
 
-## 22. Outdoor land with an edge the camera never sees
+## 23. Outdoor land with an edge the camera never sees
 
 The background takes no fog. So past the edge of the land, the camera sees the plain background below the horizon, and fog cannot hide it. Hide the edge with geometry, and keep the camera inside it:
 

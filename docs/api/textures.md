@@ -3,12 +3,12 @@ id: api/textures
 title: Textures
 status: experimental
 since: "0.1"
-summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass."
+summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromPass."
 ---
 
 # Textures
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass` and `textures.fromCanvas`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 
 ```mermaid
 flowchart LR
@@ -16,13 +16,15 @@ flowchart LR
     image -->|"textures.fromImageBitmap"| texture["A texture"]
     ktx2["A KTX2 file"] -->|"assets.loadTexture:<br/>transcoded in a worker to<br/>the device's compressed format"| texture
     data["Texel data<br/>(typed array)"] -->|"textures.fromData"| texture
+    canvas["An OffscreenCanvas<br/>drawn in the sketch"] -->|"textures.fromCanvas,<br/>then texture.refresh<br/>for each change"| texture
     texture -->|"uploads a band of rows per frame,<br/>within the frame's upload budget"| layer["A layer of a texture array<br/>on the GPU, with mip levels"]
 ```
 
-A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in three ways:
+A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in four ways:
 
 - `assets.loadTexture(url, options)` downloads an image file or a KTX2 file and decodes it into a texture. [Assets](assets.md) covers the loading calls.
-- `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already, such as a frame drawn on an `OffscreenCanvas`.
+- `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already.
+- `textures.fromCanvas(canvas, options)` makes a texture that follows an `OffscreenCanvas`, such as a score board or a map that the sketch draws. `texture.refresh(rect)` then sends the pixels that changed.
 - `textures.fromData({ width, height, depth, format, data })` makes a texture from numbers, four per texel.
 
 ```ts
@@ -115,6 +117,39 @@ const label = textures.fromImageBitmap(await createImageBitmap(canvas, { imageOr
 
 The image moves to the thread that draws, without a copy, so the sketch can use it no more. An image that is closed, or that went to a texture already, has no pixels, and the call throws E1208.
 
+## Canvases
+
+`textures.fromCanvas` makes a texture that follows an `OffscreenCanvas` drawn in the sketch, such as a score board, a map or a drawing surface. The canvas's last row goes to v = 0, the bottom of a plane, so the canvas stands upright on a plane as on a page. Its first pixels upload as any image's do.
+
+`texture.refresh(rect)` reads the canvas again. Give it the rectangle that changed, in the canvas's own coordinates. The rectangle starts at the column and row of its top-left texel, counted from the canvas's top-left corner, and gives its width and height. Only that rectangle uploads, in the texture's turn and within the frame's upload budget. The rest of the texture keeps its texels. Without a rectangle, the call reads the whole canvas.
+
+```ts
+const canvas = new OffscreenCanvas(1024, 1024);
+const context = canvas.getContext('2d', { willReadFrequently: true })!;
+context.fillStyle = '#101820';
+context.fillRect(0, 0, 1024, 1024);
+const screen = textures.fromCanvas(canvas, { refreshHz: 30 });
+
+return {
+  onUpdate() {
+    context.fillStyle = '#f0c040';
+    context.fillRect(x, y, 256, 256);
+    // Only the changed rectangle uploads, at most 30 times a second.
+    screen.refresh({ x, y, width: 256, height: 256 });
+  },
+};
+```
+
+- Ask for the 2D context with `willReadFrequently: true`, so the browser keeps the pixels where the engine reads them cheaply.
+- The rectangle must lie inside the canvas. A rectangle outside it throws E1208.
+- The `refreshHz` option caps how often the engine reads the canvas. A call that comes sooner reads nothing and returns false, and the next read covers its rectangle too.
+- A refresh that comes before the first upload reaches the GPU sends the whole canvas, because a rectangle cannot fill the rest.
+- `texture.update` works on a canvas texture too. An update with another size gives the texture that size, and the next refresh sends the whole canvas.
+- The upload budget counts the rectangle. A 256 x 256 rectangle is 256 KiB, so a 1024 x 1024 screen that refreshes at 30 Hz sends 7.5 MiB a second. The preset's `uploadBytesPerFrame` sets the budget.
+- A refresh makes one `ImageData` for the rectangle, which the browser returns.
+
+The screen shows the canvas with the sampling of any image. Give it mip levels of its own only where it shrinks on screen, since the GPU makes them again after each refresh.
+
 ## Data
 
 `textures.fromData` takes four numbers per texel, in rows from the bottom up. It stores them in one of two formats:
@@ -150,7 +185,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 - An image may have another size, and the texture then takes that size. Images fill textures of one layer in `rgba8unorm`.
 - Data must fit the texture's size and format.
 
-Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, such as frames of a video, keep the images small: each update decodes and uploads a whole image.
+Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, such as frames of a video, keep the images small. Or follow a canvas and refresh only the rectangle that changed. Each image update decodes and uploads a whole image.
 
 `texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and the scene shows its background color in place of a background texture. Later calls on the texture throw [E1101](../errors/E1101.md).
 
