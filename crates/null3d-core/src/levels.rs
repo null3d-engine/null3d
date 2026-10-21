@@ -9,12 +9,12 @@
 //! ```
 //!
 //! `scale` is the largest axis scale of the source's world matrix, and `distance` the distance from
-//! the view's camera to the centre of the source's bounding sphere, or 1 for an orthographic
-//! camera, whose pixels do not shrink with distance. `factor` is the render height in pixels times
-//! the projection's `P[1][1]`, over twice the threshold in pixels. The base level's error is 0, so
-//! it always passes. The rule keeps no state, so every view and both frame builders pick the same
-//! level for the same source: the job workers through [`LevelRule::pick`], and the GPU's culling
-//! shader by the same steps.
+//! the view's camera to the nearest point of the source's bounding sphere, at least
+//! [`LEAST_DISTANCE`], or 1 for an orthographic camera, whose pixels do not shrink with distance.
+//! `factor` is the render height in pixels times the projection's `P[1][1]`, over twice the
+//! threshold in pixels. The base level's error is 0, so it always passes. The rule keeps no state,
+//! so every view and both frame builders pick the same level for the same source: the job workers
+//! through [`LevelRule::pick`], and the GPU's culling shader by the same steps.
 //!
 //! Past each switch distance lies a fading band, [`FADE_BAND`] of the switch distance long, in
 //! which the new level and the one before both draw. A fade amount `t` runs from 0 to 1 across the
@@ -32,6 +32,10 @@ pub const FADE_BAND: f32 = 0.08;
 /// The smallest fade value of the new level in a band, so that its sign marks it even at the
 /// band's start, where it covers no pixel yet.
 const LEAST_FADE: f32 = 1.0e-6;
+
+/// The smallest distance that the rule compares, in metres. A camera inside a source's bounds
+/// measures this distance, so the source keeps its base level.
+pub const LEAST_DISTANCE: f32 = 1.0e-3;
 
 /// A bucket's level of detail: the level's error, the bucket of the next coarser level, and the
 /// level's fade bucket, each [`NO_LINK`] for none.
@@ -131,14 +135,17 @@ impl LevelRule {
         [self.factor, orthographic, self.band, 0.0]
     }
 
-    /// The distance that the rule compares for a sphere centre relative to the camera: its length,
-    /// or 1 for an orthographic camera.
+    /// The distance that the rule compares for a bounding sphere whose centre lies at `center`
+    /// relative to the camera and whose radius is `radius`: the distance to its nearest point, at
+    /// least [`LEAST_DISTANCE`], or 1 for an orthographic camera.
     #[inline(always)]
-    pub fn distance(&self, center: [f32; 3]) -> f32 {
+    pub fn distance(&self, center: [f32; 3], radius: f32) -> f32 {
         if self.orthographic {
             1.0
         } else {
-            (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt()
+            let length =
+                (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt();
+            (length - radius).max(LEAST_DISTANCE)
         }
     }
 
@@ -230,6 +237,31 @@ mod tests {
     }
 
     #[test]
+    fn the_distance_runs_to_the_nearest_point_of_the_bounds() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        // A sphere of radius 2 m centred 5 m away has its nearest point 3 m away.
+        assert_eq!(rule.distance([3.0, 4.0, 0.0], 2.0), 3.0);
+        // A sphere that reaches past the camera measures the least distance.
+        assert_eq!(rule.distance([0.5, 0.0, 0.0], 2.0), LEAST_DISTANCE);
+        assert_eq!(rule.distance([-1.0, 0.0, 0.0], 2.0), LEAST_DISTANCE);
+        // An orthographic camera measures the same distance wherever the sphere lies.
+        let flat = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
+        assert_eq!(flat.distance([1e5, 0.0, 0.0], 1e4), 1.0);
+    }
+
+    #[test]
+    fn a_large_object_switches_by_its_near_side() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // Level 1 switches in at a nearest point of 5 m. A sphere of radius 4 m centred at 9 m
+        // reaches 4 m, and one centred at 9.1 m reaches 5.1 m.
+        let near = rule.distance([0.0, 0.0, -9.0], 4.0);
+        assert_eq!(rule.pick(&links, 0, 1.0, near), Picked::One(0));
+        let far = rule.distance([0.0, 0.0, -9.1], 4.0);
+        assert_eq!(rule.pick(&links, 0, 1.0, far), Picked::One(1));
+    }
+
+    #[test]
     fn a_larger_threshold_or_a_lower_render_height_picks_coarser_levels() {
         let links = links([0.0, 0.01, 0.04, 0.2], false);
         let full = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
@@ -245,7 +277,7 @@ mod tests {
         let links = links([0.0, 0.01, 0.04, 0.2], false);
         // A view 10 m high on 1,000 pixels: P[1][1] is 0.2, so 100 pixels a metre at threshold 1.
         let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
-        let distance = rule.distance([1e5, 0.0, 0.0]);
+        let distance = rule.distance([1e5, 0.0, 0.0], 1.0);
         assert_eq!(distance, 1.0);
         // An error passes while it covers less than a pixel: level 1's 1 cm covers exactly one
         // pixel at scale 1, so the base level draws, and half a pixel at scale 0.5.

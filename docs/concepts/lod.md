@@ -59,7 +59,7 @@ pixels = error × scale × render height / (2 × distance × tan(field of view /
 
 Each object and each instance row draws the coarsest level whose error covers fewer pixels than the `lodThreshold` quality setting. The setting is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, each level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles the threshold, twice at most. An orthographic camera's pixels do not shrink with distance. So its levels follow the object's scale and the camera's zoom alone.
 
-The distance runs from the camera to the center of the object's bounding sphere, so turning the camera never changes a level. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
+The distance runs from the camera to the nearest point of the object's bounding sphere. A large object therefore switches by its near side, so it does not turn coarse too early. Turning the camera never changes a level. A camera inside the bounds measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
 
 ## Fading between levels
 
@@ -82,7 +82,7 @@ Far shadow cascades and the shadow tiles of point and spot lights keep their dep
 | `lod.autoUpdate`, `lod.update(camera)` | None: the engine picks levels in every frame |
 | `lod.getCurrentLevel()` | None |
 
-A three.js `LOD` holds whole objects. In null3D the levels belong to the mesh, and every object and instance batch that draws it picks its own level. A level given by its distance switches in at that distance for an object of scale 1. That holds on a screen 1,080 pixels high, at a field of view of 50 degrees, three.js's default. The `fov` option of `setLevels` names another field of view. On other screens the level switches by its error, as every level does.
+A three.js `LOD` holds whole objects. In null3D the levels belong to the mesh, and every object and instance batch that draws it picks its own level. A level given by its distance switches in at that distance for an object of scale 1. The distance measures to the nearest point of the object's bounds. That holds on a screen 1,080 pixels high, at a field of view of 50 degrees, three.js's default. three.js measures to the object's position instead, so a large object switches later in null3D. The `fov` option of `setLevels` names another field of view. On other screens the level switches by its error, as every level does.
 
 ## API reference
 

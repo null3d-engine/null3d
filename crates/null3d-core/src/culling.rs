@@ -817,7 +817,7 @@ impl LevelChoice<'_> {
             rows.spheres.ys[r] + offset[1],
             rows.spheres.zs[r] + offset[2],
         ];
-        let distance = self.rule.distance(center);
+        let distance = self.rule.distance(center, radius);
         self.rule.pick(self.links, home, radius / local, distance)
     }
 }
