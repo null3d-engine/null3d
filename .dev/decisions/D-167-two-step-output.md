@@ -302,3 +302,13 @@ The page runs unchanged on the iPad, the cloud S25, Pixel 9 and Pixel 11. It nee
 host for the iPad and a tunnel URL for the phone runner. No engine build is needed. The S25 run
 decides the 0.2 ms band. The nearest baseline and the mip bias are in the image table above. A
 `gsrSharp` switch shows the softer GSR 1 variant at 1.0.
+
+## Addendum, 21 October 2026: the sharpening answers question 5
+
+Question 5 asked whether RCAS fuses into the upscale, and how a `sharpen` value scales with the
+render scale. D-205 answers both. The value draws its own RCAS in the second step, over the four
+texels that cross each pixel, after the upscale and before the color table, the outline and the
+dither. It draws only at the whole canvas's render scale, so no scaling against the upscale is
+needed: below scale 1 the upscale's own GSR 1 sharpening runs, and the value adds nothing. A sketch
+that sets the value draws these two steps at the whole scale too, so the sharpening reads display
+color after one tone curve for each pixel.

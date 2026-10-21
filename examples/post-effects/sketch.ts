@@ -1,10 +1,11 @@
 // Post effects: crates at the dead end of a neon alley at night, on wet asphalt that mirrors the
 // neon, and the camera sways in front of them. Bloom spreads the neon past its edges, ambient
 // occlusion darkens the corner, an outline marks one crate, depth of field focuses on that crate,
-// and a vignette darkens the edges. A lens grade splits red from blue toward the edges, bleeds the
-// bright neon sideways into an anamorphic streak and adds film grain. Every 3 seconds the grading
-// table changes: none, warm, then cool, each made in code from a few numbers. The pointer moves the
-// pink lamp, and the bloom, the shading and the reflections in the puddles follow.
+// a vignette darkens the edges, and a light sharpening keeps the crate edges crisp. A lens grade
+// splits red from blue toward the edges, bleeds the bright neon sideways into an anamorphic streak
+// and adds film grain. Every 3 seconds the grading table changes: none, warm, then cool, each made
+// in code from a few numbers. The pointer moves the pink lamp, and the bloom, the shading and the
+// reflections in the puddles follow.
 import { defineSketch, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { LENS_WGSL } from '../lib/lens';
@@ -28,6 +29,7 @@ export default defineSketch(async (ctx) => {
 		vignette: { intensity: 0.9, size: 1.1 },
 		dof: { aperture: 1.4, focusPoint: [-0.3, 0.35, -1.45] },
 		ssr: { maxDistance: 24, thickness: 0.6 },
+		sharpen: 0.5,
 	});
 	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0.25, grain: 0.05 } });
 	scene.setBackground('#05060a');

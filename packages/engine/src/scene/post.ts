@@ -3,7 +3,8 @@
 // occlusion, which darkens the ambient light of the camera's opaque objects, screen-space
 // reflections, which reflect what the screen shows in their shiny surfaces, outlines, the
 // vignette, which the final pass applies before the tone mapping, the color grading table, which
-// it applies after, depth of field, which blurs by distance before bloom, and automatic exposure,
+// it applies after, the sharpening, which sharpens display color at the whole canvas's render
+// scale, depth of field, which blurs by distance before bloom, and automatic exposure,
 // which adapts the final pass's exposure to the scene's brightness. The core takes one
 // exposure: the sketch's exposure times the camera
 // exposure of its EV100. The sketch's custom effects and custom tone curve come through here too
@@ -66,6 +67,7 @@ const SETTINGS = [
 	'dof',
 	'ssr',
 	'autoExposure',
+	'sharpen',
 ] as const;
 const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
 /** Each way of blending bloom's glow, by its code in the core. */
@@ -499,6 +501,14 @@ export interface PostSettings {
 	 * needs HDR color, as bloom does.
 	 */
 	autoExposure?: AutoExposureSettings | false;
+	/**
+	 * Sharpens edges and fine detail: a share from 0 for none to 1 for the most, or `false` to turn
+	 * it off. It is off by default, and 0.5 is a good start. The engine sharpens the display color
+	 * after the tone mapping, so bright edges cannot gain rings the way sharpened light does. It
+	 * draws at the whole canvas's render scale; below one, the upscale sharpens the image itself.
+	 * See the post-processing concepts page.
+	 */
+	sharpen?: number | false;
 }
 
 /**
@@ -535,6 +545,8 @@ export class Post implements ViewHolder {
 	private warnedNoSsr = false;
 	private autoExposure = false;
 	private warnedNoExposure = false;
+	/** True while the sketch sharpens the picture. */
+	private sharpen = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -642,6 +654,7 @@ export class Post implements ViewHolder {
 			dof,
 			ssr,
 			autoExposure,
+			sharpen,
 		} = settings;
 		const { core } = this;
 		const { glue } = core;
@@ -695,6 +708,11 @@ export class Post implements ViewHolder {
 		if (ssr !== undefined) this.setSsr(ssr, values);
 		if (dof !== undefined) this.setDof(dof, values);
 		if (autoExposure !== undefined) this.setAutoExposure(autoExposure, values);
+		if (sharpen !== undefined) {
+			this.sharpen = sharpen !== false && sharpen > 0;
+			if (this.sharpen) values[C.POST_VALUE_SHARPEN] = sharpen as number;
+			core.check(glue.setSharpen(this.sharpen), 'post.set', undefined, true);
+		}
 		if (outline !== undefined) {
 			this.outline = outline !== false;
 			if (outline !== false) {
@@ -935,7 +953,7 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof, ssr and autoExposure.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof, ssr, autoExposure and sharpen.`,
 			);
 	const {
 		toneMapping,
@@ -949,8 +967,10 @@ function checkSettings(settings: PostSettings): void {
 		outline,
 		dof,
 		ssr,
+		sharpen,
 	} = settings;
 	checkDof(dof);
+	if (sharpen !== undefined && sharpen !== false) checkNumber('sharpen', sharpen, 1);
 	checkGroup('ssr', ssr, SSR_SETTINGS, 'intensity, maxDistance, thickness and maxRoughness');
 	if (ssr) {
 		checkNumber('ssr.intensity', ssr.intensity, 1);

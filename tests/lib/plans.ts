@@ -1124,8 +1124,8 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, the subsurface blur of skin, the volumetric fog, 4 custom effects, or
- * the physical sky.
+ * sun's contact shadows, the subsurface blur of skin, the volumetric fog, 4 custom effects, the
+ * physical sky, or the sharpening.
  */
 export type CostedEffect =
 	| 'bloom'
@@ -1135,7 +1135,8 @@ export type CostedEffect =
 	| 'contact'
 	| 'fog'
 	| 'effects'
-	| 'sky';
+	| 'sky'
+	| 'sharpen';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1156,7 +1157,9 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
  * with the sun still and with the sun moving in every frame, which draws the sky view table again
  * in each frame. The subsurface plan times the skin blur at 17 and 25 taps, High's and
- * Ultra's. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * Ultra's. The sharpen plan times the sharpening at the whole canvas's render scale, where the
+ * frame draws the two-step pass, and at half it, where the upscale sharpens instead. D-21 records
+ * the results of the bloom plan and the ao plan, D-71 those of the
  * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
  * contact plan, D-143 those of the physical sky plan, and D-153 those of the subsurface plan.
  */
@@ -1201,6 +1204,8 @@ export function effectPlan(
 			['-17', ['taps=17']],
 			['-25', ['taps=25']],
 		],
+		// The two steps of the pass at the whole canvas's scale, and the sharpening in the second.
+		sharpen: [['', []]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1870,6 +1875,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	contact: () => effectPlan('contact'),
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
+	sharpen: () => effectPlan('sharpen'),
 	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,

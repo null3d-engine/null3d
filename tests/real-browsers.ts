@@ -1080,6 +1080,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'contact',
 	'effects',
 	'effects-joined',
+	'sharpen',
 	'physical-sky',
 	'occlusion',
 	'gpu-occlusion',

@@ -4,7 +4,9 @@
 //! A view that keeps its camera draws the same scene every frame. Drawing each frame with the
 //! camera's projection moved by a different fraction of a pixel, and averaging the frames, is a
 //! form of supersampling: edges and fine detail converge on a sharper image than any one frame, and
-//! the cost is one frame's work for each sample.
+//! the cost is one frame's work for each sample. A view that sharpens its picture never accumulates:
+//! the sharpening draws in the moving frame's second step, so the history would not hold it
+//! (`frame_graph.rs`'s `still_eligible`).
 //!
 //! The jitter cycles through the Halton sequence of bases 2 and 3, whose samples spread evenly over
 //! the pixel, so the average converges quickly. Sample 0 is no offset: the first frame of a still
