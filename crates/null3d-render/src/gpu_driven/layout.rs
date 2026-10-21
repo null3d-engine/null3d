@@ -192,6 +192,8 @@ pub(super) struct Bucket {
     /// The id of the pipeline that draws its objects into GPU picking's id target, or 0 while
     /// picking is off or its pair has no pick build.
     pub(super) pick: u32,
+    /// True when its material reads the copy of the scene's depth, which its draws bind.
+    pub(super) scene_depth: bool,
     /// True when that pipeline binds the material's maps, as a custom material's pick build does.
     pub(super) pick_maps: bool,
 }
@@ -998,12 +1000,18 @@ impl Layout {
             };
             let base = if by_index { &mut indexed } else { &mut copied };
             self.parallax |= parallax;
+            // A bucket draws its material's surface function in the camera's opaque or skin pass,
+            // and only a custom material's own reads the copy of the scene's depth. The shadow,
+            // outline, motion and pick builds drop it.
+            let scene_depth = matches!(drawn, Drawn::Scene | Drawn::Subsurface)
+                && settings.materials().reads_scene_depth(material - 1);
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
                 prepass_own,
                 group,
                 material,
+                scene_depth,
                 base: *base,
                 capacity: count,
                 first_draw: self.draws.len() as u32,

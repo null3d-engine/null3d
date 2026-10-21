@@ -214,6 +214,40 @@ Give the pass's texture to the material with `textures: { mirror: textures.fromP
 - `reflection_uv(clip, offset)` gives the texture coordinates of the point whose clip position is `clip`. The texture holds the mirrored image, so the function turns the screen's x around. `offset` moves the place in texture coordinates. A ripple's tilt, such as `s.normal.xz * 0.05`, makes the reflection waver.
 - Roughness does not blur the reflection, which keeps the pass's resolution. A reflection at a quarter of the render size looks soft.
 
+## The scene's depth
+
+A surface function reads the depth of the opaque scene behind its point. The engine copies that depth after the opaque pass, and a blended surface draws after the copy. Declare the input with `sceneInputs: ['sceneDepth']`, then call one of the helpers:
+
+| Function | What it gives |
+| --- | --- |
+| `sceneDepth(uv)` | The scene's depth at the screen's place `uv`: 1 at the camera's near plane and 0 at its far plane, and 0 where nothing drew |
+| `sceneDistance(uv)` | The distance in front of the camera of the surface at `uv`, in world units |
+
+```wgsl
+struct Uniforms { shallow: vec3f, deep: vec3f, foam: vec3f }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    let behind = sceneDistance(uv);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(1.0, 8.0, behind));
+    // Foam where an opaque surface nearly touches the sheet.
+    s.baseColor = mix(s.baseColor, material.foam, 1.0 - smoothstep(0.1, 0.6, behind));
+    s.alpha = mix(0.45, 0.9, smoothstep(1.0, 8.0, behind));
+    return s;
+}
+```
+
+- `input.fragCoord` counts pixels from the top left on both GPU paths, so `input.fragCoord.xy / frame.resolution` is the screen's place.
+- Read the helpers in the surface function, not in a vertex offset. The depth belongs to the pixels, and the vertex stage does not bind it.
+- A surface that draws before the copy exists reads 0, the far plane. That is a surface in the opaque pass, and any surface in a scene pass or a reflection pass.
+- The engine makes the copy while a material that declares the input draws, whatever the quality preset says.
+- `sceneDistance` takes a perspective and an orthographic camera. On WebGL2, the values are the depth that the device stores, so a device that draws `reversed-gl` depth gives less precise distances.
+- A material that reads the scene's depth declares no textures of its own. The two groups together would pass WebGPU's 16 sampled textures in the fragment stage.
+- Development builds throw E1217 when the declaration and the WGSL disagree, and for a material with both the depth and its own textures.
+
+[Custom materials](../api/materials.md#the-scene-behind-a-surface) gives the options and the cases where an input is absent.
+
 ## Transmission
 
 A surface that lets light through shows what lies behind it, bent by its normal and its volume, as [Transmission](../api/materials.md#transmission) on the Materials page describes. A surface function sets how much light passes with the surface's `transmission`, and how deep the volume is with its `thickness`. Water whose ripples bend the stones on its bed only needs a normal:
@@ -373,7 +407,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.

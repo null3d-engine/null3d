@@ -1,4 +1,4 @@
-# D-208: Property animation samples on the sketch's thread
+# D-209: Property animation samples on the sketch's thread
 
 Status: decided. Date: 21 October 2026. Task: M3-G1.
 

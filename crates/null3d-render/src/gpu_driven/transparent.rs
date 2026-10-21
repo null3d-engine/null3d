@@ -206,8 +206,9 @@ impl Transparent {
     /// It leaves out the objects whose maps show a target that the view does not read. `rows`
     /// picks the buckets that draw, and their pipelines: those of the transparent pass, or of the
     /// camera's weighted layer. The draws bind group `frame` at 0, the view's frame group, or the
-    /// decal pass's own. Each draw binds group `last`, where it is not 0, after its bucket's groups,
-    /// as decals bind the scene's depth.
+    /// decal pass's own. Each draw binds group `scene` for a bucket whose material reads the
+    /// scene's depth, and group `last` where it is not 0, after its bucket's groups, as decals bind
+    /// the scene's depth.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
@@ -220,6 +221,7 @@ impl Transparent {
         meshes: &MeshBuffers,
         frame: u32,
         last: u32,
+        scene: u32,
         particles: &ParticlePass,
     ) -> Result<(), RecordError> {
         let draws = self.views[view.index()].draws();
@@ -258,7 +260,11 @@ impl Transparent {
             }
             let skinned = bucket.skinned_slot();
             let skins = skinned.is_some_and(|slot| skinning.skins_in_vertex_shader(slot));
-            groups.set(list, bucket.textures, skins, last)?;
+            // A bucket whose material reads the scene's depth binds the group that its pass chose:
+            // the copy of the camera's opaque depth in the camera's transparent pass, or the blank
+            // texel anywhere the copy does not exist yet.
+            let scene = if bucket.scene_depth { scene } else { 0 };
+            groups.set(list, bucket.textures, scene, skins, last)?;
             let regions = skinned.and_then(|slot| skinning.parts_of(slot));
             list.push(
                 Op::SetVertexBuffer,

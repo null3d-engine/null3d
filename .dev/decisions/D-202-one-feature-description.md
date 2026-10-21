@@ -211,3 +211,88 @@ The stats have the same gap. `FrameStats` reports the engine's threads, passes a
 
 - `packages/engine/src/scene/feature-host.test.ts` writes one feature with a `'scale'` setting, a `'double'` setting, a budget and a memory figure. It checks the value on each preset and the WebGL2 column. It checks the quality callback's arguments and a budget step's effect on both words. It also checks the budget's time on a new preset, the range's cap, the figures, and the removal of a feature and its budget.
 - `tests/image/stats.spec.ts` opens the stats page with `feature`: the sketch adds the feature, and the overlay shows its row with the preset's value, its budget and its memory. A switch to Low moves both, and the row follows.
+
+## Addendum, 21 October 2026: how scene inputs bind (H7)
+
+Status: decided. Task: M3-E4. The "How each hook fits" table above says that H7's
+depth-behind-a-material part needs "a custom-material field". This addendum records the field, the
+bindings and the absent cases.
+
+Summary: `SceneInput` is one public vocabulary (`'sceneColor'`, `'sceneDepth'`, `'normals'`,
+`'motionVectors'`) that `FeatureResource` extends with `'history'` and `'shadowAtlas'`. A custom
+material declares `sceneInputs: ['sceneDepth']` and reads it through `sceneDepth(uv)` or
+`sceneDistance(uv)`. The compiler turns the call into a `SCENE_DEPTH` build, and the material takes
+a `SCENE_DEPTH` feature bit. The frame then binds the copy of the camera's opaque depth (D-131),
+in the group after the frame's. A material that draws before the copy exists, and every view other
+than the camera's, binds one texel at the far plane, which reads 0. The copy is made while a reader
+draws, whatever the preset says.
+
+### The problem
+
+A custom material's surface function could read only the standard maps and its own textures. Water's
+soft shores and the splats add-on's depth mixing need the depth of the opaque scene behind a
+transparent surface. H7 must bind it on WebGPU and WebGL2, in every thread mode, and say what a
+reader sees where the resource is absent.
+
+### The binding
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| Which depth? | The copy of the camera's opaque depth, after the opaque pass and before the transparent pass | The transparent pass writes depth, so a shader cannot bind the depth target that its own pass holds on WebGPU. D-131 rejected that same option for particles |
+| Which group? | After the frame's group on WebGPU, and after the maps' group where a material has textures: group 2 with textures and group 1 without on WebGPU, group 4 on WebGL2 | It matches the decal group's place, so the shader's group numbers follow one rule and the pipeline builder appends joints and the index group after it |
+| Why no textures with the depth? | `materials.shader` refuses a material that both reads the scene's depth and declares textures | The frame group holds 8 sampled textures and the maps' group holds 8, which leaves the fragment stage no room for the copy under WebGPU's default limit of 16 (hard rule 6). A layout with 7 map slots would need a second bind group layout for the same maps, as well as a second view of the copy |
+| How does the engine know? | The compiler detects `sceneDepth` or `sceneDistance` in the WGSL and adds the `SCENE_DEPTH` def; `materials.shader` records the `SCENE_DEPTH` feature bit | The material's shading word has no free bit. The feature word does, and the bit is fixed at creation like every feature |
+| Why not a custom texture? | It would sample through the maps' layout with a filtering sampler | The copy is 32-bit float, which WebGPU cannot filter, and the maps' layout also costs a sampled texture in every material's fragment stage (hard rule 6) |
+| What when a reader draws first? | One texel at the far plane | The same pattern as a particle system's blank depth. It is one texture for the frame and one bind group |
+| What if the preset is Low? | The copy still draws | The material's read is a dependency, not a quality choice. D-131's preset controls soft particles alone |
+| What about normals and motion? | The vocabulary declares them; no frame makes a normals target, and the motion target exists only while a reader wants it | H7 binds what the frame makes. A material that declares them today gets E1217 rather than a silent zero |
+| What about the 8-bit path? | The copy reads the scene depth's format and samples | The copy's `MULTISAMPLED` build copies sample 0, as particles already do on both paths. The copy is one sample on both paths, so a material's binding needs no multisampled layout |
+| What about `reversed-gl`? | `sceneDepth` gives the stored value; `sceneDistance` is then less precise | The engine draws `reversed` where the browser has `EXT_clip_control`; all team devices do. A value written by the device's own depth mode has no single linearization (D-08) |
+
+### The group indices
+
+The custom material template's layouts are `[frame, maps?, scene]`, then the joint and index groups
+that the pipeline builder appends. The draw's groups follow the same order: maps, scene, joints,
+index. A caster, motion or pick build shades no surface, so its layout leaves the scene group out.
+
+### The absent cases
+
+- **The opaque pass.** The copy is written after it, so its materials bind the blank texel and read
+  0, the far plane. A material that needs the depth of the surfaces behind it blends, which draws
+  after the copy.
+- **A scene pass or a reflection pass.** Their views have no copy, and the camera's copy would be
+  wrong under their camera, so they bind the blank texel too.
+- **A preset without the copy.** The preset changes nothing: the copy is made while a reader exists.
+- **The copy's pipeline not yet built.** The blank groups exist from the first frame that wants the
+  copy, and the camera's group binds the blank until the target exists. A draw therefore never
+  reaches GPU validation with a missing group.
+- **The 8-bit path.** The same copy and the same values, with sample 0 of the scene depth.
+- **A destroyed material.** The feature bit is checked on live materials only, so the copy stops
+  with the last reader.
+
+### Rejected options
+
+- **A public `textures.sceneDepth()`.** It promises a texture object that the render graph plans,
+  and the custom texture path cannot bind a float depth without a sampler. A declaration is a
+  smaller promise.
+- **Reading the scene depth target directly.** It works for decals, which draw into the color alone,
+  and fails for a blended material, whose pass writes depth.
+- **A second copy per material.** One copy serves every reader in the frame.
+- **Binding the depth for opaque materials too.** The copy does not exist when they draw. Returning
+  the far plane is honest, and the first users blend.
+
+### Consequences
+
+- **Code:** `SceneInput` and `FeatureResource` in `packages/engine/src/scene/features.ts`; the
+  `sceneInputs` option and its checks in `packages/engine/src/scene/resources.ts`; the
+  `SCENE_DEPTH` shader def and helpers in `crates/null3d-shaders`; the `SCENE_DEPTH` feature bit in
+  `crates/null3d-render/src/materials.rs`; the copy's groups and the blank texel in
+  `crates/null3d-render/src/frame_graph.rs`; the draw bindings in both frame builders.
+- **Tests:** a Rust shader compiler test checks the depth binding in the shading builds alone. The
+  declaration has unit tests. The page test `scene-depth` draws the same water sheet on both GPU
+  paths and in every thread mode.
+- **Docs:** `docs/api/materials.md`, `docs/shaders/surface-functions.md`,
+  `docs/concepts/render-graph.md`, `docs/api/features.md`, `docs/guides/custom-passes.md`,
+  `docs/guides/custom-shaders.md` and the mapping's new entry.
+- **Shaders:** the copy's shaders load with the material, through the `particles` first-use file,
+  which already holds them.
