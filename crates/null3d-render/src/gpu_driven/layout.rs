@@ -49,13 +49,13 @@ use crate::subsurface::skin_key;
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
 /// the skin of a bucket whose vertex shader skins.
-const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
+pub(super) const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
 /// Bytes of one bucket record.
 const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
-const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
+pub(super) const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
 
 // What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
 // group of its material's map, the mesh page of its mesh's first part, its engine mesh id or a
@@ -336,7 +336,7 @@ pub(super) struct Layout {
     parallax: bool,
     pub(super) sources: u32,
     /// Each batch's raw id and the first source of its rows.
-    batch_bases: Vec<(u32, u32)>,
+    pub(super) batch_bases: Vec<(u32, u32)>,
     /// The sources up to the last row of a batch with row values, which the row values texture
     /// holds, or 0 while no batch has them.
     pub(super) value_sources: u32,
@@ -368,9 +368,22 @@ pub(super) struct Layout {
     pub(super) scene_rows: u32,
     /// The bucket of every source as the CPU culling reads it, or `NO_BUCKET` for a source that
     /// draws nowhere. It is `instance_buckets` without the occluder bit and the cell index.
-    cull_buckets: Vec<u32>,
+    pub(super) cull_buckets: Vec<u32>,
     /// Each bucket's link to its next level of detail, as the CPU culling reads it.
-    level_links: Vec<LevelLink>,
+    pub(super) level_links: Vec<LevelLink>,
+    /// True for each bucket that holds a level's copies: the buckets of a level set and their
+    /// fade buckets. Their slices follow the copies that a frame draws
+    /// ([`Layout::fit_copies`](super::copies)).
+    pub(super) marks: Vec<u8>,
+    /// The buckets that `marks` marks, in bucket order.
+    pub(super) level_buckets: Vec<u32>,
+    /// Each bucket's base as the GPU holds its record, so a frame uploads the records of the
+    /// buckets whose slice moved.
+    pub(super) placed: Vec<u32>,
+    /// The copies that one view places in each bucket, and the largest count over the views that
+    /// draw the layout: working space of [`Layout::fit_copies`](super::copies).
+    pub(super) copy_counts: Vec<u32>,
+    pub(super) copy_fits: Vec<u32>,
     /// The most words that the CPU culling lists for one view: a source that fades between levels
     /// lists three words more than one that does not.
     cull_rows: u32,
@@ -391,7 +404,7 @@ pub(super) struct Layout {
     /// The pipelines of the skinned objects that the layout leaves out until they are built.
     waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
-    bucket_records: Vec<u32>,
+    pub(super) bucket_records: Vec<u32>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -585,6 +598,9 @@ impl Layout {
         self.depthless = false;
         self.occluders = 0;
         self.buckets.clear();
+        self.marks.clear();
+        self.level_buckets.clear();
+        self.placed.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.skinned.clear();
@@ -1116,6 +1132,26 @@ impl Layout {
                 next: bucket.levels.next.unwrap_or(NO_LINK),
                 fade: bucket.levels.fade.unwrap_or(NO_LINK),
             }));
+        // The buckets that take a level's copies: the buckets of the sets and their fade buckets,
+        // whose slices the frame sizes to the copies it draws.
+        self.marks.clear();
+        self.marks.resize(self.buckets.len(), 0);
+        for (bucket, link) in self.level_links.iter().enumerate() {
+            for target in [link.next, link.fade] {
+                if target != NO_LINK {
+                    self.marks[bucket] = 1;
+                    self.marks[target as usize] = 1;
+                }
+            }
+        }
+        self.level_buckets.clear();
+        self.level_buckets.extend(
+            (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
+        );
+        // The bases that the GPU holds, before any frame sizes the slices: every bucket's record
+        // goes up at the first frame that sizes them again.
+        self.placed.clear();
+        self.placed.resize(self.buckets.len(), u32::MAX);
         let fades = self.level_links.iter().any(LevelLink::has_next);
         self.cull_rows = if fades {
             self.sources.saturating_mul(4)

@@ -198,3 +198,131 @@ fn a_ball_inside_a_fading_band_draws_both_levels_in_pairs() {
     );
     assert!(drawn.contains(&(indices_of(&world, fine), 1)), "{drawn:?}");
 }
+
+/// The copy lists that a frame reserves for each layout, in bytes per view: the scene's, the
+/// casters', the outlined objects', the scattered ones' and the moving ones'.
+fn copies(world: &World) -> [u32; 5] {
+    world.renderer.compacted_bytes()
+}
+
+/// Gives the world's ball one lower level for each error, each simpler than the one before, and
+/// fading bands when `fades`. Returns their engine mesh ids.
+fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: bool) -> Vec<u32> {
+    let finest = [[6, 4], [4, 3], [3, 2], [2, 1]];
+    let settings = world.renderer.settings_mut();
+    let meshes: Vec<u32> = errors
+        .iter()
+        .zip(finest)
+        .map(|(_, segments)| {
+            settings
+                .meshes_mut()
+                .add(&base_sphere(0.5, segments))
+                .unwrap()
+                + 1
+        })
+        .collect();
+    settings
+        .set_mesh_levels(BALL, &meshes, errors, fades)
+        .unwrap();
+    meshes
+}
+
+/// Moves the world's visible ball `distance` metres in front of the camera, which looks down -z
+/// from 20 m out.
+fn ball_at(world: &mut World, distance: f32) {
+    let ball = world.objects[2];
+    world
+        .scene
+        .set_position(ball, [0.0, 0.0, 20.0 - distance])
+        .unwrap();
+}
+
+#[test]
+fn a_meshs_levels_take_the_room_of_the_copy_that_draws_the_not_of_a_level_each() {
+    let mut plain = World::new();
+    plain.record(true);
+    let without = copies(&plain);
+    let mut world = World::new();
+    give_levels(&mut world, true);
+    world.record(true);
+    let fading = copies(&world);
+    // Two balls draw the base mesh, one of them hidden, and the ball 20 m away picks the coarsest
+    // level. Its three plain and three fade buckets reserve one copy between them, for that one
+    // ball, where a level's bucket for each copy would reserve two in every one.
+    assert_eq!(fading[0] + 64, without[0], "{fading:?} {without:?}");
+}
+
+#[test]
+fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
+    let mut world = World::new();
+    give_levels(&mut world, true);
+    ball_at(&mut world, 20.0);
+    world.record(true);
+    let picked = copies(&world)[0];
+    // Inside level 2's band the ball draws both levels' fade buckets, so it takes two copies:
+    // one in each, and none elsewhere.
+    ball_at(&mut world, 16.8);
+    world.frame += 1;
+    world.record(false);
+    let band = copies(&world)[0];
+    assert_eq!(band, picked + 64, "{band} {picked}");
+}
+
+#[test]
+fn a_coarse_level_takes_no_more_room_than_the_finest_one() {
+    let mut fine = World::new();
+    give_levels(&mut fine, false);
+    ball_at(&mut fine, 1.0);
+    fine.record(true);
+    let mut coarse = World::new();
+    give_levels(&mut coarse, false);
+    ball_at(&mut coarse, 100.0);
+    coarse.record(true);
+    // The ball draws its base mesh at 1 m and its coarsest level at 100 m: the level set takes
+    // the copy of the ball that draws, whatever level the distance picks.
+    assert_eq!(copies(&fine), copies(&coarse));
+    let mut hidden = World::new();
+    give_levels(&mut hidden, false);
+    ball_at(&mut hidden, 1.0e5);
+    hidden.record(true);
+    // Past the hide distance a bound that covers less than a pixel draws nothing.
+    assert_eq!(copies(&hidden)[0] + 64, copies(&fine)[0]);
+}
+
+#[test]
+fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
+    // A forest: a batch of 40,000 copies of a mesh that has three lower levels and fading bands.
+    // The same world draws the same copies without levels.
+    let rows = 40_000;
+    let mut without = World::new();
+    without.record(true);
+    let mut plain = copies(&without)[0];
+    let mut sized = World::new();
+    give_levels_of(&mut sized, &[0.01, 0.05, 0.2], true);
+    sized.record(true);
+    let settled = copies(&sized)[0];
+    for world in [&mut without, &mut sized] {
+        // The material of the world's first object, which draws the lit ball.
+        let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+        let material = world.scene.materials()[slot];
+        let batch = world
+            .batches
+            .create(rows, false, false, BALL, material, 0.9)
+            .unwrap();
+        world
+            .batches
+            .get_mut(batch)
+            .unwrap()
+            .set_active_count(rows)
+            .unwrap();
+        world.record(true);
+        world.frame += 1;
+    }
+    plain = copies(&without)[0] - plain;
+    let levels = copies(&sized)[0] - settled;
+    // The set of four levels and four fade buckets takes one copy for each of the 40,000 copies:
+    // 2.6 MB in this view, where a slice for every copy in every level and band would take 20.5 MB.
+    assert_eq!(levels, rows * 64, "{levels}");
+    assert_eq!(levels, plain, "{levels} {plain}");
+    assert_eq!(8 * rows * 64, 20_480_000);
+}
