@@ -345,7 +345,8 @@ export const POST_VALUE_SSR_INTENSITY = 59;
 export const POST_VALUE_SSR_MAX_DISTANCE = 60;
 export const POST_VALUE_SSR_THICKNESS = 61;
 export const POST_VALUE_SSR_MAX_ROUGHNESS = 62;
-export const POST_VALUE_COUNT = 63;
+export const POST_VALUE_SHARPEN = 63;
+export const POST_VALUE_COUNT = 64;
 
 export const CALL_VALUE_COUNT = 10;
 

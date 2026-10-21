@@ -20,6 +20,10 @@
 //! either on builds no pipeline. The 8-bit path's scene shaders tone map and encode color
 //! themselves, so there the final pass grades display color, and multiplies the vignette's factor
 //! into the linear value of the display color.
+//!
+//! The sharpening rides with them because the final pass applies it: the second step of the
+//! two-step pass sharpens display color with RCAS at the whole canvas's render scale too (see
+//! [`crate::final_pass`]).
 
 use null3d_core::handle::Handle;
 
@@ -88,13 +92,16 @@ impl Vignette {
     }
 }
 
-/// What the final pass grades a frame with: the table, once its texels are on the GPU, and the
-/// vignette.
+/// What the final pass grades a frame with: the table, once its texels are on the GPU, the
+/// vignette, and the sharpening.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Grading {
     /// The table's GPU texture id, with its scale and offset (see [`Lut::placement`]).
     pub(crate) lut: Option<(u32, [f32; 4], [f32; 4])>,
     pub(crate) vignette: Option<Vignette>,
+    /// The sharpening's strength, from 0 for off to 1 for the most, at the whole canvas's render
+    /// scale only. The second step of the two-step pass applies it.
+    pub(crate) sharpen: Option<f32>,
 }
 
 #[cfg(test)]

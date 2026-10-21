@@ -1274,6 +1274,33 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: EIGHT_BIT_TOLERANCE,
 		deviceTolerance: EIGHT_BIT_TOLERANCE,
 	},
+	// The sharpening at the whole canvas's render scale: a wall of small boxes whose edges fill the
+	// image, at the most that the value takes, on the HDR path and on the 8-bit path. Both paths
+	// sharpen display color, in the second step of the two-step pass, which sharpening draws at the
+	// whole scale. Each path keeps its own references: the sharpening widens the one-step difference
+	// of the tones that the two paths resolve at an edge. The threshold is tighter than the default,
+	// because the sharpening moves an edge by about 10 steps, which the default would not count: a
+	// picture that lost it must fail.
+	{
+		name: 'sharpen',
+		sketch: 'tests/pages/sketches/sharpen-sketch.ts?sharpen=1',
+		hold: 0,
+		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+		// The sharpening widens a one-step difference at an edge to about 10 steps, so CI's software
+		// GPU on another machine may count more pixels than the tight threshold allows. A picture
+		// that lost the sharpening moves far more, at about a fifth of the image.
+		swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'sharpen-8-bit',
+		sketch: 'tests/pages/sketches/sharpen-sketch.ts?sharpen=1',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+		swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+	},
 	...toneMappingTests(),
 	// One bright unlit color on two panels, the left with toneMapped: false. The 8-bit path applies
 	// the output transform in each material's shader, so it keeps that panel's color as the display
