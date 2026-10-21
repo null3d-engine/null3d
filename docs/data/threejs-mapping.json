@@ -1495,8 +1495,8 @@
       "three": "AnimationClip / KeyframeTrack built in code",
       "status": "changed",
       "since": "0.3",
-      "target": "Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2)",
-      "notes": "Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes in 0.3.",
+      "target": "const pulse = scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true }); const recolor = scene.animateProperty(material, 'color', { times: [0, 1], values: [1, 0, 0, 0, 0, 1] })",
+      "notes": "A track names a value of a light, a camera, a material or an object: 'light.intensity', 'light.color', 'camera.fov', a material value that setUniform takes, or 'position', 'rotation', 'scale' and 'visible'. Keys hold a number, or three numbers for a color, a position or a scale, or four for a rotation. Interpolation: 'linear', 'step' or glTF's cubic spline ('cubic'), and a cubic key holds an in-tangent, the value and an out-tangent. animation.setTime(t) places the animation, setSpeed, setPaused, setLoop and stop control it, and a material animation changes every object that uses the material. glTF files play their KHR_animation_pointer tracks through the model's animator, with the clip's time, speed, fades and weights: a light's intensity, color and range, a material's values, a node's visibility, and a node's transform or morph weights. A pointer the engine does not read leaves its value as the file has it, with a warning in development builds. three.js needs a plugin for the extension.",
       "docs": "api/animation",
       "detect": "\\bAnimationClip\\b|\\b\\w+KeyframeTrack\\b"
     },

@@ -6,6 +6,7 @@
 		"test": "playwright test"
 	},
 	"devDependencies": {
+		"@needle-tools/three-animation-pointer": "1.1.3",
 		"@null3d/cli": "workspace:*",
 		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",

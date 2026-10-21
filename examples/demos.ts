@@ -204,6 +204,17 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 120,
 	},
 	{
+		name: 'property-animation',
+		group: 'Light, materials and effects',
+		sketch: new URL('./property-animation/sketch.ts', import.meta.url),
+		title: 'Animated values',
+		scene: 'Neon plinths',
+		summary:
+			'One value of a lamp, of a material and of a camera, each moved by keyframes that scene.animateProperty plays: the lamp breathes, the plinths cycle through the spectrum, and the lens widens and narrows. A glTF file moves the same kinds of value with KHR_animation_pointer.',
+		hold: 2.2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'translucency',
 		group: 'Light, materials and effects',
 		sketch: new URL('./translucency/sketch.ts', import.meta.url),
