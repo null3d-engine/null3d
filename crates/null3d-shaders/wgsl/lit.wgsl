@@ -186,7 +186,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::mesh::{row_values_of}
 #endif
 #ifdef LOD_FADE
-#import null3d::mesh::{instance_fade, lod_kept}
+#import null3d::mesh::{instance_lod, lod_kept}
 #endif
 #ifdef CASTER
 #import null3d::mesh::{caster_clip}
@@ -282,8 +282,9 @@ var<private> hash_place: vec3f;
 #endif
 
 #ifdef LOD_FADE
-/// The fade value of the instance's level of detail, which picks the pixels it draws.
-var<private> lod_fade: f32;
+/// The fade value of the instance's level of detail, which picks the pixels it draws, and the
+/// phase of its dither.
+var<private> lod: vec2f;
 #endif
 
 #ifdef CUSTOM_UNIFORMS
@@ -794,9 +795,10 @@ struct VertexOut {
 #endif
 #endif
 #ifdef LOD_FADE
-    /// The fade value of the instance's level of detail. It shares its slot with the object ids,
-    /// as only custom materials read those, and they have no fading builds.
-    @location(12) @interpolate(flat, either) lod_fade: f32,
+    /// The fade value of the instance's level of detail, and the phase of its dither. It shares
+    /// its slot with the object ids, as only custom materials read those, and they have no fading
+    /// builds.
+    @location(12) @interpolate(flat, either) lod: vec2f,
 #endif
 #ifdef OBJECT_MATRICES
     /// The rows of the object's world matrix that give x, y and z, relative to the camera.
@@ -1360,7 +1362,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #endif
 #ifdef LOD_FADE
-    out.lod_fade = instance_fade(i);
+    out.lod = instance_lod(i, found.source);
 #endif
 #ifdef OBJECT_MATRICES
     out.world_x = found.row_x;
@@ -1757,7 +1759,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     }
 #endif
 #ifdef LOD_FADE
-    if !lod_kept(lod_fade, pixel.xy) {
+    if !lod_kept(lod.x, pixel.xy, u32(lod.y)) {
         discard;
     }
 #endif
@@ -1854,7 +1856,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     hash_place = in.mesh_place;
 #endif
 #ifdef LOD_FADE
-    lod_fade = in.lod_fade;
+    lod = in.lod;
 #endif
 #ifdef DISPLACEMENT
     height_scale = in.heights.x;

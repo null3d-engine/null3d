@@ -16,7 +16,7 @@ enable draw_index;
 #import null3d::mesh::{row_values_of}
 #endif
 #ifdef LOD_FADE
-#import null3d::mesh::{instance_fade, lod_kept}
+#import null3d::mesh::{instance_lod, lod_kept}
 #endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
@@ -70,8 +70,8 @@ struct VertexOut {
     @location(4) @interpolate(flat, either) row_color: vec4f,
 #endif
 #ifdef LOD_FADE
-    /// The fade value of the instance's level of detail.
-    @location(5) @interpolate(flat, either) lod_fade: f32,
+    /// The fade value of the instance's level of detail, and the phase of its dither.
+    @location(5) @interpolate(flat, either) lod: vec2f,
 #endif
 }
 
@@ -112,7 +112,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.row_color = row_values_of(found).color;
 #endif
 #ifdef LOD_FADE
-    out.lod_fade = instance_fade(i);
+    out.lod = instance_lod(i, found.source);
 #endif
     return out;
 }
@@ -151,7 +151,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     }
 #endif
 #ifdef LOD_FADE
-    if !lod_kept(in.lod_fade, in.clip.xy) {
+    if !lod_kept(in.lod.x, in.clip.xy, u32(in.lod.y)) {
         discard;
     }
 #endif

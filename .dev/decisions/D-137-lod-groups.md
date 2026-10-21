@@ -219,3 +219,12 @@ levels at the same camera distance.
 The level-of-detail image tests place their spheres by their nearest points. The image tests and the
 forest, atmosphere, light-shafts and impostors demos were rechecked, and their references were
 redrawn where the picture moved.
+## Addendum: a dither phase per copy (21 October 2026)
+
+The band's 4 × 4 ordered dither was the same for every copy, so the copies inside a band lined up into one grid. The owner saw that grid on Creek's foliage, and the narrower band of 19 October made it smaller but did not remove it.
+
+Each copy now shifts the pattern by a phase from 0 to 15 that a hash of the copy picks. Two copies rarely share a phase, so their patterns no longer line up. The shift moves the pattern by whole pixels within its 4 × 4 tile. Every copy therefore draws the same set of dither values, in another place.
+
+The two levels of a band draw the same copy, so they take the same phase. Each pixel still draws exactly one level, and no gap opens between them. A copy's source names it on both GPU paths. The culling shader writes it beside the fade value on WebGPU, and the index list holds it on WebGL2. The hash is `pcg` from `null3d::noise`, which every GPU works out alike. The phase rides in the flat vertex value that already carried the fade value. The change adds no texture, no draw and no lookup, and the vertex shader hashes each copy once per vertex.
+
+Both GPU paths carry the phase in the same shader source, so a change to the pattern lands on both at once. The `lod-fade` test drew new pictures, about 1% of its pixels on each tier, and its references moved in both sets. The demos whose trees carry levels stayed within the image tolerance on both GPUs, so their references did not move.
