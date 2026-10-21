@@ -101,8 +101,12 @@ function difference(a: Frame, b: Frame): number {
 	return sum / ((a.data.length / 4) * 3);
 }
 
-/** A mean difference that only a change of the look gives; the scene at rest differs less. */
-const CHANGED = 1.5;
+/**
+ * A mean difference that only a change of the look gives; the scene at rest differs less. The
+ * environment light's switch changes the least of the parts, about 1.5 of the mean on the software
+ * GPU, so the limit sits below it and well above the look at rest.
+ */
+const CHANGED = 1.2;
 /**
  * The share of the change that turning a part off made that turning it back on must make again. A
  * part whose own light is drawn into the environment map fills that map a stage a frame, so a slow
