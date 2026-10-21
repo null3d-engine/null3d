@@ -97,3 +97,15 @@ The brief also listed smaller items with a recommendation. The owner's rulings a
 ## Addendum, 21 October 2026: M4's tasks from these rulings move into M3
 
 The owner moved all of M4's feature work into M3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). Rulings 16 (the temporal upscaler, M3-F10, still only if M3-A11 ships a temporal resolve), 19 (the FFT ocean, M3-F9), 21 (the glTF intent gaps, M3-G1 to M3-G4), 25 (the script-tag build, M3-O1) and 26 (six API features, M3-K1 to M3-K6) now come in M3. Ruling 20 stands: GPU grass stays dropped.
+
+## Addendum, 21 October 2026: the order the rulings are built in
+
+The owner asked for the cost and benefit of these rulings to be read back on 21 October 2026, and
+accepted two ordering rules:
+
+- M3-A11, the temporal resolve's second look, runs early. It decides TAA (ruling 24), the many-lights
+  prototype (M3-F3, ruling 15) and the temporal upscaler (M3-F10, ruling 16), about 6.5
+  helper-weeks between them, so its answer is known before the rest is planned.
+- The API features of ruling 26 (M3-K1 to M3-K6) are built early in M3, not last. They cost little,
+  but they add public surface just before the API freezes, and time to use them is what makes that
+  surface safe to freeze.
