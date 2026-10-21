@@ -4,7 +4,10 @@
 // light as infinity, and the tone mapping draws it black: the emissive sphere vanishes, the sun's
 // highlight on the metal floor gets a black hole at its center, and bloom draws no glow at all.
 // The image comparison catches a change of the picture. This spec checks the pixels that the fault
-// turns black, so it fails even before a test has references.
+// turns black, so it fails even before a test has references. The NaN tests draw a plate whose
+// upper half writes a NaN in every channel and whose lower half gives off light: the upper half
+// must draw black on every path, the lower half must draw, and with bloom the sphere beside it must
+// still glow, because a NaN that survives the blur covers the picture.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import { IMAGE_RUNS } from './manifest.ts';
@@ -15,6 +18,19 @@ test.describe.configure({ mode: 'parallel' });
 const SPHERE: Point = [102, 46];
 /** Where the center of the sun's highlight on the floor draws. */
 const HIGHLIGHT: Point = [160, 90];
+/** Where the upper half of the ?nan plate, which writes NaN, draws, beside the sphere at [102, 46]. */
+const NAN_HALF: Point = [218, 35];
+/** The radius of the NaN half's sample: small enough to stay clear of the lit half's glow. */
+const NAN_RADIUS = 2;
+/** Where the lower half of the ?nan plate, which gives off light, draws. */
+const LIT_HALF: Point = [218, 54];
+/**
+ * The highest value of any channel of the NaN half's pixels that still counts as black, out of 255.
+ * The lit half's bloom reaches a few steps into the NaN half.
+ */
+const BLACK = 3;
+/** The lowest value of the lit half that proves the plate drew at all, out of 255. */
+const LIT = 100;
 /** The lowest value of each channel that counts as white, out of 255. */
 const WHITE = 250;
 /** How far from the sphere's center bloom's glow must reach, in pixels. */
@@ -63,6 +79,24 @@ function darkest(image: Image, center: Point, radius: number): { value: number; 
 	return { value, at };
 }
 
+/** The lightest channel of each pixel within `radius` of `center`, as `x,y: value` for the lightest. */
+function lightest(image: Image, center: Point, radius: number): { value: number; at: string } {
+	let value = 0;
+	let at = '';
+	for (let y = center[1] - radius; y <= center[1] + radius; y++)
+		for (let x = center[0] - radius; x <= center[0] + radius; x++) {
+			if ((x - center[0]) ** 2 + (y - center[1]) ** 2 > radius * radius) continue;
+			const i = 4 * (y * image.width + x);
+			const high = Math.max(
+				image.pixels[i] ?? 0,
+				image.pixels[i + 1] ?? 0,
+				image.pixels[i + 2] ?? 0,
+			);
+			if (high > value) [value, at] = [high, `${x},${y}`];
+		}
+	return { value, at };
+}
+
 for (const name of ['hdr-limit', 'hdr-limit-bloom'])
 	test(`${name}: light past the largest 16-bit float draws white on every tier`, async ({
 		page,
@@ -87,5 +121,34 @@ for (const name of ['hdr-limit', 'hdr-limit-bloom'])
 					.soft(glow.value, `${run.id}: the glow at ${glow.at}`)
 					.toBeGreaterThanOrEqual(GLOW_FLOOR);
 			}
+		}
+	});
+
+for (const name of ['hdr-limit-nan', 'hdr-limit-nan-bloom', 'hdr-limit-nan-8-bit'])
+	test(`${name}: a NaN draws black and does not spread through bloom`, async ({ page }) => {
+		test.setTimeout(180_000);
+		const runs = IMAGE_RUNS.filter((run) => run.test === name);
+		expect(runs.length).toBe(name === 'hdr-limit-nan-8-bit' ? 2 : 3);
+		for (const run of runs) {
+			const image = await imageOf(page, run.path);
+			const black = lightest(image, NAN_HALF, NAN_RADIUS);
+			expect
+				.soft(black.value, `${run.id}: the NaN half draws ${black.value} at ${black.at}`)
+				.toBeLessThanOrEqual(BLACK);
+			const lit = lightest(image, LIT_HALF, 3);
+			expect
+				.soft(lit.value, `${run.id}: the lit half draws ${lit.value} at ${lit.at}`)
+				.toBeGreaterThanOrEqual(LIT);
+			if (name !== 'hdr-limit-nan-bloom') continue;
+			// A NaN that survived bloom's first step would poison the whole blur, so the sphere's
+			// glow must still reach its usual radius.
+			const sphere = darkest(image, SPHERE, 1);
+			expect
+				.soft(sphere.value, `${run.id}: the sphere at ${sphere.at}`)
+				.toBeGreaterThanOrEqual(WHITE);
+			const glow = darkest(image, SPHERE, GLOW_RADIUS);
+			expect
+				.soft(glow.value, `${run.id}: the glow at ${glow.at}`)
+				.toBeGreaterThanOrEqual(GLOW_FLOOR);
 		}
 	});
