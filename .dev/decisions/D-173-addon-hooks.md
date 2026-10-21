@@ -252,3 +252,13 @@ Tasks, each with its first user:
 ## Addendum, 21 October 2026: M4's hook and platform tasks move into M3
 
 The owner moved all of M4's feature work into M3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). The hooks table's M4 rows now come in M3: H1 (M3-E8), H2 (M3-E9), H8 (M3-E10), the texture-unit allocator (M3-D7), namespaces (M3-D8), the plugin interface version (M3-D6) and the listing check (M3-D9). The plugin interface version still freezes with the API, in M4. Before H3, M3-R1 defines one public feature description that every hook is an instance of. Built-in renderer features stay internal and do not use these hooks; a feature that leaves the core uses them.
+
+## Addendum, 21 October 2026: the volumetric cloud tier is built in M3
+
+The owner asked for volumetric clouds on 21 October 2026, after the ruling that leaves them to other
+developers was read back. Ruling 1's core tier therefore gets a task: M3-F11 builds the sky's High
+tier and above as volumetric clouds, behind the same cloud settings that draw the flat layer on Low
+and Medium. The H8 sky-layers hook (M3-E10) keeps its place: it is how another developer adds their
+own clouds behind these settings, not a second way for the engine to draw them.
+
+The rule of one place per feature holds. Clouds stay in the core, and no cloud add-on is planned.
