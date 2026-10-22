@@ -1180,8 +1180,6 @@ impl GpuDrivenRenderer {
     /// takes the room of its sources in each view, instead of the room of a whole level for each.
     fn fit_level_copies(
         &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
         input: &FrameInput<'_>,
         parity: usize,
     ) -> Result<(), RecordError> {
@@ -1232,7 +1230,7 @@ impl GpuDrivenRenderer {
             (scattering, std::slice::from_ref(&plain)),
             (moving, std::slice::from_ref(&plain)),
         ] {
-            layout.fit_copies(list, arena, scene, batches, drawn_by, parity, copy_offsets)?;
+            layout.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
         }
         self.copy_views = views;
         Ok(())
@@ -2161,18 +2159,18 @@ impl GpuDrivenRenderer {
         self.layout
             .upload_row_values(list, input, parity, upload_everything || values_remade)?;
         self.layout.upload_object_ranges(list, arena)?;
-        self.layout.update_skinned(list, arena, input.scene)?;
+        self.layout.update_skinned(input.scene)?;
         if shadows {
-            self.casters.update_skinned(list, arena, input.scene)?;
+            self.casters.update_skinned(input.scene)?;
         }
         if outlines {
-            self.outlined.update_skinned(list, arena, input.scene)?;
+            self.outlined.update_skinned(input.scene)?;
         }
         if scatters {
-            self.scattering.update_skinned(list, arena, input.scene)?;
+            self.scattering.update_skinned(input.scene)?;
         }
         if motion_on {
-            self.moving.update_skinned(list, arena, input.scene)?;
+            self.moving.update_skinned(input.scene)?;
         }
         self.skinning.begin_frame();
         self.layout
@@ -2195,7 +2193,23 @@ impl GpuDrivenRenderer {
 
         // Each level's slice holds the copies that this frame's views draw, rather than the room
         // for every source.
-        self.fit_level_copies(list, arena, input, parity)?;
+        self.fit_level_copies(input, parity)?;
+        // Every change to a layout's bucket records this frame, a rebuilt table's included, goes
+        // up in one write here, after the slices settled, so the culling pass reads a table that
+        // no later write of the same frame can undo.
+        self.layout.upload_records(list, arena)?;
+        if shadows {
+            self.casters.upload_records(list, arena)?;
+        }
+        if outlines {
+            self.outlined.upload_records(list, arena)?;
+        }
+        if scatters {
+            self.scattering.upload_records(list, arena)?;
+        }
+        if motion_on {
+            self.moving.upload_records(list, arena)?;
+        }
         let render_size = self.graph.render_size();
         let any_probes = self.settings.probes().any();
         let list_probes = self.probes_listed || any_probes;

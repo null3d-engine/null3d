@@ -313,10 +313,11 @@ mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lis
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
-mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, error: 0.1 }]);  // (0.2) levels of detail, most detailed first
+mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, error: 0.1, material: farShading }]);  // (0.2) levels of detail, most detailed first
 // every object and batch of `mesh` draws the coarsest level whose error covers under lodThreshold pixels,
 // and draws nothing where its bound covers fewer pixels than that; the hide fades out with the same band;
-// { mesh, distance } in place of error maps three.js's LOD.addLevel; errors grow; E1221 for bad levels
+// { mesh, distance } in place of error maps three.js's LOD.addLevel; errors grow; E1221 for bad levels;
+// a level's `material` shades its own way, and a level without one draws with the level before's
 object.setLevelBias(0.5);   // (0.2) this object's own threshold: below 1 keeps detail, above 1 turns coarse sooner
 ```
 
