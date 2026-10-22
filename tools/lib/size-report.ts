@@ -892,8 +892,13 @@ export function downloadSizes(
  * trim that pays it back is in hand: the fog write, the picks and the pointer events move to files
  * that load on first use and save about 2.6 KB, which needs the size report to follow the chunks the
  * bundler splits out.
+ *
+ * The owner gave standing permission to raise it without asking on 22 October 2026. It went to
+ * 182 KB the same morning, because the night's work left the largest start at 181,958 bytes, 314
+ * bytes under the line, and the next feature would have stopped every build on the machine for as
+ * long as a raise waited. The trim above is still owed and still pays it back.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 178 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 182 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
