@@ -3747,6 +3747,22 @@ pub fn set_lut(texture: u32) -> u32 {
     })
 }
 
+/// Grades the canvas color with the built-in grading table in 3D texture `texture`, or with none
+/// when `texture` is 0, from the next frame on. A job worker baked the sketch's grading values into
+/// the table's texels. The TypeScript API checks the values. Fails for a texture that is not live.
+#[wasm_bindgen(js_name = setGrade)]
+pub fn set_grade(texture: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        settings.set_grade((!texture.is_none()).then_some(texture));
+        0
+    })
+}
+
 /// Lights the scene with the environment whose prefiltered light is cube texture `texture`, or
 /// with none when `texture` is 0, from the next frame on. The environment's values give its
 /// intensity, its rotation and the coefficients of its diffuse light. The TypeScript API checks the

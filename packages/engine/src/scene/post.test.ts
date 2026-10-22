@@ -586,6 +586,20 @@ describe('post.set', () => {
 			{ ao: { samples: 0 } },
 			{ ao: { samples: 8.5 } },
 			{ ao: { samples: 65 } },
+			{ grading: true },
+			{ grading: { contrast: 1.2 } },
+			{ grading: { whiteBalance: { temperature: 1000 } } },
+			{ grading: { whiteBalance: { temperature: 30000 } } },
+			{ grading: { whiteBalance: { tint: -2 } } },
+			{ grading: { whiteBalance: { hue: 1 } } },
+			{ grading: { lift: [0, 0] } },
+			{ grading: { lift: [1.5, 0, 0] } },
+			{ grading: { gamma: [0, 1, 1] } },
+			{ grading: { gain: [-1, 1, 1] } },
+			{ grading: { saturation: -1 } },
+			{ grading: { splitToning: { balance: 2 } } },
+			{ grading: { splitToning: { strength: 2 } } },
+			{ grading: { splitToning: { tint: '#fff' } } },
 		])
 			expect(() => output.set(bad as PostSettings)).toThrow('E1213');
 		expect(calls).toEqual([]);

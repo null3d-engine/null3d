@@ -820,6 +820,8 @@ export class Pipelines {
 			{ binding: 11, visibility: fragment, texture: {} },
 			// The automatic exposure's texel, in 32-bit floats, which no device need filter.
 			{ binding: 12, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			// The built-in grading table, a 3D texture that a job worker baked.
+			{ binding: 13, visibility: fragment, texture: { viewDimension: '3d' } },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// The base level of bloom's chain, which the final pass's bloom build reads with a linear

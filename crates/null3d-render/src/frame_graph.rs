@@ -4062,6 +4062,7 @@ impl FrameGraph {
             grading: Grading {
                 vignette: grading.vignette.filter(|_| hdr),
                 lut: None,
+                grade: None,
                 sharpen: None,
             },
             outline: None,
@@ -4078,6 +4079,7 @@ impl FrameGraph {
             grading: Grading {
                 vignette: grading.vignette.filter(|_| !hdr),
                 lut: grading.lut,
+                grade: grading.grade,
                 sharpen: grading.sharpen,
             },
             fold: None,
