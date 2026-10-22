@@ -570,6 +570,8 @@ export class Post implements ViewHolder {
 	private gradeValues: GradeValues | false = false;
 	/** The bakes asked for so far: an answer that is not the newest one is dropped. */
 	private gradeBakes = 0;
+	/** Resolves once the bakes asked for so far have written the table, or have failed. */
+	private gradeSettled: Promise<void> = Promise.resolve();
 	private warnedNoGrade = false;
 	private vignette = false;
 	private outline = false;
@@ -819,21 +821,32 @@ export class Post implements ViewHolder {
 			const handle = table.write(texels);
 			this.core.check(this.core.glue.setGrade(handle), 'post.set', undefined, true);
 		};
-		void import('../shared/tasks')
-			.then(({ runTaskWithError }) =>
-				runTaskWithError<Float32Array>({ name: 'grade' }, values, [], gradeError),
-			)
-			.then((texels) => {
-				done(texels);
-			})
-			.catch((thrown: unknown) => {
-				if (DEV && !this.warnedNoGrade) {
-					this.warnedNoGrade = true;
-					console.warn(
-						`null3D: the grading values could not bake, so the picture keeps its colors: ${thrown instanceof Error ? thrown.message : String(thrown)}.`,
-					);
-				}
-			});
+		// Bakes run one after another, so a later one replaces an earlier one's table when it lands.
+		this.gradeSettled = this.gradeSettled.then(() =>
+			import('../shared/tasks')
+				.then(({ runTaskWithError }) =>
+					runTaskWithError<Float32Array>({ name: 'grade' }, values, [], gradeError),
+				)
+				.then((texels) => {
+					done(texels);
+				})
+				.catch((thrown: unknown) => {
+					if (DEV && !this.warnedNoGrade) {
+						this.warnedNoGrade = true;
+						console.warn(
+							`null3D: the grading values could not bake, so the picture keeps its colors: ${thrown instanceof Error ? thrown.message : String(thrown)}.`,
+						);
+					}
+				}),
+		);
+	}
+
+	/**
+	 * @internal Resolves once the newest grading bake has written the table, or has failed. Hold
+	 * mode waits for it before it draws the held frame, so that frame shows the grade.
+	 */
+	gradingSettled(): Promise<void> {
+		return this.gradeSettled;
 	}
 
 	/** Turns depth of field on with the settings that `dof` gives, or off with `false`. */
