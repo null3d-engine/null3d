@@ -52,6 +52,13 @@ function paintBase(context: OffscreenCanvasRenderingContext2D): void {
 	}
 }
 
+/** How far along `range` the place `at` is, counting up and then back down. */
+function backAndForth(at: number, range: number): number {
+	const span = 2 * range;
+	const turn = at % span;
+	return turn <= range ? turn : span - turn;
+}
+
 /** The middle of some times: the mean of the two middle ones when their count is even. */
 function median(times: Float64Array): number {
 	const sorted = Float64Array.from(times).sort();
@@ -151,8 +158,12 @@ export default defineSketch(({ scene, geometry, materials, textures, page, time 
 			}
 			if (running) {
 				step++;
-				markerX = (step * 11) % (SIZE - MARKER);
-				markerY = (step * 7) % (SIZE - MARKER);
+				// The marker moves a few texels each frame, back and forth, so a read that the
+				// refresh rate skipped covers a rectangle a little larger than the marker rather
+				// than a jump across the canvas. The screen then stays within its byte budget at
+				// the display's frame rate, whatever that is.
+				markerX = backAndForth(step * 11, SIZE - MARKER);
+				markerY = backAndForth(step * 7, SIZE - MARKER);
 				paintMarker(context, markerX, markerY, step);
 				// The engine reads the canvas only when the refresh rate allows it, and the
 				// rectangle then covers every change since the last read.
