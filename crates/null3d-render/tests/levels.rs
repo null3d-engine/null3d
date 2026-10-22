@@ -660,3 +660,22 @@ fn the_culling_shader_hides_under_the_threshold_only_a_mesh_with_levels() {
         "a distance range must hide every source: {decision}"
     );
 }
+
+/// A row that carries a bound of its own, as a batch whose vertex shader moves its rows does,
+/// tests that bound in the GPU culling shader's frustum, level and hide tests, where the layout
+/// writes it in the source's ranges texel. A row without one keeps its bucket's sphere.
+#[test]
+fn the_culling_shader_culls_a_row_by_its_own_bound_where_it_has_one() {
+    let cull = include_str!("../../null3d-shaders/wgsl/cull.wgsl");
+    let from = cull
+        .find("let own = out.ranges.z;")
+        .expect("the shader reads the row's own local radius");
+    let to = cull[from..]
+        .find("out.scale = scale;")
+        .expect("the shader sets the row's sphere before its scale");
+    let radius = &cull[from..from + to];
+    assert!(
+        radius.contains("own * scale"),
+        "the shader ignores the row's own radius: {radius}"
+    );
+}

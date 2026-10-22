@@ -1605,7 +1605,8 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
 /// Gives every row of a batch a bounding sphere of the first call value's meters around its own
 /// origin, in place of the mesh's own radius. A vertex shader that carries rows away from their
 /// origins, such as traffic along a lane, needs this, or culling drops rows that are still on the
-/// screen. Every row is marked for update, so the next frame writes its new sphere.
+/// screen. Every row is marked for update, so the next frame writes its new sphere, and the
+/// renderer's tables are built again, so the GPU culling reads the new radius too.
 #[wasm_bindgen(js_name = setBatchBounds)]
 pub fn set_batch_bounds(batch: u32) -> u32 {
     with_engine(|e| {
@@ -1613,6 +1614,7 @@ pub fn set_batch_bounds(batch: u32) -> u32 {
         match e.batches.get_mut(Handle::from_raw(batch)) {
             Ok(batch) => {
                 batch.set_local_radius(radius);
+                e.structure_changed = true;
                 0
             }
             Err(error) => core_failure(error),

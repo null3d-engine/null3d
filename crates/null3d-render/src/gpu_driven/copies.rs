@@ -131,6 +131,7 @@ impl Layout {
                 radii[source],
                 bias,
                 range,
+                false,
             );
         }
         for &(id, first) in &self.batch_bases {
@@ -149,6 +150,8 @@ impl Layout {
                 }
                 let center = row_center(&spheres, batch_cells[row], cells, row);
                 let range = batch_ranges(batches, batch).range(row);
+                // A batch's rows carry the batch's own radius, which the culling shader tests
+                // around each row in place of its bucket's sphere.
                 self.count_source(
                     counts,
                     rule,
@@ -158,6 +161,7 @@ impl Layout {
                     local,
                     1.0,
                     range,
+                    true,
                 );
             }
         }
@@ -165,7 +169,9 @@ impl Layout {
 
     /// Counts one source's copies: the buckets of base bucket `home` that the rule may place it
     /// in, for a source whose world bounding sphere is at `center` relative to the camera, with
-    /// the world radius `radius`, the local radius `local` and the threshold `bias`.
+    /// the world radius `radius`, the local radius `local` and the threshold `bias`. `own` is true
+    /// for a source that carries a bound of its own, as a batch whose rows move do, and false for
+    /// one that tests its bucket's sphere.
     #[allow(clippy::too_many_arguments)]
     fn count_source(
         &self,
@@ -177,6 +183,7 @@ impl Layout {
         local: f32,
         bias: f32,
         range: DrawRange,
+        own: bool,
     ) {
         // A sphere that covers all of space, and an object whose local radius is 0, have no scale
         // to read here. Its buckets hold the room for every level that it may pick.
@@ -185,10 +192,14 @@ impl Layout {
             return;
         }
         let scale = radius / local;
-        // The sphere that the culling shader tests: the bucket's own local radius, scaled by the
-        // source's. A bucket of a mesh's bounds holds the mesh's radius, which a scaled source
-        // grows.
-        let radius = self.buckets[home as usize].radius * scale;
+        // The sphere that the culling shader tests: a source's own radius where it carries one,
+        // otherwise the bucket's local radius scaled by the source's. A bucket of a mesh's bounds
+        // holds the mesh's radius, which a scaled source grows.
+        let radius = if own {
+            radius
+        } else {
+            self.buckets[home as usize].radius * scale
+        };
         let distance = rule.distance(center, radius);
         // A source at a switch distance counts toward both levels, and one inside a band toward
         // both levels' fade buckets, so the slices hold whatever the shader picks.
@@ -271,5 +282,72 @@ impl Layout {
         // The table goes up whole: every bucket's slice is this frame's, and the culling shader
         // reads the table before it places a copy.
         self.mark_records(0..self.buckets.len() as u32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Switch};
+
+    use super::*;
+    use crate::gpu_driven::layout::Bucket;
+
+    /// A batch row whose vertex shader carries it across a long lane must count its copies by the
+    /// batch's own bound, as the culling shader picks them. The row is 20 m from the camera, and
+    /// the bucket's 0.9 m sphere puts its nearest point 19.1 m out, past a level's 5 m switch,
+    /// while the row's own 2600 m bound reaches the camera and keeps the base level.
+    #[test]
+    fn a_batch_row_counts_by_its_own_bound() {
+        let mut layout = Layout::default();
+        layout.level_links = vec![
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Error,
+                next: 1,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 0.01,
+                switch: Switch::Error,
+                next: NO_LINK,
+                fade: NO_LINK,
+            },
+        ];
+        layout.buckets = vec![
+            Bucket {
+                radius: 0.9,
+                ..Bucket::default()
+            },
+            Bucket {
+                radius: 0.9,
+                ..Bucket::default()
+            },
+        ];
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let count = |own: bool| {
+            let mut counts = [0u32; 2];
+            layout.count_source(
+                &mut counts,
+                rule,
+                0,
+                [0.0, 0.0, 20.0],
+                2600.0,
+                2600.0,
+                1.0,
+                DrawRange::NONE,
+                own,
+            );
+            counts
+        };
+        assert_eq!(
+            count(true),
+            [1, 0],
+            "a row with its own bound keeps its base level"
+        );
+        assert_eq!(
+            count(false),
+            [0, 1],
+            "the bucket's sphere alone would move the row to the coarser level"
+        );
     }
 }
