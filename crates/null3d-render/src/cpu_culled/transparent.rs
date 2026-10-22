@@ -24,6 +24,7 @@ use super::layout::{MULTI_DRAW_BLOCK_BYTES, RESIDENT};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, put_u32};
 use crate::particles::ParticlePass;
 use crate::sorted::{SortedLayout, SortedRows, SortedView};
+use crate::vertex_draws::VertexDrawTable;
 use crate::view::ViewId;
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
@@ -60,6 +61,9 @@ struct Call {
     /// The id of the particle system that the call draws, with its own records and groups, or 0
     /// for a call of mesh parts.
     particles: u32,
+    /// The id of the vertex draw that the call draws, which makes its vertices from its counts, or
+    /// 0 for a call of mesh parts.
+    draws: u32,
 }
 
 /// Which passes record a call: the transparent pass, which leaves out a weighted bucket's own
@@ -189,6 +193,22 @@ impl Transparent {
                     repeat: false,
                     kind: CallKind::Sorted,
                     particles: system,
+                    draws: 0,
+                });
+                continue;
+            }
+            if let Some(id) = bucket.vertex_draw() {
+                state.calls.push(Call {
+                    pipeline: bucket.pipeline,
+                    textures: bucket.textures,
+                    page: u32::MAX,
+                    first: state.parts.len() as u32,
+                    count: 0,
+                    records,
+                    repeat: false,
+                    kind: CallKind::Sorted,
+                    particles: 0,
+                    draws: id,
                 });
                 continue;
             }
@@ -218,6 +238,7 @@ impl Transparent {
                             && !call.repeat
                             && call.kind == kind
                             && call.particles == 0
+                            && call.draws == 0
                             && call.textures == bucket.textures
                             && call.page == part.page
                             && call.count < per_call
@@ -243,6 +264,7 @@ impl Transparent {
                         repeat: false,
                         kind,
                         particles: 0,
+                        draws: 0,
                     });
                 }
                 state.parts.push(PartDraw {
@@ -331,6 +353,7 @@ impl Transparent {
         groups: impl Fn(&mut DrawList) -> Result<(), RecordError>,
         hidden: &dyn Fn(u32) -> bool,
         particles: &ParticlePass,
+        vertex_draws: &VertexDrawTable,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
         if !state.calls.iter().any(|call| call.kind.drawn_in(rows)) {
@@ -349,6 +372,20 @@ impl Transparent {
                 if particles.record(list, id, call.particles, call.pipeline, call.textures)? {
                     groups(list)?;
                     (pipeline, textures, page) = (None, 0, None);
+                }
+                continue;
+            }
+            // A vertex draw makes its vertices and its copies from its two counts, so it sets no
+            // vertex buffer and no index buffer. The next mesh draw binds its own.
+            if call.draws != 0 {
+                let (count, instances) = vertex_draws.counts(call.draws);
+                if count > 0 && instances > 0 {
+                    if pipeline != Some(call.pipeline) {
+                        list.push(Op::SetPipeline, &[call.pipeline])?;
+                        pipeline = Some(call.pipeline);
+                    }
+                    list.push(Op::Draw, &[count, instances, 0, 0])?;
+                    page = None;
                 }
                 continue;
             }

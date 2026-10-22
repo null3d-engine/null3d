@@ -2,6 +2,7 @@ bunx commitlint --edit "$1"
 bun tools/hooks/check-docs-ack.ts "$1"
 bun tools/hooks/check-skills-ack.ts "$1"
 bun tools/hooks/check-size-growth.ts "$1"
+bun tools/hooks/check-limits-ack.ts "$1"
 bun tools/hooks/check-task.ts "$1"
 bun tools/hooks/check-docs-links.ts
 bun tools/hooks/check-docs-style.ts "$1"

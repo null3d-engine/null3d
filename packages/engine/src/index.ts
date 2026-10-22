@@ -35,7 +35,7 @@ export * as math from './math/math';
  * @category api/math
  */
 export * as quat from './math/quat';
-export type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from './math/types';
+export type { EulerOrder, Mat4Like, QuatLike, Vec2Like, Vec3Like } from './math/types';
 /**
  * Vectors (x, y, z) in plain arrays, in the style of gl-matrix: `vec3.add(out, a, b)` writes the sum
  * into `out` and returns `out`, so per-frame code allocates nothing.
@@ -113,7 +113,11 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { FeatureDraw, FeatureDrawOptions, FeatureDrawVertices } from './scene/feature-draws';
+export type {
+	FeatureDraw,
+	FeatureDrawOptions,
+	FeatureDrawVertices,
+} from './scene/feature-draws';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
@@ -323,6 +327,8 @@ export type {
 	TimeOfDayPreset,
 } from './scene/time-of-day';
 export { emptyTimeOfDay, timeOfDay } from './scene/time-of-day';
+export type { VertexDrawBounds, VertexDrawOptions } from './scene/vertex-draws';
+export { VertexDraw } from './scene/vertex-draws';
 export type {
 	TextureValues,
 	UniformType,

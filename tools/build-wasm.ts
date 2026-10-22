@@ -87,6 +87,7 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
+	cacheRoot,
 	hashFiles,
 	hashOf,
 	pruneCacheLocked,
@@ -838,16 +839,23 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
-	const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
-	// The report names every file that the build writes, so a build with many first-use shader
-	// files prints more than a capture of a megabyte holds; a smaller buffer kills the build.
-	const build = spawnSync('bunx', args, {
-		cwd: root,
-		encoding: 'utf8',
-		maxBuffer: 64 * 1024 * 1024,
-	});
-	if (build.status !== 0)
-		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+	// One page build at a time on the machine: two at once leave the bundler blocked in its own
+	// callback, gaining a tenth of a second of processor time a minute, and neither finishes.
+	const release = acquireLock(join(cacheRoot(), 'page-build.lock'));
+	try {
+		const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
+		// The report names every file that the build writes, so a build with many first-use shader
+		// files prints more than a capture of a megabyte holds; a smaller buffer kills the build.
+		const build = spawnSync('bunx', args, {
+			cwd: root,
+			encoding: 'utf8',
+			maxBuffer: 64 * 1024 * 1024,
+		});
+		if (build.status !== 0)
+			throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+	} finally {
+		release();
+	}
 	const assets = join(root, JS_BUILD_DIR, 'assets');
 	return readdirSync(assets).flatMap((file) => {
 		if (!file.endsWith('.js')) return [];

@@ -40,6 +40,22 @@ scene.createInstances(tree, 20_000, { material: bark });
 
 Errors grow from level to level. The asset tool works out each level's error for you, as the next section shows.
 
+## A material per level
+
+A level may name a material of its own, so a far level shades more cheaply. It can leave out the normal map, or use an opaque mask in place of an alpha-tested one:
+
+```ts
+const bark = materials.standard({ map: barkMap, normalMap: barkNormal });
+scene.createMesh({ mesh: tree, material: bark });
+const barkFar = materials.standard({ map: barkMap, roughness: 0.85 }); // no normal map
+tree.setLevels([
+	{ mesh: coarse, error: 0.02, material: barkFar },
+	{ mesh: coarsest, error: 0.1, material: barkFar },
+]);
+```
+
+A level without a material draws with the material of the level before it. The base level draws with the object's or the instance batch's material. A glTF file gives a level its own material when the level node's primitive names another material than the node's primitive. Each material draws in its own buckets, so the far levels' pipelines leave out what their materials do not use.
+
 ## Levels from the asset tool
 
 `bunx @null3d/cli assets optimize --lod` adds levels to each mesh of 64 triangles or more, as [the asset pipeline](../guides/assets-pipeline.md#levels-of-detail) explains:
@@ -49,6 +65,16 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod
 ```
 
 Each level has about half the triangles of the level above, and shares the mesh's vertices. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps their errors in its extras, as `NULL3D_lod_error`. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh. Another tool may store screen coverage alone, in `MSFT_screencoverage`. The loader then works out each error from the coverage, for a screen 1,080 pixels high. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps and converts the errors to those steps.
+
+## Cluster levels
+
+A level covers the whole mesh at one detail. A mesh that is close at one end and far at the other picks one detail for all of it. A cluster tree splits the mesh into patches of about 128 triangles instead. Each patch has its own error and its own bounds. One mesh can then draw fine triangles near the camera and coarse ones far from it. Its near and far parts switch detail separately.
+
+The asset tool builds the tree with `--clusters`, as [the asset pipeline](../guides/assets-pipeline.md#cluster-levels) explains. It splits a large static mesh into patches, then simplifies groups of patches into the patches above them. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. It costs about twice the mesh's indices.
+
+A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The patches that draw then cover the mesh once, and the patches of one group switch together, so no gap opens.
+
+The engine reads the tree from a file and draws the whole mesh for now. Drawing the patches of a tree is not built yet. Meshes that a skin or a morph target bends, meshes whose material blends or masks, and meshes with many copies keep whole levels.
 
 ## How the engine picks a level
 

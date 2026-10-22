@@ -171,20 +171,41 @@ The bake skips a material, and the report says why, when:
 
 ## Levels of detail
 
-`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The levels stop when a level would keep more than three quarters of the triangles above it. Each level shares the mesh's vertices, so only its indices add to the file.
+`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The levels stop when a level would keep more than three quarters of the triangles above it.
 
 The command plans the levels as follows:
 
 1. It welds the vertices of each mesh part for planning. Copies of a vertex at one place merge when their texture coordinates and colors match and their normals lie within 20 degrees. Exporters often leave such copies, and they stop the simplifier.
 2. It simplifies with meshoptimizer, with the normals and the vertex colors in the error. Texture seams and the borders between mesh parts stay in place. Normal seams may move, so a model of flat faces still simplifies.
-3. A skinned mesh simplifies in its skeleton's rest pose, as it draws. Meshes with joints or morph targets keep their triangles more even, so they bend well.
-4. Each level stores its error: the largest distance between its surface and the full mesh's, in the units of the mesh's positions. Each level's error is at least 1.5 times the error of the level above, so the levels change at distances well apart.
+3. A part of separate cards, such as a tree's leaves, takes a step of its own. A card is a quad of four vertices and two triangles, or a folded card of six vertices and four triangles, alone in the part. Each level keeps half of the cards, spread over the crown. It grows each kept card about its middle, so the cards cover the same surface. The level's error is the size of the largest card that it drops. A part of any other shape simplifies the usual way.
+4. A skinned mesh simplifies in its skeleton's rest pose, as it draws. Meshes with joints or morph targets keep their triangles more even, so they bend well.
+5. Each level stores its error: the largest distance between its surface and the full mesh's, in the units of the mesh's positions. Each level's error is at least 1.5 times the error of the level above, so the levels change at distances well apart.
+
+A simplified level shares the mesh's vertices, so only its indices add to the file. A card level stores its own positions, because its kept cards grew, so its position stream adds to the file.
 
 The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps.
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
 `assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. Skinned meshes draw their full mesh for now. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
+
+### Cluster levels
+
+`--clusters` stores a tree of small patches for each large static mesh: a scan, a cliff, a building or a CAD model. Every patch holds about 128 triangles, and the patches above it replace groups of patches below. One mesh can then draw fine triangles near the camera and coarse triangles far from it. The whole levels draw one detail for the whole object instead.
+
+The command splits each mesh part into patches and builds the tree above them with meshoptimizer:
+
+1. The patches are compact pieces of the surface, so each one covers a small part of the screen.
+2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
+3. Each patch stores its error, the largest distance between its surface and the surface below it, and a sphere around its triangles.
+
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The engine reads the tree, and draws the whole mesh until it draws patches.
+
+A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
+
+```sh
+bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters
+```
 
 ### Fewer triangles in the full mesh
 
@@ -200,6 +221,7 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `draws` | The objects that the scene draws, with each instance of an instancing node, the parts and meshes they draw, the triangles at full detail, and the vertices the file stores |
 | `size` | The scene's size in its own units, from the meshes' bounds |
 | `levels of detail` | The meshes that got levels, and their triangles at each level, the full meshes first |
+| `cluster trees` | The meshes that got a tree of patches, the patches, the leaf patches, the tree's triangles against the full meshes', and the bytes the trees take |
 | `merged copies` | The meshes, materials, textures and vertex data that merged into an equal copy |
 | Textures | Each group of textures that share a size, a format and a color space |
 | `texture memory` | The textures' GPU memory with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format |
