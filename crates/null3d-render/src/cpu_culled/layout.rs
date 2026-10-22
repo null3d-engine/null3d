@@ -17,7 +17,7 @@ use std::collections::TryReserveError;
 use null3d_core::clusters::{
     CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
 };
-use null3d_core::culling::{CULL_CHUNK, NO_BUCKET};
+use null3d_core::culling::{CULL_CHUNK, NO_BUCKET, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
@@ -494,7 +494,29 @@ impl Layout {
             Some(bucket)
         };
         let fades = drawn == Drawn::Scene && settings.levels_fade();
-        expand_level_keys(key_counts, levels, fades, eligible, &level_bucket);
+        // The keys whose sources draw in a distance band, which need a fade bucket beside each of
+        // their levels only while the quality settings fade those bands.
+        let mut ranged_keys: Vec<BucketKey> = Vec::new();
+        if fades {
+            for slot in 0..scene.capacity() as usize + 1 {
+                let [start, end] = scene
+                    .draw_ranges()
+                    .get(slot * 2..slot * 2 + 2)
+                    .map_or([0.0, f32::INFINITY], |range| [range[0], range[1]]);
+                if start > 0.0 || end.is_finite() {
+                    ranged_keys.extend(scene_key(slot));
+                }
+            }
+            for (_, batch) in batches.iter() {
+                if !batch_ranges(batches, batch).is_none() {
+                    ranged_keys.extend(batch_key(batch));
+                }
+            }
+            ranged_keys.sort_unstable();
+            ranged_keys.dedup();
+        }
+        let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
+        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -562,7 +584,8 @@ impl Layout {
             // Each key's bucket of rows is at twice its place in the keys.
             let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
             self.level_links.push(LevelLink {
-                error: links.error,
+                value: links.value,
+                switch: links.switch,
                 next: links.next.map_or(NO_LINK, |key| 2 * key),
                 fade: links.fade.map_or(NO_LINK, |key| 2 * key),
             });
@@ -619,15 +642,26 @@ impl Layout {
         let mut by_row = self.scene_rows.div_ceil(CULL_CHUNK);
         let links = &self.level_links;
         let picks = |bucket: u32| links.get(bucket as usize).is_some_and(LevelLink::has_next);
-        // Rows that fade list two pairs of words in place of one entry.
-        let mut fading_rows = if picks_any(&self.scene_buckets, links) {
+        // A run whose rows draw in a distance band looks each row up too, even without levels.
+        let scene_ranges = (0..self.scene_rows as usize).any(|slot| {
+            let [start, end] = scene
+                .draw_ranges()
+                .get(slot * 2..slot * 2 + 2)
+                .map_or([0.0, f32::INFINITY], |range| [range[0], range[1]]);
+            start > 0.0 || end.is_finite()
+        });
+        // Rows that fade list two pairs of words in place of one entry, and a row inside a
+        // distance band's edge lists its entry and a fade value.
+        let mut fading_rows = if picks_any(&self.scene_buckets, links) || scene_ranges {
             self.scene_rows
         } else {
             0
         };
         for ((_, batch), slot) in batches.iter().zip(&mut self.batches) {
             slot.bucket = bucket_of(batch_key(batch));
-            slot.levels = picks(slot.bucket);
+            let picked = picks(slot.bucket);
+            let ranged = !batch_ranges(batches, batch).is_none();
+            slot.levels = picked || ranged;
             if slot.bucket != NO_BUCKET {
                 let chunks = batch.capacity().div_ceil(CULL_CHUNK);
                 runs += chunks;
@@ -638,11 +672,7 @@ impl Layout {
                 }
             }
         }
-        let fading_words = if fades {
-            fading_rows.saturating_mul(3)
-        } else {
-            0
-        };
+        let fading_words = fading_rows.saturating_mul(3);
 
         // The ring slot of draw records: one block per multi-draw call, or one aligned record per
         // draw.

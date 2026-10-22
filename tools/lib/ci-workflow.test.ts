@@ -1,28 +1,40 @@
-// Checks the CI workflow's job graph and shard lists. A typo in either breaks CI without failing
-// any job: a job missing from ci-passed's needs never gates main, a job that skips on an answer
-// ci-passed does not expect fails every docs-only run, and a shard missing from a matrix never runs
-// its tests.
+// Checks the CI workflow's job graph, its shard lists and the reuse of its work. A typo in the
+// graph or the lists breaks CI without failing any job: a job missing from ci-passed's needs never
+// gates main, a job that skips on an answer ci-passed does not expect fails every docs-only run,
+// and a shard missing from a matrix never runs its tests. A fault in the reuse costs time on every
+// run, or reuses a pass that no longer holds, and fails nothing: a job that builds what the build
+// job made, a test of the whole shader set in two jobs, and a pass key that misses a script that
+// its part starts ([Efficient jobs](../../.dev/pull-requests.md#efficient-jobs)).
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 
 interface Step {
 	name?: string;
 	run?: string;
+	uses?: string;
+	with?: Record<string, unknown>;
 	env?: Record<string, string>;
 }
 
 interface Job {
 	needs?: string | string[];
 	if?: string;
+	env?: Record<string, string>;
 	strategy?: { matrix?: Record<string, unknown> & { include?: Record<string, unknown>[] } };
 	steps?: Step[];
 }
 
-const workflow = Bun.YAML.parse(
-	readFileSync(join(import.meta.dirname, '../../.github/workflows/ci.yml'), 'utf8'),
-) as { jobs: Record<string, Job> };
+const ROOT = join(import.meta.dirname, '../..');
+const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as {
+	jobs: Record<string, Job>;
+};
 const jobs = workflow.jobs;
+const scripts = (
+	JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+		scripts: Record<string, string>;
+	}
+).scripts;
 
 const needsOf = (job: Job | undefined): string[] =>
 	job?.needs === undefined ? [] : Array.isArray(job.needs) ? job.needs : [job.needs];
@@ -33,6 +45,117 @@ const jobNamed = (name: string): Job => {
 	return job;
 };
 const matrixOf = (name: string) => jobNamed(name).strategy?.matrix ?? {};
+
+/** A command with each `bun run <script>` of package.json written out as the script's commands. */
+function expanded(command: string, seen: ReadonlySet<string> = new Set()): string {
+	return command.replace(/\bbun run ([\w:-]+)/g, (call, name: string) => {
+		const script = scripts[name];
+		return script === undefined || seen.has(name)
+			? call
+			: expanded(script, new Set([...seen, name]));
+	});
+}
+
+/** The matrix's combinations: its include entries, or else each value of its one list. */
+function combinations(job: Job): Record<string, unknown>[] {
+	const { include, ...lists } = job.strategy?.matrix ?? {};
+	if (include) return include;
+	const [key, values] = Object.entries(lists)[0] ?? [];
+	return Array.isArray(values) && key ? values.map((value) => ({ [key]: value })) : [{}];
+}
+
+/** One command that a job runs, for one combination of its matrix, with the environment it sees. */
+interface Command {
+	text: string;
+	env: Record<string, string>;
+	entry: Record<string, unknown>;
+}
+
+/**
+ * Every command that a job runs, for each combination of its matrix, with the matrix's values in
+ * place and package.json's scripts written out.
+ */
+function commandsOf(job: Job): Command[] {
+	return combinations(job).flatMap((entry) =>
+		(job.steps ?? []).flatMap(({ run, env }) => {
+			if (run === undefined) return [];
+			const text = run.replace(/\$\{\{\s*matrix\.(\w+)\s*\}\}/g, (_, key: string) =>
+				String(entry[key] ?? ''),
+			);
+			return [{ text: expanded(text), env: { ...job.env, ...env }, entry }];
+		}),
+	);
+}
+
+/** The jobs whose steps download the build job's files. */
+const downloadsBuild = (job: Job) =>
+	(job.steps ?? []).some(
+		({ uses, with: given }) =>
+			uses?.startsWith('actions/download-artifact@') === true && given?.name === 'page-wasm',
+	);
+
+/** Every file below a folder of the repository, by its path from the root. */
+function filesBelow(folder: string): string[] {
+	return readdirSync(join(ROOT, folder), { recursive: true, encoding: 'utf8' })
+		.map((file) => join(folder, file))
+		.filter((file) => statSync(join(ROOT, file)).isFile());
+}
+
+/** The scripts that the shader crate's Rust tests start, which they name by their path. */
+const RUST_STARTED_SCRIPTS = [
+	...new Set(
+		filesBelow('crates/null3d-shaders/tests')
+			.filter((file) => file.endsWith('.rs'))
+			.flatMap((file) => [...readFileSync(join(ROOT, file), 'utf8').matchAll(/tools\/[\w-]+\.ts/g)])
+			.map(([path]) => path),
+	),
+];
+
+/** A script path in a command: a file of the repository that Bun runs or tests. */
+const SCRIPT_PATH = /(?:^|[\s(])(?:\.\/)?((?:tools|tests|packages|bench)\/[\w./-]+\.[cm]?[jt]s)\b/g;
+/** A relative import or a dynamic import of a relative path. */
+const RELATIVE_IMPORT = /(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"?]+)/g;
+/** The build job writes this folder, and the key names its inputs instead of its files. */
+const GENERATED = 'packages/engine/src/generated/';
+
+/** The repository file that an import names, by its path from the root, or null outside it. */
+function importedFile(from: string, spec: string): string | null {
+	const base = resolve(dirname(join(ROOT, from)), spec);
+	for (const candidate of [
+		base,
+		base.replace(/\.js$/, '.ts'),
+		`${base}.ts`,
+		join(base, 'index.ts'),
+	])
+		if (existsSync(candidate) && statSync(candidate).isFile()) return relative(ROOT, candidate);
+	return null;
+}
+
+/** The scripts and every repository file that they import, directly or through other files. */
+function scriptsWithImports(start: readonly string[]): Set<string> {
+	const found = new Set<string>();
+	const next = [...start];
+	for (let file = next.pop(); file !== undefined; file = next.pop()) {
+		if (found.has(file)) continue;
+		found.add(file);
+		if (file.startsWith(GENERATED)) continue;
+		for (const [, spec] of readFileSync(join(ROOT, file), 'utf8').matchAll(RELATIVE_IMPORT)) {
+			const imported = spec === undefined ? null : importedFile(file, spec);
+			if (imported !== null && !imported.includes('node_modules')) next.push(imported);
+		}
+	}
+	return found;
+}
+
+/** A pattern of `hashFiles` as a regular expression over paths from the root. */
+const globPattern = (glob: string) =>
+	new RegExp(
+		`^${glob
+			.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+			.replace(/\*\*/g, '\0')
+			.replace(/\*/g, '[^/]*')
+			.replaceAll('\0', '.*')}$`,
+	);
 
 describe("CI's workflow", () => {
 	it('gates main on every job through ci-passed', () => {
@@ -120,6 +243,70 @@ describe("CI's workflow", () => {
 			expect(numbered.sort(), tests).toEqual(
 				Array.from({ length: count }, (_, i) => `${i}/${count}`).sort(),
 			);
+		}
+	});
+
+	it('restores a Rust cache in every job that runs cargo or rustup', () => {
+		for (const [name, job] of Object.entries(jobs)) {
+			if (!commandsOf(job).some(({ text }) => /\b(?:cargo|rustup)\b/.test(text))) continue;
+			const cached = (job.steps ?? []).some(({ uses }) => uses?.startsWith('Swatinem/rust-cache@'));
+			expect(cached, name).toBe(true);
+		}
+	});
+
+	it("keeps every job that downloads the build job's files from building them again", () => {
+		const downloaders = Object.entries(jobs).filter(([, job]) => downloadsBuild(job));
+		expect(downloaders.length).toBeGreaterThan(0);
+		for (const [name, job] of downloaders)
+			expect(job.env?.NULL3D_REQUIRE_FRESH_SHADERS, name).toBe('1');
+	});
+
+	it('runs the test that builds every shader in the shader compiler job alone', () => {
+		// The determinism check builds a few entries of the same test, which is not the whole set.
+		const runs = Object.entries(jobs).flatMap(([name, job]) =>
+			commandsOf(job)
+				.filter(({ text }) => /-p null3d-shaders --test build\b/.test(text))
+				.filter(({ entry }) => entry.shard !== 'determinism')
+				.map(() => name),
+		);
+		expect([...new Set(runs)]).toEqual(['shader-compiler']);
+		// The module exports test builds a few entries, among the workspace's tests.
+		for (const [name, job] of Object.entries(jobs))
+			for (const { text } of commandsOf(job))
+				expect(text, name).not.toMatch(/-p null3d-shaders-wasm\b|shader-module-exports/);
+	});
+
+	it('names in each pass key every script that its part starts, with their imports', () => {
+		const keyed = Object.entries(jobs).filter(([, job]) =>
+			(job.steps ?? []).some(({ name }) => /^The key of this \w+'s inputs$/.test(name ?? '')),
+		);
+		expect(keyed.length).toBeGreaterThan(0);
+		for (const [name, job] of keyed) {
+			const key = (job.steps ?? []).find(({ name: step }) =>
+				/^The key of this \w+'s inputs$/.test(step ?? ''),
+			);
+			const globs = [...(key?.run ?? '').matchAll(/hashFiles\(([^)]*)\)/g)].flatMap(([, args]) =>
+				[...(args ?? '').matchAll(/'([^']+)'/g)].map(([, glob]) => glob ?? ''),
+			);
+			const patterns = globs.map(globPattern);
+			const started = commandsOf(job).flatMap(({ text, env }) => {
+				const named = [...text.matchAll(SCRIPT_PATH)].map(([, path]) => path ?? '');
+				// The shader crate's build tests start their scripts when they build through the compiler.
+				const compiles =
+					/cargo .*-p null3d-shaders\b/.test(text) &&
+					(text.includes('NULL3D_SHADER_COMPILER=') || env.NULL3D_SHADER_COMPILER !== undefined);
+				return [...named, ...(compiles ? RUST_STARTED_SCRIPTS : [])];
+			});
+			const files = scriptsWithImports(started.filter((path) => existsSync(join(ROOT, path))));
+			const missing = [...files].filter(
+				(file) => !file.startsWith(GENERATED) && !patterns.some((pattern) => pattern.test(file)),
+			);
+			expect(missing, name).toEqual([]);
+			// A part that reads the build job's shader modules names the files they are built from.
+			if ([...files].some((file) => file.startsWith(GENERATED)))
+				expect(globs, name).toEqual(
+					expect.arrayContaining(['crates/null3d-shaders/**', 'tools/shaders.ts']),
+				);
 		}
 	});
 });

@@ -159,6 +159,16 @@ impl DataTexture {
         }
     }
 
+    /// The textures of sources' distance ranges: each start distance then its end distance.
+    pub(crate) const fn ranges(first_id: u32, count: u32) -> Self {
+        Self {
+            first_id,
+            count,
+            width: sizes::RANGES_PER_TEXTURE_ROW * sizes::RANGE_TEXELS,
+            format: format::RGBA32_FLOAT,
+        }
+    }
+
     /// Makes the textures again when `rows`, the rows they hold, is fewer than `needed`, with room
     /// to grow but at most `limit`. Returns true when it made them.
     pub(crate) fn grow(

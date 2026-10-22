@@ -2147,6 +2147,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
 	// the levels switching at once and in their fading bands, opaque and as a mask smoothed by alpha
 	// to coverage, and one copy casts a coarser level's shadow onto a wall.
+	//
+	// The sketch places each copy along its own ray at the distance the rule measures, so a copy
+	// sits at the share of its switch that the test means: at 95 percent of a 9.27 m switch it
+	// draws the base level with one copy, and at 103 percent the first lower level. The bias test
+	// halves that switch once: 4.63 m, and the same shares of it draw the same levels.
 	{
 		name: 'lod',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
@@ -2164,13 +2169,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
-		// Each object takes a bias of 2 and stands at half the distance, so its levels switch where
-		// the copies without a bias do: the image must match the first test's.
+		// Each object takes a bias of 2, which halves its switch once, so each copy is placed at half
+		// the distance of the first test's and draws the same level there. The copies are then
+		// twice the size on screen, so this test keeps a picture of its own rather than the first
+		// test's: a bias moves the switches, not the sizes.
 		name: 'lod-bias',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&bias',
 		hold: 0,
 		size: [480, 270],
-		reference: 'lod',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
@@ -2203,6 +2209,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/lod-sketch.ts?shadows',
 		hold: 0,
 		size: [480, 270],
+	},
+	// A distance band hides a copy outside it and fades it at each edge. Two rows of copies stand
+	// around the band's start and its end: one outside, one inside the fade band, and one past it.
+	// The fade dither's phase follows each copy's number in its draw, which each GPU path numbers
+	// its own way, so every path keeps a picture of its own, as the level fade's test does.
+	{
+		name: 'lod-range',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-range-batch',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-range',
+		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
 	// geometry. Three copies stand at 95%, 103% and 109% of that distance, the second inside the

@@ -20,6 +20,7 @@ import {
 } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { enableReflections } from '../../lib/ssr';
+import { createMoods } from '../../lib/stage';
 import { createCity } from './city';
 import { createFacades } from './facades';
 import { createHero } from './hero';
@@ -29,10 +30,30 @@ import { CARS, createTraffic } from './traffic';
 
 /** The camera's vertical field of view in degrees. */
 const FOV = 58;
-/** How much brighter than the model's own scale the night sky shows, for this exposure. */
-const SKY = 3.6;
 /** The bearing of the moon and the sky's light about +Y. */
 const HEADING = 2.1;
+/** The fog's density in the ordinary moods, and the lit fog the sun and the lamps show through. */
+const FOG_DENSITY = 0.0042;
+const FOG_LIT = { intensity: 1.5, anisotropy: 0.42, distance: 430 };
+/** How much denser the storm's fog is, and how much denser its rain. */
+const STORM_FOG = 2.4;
+const STORM_RAIN = 1.8;
+
+/** The looks that the scene's Time of day buttons offer. Storm is the scene's own variation. */
+const MOODS = ['Dusk', 'Night', 'Storm'] as const;
+type SkywayMood = (typeof MOODS)[number];
+/** The stage mood that each look takes: the storm is the night, under heavier cloud and rain. */
+const STAGE_MOOD: Record<SkywayMood, 'Dusk' | 'Night'> = {
+	Dusk: 'Dusk',
+	Night: 'Night',
+	Storm: 'Night',
+};
+const MOOD_OPTIONS = [
+	{ id: 'Dusk', label: 'Dusk', tip: 'The sun has just set, and the city lights are coming on.' },
+	{ id: 'Night', label: 'Night', tip: 'The city after dark, with the moon behind cloud.' },
+	{ id: 'Storm', label: 'Storm', tip: 'A storm: heavy cloud, dense fog and driving rain.' },
+] as const;
+const isSkywayMood = (name: unknown): name is SkywayMood => MOODS.includes(name as SkywayMood);
 /** The point that the lens focuses on, kept up to date by the route. */
 const TARGET: [number, number, number] = [-525, 90, 560];
 
@@ -95,33 +116,58 @@ const TRAFFIC_OPTIONS = [
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time, debug } = ctx;
 	page.post('loading', 'Opening the skyway');
-	const night = timeOfDay('night', { heading: HEADING });
-	// A dark blue night under cloud, brighter than the physical model's own scale so the wet
-	// streets have something to mirror.
-	scene.setBackground(
-		{ sky: { ...night.sky, cloudCoverage: 0.85, time: 0 } },
-		{ intensity: night.skyIntensity * SKY },
-	);
-	const room = await assets.skyEnvironment();
-	scene.setEnvironment(room, { intensity: night.skyIntensity * SKY });
-	scene.createDirectionalLight({
+	// The sky, the sun, the fog and the exposure follow the shared stage, which eases between moods
+	// and lights the scene from the sky. The scene gives the stage its lit fog, so the lamps and the
+	// searchlights stay visible through the air in every mood.
+	const [skyLight, room] = await Promise.all([
+		assets.skyEnvironment(),
+		assets.builtinEnvironment('room'),
+	]);
+	const night = timeOfDay('night', { heading: HEADING, model: 'physical' });
+	const sun = scene.createDirectionalLight({
 		direction: [-0.32, -0.62, 0.42],
 		color: '#a8c0ee',
 		intensity: 0.6,
 	});
-	scene.createAmbientLight({ color: '#28324a', intensity: 0.5 });
-
-	const fog = {
-		color: [
-			(night.fog.color[0] as number) * SKY,
-			(night.fog.color[1] as number) * SKY,
-			(night.fog.color[2] as number) * SKY,
-		] as [number, number, number],
-		density: 0.0042,
-		heightFalloff: 0.013,
-		volumetric: { intensity: 1.5, anisotropy: 0.42, distance: 430 },
+	scene.createAmbientLight({ color: '#28324a', intensity: 1.2 });
+	const stage = createMoods(ctx, sun, skyLight, room, {
+		heading: HEADING,
+		fogDensity: FOG_DENSITY,
+		cloudCoverage: 0.45,
+		backdrop: [0.01, 0.012, 0.02],
+		volumetric: FOG_LIT,
+		// The city's own lights carry it: the physical night alone leaves the streets black.
+		exposureScale: 4.5,
+		// The sky's own light on the wet streets and the tower sides.
+		environmentScale: 2.2,
+		// A brighter sky than the night gives, so the towers stand against it.
+		skyScale: 2.6,
+	});
+	// The storm's own sky: the physical night under full cloud, with the moon dimmed by it.
+	const storm = {
+		atmosphere: {
+			sunPosition: night.atmosphere.sunPosition,
+			sunIntensity: 0,
+			moonPosition: night.atmosphere.moonPosition,
+			moonIntensity: (night.atmosphere.moonIntensity as number) * 0.35,
+			stars: 0,
+			cloudCoverage: 1,
+			time: 0,
+		},
 	};
-	scene.setFog(fog);
+	const stormSky = { intensity: (night.skyIntensity as number) * 0.5 };
+	/** The storm's fog, which the scene writes while the storm runs. */
+	const stormFog = {
+		color: [0.03, 0.035, 0.06] as [number, number, number],
+		density: FOG_DENSITY * STORM_FOG,
+		heightFalloff: 0.013,
+		volumetric: FOG_LIT,
+	};
+	let mood: SkywayMood = 'Night';
+	const params = new URL(import.meta.url).searchParams;
+	const start = params.get('mood');
+	if (isSkywayMood(start)) mood = start;
+	stage.set(STAGE_MOOD[mood]);
 
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -133,7 +179,6 @@ export default defineSketch(async (ctx) => {
 	enableReflections(ctx);
 	post.set({
 		toneMapping: 'agx-punchy',
-		exposure: night.exposure * 1.25,
 		ssr: { maxDistance: 260, thickness: 2, maxRoughness: 0.4, intensity: 1 },
 		bloom: { intensity: 0.55, threshold: 1 },
 		ao: { radius: 1.4 },
@@ -175,7 +220,24 @@ export default defineSketch(async (ctx) => {
 	/** The level of detail the Quality tab keeps, as the other showcases do. */
 	let lodThreshold = quality.settings.lodThreshold || 1;
 
+	/**
+	 * Writes the storm's own sky and fog over the stage's night. A held frame runs no update, so
+	 * the setup writes it once too.
+	 */
+	const writeStorm = (t: number): void => {
+		storm.atmosphere.time = t;
+		scene.setBackground(storm, stormSky);
+		if (!on.fog) return;
+		const air = stage.airColor;
+		stormFog.color[0] = air[0] as number;
+		stormFog.color[1] = air[1] as number;
+		stormFog.color[2] = air[2] as number;
+		scene.setFog(stormFog);
+	};
+	if (mood === 'Storm') writeStorm(0);
+
 	const groups = (): readonly HudGroup[] => [
+		radioGroup('mood', 'Time of day', MOOD_OPTIONS, mood),
 		toggleGroup('atmosphere', 'Atmosphere', ATMOSPHERE, ['fog', 'rain'], (id) => on[id] ?? false),
 		toggleGroup('lighting', 'Lighting', LIGHTING, ['ao', 'environment'], (id) => on[id] ?? false),
 		toggleGroup(
@@ -210,7 +272,7 @@ export default defineSketch(async (ctx) => {
 		on[id] = lit;
 		switch (id) {
 			case 'fog':
-				scene.setFog(lit ? fog : null);
+				stage.show('fog', lit);
 				break;
 			case 'rain':
 				rain.setVisible(lit);
@@ -219,7 +281,7 @@ export default defineSketch(async (ctx) => {
 				post.set({ ao: lit ? { radius: 1.4 } : false });
 				break;
 			case 'environment':
-				scene.setEnvironment(lit ? room : null, { intensity: night.skyIntensity * SKY });
+				stage.show('environment', lit);
 				break;
 			case 'bloom':
 				post.set({ bloom: lit ? { intensity: 0.55, threshold: 1 } : false });
@@ -235,10 +297,21 @@ export default defineSketch(async (ctx) => {
 				break;
 		}
 	};
+	/** Takes one of the scene's looks: the stage for Dusk and Night, its own heavy weather for Storm. */
+	const setMood = (next: SkywayMood): void => {
+		mood = next;
+		stage.set(STAGE_MOOD[next]);
+		rain.setStrength(next === 'Storm' ? STORM_RAIN : 1);
+	};
+	rain.setStrength(mood === 'Storm' ? STORM_RAIN : 1);
+
 	page.onMessage((name, value) => {
 		const picked = String(value);
 		if (name === 'camera') film.select(picked);
-		else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
+		else if (name === 'mood' && isSkywayMood(value)) {
+			setMood(value);
+			film.refresh();
+		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
 			set(picked, !(on[picked] ?? false));
 			film.refresh();
 		} else if (name === 'traffic') {
@@ -268,6 +341,10 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			stage.update(dt);
+			// The storm is the scene's own weather over the stage's night: a sky under full cloud,
+			// and fog thick enough to hide the far towers.
+			if (mood === 'Storm') writeStorm(t);
 			film.update(dt);
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');

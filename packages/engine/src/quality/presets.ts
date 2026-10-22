@@ -288,8 +288,10 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 16, heavierBelow: true },
 	},
-	// Whether two levels hand over in a short dithered band past each switch distance. Low switches
-	// at once: the dither's discard costs tile GPUs their hidden-surface removal in the band.
+	// Whether a source's distance band fades at each edge, through a short dithered band. A level's
+	// own hand-over follows the level, whatever this setting: a hand-set level fades because its
+	// switch shows, and a measured one switches at once because it does not. Low cuts distance
+	// bands: the dither's discard costs tile GPUs their hidden-surface removal in the band.
 	lodFade: {
 		presets: [false, true, true, true],
 		changes: 'live',
@@ -600,9 +602,11 @@ export interface QualitySettings {
 	 */
 	lodShadowFactor: number;
 	/**
-	 * Whether two levels of detail hand over in a short band past each switch distance, where a
-	 * dither pattern shares the pixels between them, so a switch does not pop. False switches at
-	 * once. It changes during play.
+	 * Whether a mesh's distance band, from `setDrawRange`, fades at each edge over a short band
+	 * where a dither pattern drops a growing share of the pixels, so the mesh does not pop. False
+	 * cuts each edge at once. A level of detail's own hand-over follows the level: a hand-set
+	 * level fades whatever this setting, and a measured one switches at once. It changes during
+	 * play.
 	 */
 	lodFade: boolean;
 	/**

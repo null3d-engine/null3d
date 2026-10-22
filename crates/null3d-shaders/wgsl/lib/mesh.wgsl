@@ -181,9 +181,15 @@ struct InstanceBucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    /// The switch value of the bucket's level, the bucket of the next coarser level plus one, the
+    /// level's fade bucket plus one, the threshold bias that picks the levels, and the measure that
+    /// the switch value names. The vertex shader reads none of them, but the record's stride holds
+    /// every word that the culling shader reads.
     level_error: f32,
     next_level: u32,
     fade_bucket: u32,
+    bias: f32,
+    level_switch: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
