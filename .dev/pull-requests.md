@@ -361,6 +361,7 @@ The faults that the reviews of 22 October 2026 found, first in run 39744891020, 
 - The module exports test built `standard_maps`, 77.8% of all shader builds, for 18.1 minutes, to check six renders. Four entries make one module of every kind.
 - Four parts of `rust-tests` ran the test that builds every shader, with the same checks as the `shader-compiler` shards, which also compare the compiler's build with it. They added no check.
 - Every browser job of a full run built the production pages before its first test, 283 s on average in run 39554447893, and only 2 of the 40 shards ran a test that read them ([D-220](decisions/D-220-production-pages-once.md)).
+- The packages job packed each package through its own pack script, and each script built the packages that its package needs, so one pack compiled the engine six times, for about 3 minutes in CI; the pack now builds each package once ([Releases](releases.md#the-fresh-project-test)).
 - A pass key that held all of `tools/lib` rebuilt every shard after a change to the size report (fixed in e970ab6a1). A key that left out the compiler's runner script, and the WGSL that the packing test compiles, reused a pass after a change to them.
 
 The ways to reuse work:

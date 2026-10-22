@@ -100,6 +100,7 @@ import {
 	pruneCacheLocked,
 	runByLine,
 	runCargoAsync,
+	secondsSince,
 	touchCacheEntry,
 	writeFolderAtomic,
 } from './lib/build-cache';
@@ -364,9 +365,6 @@ export interface BuildLog {
 
 /** Prints a line to the output, or to the error output. */
 const printLine: LineSink = (line, stderr) => (stderr ? console.error(line) : console.log(line));
-
-/** Whole seconds since `started`, a reading of `performance.now()`. */
-const secondsSince = (started: number) => Math.round((performance.now() - started) / 1000);
 
 /** An empty log for the build `name`, which prints through `write`. */
 export function buildLog(name: string, write: LineSink = printLine): BuildLog {
@@ -1043,7 +1041,7 @@ async function writeSizePart(spec: PartSpec): Promise<void> {
 		const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
 		if (reached <= tenths) return;
 		tenths = reached;
-		const seconds = Math.round((performance.now() - started) / 1000);
+		const seconds = secondsSince(started);
 		console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
 	});
 	const path = join(root, SIZE_PARTS_DIR, sizePartFile(spec));
@@ -1193,7 +1191,7 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	} finally {
 		if (group) console.log('::endgroup::');
 	}
-	console.log(`built the base in ${Math.round((performance.now() - started) / 1000)} s`);
+	console.log(`built the base in ${secondsSince(started)} s`);
 	return JSON.parse(readFileSync(kept, 'utf8'));
 }
 
