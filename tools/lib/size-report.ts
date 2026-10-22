@@ -327,18 +327,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
-	{
-		name: 'page-shader-features.js',
-		module: 'generated/shader-features.ts',
-		loadedBy: 'page-assets.js',
-	},
-	{
-		// The copies of modules that the page's start keeps inline, which the loader's file carries.
-		name: 'page-assets-check.js',
-		module: 'quality/check.ts',
-		loadedBy: 'page-assets.js',
-	},
-	{ name: 'page-assets-core.js', module: 'generated/core.ts', loadedBy: 'page-assets.js' },
+	// Modules that both the page's start and the file loader carry, which the bundler puts in files
+	// of their own that every page loads: they are parts of the start, not first-use files.
+	{ name: 'page-shader-features.js', module: 'generated/shader-features.ts', loadedBy: 'page.js' },
+	{ name: 'page-check.js', module: 'quality/check.ts', loadedBy: 'page.js' },
+	{ name: 'page-core.js', module: 'generated/core.ts', loadedBy: 'page.js' },
 	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
@@ -409,14 +402,12 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-shader-features.js',
 		module: 'generated/shader-features.ts',
-		loadedBy: 'sketch-worker-assets.js',
+		loadedBy: 'sketch-worker.js',
 	},
 	{
-		// The shared helpers that the loader's own file carries a copy of, which the page's start
-		// keeps inline.
-		name: 'sketch-worker-assets-helpers.js',
+		name: 'sketch-worker-images.js',
 		module: 'shared/images.ts',
-		loadedBy: 'sketch-worker-assets.js',
+		loadedBy: 'sketch-worker.js',
 	},
 	{ name: 'sketch-worker-gpu.js', module: 'generated/gpu.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
@@ -626,6 +617,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'render-worker.js',
 			'job-worker.js',
 		],
@@ -638,6 +632,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'sketch-worker-renderer.js',
 			'job-worker.js',
 		],
@@ -651,6 +648,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page-renderer.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'job-worker.js',
 		],
 	},
@@ -701,6 +701,9 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 			'engine-error.js',
 			'page-message.js',
 			'page-gpu.js',
+			'page-check.js',
+			'page-core.js',
+			'page-shader-features.js',
 			'page-control.js',
 			`${drawing}-${path.part}.js`,
 			`${drawing}-gpu-shared.js`,
@@ -924,7 +927,8 @@ export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 1
  * combination that a feature's bits can form, so its uncompressed size grows with the engine's
  * features while its compressed figure, which is what a page downloads, stays small. The owner
  * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
- * past 64 KB; the compressed figures stay at [`LATER_BUDGET`]'s.
+ * past 64 KB. The compressed figures date from that approval and did not follow the later
+ * raise of [`LATER_BUDGET`], which the glTF worker alone outgrew.
  */
 export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 
