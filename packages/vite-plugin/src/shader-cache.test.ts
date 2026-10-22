@@ -88,6 +88,7 @@ class CountingCompiler implements ShaderCompiler {
 				function: 'effect',
 				uniforms: [],
 				depth: false,
+				bloom: false,
 				joins: false,
 				textures: [],
 				variants: { webgpu: build(effect.source) },

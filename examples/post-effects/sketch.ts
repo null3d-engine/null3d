@@ -24,6 +24,8 @@ struct Uniforms { strength: f32 }
 
 fn effect(input: EffectInput) -> vec4f {
     let glow = effectBloom(input.uv);
+    // The level's glow is everything bright, blurred wider as the level goes up: added back at a
+    // gain, it reads as the streak and the glare around the neon.
     return vec4f(input.color.rgb + glow * uniforms.strength * vec3f(0.45, 0.65, 1.0), input.color.a);
 }
 `;
@@ -63,7 +65,7 @@ export default defineSketch(async (ctx) => {
 	});
 	// The lens effect keeps the color fringes and the grain. The streak comes from bloom's chain.
 	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0, grain: 0.05 } });
-	post.addEffect({ wgsl: STREAK_WGSL, uniforms: { strength: 0.9 }, bloomLevel: 2, order: 1 });
+	post.addEffect({ wgsl: STREAK_WGSL, uniforms: { strength: 6 }, bloomLevel: 3, order: 1 });
 	scene.setBackground('#05060a');
 	scene.setFog({ color: '#0a0c14', density: 0.03 });
 	const camera = scene.createPerspectiveCamera({ fov: 45 });
