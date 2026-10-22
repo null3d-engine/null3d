@@ -3,10 +3,12 @@ import {
 	everyShader,
 	type GlslProgram,
 	type GlslStage,
+	type GlslTexture,
 	type ShaderBinding,
 } from '../../generated/shaders';
 import { DEPTH_SETUPS } from './depth';
 import {
+	checkStageUnits,
 	createProgram,
 	declaresUniform,
 	type GlslTemplate,
@@ -20,6 +22,7 @@ import {
 	RELINK_TAIL,
 	relink,
 	slotOf,
+	stageUnitCount,
 	UPLOAD_UNIT,
 } from './programs';
 
@@ -139,6 +142,49 @@ describe('WebGL2 slots of bind groups', () => {
 		console.log(
 			`the most texture units in one stage: ${most[1]} of ${MIN_STAGE_TEXTURE_UNITS}, in ${most[0]}`,
 		);
+	});
+});
+
+describe('WebGL2 texture-unit allocator', () => {
+	const texture = (binding: number): GlslTexture => ({
+		name: `texture${binding}`,
+		group: 3,
+		binding,
+		sampler: null,
+	});
+	const stage = (textures: GlslTexture[]): GlslStage => ({
+		source: '',
+		uniformBlocks: [],
+		textures,
+	});
+
+	it('counts the distinct units that a stage reads', () => {
+		expect(stageUnitCount(stage([texture(0), texture(0), texture(1)]))).toBe(2);
+	});
+
+	it("gives an add-on's material the error when it asks for too many units", () => {
+		const many = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS + 1 }, (_, binding) => texture(binding)),
+		);
+		const thrown = (() => {
+			try {
+				checkStageUnits(many, 'fragment');
+				return null;
+			} catch (error) {
+				return error as { code?: string; message: string };
+			}
+		})();
+		expect(thrown?.code).toBe('E1209');
+		expect(thrown?.message).toContain(
+			`reads ${MIN_STAGE_TEXTURE_UNITS + 1} textures in its fragment stage`,
+		);
+	});
+
+	it('lets a stage that fills every unit draw', () => {
+		const full = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS }, (_, binding) => texture(binding)),
+		);
+		expect(() => checkStageUnits(full, 'fragment')).not.toThrow();
 	});
 });
 
