@@ -3331,7 +3331,7 @@ impl SceneSettings {
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
         let transmits = has(feature::TRANSMISSION) && shading.transmits();
-        let layers = has(feature::COAT_SHEEN) && shading.layers();
+        let layers = has(feature::LAYERS) && shading.layers();
         let translucent =
             has(feature::TRANSLUCENCY) && shading.translucent() && !transmits && !layers;
         let rows = row_values && shading.reads_row_values() && !transmits;

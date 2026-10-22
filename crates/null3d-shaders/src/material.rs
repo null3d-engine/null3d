@@ -551,18 +551,23 @@ fn names_diffuse_transmission(tokens: &[Token]) -> bool {
     })
 }
 
-/// The fields of the surface record that a layered material's builds light: the clear coat's and
-/// the sheen's values.
-const LAYER_FIELDS: [&str; 5] = [
+/// The fields of the surface record that a layered material's builds light: the clear coat's, the
+/// sheen's, the iridescence's and the anisotropy's values.
+const LAYER_FIELDS: [&str; 10] = [
     "clearcoat",
     "clearcoatRoughness",
     "clearcoatNormal",
     "sheenColor",
     "sheenRoughness",
+    "iridescence",
+    "iridescenceIor",
+    "iridescenceThickness",
+    "anisotropy",
+    "anisotropyRotation",
 ];
 
 /// True when a custom material's WGSL sets or reads one of the surface's layer values, so the
-/// material can have a clear coat or a sheen.
+/// material can have a clear coat, a sheen, iridescence or anisotropy.
 fn names_coat_sheen(tokens: &[Token]) -> bool {
     tokens
         .windows(2)

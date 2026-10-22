@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
 	MAP_SLOT_COAT,
@@ -10,6 +11,8 @@ import {
 	MAP_SLOT_DIFFUSE_TRANSMISSION,
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
+	MAP_SLOT_IRIDESCENCE,
+	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_SHEEN_COLOR,
@@ -20,11 +23,13 @@ import {
 	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
@@ -41,6 +46,8 @@ import {
 	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_ANISOTROPY,
+	MATERIAL_PARAM_ANISOTROPY_ROTATION,
 	MATERIAL_PARAM_CLEARCOAT,
 	MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
 	MATERIAL_PARAM_CLEARCOAT_ROUGHNESS,
@@ -53,6 +60,10 @@ import {
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
+	MATERIAL_PARAM_IRIDESCENCE,
+	MATERIAL_PARAM_IRIDESCENCE_IOR,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -127,6 +138,12 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, 2],
 	[MATERIAL_PARAM_SHEEN_COLOR, 3],
 	[MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
+	[MATERIAL_PARAM_IRIDESCENCE, 1],
+	[MATERIAL_PARAM_IRIDESCENCE_IOR, 1],
+	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN, 1],
+	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, 1],
+	[MATERIAL_PARAM_ANISOTROPY, 1],
+	[MATERIAL_PARAM_ANISOTROPY_ROTATION, 1],
 	[MATERIAL_PARAM_DECAL_FADE_START, 1],
 	[MATERIAL_PARAM_DECAL_FADE_END, 1],
 	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
@@ -757,7 +774,7 @@ describe('Material.set', () => {
 		const light = thrown(() => materials.standard({ clearcoat: 1, lightMap: texture(8) }));
 		expect(light.code).toBe('E1217');
 		expect(light.message).toStartWith(
-			'E1217: materials.standard() got lightMap with a clear coat or a sheen,',
+			'E1217: materials.standard() got lightMap with a clear coat, a sheen, iridescence or anisotropy,',
 		);
 		const specular = thrown(() =>
 			materials.standard({ sheenColor: '#ffffff', specularColorMap: texture(8) }),
@@ -774,6 +791,74 @@ describe('Material.set', () => {
 		);
 		expect(sheens.code).toBe('E1217');
 		expect(features).toHaveLength(1);
+	});
+
+	test('gives iridescence and anisotropy their layers, their values and their maps', () => {
+		const { table, maps, features, materials } = fakeCore();
+		const film = materials.standard({
+			iridescence: 1,
+			iridescenceIor: 1.8,
+			iridescenceThicknessRange: [300, 500],
+		});
+		const brushed = materials.standard({
+			anisotropy: 0.8,
+			anisotropyRotation: 0.5,
+			map: texture(1),
+			anisotropyMap: texture(9),
+		});
+		materials.standard({ roughness: 0.5 });
+		// A thin film or a stretched lobe takes the shader builds of the layers above the base.
+		for (const bits of features.slice(0, 2))
+			expect((bits ?? 0) & MATERIAL_FEATURE_COAT_SHEEN).toBe(MATERIAL_FEATURE_COAT_SHEEN);
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_IRIDESCENCE).toBe(MATERIAL_FEATURE_IRIDESCENCE);
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(0);
+		expect((features[1] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(MATERIAL_FEATURE_ANISOTROPY);
+		expect((features[2] ?? 0) & (MATERIAL_FEATURE_IRIDESCENCE | MATERIAL_FEATURE_ANISOTROPY)).toBe(
+			0,
+		);
+		const row = (k: number) => table[k] as number[];
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE]).toBe(1);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_IOR]).toBe(1.8);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN]).toBe(300);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX]).toBe(500);
+		expect(row(1)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.8);
+		expect(row(1)[MATERIAL_PARAM_ANISOTROPY_ROTATION]).toBe(0.5);
+		expect(maps).toEqual([
+			[2, MAP_SLOT_BASE_COLOR, 1, 0],
+			[2, MAP_SLOT_ANISOTROPY, 9, 0],
+		]);
+		film.set({ iridescenceThicknessRange: [100, 200] });
+		brushed.set({ anisotropy: 0.25 });
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN]).toBe(100);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX]).toBe(200);
+		expect(row(1)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.25);
+		for (const values of [
+			{ iridescence: 1.5 },
+			{ iridescenceIor: 0.5 },
+			{ anisotropy: -1 },
+			{ iridescenceThicknessRange: [500, 300] as const },
+			{ anisotropyRotation: Number.NaN },
+		])
+			expect(thrown(() => film.set(values)).code).toBe('E1108');
+		expect(thrown(() => materials.standard({ anisotropy: 0.5 })).code).toBe('E1217');
+		const clash = thrown(() =>
+			materials.standard({ clearcoatMap: texture(5), iridescenceMap: texture(9) }),
+		);
+		expect(clash.code).toBe('E1217');
+		expect(clash.message).toContain('iridescenceMap with the maps of a clear coat or a sheen');
+	});
+
+	test('puts the iridescence maps in the light and specular intensity map slots', () => {
+		const { maps, materials } = fakeCore();
+		materials.standard({
+			iridescence: 1,
+			iridescenceMap: texture(5),
+			iridescenceThicknessMap: texture(6),
+		});
+		expect(maps).toEqual([
+			[1, MAP_SLOT_IRIDESCENCE, 5, 0],
+			[1, MAP_SLOT_IRIDESCENCE_THICKNESS, 6, 0],
+		]);
 	});
 
 	test('checks the map values before it changes any', () => {
@@ -1168,7 +1253,7 @@ describe('materials.shader', () => {
 		const refused = thrown(() => materials.shader({ wgsl: plain, sheenColor: '#ffffff' }));
 		expect(refused.code).toBe('E1217');
 		expect(refused.message).toStartWith(
-			"E1217: materials.shader() got a clear coat or a sheen, but its WGSL never names the surface's layers,",
+			"E1217: materials.shader() got a clear coat, a sheen or iridescence, but its WGSL never names the surface's layers,",
 		);
 	});
 

@@ -845,6 +845,8 @@ function shineAlong(direction: readonly [number, number, number]): number[] {
 interface GridSphere {
 	material: GltfJson;
 	uv?: number;
+	/** True for a sphere whose texture coordinates run over the whole sphere, as a tangent frame needs. */
+	uvs?: boolean;
 }
 
 /**
@@ -871,10 +873,25 @@ function sphereGrid(b: GltfBuilder, rows: readonly (readonly GridSphere[])[]): G
 		}
 		return accessor;
 	};
+	const sphereUv = (() => {
+		let accessor: number | undefined;
+		return () => {
+			if (accessor === undefined) {
+				const across = 32;
+				const down = 16;
+				const uvs: number[] = [];
+				for (let i = 0; i <= down; i++)
+					for (let j = 0; j <= across; j++) uvs.push(j / across, i / down);
+				accessor = b.accessor(new Float32Array(uvs), 2);
+			}
+			return accessor;
+		};
+	})();
 	rows.forEach((row, r) => {
-		row.forEach(({ material, uv }, c) => {
+		row.forEach(({ material, uv, uvs }, c) => {
 			const attributes: GltfJson = { POSITION: position, NORMAL: normal };
 			if (uv !== undefined) attributes.TEXCOORD_0 = uvOf(uv);
+			if (uvs) attributes.TEXCOORD_0 = sphereUv();
 			const mesh = b.mesh([{ attributes, indices, material: b.material(material) }]);
 			const x = c - (row.length - 1) / 2;
 			const y = (rows.length - 1) / 2 - r;
@@ -995,5 +1012,190 @@ export function iorBuilder(): GltfBuilder {
 			{ specularFactor: 0.6, specularColorFactor: [1, 0.6, 0.3] },
 		),
 		row('bright', { roughnessFactor: 0.3 }, { specularColorFactor: [2, 2, 2] }),
+	]);
+}
+
+/** The values that a ramp of test slides runs through, from none to all. */
+const RAMP = [0, 0.25, 0.5, 0.75, 1] as const;
+
+/** A one-row texture of `texels`, which are bytes of RGBA. */
+function rampTexture(b: GltfBuilder, texels: readonly (readonly number[])[]): number {
+	const image = b.view(pngBytes(texels.length, 1, new Uint8Array(texels.flat())));
+	b.json.images ??= [];
+	b.json.textures ??= [];
+	b.json.samplers ??= [{ magFilter: 9728, minFilter: 9728, wrapS: 33071, wrapT: 33071 }];
+	b.json.images.push({ bufferView: image, mimeType: 'image/png' });
+	return b.json.textures.push({ source: b.json.images.length - 1, sampler: 0 }) - 1;
+}
+
+/**
+ * A small equivalent of the Khronos IridescenceDielectricSpheres and IridescenceLamp models for
+ * KHR_materials_iridescence, lit by lights instead of an environment. Its rows take: the
+ * iridescence factor; the film's greatest thickness, in nanometers; its index of refraction; the
+ * iridescence in a texture's red; the thickness in a texture's green, mixed between 100 and 400
+ * nanometers; and a metal, whose film tints its base color. The spheres are dark and fairly
+ * smooth, so the film's colors show on their reflection.
+ */
+export function iridescenceBuilder(): GltfBuilder {
+	const b = new GltfBuilder().uses('KHR_materials_iridescence');
+	const ramp = (channel: 'red' | 'green') =>
+		rampTexture(
+			b,
+			RAMP.map((v) => {
+				const byte = Math.round(v * 255);
+				return channel === 'red' ? [byte, 0, 0, 255] : [0, byte, 0, 255];
+			}),
+		);
+	const iridescenceTexture = ramp('red');
+	const thicknessTexture = ramp('green');
+	const material = (name: string, film: GltfJson, pbr: GltfJson = {}): GltfJson => ({
+		name,
+		pbrMetallicRoughness: {
+			baseColorFactor: [0.03, 0.035, 0.05, 1],
+			metallicFactor: 0,
+			roughnessFactor: 0.2,
+			...pbr,
+		},
+		extensions: { KHR_materials_iridescence: film },
+	});
+	const uv = (c: number) => (c + 0.5) / RAMP.length;
+	const thicknesses = [100, 200, 400, 800, 1600];
+	const iors = [1, 1.3, 1.5, 2, 3];
+	return sphereGrid(b, [
+		RAMP.map(
+			(v, c): GridSphere => ({
+				material: material(`factor ${c}`, {
+					iridescenceFactor: v,
+					iridescenceThicknessMaximum: 400,
+				}),
+			}),
+		),
+		thicknesses.map(
+			(v, c): GridSphere => ({
+				material: material(`thickness ${c}`, {
+					iridescenceFactor: 1,
+					iridescenceThicknessMaximum: v,
+				}),
+			}),
+		),
+		iors.map(
+			(v, c): GridSphere => ({
+				material: material(`ior ${c}`, {
+					iridescenceFactor: 1,
+					iridescenceIor: v,
+					iridescenceThicknessMaximum: 400,
+				}),
+			}),
+		),
+		RAMP.map(
+			(_, c): GridSphere => ({
+				material: material(`texture ${c}`, {
+					iridescenceFactor: 1,
+					iridescenceTexture: { index: iridescenceTexture },
+					iridescenceThicknessMaximum: 400,
+				}),
+				uv: uv(c),
+			}),
+		),
+		RAMP.map(
+			(_, c): GridSphere => ({
+				material: material(`thickness texture ${c}`, {
+					iridescenceFactor: 1,
+					iridescenceThicknessTexture: { index: thicknessTexture },
+					iridescenceThicknessMinimum: 100,
+					iridescenceThicknessMaximum: 400,
+				}),
+				uv: uv(c),
+			}),
+		),
+		RAMP.map(
+			(_, c): GridSphere => ({
+				material: material(
+					`metal ${c}`,
+					{ iridescenceFactor: 1, iridescenceThicknessMaximum: 400 },
+					{ metallicFactor: 1, baseColorFactor: [0.85, 0.75, 0.6, 1] },
+				),
+			}),
+		),
+	]);
+}
+
+/**
+ * A small equivalent of the Khronos anisotropy test models for KHR_materials_anisotropy, lit by
+ * lights. Its rows take: the anisotropy's strength; its rotation, in radians, at full strength;
+ * the strength in an anisotropy texture's blue; the direction in its red and green; and a metal,
+ * whose stretched highlight follows the tangent frame. Every sphere reads the whole sphere's
+ * texture coordinates, which give the frame that the direction turns in.
+ */
+export function anisotropyBuilder(): GltfBuilder {
+	const b = new GltfBuilder().uses('KHR_materials_anisotropy');
+	// A white texel gives every sphere the base color map that its coordinates need.
+	const white = rampTexture(b, [[255, 255, 255, 255]]);
+	const strengths = [0, 0.25, 0.5, 0.75, 1];
+	const rotations = [0, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI];
+	const strengthTexture = (v: number) => rampTexture(b, [[128, 128, Math.round(v * 255), 255]]);
+	const directionTexture = (angle: number) =>
+		rampTexture(b, [
+			[
+				Math.round((0.5 + 0.5 * Math.cos(angle)) * 255),
+				Math.round((0.5 + 0.5 * Math.sin(angle)) * 255),
+				255,
+				255,
+			],
+		]);
+	const material = (name: string, anisotropy: GltfJson, baseColor: GltfJson): GltfJson => ({
+		name,
+		pbrMetallicRoughness: {
+			baseColorFactor: [0.4, 0.42, 0.45, 1],
+			metallicFactor: 0.5,
+			roughnessFactor: 0.3,
+			baseColorTexture: { index: white },
+			...baseColor,
+		},
+		extensions: { KHR_materials_anisotropy: anisotropy },
+	});
+	return sphereGrid(b, [
+		strengths.map(
+			(v, c): GridSphere => ({
+				material: material(`strength ${c}`, { anisotropyStrength: v }, {}),
+				uvs: true,
+			}),
+		),
+		rotations.map(
+			(v, c): GridSphere => ({
+				material: material(`rotation ${c}`, { anisotropyStrength: 1, anisotropyRotation: v }, {}),
+				uvs: true,
+			}),
+		),
+		strengths.map(
+			(v, c): GridSphere => ({
+				material: material(
+					`texture strength ${c}`,
+					{ anisotropyStrength: 1, anisotropyTexture: { index: strengthTexture(v) } },
+					{},
+				),
+				uvs: true,
+			}),
+		),
+		rotations.map(
+			(angle, c): GridSphere => ({
+				material: material(
+					`texture direction ${c}`,
+					{ anisotropyStrength: 1, anisotropyTexture: { index: directionTexture(angle) } },
+					{},
+				),
+				uvs: true,
+			}),
+		),
+		rotations.map(
+			(v, c): GridSphere => ({
+				material: material(
+					`metal ${c}`,
+					{ anisotropyStrength: 1, anisotropyRotation: v },
+					{ metallicFactor: 1, roughnessFactor: 0.2, baseColorFactor: [0.9, 0.85, 0.75, 1] },
+				),
+				uvs: true,
+			}),
+		),
 	]);
 }

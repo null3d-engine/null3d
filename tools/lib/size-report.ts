@@ -900,8 +900,14 @@ export function downloadSizes(
  */
 export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 182 * 1024 };
 
-/** The budget for each part that loads after the start. */
-export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+/**
+ * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
+ * from 16 KB, because the glTF worker drew the thin film's and the stretched lobe's options, their
+ * map slots and their loader notes: it went from 14,737 to 16,832 bytes after Brotli (D-215). The
+ * figure is the cap of every file that loads after the start, so the raise loosens each of them by
+ * the same kilobyte; no other file is near it.
+ */
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
 
 /**
  * The budget for a generated combination table, whose name holds `-combos`: the list of module
@@ -934,11 +940,19 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * does, so these limits do not keep the start budget's proportions. Only hosts without Brotli meet
  * the gzip limit. Each limit is the owner's, and decision record D-14 holds its figures and
  * approvals.
+ *
+ * These are the caps of a file that a feature loads on its first use, and not of the JavaScript
+ * that a page loads at its start, whose own figures are [`START_BUDGET`]. The raw and Brotli
+ * figures rose on 22 October 2026 for the coat and sheen family, which gained iridescence's and
+ * anisotropy's code (D-215). That code rides the family's builds, which the largest combinations
+ * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
+ * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
+ * have doubled the lit builds instead, past the build budget.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
-	raw: 1_536 * 1024,
+	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 49 * 1024,
+	brotli: 52 * 1024,
 };
 
 /**
