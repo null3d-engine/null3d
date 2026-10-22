@@ -338,3 +338,25 @@ alpha-tested one. The engine's part is small because buckets are already per mat
 The lod image test's new `lod-material` case draws each level with a material of its own in the
 level's color, a different pipeline from the base's vertex-colored one, and must draw the same
 image as `lod`. E1221 now names a level material that is destroyed or from another engine.
+
+## Addendum: the tool thins leaf cards (22 October 2026, M3-L2)
+
+The asset tool now writes levels for meshes whose parts are separate cards, so a tree that leaves
+Blender without levels still gets them (follow-up 5).
+
+- The tool calls a part a card list when every separate piece of it, after welding, is a quad of
+  four vertices and two triangles, or a card folded along its middle of six vertices and four
+  triangles, as Creek makes its leaves. A flat-shaded surface splits into pieces of three vertices,
+  so it never matches, and it keeps the simplifier's path.
+- Each level keeps every second card of the level above, in an order along a space-filling curve
+  of the cards' middles, so a level thins the crown evenly rather than one side first.
+- Each kept card grows about its middle by the square root of two for that step, so the cards
+  keep the surface that the dropped ones covered. The file stores the level's own positions,
+  because the growth moves vertices. This is the one level kind that copies vertices.
+- The level's error is the size of the largest card that it drops, as the follow-up said. On
+  Creek's cards, 0.8 m wide, a level switches at about a kilometre on a 1,080-pixel screen. That
+  is conservative: it thins a crown only long after the geometry detail has gone. A hand-authored
+  level, as Creek's Blender script makes, switches nearer. The tool's rule stays geometric and
+  predictable; an author who wants earlier thinning gives the level its own error.
+- The card step runs only for a mesh that a skin does not pose, because a posed list's positions
+  are in the scene's units and the level's stored positions are in the mesh's.
