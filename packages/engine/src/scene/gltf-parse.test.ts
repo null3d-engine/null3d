@@ -602,6 +602,46 @@ describe('materials, textures and lights', () => {
 		expect(data.materials[3]?.diffuseTransmission).toBeUndefined();
 	});
 
+	test('KHR_materials_transmission and KHR_materials_volume give the transmission and thickness maps', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_transmission')
+			.uses('KHR_materials_volume')
+			.uses('KHR_materials_specular');
+		const [glass, shiny, dull] = b.json.materials as [GltfJson, GltfJson, GltfJson];
+		glass.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 1, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		shiny.extensions = {
+			KHR_materials_specular: { specularTexture: { index: 2 } },
+			KHR_materials_transmission: { transmissionFactor: 0.5, transmissionTexture: { index: 0 } },
+		};
+		// A material that lets no light through takes neither map.
+		dull.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 0, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		const [first, second, third] = data.materials;
+		expect(first?.transmission).toMatchObject({ factor: 1, thickness: 0.4 });
+		const transmission = first?.maps.transmissionMap ?? -1;
+		const thickness = first?.maps.thicknessMap ?? -1;
+		expect(transmission).toBeGreaterThanOrEqual(0);
+		expect(thickness).toBeGreaterThanOrEqual(0);
+		expect(data.textures[transmission]?.colorSpace).toBe('linear');
+		expect(data.textures[thickness]?.colorSpace).toBe('linear');
+		// The specular textures keep their slots, which the transmission textures would take.
+		expect(second?.maps.specularIntensityMap).toBeDefined();
+		expect(second?.maps.transmissionMap).toBeUndefined();
+		expect(second?.maps.thicknessMap).toBeUndefined();
+		expect(third?.transmission).toBeUndefined();
+		expect(third?.maps.transmissionMap).toBeUndefined();
+		expect(third?.maps.thicknessMap).toBeUndefined();
+		expect(data.notes).toContain(
+			"material 1's transmission and thickness textures, which a material with specular textures does not take",
+		);
+	});
+
 	test('a clear coat or a sheen wins over KHR_materials_diffuse_transmission', () => {
 		const b = specularBuilder()
 			.uses('KHR_materials_diffuse_transmission')

@@ -259,8 +259,10 @@ export const MAP_SLOT_SHEEN_ROUGHNESS = 12;
 export const MAP_SLOT_IRIDESCENCE = 13;
 export const MAP_SLOT_IRIDESCENCE_THICKNESS = 14;
 export const MAP_SLOT_ANISOTROPY = 15;
-export const MAP_SLOT_BUMP = 16;
-export const MAP_SLOT_DISPLACEMENT = 17;
+export const MAP_SLOT_TRANSMISSION = 16;
+export const MAP_SLOT_THICKNESS = 17;
+export const MAP_SLOT_BUMP = 18;
+export const MAP_SLOT_DISPLACEMENT = 19;
 
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;
