@@ -43,6 +43,9 @@ const LUT_SAMPLER_BINDING: u32 = 10;
 const OUTLINE_BINDING: u32 = 11;
 /// The binding of the automatic exposure's texel in the final pass's group.
 const EXPOSURE_BINDING: u32 = 12;
+/// The binding of the built-in grading table, a 3D texture, in the final pass's group. The table's
+/// sampler reads it.
+const GRADE_BINDING: u32 = 13;
 /// The bindings of the effects' uniform buffer and of the scene's depth in the fold's group.
 const EFFECTS_BINDING: u32 = 4;
 const EFFECT_DEPTH_BINDING: u32 = 5;
@@ -195,13 +198,14 @@ pub(crate) struct FinalPass {
 }
 
 /// What the final pass's bind group reads: the scene color texture, bloom's inputs for the bloom
-/// build, the color grading table, the outline mask, and the inputs of the effects that fold into
-/// the pass.
+/// build, the color grading table, the built-in grading table, the outline mask, and the inputs of
+/// the effects that fold into the pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Bound {
     scene_color: u32,
     bloom: Option<BloomInputs>,
     lut: u32,
+    grade: u32,
     mask: u32,
     fold: Option<FoldInputs>,
     exposure: u32,
@@ -472,6 +476,13 @@ impl FinalPass {
             }
             None => ids.blank_lut,
         };
+        let grade = match inputs.grading.grade {
+            Some(texture) => {
+                settings.output.flags |= OutputUniform::GRADE;
+                texture
+            }
+            None => ids.blank_lut,
+        };
         let mask = match inputs.outline {
             Some(OutlineInputs { mask, outline }) => {
                 settings.output.flags |= OutputUniform::OUTLINE;
@@ -495,6 +506,7 @@ impl FinalPass {
             scene_color: inputs.color,
             bloom: inputs.bloom,
             lut,
+            grade,
             mask,
             fold: inputs.fold,
             exposure,
@@ -644,6 +656,7 @@ fn bind(
         0,
     );
     entry(OUTLINE_BINDING, resource_kind::TEXTURE, inputs.mask, 0, 0);
+    entry(GRADE_BINDING, resource_kind::TEXTURE, inputs.grade, 0, 0);
     entry(
         EXPOSURE_BINDING,
         resource_kind::TEXTURE,
@@ -876,6 +889,39 @@ mod tests {
     }
 
     #[test]
+    fn the_built_in_grading_table_sets_its_flag_and_binds_its_own_binding() {
+        check_flag("GRADE", OutputUniform::GRADE);
+        let bound = |list: &DrawList| {
+            let groups: Vec<Vec<u32>> = null3d_gpu::drawlist::decode(list.words())
+                .map(|command| command.unwrap())
+                .filter(|command| command.op == Op::CreateBindGroup)
+                .map(|command| command.operands.to_vec())
+                .collect();
+            let [group] = &groups[..] else {
+                panic!("one bind group: {groups:?}");
+            };
+            group[3..]
+                .chunks(5)
+                .find(|entry| entry[0] == GRADE_BINDING)
+                .expect("the group binds a grading table")[2]
+        };
+        let (_, settings, list) =
+            prepared(format::RGBA16_FLOAT, Antialias::Msaa, Grading::default());
+        assert_eq!(settings.output.flags & OutputUniform::GRADE, 0);
+        assert_eq!(bound(&list), IDS.blank_lut);
+        let (_, settings, list) = prepared(
+            format::RGBA16_FLOAT,
+            Antialias::Msaa,
+            Grading {
+                grade: Some(41),
+                ..Grading::default()
+            },
+        );
+        assert_ne!(settings.output.flags & OutputUniform::GRADE, 0);
+        assert_eq!(bound(&list), 41);
+    }
+
+    #[test]
     fn grading_sets_its_flags_and_values_and_binds_the_table_or_the_blank_one() {
         check_flag("VIGNETTE", OutputUniform::VIGNETTE);
         check_flag("LUT", OutputUniform::LUT);
@@ -903,6 +949,7 @@ mod tests {
         let offset = [0.01, 0.02, 0.03, 0.0];
         let grading = Grading {
             lut: Some((40, scale, offset)),
+            grade: None,
             vignette: Some(Vignette {
                 intensity: 0.7,
                 size: 1.2,

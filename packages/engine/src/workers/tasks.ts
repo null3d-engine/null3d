@@ -61,6 +61,7 @@ export interface TaskResult {
 /** The engine's own tasks, which each load the first time this worker runs one. */
 const ENGINE_TASKS: Record<string, () => Promise<TaskModule>> = {
 	ktx2: () => import('../scene/ktx2-transcode'),
+	grade: () => import('../scene/grade-task'),
 };
 
 /** The receiving end of the loader's requests. */

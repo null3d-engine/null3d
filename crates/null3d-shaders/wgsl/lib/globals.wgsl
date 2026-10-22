@@ -145,7 +145,7 @@ struct ProbeGrid {
 /// then the values of a material that lets light through, which only the builds that let light
 /// through read, then the clear coat and sheen of a layered material, then the values of a
 /// material that lets light through a thin surface, then the scatter distances of the subsurface
-/// blur. Colors are linear.
+/// blur, then the thin film's values and the anisotropy's. Colors are linear.
 struct MaterialRow {
     color: vec4f,
     emissive: vec4f,
@@ -172,6 +172,14 @@ struct MaterialRow {
     /// Each channel's share of the scatter radius under the surface, linear, and the radius in
     /// world units, which only the skin pass's builds read.
     subsurface: vec4f,
+    /// How much of the specular reflection a thin film above the surface tints, the film's index
+    /// of refraction, and the film's thickness where its map is 0 and where it is 1, in
+    /// nanometers.
+    iridescence: vec4f,
+    /// The anisotropy's strength, its rotation from the tangent in radians, the family of layers
+    /// whose maps the light map's and the specular maps' slots hold (0 for the clear coat's and
+    /// the sheen's, 1 for iridescence's and the anisotropy's), and a spare.
+    anisotropy: vec4f,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

@@ -212,6 +212,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
   New per-pixel inputs of the standard material take a texture array layer, an atlas part or a place in a shared texture. The [technique review](technique-review-2026-10.md#webgl2-texture-units) gives the rules. A new map slot takes a shared unit. The unit test fails when a stage passes 12.
 - WebGPU counts a pipeline's resources per shader stage over every entry of its groups' layouts, whether or not the shader reads them. The frame group gives the fragment stage 8 textures and the maps' group 8 more, so a standard material with maps reads all 16 of WebGPU's default. The decal templates bind the scene's depth as well, so they bind a frame group of their own (`layout::DECAL_FRAME`), which leaves out the light probe grids' texture. No decal build reads that grid. A decal with maps reads exactly 16 textures per stage, WebGPU's default, so the next texture a decal wants needs a layout change. It keeps the copy of the opaque color, because the reflections' lit code reads that copy in every lit build. The probe grid's binding had put textured decals at 17, and their pipelines failed on WebGPU while the WebGL2 path drew them. A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's sampled textures, samplers and buffers per stage over its layouts. It covers every template with the layout bits that its shader lists in the manifest, custom materials and effects, and the compute pipelines, and it fails above WebGPU's default limits.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
+- A data texture's item must fill the whole texel that its shader reads, because the write takes each item's bytes from the upload. The distance bands' ranges texture holds one `RGBA32F` texel for each source, whose `.xy` the culling shader reads. A layout that wrote two floats a source put every second source's range in another's texel and read past the block, so the WebGPU paths hid every object inside a band while WebGL2, which reads the ranges on the host, drew them (22 October 2026). The layout's unit test pins the width of the item.
 
 ## Cube, 3D and high dynamic range textures
 
@@ -377,6 +378,29 @@ When a page loads the engine's files from another origin, such as a CDN, each wo
 - `compileWasm` tells a blocked download of another origin by the policy's violation report (E1422 with `connect-src`), and calls any other failed download E1423. The report can arrive after the failed fetch, so it waits up to 100 ms for it.
 - The CDN test (`tests/image/cdn.spec.ts`) serves the production build's HTML and its files from its own server, under two host names. Chrome treats a response that Playwright fulfills as coming from a public address. Such a page may not reach a loopback server, and the browser applies no real CORS rules to fulfilled responses either.
 
+## Custom effects that read bloom
+
+An effect's WGSL that calls `effectBloom` reads a level of bloom's chain, and the API names which
+level with `bloomLevel`.
+
+- The chain normally runs after the effects, from their output. While an effect reads it, the chain
+  runs before the effects, from the scene color that the first effect reads, and the final pass
+  still mixes the glow into the effects' output. The render graph orders the passes from that edge:
+  the effect's pass reads the level's target, so the step that writes it runs first.
+- Each effect binds one level, at binding 4 of its group, because the levels are separate textures
+  and an effect names the level it wants. A group of joined effects binds one color and one level,
+  so the compiler refuses to join an effect that reads bloom: it draws in a pass of its own, as an
+  effect with textures does. The shader build detects the call and sets `EFFECT_BLOOM`, which
+  declares the binding.
+- The effect's block holds the scale and the offset from the image's place to that level's texture.
+  A level whose chain is smaller than its target, as the governor's halving makes it, occupies a
+  corner, and WebGL2 counts the rows from the bottom, so the map turns the row scale negative. The
+  engine computes it from the same corner map that bloom's steps use.
+- A level that the frame's chain does not draw, because the weights end before it, binds a one-texel
+  texture instead, so the effect reads black rather than a stale level.
+- The level is drawn only while bloom is on. A sketch that reads a level with bloom off reads black,
+  which keeps the cost of the chain with the sketches that ask for it.
+
 ## The shader compiler
 
 The shader compiler is the shader crate built as a WebAssembly module. Build tools such as the Vite plugin load it in Node or Bun, so pages never download a shader translator. The crate `null3d-shaders-wasm` builds it, and the wrapper in `packages/vite-plugin/src/shader-compiler.ts` loads it and gives its API.
@@ -408,7 +432,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - So the parser boxes each skinned copy as its joints place it at rest (`skinnedRest` in `gltf-animation.ts`). Each vertex moves by its joints' skinning matrices, blended by its weights, as the skinning passes move it. three.js's `SkinnedMesh.computeBoundingBox` does the same in the current pose. The box then holds the model in meters, whether or not the file is quantized. It costs one blended matrix per vertex, once per file, in the glTF worker. `skins.test.ts` checks that the Knight's boxes match before and after the tool. Culling of skinned objects needed no change: each frame, it bounds them with joint spheres moved by the posed skinning matrices. Instance batches had the same fault, since they drew a skinned mesh with no matrix. They now take the main joint's skinning matrix at rest, as [D-93](decisions/D-93-skinned-meshes-in-batches.md) says.
 - glTF-Transform drops extensions that it does not know. `lod-extension.js` teaches it `MSFT_lod`, and a new extension that the tool writes needs the same.
 - The Vite plugin imports `@null3d/cli/assets` with a specifier in a variable, so neither TypeScript nor Vite resolves it until a project imports a model with `?optimized`.
-- `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it. The same command runs the Vite plugin's WGSL tests, which build small projects with Vite.
+- `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it. The same command runs the Vite plugin's WGSL tests, which build small projects with Vite. CI runs its parts, `test:shader-compiler:build`, `test:shader-compiler:plugin` and `test:shader-compiler:pack`, in jobs of their own ([D-218](decisions/D-218-efficient-ci-jobs.md)).
 - The Vite plugin compiles WGSL from projects (`packages/vite-plugin/src/wgsl.ts`). It reads a module's comments with Vite's parser, so the `/* wgsl */` tag counts only as a real comment before a real template literal. It runs before TypeScript becomes JavaScript, so the literal's place in the code is its place in the file.
 - Each project shader builds for WebGPU and, with the shader def `WEBGL2`, for WebGL2. It has one render pipeline for each `@fragment` entry point, with its one `@vertex` entry point. The plugin finds the entry points in the WGSL text, because the compiler takes the pipelines with the source.
 - Plugin errors count columns from 1, as editors do. Rollup counts its own from 0, but Vite and Rolldown only print the place, and Vite's overlay opens the editor at it.

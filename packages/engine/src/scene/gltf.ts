@@ -429,17 +429,14 @@ function nodeOf(node: NodeData): GltfExtensionData['node'] {
 	};
 }
 
-/** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
-const COVERAGE_HEIGHT = 1080;
-
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
- * `NULL3D_lod_error`, or from `MSFT_screencoverage`: a level switches in where the mesh's sphere
- * covers less of the screen's height than the level before allows, on a screen 1,080 pixels
- * high. A level that names another material than the node's primitive draws with it. Levels whose
- * meshes have other primitives, or no errors, are left out, and so are levels that a mesh cannot
- * take, with a note.
+ * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
+ * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
+ * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
+ * another material than the node's primitive draws with it. Levels whose meshes have other
+ * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
@@ -453,10 +450,10 @@ function setFileLevels(
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
 	const lower = levels.meshes.map(meshOf);
 	for (const [p, mesh] of base.entries()) {
-		const errors =
-			levels.errors ??
-			levels.coverage?.map((coverage) => (2 * mesh.radius) / (coverage * COVERAGE_HEIGHT));
-		if (!errors) return;
+		const measured = levels.errors !== undefined;
+		const errors = levels.errors;
+		const coverage = levels.coverage;
+		if (!measured && !coverage) return;
 		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
@@ -467,7 +464,9 @@ function setFileLevels(
 					const material = own && level.material !== own.material ? materials.of(level) : undefined;
 					return {
 						mesh: meshes[p] as MeshGeometry,
-						error: errors[j],
+						...(measured
+							? { error: (errors as number[])[j] as number, fade: false }
+							: { coverage: (coverage as number[])[j] as number }),
 						...(material && { material }),
 					};
 				}),
@@ -1041,11 +1040,22 @@ class FileMaterials {
 			options.clearcoatNormalScale = [scale, tangents ? scale : -scale];
 			options.sheenColor = layers.sheenColor;
 			options.sheenRoughness = layers.sheenRoughness;
+			// A material pays nothing for an extension that its file does not give.
+			if (layers.iridescence !== undefined) options.iridescence = layers.iridescence;
+			if (layers.iridescenceIor !== undefined) options.iridescenceIor = layers.iridescenceIor;
+			if (layers.iridescenceThicknessRange !== undefined)
+				options.iridescenceThicknessRange = layers.iridescenceThicknessRange;
+			if (layers.anisotropy !== undefined) options.anisotropy = layers.anisotropy;
+			if (layers.anisotropyRotation !== undefined)
+				options.anisotropyRotation = layers.anisotropyRotation;
 			options.clearcoatMap = map(m.maps.clearcoatMap);
 			options.clearcoatRoughnessMap = map(m.maps.clearcoatRoughnessMap);
 			options.clearcoatNormalMap = map(m.maps.clearcoatNormalMap);
 			options.sheenColorMap = map(m.maps.sheenColorMap);
 			options.sheenRoughnessMap = map(m.maps.sheenRoughnessMap);
+			options.iridescenceMap = map(m.maps.iridescenceMap);
+			options.iridescenceThicknessMap = map(m.maps.iridescenceThicknessMap);
+			options.anisotropyMap = map(m.maps.anisotropyMap);
 		}
 		return materials.standard(options);
 	}
@@ -1188,6 +1198,14 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return layers ? Float32Array.from(layers.sheenColor) : new Float32Array(3);
 			case 'sheenRoughness':
 				return one(layers?.sheenRoughness);
+			case 'iridescence':
+				return one(layers?.iridescence);
+			case 'iridescenceIor':
+				return one(layers?.iridescenceIor);
+			case 'anisotropy':
+				return one(layers?.anisotropy);
+			case 'anisotropyRotation':
+				return one(layers?.anisotropyRotation);
 		}
 		return undefined;
 	}

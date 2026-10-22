@@ -20,6 +20,12 @@ export const HTTPS_PORT = HTTP_PORT + 1;
 /** Where `vite preview` serves the production build of the test pages. */
 export const PREVIEW_PORT = HTTP_PORT + 2;
 /**
+ * The switch of the production build of the test pages. With the value `skip` a browser run starts
+ * no production server and has no production build project. With `prebuilt` the server serves the
+ * pages that `bun run build:test-pages` built, and builds none. Unset, the server builds them.
+ */
+export const PRODUCTION_PAGES_SWITCH = 'NULL3D_PRODUCTION_PAGES';
+/**
  * Chrome's debugging port for the benchmark tools that drive Chrome through its debugging protocol:
  * a Chrome they start here, or Chrome on a phone that adb forwards here. Each copy of the repository
  * has its own, so two copies can run these tools at the same time.

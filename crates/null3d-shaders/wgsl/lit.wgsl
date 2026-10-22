@@ -244,7 +244,9 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::globals::{MaterialCoatSheen}
 #import null3d::coat_sheen::{Layers, begin_layers, coat_environment, coat_facing, coat_transmittance}
 #import null3d::coat_sheen::{finish_layers, layered_ambient, layered_environment, layered_light}
-#import null3d::mesh::{material_coat_sheen}
+#import null3d::mesh::{material_anisotropy, material_coat_sheen, material_iridescence}
+#import null3d::iridescence::{eval_iridescence, schlick_to_reflectance}
+#import null3d::math::{rotate_2d}
 #endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
@@ -345,6 +347,18 @@ var<private> object_scale: vec3f;
 #ifdef COAT_SHEEN
 /// The values of the layered material's clear coat and sheen, which the fragment shader reads once.
 var<private> coat_sheen_row: MaterialCoatSheen;
+
+/// The values of the material's thin film and of its anisotropy, which the fragment shader reads
+/// once. A material without either keeps their values at nothing.
+var<private> film_row: vec4f;
+var<private> anisotropy_row: vec4f;
+
+/// The bit of a material's flags that says it has a thin film above it, whose maps take the light
+/// map's and the specular intensity map's slots.
+const IRIDESCENCE_FLAG: u32 = 4194304u;
+/// The bit of a material's flags that says its specular lobe stretches along its tangent, whose
+/// map takes the specular color map's slot.
+const ANISOTROPY_FLAG: u32 = 8388608u;
 #endif
 
 #ifdef DECAL
@@ -1002,12 +1016,36 @@ struct Surface {
     sheenColor: vec3f,
     /// The sheen's perceptual roughness, from 0 to 1.
     sheenRoughness: f32,
+    /// How much of the specular reflection a thin film above the surface tints, from 0 to 1.
+    iridescence: f32,
+    /// The film's index of refraction, 1 or more.
+    iridescenceIor: f32,
+    /// The film's thickness in nanometers.
+    iridescenceThickness: f32,
 #else ifdef COAT_SHEEN
     clearcoat: f32,
     clearcoatRoughness: f32,
     clearcoatNormal: vec3f,
     sheenColor: vec3f,
     sheenRoughness: f32,
+    /// How much of the specular reflection a thin film above the surface tints, from 0 to 1.
+    iridescence: f32,
+    /// The film's index of refraction, 1 or more.
+    iridescenceIor: f32,
+    /// The film's thickness in nanometers: the thickness map's green channel mixes the material's
+    /// least and greatest thickness.
+    iridescenceThickness: f32,
+    /// How far the specular lobe stretches along the tangent, from 0 (round) to 1.
+    anisotropy: f32,
+    /// The direction along which the lobe stretches, in radians from the tangent.
+    anisotropyRotation: f32,
+    /// The map's direction in the tangent plane, from 0 to 1 in each axis, and its strength.
+    anisotropyDirection: vec2f,
+    anisotropyMapStrength: f32,
+    /// The surface's tangent and bitangent in world space: the frame that the anisotropy turns
+    /// its direction in.
+    anisotropyTangent: vec3f,
+    anisotropyBitangent: vec3f,
 #endif
 }
 
@@ -1066,22 +1104,35 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A layered material's slots 5 to 7 hold its coat, coat normal and sheen maps.
-    if map_ready(m.more_maps.y) {
-        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
-        s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
-        s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
-    }
-    if map_ready(m.more_maps.z) {
-        let at = map_uv(flags, 6u, first, second);
-        let texel = specular_intensity_texel(m.more_maps.z, at);
-        let scale = coat_sheen_row.coat.zw;
-        s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
-    }
-    if map_ready(m.more_maps.w) {
-        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
-        s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
-        s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+    // A layered material's slots 5 to 7 hold the maps of one family of layers, which the row's
+    // kind names: the clear coat's, the coat normal's and the sheen's, or iridescence's and its
+    // thickness with the anisotropy's.
+    if u32(anisotropy_row.z) == 1u {
+        if map_ready(m.more_maps.y) {
+            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+            s.iridescence *= texel.r;
+        }
+        if map_ready(m.more_maps.z) {
+            let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
+            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
+        }
+    } else {
+        if map_ready(m.more_maps.y) {
+            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+            s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
+            s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
+        }
+        if map_ready(m.more_maps.z) {
+            let at = map_uv(flags, 6u, first, second);
+            let texel = specular_intensity_texel(m.more_maps.z, at);
+            let scale = coat_sheen_row.coat.zw;
+            s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
+        }
+        if map_ready(m.more_maps.w) {
+            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+            s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
+            s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+        }
     }
 #else
     if map_ready(m.more_maps.y) {
@@ -1129,7 +1180,62 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = normal_texel(m.maps.z, at);
         s.normal = bent_normal(texel, m.surface.zw, at, input, position_dx, position_dy);
     }
+#ifdef COAT_SHEEN
+#ifndef CUSTOM
+    if (u32(m.strengths.z) & ANISOTROPY_FLAG) != 0u {
+        // The anisotropy's axes come from the surface's tangent frame, which three.js builds from
+        // the normal map's coordinates where the material has a normal map, and from the first
+        // coordinates otherwise.
+        var frame_at = first;
+        if heights == 0u && map_ready(m.maps.z) {
+            frame_at = map_uv(flags, 2u, first, second);
+        }
+        let frame = tangent_frame(input, frame_at, position_dx, position_dy);
+        s.anisotropyTangent = frame[0];
+        s.anisotropyBitangent = frame[1];
+        // Its map takes the specular color map's slot in the iridescence family, which the row's
+        // kind names.
+        if u32(anisotropy_row.z) == 1u && map_ready(m.more_maps.w) {
+            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+            s.anisotropyDirection = texel.rg;
+            s.anisotropyMapStrength = texel.b;
+        }
+    }
+#endif
+#endif
     return s;
+}
+
+/// The surface's tangent frame at the coordinates `at`, as three.js's `getTangentFrame`: the unit
+/// tangent along u, the unit bitangent along v and the input's normal. The frame comes from the
+/// mesh's tangents with VERTEX_TANGENT, and otherwise from how the position, whose changes across
+/// a pixel and up a row are `position_dx` and `position_dy`, and the coordinates change between
+/// pixels.
+fn tangent_frame(
+    input: SurfaceInput,
+    at: MapUv,
+    position_dx: vec3f,
+    position_dy: vec3f,
+) -> mat3x3f {
+    let normal = input.normal;
+    let facing = select(-1.0, 1.0, input.frontFacing);
+#ifdef VERTEX_TANGENT
+    return mat3x3f(
+        normalize(input.tangent) * facing,
+        normalize(input.bitangent) * facing,
+        normal,
+    );
+#else
+    // three.js's getTangentFrame, with rows counted upward.
+    let q1perp = cross(position_dy, normal);
+    let q0perp = cross(normal, position_dx);
+    let st_dy = at.dy * ROWS_UP;
+    var tangent = q1perp * at.dx.x + q0perp * st_dy.x;
+    var bitangent = q1perp * at.dx.y + q0perp * st_dy.y;
+    let det = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    let size = select(inverseSqrt(det), 0.0, det == 0.0);
+    return mat3x3f(tangent * size * facing, bitangent * size * facing, normal);
+#endif
 }
 
 /// The input's normal bent by a normal map's `texel`, read at `at`, whose bends along u and v
@@ -1145,24 +1251,8 @@ fn bent_normal(
     position_dy: vec3f,
 ) -> vec3f {
     let bent = vec3f((texel.xy * 2.0 - 1.0) * scale, texel.z * 2.0 - 1.0);
-    let normal = input.normal;
-    let facing = select(-1.0, 1.0, input.frontFacing);
-#ifdef VERTEX_TANGENT
-    let tangent = normalize(input.tangent) * facing;
-    let bitangent = normalize(input.bitangent) * facing;
-#else
-    // three.js's getTangentFrame, with rows counted upward.
-    let q1perp = cross(position_dy, normal);
-    let q0perp = cross(normal, position_dx);
-    let st_dy = at.dy * ROWS_UP;
-    var tangent = q1perp * at.dx.x + q0perp * st_dy.x;
-    var bitangent = q1perp * at.dx.y + q0perp * st_dy.y;
-    let det = max(dot(tangent, tangent), dot(bitangent, bitangent));
-    let size = select(inverseSqrt(det), 0.0, det == 0.0);
-    tangent *= size * facing;
-    bitangent *= size * facing;
-#endif
-    return normalize(tangent * bent.x + bitangent * bent.y + normal * bent.z);
+    let frame = tangent_frame(input, at, position_dx, position_dy);
+    return normalize(frame[0] * bent.x + frame[1] * bent.y + frame[2] * bent.z);
 }
 #endif
 
@@ -1208,12 +1298,26 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.clearcoatNormal = input.normal;
     s.sheenColor = coat_sheen_row.sheen.rgb;
     s.sheenRoughness = coat_sheen_row.sheen.w;
+    s.iridescence = film_row.x;
+    s.iridescenceIor = film_row.y;
+    s.iridescenceThickness = film_row.w;
+#ifndef CUSTOM
+    s.anisotropy = anisotropy_row.x;
+    s.anisotropyRotation = anisotropy_row.y;
+    s.anisotropyDirection = vec2f(1.0, 0.5);
+    s.anisotropyMapStrength = 1.0;
+    s.anisotropyTangent = vec3f(0.0);
+    s.anisotropyBitangent = vec3f(0.0);
+#endif
 #else ifdef CUSTOM
     s.clearcoat = 0.0;
     s.clearcoatRoughness = 0.0;
     s.clearcoatNormal = input.normal;
     s.sheenColor = vec3f(0.0);
     s.sheenRoughness = 1.0;
+    s.iridescence = 0.0;
+    s.iridescenceIor = 1.0;
+    s.iridescenceThickness = 0.0;
 #endif
 #ifdef MAPS
     s = with_maps(s, input);
@@ -1452,9 +1556,25 @@ struct Surrounding {
     irradiance: vec3f,
 }
 
+/// The normal along which the surface reflects the light around it. An anisotropic lobe reflects
+/// about a direction bent away from the normal across its stretched axis, as three.js's
+/// `getIBLAnisotropyRadiance` bends it. Other surfaces reflect about their own normal.
+fn reflection_normal(m: PbrMaterial, normal: vec3f, to_view: vec3f) -> vec3f {
+#ifdef COAT_SHEEN
+    if m.anisotropy > 0.0 {
+        let bitangent = m.anisotropy_b;
+        let across = normalize(cross(cross(bitangent, to_view), bitangent));
+        let weight = pow(1.0 - m.anisotropy * (1.0 - m.roughness), 4.0);
+        return normalize(mix(across, normal, weight));
+    }
+#endif
+    return normal;
+}
+
 fn probe_surrounding(
     relative: vec3f,
     normal: vec3f,
+    radiance_normal: vec3f,
     to_view: vec3f,
     roughness: f32,
 ) -> Surrounding {
@@ -1462,15 +1582,15 @@ fn probe_surrounding(
     var radiance = vec3f(0.0);
     var irradiance = vec3f(0.0);
     if has_environment(env) {
-        radiance = environment_radiance(env, to_view, normal, roughness);
+        radiance = environment_radiance(env, to_view, radiance_normal, roughness);
         irradiance = environment_irradiance(env, normal);
     }
     // A decal modulates the surface under it, which reflects the probes already, so the decal
     // build reads none: that keeps its fragment stage within WebGL2's texture units.
 #ifndef DECAL
     if has_probes() {
-        let reflected = reflected_direction(to_view, normal, roughness);
-        let local = probe_light(relative, reflected, normal, roughness);
+        let reflected = reflected_direction(to_view, radiance_normal, roughness);
+        let local = probe_light(relative, reflected, radiance_normal, roughness);
         radiance = local.radiance + radiance * (1.0 - local.weight);
         irradiance = local.irradiance + irradiance * (1.0 - local.weight);
     }
@@ -1578,7 +1698,7 @@ fn light_surface(
     if has_surrounding() || mirrored > 0.0 {
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
-        let around = probe_surrounding(relative, normal, to_view, m.roughness);
+        let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
         var irradiance = around.irradiance;
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
@@ -1683,10 +1803,53 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     var pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
     pbr.diffuse *= 1.0 - through_share;
 #else
-    let pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
+    var pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
 #endif
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
+#ifdef COAT_SHEEN
+    // The thin film's Fresnel term tints the specular reflection, and its reflectance at normal
+    // incidence tints the light from all directions, as three.js's physical material sets them.
+    let layer_flags = u32(material_row.strengths.z);
+    if (layer_flags & IRIDESCENCE_FLAG) != 0u {
+        var iridescence = saturate(s.iridescence);
+        if (s.iridescenceThickness <= 0.0) {
+            iridescence = 0.0;
+        }
+        if iridescence > 0.0 {
+            let dielectric = eval_iridescence(
+                1.0, s.iridescenceIor, n_dot_v, s.iridescenceThickness, pbr.specular,
+            );
+            let metallic = eval_iridescence(
+                1.0, s.iridescenceIor, n_dot_v, s.iridescenceThickness, pbr.base_color,
+            );
+            pbr.iridescence = iridescence;
+            pbr.iridescence_fresnel = mix(dielectric, metallic, pbr.metalness);
+            pbr.iridescence_reflectance = schlick_to_reflectance(dielectric, 1.0, n_dot_v);
+            pbr.iridescence_reflectance_metallic = schlick_to_reflectance(metallic, 1.0, n_dot_v);
+        }
+    }
+#ifndef CUSTOM
+    // The anisotropy stretches the specular lobe along a direction of the surface's tangent
+    // frame, which the material's rotation turns and its map bends. three.js sets the same values.
+    if (layer_flags & ANISOTROPY_FLAG) != 0u && length(s.anisotropyTangent) > 0.0 {
+        let direction = normalize(2.0 * s.anisotropyDirection - vec2f(1.0));
+        var stretched = rotate_2d(direction, s.anisotropyRotation)
+            * (s.anisotropy * s.anisotropyMapStrength);
+        var strength = length(stretched);
+        if strength <= 0.0 {
+            stretched = vec2f(1.0, 0.0);
+        } else {
+            stretched /= strength;
+            strength = saturate(strength);
+        }
+        pbr.anisotropy = strength;
+        pbr.alpha_t = mix(pbr.roughness * pbr.roughness, 1.0, strength * strength);
+        pbr.anisotropy_t = s.anisotropyTangent * stretched.x + s.anisotropyBitangent * stretched.y;
+        pbr.anisotropy_b = s.anisotropyBitangent * stretched.x - s.anisotropyTangent * stretched.y;
+    }
+#endif
+#endif
 #ifdef COAT_SHEEN
     // The coat's roughness takes the clearcoat floor and the geometry's roughness, as three.js's
     // physical material does.
@@ -1910,6 +2073,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef COAT_SHEEN
     coat_sheen_row = material_coat_sheen(in.material);
+    film_row = material_iridescence(in.material);
+    anisotropy_row = material_anisotropy(in.material);
 #endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;

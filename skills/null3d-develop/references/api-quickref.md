@@ -313,12 +313,14 @@ mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lis
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
-mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, error: 0.1, material: farShading }]);  // (0.2) levels of detail, most detailed first
-// every object and batch of `mesh` draws the coarsest level whose error covers under lodThreshold pixels,
-// and draws nothing where its bound covers fewer pixels than that; the hide fades out with the same band;
-// { mesh, distance } in place of error maps three.js's LOD.addLevel; errors grow; E1221 for bad levels;
+mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels of detail, most detailed first
+// every object and batch of `mesh` draws the coarsest level whose switch the distance passes:
+// error (in the mesh's units), distance (meters at scale 1) or coverage (a share of the screen height);
+// a level given by distance or a hand-set error fades over a band, a measured error switches at once;
+// setLevels(levels, { fade: false }) or { fade } on one level switches it at once; switches grow; E1221 for bad levels;
 // a level's `material` shades its own way, and a level without one draws with the level before's
 object.setLevelBias(0.5);   // (0.2) this object's own threshold: below 1 keeps detail, above 1 turns coarse sooner
+object.setDrawRange(8, 120);   // (0.2) draw only between 8 m and 120 m, fading at each edge; batch.setDrawRange too
 ```
 
 (0.2) Each attribute also takes the 8-bit and 16-bit integer arrays that glTF's `KHR_mesh_quantization` allows. The GPU keeps them as integers, at half or a quarter of the floats' size. Plain integers read as whole numbers; `{ array, normalized: true }` reads them as fractions, as three.js's `BufferAttribute` does. Normals and tangents take `Int8Array` or `Int16Array`, colors and weights `Uint8Array` or `Uint16Array`, and joints `Uint8Array`, `Uint16Array` or whole numbers. Integer positions keep their units, so scale the object to meters, as a glTF node does. A mesh keeps the attributes it gets in their types. Meshes whose attributes have the same types share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206, and a generator option that is not a finite number throws E1203. `api/geometry` covers vertex formats and meshes over 65,535 vertices. `updateVertices` (0.2) takes `positions`, `normals`, `uvs`, `uvs1`, `colors` and `tangents`. Update the normals with the positions, because the engine does not compute them again. The mesh keeps the bounding sphere it was made with, so give objects whose vertices move outside it bounds with `setBounds`. A mesh with joints or morph targets takes no updates. The first update rebuilds the draw tables once, so make it in the setup.
@@ -337,6 +339,8 @@ const paint = materials.standard({
   subsurfaceRadius: 0, subsurfaceColor: '#ffffff',  // (0.2) skin 0.012 and [1, 0.4, 0.25], wax, jade: light spreads under the surface; give it at creation; blurs on High and Ultra only
   clearcoat: 0, clearcoatRoughness: 0,        // (0.2) car paint, varnish: give a layer option at creation to have the layers
   sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps and no diffuseTransmission with layers
+  iridescence: 0, iridescenceIor: 1.3, iridescenceThicknessRange: [100, 400],  // (0.3) soap bubbles, beetles, oil: a thin film tints the reflection; no light or specular maps and no coat or sheen maps
+  anisotropy: 0, anisotropyRotation: 0,       // (0.3) brushed metal: the highlight stretches along the tangent; needs a map, whose coordinates give the tangent frame
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   contactShadows: true,                        // (0.2) fixed at creation; false on grass, leaf cards and other thin surfaces that crowd or sway, where contact shadows darken and flicker
@@ -581,7 +585,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `grading`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
@@ -594,11 +598,14 @@ post.set({
   ssr: { maxDistance: 50, thickness: 0.5 },  // (0.2) smooth opaque surfaces reflect the screen in place of the environment; intensity, maxRoughness (0.5) too; false turns it off
   dof: { aperture: 1.8, focusPoint: [0, 1, 0] },  // (0.2) a camera lens: f-number, focusDistance or a world point, focalLength ('camera'), maxBlur, blades; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut or lutFromData, or false; LUTPass's meanings
+  grading: { whiteBalance: { temperature: 5000 }, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1.04, 1.0, 0.94],
+             saturation: 0.9, splitToning: { shadows: '#3a4a7a', highlights: '#f0c088', balance: 0, strength: 0.25 } },  // (0.3) a colorist's controls baked into a table by a job worker; false turns it off
   vignette: { intensity: 1, size: 1 },   // (0.2) darkens HDR color before the tone curve; falloff (2) and roundness (0) too; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
 post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
 const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; per-pixel effects join into one pass, at most 8
+post.addEffect({ wgsl: streakWgsl, bloomLevel: 2 });  // (0.3) WGSL that calls effectBloom(input.uv) reads that level of bloom's chain: a streak or a glare without its own blur; draws in a pass of its own
 post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
 post.removeEffect(fx);                  // (0.2)
 ```
@@ -660,7 +667,7 @@ quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
-quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, dithered bands
+quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, distance band fades
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set

@@ -479,9 +479,11 @@ mod ids {
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The texel that custom effects bind in place of bloom's level when they read none.
+    pub const BLANK_EFFECT_BLOOM: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The first step of the two-step pass's own blank color grading table and outline texture,
     /// which it owns so that it never destroys the final pass's.
-    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_BLOOM + 1;
     pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
@@ -505,8 +507,11 @@ mod ids {
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
     pub const SKIN_FIRSTS: u32 = BLANK_PASS_DEPTH + 1;
+    /// The start distance and the end distance of every source's distance range, which the
+    /// culling pass reads.
+    pub const INSTANCE_RANGES: u32 = SKIN_FIRSTS + 1;
     /// The two copies of the last frame's joint texture, one for each frame parity.
-    const LAST_JOINTS: u32 = SKIN_FIRSTS + 1;
+    const LAST_JOINTS: u32 = INSTANCE_RANGES + 1;
 
     pub const fn last_joints(copy: usize) -> u32 {
         LAST_JOINTS + copy as u32
@@ -994,6 +999,7 @@ impl GpuDrivenRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                            blank_bloom: ids::BLANK_EFFECT_BLOOM,
                         },
                         fullscreen: FullscreenIds {
                             buffer: ids::FULLSCREEN,

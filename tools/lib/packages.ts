@@ -23,6 +23,7 @@ import {
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
+import { secondsSince } from './build-cache.ts';
 import { generateDocs, writeGeneratedDocs } from './docs.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
@@ -401,17 +402,35 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 	if (keptArtifact !== null) writeFileSync(artifact, keptArtifact);
 }
 
+/** Builds one package's own library: the shader modules when its source imports them, then `lib/`. */
+function buildLibrary(root: string, name: string): void {
+	const build = packageBuild(name);
+	if (build.shaders) ensureShaderModules(root);
+	if (build.compile) compile(root, join(root, 'packages', name), build);
+}
+
 /**
- * Builds a package's JavaScript and declarations into its `lib/`, and the shader modules that its
- * source imports. It writes nothing else that a tarball holds, such as the docs copy, so a tool
- * that only needs files a browser runs, such as the CDN build, calls this.
+ * Builds a package's JavaScript and declarations into its `lib/`, after the libraries of the
+ * packages that it needs, and the shader modules that its source imports. It writes nothing else
+ * that a tarball holds, such as the docs copy, so a tool that only needs files a browser runs, such
+ * as the CDN build, calls this.
  */
 export function buildPackageLibrary(root: string, name: string): void {
-	const build = packageBuild(name);
-	for (const needed of [...build.needs, name]) {
-		if (packageBuild(needed).shaders) ensureShaderModules(root);
-		if (packageBuild(needed).compile)
-			compile(root, join(root, 'packages', needed), packageBuild(needed));
+	for (const needed of [...packageBuild(name).needs, name]) buildLibrary(root, needed);
+}
+
+/**
+ * Writes what a tarball holds beside the library and the WebAssembly builds: the license copies,
+ * and the engine's docs with their generated pages and sections, which read the shader modules.
+ */
+function writePackageFiles(root: string, name: string): void {
+	const dir = join(root, 'packages', name);
+	for (const file of LICENSES) copyFileSync(join(root, file), join(dir, file));
+	if (packageBuild(name).docs) {
+		// Git keeps no generated docs, so the pack writes them first.
+		writeGeneratedDocs(root, generateDocs(root));
+		rmSync(join(dir, 'docs'), { recursive: true, force: true });
+		cpSync(join(root, 'docs'), join(dir, 'docs'), { recursive: true });
 	}
 }
 
@@ -419,19 +438,33 @@ export function buildPackageLibrary(root: string, name: string): void {
  * Makes everything that a package's tarball holds besides the files git keeps and the WebAssembly
  * builds: the license copies, the built JavaScript and declarations, and the engine's shader
  * modules and docs with their generated pages and sections. Each package's `prepack` script runs
- * this, so `bun pm pack` and `npm pack` both pack a complete package.
+ * this, so `bun pm pack` and `npm pack` of one package pack a complete package.
  */
 export function buildPackage(root: string, name: string): void {
-	const build = packageBuild(name);
-	const dir = join(root, 'packages', name);
-	for (const file of LICENSES) copyFileSync(join(root, file), join(dir, file));
 	buildPackageLibrary(root, name);
-	if (build.docs) {
-		// Git keeps no generated docs, so the pack writes them first, after the shader modules that
-		// the engine's API reference reads.
-		writeGeneratedDocs(root, generateDocs(root));
-		rmSync(join(dir, 'docs'), { recursive: true, force: true });
-		cpSync(join(root, 'docs'), join(dir, 'docs'), { recursive: true });
+	writePackageFiles(root, name);
+}
+
+/**
+ * Builds the packages named in `names` as their `prepack` scripts do, but each package's library
+ * once: the packages that one needs build before it, and a package that several others need is
+ * not compiled again for each of them. Through the prepack scripts, a pack of every package
+ * compiled the engine once for itself and once more for each add-on that needs it. Prints each
+ * package's time, so a long build shows where it is.
+ */
+export function buildPackages(root: string, names: readonly string[]): void {
+	const built = new Set<string>();
+	const library = (name: string): void => {
+		if (built.has(name)) return;
+		for (const needed of packageBuild(name).needs) library(needed);
+		const started = performance.now();
+		buildLibrary(root, name);
+		built.add(name);
+		console.log(`  built ${name} in ${secondsSince(started)} s`);
+	};
+	for (const name of names) {
+		library(name);
+		writePackageFiles(root, name);
 	}
 }
 
@@ -547,17 +580,19 @@ export function shaderModuleJsFiles(root: string): string[] {
 }
 
 /**
- * Packs every public package with `bun pm pack`, which runs its `prepack` script and writes the
- * real version in place of each `workspace:` one, into `out`. Then checks each tarball, and fails
- * with every problem. The WebAssembly builds must exist first (`bun run build`). Afterwards it
- * deletes each `lib/` that a pack built, so no check in the repository can read built files in
- * place of the source.
+ * Packs every public package into `out`: it builds each package once (buildPackages), then packs
+ * it with `bun pm pack`, which writes the real version in place of each `workspace:` one, without
+ * the `prepack` script, whose build is done. Then checks each tarball, and fails with every
+ * problem. The WebAssembly builds must exist first (`bun run build`). Afterwards it deletes each
+ * `lib/` that the build wrote, so no check in the repository can read built files in place of the
+ * source.
  */
 export function packPackages(root: string, out: string): PackedPackage[] {
 	rmSync(out, { recursive: true, force: true });
 	mkdirSync(out, { recursive: true });
 	const folders = publicPackages(root);
 	try {
+		buildPackages(root, folders);
 		return packEach(root, out, folders);
 	} finally {
 		for (const folder of folders)
@@ -571,7 +606,13 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 	const problems: string[] = [];
 	for (const folder of folders) {
 		const dir = join(root, 'packages', folder);
-		const printed = run('bun', ['pm', 'pack', '--quiet', '--destination', out], dir);
+		const started = performance.now();
+		const printed = run(
+			'bun',
+			['pm', 'pack', '--ignore-scripts', '--quiet', '--destination', out],
+			dir,
+		);
+		console.log(`  packed ${folder} in ${secondsSince(started)} s`);
 		const tarball = resolve(out, printed.trim().split('\n').at(-1) ?? '');
 		const manifest = JSON.parse(run('tar', ['-xOzf', tarball, 'package/package.json'], root));
 		const files = new Set(

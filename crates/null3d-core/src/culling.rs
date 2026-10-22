@@ -24,9 +24,10 @@ use std::simd::prelude::*;
 
 use crate::alloc::reserve_keeping;
 use crate::cells::CELL_SHIFT;
+use crate::instances::{BatchTable, InstanceBatch};
 use crate::jobs::JobSystem;
 use crate::layers::shares_layer;
-use crate::levels::{LevelLink, LevelRule, Picked, fade_values};
+use crate::levels::{DrawRange, LevelLink, LevelRule, Picked, fade_values};
 use crate::occlusion::OcclusionBuffer;
 use crate::shared::SharedMut;
 use crate::world::{SphereArrays, UNBOUNDED_RADIUS};
@@ -789,6 +790,41 @@ pub struct LevelRows<'a> {
     pub radii: RowRadii<'a>,
     /// The rows' threshold biases.
     pub biases: RowBiases<'a>,
+    /// The distance ranges in which the rows draw.
+    pub ranges: RowRanges<'a>,
+}
+
+/// The distance range in which a set's rows draw: the batch's range for every row, or each row's
+/// own.
+#[derive(Clone, Copy, Debug)]
+pub enum RowRanges<'a> {
+    /// Every row draws in this range.
+    One(DrawRange),
+    /// Row `i` draws in the range at `2i` and `2i + 1`, its start and its end.
+    Rows(&'a [f32]),
+}
+
+impl RowRanges<'_> {
+    /// The range of row `row`.
+    #[inline]
+    pub fn range(&self, row: usize) -> DrawRange {
+        match self {
+            RowRanges::One(range) => *range,
+            RowRanges::Rows(values) => match (values.get(2 * row), values.get(2 * row + 1)) {
+                (Some(&start), Some(&end)) => DrawRange::new(start, end),
+                _ => DrawRange::NONE,
+            },
+        }
+    }
+
+    /// True when every row draws at every distance.
+    #[inline]
+    pub fn is_none(&self) -> bool {
+        match self {
+            RowRanges::One(range) => range.is_none(),
+            RowRanges::Rows(values) => values.is_empty(),
+        }
+    }
 }
 
 /// The threshold bias that picks the levels of a set's rows, by row: 1 for a row that draws the
@@ -817,11 +853,22 @@ impl LevelChoice<'_> {
     /// True when a row of base bucket `bucket` picks its level.
     fn picks(&self, bucket: u32) -> bool {
         bucket != NO_BUCKET
-            && self.rule.on()
             && self
                 .links
                 .get(bucket as usize)
                 .is_some_and(LevelLink::has_next)
+    }
+
+    /// True when culling must read each row of the set `set` in bucket `bucket`: its rows pick
+    /// levels, they draw in a distance range, or both.
+    pub fn run_looks_up(&self, bucket: u32, set: u32) -> bool {
+        bucket == BY_ROW || self.looks_up(bucket, &(self.rows)(set))
+    }
+
+    /// True when culling must read each row of `rows` for bucket `bucket`: it picks a level, it
+    /// draws in a distance range, or both.
+    fn looks_up(&self, bucket: u32, rows: &LevelRows<'_>) -> bool {
+        bucket != NO_BUCKET && (self.picks(bucket) || !rows.ranges.is_none())
     }
 
     /// The buckets that `row` of `rows`, whose base bucket is `home`, draws in.
@@ -847,8 +894,31 @@ impl LevelChoice<'_> {
             RowBiases::Rows(biases) => biases[r],
         };
         let distance = self.rule.distance(center, radius);
-        self.rule
-            .pick(self.links, home, radius / local, radius, distance, bias)
+        let range = rows.ranges.range(r);
+        self.rule.pick(
+            self.links,
+            home,
+            radius / local,
+            radius,
+            distance,
+            bias,
+            range,
+        )
+    }
+}
+
+/// The distance ranges in which a batch's rows draw: the source's own for a part that reads
+/// another batch's rows, each row's range when the source set one, else the batch's range.
+pub fn batch_ranges<'a>(batches: &'a BatchTable, batch: &'a InstanceBatch) -> RowRanges<'a> {
+    let source = batch
+        .source()
+        .and_then(|handle| batches.get(handle).ok())
+        .unwrap_or(batch);
+    if source.row_ranges().is_empty() {
+        let [start, end] = source.draw_range();
+        RowRanges::One(DrawRange::new(start, end))
+    } else {
+        RowRanges::Rows(source.row_ranges())
     }
 }
 
@@ -862,6 +932,7 @@ fn count_picked(histogram: &mut [u32], picked: Picked) {
             histogram[new as usize] += 2;
             histogram[old as usize] += 2;
         }
+        Picked::FadeIn { bucket, .. } => histogram[bucket as usize] += 2,
         Picked::FadeOut { old, .. } => histogram[old as usize] += 2,
         Picked::Hidden => {}
     }
@@ -1010,8 +1081,15 @@ pub fn cull_into_buckets<'a>(
     } = view;
     // A run looks its rows' buckets up when they each have their own, or when its bucket has
     // coarser levels, so that each row picks its level.
-    let picks = |bucket: u32| levels.is_some_and(|choice| choice.picks(bucket));
-    let looks_up = |run: &CullRun| run.bucket == BY_ROW || picks(run.bucket);
+    let looks_up = |run: &CullRun| {
+        if run.bucket == BY_ROW {
+            return true;
+        }
+        match levels {
+            Some(choice) => choice.looks_up(run.bucket, &(choice.rows)(run.set)),
+            None => false,
+        }
+    };
     let bucket_count = buckets as usize;
     assert!(
         runs.len() <= out.run_offsets.len() && bucket_count < out.bucket_starts.len(),
@@ -1088,7 +1166,7 @@ pub fn cull_into_buckets<'a>(
                     run.bucket
                 };
                 match &level_rows {
-                    Some((choice, rows)) if choice.picks(bucket) => {
+                    Some((choice, rows)) if choice.looks_up(bucket, rows) => {
                         count_picked(histogram, choice.pick(rows, offsets, row, bucket));
                     }
                     _ if bucket != NO_BUCKET => histogram[bucket as usize] += 1,
@@ -1204,7 +1282,7 @@ pub fn cull_into_buckets<'a>(
                     run.bucket
                 };
                 let picked = match &level_rows {
-                    Some((choice, rows)) if choice.picks(bucket) => {
+                    Some((choice, rows)) if choice.looks_up(bucket, rows) => {
                         choice.pick(rows, offsets, row, bucket)
                     }
                     _ if bucket != NO_BUCKET => Picked::One(bucket),
@@ -1218,6 +1296,10 @@ pub fn cull_into_buckets<'a>(
                         put(new, fade_new.to_bits());
                         put(old, entry(row));
                         put(old, fade_old.to_bits());
+                    }
+                    Picked::FadeIn { bucket, t } => {
+                        put(bucket, entry(row));
+                        put(bucket, t.max(1.0e-6).to_bits());
                     }
                     Picked::FadeOut { old, t } => {
                         put(old, entry(row));

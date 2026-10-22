@@ -181,9 +181,15 @@ struct InstanceBucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    /// The switch value of the bucket's level, the bucket of the next coarser level plus one, the
+    /// level's fade bucket plus one, the threshold bias that picks the levels, and the measure that
+    /// the switch value names. The vertex shader reads none of them, but the record's stride holds
+    /// every word that the culling shader reads.
     level_error: f32,
     next_level: u32,
     fade_bucket: u32,
+    bias: f32,
+    level_switch: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
@@ -425,6 +431,26 @@ fn material_coat_sheen(id: u32) -> MaterialCoatSheen {
     );
 #else
     return MaterialCoatSheen(materials[id].coat, materials[id].sheen);
+#endif
+}
+
+/// The thin film's values of material `id`: how much of its specular reflection the film tints,
+/// the film's index of refraction, and its thickness where its map is 0 and where it is 1.
+fn material_iridescence(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(15u, id), 0);
+#else
+    return materials[id].iridescence;
+#endif
+}
+
+/// The anisotropy's values of material `id`: the strength of the stretched lobe, and its rotation
+/// from the tangent in radians.
+fn material_anisotropy(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(16u, id), 0);
+#else
+    return materials[id].anisotropy;
 #endif
 }
 #endif

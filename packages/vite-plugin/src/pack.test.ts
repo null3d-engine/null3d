@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CompilerPool } from './compile-pool';
 import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
@@ -169,7 +169,8 @@ async function compiledShaders(file: string, compiler: CompilerPool): Promise<Co
 }
 
 describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
-	const compiler = new CompilerPool();
+	// The test runs no dev server beside the compiles, so its pool takes every core.
+	const compiler = new CompilerPool(availableParallelism());
 	afterAll(() => compiler.close());
 
 	it(

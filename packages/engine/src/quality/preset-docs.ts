@@ -125,7 +125,7 @@ export const SETTING_DOCS: {
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
-	lodFade: { label: 'Level of detail fades', print: yesNo },
+	lodFade: { label: 'Distance band fades', print: yesNo },
 	physicalSky: {
 		label: 'Physical sky',
 		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),

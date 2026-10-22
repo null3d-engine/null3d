@@ -167,6 +167,8 @@ export interface EffectBuild {
 	readonly uniforms: readonly CompiledUniform[];
 	/** True when the effect reads the scene's depth. */
 	readonly depth: boolean;
+	/** True when the effect reads a level of bloom's chain. */
+	readonly bloom: boolean;
 	/** True when the effect joins the effect before it. */
 	readonly joins: boolean;
 	/** The textures that an effect declares, where the engine writes each one's layer. */

@@ -35,6 +35,11 @@
 // Node and Bun, never in a page, so they have no size budget. Every mode that builds first builds the
 // shader modules when they are missing or out of date, because git does not keep them.
 //
+// The two WebAssembly files and the build tools' modules then build at the same time, so that the
+// steps of one build that use a single core (the link, wasm-bindgen and wasm-opt) overlap the
+// compile of another. Each build prints its lines as they come, with its name in front, and the time
+// of each step. A failed build names itself, and its whole log prints again in one piece at the end.
+//
 // Each file goes in place whole, by a rename from a temporary name (tools/lib/atomic-files.ts). A
 // dev server or a browser run of the same checkout can read the files while a build runs, as the
 // GPU check's first step builds beside a running test, and a half-written core fails its page.
@@ -85,13 +90,17 @@ import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import {
 	acquireLock,
+	type CargoRun,
 	cacheDir,
 	cacheOff,
 	cacheRoot,
 	hashFiles,
 	hashOf,
+	type LineSink,
 	pruneCacheLocked,
-	runCargo,
+	runByLine,
+	runCargoAsync,
+	secondsSince,
 	touchCacheEntry,
 	writeFolderAtomic,
 } from './lib/build-cache';
@@ -335,13 +344,110 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}, cwd 
 }
 
 /**
- * Runs cargo through the caches' one helper, which sets the build folder of the call and sccache,
- * and throws when it fails.
+ * The log of one of the builds that run at the same time. It prints each line at once, with the
+ * build's name in front, so a long build shows its progress while it runs. It also keeps every line,
+ * so that the whole log of a failed build can print again in one piece once every build has ended,
+ * and it notes the time that each command took.
  */
-function cargo(args: readonly string[], env: Record<string, string>, targetDir: string): void {
-	const { status, error } = runCargo(root, args, { env, targetDir });
-	if (error) throw error;
-	if (status !== 0) throw new Error(`cargo ${args.join(' ')} failed`);
+export interface BuildLog {
+	/** Adds a line of the build's own; `stderr` sends it to the error output. */
+	say(line: string, stderr?: boolean): void;
+	/** Runs a command in the checkout, adds its output line by line, and throws when it fails. */
+	run(command: string, args: readonly string[]): Promise<void>;
+	/**
+	 * Runs cargo through the caches' one setup, which sets the build folder of the call and sccache,
+	 * adds its output line by line, and throws when it fails.
+	 */
+	cargo(args: readonly string[], env: Record<string, string>, targetDir: string): Promise<void>;
+	/** Every line that the build said and that its commands wrote, in order, without the name. */
+	text(): string;
+}
+
+/** Prints a line to the output, or to the error output. */
+const printLine: LineSink = (line, stderr) => (stderr ? console.error(line) : console.log(line));
+
+/** An empty log for the build `name`, which prints through `write`. */
+export function buildLog(name: string, write: LineSink = printLine): BuildLog {
+	let text = '';
+	const say = (line: string, stderr = false) => {
+		text += `${line}\n`;
+		write(`[${name}] ${line}`, stderr);
+	};
+	/** Runs a command, and says how long it took, or throws when it failed. */
+	const timed = async (
+		label: string,
+		args: readonly string[],
+		start: (onLine: LineSink) => Promise<CargoRun>,
+	): Promise<void> => {
+		const started = performance.now();
+		const { status, error } = await start(say);
+		if (error) throw new Error(`could not run ${label}: ${error.message}`);
+		if (status !== 0) {
+			const ended = status === null ? 'a signal stopped it' : `its exit status was ${status}`;
+			throw new Error(`${label} ${args.join(' ')} failed: ${ended}`);
+		}
+		say(`${label} took ${secondsSince(started)} s`);
+	};
+	return {
+		say,
+		run: (command, args) =>
+			timed(basename(command), args, (onLine) => runByLine(command, args, { cwd: root, onLine })),
+		cargo: (args, env, targetDir) =>
+			timed('cargo', args, (onLine) => runCargoAsync(root, args, { env, targetDir, onLine })),
+		text: () => text,
+	};
+}
+
+/** A build that runs beside the others: the name that its lines and its failure give, and its work. */
+export interface BuildJob {
+	name: string;
+	work: (log: BuildLog) => Promise<void>;
+}
+
+/** The names joined as a sentence lists them: "a", "a and b", "a, b and c". */
+function listed(names: readonly string[]): string {
+	return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : `${names[0]}`;
+}
+
+/**
+ * Runs the builds at the same time, so that the steps of one build that use a single core, such as
+ * wasm-bindgen, wasm-opt and the link, overlap the compile of another. Each build prints its lines as
+ * they come, with its name in front, and a line that says how it ended and after how long. A build
+ * that fails ends its log with its error, and the others still run to their end, so that no command
+ * keeps running after the script has stopped. Then each failed build's whole log prints again in one
+ * piece, to the error output, so that the failure reads without the other builds' lines, and the call
+ * throws, naming each build that failed.
+ */
+export async function runBuilds(
+	builds: readonly BuildJob[],
+	write: LineSink = printLine,
+): Promise<void> {
+	const ends = await Promise.all(
+		builds.map(async ({ name, work }) => {
+			const log = buildLog(name, write);
+			const started = performance.now();
+			let failed = false;
+			try {
+				await work(log);
+			} catch (e) {
+				log.say(`error: ${(e as Error).message}`, true);
+				failed = true;
+			}
+			const seconds = secondsSince(started);
+			write(`[${name}] ${failed ? 'failed after' : 'done in'} ${seconds} s`, failed);
+			return { name, failed, seconds, text: log.text() };
+		}),
+	);
+	const failed = ends.filter((end) => end.failed);
+	for (const { name, seconds, text } of failed)
+		write(
+			`\nthe whole log of the ${name} build, which failed after ${seconds} s:\n${text.trimEnd()}`,
+			true,
+		);
+	const names = failed.map(({ name }) => name);
+	if (names.length === 1) throw new Error(`the ${names[0]} build failed; its whole log is above`);
+	if (names.length > 1)
+		throw new Error(`the ${listed(names)} builds failed; their whole logs are above`);
 }
 
 const git = (args: string[], cwd = root) =>
@@ -672,16 +778,16 @@ export function artifactFiles(folder: string): string[] {
 
 /**
  * Stores the files of `sources`, each under its name, at `base` under `key`, with the record that
- * checks them. A cache that cannot be written is not an error: the build's output is already in
- * place, and the next build writes the entry again.
+ * checks them. Returns false when the cache cannot be written, which is not an error: the build's
+ * output is already in place, and the next build writes the entry again.
  */
 export function writeArtifacts(
 	base: string,
 	key: string,
 	sources: readonly (readonly [string, string])[],
-): void {
+): boolean {
 	const folder = join(base, key);
-	const written = writeFolderAtomic(folder, (staging) => {
+	return writeFolderAtomic(folder, (staging) => {
 		const record: Record<string, string> = {};
 		for (const [name, source] of sources) {
 			const file = join(staging, name);
@@ -690,29 +796,40 @@ export function writeArtifacts(
 		}
 		writeFileSync(join(staging, ARTIFACT_RECORD), `${JSON.stringify(record, null, '\t')}\n`);
 	});
-	// A cache that cannot be written is not an error: the build's output is already in place.
-	if (!written) console.warn('could not write the build cache; the build continues');
+}
+
+/** Stores a build's files in the artifact cache under `key`, then prunes the cache. */
+function storeArtifacts(
+	log: BuildLog,
+	key: string,
+	sources: readonly (readonly [string, string])[],
+): void {
+	if (!writeArtifacts(ARTIFACT_CACHE_BASE, key, sources))
+		log.say('warning: could not write the build cache; the build continues', true);
+	pruneCacheLocked(ARTIFACT_CACHE_BASE);
 }
 
 /**
  * Builds a variant's WebAssembly file and its generated module, which holds `stamp`, the stamp of
  * the Rust sources that the build read. It copies the files of an earlier build of the same inputs
- * from the cache, when there is one, and skips cargo, wasm-bindgen and wasm-opt.
+ * from the cache, when there is one, and skips cargo, wasm-bindgen and wasm-opt. Its lines go to
+ * `log`, which names the build, because it runs at the same time as the other builds (see runBuilds).
  */
-function buildVariant(
+async function buildVariant(
+	log: BuildLog,
 	variant: Variant,
 	bindgen: string,
 	keepNames: boolean,
 	stamp: string,
 	tools: ToolVersions,
 	noCache: boolean,
-): void {
+): Promise<void> {
 	const targetDir = buildFolder(variant);
 	const dest = join(root, OUT_DIR, variant.name);
 	const key = variantKey(variant, stamp, keepNames, tools);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, CORE_ARTIFACTS);
 	if (cached) {
-		console.log(`\nthe ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
+		log.say(`the ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
 		withInstallLock(variant.name, () => {
@@ -720,8 +837,8 @@ function buildVariant(
 		});
 		return;
 	}
-	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
-	cargo(
+	log.say(`building the ${variant.name} WebAssembly file`);
+	await log.cargo(
 		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
 		{ RUSTFLAGS: variant.rustflags },
 		targetDir,
@@ -731,12 +848,12 @@ function buildVariant(
 	const staged = variantStagingFolder(variant);
 	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
-	run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
+	await log.run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
 	const glue = join(staged, 'null3d.js');
 	const text = readFileSync(glue, 'utf8');
 	writeFileSync(glue, stampGlue(variant.releasesInstance ? addReleaseInstance(text) : text, stamp));
 	const wasm = `${staged}/null3d_bg.wasm`;
-	run(join(root, 'node_modules/.bin/wasm-opt'), [
+	await log.run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
 		// wasm-opt drops the name section unless it keeps debug information.
 		...(keepNames ? ['--debuginfo'] : []),
@@ -755,12 +872,11 @@ function buildVariant(
 	// sources match the key. The glue carries the stamp of the sources that the build read, so such a
 	// core fails with E1402 on the next page load and asks for a build.
 	if (!noCache) {
-		if (coreSourcesStamp(root) === stamp) {
-			writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
-			pruneCacheLocked(ARTIFACT_CACHE_BASE);
-		} else
-			console.warn(
-				'the core sources changed while this build ran, so the cache stores nothing for it; build again',
+		if (coreSourcesStamp(root) === stamp) storeArtifacts(log, key, stagedFiles);
+		else
+			log.say(
+				'warning: the core sources changed while this build ran, so the cache stores nothing for it; build again',
+				true,
 			);
 	}
 	// Each build stages in a folder of its own, so the put-in-place step is the only place two builds
@@ -774,16 +890,20 @@ function buildVariant(
  * no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
  * compiler takes longer than the whole build, saves almost nothing after Brotli and makes compiles
  * no faster. It copies the modules of an earlier build of the same inputs from the cache, when
- * there is one.
+ * there is one. Its lines go to `log`, as buildVariant's do.
  */
-function buildToolModules(tools: ToolVersions, noCache: boolean): void {
+async function buildToolModules(
+	log: BuildLog,
+	tools: ToolVersions,
+	noCache: boolean,
+): Promise<void> {
 	const names = TOOL_MODULES.map(({ crate }) => `${crate}.wasm`);
 	const [shaders, assets] = toolInputs(root);
 	const key = toolsKey(shaders, assets, tools);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
-		console.log(
-			"\nthe shader compiler and the asset tool's formats are unchanged, copying them from the cache",
+		log.say(
+			"the shader compiler and the asset tool's formats are unchanged, copying them from the cache",
 		);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
@@ -793,8 +913,8 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
-	console.log("\nbuilding the shader compiler and the asset tool's formats");
-	cargo(
+	log.say("building the shader compiler and the asset tool's formats");
+	await log.cargo(
 		[
 			'build',
 			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
@@ -815,16 +935,16 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 	// modules are not what the key names (see buildVariant, which takes the same care).
 	if (!noCache) {
 		const [nowShaders, nowAssets] = toolInputs(root);
-		if (nowShaders === shaders && nowAssets === assets) {
-			writeArtifacts(
-				ARTIFACT_CACHE_BASE,
+		if (nowShaders === shaders && nowAssets === assets)
+			storeArtifacts(
+				log,
 				key,
 				TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
 			);
-			pruneCacheLocked(ARTIFACT_CACHE_BASE);
-		} else
-			console.warn(
-				"the tools' crate sources changed while this build ran, so the cache stores nothing for it; build again",
+		else
+			log.say(
+				"warning: the tools' crate sources changed while this build ran, so the cache stores nothing for it; build again",
+				true,
 			);
 	}
 }
@@ -921,7 +1041,7 @@ async function writeSizePart(spec: PartSpec): Promise<void> {
 		const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
 		if (reached <= tenths) return;
 		tenths = reached;
-		const seconds = Math.round((performance.now() - started) / 1000);
+		const seconds = secondsSince(started);
 		console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
 	});
 	const path = join(root, SIZE_PARTS_DIR, sizePartFile(spec));
@@ -1071,7 +1191,7 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	} finally {
 		if (group) console.log('::endgroup::');
 	}
-	console.log(`built the base in ${Math.round((performance.now() - started) / 1000)} s`);
+	console.log(`built the base in ${secondsSince(started)} s`);
 	return JSON.parse(readFileSync(kept, 'utf8'));
 }
 
@@ -1136,9 +1256,18 @@ async function main(): Promise<void> {
 		const stamp = coreSourcesStamp(root);
 		const tools = toolVersions(cargoLock);
 		const noCache = options.noCache || cacheOff();
-		for (const variant of VARIANTS)
-			buildVariant(variant, bindgen, options.keepNames, stamp, tools, noCache);
-		if (!options.sizesOnly) buildToolModules(tools, noCache);
+		// Each build has its own Rust build folder, staging folder and install lock, so none waits for
+		// another. The size report reads their files only after every build has ended.
+		const builds: BuildJob[] = VARIANTS.map((variant) => ({
+			name: variant.name,
+			work: (log) => buildVariant(log, variant, bindgen, options.keepNames, stamp, tools, noCache),
+		}));
+		if (!options.sizesOnly)
+			builds.push({ name: 'tools', work: (log) => buildToolModules(log, tools, noCache) });
+		console.log(
+			`\nbuilding ${listed(builds.map(({ name }) => name))} at the same time, each line headed by its build's name`,
+		);
+		await runBuilds(builds);
 	}
 	if (options.pagesOnly) return;
 	if (options.part) return writeSizePart(options.part);
