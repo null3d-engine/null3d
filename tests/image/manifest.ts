@@ -2595,6 +2595,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
 	},
+	// The balls' transmission and thickness vary across them, from the two maps that take the
+	// specular maps' slots: bands of the transmission map's red and bands of the thickness map's
+	// green. A software GPU builds these shaders slowly.
+	{
+		name: 'transmission-maps',
+		sketch: `${TRANSMISSION_SKETCH}?maps`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
 	// A post in front of thick clear water, where the water's bent rays land on the post: the post's

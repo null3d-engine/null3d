@@ -219,7 +219,7 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, material_transmission}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_transmission}
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
@@ -312,6 +312,11 @@ var<private> pixel_material: u32;
 #ifdef TRANSMISSION
 /// The values of the material that lets light through, which the fragment shader reads once.
 var<private> transmission_row: MaterialTransmission;
+
+/// Which family of maps the material keeps in the light map's and the specular maps' slots: 2 when
+/// they hold its transmission and thickness maps, so `with_maps` reads them instead of the
+/// specular maps.
+var<private> layer_maps_kind: u32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -1145,6 +1150,14 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
 #ifdef TRANSLUCENCY
         s.diffuseTransmission *= texel.a;
+#else ifdef TRANSMISSION
+        // A material that lets light through keeps its transmission and thickness maps there
+        // instead, whose red and green scale the transmission and the volume.
+        if layer_maps_kind == 2u {
+            s.transmission *= texel.r;
+        } else {
+            specular_texel.a = texel.a;
+        }
 #else
         specular_texel.a = texel.a;
 #endif
@@ -1153,6 +1166,12 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
+#else ifdef TRANSMISSION
+        if layer_maps_kind == 2u {
+            s.thickness *= texel.g;
+        } else {
+            specular_texel = vec4f(texel.rgb, specular_texel.a);
+        }
 #else
         specular_texel = vec4f(texel.rgb, specular_texel.a);
 #endif
@@ -2062,6 +2081,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     material_row = material_of(in.material);
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
+    layer_maps_kind = layer_maps_kind_of(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);

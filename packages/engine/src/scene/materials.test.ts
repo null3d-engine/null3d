@@ -19,6 +19,8 @@ import {
 	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
+	MAP_SLOT_THICKNESS,
+	MAP_SLOT_TRANSMISSION,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
@@ -42,6 +44,7 @@ import {
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
+	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
@@ -686,6 +689,50 @@ describe('Material.set', () => {
 			'E1217: materials.standard() got diffuseTransmissionMap without diffuseTransmission;',
 		);
 		expect(table).toEqual([]);
+	});
+
+	test('puts the transmission and thickness maps in the specular slots', () => {
+		const { table, maps, features, materials } = fakeCore();
+		materials.standard({
+			transmission: 0.8,
+			thickness: 0.5,
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_TRANSMISSION).toBe(MATERIAL_FEATURE_TRANSMISSION);
+		// They take the two slots that the specular maps leave free, and read the same channels.
+		expect(maps).toEqual([
+			[1, MAP_SLOT_TRANSMISSION, 5, 0],
+			[1, MAP_SLOT_THICKNESS, 6, 1],
+		]);
+		// A material that asks for the specular maps too is refused, never drawn without one.
+		const specular = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				transmissionMap: texture(5),
+				specularIntensityMap: texture(5),
+			}),
+		);
+		expect(specular.message).toStartWith(
+			'E1217: materials.standard() got specularIntensityMap with transmissionMap;',
+		);
+		const opaque = thrown(() => materials.standard({ thicknessMap: texture(5) }));
+		expect(opaque.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap without transmission;',
+		);
+		const leaf = thrown(() =>
+			materials.standard({ transmission: 0.8, diffuseTransmission: 0, thicknessMap: texture(5) }),
+		);
+		expect(leaf.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with diffuseTransmission;',
+		);
+		const painted = thrown(() =>
+			materials.standard({ transmission: 0.8, clearcoat: 1, transmissionMap: texture(5) }),
+		);
+		expect(painted.message).toStartWith(
+			'E1217: materials.standard() got transmissionMap with a clear coat, a sheen, iridescence or anisotropy,',
+		);
+		expect(table).toHaveLength(1);
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {

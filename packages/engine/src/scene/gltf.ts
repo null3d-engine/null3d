@@ -1076,6 +1076,8 @@ class FileMaterials {
 			specularColorMap: map(m.maps.specularColorMap),
 			diffuseTransmissionMap: map(m.maps.diffuseTransmissionMap),
 			diffuseTransmissionColorMap: map(m.maps.diffuseTransmissionColorMap),
+			transmissionMap: map(m.maps.transmissionMap),
+			thicknessMap: map(m.maps.thicknessMap),
 		};
 		const volume = m.transmission ?? m.diffuseTransmission;
 		if (volume) {

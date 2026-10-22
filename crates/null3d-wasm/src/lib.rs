@@ -2396,8 +2396,9 @@ pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
 
 // Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
 // map changes the draw tables, as a new material does.
-/// Gives a material a map in a slot (`constants::map_slot`), or one of a layered material's maps
-/// after the slots, which the shader reads at the second texture coordinates when `second_uv` is 1.
+/// Gives a material a map in a slot (`constants::map_slot`), or one of the maps that take a slot
+/// the material has no other use for, after the slots. The shader reads it at the second texture
+/// coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
     // The engine's own calls name only the slots and layer maps that exist, and the height maps'
