@@ -353,8 +353,9 @@ export class MeshGeometry {
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
 	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
-	 * Skinned and morphed objects, and materials that blend or let light through, draw the base
-	 * mesh. Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
+	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
+	 * skinned object draws a level while the level names the base mesh's own vertices.
+	 * Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
 	 * cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {

@@ -1065,6 +1065,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 		hold: 0,
 	},
+	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
+	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
+	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same
+	// pixels, which proves that a skinned level draws the base mesh's own vertices.
+	{
+		name: 'skinned-lod',
+		sketch: 'tests/pages/sketches/skinned-lod-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
 	// The same file with each level's vertices copied into accessors of its own, which the loader
 	// stores as a separate mesh: a level stored over its base mesh's vertices must draw exactly
 	// what the same level drawn from its own vertex stream drew.
