@@ -12,6 +12,7 @@
 // surface. A separate depth-only program gave other depths in Chrome on a Mac, although both
 // programs mark the position invariant.
 
+import { EngineError } from '../../errors/engine-error';
 import {
 	PERMUTATION_PREPASS,
 	TEMPLATE_ACCUMULATE,
@@ -134,9 +135,34 @@ export const MIN_STAGE_TEXTURE_UNITS = 16;
 /** The slot of a binding of a bind group: its texture unit, uniform block binding point or sampler's place. */
 export function slotOf(group: number, binding: number): number {
 	return (GROUP_BASES[group] as number) + binding;
-}
-/** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
+} /** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
 export const NO_SAMPLER = -1;
+
+/**
+ * The texture units that one stage of a program reads: its distinct texture slots, since two
+ * entries of one slot read one texture. A stage that reads more than
+ * [`MIN_STAGE_TEXTURE_UNITS`] fails to link on the devices that give their stages the fewest
+ * units, so the engine refuses the program before the driver does.
+ */
+export function stageUnitCount(stage: GlslStage): number {
+	const slots = new Set<number>();
+	for (const texture of stage.textures) slots.add(slotOf(texture.group, texture.binding));
+	return slots.size;
+}
+
+/**
+ * Throws E1209 when one stage of a program reads more textures than a WebGL2 stage has units. The
+ * engine hands out the stage's units, so a material that asks for too many hears about it, rather
+ * than the device failing to link a shader that then draws nothing.
+ */
+export function checkStageUnits(stage: GlslStage, stageName: 'vertex' | 'fragment'): void {
+	const units = stageUnitCount(stage);
+	if (units <= MIN_STAGE_TEXTURE_UNITS) return;
+	throw new EngineError(
+		'E1209',
+		`a WebGL2 program reads ${units} textures in its ${stageName} stage, and a stage has ${MIN_STAGE_TEXTURE_UNITS} units: give the material fewer textures.`,
+	);
+}
 
 /**
  * How the backend builds the programs of one render pipeline template: the shader's variants, of
@@ -485,7 +511,11 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 	}
 	gl.useProgram(p.program);
 	const textureUnits: number[] = [];
-	for (const stage of [p.source.vertex, p.source.fragment]) {
+	for (const [stageName, stage] of [
+		['vertex', p.source.vertex],
+		['fragment', p.source.fragment],
+	] as const) {
+		checkStageUnits(stage, stageName);
 		for (const block of stage.uniformBlocks) {
 			const index = gl.getUniformBlockIndex(p.program, block.name);
 			if (index !== gl.INVALID_INDEX)

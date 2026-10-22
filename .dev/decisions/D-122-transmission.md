@@ -109,3 +109,11 @@ Options A throughout. The camera's opaque color goes into a copy with a whole ch
 - Skills: the develop skill's task table, quick reference and shaders reference, and the port skill's materials notes and evals.
 - Tests: the frame graph's and the builders' tests, the image tests `transmission`, `transmission-custom`, `transmission-blend` and `transmission-water`, the parity scene, the transmission spec, the first-use download test, and `--transmission` in `bench:allocation`.
 - Later: the two maps, a Gaussian chain if a scene needs a softer blur, and the back faces of double-sided glass in the copy.
+
+## Addendum, 23 October 2026: where the transmission and thickness maps sit
+
+The "Later" line's two maps are M3-G4. On WebGPU the maps group holds eight textures and the fragment stage already reads the device's sixteen, so the maps must take slots that another map family leaves free. They take the two specular map slots, which the diffuse transmission maps already take for the same reason.
+
+The owner's ruling of 23 October 2026: those slots are the transmission and thickness maps' only when the material uses neither specular map. A material that asks for a specular map beside a transmission or a thickness map is refused with an error naming the conflict, rather than drawing without one of them. A dropped map changes the look and tells no one, and the engine fails loudly elsewhere for the same reason. On WebGL2 both maps fit beside the specular maps, since the lit shader reads 13 of the 16 units that a stage has, so there is no such rule there.
+
+A material that has the coat and sheen maps or the iridescence and anisotropy maps has no free slot either, since those families take the map slots above the specular ones. Their conflict rule gains the transmission and thickness maps when the work lands.
