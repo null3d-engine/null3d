@@ -249,7 +249,7 @@ export interface CoreGlue extends CoreErrors {
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
-	setBatchBounds(batch: number, radius: number): number;
+	setBatchBounds(batch: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
