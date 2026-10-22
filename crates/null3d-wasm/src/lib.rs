@@ -693,9 +693,11 @@ fn effect_maps(e: &Engine) -> EffectMaps {
 #[wasm_bindgen(js_name = setEffect)]
 pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
     with_engine(|e| {
+        let level = (flags >> constants::effect_flag::BLOOM_SHIFT) & 0xff;
         let effect = (template != 0).then_some(Effect {
             template,
             depth: flags & constants::effect_flag::DEPTH != 0,
+            bloom: (level != 0).then_some(level - 1),
             values: *e.effect_values,
             maps: effect_maps(e),
         });

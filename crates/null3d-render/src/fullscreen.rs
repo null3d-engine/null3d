@@ -167,6 +167,7 @@ impl FullscreenPasses {
             inverse_projection: inverse_projection.unwrap_or(IDENTITY),
             values: pass.values,
             drawn: [width, height, height, 1.0],
+            bloom: [0.0; 4],
         };
         if self.uploaded[place] != Some(block) {
             let (at, bytes) = arena.push(bytes_of(&block))?;
@@ -199,6 +200,7 @@ impl FullscreenPasses {
             (ids.first_group + place as u32, layout),
             (ids.buffer, (place * BLOCK) as u32, BLOCK_BYTES as u32),
             (inputs.color, ids.sampler, inputs.depth),
+            0,
         )?;
         self.bound[place] = Some((inputs, layout));
         Ok(())

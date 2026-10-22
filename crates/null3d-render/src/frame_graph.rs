@@ -173,7 +173,7 @@ use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{
-    self, Effect, EffectIds, EffectJoins, EffectMaps, EffectPass, MAX_EFFECTS, Unit,
+    self, Effect, EffectBloom, EffectIds, EffectJoins, EffectMaps, EffectPass, MAX_EFFECTS, Unit,
 };
 use crate::exposure::{ExposureFrame, ExposureIds, ExposurePass};
 use crate::final_pass::{BloomInputs, FinalIds, FinalInputs, FinalPass, FoldInputs, OutlineInputs};
@@ -390,6 +390,7 @@ const FOG_COLOR: &str = "fogColor";
 const NO_EFFECT: Effect = Effect {
     template: 0,
     depth: false,
+    bloom: None,
     values: [0.0; effects::EFFECT_FLOATS],
     maps: EffectMaps::NONE,
 };
@@ -859,6 +860,8 @@ pub(crate) struct FrameGraph {
     effect_count: usize,
     /// A bit for each effect that reads the scene's depth, by its place.
     effect_depths: u32,
+    /// The level of bloom's chain that each effect reads, plus one, or 0 for none, by its place.
+    effect_blooms: [u8; MAX_EFFECTS],
     /// The views whose targets each effect's textures show, by its place, which its pass reads.
     effect_views: [u32; MAX_EFFECTS],
     /// How the sketch joins its effects into groups and folds them into the final pass.
@@ -1161,6 +1164,7 @@ impl FrameGraph {
             effects: [NO_EFFECT; MAX_EFFECTS],
             effect_count: 0,
             effect_depths: 0,
+            effect_blooms: [0; MAX_EFFECTS],
             effect_views: [0; MAX_EFFECTS],
             effect_joins: EffectJoins::default(),
             effect_units: [Unit::default(); MAX_EFFECTS],
@@ -1291,6 +1295,7 @@ impl FrameGraph {
         );
         self.effect_count = 0;
         self.effect_depths = 0;
+        self.effect_blooms = [0; MAX_EFFECTS];
         self.effect_views = [0; MAX_EFFECTS];
         self.unit_count = 0;
         self.folded = None;
@@ -1892,8 +1897,10 @@ impl FrameGraph {
                 bits | (u32::from(effect.depth) << index)
             });
         let mut views = [0; MAX_EFFECTS];
-        for (mask, effect) in views.iter_mut().zip(&effects[..count]) {
+        let mut blooms = [0; MAX_EFFECTS];
+        for ((mask, level), effect) in views.iter_mut().zip(&mut blooms).zip(&effects[..count]) {
             *mask = effect.maps.views;
+            *level = effect.bloom.map_or(0, |level| (level + 1) as u8);
         }
         if count != self.effect_count || depths != self.effect_depths || *joins != self.effect_joins
         {
@@ -1904,6 +1911,11 @@ impl FrameGraph {
         }
         if views != self.effect_views {
             self.effect_views = views;
+            self.declared = false;
+        }
+        if blooms != self.effect_blooms {
+            self.effect_blooms = blooms;
+            self.effect_textures.clear();
             self.declared = false;
         }
         self.effects[..count].copy_from_slice(&effects[..count]);
@@ -3217,6 +3229,14 @@ impl FrameGraph {
             {
                 pass = pass.reads(SCENE_DEPTH);
             }
+            // An effect that reads a level of bloom's chain runs after the step that fills it.
+            for place in unit.places() {
+                if let Some(level) = self.effects.get(place).and_then(|effect| effect.bloom)
+                    && let Some(name) = BLOOM_LEVELS.get(level as usize)
+                {
+                    pass = pass.reads(*name);
+                }
+            }
             let views = self.effect_views[unit.places()]
                 .iter()
                 .fold(0, |mask, views| mask | views);
@@ -3535,12 +3555,20 @@ impl FrameGraph {
         let target = Target::color(bloom::FORMAT);
         let size = self.bloom_chain.size;
         let levels = self.bloom_pass.as_ref().map_or(LEVELS, BloomPass::levels);
+        // An effect that reads the chain runs after it, so the chain reads the scene before that
+        // effect's pass rather than its output.
+        let reads_bloom = self.effect_blooms.iter().any(|&level| level != 0);
+        let source = if reads_bloom {
+            self.scene_output()
+        } else {
+            self.color_output()
+        };
         for level in 0..levels {
             let pass = Pass::new(BLOOM_DOWN[level], PassKind::Fullscreen)
                 .size(bloom::level_size(size, level))
                 .creates(BLOOM_LEVELS[level], target);
             let pass = match level {
-                0 => pass.reads(self.color_output()),
+                0 => pass.reads(source),
                 _ => pass.reads_so_far(BLOOM_LEVELS[level - 1]),
             };
             let pass = self.add(pass, Role::Bloom(level as u8));
@@ -4195,6 +4223,7 @@ impl FrameGraph {
             return Ok(());
         }
         let (colors, depth) = self.effect_textures();
+        let blooms = self.effect_blooms();
         let units = self.effect_units;
         let unit_count = self.unit_count;
         let frame = (self.canvas, self.scale);
@@ -4212,11 +4241,48 @@ impl FrameGraph {
             arena,
             &self.effects[..count],
             (&units[..unit_count], &colors[..unit_count], depth),
+            &blooms[..count],
             frame,
             clock,
             inverse,
             made,
         )
+    }
+
+    /// The bloom level that each effect reads, with the scale and offset that place the image in
+    /// that level's texture: the level's texture, or 0 while the frame does not draw it.
+    fn effect_blooms(&mut self) -> [EffectBloom; MAX_EFFECTS] {
+        let mut levels = [EffectBloom::default(); MAX_EFFECTS];
+        let (canvas, scale, chain) = (self.canvas, self.scale, self.bloom_chain);
+        let (offset, available) = chain.levels(canvas);
+        let active = self
+            .bloom
+            .map_or(0, |bloom| bloom.drawn_levels(offset, available));
+        let rows_from_bottom = self
+            .bloom_pass
+            .as_ref()
+            .is_some_and(BloomPass::rows_from_bottom);
+        let draws = self.bloom_draws();
+        for (level, found) in self.effect_blooms.iter().zip(&mut levels) {
+            let Some(level) = level.checked_sub(1) else {
+                continue;
+            };
+            let map = bloom::level_map(
+                level as usize,
+                canvas,
+                scale,
+                chain.size,
+                chain.halvings,
+                rows_from_bottom,
+            );
+            let texture = if draws && (level as usize) < active {
+                self.sampled_id(BLOOM_LEVELS[level as usize]).unwrap_or(0)
+            } else {
+                0
+            };
+            *found = EffectBloom { texture, map };
+        }
+        levels
     }
 
     /// Records what the motion debug view's step reads while it draws: its objects, its block and
@@ -5546,6 +5612,7 @@ mod tests {
         let effect = Effect {
             template: 64,
             depth: false,
+            bloom: None,
             values: [0.0; effects::EFFECT_FLOATS],
             maps: EffectMaps {
                 views: 1 << 1,
@@ -5674,6 +5741,7 @@ mod tests {
             sampler: 12,
             first_group: 40,
             blank_depth: 904,
+            blank_bloom: 905,
         },
         fullscreen: FullscreenIds {
             buffer: 14,
@@ -6647,6 +6715,7 @@ mod tests {
         let effect = |template, depth| Effect {
             template,
             depth,
+            bloom: None,
             values: [0.0; effects::EFFECT_FLOATS],
             maps: EffectMaps::NONE,
         };
@@ -6767,6 +6836,7 @@ mod tests {
         let effect = Effect {
             template: CUSTOM,
             depth: false,
+            bloom: None,
             values: [0.0; effects::EFFECT_FLOATS],
             maps: EffectMaps::NONE,
         };
@@ -6987,6 +7057,45 @@ mod tests {
     }
 
     #[test]
+    fn an_effect_that_reads_bloom_runs_after_the_chain_which_reads_the_scene_before_it() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let effect = |template, bloom| Effect {
+            template,
+            depth: false,
+            bloom,
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        let chain = [effect(CUSTOM, None), effect(CUSTOM + 1, Some(2))];
+        frames.set_effects(&chain, &EffectJoins::default(), [0.0; 2], None);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.sync(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        // The chain fills every level before the effect that reads one runs, and the effect that
+        // reads none runs before the chain.
+        // The step up into level 2, the level that the second effect reads, writes it last.
+        let last = BLOOM_UP[2];
+        assert!(place("Effect0") < place(BLOOM_DOWN[0]));
+        assert!(place(last) < place("Effect1"));
+        // The final pass still mixes the glow into the effect's output.
+        assert!(place("Effect1") < place("FinalBloom"));
+    }
+
+    #[test]
     fn effects_join_once_their_group_is_built_and_fold_into_the_final_pass() {
         let canvas = (1280, 720);
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
@@ -6998,6 +7107,7 @@ mod tests {
         let effect = |template, depth| Effect {
             template,
             depth,
+            bloom: None,
             values: [0.0; effects::EFFECT_FLOATS],
             maps: EffectMaps::NONE,
         };
@@ -7130,6 +7240,7 @@ mod tests {
         let effect = Effect {
             template: CUSTOM,
             depth: false,
+            bloom: None,
             values: [0.0; effects::EFFECT_FLOATS],
             maps: EffectMaps::NONE,
         };
@@ -7914,6 +8025,7 @@ mod tests {
         let effect = Effect {
             template: CUSTOM,
             depth: false,
+            bloom: None,
             values: [0.0; effects::EFFECT_FLOATS],
             maps: EffectMaps::NONE,
         };

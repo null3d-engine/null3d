@@ -21,6 +21,8 @@ import {
 	LAYOUT_DOF_COMPOSITE,
 	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
+	LAYOUT_EFFECT_BLOOM,
+	LAYOUT_EFFECT_BLOOM_DEPTH_MS,
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_EXPOSURE,
 	LAYOUT_FINAL,
@@ -910,6 +912,23 @@ export class Pipelines {
 			...effectEntries,
 			unfiltered(3, true),
 		]);
+		// An effect that reads a level of bloom's chain binds the level after its depth, which it
+		// samples with its linear sampler.
+		const bloomLevel: GPUBindGroupLayoutEntry = {
+			binding: 4,
+			visibility: fragment,
+			texture: {},
+		};
+		this.defineLayout(LAYOUT_EFFECT_BLOOM, 'effect bloom', [
+			...effectEntries,
+			unfiltered(3),
+			bloomLevel,
+		]);
+		this.defineLayout(LAYOUT_EFFECT_BLOOM_DEPTH_MS, 'effect bloom depth ms', [
+			...effectEntries,
+			unfiltered(3, true),
+			bloomLevel,
+		]);
 		// Depth of field's composite: an effect's entries with the scene's depth, then the blurred
 		// image, which it reads with the linear sampler.
 		const blurred: GPUBindGroupLayoutEntry = { binding: 4, visibility: fragment, texture: {} };
@@ -1374,7 +1393,9 @@ export class Pipelines {
 		if (kind !== undefined) {
 			const effect = kind === 'effect' || kind === 'effectGroup';
 			const [layout, multisampled, label] = effect
-				? [LAYOUT_EFFECT, LAYOUT_EFFECT_DEPTH_MS, `custom effect ${id}`]
+				? shader.bloom
+					? [LAYOUT_EFFECT_BLOOM, LAYOUT_EFFECT_BLOOM_DEPTH_MS, `custom effect ${id}`]
+					: [LAYOUT_EFFECT, LAYOUT_EFFECT_DEPTH_MS, `custom effect ${id}`]
 				: kind === 'effectFold'
 					? [LAYOUT_FINAL_EFFECTS, LAYOUT_FINAL_EFFECTS_DEPTH_MS, `folded effects ${id}`]
 					: [
