@@ -1001,11 +1001,22 @@ class FileMaterials {
 			options.clearcoatNormalScale = [scale, tangents ? scale : -scale];
 			options.sheenColor = layers.sheenColor;
 			options.sheenRoughness = layers.sheenRoughness;
+			// A material pays nothing for an extension that its file does not give.
+			if (layers.iridescence !== undefined) options.iridescence = layers.iridescence;
+			if (layers.iridescenceIor !== undefined) options.iridescenceIor = layers.iridescenceIor;
+			if (layers.iridescenceThicknessRange !== undefined)
+				options.iridescenceThicknessRange = layers.iridescenceThicknessRange;
+			if (layers.anisotropy !== undefined) options.anisotropy = layers.anisotropy;
+			if (layers.anisotropyRotation !== undefined)
+				options.anisotropyRotation = layers.anisotropyRotation;
 			options.clearcoatMap = map(m.maps.clearcoatMap);
 			options.clearcoatRoughnessMap = map(m.maps.clearcoatRoughnessMap);
 			options.clearcoatNormalMap = map(m.maps.clearcoatNormalMap);
 			options.sheenColorMap = map(m.maps.sheenColorMap);
 			options.sheenRoughnessMap = map(m.maps.sheenRoughnessMap);
+			options.iridescenceMap = map(m.maps.iridescenceMap);
+			options.iridescenceThicknessMap = map(m.maps.iridescenceThicknessMap);
+			options.anisotropyMap = map(m.maps.anisotropyMap);
 		}
 		return materials.standard(options);
 	}
@@ -1148,6 +1159,14 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return layers ? Float32Array.from(layers.sheenColor) : new Float32Array(3);
 			case 'sheenRoughness':
 				return one(layers?.sheenRoughness);
+			case 'iridescence':
+				return one(layers?.iridescence);
+			case 'iridescenceIor':
+				return one(layers?.iridescenceIor);
+			case 'anisotropy':
+				return one(layers?.anisotropy);
+			case 'anisotropyRotation':
+				return one(layers?.anisotropyRotation);
 		}
 		return undefined;
 	}

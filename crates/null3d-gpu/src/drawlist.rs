@@ -1670,11 +1670,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: fifteen `vec4f`s. The row holds the base
-    /// values, the transmission's values, the attenuation's, the clear coat's, the sheen's, the
-    /// diffuse transmission's and the subsurface scatter's. On WebGL2 each row is a row of fifteen
-    /// `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 240;
+    /// Bytes of one material's row in the material table: seventeen `vec4f`s. The row holds the
+    /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's and the
+    /// anisotropy's. On WebGL2 each row is a row of seventeen `RGBA32_FLOAT` texels of a data
+    /// texture.
+    pub const MATERIAL_BYTES: u32 = 272;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;

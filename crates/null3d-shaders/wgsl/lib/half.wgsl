@@ -4,6 +4,9 @@ enable f16;
 #import null3d::color::{AGX_PUNCHY_POWER, AGX_PUNCHY_SATURATION, agx_contrast, luminance}
 #import null3d::color::{LINEAR_REC2020_TO_LINEAR_SRGB, LINEAR_SRGB_TO_LINEAR_REC2020}
 #import null3d::lighting::{PbrMaterial, Reflected}
+#ifdef COAT_SHEEN
+#import null3d::lighting::{d_ggx_anisotropic, v_ggx_smith_correlated_anisotropic}
+#endif
 
 // The engine's color math at half precision, for the builds of the HALF permutation bit: direct
 // and ambient light on a PBR surface, the tone mapping curves and sRGB encoding. Each function
@@ -86,14 +89,42 @@ fn direct_light(
     let n_dot_h = saturate(dot(n, half_dir));
     let fresnel = fresnel_weight(saturate(dot(v, half_dir)));
     let grazing = f16(m.specular_grazing) * fresnel;
-    let specular = vec3h(m.specular_blended) * (1.0h - fresnel) + grazing;
+    var specular = vec3h(m.specular_blended) * (1.0h - fresnel) + grazing;
     let dielectric = vec3h(m.specular) * (1.0h - fresnel) + grazing;
     let roughness = max(m.roughness, ROUGHNESS_FLOOR);
     let alpha = f16(roughness * roughness);
-    let brdf = min(
+    var brdf = min(
         smith_visibility(alpha, n_dot_l, n_dot_v) * ggx(alpha, n_dot_h, cross(n, half_dir)),
         MAX,
     );
+#ifdef COAT_SHEEN
+    specular = mix(specular, vec3h(m.iridescence_fresnel), f16(m.iridescence));
+    if m.anisotropy > 0.0 {
+        // The anisotropic terms run at full precision, then narrow once: their squared terms pass
+        // the largest 16-bit float near a highlight's peak.
+        let tangent = m.anisotropy_t;
+        let bitangent = m.anisotropy_b;
+        let alpha_b = m.roughness * m.roughness;
+        let visibility = v_ggx_smith_correlated_anisotropic(
+            m.alpha_t,
+            alpha_b,
+            dot(tangent, to_view),
+            dot(bitangent, to_view),
+            dot(tangent, to_light),
+            dot(bitangent, to_light),
+            saturate(dot(normal, to_view)),
+            saturate(dot(normal, to_light)),
+        );
+        let distribution = d_ggx_anisotropic(
+            m.alpha_t,
+            alpha_b,
+            saturate(dot(normal, normalize(to_light + to_view))),
+            dot(tangent, normalize(to_light + to_view)),
+            dot(bitangent, normalize(to_light + to_view)),
+        );
+        brdf = f16(min(visibility * distribution, f32(MAX)));
+    }
+#endif
     let irradiance = n_dot_l * half_color(light);
     let diffuse = irradiance * (INV_PI * vec3h(m.diffuse)) * (1.0h - dielectric);
     let reflected = irradiance * specular * brdf * vec3h(compensation);
@@ -103,7 +134,11 @@ fn direct_light(
 /// The diffuse light that a PBR surface reflects from ambient, hemisphere and probe light, as
 /// `null3d::lighting::indirect_diffuse` gives it.
 fn indirect_diffuse(m: PbrMaterial, irradiance: vec3f, dfg: vec2f) -> vec3f {
+#ifdef COAT_SHEEN
+    let f0 = vec3h(mix(m.specular, m.iridescence_reflectance, m.iridescence));
+#else
     let f0 = vec3h(m.specular);
+#endif
     let split = vec2h(dfg);
     let single = f0 * split.x + f16(m.specular_grazing) * split.y;
     let missing = 1.0h - (split.x + split.y);
