@@ -367,6 +367,7 @@ The faults that the reviews of 22 October 2026 found, first in run 39744891020, 
 - The key of Playwright's browser cache hashed the test and benchmark package files, which changed 10 times in a month, while the browser changes only with Playwright's version. No job filled the cache ahead of the browser jobs, so after each change, and in the first full run of a branch, every browser job downloaded Chrome and its packages at once: about 45 s each in run 39813231961, with one 20-second stall at the mirror.
 - The first benchmark shard took 24.3 minutes in run 39854225392 and ended the whole run, while the others took 6.6 to 13.9. Its split was made by hand from a measurement of 11 October, and its six scenes had grown slower since. A split by hand needs a new measurement when its tests grow. S1's three scenes now run in a shard of their own.
 - One showcase HUD test checked the sky and then the fog for 20.9 minutes in the same run, the longest browser job. The two checks share only the page's setup, 204 s of it, so each is now a test with a job of its own.
+- The `load-pages` job's artifact held the startup pages and the benchmark pages, 8.52 GB in 19,827 files, of which 7,271 contents and 2.90 GB were distinct: each page's build writes the whole shader set. Its 51 downloads took 86 runner-minutes in run 39854225392. The job now links equal files and ships one archive that holds each content once ([D-222](decisions/D-222-load-pages-once.md#update-23-october-2026-each-content-once)).
 - A pass key that held all of `tools/lib` rebuilt every shard after a change to the size report (fixed in e970ab6a1). A key that left out the compiler's runner script, and the WGSL that the packing test compiles, reused a pass after a change to them.
 
 The ways to reuse work:
@@ -391,7 +392,7 @@ Before you add or change a job or a step, answer these questions:
 6. Does it use every core? Does its split follow measured cost, and does the costliest unit split?
 7. Does it need to run on every push? Gate it on the `changes` job, or let it reuse its pass, when its inputs seldom change.
 8. Does the change touch a file that a cache's key covers, without changing what the cache holds? Keep test-only code in the tests, outside the key. A list that two shader tests shared from the shader library changed the compiler's stamp, and every shader had to compile again, on the Mac and in CI ([D-218](decisions/D-218-efficient-ci-jobs.md)).
-9. When it hands files to other jobs, does the artifact's compression suit them? An artifact that many jobs download keeps the default level. The fastest level suits one large upload that the critical path waits for and that a few jobs download, such as `load-pages` ([D-218](decisions/D-218-efficient-ci-jobs.md)).
+9. When it hands files to other jobs, does the artifact hold a content more than once? Builds that share files ship them once, through hard links in one archive. Does its compression suit them? An artifact that many jobs download keeps the default level. The fastest level suits one large upload that the critical path waits for and that a few jobs download. A file that `zstd` compressed on every core uploads at level 0, as `load-pages` does ([D-218](decisions/D-218-efficient-ci-jobs.md)).
 
 How to review a run:
 

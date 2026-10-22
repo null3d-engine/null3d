@@ -1194,10 +1194,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/load-pages
         with:
-          name: load-pages
-          path: target
+          mode: download
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
@@ -1247,10 +1246,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/load-pages
         with:
-          name: load-pages
-          path: target
+          mode: download
       - uses: ./.github/actions/playwright-chromium
       # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/samples
@@ -1288,16 +1286,9 @@ jobs:
           mode: download
       - name: The benchmark pages and the startup pages, built for production
         run: bun tests/lib/load-server.ts
-      # Gigabytes of scripts, which compress well, so the upload takes the fastest level.
-      - uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/load-pages
         with:
-          name: load-pages
-          path: |
-            target/bench-pages/
-            target/startup-pages/
-          compression-level: 1
-          if-no-files-found: error
-          retention-days: 1
+          mode: upload
 
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
@@ -1347,10 +1338,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/load-pages
         with:
-          name: load-pages
-          path: target
+          mode: download
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
