@@ -489,7 +489,8 @@ describe('post.set', () => {
 		output.set({ sharpen: false });
 		expect(sharpens).toEqual([
 			[true, 0.5],
-			[false, 0.25],
+			// A value of 0 turns the sharpening off and keeps the strength the block holds.
+			[false, 0.5],
 			[true, 0.25],
 			[false, 0.25],
 		]);
