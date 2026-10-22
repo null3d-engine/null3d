@@ -500,6 +500,25 @@ export interface PrimitiveData {
 	 * with the blocker to draw in its place when the file holds one.
 	 */
 	occluder?: true | BlockerData;
+	/**
+	 * The tree of cluster patches over the primitive's triangles (`NULL3D_clusters`), which views
+	 * draw patch by patch where their error lets them.
+	 */
+	patches?: PatchesData;
+}
+
+/**
+ * A tree of cluster patches: every patch's triangles, its bounding sphere and its error, as the
+ * asset tool builds them. `indices` holds every patch's triangles one patch after another, and
+ * each patch's `first` and `count` name its run of them. `words` holds each patch's first index,
+ * index count, its parent's place plus one (0 for the root) and its error's bits, four integers
+ * each; `bounds` holds its centre and radius, four floats each.
+ */
+export interface PatchesData {
+	indices: Uint32Array;
+	bounds: Float32Array;
+	words: Uint32Array;
+	root: number;
 }
 
 /**
@@ -522,6 +541,8 @@ export interface BlockerData {
 export const MESH_BVH = 'NULL3D_mesh_bvh';
 /** The extension that makes a primitive block the view, with a blocker mesh or with its own. */
 export const OCCLUDER = 'NULL3D_occluder';
+/** The extension that holds a primitive's tree of cluster patches. */
+export const CLUSTERS = 'NULL3D_clusters';
 
 /**
  * A primitive that carries an extension which an add-on's handler reads. The loader hands the
@@ -1584,7 +1605,7 @@ const ATTRIBUTES: readonly [
 	name: string,
 	field: Exclude<
 		keyof PrimitiveData,
-		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder'
+		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
 	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
@@ -1785,6 +1806,14 @@ function parsePrimitive(
 			read,
 			budget,
 		);
+	if (extensions?.[CLUSTERS] !== undefined)
+		data.patches = patchesOf(
+			entry(extensions[CLUSTERS], `${what}'s ${CLUSTERS}`),
+			what,
+			read,
+			vertices,
+			budget,
+		);
 	return data;
 }
 
@@ -1795,6 +1824,53 @@ function storedTree(extension: Entry, what: string, read: Reader): Uint8Array {
 		broken(`${what}'s stored tree is not an accessor of unsigned 32-bit integers`);
 	const { buffer, byteOffset, byteLength } = data.array;
 	return new Uint8Array(buffer, byteOffset, byteLength);
+}
+
+/**
+ * A primitive's tree of cluster patches: its indices, the patches' spheres and their records.
+ * The tree is refused when it does not cover the primitive's vertices or its own patches, so a
+ * broken file draws the whole mesh instead of patches that name nothing.
+ */
+function patchesOf(
+	extension: Entry,
+	what: string,
+	read: Reader,
+	vertices: number,
+	budget: FileBudget,
+): PatchesData {
+	const indices = read(Number(extension.indices), `${what}'s patch indices`);
+	const bounds = read(Number(extension.bounds), `${what}'s patch bounds`);
+	const words = read(Number(extension.patches), `${what}'s patches`);
+	if (indices.componentType !== UNSIGNED_INT || indices.components !== 1)
+		broken(`${what}'s patch indices are not an accessor of unsigned 32-bit integers`);
+	if (bounds.componentType !== FLOAT || bounds.components !== 4)
+		broken(`${what}'s patch bounds are not four floats per patch`);
+	if (words.componentType !== UNSIGNED_INT || words.components !== 4)
+		broken(`${what}'s patches are not four unsigned integers per patch`);
+	if (bounds.count !== words.count)
+		broken(`${what} has ${words.count} patches and ${bounds.count} patch bounds`);
+	const root = count(Number(extension.root), `${what}'s patch root`);
+	if (words.count === 0 || root >= words.count)
+		broken(`${what}'s patch tree has no root among its patches`);
+	budget.take(indices.count * 4 + words.count * 32, `${what}'s patches`);
+	const patch = words.array as Uint32Array;
+	for (let k = 0; k < words.count; k++) {
+		const first = patch[k * 4] as number;
+		const size = patch[k * 4 + 1] as number;
+		const parent = patch[k * 4 + 2] as number;
+		if (size === 0 || size % 3 !== 0 || first + size > indices.count)
+			broken(`${what}'s patch ${k} names no whole triangles of its tree`);
+		if (parent > words.count || parent === k + 1)
+			broken(`${what}'s patch ${k} names the patch ${parent} as its parent`);
+	}
+	for (const i of indices.array)
+		if (i >= vertices) broken(`${what} has the patch index ${i}, past its ${vertices} vertices`);
+	return {
+		indices: indices.array as Uint32Array,
+		bounds: bounds.array as Float32Array,
+		words: patch,
+		root,
+	};
 }
 
 /** A primitive's blocker, or true when the primitive blocks with its own mesh. */
