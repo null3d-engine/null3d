@@ -2203,7 +2203,9 @@ impl SceneSettings {
         band: f32,
     ) -> LevelRule {
         let lens = view.and_then(|view| Some((view, view.camera()?.1)));
-        let (Some((view, lens)), true) = (lens, self.levels.any()) else {
+        // A scene with a tree of cluster patches picks patches by the same rule, even while no mesh
+        // has whole levels.
+        let (Some((view, lens)), true) = (lens, self.levels.any() || self.patches.any()) else {
             return LevelRule::default();
         };
         let (width, height) = view.draw_size(canvas, self.level_scale);
