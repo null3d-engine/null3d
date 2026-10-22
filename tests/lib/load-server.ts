@@ -19,6 +19,7 @@ import {
 	immutableAssetsMiddleware,
 } from '../../packages/vite-plugin/src/index.ts';
 import { acquirePageBuildLock, secondsSince } from '../../tools/lib/build-cache.ts';
+import { coreFromOtherSources } from '../../tools/lib/core-sources.ts';
 import {
 	type DownloadedFile,
 	type Downloads,
@@ -41,6 +42,8 @@ const BENCH_CONFIG = 'bench/vite.pages.config.ts';
 
 /** Runs `vite build` in the repository copy at `root`, with `env` added, under the page build lock. */
 function viteBuild(root: string, args: readonly string[], env: Record<string, string> = {}): void {
+	const stale = coreFromOtherSources(root);
+	if (stale) throw new Error(stale);
 	const release = acquirePageBuildLock();
 	const build = spawnSync('bunx', ['vite', 'build', ...args], {
 		cwd: root,
