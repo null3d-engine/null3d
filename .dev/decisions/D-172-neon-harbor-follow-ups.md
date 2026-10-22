@@ -1,12 +1,12 @@
-# D-172: Rive City's techniques become M3's first tasks
+# D-172: Neon Harbor's techniques become M3's first tasks
 
 Status: decided by the owner on 14 October 2026. Date: 2026-10-14. Task: M2-R37, M2-EX43, M3-A1 to M3-C2.
 
-Summary: A study of Rive City, a flying-car city that Rive's runtime draws in the browser, found about ten techniques that make its look. Its 3D scene also crashed once its script memory passed 2 GB. The owner ruled that the engine gaps, add-ons and two flagship demos from the study are M3's first tasks. Lights, Swarm and City leave M2's showcase tier for the M3 flagship. The study's demo touches join M2-EX43, and the fix for signed memory addresses is an M2 task (M2-R37).
+Summary: A study of Neon Harbor, a flying-car city that a showcase page draws in the browser, found about ten techniques that make its look. Its 3D scene also crashed once its script memory passed 2 GB. The owner ruled that the engine gaps, add-ons and two flagship demos from the study are M3's first tasks. Lights, Swarm and City leave M2's showcase tier for the M3 flagship. The study's demo touches join M2-EX43, and the fix for signed memory addresses is an M2 task (M2-R37).
 
 ## Question
 
-Which of the techniques that Rive City uses should null3D build, in which milestone, and how do they relate to the M2 work in progress?
+Which of the techniques that Neon Harbor uses should null3D build, in which milestone, and how do they relate to the M2 work in progress?
 
 ## Rule
 
@@ -14,9 +14,9 @@ The owner rules from the study's findings and from the overlap with M2's tasks.
 
 ## Data
 
-Rive City (studied on 14 October 2026) is not a 3D engine. Rive's 2D runtime (`@rive-app/webgl2` 2.44.2) plays one 29.6 MB file, and a script module inside the file draws the city through Rive's low-level GPU interface. That interface has the shape of WebGPU, and Rive translates its WGSL shaders at export for each GPU path, as null3D's build does ([D-13](D-13-shader-variants.md)). The page runs on the main thread.
+Neon Harbor (studied on 14 October 2026) is not a 3D engine. A 2D animation runtime plays one 29.6 MB file, and a script module inside the file draws the city through the runtime's low-level GPU interface. That interface has the shape of WebGPU, and the runtime translates its WGSL shaders at export for each GPU path, as null3D's build does ([D-13](D-13-shader-variants.md)). The page runs on the main thread.
 
-| Figure | Rive City |
+| Figure | Neon Harbor |
 | --- | --- |
 | City geometry | 251,560 triangles in 387 objects, 60 MB once inflated (426 ms on the main thread) |
 | Moving things | 8,437 instanced cars moved in the vertex shader, 322 steam vents, 173 holograms, 192 billboards |
@@ -85,7 +85,7 @@ The owner ruled on 14 October 2026:
 - M2-R37 converts every address read from the shared slots to an unsigned number (`>>> 0`). It adds a static check against signed address reads. It also adds a browser test whose page asks for a 4096 MiB maximum and grows the engine's memory past 2 GiB. [AGENTS.md](../../AGENTS.md#hard-rules) states the rule now (hard rule 31). [Addresses above 2 GiB](../implementation-notes.md#addresses-above-2-gib) explains it.
 - M2-EX8 shrinks to Creek and Town. M2-EX43 gains the demo touches. M3-B1 to M3-B3 later turn the touches' shader code into add-ons and move the demos onto them.
 - The add-ons follow the add-on rule: each loads its shaders on first use, and costs nothing when a page does not import it.
-- Rive's shaders were read only to learn the techniques. null3D's code is written from the techniques, never copied from Rive's files.
+- The runtime's shaders were read only to learn the techniques. null3D's code is written from the techniques, never copied from the runtime's files.
 
 ## Addendum, 15 October 2026: example add-ons
 
