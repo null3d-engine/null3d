@@ -58,6 +58,14 @@ const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
 pub(super) const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
+/// Floats of one source's distance range in the ranges texture: its start and its end, then two
+/// words that nothing reads, which fill the texture's texel.
+const RANGE_FLOATS: usize = sizes::RANGE_TEXELS as usize * 4;
+
+/// Appends one source's distance range to the ranges texture's data, as its texel.
+fn push_range(ranges: &mut Vec<f32>, start: f32, end: f32) {
+    ranges.extend_from_slice(&[start, end, 0.0, 0.0]);
+}
 
 // What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
 // group of its material's map, the mesh page of its mesh's first part, its engine mesh id or a
@@ -1168,8 +1176,12 @@ impl Layout {
         if self.owns_sources() {
             self.source_layers
                 .extend_from_slice(&scene.layers()[..scene_rows as usize]);
-            self.source_ranges
-                .extend_from_slice(&scene.draw_ranges()[..scene_rows as usize * 2]);
+            for range in scene.draw_ranges()[..scene_rows as usize * 2]
+                .as_chunks::<2>()
+                .0
+            {
+                push_range(&mut self.source_ranges, range[0], range[1]);
+            }
         }
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
@@ -1190,16 +1202,14 @@ impl Layout {
                 match batch_ranges(batches, batch) {
                     RowRanges::One(range) => {
                         for _ in 0..batch.capacity() {
-                            self.source_ranges
-                                .extend_from_slice(&[range.start, range.end]);
+                            push_range(&mut self.source_ranges, range.start, range.end);
                         }
                     }
                     RowRanges::Rows(values) => {
+                        let ranges = RowRanges::Rows(values);
                         for row in 0..batch.capacity() as usize {
-                            match values.get(2 * row..2 * row + 2) {
-                                Some(range) => self.source_ranges.extend_from_slice(range),
-                                None => self.source_ranges.extend_from_slice(&[0.0, f32::INFINITY]),
-                            }
+                            let range = ranges.range(row);
+                            push_range(&mut self.source_ranges, range.start, range.end);
                         }
                     }
                 }
@@ -1434,7 +1444,7 @@ impl Layout {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
-        let count = (self.source_ranges.len() / 2) as u32;
+        let count = (self.source_ranges.len() / RANGE_FLOATS) as u32;
         let needed = count.div_ceil(sizes::RANGES_PER_TEXTURE_ROW);
         let limit = BUDGET[Limit::TextureDimension2D as usize];
         let texture = DataTexture::ranges(ids::INSTANCE_RANGES, 1);
@@ -1711,6 +1721,20 @@ mod tests {
     use crate::geometry::box_geometry;
     use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
+
+    /// The culling shader reads each source's range from the start of one texel of the ranges
+    /// texture, so the data must give every source a whole texel: its start and end, then the
+    /// words that nothing reads. Data of two floats per source lands every second source's range
+    /// in the wrong texel and reads past the block.
+    #[test]
+    fn every_sources_range_fills_a_whole_texel_of_the_ranges_texture() {
+        let mut ranges = Vec::new();
+        push_range(&mut ranges, 12.0, 30.0);
+        push_range(&mut ranges, 0.0, f32::INFINITY);
+        assert_eq!(ranges.len(), 2 * RANGE_FLOATS);
+        assert_eq!(ranges.len() * 4, 2 * 16);
+        assert_eq!(ranges, [12.0, 30.0, 0.0, 0.0, 0.0, f32::INFINITY, 0.0, 0.0]);
+    }
 
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
