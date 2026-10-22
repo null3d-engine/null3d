@@ -438,7 +438,7 @@ describe('budgetProblems', () => {
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
 		expect(START_BUDGET.brotli).toBe(182 * 1024);
-		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
+		expect(LATER_BUDGET.brotli).toBe(17 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
 
@@ -468,13 +468,13 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(49 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(52 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
 		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+			`js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 
@@ -487,8 +487,8 @@ describe('budgetProblems', () => {
 			},
 		];
 		expect(COMBOS_BUDGET.raw).toBe(96 * 1024);
-		expect(COMBOS_BUDGET.gzip).toBe(LATER_BUDGET.gzip);
-		expect(COMBOS_BUDGET.brotli).toBe(LATER_BUDGET.brotli);
+		expect(COMBOS_BUDGET.gzip).toBe(24 * 1024);
+		expect(COMBOS_BUDGET.brotli).toBe(16 * 1024);
 		// A table past the shared raw figure is within its own, which is what the translucency
 		// builds asked for.
 		const within = new Map([
@@ -527,7 +527,7 @@ describe('budgetProblems', () => {
 			plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }),
 		);
 		expect(budgetProblems(within, downloads, later)).toEqual([
-			'js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is 50,177 bytes after Brotli, over its 49 KB budget set in tools/lib/size-report.ts',
+			`js/shader-paragraphs-glsl-draw-index.js, the shader builds of a feature that loads on first use, is ${(FIRST_USE_SHADER_BUDGET.brotli + 1).toLocaleString('en-US')} bytes after Brotli, over its ${FIRST_USE_SHADER_BUDGET.brotli / 1024} KB budget set in tools/lib/size-report.ts`,
 		]);
 	});
 });
