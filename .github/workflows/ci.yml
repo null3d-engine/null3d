@@ -677,9 +677,13 @@ jobs:
       - uses: actions/checkout@v5
       # The shader compiler comes from the shader crates and the build tool, and the first shard's
       # other tests read the Vite plugin and the packages' install as well.
+      # The key names the files that decide what the compiler produces, not the whole of tools/lib:
+      # that folder holds the size report, the limits report and the cache's own rules, and a change
+      # to any of them used to purge this pass and rebuild every shard cold (22 October 2026). A tool
+      # module that the shader build starts to import belongs in this list.
       - name: The key of this shard's inputs
         id: inputs
-        run: echo "key=passed-v2-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/**', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v3-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
