@@ -1,0 +1,59 @@
+// The vehicle of a traffic lane: its place along the lane, and the lights it shows from its own
+// coordinates. The row's values hold its start offset, its speed, the lane's length and a tint. A
+// row's heading turns the movement and the light areas together, so the same mesh drives every way.
+
+struct Uniforms {
+    // The row's heading, in radians about +y, which turns local +Z onto the lane.
+    heading: f32,
+    // How brightly the skirt under the belly glows.
+    glow: f32,
+    // The hull's half width, its height and its half length, in meters.
+    size: vec3f,
+    body: vec3f,
+    tail: vec3f,
+    nose: vec3f,
+    skirt: vec3f,
+}
+
+// The row's place along its lane, from its start offset and the clock, wrapped at the lane's end.
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let span = max(object.values.z, 1.0);
+    let travelled = object.values.x + frame.time * object.values.y;
+    return vec3f(0.0, 0.0, travelled - span * floor(travelled / span));
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    // The vehicle's own axes, from its heading: its length runs along local +Z.
+    let c = cos(material.heading);
+    let sn = sin(material.heading);
+    let d = input.worldPosition - object.position;
+    let lx = c * d.x - sn * d.z;
+    let ly = d.y;
+    let lz = sn * d.x + c * d.z;
+    let half = max(material.size, vec3f(0.001));
+    let tint = object.values.w;
+
+    // The paint takes a little of the row's tint, so a lane is not one flat color.
+    s.baseColor = mix(material.body, material.body * 2.4, 0.25 * tint);
+    s.metalness = 0.7;
+    s.roughness = 0.34;
+    s.emissive = vec3f(0.0);
+
+    // Tail lights: two bars, and a thin strip above them.
+    let rear = 1.0 - step(-half.z * 0.86, lz);
+    let bars = rear * step(half.y * 0.18, ly) * step(ly, half.y * 0.4)
+        * step(half.x * 0.17, abs(lx)) * step(abs(lx), half.x * 0.62);
+    s.emissive += material.tail * bars * 6.0;
+    let strip = rear * step(half.y * 0.42, ly) * step(ly, half.y * 0.5)
+        * step(abs(lx), half.x * 0.75);
+    s.emissive += material.tail * strip * 4.0;
+    // Nose lamps.
+    let front = step(half.z * 0.84, lz) * step(half.y * 0.16, ly) * step(ly, half.y * 0.34)
+        * step(half.x * 0.1, abs(lx)) * step(abs(lx), half.x * 0.52);
+    s.emissive += material.nose * front * 4.5;
+    // The hover skirt glows under the belly, in the vehicle's own tint.
+    let skirt = step(ly, half.y * 0.15) * step(half.y * 0.02, ly);
+    s.emissive += mix(material.skirt, material.tail, tint * 0.5) * skirt * material.glow;
+    return s;
+}

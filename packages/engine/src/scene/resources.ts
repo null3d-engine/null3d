@@ -157,7 +157,10 @@ export interface ResourceUsers {
  * @category api/geometry
  */
 export interface MeshLevel {
-	/** The simpler mesh. It has the base mesh's vertex attributes, and draws with its material. */
+	/**
+	 * The simpler mesh. It has the base mesh's vertex attributes, and draws with the object's
+	 * material or the level's own.
+	 */
 	mesh: MeshGeometry;
 	/**
 	 * The level's error: the largest distance between its surface and the base mesh's, in the
@@ -172,6 +175,13 @@ export interface MeshLevel {
 	 * at a higher render scale, the level switches in farther away.
 	 */
 	distance?: number;
+	/**
+	 * The material that the level's surface draws with, where it shades more cheaply than the base
+	 * mesh's. A level without one draws with the material of the level before it, and the base
+	 * level draws with the object's or the batch's own material. Give a far level a material
+	 * without a normal map, or with an opaque mask in place of an alpha-tested one.
+	 */
+	material?: Material;
 }
 
 /**
@@ -311,11 +321,13 @@ export class MeshGeometry {
 	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
 	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
 	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
-	 * `lodThreshold` quality setting. A bound that covers fewer pixels than the threshold draws
-	 * nothing, so the mesh's last level holds no geometry. The shadow maps pick a coarser level
-	 * still. An empty list takes the levels away. Skinned and morphed objects, and materials that
-	 * blend or let light through, draw the base mesh. Destroying a level's mesh takes every level
-	 * away. Throws E1221 for levels the mesh cannot take, and E1101 for a destroyed mesh.
+	 * `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
+	 * more cheaply; a level without one draws with the level before's material. A bound that
+	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
+	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
+	 * Skinned and morphed objects, and materials that blend or let light through, draw the base
+	 * mesh. Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
+	 * cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
 		const call = 'mesh.setLevels';
@@ -358,9 +370,25 @@ export class MeshGeometry {
 				);
 		const count = levels.length;
 		const ids = levels.map((level) => level.mesh.id);
-		const at = this.core.checkGrowth(this.core.glue.meshArrays(2 * count), call);
+		const materials = levels.map((level, k) => {
+			const { material } = level;
+			if (!material) return 0;
+			if (!material.live)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with a material that is destroyed.`,
+				);
+			if (material.core !== this.core)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with a material from another engine.`,
+				);
+			return material.id;
+		});
+		const at = this.core.checkGrowth(this.core.glue.meshArrays(3 * count), call);
 		this.core.u32(at, count).set(ids);
 		this.core.f32(at + 4 * count, count).set(errors);
+		this.core.u32(at + 8 * count, count).set(materials);
 		this.core.check(
 			this.core.glue.setMeshLevels(id, count, options.fade ?? true),
 			call,
@@ -1492,6 +1520,12 @@ export interface CompiledWgsl {
 	 * `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader.
 	 */
 	readonly kind: 'material' | 'effect' | 'toneCurve' | 'shader';
+	/**
+	 * True for a draw shader: a custom material's `@vertex` entry point takes the vertex and
+	 * instance indices and no mesh attribute, and `scene.createVertexDraw` draws it from a vertex
+	 * count.
+	 */
+	readonly meshless?: boolean;
 }
 
 /**
@@ -1605,6 +1639,7 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		variants: compiled.variants,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
+		...(compiled.meshless === true && { meshless: true }),
 		...(compiled.sceneDepth === true && { sceneDepth: true }),
 		...(compiled.builds && { builds: true }),
 	};

@@ -24,6 +24,7 @@ use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
+use null3d_render::vertex_draws;
 use null3d_render::{debug_view, fog};
 
 /// Fields of `sceneArrays`.
@@ -682,7 +683,7 @@ pub mod query {
     pub const RAY_FLOATS: u32 = 6;
 
     /// Numbers per hit record.
-    pub const HIT_FLOATS: u32 = 11;
+    pub const HIT_FLOATS: u32 = 14;
     /// The object's slot, or 0 for a batch row.
     pub const HIT_SLOT: u32 = 0;
     /// The batch's id, or 0 for an object.
@@ -697,6 +698,10 @@ pub mod query {
     pub const HIT_POINT: u32 = 5;
     /// The triangle's unit normal in the world, facing the ray's origin, three numbers.
     pub const HIT_NORMAL: u32 = 8;
+    /// The first texture coordinates at the hit, two numbers: NaN when the hit has none.
+    pub const HIT_UV: u32 = 11;
+    /// 1 when the hit carries first texture coordinates, 0 when it does not.
+    pub const HIT_HAS_UV: u32 = 13;
 
     /// The closest hit.
     pub const CLOSEST: u32 = 0;
@@ -865,6 +870,8 @@ pub fn typescript() -> String {
                 ("HIT_DISTANCE", query::HIT_DISTANCE),
                 ("HIT_POINT", query::HIT_POINT),
                 ("HIT_NORMAL", query::HIT_NORMAL),
+                ("HIT_UV", query::HIT_UV),
+                ("HIT_HAS_UV", query::HIT_HAS_UV),
                 ("CLOSEST", query::CLOSEST),
                 ("ANY", query::ANY),
                 ("ALL", query::ALL),
@@ -981,6 +988,15 @@ pub fn typescript() -> String {
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
                 ("MAX_RECORDS", particles::MAX_RECORDS),
+            ],
+        ),
+        // The most that a draw which makes its own vertices holds.
+        (
+            "VERTEX_DRAW",
+            &[
+                ("MAX_DRAWS", vertex_draws::MAX_DRAWS as u32),
+                ("MAX_VERTICES", vertex_draws::MAX_VERTICES),
+                ("MAX_INSTANCES", vertex_draws::MAX_INSTANCES),
             ],
         ),
         (

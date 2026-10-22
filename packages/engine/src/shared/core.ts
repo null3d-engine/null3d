@@ -248,6 +248,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
+	setBatchBounds(batch: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
@@ -333,6 +335,14 @@ export interface CoreGlue extends CoreErrors {
 	 * floats, then `indices` indices, at `meshArrays`'s address. 1 when the mesh takes it.
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
+	/**
+	 * Gives a mesh the tree of cluster patches that a model file stores: `patches` records of
+	 * eight words each, four floats of a bounding sphere and four integers of a run of indices,
+	 * a parent and an error, then `indices` indices, at `meshArrays`'s address. `root` names the
+	 * patch that the walk starts at. 1 when the mesh takes the tree, 0 when the tree does not
+	 * cover the mesh's vertices.
+	 */
+	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
 	meshRadius(mesh: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
@@ -734,6 +744,15 @@ export interface CoreGlue extends CoreErrors {
 	markParticleValues(id: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
+	/**
+	 * Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene
+	 * slot `slot`, and returns its id, or 0 when the scene holds the most draws already.
+	 */
+	createVertexDraw(slot: number, vertices: number, instances: number): number;
+	/** Forgets a draw that makes its own vertices. */
+	destroyVertexDraw(id: number): number;
+	/** Sets the vertices of one shape and the number of its copies of such a draw. */
+	setVertexDrawCounts(id: number, vertices: number, instances: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
@@ -1054,6 +1073,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchBounds',
 	'setBatchLayers',
 	'setBatchShadows',
 	'markBatchDirty',
@@ -1073,6 +1093,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMeshFromArrays',
 	'setMeshBvh',
 	'setMeshBlocker',
+	'setMeshPatches',
 	'meshRadius',
 	'meshVertexCount',
 	'meshFormat',
@@ -1162,6 +1183,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'markParticleRecords',
 	'markParticleValues',
 	'setSoftParticles',
+	'createVertexDraw',
+	'destroyVertexDraw',
+	'setVertexDrawCounts',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setOcclusionBuffer',
