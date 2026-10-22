@@ -390,6 +390,33 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+  browser-caches:
+    # Fills the caches of Playwright's browser and of the sample content when they miss, once, so
+    # that the jobs that read them, which start minutes later after the build job, find them, and do
+    # not each download the same files from the package mirror at once. When a cache holds the
+    # current version, its step only looks the key up. The mirror sometimes stalls for minutes, so
+    # no job waits for this one, and a fill that fails leaves each job to install for itself.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+        continue-on-error: true
+        with:
+          cache-only: "true"
+      - uses: ./.github/actions/samples
+        continue-on-error: true
+        with:
+          cache-only: "true"
+
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
     # the shader compiler that the dev server runs on the WGSL in the test sketches, the asset
@@ -448,15 +475,6 @@ jobs:
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
-      # Every job that runs a browser waits for this one, so a cache that misses fills here, once,
-      # and not in each of those jobs at once, each downloading the same files from the package
-      # mirror. When the cache holds the current version, each step only looks its key up.
-      - uses: ./.github/actions/playwright-chromium
-        with:
-          cache-only: "true"
-      - uses: ./.github/actions/samples
-        with:
-          cache-only: "true"
 
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
@@ -1388,6 +1406,7 @@ jobs:
       - shader-entries
       - docs-and-tools
       - heavy-checks
+      - browser-caches
       - rust-lint
       - rust-tests
       - build
@@ -1440,7 +1459,7 @@ jobs:
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "size-parts": "code",
               "wasm-checks": "code",
               "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
-              "heavy-checks": "code",
+              "heavy-checks": "code", "browser-caches": "code",
               "city": "full", "load-pages": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
