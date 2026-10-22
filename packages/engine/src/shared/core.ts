@@ -333,6 +333,14 @@ export interface CoreGlue extends CoreErrors {
 	 * floats, then `indices` indices, at `meshArrays`'s address. 1 when the mesh takes it.
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
+	/**
+	 * Gives a mesh the tree of cluster patches that a model file stores: `patches` records of
+	 * eight words each, four floats of a bounding sphere and four integers of a run of indices,
+	 * a parent and an error, then `indices` indices, at `meshArrays`'s address. `root` names the
+	 * patch that the walk starts at. 1 when the mesh takes the tree, 0 when the tree does not
+	 * cover the mesh's vertices.
+	 */
+	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
 	meshRadius(mesh: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
@@ -1073,6 +1081,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMeshFromArrays',
 	'setMeshBvh',
 	'setMeshBlocker',
+	'setMeshPatches',
 	'meshRadius',
 	'meshVertexCount',
 	'meshFormat',
