@@ -353,11 +353,15 @@ pub struct SunShadow {
     pub contact: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
+    /// The scene slot of the object whose shadow the light draws into a tile of its own, or
+    /// `None` for a light that names no hero.
+    pub hero: Option<u32>,
 }
 
 impl SunShadow {
-    /// The shadows of a light with `values`, by [`value`], and the layer mask `layers`.
-    fn of(values: &[f32; value::LAST as usize + 1], layers: u32) -> Self {
+    /// The shadows of a light with `values`, by [`value`], the layer mask `layers`, and the scene
+    /// slot of its hero object, if the light names one that still exists.
+    fn of(values: &[f32; value::LAST as usize + 1], layers: u32, hero: Option<u32>) -> Self {
         let whole = |code: u32, low: f32, high: f32| values[code as usize].clamp(low, high) as u32;
         let distance = values[value::SHADOW_DISTANCE as usize];
         Self {
@@ -369,6 +373,7 @@ impl SunShadow {
             auto: distance <= 0.0,
             contact: values[value::SHADOW_CONTACT as usize].max(0.0),
             layers,
+            hero,
         }
     }
 }
@@ -445,6 +450,9 @@ struct Row {
     colors: [[f32; 3]; 2],
     /// Numbers, by [`value`].
     values: [f32; value::LAST as usize + 1],
+    /// The object that a directional light draws a shadow of its own for, or
+    /// [`Handle::NONE`] for none.
+    hero: Handle,
 }
 
 impl Row {
@@ -455,6 +463,7 @@ impl Row {
         order: 0,
         colors: [[0.0; 3]; 2],
         values: [0.0; value::LAST as usize + 1],
+        hero: Handle::NONE,
     };
 }
 
@@ -556,6 +565,7 @@ impl LightTable {
             order: self.created,
             colors: [[1.0; 3]; 2],
             values: self.defaults,
+            hero: Handle::NONE,
         };
         self.created = self.created.wrapping_add(1);
         Ok(row)
@@ -570,6 +580,7 @@ impl LightTable {
         let copy = &mut self.rows[row as usize];
         copy.colors = source.colors;
         copy.values = source.values;
+        copy.hero = source.hero;
         Ok(row)
     }
 
@@ -666,6 +677,13 @@ impl LightTable {
             .ok_or(past(which, value::LAST))
     }
 
+    /// Sets the object that a directional light draws a hero shadow of, or [`Handle::NONE`] to
+    /// stop drawing one. Fails with [`CoreError::InvalidHandle`] for a row that holds no light.
+    pub fn set_hero(&mut self, light: u32, object: Handle) -> Result<(), CoreError> {
+        self.row_mut(light)?.hero = object;
+        Ok(())
+    }
+
     /// The point and spot lights that the last [`LightTable::gather`] found visible, in row order.
     pub fn visible(&self) -> &[VisibleLight] {
         &self.visible
@@ -731,8 +749,13 @@ impl LightTable {
                         frame.sun_direction = forward(world.matrix(s));
                         frame.sun_color = lit;
                         let casts = scene.flags()[s] & flags::CAST_SHADOWS != 0;
-                        frame.sun_shadow =
-                            casts.then(|| SunShadow::of(&row.values, scene.layers()[s]));
+                        frame.sun_shadow = casts.then(|| {
+                            // A hero object that the sketch destroyed leaves the light without one.
+                            let hero = (row.hero != Handle::NONE)
+                                .then(|| scene.resolve(row.hero).ok())
+                                .flatten();
+                            SunShadow::of(&row.values, scene.layers()[s], hero)
+                        });
                     }
                 }
                 kind::POINT | kind::SPOT => {
@@ -1040,6 +1063,17 @@ mod tests {
         assert_eq!(c, a);
         assert_eq!(table.object(c).unwrap(), Handle::new(6, 0));
         assert_eq!(table.kind(c), kind::AMBIENT);
+    }
+
+    #[test]
+    fn a_light_keeps_its_hero_and_a_free_row_takes_none() {
+        let mut table = LightTable::new();
+        let sun = table.create(Handle::new(1, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.row(sun).unwrap().hero, Handle::NONE);
+        table.set_hero(sun, Handle::new(9, 0)).unwrap();
+        assert_eq!(table.row(sun).unwrap().hero, Handle::new(9, 0));
+        table.destroy(sun).unwrap();
+        assert!(table.set_hero(sun, Handle::new(9, 0)).is_err());
     }
 
     #[test]

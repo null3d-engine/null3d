@@ -1064,6 +1064,7 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
         auto: false,
         contact: 0.0,
         layers: DEFAULT_LAYERS,
+        hero: None,
     };
     let [mut on, mut off] = [true, false].map(|cell_culling| {
         let (mut world, _) = spread_world(cell_culling, OBJECTS, 256);
