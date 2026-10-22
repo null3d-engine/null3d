@@ -58,13 +58,13 @@ const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
 pub(super) const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
-/// Floats of one source's distance range in the ranges texture: its start and its end, then two
-/// words that nothing reads, which fill the texture's texel.
+/// Floats of one source's texel in the ranges texture: its start and its end distance, its own
+/// local radius, which 0 leaves to its bucket's sphere, then a word that nothing reads.
 const RANGE_FLOATS: usize = sizes::RANGE_TEXELS as usize * 4;
 
-/// Appends one source's distance range to the ranges texture's data, as its texel.
-fn push_range(ranges: &mut Vec<f32>, start: f32, end: f32) {
-    ranges.extend_from_slice(&[start, end, 0.0, 0.0]);
+/// Appends one source's texel to the ranges texture's data.
+fn push_range(ranges: &mut Vec<f32>, start: f32, end: f32, radius: f32) {
+    ranges.extend_from_slice(&[start, end, radius, 0.0]);
 }
 
 // What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
@@ -158,7 +158,7 @@ fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3
 }
 
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Bucket {
     /// The id of its render pipeline. In the casters' layout, the pipeline that draws into the
     /// shadow cascades, or 0 while the cascades are off.
@@ -372,8 +372,8 @@ pub(super) struct Layout {
     occluders: u32,
     /// The layer mask of every source.
     source_layers: Vec<u32>,
-    /// The distance range of every source, as the texel of the ranges texture that holds it: its
-    /// start distance, then its end distance, then two words that nothing reads.
+    /// The texel of the ranges texture that every source reads: its start and end distance, its own
+    /// local radius, which 0 leaves to its bucket's sphere, then a word that nothing reads.
     source_ranges: Vec<f32>,
     /// The texel rows of the distance ranges texture, 0 before it exists.
     ranges_rows: u32,
@@ -1181,7 +1181,7 @@ impl Layout {
                 .as_chunks::<2>()
                 .0
             {
-                push_range(&mut self.source_ranges, range[0], range[1]);
+                push_range(&mut self.source_ranges, range[0], range[1], 0.0);
             }
         }
         self.scene_layers_default = scene.common_layers().is_some();
@@ -1200,17 +1200,20 @@ impl Layout {
             if self.owns_sources() {
                 let rows = self.source_layers.len() + batch.capacity() as usize;
                 self.source_layers.resize(rows, layers);
+                // A batch's rows may move away from their origins in its vertex shader, so each
+                // carries the batch's own radius, which the culling shader tests around the row.
+                let radius = batch.local_radius();
                 match batch_ranges(batches, batch) {
                     RowRanges::One(range) => {
                         for _ in 0..batch.capacity() {
-                            push_range(&mut self.source_ranges, range.start, range.end);
+                            push_range(&mut self.source_ranges, range.start, range.end, radius);
                         }
                     }
                     RowRanges::Rows(values) => {
                         let ranges = RowRanges::Rows(values);
                         for row in 0..batch.capacity() as usize {
                             let range = ranges.range(row);
-                            push_range(&mut self.source_ranges, range.start, range.end);
+                            push_range(&mut self.source_ranges, range.start, range.end, radius);
                         }
                     }
                 }
@@ -1827,18 +1830,93 @@ mod tests {
         }
     }
 
-    /// The culling shader reads each source's range from the start of one texel of the ranges
-    /// texture, so the data must give every source a whole texel: its start and end, then the
-    /// words that nothing reads. Data of two floats per source lands every second source's range
-    /// in the wrong texel and reads past the block.
+    /// The culling shader reads each source's range and own radius from one texel of the ranges
+    /// texture, so the data must give every source a whole texel: its start and end, its own local
+    /// radius, then the word that nothing reads. Data of fewer words per source lands every second
+    /// source's range in the wrong texel and reads past the block.
     #[test]
     fn every_sources_range_fills_a_whole_texel_of_the_ranges_texture() {
         let mut ranges = Vec::new();
-        push_range(&mut ranges, 12.0, 30.0);
-        push_range(&mut ranges, 0.0, f32::INFINITY);
+        push_range(&mut ranges, 12.0, 30.0, 0.0);
+        push_range(&mut ranges, 0.0, f32::INFINITY, 2600.0);
         assert_eq!(ranges.len(), 2 * RANGE_FLOATS);
         assert_eq!(ranges.len() * 4, 2 * 16);
-        assert_eq!(ranges, [12.0, 30.0, 0.0, 0.0, 0.0, f32::INFINITY, 0.0, 0.0]);
+        assert_eq!(
+            ranges,
+            [12.0, 30.0, 0.0, 0.0, 0.0, f32::INFINITY, 2600.0, 0.0]
+        );
+    }
+
+    /// A batch may carry its rows far from their origins in its vertex shader, so the shader must
+    /// cull them by the batch's own radius around each row, not by the sphere of the mesh that they
+    /// draw. The ranges texture's third word carries it for every row of the batch, where a scene
+    /// object keeps 0 and its bucket's sphere.
+    #[test]
+    fn a_batch_row_carries_its_own_local_radius_to_the_culling_shader() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mesh = settings
+            .meshes_mut()
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap()
+            + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        scene.apply_commands(&[], 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let object = scene.reserve().unwrap();
+        scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                1,
+            )
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut batches = BatchTable::with_capacity(1);
+        batches
+            .create(4, false, false, mesh, material, 2600.0)
+            .unwrap();
+        let mut layout = Layout::default();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        let texels = uploaded_ranges(&mut layout);
+        let scene_rows = (scene.capacity() + 1) as usize;
+        // The scene's object reads no radius of its own; each batch row reads the batch's.
+        assert_eq!(texels[0][2], 0.0, "{:?}", texels[0]);
+        for texel in &texels[scene_rows..scene_rows + 4] {
+            assert_eq!(texel[2], 2600.0, "{texel:?}");
+        }
     }
 
     #[test]

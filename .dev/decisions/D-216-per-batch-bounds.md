@@ -45,3 +45,28 @@ A vertex shader may move a row far from the origin it was placed at. Skyway's tr
 - Docs: [Instances](../../docs/concepts/instances.md#culling), the [API quick reference](../../skills/null3d-develop/references/api-quickref.md), and the InstancedMesh entry of the three.js mapping.
 - Tests: `packages/engine/src/scene/batch-bounds.test.ts` checks that one batch takes the radius and another does not, and both errors. Skyway's image tests draw the lanes on WebGPU, compatibility and WebGL2: a bound that failed would show an empty sky.
 - The culling code and the levels of detail are untouched. The cull reads each row's sphere exactly as before.
+
+## Addendum, 23 October 2026: the WebGPU compute cull reads the row's own sphere
+
+The record above says that both GPU paths cull by the row's sphere. WebGL2's job workers and the
+direct-draw path do, since they read the batch's world spheres. WebGPU's compute cull did not. Its
+shader tested the bucket record's local sphere, scaled by the instance's matrix. A bucket of
+batches holds the mesh's sphere, so the batch's widened radius never reached it. A batch whose
+vertex shader moved its rows far from their origins was therefore culled by the mesh's radius. That
+is the fault this record set out to remove. The instances demo showed it on 23 October 2026. Its
+traffic lanes, carried up to 1,300 m from their origins, vanished on WebGPU and compatibility while
+WebGL2 kept them.
+
+The ranges texture, which carries each source's distance range, had two spare words in its texel.
+Each batch row now writes its batch's local radius in the third word. The culling shader tests that
+radius times the row's matrix scale, in place of the bucket's sphere. A scene object leaves the word
+0 and keeps its bucket's sphere, which already holds its own radius or the mesh's. The copy counter
+reads the same radius, so the level slices still hold whatever the shader picks. The change costs no
+new texture and no extra texel, since the word was zero before.
+
+A change of the radius now builds the renderer's tables again, so the texel holds the new value. A
+mesh radius that a displaced material grows already did this.
+
+Tests: the renderer's layout tests read the uploaded texel of a batch row. The copy counter's tests
+check that its level slices follow the wide bound, and a guard test in the level tests reads the
+shader's rule.
