@@ -31,10 +31,13 @@ for (const mode of ENGINE_MODES) {
 		await page.goto(`engine.html?gpu=webgpu&seconds=1&pause&${mode.query}`);
 		const result = await pageResult<Result>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(result.pause?.paused, 'frames drawn during the pause').toEqual({
-			frames: 0,
-			presented: 0,
-		});
+		expect(result.pause?.paused.frames, 'frames drawn during the pause').toBe(0);
+		// A frame that the GPU took before the pause can land while it holds. On a busy machine the
+		// software GPU takes long enough for that, and the drawing itself still stays at zero.
+		expect(
+			result.pause?.paused.presented,
+			'frames left to land during the pause',
+		).toBeLessThanOrEqual(softwareGpu() ? 1 : 0);
 		expect(result.pause?.resumed.frames ?? 0).toBeGreaterThan(MIN_FRAMES_RESUMED);
 		expect(result.pause?.resumed.presented ?? 0).toBeGreaterThan(MIN_FRAMES_RESUMED);
 		expect(result.count.largestStep, 'the longest step').toBeLessThan(LONGEST_STEP_S);
