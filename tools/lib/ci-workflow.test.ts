@@ -316,6 +316,24 @@ describe("CI's workflow", () => {
 		}
 	});
 
+	it('fills the browser and sample caches in the build job, which every job that reads them waits for', () => {
+		for (const action of ['./.github/actions/playwright-chromium', './.github/actions/samples']) {
+			const fills = (jobNamed('build').steps ?? []).some(
+				({ uses, with: given }) => uses === action && given?.['cache-only'] === 'true',
+			);
+			expect(fills, action).toBe(true);
+			for (const [name, job] of Object.entries(jobs))
+				if (name !== 'build' && (job.steps ?? []).some(({ uses }) => uses === action))
+					expect(needsOf(job), `${name} reads ${action}`).toContain('build');
+		}
+		// The browser's key is Playwright's version: the package files change far more often.
+		const browser = readFileSync(
+			join(ROOT, '.github/actions/playwright-chromium/action.yml'),
+			'utf8',
+		);
+		expect(browser).not.toContain('package.json');
+	});
+
 	it('makes the load builds in one job, which every job that serves them waits for', () => {
 		const builders = Object.entries(jobs).filter(([, job]) =>
 			commandsOf(job).some(({ text }) => text.includes('tests/lib/load-server.ts')),

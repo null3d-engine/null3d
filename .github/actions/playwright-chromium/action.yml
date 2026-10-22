@@ -2,8 +2,8 @@ name: Install Chromium for Playwright
 description: >-
   Installs Playwright's Chromium and the Ubuntu packages that it needs. Ubuntu's package mirror
   sometimes stalls for minutes, so the browser and the downloaded packages stay in the Actions
-  cache, and a job downloads them again only after Playwright's version changes. The cache saves
-  only when the workflow's SAVE_CACHES is true.
+  cache, and a job downloads them again only after Playwright's version or the runner's image
+  changes. The cache saves only when the workflow's SAVE_CACHES is true.
 
 inputs:
   cache-only:
@@ -15,6 +15,15 @@ inputs:
 runs:
   using: composite
   steps:
+    # The browser and its packages change only with Playwright's version, which the lock file
+    # names, and with the runner's image, so those two make the key: any other change to the
+    # packages keeps the cache.
+    - id: key
+      shell: bash
+      run: |
+        version=$(grep -oE '"playwright-core@[^"]+"' bun.lock | head -1 | tr -d '"')
+        if [ -z "$version" ]; then echo "::error::bun.lock names no version of playwright-core"; exit 1; fi
+        echo "key=playwright-chromium-$ImageOS-$version" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@v4
       id: restore
       with:
@@ -22,7 +31,7 @@ runs:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/playwright-debs
-        key: playwright-chromium-${{ runner.os }}-${{ hashFiles('tests/package.json', 'bench/package.json') }}
+        key: ${{ steps.key.outputs.key }}
     - name: Install Chromium and its packages
       if: inputs.cache-only != 'true' || steps.restore.outputs.cache-hit != 'true'
       shell: bash
@@ -55,4 +64,4 @@ runs:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/playwright-debs
-        key: playwright-chromium-${{ runner.os }}-${{ hashFiles('tests/package.json', 'bench/package.json') }}
+        key: ${{ steps.key.outputs.key }}
