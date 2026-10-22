@@ -24,7 +24,9 @@ D-137's addendum of 19 October 2026 asked for three changes:
 
 - The fade buckets cost a copy per source per level per view, 64 bytes each, which M3-L2 then sizes to what draws.
 - D-91 found no change wider than a pixel's edge at 502 of 518 asset-tool switches.
-- The check at the time of writing: `cargo test -p null3d-core levels` passes, and the image tests `lod`, `lod-fade`, `lod-hide`, `lod-range` and `lod-range-batch` draw the same image on every GPU tier that draws them.
+- The tests on this branch: 18 tests of the level rule, 13 culling tests and 13 renderer level tests pass, Clippy reports nothing, and the typecheck passes.
+- The GPU check against the branch's merge base passes: S4 at Medium went from 3.24 to 2.92 ms, S6 at Medium from 4.53 to 3.85 ms, S4 at High from 4.41 to 4.03 ms, and S6 at High from 7.99 to 6.35 ms. The extra texture read per source costs less than the noise.
+- The hand-set levels of the image tests `lod-fade` and `lod-hide` still fade, and `lod` switches at once through `{ fade: false }`, so their references stay. The new `lod-range` and `lod-range-batch` tests carry no references yet.
 
 ## Alternatives rejected
 
