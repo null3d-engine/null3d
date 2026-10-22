@@ -200,6 +200,18 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 	await expect
 		.poll(async () => difference(await frame(page), off), { timeout: WAIT_MS })
 		.toBeGreaterThan(departure * RETURNED);
+	progress(`${label} off and on again`);
+}
+
+/** When the test's page opened, for the progress lines that each stage prints. */
+let opened = 0;
+
+/**
+ * Prints how far the test has come and when, so a long run on a slow machine shows which stage takes
+ * its time.
+ */
+function progress(stage: string): void {
+	console.log(`  ${stage} after ${Math.round((performance.now() - opened) / 1000)} s`);
 }
 
 /**
@@ -209,6 +221,7 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
  */
 async function openHud(page: Page): Promise<string[]> {
 	const errors = watchPageProblems(page);
+	opened = performance.now();
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
 	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
 	// engine on the page, which is how these tests read the canvas's frames.
@@ -224,6 +237,7 @@ async function openHud(page: Page): Promise<string[]> {
 	// page takes its loading overlay away on the first frame, so that is the signal to wait for
 	// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
 	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
+	progress('the first frame');
 	// Open the panel, as a visitor does, with the chevron.
 	await page.locator('.hud__chevron').click();
 	await expect(hud).toHaveClass(/\bopen\b/);
@@ -244,6 +258,7 @@ async function holdForSwitches(page: Page): Promise<void> {
 	// Atmosphere is a group of toggles: each names the effect, with its label's own case, and its
 	// new state.
 	await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
+	progress('the scene held still for the switches');
 }
 
 test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page }) => {
