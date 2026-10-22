@@ -3526,6 +3526,44 @@ pub fn mark_particle_values(id: u32) -> u32 {
     })
 }
 
+/// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
+/// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
+/// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
+/// data and no per-instance data reach the GPU.
+#[wasm_bindgen(js_name = createVertexDraw)]
+pub fn create_vertex_draw(slot: u32, vertices: u32, instances: u32) -> u32 {
+    value_with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .vertex_draws_mut()
+            .create(slot, vertices, instances)
+            .map_err(|_| out_of_memory(0))
+    })
+}
+
+/// Forgets a draw that makes its vertices from a vertex count. Its object draws nothing from then
+/// on.
+#[wasm_bindgen(js_name = destroyVertexDraw)]
+pub fn destroy_vertex_draw(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().vertex_draws_mut().destroy(id);
+        0
+    })
+}
+
+/// Sets the vertices of one shape and the number of its copies for a draw that makes its own
+/// vertices. A frame reads them, so the change uploads nothing.
+#[wasm_bindgen(js_name = setVertexDrawCounts)]
+pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .vertex_draws_mut()
+            .set_counts(id, vertices, instances);
+        0
+    })
+}
+
 /// Lets particle systems with a soft fade fade near the surfaces behind them, which copies the
 /// camera's opaque depth while one draws, or draws them with hard edges: the quality preset's soft
 /// particles.
