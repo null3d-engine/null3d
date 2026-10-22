@@ -1771,6 +1771,14 @@ impl FrameGraph {
         }
     }
 
+    /// True when a frame wants the two-step pass: the render scale can drop below the whole
+    /// canvas, or the sketch sharpens, which reads the first step's display color at the whole
+    /// scale too. A frame asks for the pipelines of the passes that it wants before it declares
+    /// them, so this answers in a frame that has not declared anything yet.
+    fn two_step_wanted(&self) -> bool {
+        self.scales || self.sharpen.is_some()
+    }
+
     /// True when the frame draws the two-step pass: the pass is declared, the second step's
     /// pipeline is built, and either the frame draws below the whole canvas's render scale or the
     /// sketch sharpens, which reads the first step's display color at the whole scale too. A
@@ -2905,7 +2913,7 @@ impl FrameGraph {
         // draws the scene's display color at the render size into OUTPUT_COLOR, and the plain final
         // pass then scales that up to the canvas. A sketch that sharpens draws the same two steps
         // at the whole canvas's scale, where the second step sharpens the display color.
-        self.two_step_declared = self.scales || self.sharpen.is_some();
+        self.two_step_declared = self.two_step_wanted();
         let two_step = self.two_step_declared;
         let output = if two_step {
             [
@@ -3758,11 +3766,13 @@ impl FrameGraph {
             pipelines.built(blend, pipelines_built)
                 && still.is_some_and(|id| pipelines.built(id, pipelines_built))
         };
-        // While the two steps are declared, they ask for their pipelines before a frame first
+        // While the two steps are wanted, they ask for their pipelines before a frame first
         // draws them: a render scale below the whole canvas's, or the sharpening at the whole
         // scale. The first step draws the final pass's builds, which are built with it, so the
-        // second step's plain build alone decides when the two steps can draw.
-        self.two_step_built = self.two_step_declared && {
+        // second step's plain build alone decides when the two steps can draw. The wish holds the
+        // answer, not the declaration: the passes of a frame are declared after its pipelines are
+        // asked for, so the first frame that wants the steps draws them too.
+        self.two_step_built = self.two_step_wanted() && {
             self.output_pass.request_pipeline(pipelines, wanted);
             let present = self.final_pass.request_present(pipelines);
             pipelines.built(present, pipelines_built)

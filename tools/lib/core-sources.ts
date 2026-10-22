@@ -3,7 +3,7 @@
 // server serves the engine's stamp module with the stamp of the sources on disk. Development builds
 // compare the two when the core loads, so a core built before a merge or an edit fails with E1402
 // and the advice to build again, before it can run with code that expects another core.
-import { statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { inputFiles, inputHash } from './shader-modules';
@@ -14,10 +14,32 @@ const CORE_CRATE = 'crates/null3d-wasm';
 export const STAMP_MODULE = 'packages/engine/src/shared/core-sources.ts';
 /** Hex digits of the sources' hash that the stamp keeps: enough to tell builds apart. */
 const STAMP_DIGITS = 16;
+/** The two builds of the engine core, by the name that their folders give them. */
+const CORE_BUILDS = ['single', 'threaded'] as const;
 
 /** The stamp of the core's Rust sources in the checkout at `root`. */
 export function coreSourcesStamp(root: string): string {
 	return inputHash(root, CORE_CRATE).slice(0, STAMP_DIGITS);
+}
+
+/**
+ * The message that names the core build in `root` which came from other Rust sources than the
+ * checkout holds, or null when each one matches. A production build ships the core's bytes as they
+ * are and drops the check that a development build makes at load time. A core from before a change
+ * then runs beside code that expects another core, and the page fails with a GPU error of its own.
+ * A page build refuses that state with this message, so the fault names itself at build time.
+ */
+export function coreFromOtherSources(root: string): string | null {
+	const sources = coreSourcesStamp(root);
+	for (const build of CORE_BUILDS) {
+		const glue = join(root, 'packages/engine/dist/wasm', build, 'null3d.js');
+		const stamp = existsSync(glue)
+			? /export const coreSources = "([0-9a-f]+)";/.exec(readFileSync(glue, 'utf8'))?.[1]
+			: undefined;
+		if (stamp !== sources)
+			return `the ${build} engine core in ${root} was built from other Rust sources than this checkout holds. Run bun run build.`;
+	}
+	return null;
 }
 
 /** A generated module's text with the stamp of the sources that its core was built from. */

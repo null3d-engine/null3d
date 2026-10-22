@@ -610,8 +610,9 @@ pub mod param {
     /// The direction along which the lobe stretches, in radians from the tangent.
     pub const ANISOTROPY_ROTATION: usize = 65;
     /// Which family's maps the light map's and the specular maps' slots hold, as
-    /// [`LayerMap::kind`] gives it: 0 for a clear coat's and a sheen's, and 1 for iridescence's and
-    /// the anisotropy's. The core sets it as it sets each layer map, so a shader reads the maps
+    /// [`LayerMap::kind`] gives it: 0 for a clear coat's and a sheen's, 1 for iridescence's and
+    /// the anisotropy's, and 2 for the transmission and thickness maps' of a material that lets
+    /// light through. The core sets it as it sets each layer map, so a shader reads the maps
     /// that the material gave.
     pub const LAYER_MAPS_KIND: usize = 66;
     /// A decal material's values take the place of the transmission's, which a decal never has.
@@ -718,12 +719,16 @@ impl MapSlot {
     pub const DIFFUSE_TRANSMISSION_COLOR: MapSlot = MapSlot::SpecularColor;
 }
 
-/// A map of a material with layers above its base ([`feature::LAYERS`]). Such a material has no
-/// light map and no specular maps, so the layers' maps take those slots, packed as glTF packs them:
-/// the coat in red and its roughness in green of one map, the coat's normals in another, the sheen's
-/// color in RGB and its roughness in alpha of a third, the iridescence in the red of a fourth and
-/// its thickness in the green of a fifth, and the anisotropy in the RGB of a sixth. A row flag says
-/// which channels of a shared map apply.
+/// A map that takes a slot that the material has no other use for, and that the row's kind names.
+///
+/// A material with layers above its base ([`feature::LAYERS`]) has no light map and no specular
+/// maps, so the layers' maps take those slots, packed as glTF packs them: the coat in red and its
+/// roughness in green of one map, the coat's normals in another, the sheen's color in RGB and its
+/// roughness in alpha of a third, the iridescence in the red of a fourth and its thickness in the
+/// green of a fifth, and the anisotropy in the RGB of a sixth. A material that lets light through a
+/// thin surface has no specular maps either, so its transmission and thickness maps take the two
+/// specular slots, which the diffuse transmission maps of a translucent material take as well. A row
+/// flag says which channels of a shared map apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayerMap {
     /// The clear coat in red, in linear color.
@@ -743,11 +748,16 @@ pub enum LayerMap {
     /// The anisotropy's direction in red and green and its strength in blue, in linear color, in
     /// the specular color map's slot.
     Anisotropy,
+    /// The share of the light behind the surface that passes through it in red, in linear color,
+    /// in the specular intensity map's slot.
+    Transmission,
+    /// The thickness of the volume in green, in linear color, in the specular color map's slot.
+    Thickness,
 }
 
 impl LayerMap {
     /// Every layer map, in the order that `setMaterialMap` numbers them after the map slots.
-    pub const ALL: [LayerMap; 8] = [
+    pub const ALL: [LayerMap; 10] = [
         LayerMap::Coat,
         LayerMap::CoatRoughness,
         LayerMap::CoatNormal,
@@ -756,10 +766,13 @@ impl LayerMap {
         LayerMap::Iridescence,
         LayerMap::IridescenceThickness,
         LayerMap::Anisotropy,
+        LayerMap::Transmission,
+        LayerMap::Thickness,
     ];
 
-    /// Which family of layers the map belongs to, as a row looks up its slots: 0 for a clear
-    /// coat's and a sheen's, and 1 for iridescence's and the anisotropy's.
+    /// Which family of maps the light map's and the specular maps' slots hold, as a row looks it
+    /// up: 0 for a clear coat's and a sheen's, 1 for iridescence's and the anisotropy's, and 2 for
+    /// the transmission and thickness maps' of a material that lets light through.
     pub const fn kind(self) -> f32 {
         match self {
             LayerMap::Coat
@@ -768,6 +781,7 @@ impl LayerMap {
             | LayerMap::SheenColor
             | LayerMap::SheenRoughness => 0.0,
             LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 1.0,
+            LayerMap::Transmission | LayerMap::Thickness => 2.0,
         }
     }
 
@@ -775,10 +789,13 @@ impl LayerMap {
     pub const fn slot(self) -> MapSlot {
         match self {
             LayerMap::Coat | LayerMap::CoatRoughness | LayerMap::Iridescence => MapSlot::Light,
-            LayerMap::CoatNormal | LayerMap::IridescenceThickness => MapSlot::SpecularIntensity,
-            LayerMap::SheenColor | LayerMap::SheenRoughness | LayerMap::Anisotropy => {
-                MapSlot::SpecularColor
+            LayerMap::CoatNormal | LayerMap::IridescenceThickness | LayerMap::Transmission => {
+                MapSlot::SpecularIntensity
             }
+            LayerMap::SheenColor
+            | LayerMap::SheenRoughness
+            | LayerMap::Anisotropy
+            | LayerMap::Thickness => MapSlot::SpecularColor,
         }
     }
 
@@ -791,7 +808,11 @@ impl LayerMap {
             LayerMap::CoatNormal => 0,
             LayerMap::SheenColor => flag::SHEEN_COLOR_MAP,
             LayerMap::SheenRoughness => flag::SHEEN_ROUGHNESS_MAP,
-            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 0,
+            LayerMap::Iridescence
+            | LayerMap::IridescenceThickness
+            | LayerMap::Anisotropy
+            | LayerMap::Transmission
+            | LayerMap::Thickness => 0,
         }
     }
 }
@@ -1432,10 +1453,10 @@ impl MaterialTable {
         }
     }
 
-    /// Gives a layered material one of its layers' maps: a texture, or none with `Handle::NONE`.
-    /// The map takes its slot ([`LayerMap::slot`]), and its row flag says that its channel
-    /// applies while it has a texture. Two maps that share a slot share its texture, so the last
-    /// one given names it.
+    /// Gives a material one of the maps that takes a slot it has no other use for: a texture, or
+    /// none with `Handle::NONE`. The map takes its slot ([`LayerMap::slot`]), and its row flag says
+    /// that its channel applies while it has a texture. Two maps that share a slot share its
+    /// texture, so the last one given names it.
     pub fn set_layer_map(
         &mut self,
         id: u32,
@@ -1449,7 +1470,8 @@ impl MaterialTable {
         let on = if texture.is_none() { 0 } else { bit };
         *flags = ((*flags as u32 & !bit) | on) as f32;
         // A live map names the family whose maps the slots hold, so the shader reads the maps that
-        // the material gave: the coat's and the sheen's, or iridescence's and the anisotropy's.
+        // the material gave: the coat's and the sheen's, iridescence's and the anisotropy's, or the
+        // transmission and thickness maps'.
         if !texture.is_none() {
             self.rows[id as usize * MATERIAL_FLOATS + param::LAYER_MAPS_KIND] = map.kind();
         }
@@ -2042,6 +2064,49 @@ mod tests {
             row(&table, id)[param::IRIDESCENCE_THICKNESS_MAX],
             DEFAULT_ROW[param::IRIDESCENCE_THICKNESS_MAX]
         );
+    }
+
+    #[test]
+    fn the_volume_maps_take_the_specular_slots_and_name_their_family() {
+        let mut table = MaterialTable::with_capacity(1);
+        let id = table
+            .create(Shading::Lit, feature::TRANSMISSION, [1.0; 4])
+            .unwrap();
+        // A material that lets light through keeps its transmission map in the specular intensity
+        // map's slot and its thickness map in the specular color map's, and its kind says so.
+        table
+            .set_layer_map(id, LayerMap::Transmission, Handle::from_raw(5), false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::Thickness, Handle::from_raw(6), true)
+            .unwrap();
+        assert_eq!(
+            row(&table, id)[param::LAYER_MAPS_KIND],
+            LayerMap::Transmission.kind()
+        );
+        assert_eq!(
+            table.map(id, MapSlot::SpecularIntensity),
+            Handle::from_raw(5)
+        );
+        assert_eq!(table.map(id, MapSlot::SpecularColor), Handle::from_raw(6));
+        // Each map applies while it has a texture, and the thickness map reads the second
+        // coordinates.
+        let flags = row(&table, id)[param::FLAGS] as u32;
+        assert_eq!(flags & !(flag::SECOND_UV * 0xff), 0);
+        assert_ne!(
+            flags & (flag::SECOND_UV << MapSlot::SpecularColor as u32),
+            0,
+            "the thickness map reads the second coordinates"
+        );
+        assert_eq!(
+            flags & (flag::SECOND_UV << MapSlot::SpecularIntensity as u32),
+            0,
+            "the transmission map reads the first coordinates"
+        );
+        // The maps arrive through the numbers that `setMaterialMap` takes after the map slots.
+        assert_eq!(LayerMap::ALL.len(), 10);
+        assert_eq!(LayerMap::Transmission as u32, 8);
+        assert_eq!(LayerMap::Thickness as u32, 9);
     }
 
     #[test]

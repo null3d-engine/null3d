@@ -386,8 +386,7 @@ function layersOf(
 /**
  * How a material lets light through, from its KHR_materials_transmission and KHR_materials_volume
  * extensions, or none for a transmission factor of 0. A masked material lets no light through, as
- * the engine draws such a material with no mask. The maps of transmission and thickness are not
- * drawn yet: the factors stand alone, and `notes` says so.
+ * the engine draws such a material with no mask.
  */
 function transmissionOf(
 	extensions: Entry,
@@ -405,8 +404,6 @@ function transmissionOf(
 		return undefined;
 	}
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
-	if (transmission?.transmissionTexture !== undefined || volume.thicknessTexture !== undefined)
-		notes.push(`${what}'s transmission and thickness textures, which the engine does not draw yet`);
 	return { factor, ...volumeOf(volume, what) };
 }
 
@@ -464,7 +461,9 @@ function diffuseTransmissionOf(
 		broken(`${what}'s diffuseTransmissionColorFactor has a component outside 0 to 1`);
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
 	if (volume.thicknessTexture !== undefined)
-		notes.push(`${what}'s thickness texture, which the engine does not draw yet`);
+		notes.push(
+			`${what}'s thickness texture, which the engine does not draw for a material that lets light through to its other side`,
+		);
 	return {
 		factor: unit(diffuse.diffuseTransmissionFactor ?? 0, `${what}'s diffuseTransmissionFactor`),
 		color: [color[0] as number, color[1] as number, color[2] as number],
@@ -540,6 +539,13 @@ export interface VertexData {
 
 /** One primitive of a mesh: its vertex arrays, its triangles and its material. */
 export interface PrimitiveData {
+	/**
+	 * The file accessor that each attribute reads, by glTF name such as `POSITION`, for a primitive
+	 * that reads the file's accessors. Undefined for a Draco primitive, whose attributes come from
+	 * Draco's own ids. Two primitives that name one accessor read the same vertices, which the
+	 * asset tool's levels do: each names its base mesh's accessors.
+	 */
+	accessors?: Readonly<Record<string, number>>;
 	positions: VertexData;
 	normals?: VertexData;
 	uvs?: VertexData;
@@ -775,6 +781,8 @@ export interface MaterialData {
 		specularColorMap?: number;
 		diffuseTransmissionMap?: number;
 		diffuseTransmissionColorMap?: number;
+		transmissionMap?: number;
+		thicknessMap?: number;
 		clearcoatMap?: number;
 		clearcoatRoughnessMap?: number;
 		clearcoatNormalMap?: number;
@@ -1382,6 +1390,28 @@ export function parseGltf(
 		const layerMaps = layered
 			? layerTextures(coat ?? {}, sheen ?? {}, film ?? {}, anisotropy ?? {}, what, notes)
 			: {};
+		const unlit = extensions.KHR_materials_unlit !== undefined;
+		const alphaMode = String(material.alphaMode ?? 'OPAQUE');
+		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
+			broken(`${what} has the alpha mode ${alphaMode}`);
+		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
+		// The transmission and thickness textures take the specular textures' slots, so a material
+		// that gives both keeps the transmission textures, which change its look more.
+		const transmissionExtension = extensions.KHR_materials_transmission as Entry | undefined;
+		const givesVolumeMaps =
+			transmissionExtension?.transmissionTexture !== undefined ||
+			(extensions.KHR_materials_volume as Entry | undefined)?.thicknessTexture !== undefined;
+		const specularTexture = specular.specularTexture ?? specular.specularColorTexture;
+		const takesVolumeMaps = transmission !== undefined && !layered && specularTexture === undefined;
+		if (givesVolumeMaps && transmission !== undefined && layered)
+			notes.push(
+				`${what}'s transmission and thickness textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
+			);
+		if (givesVolumeMaps && transmission !== undefined && !layered && specularTexture !== undefined)
+			notes.push(
+				`${what}'s transmission and thickness textures, which a material with specular textures does not take`,
+			);
+		const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -1398,6 +1428,17 @@ export function parseGltf(
 			specularColorMap: layered
 				? undefined
 				: useTexture(specular.specularColorTexture, 'srgb', `${what}'s specularColorTexture`),
+			// The KHR_materials_transmission and KHR_materials_volume extensions give these two.
+			transmissionMap: takesVolumeMaps
+				? useTexture(
+						transmissionExtension?.transmissionTexture,
+						'linear',
+						`${what}'s transmissionTexture`,
+					)
+				: undefined,
+			thicknessMap: takesVolumeMaps
+				? useTexture(volume.thicknessTexture, 'linear', `${what}'s thicknessTexture`)
+				: undefined,
 			clearcoatMap: useTexture(layerMaps.coat, 'linear', `${what}'s clearcoatTexture`),
 			clearcoatRoughnessMap: useTexture(
 				layerMaps.coatRoughness,
@@ -1447,11 +1488,6 @@ export function parseGltf(
 			maps[key] = slot.use;
 			transform ??= slot.transform;
 		}
-		const unlit = extensions.KHR_materials_unlit !== undefined;
-		const alphaMode = String(material.alphaMode ?? 'OPAQUE');
-		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
-			broken(`${what} has the alpha mode ${alphaMode}`);
-		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
 		const diffuseTransmission = diffuseTransmissionOf(
 			extensions,
 			what,
@@ -1713,7 +1749,7 @@ const ATTRIBUTES: readonly [
 	name: string,
 	field: Exclude<
 		keyof PrimitiveData,
-		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
+		'accessors' | 'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
 	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
@@ -1847,10 +1883,14 @@ function parsePrimitive(
 	const attributes = entry(primitive.attributes, `${what}'s attributes`);
 	if (attributes.POSITION === undefined) broken(`${what} has no POSITION attribute`);
 	const out: Partial<PrimitiveData> = {};
+	/** The accessor behind each attribute: a level names its base mesh's, which shares its vertices. */
+	const accessors: Record<string, number> = {};
 	let vertices = -1;
 	for (const [name, field, components, types] of ATTRIBUTES) {
 		if (attributes[name] === undefined) continue;
-		const data = read(Number(attributes[name]), `${what}'s ${name}`);
+		const at = Number(attributes[name]);
+		accessors[name] = at;
+		const data = read(at, `${what}'s ${name}`);
 		const normalized = types[data.componentType];
 		if (
 			!(data.componentType in types) ||
@@ -1903,7 +1943,13 @@ function parsePrimitive(
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
-	const data: PrimitiveData = { ...(out as PrimitiveData), indices, material };
+	const data: PrimitiveData = {
+		...(out as PrimitiveData),
+		indices,
+		material,
+		// Draco names its attributes by its own ids, which no other primitive shares.
+		...(draco ? {} : { accessors }),
+	};
 	const extensions = primitive.extensions as Entry | undefined;
 	if (extensions?.[MESH_BVH] !== undefined)
 		data.bvh = storedTree(entry(extensions[MESH_BVH], `${what}'s ${MESH_BVH}`), what, read);

@@ -1,10 +1,10 @@
 // Cluster levels: a heightfield of 32,768 triangles that the asset tool cut into a tree of patches
-// (tests/lib/cluster-fixtures.ts). The camera looks along the ground, so the near edge lies a few
-// metres away and the far edge some tens of metres away. The engine draws the patches that its
-// threshold picks, fine triangles near the camera and coarse ones far from it, in one draw for the
-// whole mesh. Settings: `?d=<metres>` sets how far the camera stands from the middle of the
-// ground. `?coarse` raises the level threshold to 16 pixels, so the patches that draw are much
-// coarser than the mesh and the picture shows the tree at work.
+// (packages/cli/src/assets/cluster-fixture.ts). The camera looks along the ground, so the near
+// edge lies a few metres away and the far edge some tens of metres away. The engine draws the
+// patches that its threshold picks, fine triangles near the camera and coarse ones far from it, in
+// one draw for the whole mesh. Settings: `?d=<metres>` sets how far the camera stands from the
+// middle of the ground. `?coarse` raises the level threshold to 16 pixels, so the patches that
+// draw are much coarser than the mesh and the picture shows the tree at work.
 import { defineSketch } from '@null3d/engine';
 import { AMBIENT, SUN } from '../../../bench/scenes/spec';
 

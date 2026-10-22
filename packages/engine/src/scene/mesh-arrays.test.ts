@@ -4,6 +4,8 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	ARRAY_UVS,
 	ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE,
+	ARRAYS_PROBLEM_LENGTH,
+	ARRAYS_PROBLEM_LEVEL_BASE,
 	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
 	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
 	ARRAYS_PROBLEM_NOT_FINITE,
@@ -29,7 +31,13 @@ import {
 } from '../generated/gpu';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays, typeField, updateVertices } from './mesh-arrays';
+import {
+	arraysProblem,
+	meshFromArrays,
+	meshFromLevel,
+	typeField,
+	updateVertices,
+} from './mesh-arrays';
 import type { MeshArrays } from './resources';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -169,10 +177,18 @@ function fakeCore(failure?: { code: number; details: [number, number] }) {
 		targets?: number;
 		morph?: number;
 	}[] = [];
+	let level: { base: number; indices: number[] } | undefined;
 	const glue = {
 		meshArrays: (words: number) => {
 			asked.push({ words, vertices: 0, indices: 0, layout: 0, types: 0 });
 			return 256;
+		},
+		createLevelMesh: (base: number, words: number) => {
+			level = {
+				base,
+				indices: Array.from(new Uint32Array(memory.buffer, 256, words)),
+			};
+			return failure ? 0 : 9;
 		},
 		createMeshFromArrays: (
 			vertices: number,
@@ -189,7 +205,8 @@ function fakeCore(failure?: { code: number; details: [number, number] }) {
 		lastErrorCode: () => failure?.code ?? 0,
 		lastErrorDetail: (index: number) => failure?.details[index] ?? 0,
 	} as unknown as CoreGlue;
-	return { core: new CoreMemory(glue, memory), memory, asked };
+	const read = () => level;
+	return { core: new CoreMemory(glue, memory), memory, asked, read };
 }
 
 describe('meshes from arrays in engine memory', () => {
@@ -476,5 +493,33 @@ describe('vertex updates', () => {
 		const view = core.heap(Float32Array);
 		updateVertices(core, 7, LAYOUT, 'normals', positions, 0, 4, call);
 		expect(core.heap(Float32Array)).toBe(view);
+	});
+});
+
+describe("levels that draw their base mesh's vertices", () => {
+	const call = 'geometry.fromLevel';
+
+	test('write their triangles from a whole word and name their base', () => {
+		const { core, read } = fakeCore();
+		const indices = [0, 1, 2, 0, 2, 3];
+		expect(meshFromLevel(core, 7, indices, call)).toBe(9);
+		expect(read()).toEqual({ base: 7, indices });
+	});
+
+	test('take whole indices from 32-bit or 16-bit arrays', () => {
+		const { core, read } = fakeCore();
+		expect(meshFromLevel(core, 3, new Uint16Array([0, 1, 2]), call)).toBe(9);
+		expect(read()).toEqual({ base: 3, indices: [0, 1, 2] });
+	});
+
+	test("give way to a copy when the engine cannot share the base's vertices", () => {
+		const { core, read } = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_LEVEL_BASE, 0] });
+		expect(meshFromLevel(core, 7, [0, 1, 2], call)).toBeUndefined();
+		expect(read()).toEqual({ base: 7, indices: [0, 1, 2] });
+	});
+
+	test('throw the failure that is not a refusal', () => {
+		const { core } = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_LENGTH, 0] });
+		expect(() => meshFromLevel(core, 7, [0, 1, 2], call)).toThrow();
 	});
 });

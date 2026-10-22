@@ -5,6 +5,8 @@
 // each with the scene. ?custom draws the balls with a custom material whose surface function sets
 // the transmission itself.
 // ?blend adds a blended pane in front of the balls, which draws in the same pass as they do.
+// ?maps varies the transmission and the thickness across each ball with the two maps that take the
+// specular maps' slots: bands of the transmission map's red, and bands of the thickness map's green.
 // ?tone=none turns the tone mapping off, as the parity test's three.js twin draws.
 import { defineSketch } from '@null3d/engine';
 import {
@@ -32,7 +34,24 @@ fn surface(input: SurfaceInput) -> Surface {
 struct Uniforms { amount: f32 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, post }) => {
+/** A texture of `size` square texels from a function of each texel's place, in 0 to 1. */
+function texels(size: number, rgba: (u: number, v: number) => [number, number, number, number]) {
+	const data = new Uint8Array(size * size * 4);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const at = (y * size + x) * 4;
+			data.set(
+				rgba((x + 0.5) / size, (y + 0.5) / size).map((c) => Math.round(c * 255)),
+				at,
+			);
+		}
+	return data;
+}
+
+/** Every share, in the texture that both the transmission map and the thickness map read. */
+const BANDS = 4;
+
+export default defineSketch(({ scene, materials, geometry, post, textures }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
@@ -52,6 +71,22 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 			position: center,
 		});
 	}
+	// The transmission map's red follows the bands across the sphere, and the thickness map's green
+	// the bands up it, so each ball shows the wall through its light bands and bends the light
+	// farther where its green is white.
+	const bands = params.has('maps')
+		? textures.fromData({
+				width: 32,
+				height: 32,
+				data: texels(32, (u, v) => [
+					(u * BANDS) % 1 < 0.5 ? 1 : 0.15,
+					(v * BANDS) % 1 < 0.5 ? 1 : 0.1,
+					0,
+					1,
+				]),
+				colorSpace: 'linear',
+			})
+		: undefined;
 	const [widthSegments, heightSegments] = BALL_SEGMENTS;
 	const ball = geometry.sphere({ radius: BALL_RADIUS, widthSegments, heightSegments });
 	const balls = params.has('empty') ? [] : TRANSMISSION_BALLS;
@@ -67,6 +102,7 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 			...(attenuation
 				? { attenuationColor: attenuation.color, attenuationDistance: attenuation.distance }
 				: {}),
+			...(bands ? { transmissionMap: bands, thicknessMap: bands } : {}),
 		};
 		const material = params.has('custom')
 			? materials.shader({ ...options, wgsl: glassWgsl, uniforms: { amount: 1 } })

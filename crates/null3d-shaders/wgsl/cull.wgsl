@@ -48,11 +48,17 @@
 // level and negative for the old. A link of 0 means none, so a bucket record without levels holds
 // zeros there, and a view whose level factor is 0 draws every instance's base level.
 //
-// An instance whose bounding sphere covers fewer pixels than the threshold draws nothing: the last
-// level holds no geometry. The sphere's world diameter times the level factor measures the pixels
-// it covers, so it hides while that product stays under its distance, the same comparison that
-// picks the levels. Past the hide distance a band thins the coarsest level out with the same
-// dither, where a fading build exists, so the instance does not pop away.
+// An instance of a mesh with levels whose bounding sphere covers fewer pixels than the threshold
+// draws nothing: the last level holds no geometry. The sphere's world diameter times the level
+// factor measures the pixels it covers, so it hides while that product stays under its distance,
+// the same comparison that picks the levels. A mesh without levels has no such last level, so it
+// draws at every distance. Past the hide distance a band thins the coarsest level out with the
+// same dither, where a fading build exists, so the instance does not pop away.
+//
+// An instance tests the local sphere of its bucket, scaled by its own matrix, unless its source
+// gives a radius of its own: a batch whose vertex shader carries rows away from their origins sets
+// one, and every row then tests a sphere of that radius around its origin. The ranges texture holds
+// it beside the row's distance range.
 //
 // An instance also draws only inside its distance range, which the ranges texture holds for each
 // source as a start distance and an end distance. Both edges lie inside the range and fade over
@@ -201,8 +207,10 @@ struct Bucket {
 /// cell x's offset for the view whose row is y.
 @group(0) @binding(9) var cell_offsets: texture_2d<f32>;
 
-/// The distances between which each source draws: texel x of row y holds source y * a row's width
-/// plus x's start distance and end distance. A source without a range holds 0 and infinity.
+/// Each source's distance range and own radius: texel x of row y holds source y * a row's width
+/// plus x's start distance and end distance, its own local radius, which scales by the instance's
+/// matrix as its bounding sphere, and a word that nothing reads. A source without a range holds 0
+/// and infinity, and a source without a radius of its own holds 0, which keeps its bucket's sphere.
 @group(0) @binding(11) var instance_ranges: texture_2d<f32>;
 
 /// What a level's switch value measures: its error in the mesh's units, a distance in meters for a
@@ -253,10 +261,17 @@ fn instance_of(group: u32, lane: u32) -> u32 {
     return order[position];
 }
 
+/// The ranges texture's texel of the source `index`: its distance range's start and end in x and
+/// y, its own local radius in z, and a word that nothing reads.
+fn ranges_of(index: u32) -> vec4f {
+    let row = (1u << 11u) - 1u;
+    return textureLoad(instance_ranges, vec2u(index & row, index >> 11u), 0);
+}
+
 /// An instance in the view: its bucket and its own index, whether the sketch marks it as an
-/// occluder, its matrix moved by its cell's offset, and its bounding sphere relative to the camera.
-/// The bucket is `HIDDEN` for an instance that draws nowhere in the view: hidden, on none of the
-/// view's layers, or outside the frustum.
+/// occluder, its matrix moved by its cell's offset, its bounding sphere relative to the camera, and
+/// the texel that holds its distance range. The bucket is `HIDDEN` for an instance that draws
+/// nowhere in the view: hidden, on none of the view's layers, or outside the frustum.
 struct Survivor {
     bucket: u32,
     index: u32,
@@ -268,6 +283,8 @@ struct Survivor {
     radius: f32,
     /// The largest axis scale of the instance's world matrix.
     scale: f32,
+    /// The source's distance range and own local radius (see `ranges_of`).
+    ranges: vec4f,
 }
 
 /// Instance `i`, tested against the view's layers and frustum.
@@ -292,7 +309,11 @@ fn survivor(i: u32) -> Survivor {
         length(vec3f(out.r0.x, out.r1.x, out.r2.x)),
         max(length(vec3f(out.r0.y, out.r1.y, out.r2.y)), length(vec3f(out.r0.z, out.r1.z, out.r2.z))),
     );
-    out.radius = bucket.radius * scale;
+    // A row that carries a bound of its own, as a batch whose vertex shader moves its rows does,
+    // tests that bound; a row without one tests its bucket's local sphere.
+    out.ranges = ranges_of(i);
+    let own = out.ranges.z;
+    out.radius = select(bucket.radius * scale, own * scale, own > 0.0);
     out.scale = scale;
     for (var p = 0u; p < 6u; p++) {
         let plane = params.planes[p];
@@ -338,16 +359,9 @@ struct Level {
     end: f32,
 }
 
-/// The start and end distance that the texture holds for the source `index`.
-fn range_of(index: u32) -> vec2f {
-    let row = (1u << 11u) - 1u;
-    return textureLoad(instance_ranges, vec2u(index & row, index >> 11u), 0).xy;
-}
-
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
-    let range = range_of(s.index);
-    var out = Level(s.bucket, s.bucket, 0.0, 0.0, false, 0.0, range.x, range.y);
+    var out = Level(s.bucket, s.bucket, 0.0, 0.0, false, 0.0, s.ranges.x, s.ranges.y);
     let whole = params.levels.x;
     let bias = select(1.0, buckets[s.bucket].bias, buckets[s.bucket].bias > 0.0);
     let factor = whole / bias;
@@ -366,11 +380,13 @@ fn level_of(s: Survivor) -> Level {
         }
     }
     // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
-    // geometry. The view's level factor also carries the render height, the render scale and the
-    // threshold, so all of them move the hide distance.
+    // geometry. Only a mesh with levels has that last level, so a bucket with no coarser level
+    // keeps drawing at every distance. The view's level factor also carries the render height,
+    // the render scale and the threshold, so all of them move the hide distance.
     let hide = 2.0 * s.radius * factor;
-    out.hidden = (hide > 0.0 && hide < distance) || distance < out.start || distance > out.end;
-    if out.hidden {
+    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < distance;
+    out.hidden = small || distance < out.start || distance > out.end;
+    if small {
         out.hide_past = distance / hide - 1.0;
     }
     return out;

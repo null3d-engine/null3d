@@ -24,5 +24,5 @@ Each add-on is a folder named after it, and it is shaped like a package:
 - It draws on both GPU paths, or its README states its fallback.
 - Its demo lives in `examples/`, and the demo's image test draws it on every GPU tier.
 
-The folders here are `traffic-lanes`, and the ones that later tasks add: the lens kit, facades,
+The folders here are `traffic-lanes` and `lens-kit`, and the ones that later tasks add: facades,
 screens, weather and car paint.

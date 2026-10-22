@@ -176,9 +176,10 @@ struct MaterialRow {
     /// of refraction, and the film's thickness where its map is 0 and where it is 1, in
     /// nanometers.
     iridescence: vec4f,
-    /// The anisotropy's strength, its rotation from the tangent in radians, the family of layers
-    /// whose maps the light map's and the specular maps' slots hold (0 for the clear coat's and
-    /// the sheen's, 1 for iridescence's and the anisotropy's), and a spare.
+    /// The anisotropy's strength, its rotation from the tangent in radians, the family of maps that
+    /// the light map's and the specular maps' slots hold (0 for the clear coat's and the sheen's, 1
+    /// for iridescence's and the anisotropy's, 2 for the transmission and the thickness maps'), and
+    /// a spare.
     anisotropy: vec4f,
 }
 

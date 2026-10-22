@@ -63,6 +63,10 @@ pub struct MeshPart {
     pub vertex_count: u32,
     /// The page's vertex where the part's vertices start.
     pub first_vertex: u32,
+    /// True for a part that draws another mesh's vertices from its own indices, as a level of a
+    /// mesh does: its vertex range belongs to the other mesh, so taking the part out frees no
+    /// vertices.
+    pub shares_vertices: bool,
 }
 
 /// Where one mesh lives.
@@ -95,6 +99,9 @@ pub struct MeshSlot {
     /// How many times [`MeshStorage::update_vertices`] changed the mesh's vertices, never 0 again
     /// once it did: 0 for a mesh whose vertices stay as they were added.
     pub updates: u32,
+    /// The mesh whose vertices this mesh draws from its own indices, for a level, or `None`. A
+    /// level goes when its base goes, and the base's vertices outlive it.
+    base: Option<u32>,
 }
 
 /// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
@@ -153,6 +160,11 @@ pub enum MeshError {
     Morph(MorphError),
     /// The engine's memory could not grow by `bytes` for the mesh. The storage holds no part of it.
     OutOfMemory { bytes: u64 },
+    /// A mesh that a new mesh would take its vertices from is not live.
+    UnknownMesh,
+    /// A level cannot share the base mesh's vertices: the base is split into parts, or joints or
+    /// morph targets pose its vertices, so the level copies them instead.
+    SharedUnavailable,
 }
 
 /// Room for `more` values in `v`, or the bytes they need when memory cannot grow.
@@ -305,6 +317,12 @@ impl MeshStorage {
         &self.pages
     }
 
+    /// True when the live mesh `level` draws the vertices of the live mesh `base` from indices of
+    /// its own: a level that [`MeshStorage::add_level`] added over that base.
+    pub fn shares_vertices_with(&self, level: u32, base: u32) -> bool {
+        self.mesh(level).is_some_and(|slot| slot.base == Some(base))
+    }
+
     /// The live mesh with id `id`.
     pub fn mesh(&self, id: u32) -> Option<&MeshSlot> {
         self.meshes
@@ -455,8 +473,17 @@ impl MeshStorage {
                 self.updated.push((part.page, first_byte, end_byte));
             }
         }
-        let slot = &mut self.meshes[id as usize];
-        slot.updates = slot.updates.wrapping_add(1).max(1);
+        // An update through a level writes its base mesh's vertices, so the base's count moves
+        // too: a cached shadow of the base is stale as well.
+        let mut id = id;
+        loop {
+            let slot = &mut self.meshes[id as usize];
+            slot.updates = slot.updates.wrapping_add(1).max(1);
+            match slot.base {
+                Some(base) => id = base,
+                None => break,
+            }
+        }
         Ok(mesh.updates == 0)
     }
 
@@ -585,6 +612,7 @@ impl MeshStorage {
             first_source,
             sources: self.sources.len() as u32 - first_source,
             updates: 0,
+            base: None,
         };
         let lowest = (0..self.free.len()).min_by_key(|&k| self.free[k]);
         Ok(match lowest.map(|k| self.free.swap_remove(k)) {
@@ -601,19 +629,129 @@ impl MeshStorage {
         })
     }
 
+    /// Adds a mesh that draws the vertices of the live mesh `base` with the triangles `indices`,
+    /// which name the base mesh's vertices in its own order: the storage that the asset tool's
+    /// levels need, whose vertex streams are the base's. A level names a subset of the base's
+    /// vertices in the same order, because the planner simplifies by dropping vertices and
+    /// rewriting indices, never by moving the vertices it keeps. The part's page takes the
+    /// triangles' indices after the base's own, so the level costs the GPU indices alone. The level
+    /// holds the base's radius and format, and goes when the base goes.
+    ///
+    /// A base in one part shares its vertices. A split base cannot, and neither can one whose morph
+    /// targets pose its vertices: the level would draw parts of it with the wrong vertices or
+    /// without its poses, so it is refused and the caller copies the vertices instead. A skinned
+    /// base shares them, because the skin moves the same vertices whichever level names them.
+    pub fn add_level(&mut self, base: u32, indices: &[u32]) -> Result<u32, MeshError> {
+        if !indices.len().is_multiple_of(3) {
+            return Err(MeshError::NotTriangles);
+        }
+        let slot = *self
+            .meshes
+            .get(base as usize)
+            .filter(|_| self.live.get(base as usize) == Some(&true))
+            .ok_or(MeshError::UnknownMesh)?;
+        if slot.part_count != 1 || slot.sources != 0 || slot.targets != 0 {
+            return Err(MeshError::SharedUnavailable);
+        }
+        let part = self.parts[slot.first_part as usize];
+        if let Some(&index) = indices.iter().find(|&&index| index >= part.vertex_count) {
+            return Err(MeshError::IndexOutOfRange {
+                index,
+                vertices: part.vertex_count,
+            });
+        }
+        // Pages store page positions, so each index moves by where the part's vertices sit.
+        // Shared buffers store the mesh's own indices and the draw adds the part's first vertex.
+        let shift = match self.packing {
+            Packing::Pages => part.first_vertex,
+            Packing::SharedBuffers => 0,
+        };
+        let page = &mut self.pages[part.page as usize];
+        reserve(&mut page.indices, indices.len())?;
+        let first_index = page.indices.len() as u32;
+        page.indices
+            .extend(indices.iter().map(|&index| (index + shift) as u16));
+        let first_part = self.parts.len() as u32;
+        reserve(&mut self.parts, 1)?;
+        let made = MeshPart {
+            page: part.page,
+            first_index,
+            index_count: indices.len() as u32,
+            base_vertex: part.base_vertex,
+            vertex_count: part.vertex_count,
+            first_vertex: part.first_vertex,
+            shares_vertices: true,
+        };
+        self.parts.push(made);
+        if self.edges {
+            let edges = self.edge_part(made);
+            self.edge_parts.push(edges);
+        }
+        reserve(&mut self.meshes, 1)?;
+        reserve(&mut self.live, 1)?;
+        let level = MeshSlot {
+            format: slot.format,
+            first_part,
+            part_count: 1,
+            vertex_count: slot.vertex_count,
+            radius: slot.radius,
+            // The level draws the base's vertices, so it reads the base's joint spheres too: a
+            // skinned object's level follows the pose that the base's skin gives those vertices.
+            joints: slot.joints,
+            first_sphere: slot.first_sphere,
+            targets: 0,
+            first_reach: 0,
+            first_texel: 0,
+            texels: 0,
+            first_source: 0,
+            sources: 0,
+            updates: 0,
+            base: Some(base),
+        };
+        let lowest = (0..self.free.len()).min_by_key(|&k| self.free[k]);
+        Ok(match lowest.map(|k| self.free.swap_remove(k)) {
+            Some(id) => {
+                self.meshes[id as usize] = level;
+                self.live[id as usize] = true;
+                id
+            }
+            None => {
+                self.meshes.push(level);
+                self.live.push(true);
+                self.meshes.len() as u32 - 1
+            }
+        })
+    }
+
     /// Removes the live meshes among `ids`, packs the storage over their data, and returns where
     /// the data changed. Other ids are skipped. The removed ids stay taken until
     /// [`MeshStorage::release`] gives them to later meshes.
     pub fn remove(&mut self, ids: &[u32]) -> MeshMoves {
         let (mut parts, mut spheres, mut reaches, mut texels) = Default::default();
         let mut sources = Gaps::default();
-        for &id in ids {
+        // A level draws its base's vertices, so it goes with the base rather than outlive them.
+        let mut ids = ids.to_vec();
+        let mut at = 0;
+        while at < ids.len() {
+            let base = ids[at];
+            at += 1;
+            for (level, mesh) in self.meshes.iter().enumerate() {
+                let level = level as u32;
+                if mesh.base == Some(base) && self.live[level as usize] && !ids.contains(&level) {
+                    ids.push(level);
+                }
+            }
+        }
+        for &id in &ids {
             if self.mesh(id).is_none() {
                 continue;
             }
             let mesh = self.meshes[id as usize];
             Gaps::add(&mut parts, mesh.first_part, mesh.part_count);
-            Gaps::add(&mut spheres, mesh.first_sphere, mesh.joints);
+            // A level's joint spheres are its base's, which stay while the base lives.
+            if mesh.base.is_none() {
+                Gaps::add(&mut spheres, mesh.first_sphere, mesh.joints);
+            }
             Gaps::add(&mut reaches, mesh.first_reach, mesh.targets);
             Gaps::add(&mut texels, mesh.first_texel, mesh.texels);
             sources.add(mesh.first_source, mesh.sources);
@@ -665,7 +803,10 @@ impl MeshStorage {
             for k in start as usize..(start + len) as usize {
                 let part = self.parts[k];
                 let (vertices, indices) = &mut pages[part.page as usize];
-                vertices.add(part.first_vertex, part.vertex_count);
+                // A level's vertices are its base's, which stay while any mesh draws them.
+                if !part.shares_vertices {
+                    vertices.add(part.first_vertex, part.vertex_count);
+                }
                 indices.add(part.first_index, part.index_count);
                 if let Some(edges) = self.edge_parts.get(k) {
                     indices.add(edges.first_index, edges.index_count);
@@ -861,6 +1002,7 @@ impl MeshStorage {
             base_vertex,
             vertex_count: count,
             first_vertex,
+            shares_vertices: false,
         })
     }
 
@@ -1139,6 +1281,130 @@ mod tests {
                 })
             })
             .collect()
+    }
+
+    #[test]
+    fn a_level_draws_the_same_vertices_from_its_own_indices() {
+        for packing in [Packing::Pages, Packing::SharedBuffers] {
+            let mut storage = MeshStorage::new(packing);
+            let geometry = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+            let base = storage.add(&geometry).unwrap();
+            let slot = *storage.mesh(base).unwrap();
+            let parts = storage.parts(&slot, false).to_vec();
+            let count = parts.iter().map(|part| part.index_count).sum::<u32>();
+            assert!(count >= 12);
+            // The level keeps the first two triangles of the base.
+            let indices = geometry.indices[..6].to_vec();
+            let level = storage.add_level(base, &indices).unwrap();
+            let level_slot = *storage.mesh(level).unwrap();
+            let level_parts = storage.parts(&level_slot, false).to_vec();
+            // The level shares the base's page and takes the indices after the base's.
+            assert_eq!(level_parts.len(), 1);
+            assert_eq!(level_parts[0].page, parts[0].page);
+            assert_eq!(
+                level_parts[0].first_index,
+                parts[0].first_index + parts[0].index_count
+            );
+            assert_eq!(level_parts[0].index_count, 6);
+            assert_eq!(level_parts[0].first_vertex, parts[0].first_vertex);
+            assert_eq!(level_parts[0].base_vertex, parts[0].base_vertex);
+            assert!(level_parts[0].shares_vertices);
+            assert_eq!(level_slot.radius, slot.radius);
+            assert_eq!(level_slot.format, slot.format);
+            assert_eq!(level_slot.vertex_count, slot.vertex_count);
+            // The two triangles draw the base's own vertices.
+            assert_eq!(
+                resolved_vertices(&storage, level),
+                original_vertices(&geometry)[..6].to_vec()
+            );
+        }
+    }
+
+    #[test]
+    fn a_level_copies_its_vertices_when_its_base_is_split() {
+        // A page limit that one box fits and a grid does not: the grid's mesh takes several parts,
+        // which no level can share.
+        let mut storage = MeshStorage::with_page_limit(Packing::Pages, 2048);
+        let grid = grid(64, 64, 0);
+        let base = storage.add(&grid).unwrap();
+        assert!(storage.mesh(base).unwrap().part_count > 1);
+        assert_eq!(
+            storage.add_level(base, &grid.indices[..6]),
+            Err(MeshError::SharedUnavailable)
+        );
+    }
+
+    /// A skinned column of `rings` rings, its vertices naming the joint of their ring.
+    fn skinned_column(rings: usize) -> Geometry {
+        let format = vertex::JOINTS | vertex::WEIGHTS;
+        let mut g = Geometry {
+            format,
+            ..Geometry::default()
+        };
+        for ring in 0..rings {
+            for [x, z] in [[0.5, 0.0], [-0.5, 0.0], [0.0, 0.5], [0.0, -0.5]] {
+                for v in [x, ring as f32, z, 0.0, 1.0, 0.0] {
+                    g.vertices.extend_from_slice(&f32::to_le_bytes(v));
+                }
+                g.vertices.extend_from_slice(&[ring as u8, 0, 0, 0]);
+                for w in [1.0f32, 0.0, 0.0, 0.0] {
+                    g.vertices.extend_from_slice(&w.to_le_bytes());
+                }
+            }
+        }
+        g.indices = vec![0, 1, 2];
+        g
+    }
+
+    #[test]
+    fn a_level_of_a_skinned_base_keeps_its_joint_spheres_and_they_stay_while_it_lives() {
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let geometry = skinned_column(3);
+        let base = storage.add(&geometry).unwrap();
+        let base_slot = *storage.mesh(base).unwrap();
+        assert_eq!(base_slot.joints, 3);
+        let level = storage.add_level(base, &geometry.indices).unwrap();
+        let level_slot = *storage.mesh(level).unwrap();
+        assert!(storage.shares_vertices_with(level, base));
+        assert!(!storage.shares_vertices_with(base, level));
+        // The level reads the base's spheres, so a skinned draw poses its vertices.
+        assert_eq!(level_slot.joints, base_slot.joints);
+        assert_eq!(level_slot.first_sphere, base_slot.first_sphere);
+        assert_eq!(
+            storage.joint_spheres(&level_slot).len(),
+            storage.joint_spheres(&base_slot).len()
+        );
+        // Taking the level out frees no sphere of the base's.
+        storage.remove(&[level]);
+        let live_base = storage.mesh(base).unwrap();
+        assert_eq!(storage.joint_spheres(live_base).len(), 3);
+    }
+
+    #[test]
+    fn a_level_takes_its_indices_when_its_base_goes() {
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let geometry = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let base = storage.add(&geometry).unwrap();
+        let level = storage.add_level(base, &geometry.indices[..6]).unwrap();
+        let base_page = storage.parts(storage.mesh(base).unwrap(), false)[0].page;
+        // Taking the level out frees its indices alone: the base's vertices and triangles stay.
+        storage.remove(&[level]);
+        storage.release(&[level]);
+        assert!(storage.mesh(level).is_none());
+        assert_eq!(
+            resolved_vertices(&storage, base),
+            original_vertices(&geometry)
+        );
+        assert_eq!(
+            storage.pages()[base_page as usize].indices.len(),
+            geometry.indices.len()
+        );
+        // The base takes the live level with it, rather than leave it over freed vertices.
+        let level = storage.add_level(base, &geometry.indices[..6]).unwrap();
+        storage.remove(&[base]);
+        storage.release(&[base]);
+        assert!(storage.mesh(base).is_none());
+        assert!(storage.mesh(level).is_none());
     }
 
     fn original_vertices(g: &Geometry) -> Vec<Vec<u8>> {

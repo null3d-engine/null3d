@@ -24,6 +24,8 @@ import {
 	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
+	MAP_SLOT_THICKNESS,
+	MAP_SLOT_TRANSMISSION,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
@@ -126,6 +128,7 @@ import type { CoreMemory } from './memory';
 import {
 	arraysProblem,
 	meshFromArrays,
+	meshFromLevel,
 	morphTargetCount,
 	updateVertices,
 	type VertexLayout,
@@ -277,19 +280,26 @@ export class MeshGeometry {
 	/**
 	 * Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and
 	 * its other data at once, and later meshes take its room. Destroy the objects and instance
-	 * batches that use it first, in the same frame or before. Throws E1111 while one
+	 * batches that use it first, in the same frame or before. Its lower levels go with it, since a
+	 * level draws its base's vertices. Throws E1111 while one
 	 * still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh
 	 * throw E1101.
 	 */
 	destroy(): void {
 		const call = 'mesh.destroy';
-		const user = this.maker?.users?.userOf(new Set([this]));
+		// A level draws its base mesh's vertices, so the base takes it along. A level that the
+		// sketch destroyed itself is gone already.
+		const meshes = [
+			this,
+			...this.lowerLevels.filter((level) => level.mesh.live).map((level) => level.mesh),
+		];
+		const user = this.maker?.users?.userOf(new Set(meshes));
 		if (user)
 			throw new EngineError(
 				'E1111',
 				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
 			);
-		destroyMeshes(this.core, [this], call);
+		destroyMeshes(this.core, meshes, call);
 	}
 
 	/**
@@ -300,8 +310,9 @@ export class MeshGeometry {
 	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
 	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
 	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
-	 * targets take no updates. Throws E1206 for values that do not fit the mesh, and E1101 for a
-	 * destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
+	 * targets take no updates. A level that draws its base mesh's vertices writes them, so the base
+	 * and every level of it draw the new values. Throws E1206 for values that do not fit the mesh,
+	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
 	updateVertices(
 		name: UpdatableAttribute,
@@ -344,8 +355,9 @@ export class MeshGeometry {
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
 	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
-	 * Skinned and morphed objects, and materials that blend or let light through, draw the base
-	 * mesh. Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
+	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
+	 * skinned object draws a level while the level names the base mesh's own vertices.
+	 * Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
 	 * cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
@@ -998,6 +1010,21 @@ export class Geometry {
 			this,
 		);
 	}
+
+	/**
+	 * @internal A level that draws `base`'s vertices with the given triangles, or undefined when the
+	 * engine cannot share them and the caller gives the level its own arrays. Files whose levels
+	 * keep the base's vertex streams load every level this way, so a level costs indices alone.
+	 */
+	fromLevel(
+		base: MeshGeometry,
+		indices: Uint16Array | Uint32Array | readonly number[],
+	): MeshGeometry | undefined {
+		const call = 'geometry.fromLevel';
+		const id = meshFromLevel(this.core, base.id, indices, call);
+		if (id === undefined) return undefined;
+		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
+	}
 }
 
 /**
@@ -1337,6 +1364,18 @@ export interface StandardMaps {
 	 */
 	diffuseTransmissionColorMap?: Texture;
 	/**
+	 * The share of the light behind the surface that passes through it, in red, in linear color.
+	 * Its red multiplies `transmission`. Only a material created with `transmission` takes it, and
+	 * such a material takes no specular maps, since these maps take their slots.
+	 */
+	transmissionMap?: Texture;
+	/**
+	 * The thickness of the volume under the surface, in green, in linear color. Its green
+	 * multiplies `thickness`. Only a material created with `transmission` takes it, and such a
+	 * material takes no specular maps, since these maps take their slots.
+	 */
+	thicknessMap?: Texture;
+	/**
 	 * The clear coat in red, in linear color, which multiplies `clearcoat`. A material with a clear
 	 * coat or a sheen takes no light map and no specular maps, since its layers' maps take their
 	 * places.
@@ -1511,7 +1550,9 @@ export interface DecalValues
  *
  * @category api/materials
  */
-export interface DecalOptions extends DecalValues, Omit<StandardMaps, 'lightMap'> {}
+export interface DecalOptions
+	extends DecalValues,
+		Omit<StandardMaps, 'lightMap' | 'transmissionMap' | 'thicknessMap'> {}
 
 /**
  * Options of `materials.unlit`.
@@ -1781,6 +1822,8 @@ const MAP_OPTIONS: readonly (readonly [Exclude<keyof StandardMaps, 'parallax'>, 
 	['specularColorMap', MAP_SLOT_SPECULAR_COLOR],
 	['diffuseTransmissionMap', MAP_SLOT_DIFFUSE_TRANSMISSION],
 	['diffuseTransmissionColorMap', MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR],
+	['transmissionMap', MAP_SLOT_TRANSMISSION],
+	['thicknessMap', MAP_SLOT_THICKNESS],
 	['clearcoatMap', MAP_SLOT_COAT],
 	['clearcoatRoughnessMap', MAP_SLOT_COAT_ROUGHNESS],
 	['clearcoatNormalMap', MAP_SLOT_COAT_NORMAL],
@@ -1804,12 +1847,36 @@ const TRANSLUCENCY_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
 ]);
 
 /**
+ * The maps that share their slots with the specular maps, of a material that lets light through:
+ * the slots of the one hold the maps of the other.
+ */
+const TRANSMISSION_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
+	'transmissionMap',
+	'thicknessMap',
+]);
+
+/**
  * True when a map option does not fit a material with `features`: the diffuse transmission maps
  * without diffuse transmission, and the specular maps with it, which would take the same slots.
  */
 function skipsMap(key: keyof StandardMaps, features: number): boolean {
 	const translucent = (features & MATERIAL_FEATURE_TRANSLUCENCY) !== 0;
 	return translucent ? SPECULAR_MAPS.has(key) : TRANSLUCENCY_MAPS.has(key);
+}
+
+/**
+ * True for a transmission or thickness map that a material leaves out, because it gives no
+ * transmission, lets light through to its other side, or gives a specular map: each of them takes
+ * the specular maps' slots. Development builds refuse these with E1217 instead.
+ */
+function skipsTransmissionMap(options: StandardOptions, key: keyof StandardMaps): boolean {
+	if (!TRANSMISSION_MAPS.has(key)) return false;
+	return (
+		options.transmission === undefined ||
+		options.diffuseTransmission !== undefined ||
+		options.specularIntensityMap !== undefined ||
+		options.specularColorMap !== undefined
+	);
 }
 
 /** The values of a clear coat, a sheen, iridescence or anisotropy, any of which gives a material its layers. */
@@ -1886,7 +1953,13 @@ function takesAnisotropy(options: StandardOptions): boolean {
  * without the map rather than read it as another layer's.
  */
 function skipsLayerMap(options: StandardOptions, key: keyof StandardMaps): boolean {
-	if (key === 'lightMap' || SPECULAR_MAPS.has(key) || TRANSLUCENCY_MAPS.has(key)) return true;
+	if (
+		key === 'lightMap' ||
+		SPECULAR_MAPS.has(key) ||
+		TRANSLUCENCY_MAPS.has(key) ||
+		TRANSMISSION_MAPS.has(key)
+	)
+		return true;
 	if (key === 'clearcoatRoughnessMap')
 		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
 	if (key === 'sheenRoughnessMap')
@@ -2447,6 +2520,30 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, blending, depthBias, transmission } = options;
 	const features = featureBits(options);
+	for (const key of ['transmissionMap', 'thicknessMap'] as const) {
+		if (options[key] === undefined) continue;
+		if (transmission === undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} without transmission; give transmission, even as 0, to create a material that lets light through.`,
+			);
+		if (options.diffuseTransmission !== undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} with diffuseTransmission; a material that lets light through to its other side keeps its diffuse transmission maps in the same slots. Give the material one kind of map or the other.`,
+			);
+		const specular =
+			options.specularIntensityMap !== undefined
+				? 'specularIntensityMap'
+				: options.specularColorMap !== undefined
+					? 'specularColorMap'
+					: undefined;
+		if (specular)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${specular} with ${key}; the transmission and thickness maps take the specular maps' slots. Give the material the specular maps or those two, not both.`,
+			);
+	}
 	for (const [key] of MAP_OPTIONS)
 		if (options[key] && skipsMap(key, features))
 			throw new EngineError(
@@ -2518,18 +2615,22 @@ function checkFeatures(options: StandardOptions, call: string): void {
  * layer maps that glTF packs into one texture but that are two. Call it inside `if (DEV)`.
  */
 function checkLayerMaps(options: StandardOptions, call: string): void {
-	const displaced =
+	const sharedSlot =
 		options.lightMap !== undefined
 			? 'lightMap'
 			: options.specularIntensityMap !== undefined
 				? 'specularIntensityMap'
 				: options.specularColorMap !== undefined
 					? 'specularColorMap'
-					: undefined;
-	if (displaced)
+					: options.transmissionMap !== undefined
+						? 'transmissionMap'
+						: options.thicknessMap !== undefined
+							? 'thicknessMap'
+							: undefined;
+	if (sharedSlot)
 		throw new EngineError(
 			'E1217',
-			`${call}() got ${displaced} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
+			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light, specular or volume values into the other maps, or use a material without layers.`,
 		);
 	for (const [first, second, packed] of [
 		['clearcoatMap', 'clearcoatRoughnessMap', 'the roughness in the green of the clear coat map'],
@@ -3149,7 +3250,13 @@ export class Materials {
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
 			// A production build leaves out a map that would take another map's slot.
-			if (!map || skipsMap(key, features) || (layered && skipsLayerMap(options, key))) continue;
+			if (
+				!map ||
+				skipsMap(key, features) ||
+				skipsTransmissionMap(options, key) ||
+				(layered && skipsLayerMap(options, key))
+			)
+				continue;
 			const second = map.uvSet === 1 ? 1 : 0;
 			core.checkGrowth(
 				core.glue.setMaterialMap(id, slot, map.handle, second),

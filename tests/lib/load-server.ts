@@ -18,6 +18,8 @@ import {
 	ISOLATION_HEADERS,
 	immutableAssetsMiddleware,
 } from '../../packages/vite-plugin/src/index.ts';
+import { acquirePageBuildLock, secondsSince } from '../../tools/lib/build-cache.ts';
+import { coreFromOtherSources } from '../../tools/lib/core-sources.ts';
 import {
 	type DownloadedFile,
 	type Downloads,
@@ -38,8 +40,11 @@ export const BENCH_PAGES_DIR = join(REPO_ROOT, 'target/bench-pages');
 /** The Vite config of the benchmark pages' build, from a copy of the repository's root. */
 const BENCH_CONFIG = 'bench/vite.pages.config.ts';
 
-/** Runs `vite build` in the repository copy at `root`, with `env` added. */
+/** Runs `vite build` in the repository copy at `root`, with `env` added, under the page build lock. */
 function viteBuild(root: string, args: readonly string[], env: Record<string, string> = {}): void {
+	const stale = coreFromOtherSources(root);
+	if (stale) throw new Error(stale);
+	const release = acquirePageBuildLock();
 	const build = spawnSync('bunx', ['vite', 'build', ...args], {
 		cwd: root,
 		encoding: 'utf8',
@@ -48,6 +53,7 @@ function viteBuild(root: string, args: readonly string[], env: Record<string, st
 		maxBuffer: 256 << 20,
 		env: { ...process.env, ...env },
 	});
+	release();
 	if (build.status !== 0)
 		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
 }
@@ -102,6 +108,30 @@ export const LOAD_BUILDS: readonly (LoadBuild & { build(): void })[] = [
 	},
 	{ name: 'startup', prefix: '', dir: STARTUP_PAGES_DIR, build: buildStartupPages },
 ];
+
+/**
+ * The switch that serves the load builds that an earlier step made: with `NULL3D_LOAD_PAGES=prebuilt`
+ * a run builds none of them, and fails when a build that it needs is missing. Each build bundles
+ * the whole shader set, which took each real-browser shard minutes, so CI builds them once in a job
+ * of its own with `bun tests/lib/load-server.ts`, and each shard downloads them.
+ */
+export const LOAD_PAGES_SWITCH = 'NULL3D_LOAD_PAGES';
+
+/** Makes `load`, or takes the one that an earlier step made when the switch says so, and says which. */
+export function makeLoadBuild(load: (typeof LOAD_BUILDS)[number]): void {
+	if (process.env[LOAD_PAGES_SWITCH] === 'prebuilt') {
+		if (!existsSync(load.dir) || readdirSync(load.dir).length === 0)
+			throw new Error(
+				`${LOAD_PAGES_SWITCH}=prebuilt, but ${load.dir} holds no ${load.name} build; build it with bun tests/lib/load-server.ts`,
+			);
+		console.log(`The ${load.name} build comes from ${load.dir}, which an earlier step made.`);
+		return;
+	}
+	const started = performance.now();
+	console.log(`Building the ${load.name} build`);
+	load.build();
+	console.log(`Built the ${load.name} build in ${secondsSince(started)} s.`);
+}
 
 /** The build of `builds` that serves the file at `path`, a path in a build. */
 function buildOf<T extends LoadBuild>(path: string, builds: readonly T[]): T | undefined {
@@ -503,3 +533,7 @@ export async function prepareLoads(serverUrl: string, needed: readonly string[])
 		: (answer.error ?? 'restart its dev server, which predates the load routes');
 	throw new Error(`${serverUrl} cannot serve the loads (HTTP ${response.status}): ${problem}`);
 }
+
+// Run as a script, it makes every load build, as CI's job of them does before the real-browser
+// shards download them.
+if (import.meta.main) for (const load of LOAD_BUILDS) makeLoadBuild(load);

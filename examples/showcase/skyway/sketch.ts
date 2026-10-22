@@ -8,6 +8,7 @@
 // camera to the user. The HUD's Traffic buttons change how many cars fly, and the Quality buttons
 // change the preset. The stats overlay is on from the first frame.
 import { defineSketch, type QualityPreset, timeOfDay, vec3 } from '@null3d/engine';
+import { createLensKit, nightGrade } from '../../addons/lens-kit/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import {
 	ATMOSPHERE,
@@ -182,7 +183,18 @@ export default defineSketch(async (ctx) => {
 		ssr: { maxDistance: 260, thickness: 2, maxRoughness: 0.4, intensity: 1 },
 		bloom: { intensity: 0.55, threshold: 1 },
 		ao: { radius: 1.4 },
-		vignette: { intensity: 0.55 },
+	});
+	// The lens kit gives the picture its grade, its sharpening, its vignette and the camera's own
+	// marks: the fringes, the streak on the brightest light, grain and a little speed blur.
+	const lensKit = await createLensKit(ctx, {
+		sharpen: 0.35,
+		vignette: { intensity: 0.55, size: 1.05, falloff: 2.2 },
+		grade: { data: nightGrade(), intensity: 0.85 },
+		aberration: 0.8,
+		streak: 0.45,
+		grain: 0.035,
+		// The speed blur follows the camera's own travel, below, so a held frame has none.
+		speedBlur: 0,
 	});
 	debug.stats(true);
 
@@ -194,6 +206,8 @@ export default defineSketch(async (ctx) => {
 	const rain = createRain(ctx);
 	/** The camera's place, which the real lights follow. */
 	const eye = vec3.create();
+	/** The camera's place, which the lens's speed blur follows. */
+	const eyeForSpeed = vec3.create();
 	const hero = createHero(ctx, camera, {
 		position: (SHOTS[0] as Shot).position,
 		target: TARGET,
@@ -293,7 +307,7 @@ export default defineSketch(async (ctx) => {
 				post.set({ autoExposure: lit ? {} : false });
 				break;
 			case 'vignette':
-				post.set({ vignette: lit ? { intensity: 0.55 } : false });
+				lensKit.set({ vignette: lit ? { intensity: 0.55, size: 1.05, falloff: 2.2 } : false });
 				break;
 		}
 	};
@@ -338,10 +352,28 @@ export default defineSketch(async (ctx) => {
 		bounds: { ...BOUNDS, ground: () => 0 },
 	});
 
+	/** The camera's place a frame ago, for the speed that the lens smears by. */
+	const was = vec3.create();
+	// The camera keeps its distance from where it turns, so the change of its place is its travel.
+	camera.getWorldPosition(was);
+	let smear = 0;
 	return {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			camera.getWorldPosition(eyeForSpeed);
+			const travel = Math.hypot(
+				(eyeForSpeed[0] as number) - (was[0] as number),
+				(eyeForSpeed[1] as number) - (was[1] as number),
+				(eyeForSpeed[2] as number) - (was[2] as number),
+			);
+			vec3.copy(was, eyeForSpeed);
+			// A fraction of a frame's travel, settling over a few frames, so the smear never jumps.
+			smear = Math.min(
+				0.12,
+				smear + (travel / Math.max(dt, 1e-3) / 900 - smear) * Math.min(1, dt * 6),
+			);
+			lensKit.set({ speedBlur: smear });
 			// The storm is the scene's own weather over the stage's night: a sky under full cloud,
 			// and fog thick enough to hide the far towers.
 			if (mood === 'Storm') writeStorm(t);

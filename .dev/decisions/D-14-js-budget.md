@@ -852,3 +852,20 @@ The growth is the level system: the level table with its switch measures, the di
 ranges texture that culling reads, and the per-level materials. The commit gate asks for a
 `Size-Growth:` line while a file grows by more than 2 percent against main, so the landing carries
 one for each core file.
+
+## The start's squeeze, 23 October 2026
+
+The grading controls pushed the engine's start close to its budget. In pipelined WebGL2 mode the
+start is 185,857 bytes after Brotli against 186,368, so 511 bytes remain. The small path's low
+latency mode reads 182,219 and the main-thread mode 183,497. That puts every threaded start past the
+97 percent warning that the owner asked for, so every page build names them while it still passes.
+
+Two files explain the movement. The engine's error type, `errors/engine-error.ts`, is imported by the
+page's start, its loader and its checks, so the bundler keeps it in `js/engine-error.js` of its own,
+771 bytes after Brotli. The size report had not named that file, which is why the four size jobs
+failed on the tip's first runs. And `js/render-worker.js` grew from 17,993 to 18,520 bytes, or
+2.9 percent, because the grading table's bake runs on the render worker.
+
+Both need a `Size-Growth:` line, as the commit gate asks. The start's remaining room is the finding
+that matters: the next feature that touches the start has nowhere to go, so a trim is due before
+another one lands.

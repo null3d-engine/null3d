@@ -452,6 +452,28 @@ function brdfGgx(toLight: V3, toView: V3, normal: V3, f0: V3, f90: number, rough
 	const vDotH = saturate(dot(toView, half));
 	return scale(fSchlick(f0, f90, vDotH), vGgx(alpha, nDotL, nDotV) * dGgx(alpha, nDotH));
 }
+/** The visibility term of a lobe stretched along the tangent, from the cosines of its frame. */
+const vGgxAniso = (
+	alphaT: number,
+	alphaB: number,
+	tDotV: number,
+	bDotV: number,
+	tDotL: number,
+	bDotL: number,
+	nDotV: number,
+	nDotL: number,
+) => {
+	const gv = nDotL * Math.hypot(alphaT * tDotV, alphaB * bDotV, nDotV);
+	const gl = nDotV * Math.hypot(alphaT * tDotL, alphaB * bDotL, nDotL);
+	return 0.5 / Math.max(gv + gl, 1e-6);
+};
+/** The anisotropic GGX distribution, which peaks along the stretched axis of the lobe. */
+const dGgxAniso = (alphaT: number, alphaB: number, nDotH: number, tDotH: number, bDotH: number) => {
+	const a2 = alphaT * alphaB;
+	const v = [alphaB * tDotH, alphaT * bDotH, a2 * nDotH];
+	const w2 = a2 / dot(v, v);
+	return INV_PI * a2 * w2 * w2;
+};
 function multiscattering(f0: V3, f90: number, dfg: V2): [V3, V3] {
 	const single = map3(f0, (f) => f * dfg[0] + f90 * dfg[1]);
 	const ems = 1 - (dfg[0] + dfg[1]);
@@ -489,6 +511,19 @@ const materialOf = (i: Inputs) => {
 	const [roughness, kernel] = i.f(1);
 	return pbrMaterial([r, g, b], metalness, roughness, kernel);
 };
+/** A material with the specular values of glTF's specular extension, as `with_specular` sets them. */
+function withSpecular(m: Pbr, reflectance: number, color: V3, intensity: number): Pbr {
+	const specular = scale(
+		map3(color, (c) => Math.min(reflectance * c, 1)),
+		intensity,
+	);
+	return {
+		...m,
+		specular,
+		blended: mix3(specular, m.base, m.metalness),
+		grazing: intensity + (1 - intensity) * m.metalness,
+	};
+}
 /** Inputs whose first two texels make a material, and whose later texels hold unit directions. */
 const materialCase =
 	(fill: (random: () => number, i: Inputs) => void) =>
@@ -1626,6 +1661,109 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => {
 			const [du, dv] = [xyz(i.f(0)), xyz(i.f(1))];
 			return scalar(Math.min(2 * 0.15 * (dot(du, du) + dot(dv, dv)), 0.01));
+		},
+	},
+	{
+		// The first texel holds the two alphas and the view's cosines with the tangent and the
+		// bitangent, and the second the light's cosines and both cosines with the normal.
+		name: 'lighting::v_ggx_smith_correlated_anisotropic',
+		cases: (random) => [
+			// Face on with equal alphas: the term is small where both normal cosines are largest.
+			new Inputs().setF(0, [0.5, 0.5, 0, 0]).setF(1, [0.6, 0, 1, 0.8]),
+			// The view near grazing and the light face on: the term grows as the view cosine falls.
+			new Inputs().setF(0, [0.3, 0.1, 0.9962, 0]).setF(1, [0, 0, 0.0872, 1]),
+			// Both near grazing, with the lobe stretched along the tangent.
+			new Inputs().setF(0, [0.9, 0.05, 0.9962, 0]).setF(1, [-0.9962, 0, 0.0872, 0.0872]),
+			// The same directions with the alphas swapped, so the stretch runs across the frame:
+			// the term differs, because the lobe follows the tangent.
+			new Inputs().setF(0, [0.05, 0.9, 0.9962, 0]).setF(1, [-0.9962, 0, 0.0872, 0.0872]),
+			...samples((random) => {
+				// The frame is x, y and z, so a direction's components are its cosines.
+				const facing = (v: V3) => (v[2] < 0 ? scale(v, -1) : v);
+				const view = facing(unit(random));
+				const light = facing(unit(random));
+				return new Inputs()
+					.setF(0, [between(random, 0.05, 1), between(random, 0.05, 1), view[0], view[1]])
+					.setF(1, [light[0], light[1], view[2], light[2]]);
+			})(random),
+		],
+		expected: (i) => {
+			const [alphaT, alphaB, tDotV, bDotV] = i.f(0);
+			const [tDotL, bDotL, nDotV, nDotL] = i.f(1);
+			return scalar(vGgxAniso(alphaT, alphaB, tDotV, bDotV, tDotL, bDotL, nDotV, nDotL));
+		},
+	},
+	{
+		// The first texel holds the two alphas, the half vector's cosine with the normal and its
+		// cosine with the tangent; the second texel starts with its cosine with the bitangent.
+		name: 'lighting::d_ggx_anisotropic',
+		cases: (random) => [
+			// The half vector along the normal, where the lobe peaks. With equal alphas the peak is
+			// the isotropic one, one over pi times the squared alpha.
+			new Inputs().setF(0, [0.4, 0.4, 1, 0]).setF(1, [0]),
+			// The half vector at 60 degrees from the normal: the distribution falls away.
+			new Inputs().setF(0, [0.4, 0.4, 0.5, 0.8660254]).setF(1, [0]),
+			// A lobe stretched along the tangent, with the half vector on the stretched axis: the
+			// value stays well above the one across the stretch.
+			new Inputs().setF(0, [0.5, 0.05, 0, 1]).setF(1, [0]),
+			// The same lobe with the half vector across the stretched axis.
+			new Inputs().setF(0, [0.5, 0.05, 0, 0]).setF(1, [1]),
+			...samples((random) => {
+				const half = unit(random);
+				return new Inputs()
+					.setF(0, [between(random, 0.05, 1), between(random, 0.05, 1), half[2], half[0]])
+					.setF(1, [half[1]]);
+			})(random),
+		],
+		expected: (i) => scalar(dGgxAniso(i.f(0)[0], i.f(0)[1], i.f(0)[2], i.f(0)[3], i.f(1)[0])),
+	},
+	{
+		// The first two texels make a material, with the specular tint's reflectance and intensity
+		// in the rest of the second; the next texels hold the normal, the view, the tint's color
+		// and the light.
+		name: 'lighting::brdf_ggx_physical',
+		cases: (random) => [
+			// A surface without a specular layer reflects no specular light, even face on.
+			new Inputs()
+				.setF(0, [0.8, 0.8, 0.8, 0])
+				.setF(1, [0.4, 0, 0, 0])
+				.setF(2, [0, 0, 1])
+				.setF(3, [0, 0, 1])
+				.setF(4, [1, 1, 1])
+				.setF(5, [0, 0.6, 0.8]),
+			// Roughness at zero reaches the floor, and the peak of the lobe stays finite instead of
+			// dividing by a zero alpha.
+			new Inputs()
+				.setF(0, [0.5, 0.5, 0.5, 0])
+				.setF(1, [0, 0, 0.04, 1])
+				.setF(2, [0, 0, 1])
+				.setF(3, [0, 0, 1])
+				.setF(4, [1, 1, 1])
+				.setF(5, [0, 0, 1]),
+			// A grazing view raises the Fresnel term above the dielectric reflectance.
+			new Inputs()
+				.setF(0, [0.5, 0.5, 0.5, 0])
+				.setF(1, [0.5, 0, 0.04, 1])
+				.setF(2, [0, 0, 1])
+				.setF(3, [0.9962, 0, 0.0872])
+				.setF(4, [1, 1, 1])
+				.setF(5, [0, 0, 1]),
+			...materialCase((random, i) => {
+				const [roughness, kernel] = i.f(1);
+				i.setF(1, [roughness, kernel, between(random, 0.02, 0.08), between(random, 0, 1)]);
+				const normal = unit(random);
+				const facing = (v: V3) => (dot(v, normal) < 0 ? scale(v, -1) : v);
+				i.setF(2, normal)
+					.setF(3, facing(unit(random)))
+					.setF(5, facing(unit(random)))
+					.setF(4, values(random, 3, 0, 1));
+			})(random),
+		],
+		expected: (i) => {
+			const m = withSpecular(materialOf(i), i.f(1)[2], xyz(i.f(4)), i.f(1)[3]);
+			return floats(
+				brdfGgx(xyz(i.f(5)), xyz(i.f(3)), xyz(i.f(2)), m.blended, m.grazing, m.roughness),
+			);
 		},
 	},
 ];

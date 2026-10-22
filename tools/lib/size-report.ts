@@ -239,6 +239,13 @@ export interface EnginePart {
 	 * neither call downloads neither part.
 	 */
 	onFirstCall?: boolean;
+	/**
+	 * True for a part whose module the start's own files also hold, which the bundler keeps inline:
+	 * it writes a file of its own only for the thread that loads the module on demand. Every page
+	 * downloads the module's code at its start in the start's files, so no first-use check watches
+	 * it, and its own file carries the threads that load it on demand only.
+	 */
+	alsoInStart?: boolean;
 }
 
 /**
@@ -312,6 +319,13 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'errors/message.ts',
 		loadedBy: 'page.js',
 	},
+	{
+		// The engine's error type, which the page's start, its loader and its checks all raise, so the
+		// bundler keeps it in a file of its own that every page loads.
+		name: 'engine-error.js',
+		module: 'errors/engine-error.ts',
+		loadedBy: 'page.js',
+	},
 	{ name: 'page-gpu.js', module: 'generated/gpu.ts', loadedBy: 'page.js' },
 	{ name: 'page-control.js', module: 'shared/control.ts', loadedBy: 'page.js' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
@@ -320,18 +334,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
-	{
-		name: 'page-shader-features.js',
-		module: 'generated/shader-features.ts',
-		loadedBy: 'page-assets.js',
-	},
-	{
-		// The copies of modules that the page's start keeps inline, which the loader's file carries.
-		name: 'page-assets-check.js',
-		module: 'quality/check.ts',
-		loadedBy: 'page-assets.js',
-	},
-	{ name: 'page-assets-core.js', module: 'generated/core.ts', loadedBy: 'page-assets.js' },
+	// Modules that both the page's start and the file loader carry, which the bundler puts in files
+	// of their own that every page loads: they are parts of the start, not first-use files.
+	{ name: 'page-shader-features.js', module: 'generated/shader-features.ts', loadedBy: 'page.js' },
+	{ name: 'page-check.js', module: 'quality/check.ts', loadedBy: 'page.js' },
+	{ name: 'page-core.js', module: 'generated/core.ts', loadedBy: 'page.js' },
 	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
@@ -402,22 +409,23 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-shader-features.js',
 		module: 'generated/shader-features.ts',
-		loadedBy: 'sketch-worker-assets.js',
+		loadedBy: 'sketch-worker.js',
 	},
 	{
-		// The shared helpers that the loader's own file carries a copy of, which the page's start
-		// keeps inline.
-		name: 'sketch-worker-assets-helpers.js',
+		name: 'sketch-worker-images.js',
 		module: 'shared/images.ts',
-		loadedBy: 'sketch-worker-assets.js',
+		loadedBy: 'sketch-worker.js',
 	},
 	{ name: 'sketch-worker-gpu.js', module: 'generated/gpu.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
 	// The worker bootstrap, which the first feature of a worker that starts one of its own loads.
 	{
+		// The page's start imports this module too, so every page downloads its code in the start's
+		// own files; the worker's copy loads on demand in the thread that starts a worker of its own.
 		name: 'sketch-worker-worker-start.js',
 		module: 'shared/worker-start.ts',
 		loadedBy: 'sketch-worker-tasks.js',
+		alsoInStart: true,
 	},
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
@@ -619,6 +627,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'render-worker.js',
 			'job-worker.js',
 		],
@@ -631,6 +642,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'sketch-worker-renderer.js',
 			'job-worker.js',
 		],
@@ -644,6 +658,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page-renderer.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'job-worker.js',
 		],
 	},
@@ -691,8 +708,12 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 			...parts,
 			// Small modules that many files share, which the bundler puts in files of their own that
 			// every page loads.
+			'engine-error.js',
 			'page-message.js',
 			'page-gpu.js',
+			'page-check.js',
+			'page-core.js',
+			'page-shader-features.js',
 			'page-control.js',
 			`${drawing}-${path.part}.js`,
 			`${drawing}-gpu-shared.js`,
@@ -916,7 +937,8 @@ export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 1
  * combination that a feature's bits can form, so its uncompressed size grows with the engine's
  * features while its compressed figure, which is what a page downloads, stays small. The owner
  * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
- * past 64 KB; the compressed figures stay at [`LATER_BUDGET`]'s.
+ * past 64 KB. The compressed figures date from that approval and did not follow the later
+ * raise of [`LATER_BUDGET`], which the glTF worker alone outgrew.
  */
 export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 

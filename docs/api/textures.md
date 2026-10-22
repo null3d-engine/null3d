@@ -143,7 +143,7 @@ return {
 - Ask for the 2D context with `willReadFrequently: true`, so the browser keeps the pixels where the engine reads them cheaply.
 - The rectangle must lie inside the canvas. A rectangle outside it throws E1208.
 - The `refreshHz` option caps how often the engine reads the canvas. A call that comes sooner reads nothing and returns false, and the next read covers its rectangle too.
-- A refresh that comes before the first upload reaches the GPU sends the whole canvas, because a rectangle cannot fill the rest.
+- A call that comes while the rectangle read before it still uploads returns false as well. The next read covers both rectangles. The whole canvas goes only before the first upload reaches the GPU, when a rectangle cannot fill the rest.
 - `texture.update` works on a canvas texture too. An update with another size gives the texture that size, and the next refresh sends the whole canvas.
 - The upload budget counts the rectangle. A 256 x 256 rectangle is 256 KiB, so a 1024 x 1024 screen that refreshes at 30 Hz sends 7.5 MiB a second. The preset's `uploadBytesPerFrame` sets the budget.
 - A refresh makes one `ImageData` for the rectangle, which the browser returns.
@@ -199,7 +199,7 @@ An array holds at most 256 layers, the most that an iPad allows, and at most 128
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
-WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
+WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A material that lets light through keeps its transmission map in the specular intensity map's place and its thickness map in the specular color map's, so they drop in that same order. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
 
 A texture can be at most 4096 texels wide and tall, the most that every WebGPU device allows. On a WebGL2 device that allows less, the device's own limit applies: at least 2048 texels. `textures.maxSize` gives the limit, and a larger image throws E1208.
 

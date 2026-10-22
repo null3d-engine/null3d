@@ -2688,7 +2688,8 @@ export class InstanceBatch implements ViewHolder {
 	 * carries rows away from their origins, such as traffic along a lane, needs this: the engine
 	 * culls a row moved beyond the mesh's own radius while it is still on the screen. A later change
 	 * of the mesh's radius, which a displaced material makes, replaces it. Every row is marked for
-	 * update. Throws E1203 for a value that is not a finite number, and E1108 for 0 or below.
+	 * update, and the call builds the engine's draw tables again, so make it at setup. Throws E1203
+	 * for a value that is not a finite number, and E1108 for 0 or below.
 	 */
 	setBoundingRadius(radius: number): void {
 		if (DEV) {

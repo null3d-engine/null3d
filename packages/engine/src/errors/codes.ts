@@ -143,6 +143,14 @@ const DOCS = {
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
 	},
+	E1209: {
+		title: 'Too many textures',
+		cause:
+			'A material whose shader reads more textures than a WebGL2 shader stage has units. The engine numbers the textures that a program reads, and WebGL2 gives every stage 16 units. The lit shader reads most of them, so a custom material or add-on draw reaches the limit with its own textures, beside the maps and the shadows.',
+		example:
+			'E1209: a WebGL2 program reads 18 textures in its fragment stage, and a stage has 16 units: give the material fewer textures.',
+		since: '0.3',
+	},
 	E1213: {
 		title: 'Invalid setting',
 		cause:
@@ -176,7 +184,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, the transmission and thickness maps, and two textures for a pair of layer maps that glTF packs into one. A material with transmission refuses the specular maps beside the transmission and thickness maps, whose slots they share, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
