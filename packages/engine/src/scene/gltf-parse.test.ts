@@ -111,6 +111,20 @@ describe('meshes', () => {
 		expect(hull?.primitives.map((p) => p.material)).toEqual([0, 1]);
 	});
 
+	test('a primitive records the accessor behind each attribute, which a level shares with its base', () => {
+		const b = new GltfBuilder();
+		const positions = b.positions(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+		const normals = b.accessor(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3);
+		const base = b.mesh([{ attributes: { POSITION: positions, NORMAL: normals } }], 'base');
+		const level = b.mesh([{ attributes: { POSITION: positions, NORMAL: normals } }], 'base_lod1');
+		b.node({ mesh: base });
+		b.node({ mesh: level });
+		const [first, second] = parse(b.glb()).meshes;
+		// The second mesh names the first's accessors, so the parser can tell that it shares them.
+		expect(second?.primitives[0]?.accessors).toEqual(first?.primitives[0]?.accessors);
+		expect(first?.primitives[0]?.accessors).toEqual({ POSITION: positions, NORMAL: normals });
+	});
+
 	test('quantized attributes keep their integers, and normalized ones say so', () => {
 		const b = new GltfBuilder().uses('KHR_mesh_quantization', true);
 		const positions = b.positions(new Uint16Array([0, 0, 0, 1000, 0, 0, 0, 1000, 0]));

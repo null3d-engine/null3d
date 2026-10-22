@@ -540,6 +540,13 @@ export interface VertexData {
 
 /** One primitive of a mesh: its vertex arrays, its triangles and its material. */
 export interface PrimitiveData {
+	/**
+	 * The file accessor that each attribute reads, by glTF name such as `POSITION`, for a primitive
+	 * that reads the file's accessors. Undefined for a Draco primitive, whose attributes come from
+	 * Draco's own ids. Two primitives that name one accessor read the same vertices, which the
+	 * asset tool's levels do: each names its base mesh's accessors.
+	 */
+	accessors?: Readonly<Record<string, number>>;
 	positions: VertexData;
 	normals?: VertexData;
 	uvs?: VertexData;
@@ -1713,7 +1720,7 @@ const ATTRIBUTES: readonly [
 	name: string,
 	field: Exclude<
 		keyof PrimitiveData,
-		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
+		'accessors' | 'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
 	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
@@ -1847,10 +1854,14 @@ function parsePrimitive(
 	const attributes = entry(primitive.attributes, `${what}'s attributes`);
 	if (attributes.POSITION === undefined) broken(`${what} has no POSITION attribute`);
 	const out: Partial<PrimitiveData> = {};
+	/** The accessor behind each attribute: a level names its base mesh's, which shares its vertices. */
+	const accessors: Record<string, number> = {};
 	let vertices = -1;
 	for (const [name, field, components, types] of ATTRIBUTES) {
 		if (attributes[name] === undefined) continue;
-		const data = read(Number(attributes[name]), `${what}'s ${name}`);
+		const at = Number(attributes[name]);
+		accessors[name] = at;
+		const data = read(at, `${what}'s ${name}`);
 		const normalized = types[data.componentType];
 		if (
 			!(data.componentType in types) ||
@@ -1903,7 +1914,13 @@ function parsePrimitive(
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
-	const data: PrimitiveData = { ...(out as PrimitiveData), indices, material };
+	const data: PrimitiveData = {
+		...(out as PrimitiveData),
+		indices,
+		material,
+		// Draco names its attributes by its own ids, which no other primitive shares.
+		...(draco ? {} : { accessors }),
+	};
 	const extensions = primitive.extensions as Entry | undefined;
 	if (extensions?.[MESH_BVH] !== undefined)
 		data.bvh = storedTree(entry(extensions[MESH_BVH], `${what}'s ${MESH_BVH}`), what, read);
