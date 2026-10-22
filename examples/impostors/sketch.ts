@@ -13,7 +13,7 @@ import {
 	CELL,
 	ground,
 	hills,
-	impostorAtlas,
+	impostorAtlases,
 	pineArrays,
 	pineWithLevels,
 	place,
@@ -38,7 +38,7 @@ export default defineSketch(async (ctx) => {
 	const camera = scene.createPerspectiveCamera({ fov: 52, near: 0.5, far: 4000 });
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, { target: [0, 10, 0], groundY: 0 });
-	scene.createDirectionalLight({
+	const sun = scene.createDirectionalLight({
 		...day.light,
 		direction: SUN,
 		castShadows: true,
@@ -79,28 +79,39 @@ export default defineSketch(async (ctx) => {
 		});
 	}
 
-	// The far band: one sprite batch of cards, each showing the atlas cell nearest the camera.
-	const picture = impostorAtlas(SUN);
+	// The far band: one batch of cards. Each blends the three atlas views nearest the camera and is
+	// lit by the sun that the scene has now, so the band follows a moving sun with the meshes.
+	const picture = impostorAtlases();
 	const atlas = textures.fromData({
-		width: picture.width,
-		height: picture.height,
-		data: picture.data,
+		width: picture.color.width,
+		height: picture.color.height,
+		data: picture.color.data,
 		colorSpace: 'srgb',
 		wrap: 'clamp',
 		mipmaps: false,
 	});
-	const cards = await createImpostors(scene, {
-		texture: atlas,
-		atlas: picture.atlas,
-		positions: far.flatMap((tree) => [tree.x, tree.y, tree.z]),
-		center: [0.5, 0],
-		alphaMode: 'mask',
+	const surface = textures.fromData({
+		width: picture.surface.width,
+		height: picture.surface.height,
+		data: picture.surface.data,
+		colorSpace: 'linear',
+		wrap: 'clamp',
+		mipmaps: false,
 	});
+	const cards = createImpostors(
+		{ scene, materials, geometry },
+		{
+			color: atlas,
+			surface,
+			atlas: picture.atlas,
+			positions: far.flatMap((tree) => [tree.x, tree.y, tree.z]),
+			alphaMode: 'mask',
+		},
+	);
 	far.forEach((tree, k) => {
-		cards.sprites.sizes.set([tree.scale * 0.9, tree.scale], k * 2);
+		cards.batch.scales.set([tree.scale * 0.9, tree.scale, 1], k * 3);
 	});
 	cards.markDirty(0, far.length);
-	const eye: [number, number, number] = [0, 0, 0];
 
 	// L swaps the far band between the cards and a batch of detail meshes, for comparison.
 	const detail = scene.createInstances(pineWithLevels(geometry), far.length, { material: wood });
@@ -112,12 +123,23 @@ export default defineSketch(async (ctx) => {
 	detail.markDirty(0, far.length);
 	detail.setActiveCount(0);
 	let cardsOn = true;
+	// T sweeps the sun across the sky, so the cards' light follows the meshes' light: the bake holds
+	// no sun at all.
+	let sweeping = false;
+	let hour = 0.35;
 
 	return {
 		onUpdate(dt) {
+			if (input.wasPressed('KeyT')) sweeping = !sweeping;
+			if (sweeping) {
+				hour = (hour + dt * 0.03) % 1;
+				// The sun rises on one side and sets on the other, about the world's z axis.
+				const turn = hour * Math.PI;
+				sun.setRotation(0, 0, Math.sin(turn / 2), Math.cos(turn / 2));
+			}
 			if (input.wasPressed('KeyL')) {
 				cardsOn = !cardsOn;
-				cards.sprites.setActiveCount(cardsOn ? far.length : 0);
+				cards.batch.setActiveCount(cardsOn ? far.length : 0);
 				detail.setActiveCount(cardsOn ? 0 : far.length);
 			}
 			// A slow flight around the middle, looking out over the three bands.
@@ -128,11 +150,6 @@ export default defineSketch(async (ctx) => {
 				camera.lookAt(Math.sin(t + 0.7) * CARD_EDGE * 1.6, 6, Math.cos(t + 0.7) * CARD_EDGE * 1.6);
 			}
 			view.update(dt);
-			// The camera has no parent, so its own position is its world position, and it is right
-			// on the first frame. The world position would still hold the world's origin there,
-			// because the engine reports the frame that last ran.
-			camera.getPosition(eye);
-			cards.update(eye);
 		},
 	};
 });
