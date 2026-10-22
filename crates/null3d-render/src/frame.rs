@@ -403,6 +403,18 @@ pub trait FrameBuilder {
     ) -> Result<(), TryReserveError> {
         Ok(())
     }
+    /// Gives mesh `mesh`, by its id that counts from 1, the tree of cluster patches that a model
+    /// file stores, or takes its tree away with `None`. The caller marks the scene's structure as
+    /// changed, which makes the next frame rebuild its draw tables. Fails only when memory cannot
+    /// grow.
+    fn set_mesh_patches(
+        &mut self,
+        mesh: u32,
+        tree: Option<crate::patches::PatchTree>,
+    ) -> Result<(), TryReserveError> {
+        self.settings_mut().patches_mut().set(mesh, tree);
+        Ok(())
+    }
     /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
     /// last.
     fn casts_tile_shadows(&self) -> bool {
@@ -415,6 +427,7 @@ pub trait FrameBuilder {
     fn remove_meshes(&mut self, ids: &[u32]) {
         let moves = self.settings_mut().meshes_mut().remove(ids);
         self.settings_mut().forget_removed_levels();
+        self.settings_mut().forget_removed_patches();
         self.meshes_moved(ids, &moves);
     }
     /// Makes the GPU copies of the meshes follow a removal: the pages and the delta texels upload
@@ -1035,6 +1048,9 @@ pub struct SceneSettings {
     particles: ParticleTable,
     /// The meshes with levels of detail.
     levels: Levels,
+    /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
+    /// triangle lists.
+    patches: crate::patches::PatchStorage,
     /// How the levels of detail are picked, which the quality settings set.
     level_quality: LevelQuality,
     /// The render scale that the levels of detail pick by: the frame's, which the WebGL2 builder's
@@ -1161,6 +1177,7 @@ impl SceneSettings {
             area_wanted: false,
             particles: ParticleTable::default(),
             levels: Levels::default(),
+            patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
             pick: None,
@@ -2052,6 +2069,16 @@ impl SceneSettings {
         &self.levels
     }
 
+    /// The meshes' trees of cluster patches.
+    pub fn patches(&self) -> &crate::patches::PatchStorage {
+        &self.patches
+    }
+
+    /// The meshes' trees of cluster patches, which a file's load fills in.
+    pub fn patches_mut(&mut self) -> &mut crate::patches::PatchStorage {
+        &mut self.patches
+    }
+
     /// Gives the mesh with engine id `base` the lower levels `meshes`, from the most detailed
     /// down, with their errors in the base mesh's units, or with none takes its levels away.
     /// `fades` lets two levels hand over in a fading band. Every mesh must be live, with the base
@@ -2083,6 +2110,13 @@ impl SceneSettings {
     pub(crate) fn forget_removed_levels(&mut self) {
         let meshes = &self.meshes;
         self.levels
+            .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
+    }
+
+    /// Takes the trees of cluster patches away from the removed meshes.
+    pub(crate) fn forget_removed_patches(&mut self) {
+        let meshes = &self.meshes;
+        self.patches
             .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
     }
 

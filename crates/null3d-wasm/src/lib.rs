@@ -72,6 +72,7 @@ use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
+use null3d_render::patches::PatchTree;
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::probe_grid::ProbeGrid;
@@ -1880,6 +1881,68 @@ pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
                 .set_mesh_blocker(mesh, blocker)
                 .map(|()| 1)
                 .map_err(|_| core_failure(CoreError::OutOfMemory { bytes: indices * 4 })),
+            None => Ok(0),
+        }
+    })
+}
+
+/// Gives mesh `mesh` the tree of cluster patches that a model file stores: `patches` records of
+/// eight words each, four floats of its bounding sphere and then four integers of its run, its
+/// parent and its error, followed by `indices` indices, in the staging words. Returns 1 when the
+/// mesh takes the tree, and 0 when the tree does not cover the mesh's vertices.
+#[wasm_bindgen(js_name = setMeshPatches)]
+pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let vertices = e
+            .renderer
+            .settings()
+            .meshes()
+            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
+            .map_or(0, |slot| slot.vertex_count);
+        let records = patches as usize;
+        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
+        let tree = if enough {
+            let bounds: Vec<[f32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8;
+                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
+                })
+                .collect();
+            let runs: Vec<[u32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8 + 4;
+                    [
+                        staging[at],
+                        staging[at + 1],
+                        staging[at + 2],
+                        staging[at + 3],
+                    ]
+                })
+                .collect();
+            let first = records * 8;
+            PatchTree::new(
+                staging[first..first + indices as usize].to_vec(),
+                bounds,
+                runs,
+                root,
+                vertices,
+            )
+            .ok()
+        } else {
+            None
+        };
+        drop(staging);
+        match tree {
+            Some(tree) => {
+                let stored = e.renderer.set_mesh_patches(mesh, Some(tree));
+                e.structure_changed = true;
+                stored.map(|()| 1).map_err(|_| {
+                    core_failure(CoreError::OutOfMemory {
+                        bytes: ((records * 8 + indices as usize) * 4) as u32,
+                    })
+                })
+            }
             None => Ok(0),
         }
     })
