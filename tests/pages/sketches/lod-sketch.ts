@@ -189,7 +189,13 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 			const center = distance + RADIUS;
 			const across = hide ? (side - 1) * 0.6 : side === 0 ? -0.35 : 0.35;
 			const y = hide ? 0 : (ROWS[row] as number) * center * tan;
-			out[k] = [across * center * tan * aspect(), y, -center];
+			// A copy off the view's axis lies farther from the camera than its depth: place it along
+			// the same ray at the distance that the rule measures, so its nearest point sits at the
+			// share of the switch that the test means.
+			const x = across * center * tan * aspect();
+			const reach = Math.hypot(x, y, center);
+			const scale = (distance + RADIUS) / reach;
+			out[k] = [x * scale, y * scale, -center * scale];
 		}
 		return out;
 	};

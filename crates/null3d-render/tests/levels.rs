@@ -213,6 +213,45 @@ fn each_object_draws_the_level_that_its_distance_picks_on_the_job_workers() {
 }
 
 #[test]
+fn a_biased_ball_draws_the_level_that_half_its_distance_switch_picks() {
+    // The world's ball has a local radius of 0.9, so its nearest point is 0.9 m before its centre.
+    // A bias of 2 halves the first switch, which is 0.05 times 311.8 over 2, 7.795 m of nearest
+    // point: a ball at 95% of it draws the base level, and one at 103% draws level 1.
+    let place = |world: &mut World<CpuCulledRenderer>, nearest: f32| {
+        let ball = world.objects[2];
+        world
+            .scene
+            .set_position(ball, [0.0, 0.0, 20.0 - (nearest + 0.9)])
+            .unwrap();
+        world
+            .scene
+            .apply_commands(&[Command::set_level_bias(ball, 2.0)], world.frame)
+            .unwrap();
+    };
+    let mut before = cpu_world();
+    let levels = give_levels_of(&mut before, &[0.05, 0.1, 0.2], false);
+    place(&mut before, 0.95 * 7.795);
+    before.record(true);
+    let drawn = draws(&before);
+    assert!(
+        drawn
+            .iter()
+            .any(|&(indices, _)| indices == indices_of(&before, BALL)),
+        "a biased ball at 95% of its switch draws its base level {levels:?}: {drawn:?}"
+    );
+    let mut after = cpu_world();
+    let levels = give_levels_of(&mut after, &[0.05, 0.1, 0.2], false);
+    place(&mut after, 1.03 * 7.795);
+    after.record(true);
+    let drawn = draws(&after);
+    let fine = indices_of(&after, levels[0]);
+    assert!(
+        drawn.iter().any(|&(indices, _)| indices == fine),
+        "a biased ball at 103% of its switch draws level 1 {fine} {levels:?}: {drawn:?}"
+    );
+}
+
+#[test]
 fn a_larger_threshold_or_no_threshold_moves_the_switches() {
     let mut world = cpu_world();
     let [_, coarse] = give_levels(&mut world, 0);
@@ -554,4 +593,44 @@ fn the_direct_path_draws_a_level_whose_material_settings_match_the_base() {
         drawn.contains(&(indices_of(&world, meshes[1]), 1)),
         "{drawn:?}"
     );
+}
+#[test]
+fn a_bias_divides_the_switch_of_one_object() {
+    use null3d_core::levels::{LevelLink, LevelRule, NO_LINK, Picked};
+    let links = [
+        LevelLink {
+            error: 0.0,
+            next: 1,
+            fade: NO_LINK,
+        },
+        LevelLink {
+            error: 0.01,
+            next: 2,
+            fade: NO_LINK,
+        },
+        LevelLink {
+            error: 0.05,
+            next: NO_LINK,
+            fade: NO_LINK,
+        },
+    ];
+    let rule = LevelRule::new(360.0, 1.732, false, 1.0, 0.0);
+    println!("factor {}", rule.factor);
+    // Level 1 switches at 0.01 times the factor, halved by a bias of 2: 1.56 m.
+    println!(
+        "no bias at 1.606: {:?}",
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0)
+    );
+    println!(
+        "bias 2 at 1.606: {:?}",
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0)
+    );
+    println!(
+        "bias 2 at 1.481: {:?}",
+        rule.pick(&links, 0, 1.0, 0.5, 1.481, 2.0)
+    );
+    assert!(matches!(
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0),
+        Picked::One(1)
+    ));
 }
