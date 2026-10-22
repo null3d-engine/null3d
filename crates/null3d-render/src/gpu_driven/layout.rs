@@ -38,7 +38,9 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
-use crate::levels::{BucketKey, KeyLinks, expand_level_keys, is_fade_key, links_of};
+use crate::levels::{
+    BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
+};
 use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
@@ -902,8 +904,35 @@ impl Layout {
                 })
         };
         let levels = settings.levels();
+        // A level may name a material of its own, so its bucket key comes from the level's mesh and
+        // material, while it keeps the fields of the bucket that names it: its bounds, and the
+        // object's receive-shadows bit, which the base key's pipeline holds.
+        let level_bucket = |key: &BucketKey, level: usize| {
+            let (base, _) = key_level(key.3);
+            let set = levels.of(base)?;
+            let mesh = set.mesh(level);
+            let material = match set.material(level) {
+                0 => key.4,
+                own => own,
+            };
+            let object = if key.0.permutation & permutation::RECEIVE_SHADOWS != 0 {
+                flags::RECEIVE_SHADOWS
+            } else {
+                0
+            };
+            let mut bucket = key_of(
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
+                key.5,
+                object,
+                None,
+            )?;
+            bucket.3 = level_key(base, level);
+            Some(bucket)
+        };
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
-        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        expand_level_keys(key_counts, levels, fades, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -943,7 +972,7 @@ impl Layout {
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
-            let links = links_of(key, &*key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
             let mesh = levels
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");

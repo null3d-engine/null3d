@@ -312,3 +312,29 @@ The core keeps one float for each object, which raises an object's row from 263 
 job workers read it beside each row's sphere. `cull.wgsl` reads it from the bucket record, which
 takes 14 words in place of 13. A record that holds 0 keeps the quality settings' threshold, so a
 test needs no bias.
+
+## Addendum: a level may shade with its own material (22 October 2026, M3-L2)
+
+A far level now draws with a material of its own where the author gives one, so it shades more
+cheaply than the near level: without a normal map, or with an opaque mask in place of an
+alpha-tested one. The engine's part is small because buckets are already per material.
+
+- `mesh.setLevels` takes a `material` on any level. A level without one draws with the material of
+  the level before it, so a set names the cheaper material once. The base level draws with the
+  object's or the instance batch's material.
+- The rule is a chain rather than an absolute material on every level, so `links_of` can find a
+  coarser level's bucket from any level's key without carrying the base material. A level key
+  holds its own effective material, and the next level takes its own or that one.
+- A level's bucket key is built from the level's mesh and material, through the same steps as a
+  source's key: the pipeline, the map group, the page, the level key and the material. The
+  receive-shadows bit comes from the base key's pipeline, since the level belongs to the same
+  object. A level whose material cannot draw with the mesh's vertex format is left out, like any
+  pair that draws nowhere.
+- Fading builds follow each level's own pipeline. A cheaper level material that masks fades; one
+  that does not mask has no fading build and switches at once.
+- A glTF file gives a level a material when the level node's primitive names another material than
+  the node's primitive. The asset tool keeps one material per mesh, so its levels inherit.
+
+The lod image test's new `lod-material` case draws each level with a material of its own in the
+level's color, a different pipeline from the base's vertex-colored one, and must draw the same
+image as `lod`. E1221 now names a level material that is destroyed or from another engine.
