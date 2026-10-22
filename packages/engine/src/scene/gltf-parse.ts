@@ -61,6 +61,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_volume_scatter',
 	'KHR_materials_clearcoat',
 	'KHR_materials_sheen',
+	'KHR_materials_iridescence',
+	'KHR_materials_anisotropy',
 	'KHR_lights_punctual',
 	'KHR_animation_pointer',
 	'KHR_node_visibility',
@@ -248,6 +250,9 @@ interface LayerTextures {
 	coatNormal?: unknown;
 	sheenColor?: unknown;
 	sheenRoughness?: unknown;
+	iridescence?: unknown;
+	iridescenceThickness?: unknown;
+	anisotropy?: unknown;
 }
 
 /** True when two texture infos read one texture the same way: its index, coordinates and transform. */
@@ -263,9 +268,18 @@ function sameTexture(a: Entry, b: Entry): boolean {
  * The texture infos of a layered material's maps. glTF packs the clear coat and its roughness into
  * the red and green of one texture, and the sheen's color and roughness into the color and alpha
  * of one. The engine draws each pair from one texture, so a pair of two textures keeps the first,
- * and `notes` says so.
+ * and `notes` says so. The layers' maps take the same places, so a material keeps the coat's and
+ * the sheen's maps or the iridescence's, and the anisotropy's map takes the sheen's place, and
+ * `notes` says what it leaves out.
  */
-function layerTextures(coat: Entry, sheen: Entry, what: string, notes: string[]): LayerTextures {
+function layerTextures(
+	coat: Entry,
+	sheen: Entry,
+	film: Entry,
+	anisotropy: Entry,
+	what: string,
+	notes: string[],
+): LayerTextures {
 	const pair = (first: unknown, second: unknown, name: string): [unknown, unknown] => {
 		if (first === undefined || second === undefined) return [first, second];
 		if (sameTexture(entry(first, what), entry(second, what))) return [first, first];
@@ -282,33 +296,91 @@ function layerTextures(coat: Entry, sheen: Entry, what: string, notes: string[])
 		sheen.sheenRoughnessTexture,
 		'sheenRoughnessTexture',
 	);
+	const coatSheen = [
+		coatMap,
+		coatRoughness,
+		coat.clearcoatNormalTexture,
+		sheenColor,
+		sheenRoughness,
+	].some((texture) => texture !== undefined);
+	const iridescence = film.iridescenceTexture;
+	const iridescenceThickness = film.iridescenceThicknessTexture;
+	const map = anisotropy.anisotropyTexture;
+	if (coatSheen && (iridescence ?? iridescenceThickness ?? map) !== undefined)
+		notes.push(
+			`${what}'s iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's textures`,
+		);
 	return {
 		coat: coatMap,
 		coatRoughness,
 		coatNormal: coat.clearcoatNormalTexture,
 		sheenColor,
 		sheenRoughness,
+		iridescence: coatSheen ? undefined : iridescence,
+		iridescenceThickness: coatSheen ? undefined : iridescenceThickness,
+		anisotropy: coatSheen ? undefined : map,
 	};
 }
 
-/** A layered material's values from its KHR_materials_clearcoat and KHR_materials_sheen extensions. */
-function layersOf(coat: Entry, sheen: Entry, what: string): LayersData {
-	const color = numbers(sheen.sheenColorFactor, 3, [0, 0, 0], `${what}'s sheenColorFactor`);
+/**
+ * A layered material's values from its glTF material extensions. An extension that the material
+ * does not have gives no values, so a material pays nothing for another layer's effect.
+ */
+function layersOf(
+	coat: Entry | undefined,
+	sheen: Entry | undefined,
+	film: Entry | undefined,
+	anisotropy: Entry | undefined,
+	what: string,
+): LayersData {
+	const color = numbers(sheen?.sheenColorFactor, 3, [0, 0, 0], `${what}'s sheenColorFactor`);
 	if (color.some((c) => c < 0 || c > 1))
 		broken(`${what}'s sheenColorFactor has a component outside 0 to 1`);
-	return {
-		clearcoat: unit(coat.clearcoatFactor ?? 0, `${what}'s clearcoatFactor`),
+	const layers: LayersData = {
+		clearcoat: unit(coat?.clearcoatFactor ?? 0, `${what}'s clearcoatFactor`),
 		clearcoatRoughness: unit(
-			coat.clearcoatRoughnessFactor ?? 0,
+			coat?.clearcoatRoughnessFactor ?? 0,
 			`${what}'s clearcoatRoughnessFactor`,
 		),
 		clearcoatNormalScale: finite(
-			(coat.clearcoatNormalTexture as Entry | undefined)?.scale ?? 1,
+			(coat?.clearcoatNormalTexture as Entry | undefined)?.scale ?? 1,
 			`${what}'s clearcoat normal scale`,
 		),
 		sheenColor: [color[0] as number, color[1] as number, color[2] as number],
-		sheenRoughness: unit(sheen.sheenRoughnessFactor ?? 0, `${what}'s sheenRoughnessFactor`),
+		sheenRoughness: unit(sheen?.sheenRoughnessFactor ?? 0, `${what}'s sheenRoughnessFactor`),
 	};
+	if (film !== undefined) {
+		const ior =
+			film.iridescenceIor === undefined
+				? 1.3
+				: finite(film.iridescenceIor, `${what}'s iridescenceIor`);
+		if (ior < 1) broken(`${what}'s iridescenceIor is ${ior}, and it takes 1 or more`);
+		const least = unit(
+			film.iridescenceThicknessMinimum ?? 100,
+			`${what}'s iridescenceThicknessMinimum`,
+			Infinity,
+		);
+		const most = unit(
+			film.iridescenceThicknessMaximum ?? 400,
+			`${what}'s iridescenceThicknessMaximum`,
+			Infinity,
+		);
+		if (least > most)
+			broken(
+				`${what}'s iridescenceThicknessMinimum is ${least} and its maximum ${most}, and the minimum takes no more than the maximum`,
+			);
+		layers.iridescence = unit(film.iridescenceFactor ?? 0, `${what}'s iridescenceFactor`);
+		layers.iridescenceIor = ior;
+		layers.iridescenceThicknessRange = [least, most];
+	}
+	if (anisotropy !== undefined) {
+		layers.anisotropy = unit(anisotropy.anisotropyStrength ?? 0, `${what}'s anisotropyStrength`);
+		layers.anisotropyRotation = finite(
+			anisotropy.anisotropyRotation ?? 0,
+			`${what}'s anisotropyRotation`,
+		);
+	}
+	return layers;
 }
 
 /**
@@ -378,7 +450,7 @@ function diffuseTransmissionOf(
 	}
 	if (layered) {
 		notes.push(
-			`${what}'s diffuse transmission, which the engine does not draw beside a clear coat or a sheen`,
+			`${what}'s diffuse transmission, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
 		);
 		return undefined;
 	}
@@ -603,7 +675,8 @@ export interface ScatterData {
 	color: [number, number, number];
 }
 
-/** A material's layers above its base, as KHR_materials_clearcoat and KHR_materials_sheen give them. */
+/** A material's layers above its base, as KHR_materials_clearcoat, KHR_materials_sheen,
+ * KHR_materials_iridescence and KHR_materials_anisotropy give them. */
 export interface LayersData {
 	/** The clear coat factor, from 0 to 1. */
 	clearcoat: number;
@@ -615,6 +688,16 @@ export interface LayersData {
 	sheenColor: [number, number, number];
 	/** The sheen roughness factor, from 0 to 1. */
 	sheenRoughness: number;
+	/** How much of the thin film's reflection shows, from 0 to 1, for a material with the film. */
+	iridescence?: number;
+	/** The thin film's index of refraction, 1 or more. */
+	iridescenceIor?: number;
+	/** The film's least and greatest thickness, in nanometers. */
+	iridescenceThicknessRange?: [number, number];
+	/** How far the specular reflection stretches, from 0 to 1, for a material with the stretch. */
+	anisotropy?: number;
+	/** The direction that it stretches along, in radians from the tangent. */
+	anisotropyRotation?: number;
 }
 
 /** Where a material's maps sit on the texture coordinates, as KHR_texture_transform gives it. */
@@ -676,6 +759,9 @@ export interface MaterialData {
 		clearcoatNormalMap?: number;
 		sheenColorMap?: number;
 		sheenRoughnessMap?: number;
+		iridescenceMap?: number;
+		iridescenceThicknessMap?: number;
+		anisotropyMap?: number;
 	};
 	uvTransform?: UvTransformData;
 }
@@ -1262,14 +1348,19 @@ export function parseGltf(
 		const diffuse = (extensions.KHR_materials_diffuse_transmission ?? {}) as Entry;
 		const coat = extensions.KHR_materials_clearcoat as Entry | undefined;
 		const sheen = extensions.KHR_materials_sheen as Entry | undefined;
-		const layered = coat !== undefined || sheen !== undefined;
+		const film = extensions.KHR_materials_iridescence as Entry | undefined;
+		const anisotropy = extensions.KHR_materials_anisotropy as Entry | undefined;
+		const layered =
+			coat !== undefined || sheen !== undefined || film !== undefined || anisotropy !== undefined;
 		// A layered material's maps take the slots of the specular maps and of the diffuse
 		// transmission maps, which it then goes without.
 		if (layered && (specular.specularTexture ?? specular.specularColorTexture) !== undefined)
 			notes.push(
-				`${what}'s specular textures, which the engine does not draw beside a clear coat or a sheen`,
+				`${what}'s specular textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
 			);
-		const layerMaps = layered ? layerTextures(coat ?? {}, sheen ?? {}, what, notes) : {};
+		const layerMaps = layered
+			? layerTextures(coat ?? {}, sheen ?? {}, film ?? {}, anisotropy ?? {}, what, notes)
+			: {};
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -1305,6 +1396,13 @@ export function parseGltf(
 				'srgb',
 				`${what}'s sheenRoughnessTexture`,
 			),
+			iridescenceMap: useTexture(layerMaps.iridescence, 'linear', `${what}'s iridescenceTexture`),
+			iridescenceThicknessMap: useTexture(
+				layerMaps.iridescenceThickness,
+				'linear',
+				`${what}'s iridescenceThicknessTexture`,
+			),
+			anisotropyMap: useTexture(layerMaps.anisotropy, 'linear', `${what}'s anisotropyTexture`),
 			diffuseTransmissionMap: layered
 				? undefined
 				: useTexture(
@@ -1383,7 +1481,19 @@ export function parseGltf(
 		if (diffuseTransmission) data.diffuseTransmission = diffuseTransmission;
 		const scatter = scatterOf(extensions, what, notes);
 		if (scatter) data.scatter = scatter;
-		if (layered) data.layers = layersOf(coat ?? {}, sheen ?? {}, what);
+		if (layered) {
+			const values = layersOf(coat, sheen, film, anisotropy, what);
+			// The stretch's direction comes from the surface's tangent frame, which the shader
+			// builds from the texture coordinates. A material with no map draws without it.
+			if (values.anisotropy !== undefined && values.anisotropy !== 0 && !Object.keys(maps).length) {
+				notes.push(
+					`${what}'s anisotropyStrength, which needs a map for the surface's texture coordinates`,
+				);
+				values.anisotropy = 0;
+				values.anisotropyRotation = 0;
+			}
+			data.layers = values;
+		}
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
 			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);

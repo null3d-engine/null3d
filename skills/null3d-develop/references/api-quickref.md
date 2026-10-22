@@ -334,6 +334,8 @@ const paint = materials.standard({
   subsurfaceRadius: 0, subsurfaceColor: '#ffffff',  // (0.2) skin 0.012 and [1, 0.4, 0.25], wax, jade: light spreads under the surface; give it at creation; blurs on High and Ultra only
   clearcoat: 0, clearcoatRoughness: 0,        // (0.2) car paint, varnish: give a layer option at creation to have the layers
   sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps and no diffuseTransmission with layers
+  iridescence: 0, iridescenceIor: 1.3, iridescenceThicknessRange: [100, 400],  // (0.3) soap bubbles, beetles, oil: a thin film tints the reflection; no light or specular maps and no coat or sheen maps
+  anisotropy: 0, anisotropyRotation: 0,       // (0.3) brushed metal: the highlight stretches along the tangent; needs a map, whose coordinates give the tangent frame
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   contactShadows: true,                        // (0.2) fixed at creation; false on grass, leaf cards and other thin surfaces that crowd or sway, where contact shadows darken and flicker

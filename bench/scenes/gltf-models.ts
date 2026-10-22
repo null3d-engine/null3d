@@ -5,7 +5,13 @@
 // camera that both engines place from the model's bounds: on +Z of the bounds' center, at the
 // distance that fits the bounding sphere in the view. Scenes of models with lights of their own
 // add only a dim ambient light; the others take the benchmark scenes' sun and ambient light.
-import { colorMorphBuilder, iorBuilder, specularBuilder } from '../../tests/pages/lib/gltf-files';
+import {
+	anisotropyBuilder,
+	colorMorphBuilder,
+	iorBuilder,
+	iridescenceBuilder,
+	specularBuilder,
+} from '../../tests/pages/lib/gltf-files';
 import { PARITY_CANVAS } from './spec';
 
 export { AMBIENT, SUN } from './spec';
@@ -77,10 +83,11 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * compression under each of its two names, Draco compression, and morph targets: weights that a
  * clip animates, eight
  * targets on two primitives, a file's default weight on primitives that share targets, and targets
- * that move vertex colors. Three scenes make their files in code: the color targets, and two small
- * equivalents of Khronos test models whose originals need an environment map or transmission:
- * KHR_materials_specular's factors and textures, and KHR_materials_ior's indices with the specular
- * values. The specular and IOR scenes' own lights light them. The vendor name's file is the instancing model as
+ * that move vertex colors. Five scenes make their files in code: the color targets, and small
+ * equivalents of four Khronos test models whose originals need an environment map, transmission or
+ * lights of their own: KHR_materials_specular's factors and textures, KHR_materials_ior's indices
+ * with the specular values, KHR_materials_iridescence's films, and KHR_materials_anisotropy's
+ * stretched highlights. Those scenes' own lights light them. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
@@ -162,6 +169,16 @@ export const MODEL_SCENES = {
 	},
 	specular: { file: () => specularBuilder().glb(), ownLights: true },
 	ior: { file: () => iorBuilder().glb(), ownLights: true },
+	iridescence: {
+		file: () => iridescenceBuilder().glb(),
+		ownLights: true,
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	anisotropy: {
+		file: () => anisotropyBuilder().glb(),
+		ownLights: true,
+		timeoutSeconds: LAYERS_SECONDS,
+	},
 	'morph-primitives': {
 		url: sampleUrl('sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb'),
 		frame: { center: [0, 0.1, 0], radius: 0.8 },

@@ -606,7 +606,7 @@ describe('materials, textures and lights', () => {
 		expect(first?.diffuseTransmission).toBeUndefined();
 		expect(first?.maps.diffuseTransmissionMap).toBeUndefined();
 		expect(data.notes).toContain(
-			"material 0's diffuse transmission, which the engine does not draw beside a clear coat or a sheen",
+			"material 0's diffuse transmission, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy",
 		);
 	});
 
@@ -751,7 +751,7 @@ describe('materials, textures and lights', () => {
 		expect(data.textures[maps.sheenRoughnessMap ?? -1]?.image).toBe(2);
 		expect(maps.specularColorMap).toBeUndefined();
 		expect(data.notes).toEqual([
-			"material 0's specular textures, which the engine does not draw beside a clear coat or a sheen",
+			"material 0's specular textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy",
 			"material 0's clearcoatRoughnessTexture, which is not the texture of its pair and is not drawn",
 		]);
 	});
@@ -779,6 +779,103 @@ describe('materials, textures and lights', () => {
 			[
 				{ KHR_materials_clearcoat: { clearcoatTexture: { index: 9 } } },
 				"material 0's clearcoatTexture",
+			],
+		];
+		for (const [extensions, message] of cases) {
+			const [code, text] = refusal(withExtensions(extensions));
+			expect([code, text.includes(message)]).toEqual(['E1416', true]);
+		}
+	});
+
+	test('KHR_materials_iridescence and KHR_materials_anisotropy give their values and maps', () => {
+		const data = layered({
+			KHR_materials_iridescence: {
+				iridescenceFactor: 0.75,
+				iridescenceIor: 1.8,
+				iridescenceThicknessMinimum: 200,
+				iridescenceThicknessMaximum: 600,
+				iridescenceTexture: { index: 0 },
+				iridescenceThicknessTexture: { index: 1 },
+			},
+			KHR_materials_anisotropy: {
+				anisotropyStrength: 0.6,
+				anisotropyRotation: 0.5,
+				anisotropyTexture: { index: 2 },
+			},
+		});
+		const material = data.materials[0];
+		expect(material?.layers).toMatchObject({
+			iridescence: 0.75,
+			iridescenceIor: 1.8,
+			iridescenceThicknessRange: [200, 600],
+			anisotropy: 0.6,
+			anisotropyRotation: 0.5,
+		});
+		const maps = material?.maps ?? {};
+		expect(data.textures[maps.iridescenceMap ?? -1]).toMatchObject({
+			image: 0,
+			colorSpace: 'linear',
+		});
+		expect(data.textures[maps.iridescenceThicknessMap ?? -1]).toMatchObject({
+			image: 1,
+			colorSpace: 'linear',
+		});
+		expect(data.textures[maps.anisotropyMap ?? -1]).toMatchObject({
+			image: 2,
+			colorSpace: 'linear',
+		});
+		expect(data.notes).toEqual([]);
+	});
+
+	test('a clear coat or a sheen map keeps its slots ahead of iridescence and anisotropy, and notes them', () => {
+		const data = layered({
+			KHR_materials_clearcoat: { clearcoatTexture: { index: 0 } },
+			KHR_materials_iridescence: {
+				iridescenceTexture: { index: 1 },
+				iridescenceThicknessTexture: { index: 2 },
+			},
+			KHR_materials_anisotropy: { anisotropyTexture: { index: 2 } },
+		});
+		const maps = data.materials[0]?.maps ?? {};
+		expect(data.textures[maps.clearcoatMap ?? -1]?.image).toBe(0);
+		expect(maps.iridescenceMap).toBeUndefined();
+		expect(maps.anisotropyMap).toBeUndefined();
+		expect(data.notes).toEqual([
+			"material 0's iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's textures",
+		]);
+	});
+
+	test('iridescence and anisotropy values outside their ranges give E1416', () => {
+		const withExtensions = (extensions: GltfJson) => {
+			const b = shipBuilder().uses('KHR_materials_iridescence').uses('KHR_materials_anisotropy');
+			b.json.materials[0].extensions = extensions;
+			return b.glb();
+		};
+		const cases: [GltfJson, string][] = [
+			[
+				{ KHR_materials_iridescence: { iridescenceFactor: 2 } },
+				"material 0's iridescenceFactor is 2",
+			],
+			[
+				{ KHR_materials_iridescence: { iridescenceIor: 0.5 } },
+				"material 0's iridescenceIor is 0.5",
+			],
+			[
+				{
+					KHR_materials_iridescence: {
+						iridescenceThicknessMinimum: 600,
+						iridescenceThicknessMaximum: 400,
+					},
+				},
+				"material 0's iridescenceThicknessMinimum is 600 and its maximum 400",
+			],
+			[
+				{ KHR_materials_anisotropy: { anisotropyStrength: 2 } },
+				"material 0's anisotropyStrength is 2",
+			],
+			[
+				{ KHR_materials_anisotropy: { anisotropyTexture: { index: 9 } } },
+				"material 0's anisotropyTexture",
 			],
 		];
 		for (const [extensions, message] of cases) {

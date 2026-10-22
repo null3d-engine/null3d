@@ -60,7 +60,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | `transmission` | A shader variant that samples a copy of the opaque objects' colors, and the transparent pass |
 | `diffuseTransmission` | A shader variant that lights the surface's back too, and lets that light through to its front |
 | `subsurfaceRadius` | The skin pass, which draws the object again with shaders of its own, and the subsurface blur after the scene |
-| A clear coat or a sheen | A shader variant that lights the layers above the surface, whose shaders load with the first such material |
+| A clear coat, a sheen, iridescence or anisotropy | A shader variant that lights the layers above the surface, whose shaders load with the first such material |
 | `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
 | `flatShading` | The material's row: every standard shader can light with face normals |
