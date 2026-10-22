@@ -434,13 +434,12 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
-      # The artifact's paths start at the repository's root, their closest shared folder. It holds
-      # hundreds of megabytes of shader modules, and every later job waits for its upload, so it
-      # compresses at the fastest level.
+      # The artifact's paths start at the repository's root, their closest shared folder. It keeps
+      # the default compression level: every later job downloads it, and at the fastest level it grew
+      # by about a third, which those downloads paid for many times over the upload's saving.
       - uses: actions/upload-artifact@v4
         with:
           name: page-wasm
-          compression-level: 1
           path: |
             packages/engine/dist/
             packages/vite-plugin/dist/
