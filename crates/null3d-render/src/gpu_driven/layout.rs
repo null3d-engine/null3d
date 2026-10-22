@@ -1722,6 +1722,110 @@ mod tests {
     use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
 
+    /// The texels of the ranges texture that a frame uploads, as the culling shader reads them.
+    fn uploaded_ranges(layout: &mut Layout) -> Vec<[f32; 4]> {
+        let mut list = DrawList::with_capacity(4096);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16);
+        layout.apply(&mut list, &mut arena, u32::MAX).unwrap();
+        let base = arena.bytes().as_ptr() as usize;
+        let op = null3d_gpu::drawlist::decode(list.words())
+            .map(|command| command.unwrap())
+            .find(|command| {
+                command.op == Op::WriteTexture
+                    && command.operands.first() == Some(&ids::INSTANCE_RANGES)
+            })
+            .map(|command| command.operands.to_vec())
+            .expect("the frame writes the ranges texture");
+        let (at, bytes) = (op[8] as usize, op[9] as usize);
+        // The list records the upload's address as the low word of the arena's pointer, as WebAssembly
+        // holds pointers in one word; a native test reads the offset back the same way.
+        let start = (at as u32).wrapping_sub(base as u32) as usize;
+        let block = arena.bytes().len() - start;
+        assert!(
+            bytes <= block,
+            "the write takes {bytes} bytes from a block of {block}"
+        );
+        arena.bytes()[start..start + bytes]
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .map(|texel| {
+                let mut row = [0.0f32; 4];
+                for (word, bytes) in row.iter_mut().zip(texel.as_chunks::<4>().0) {
+                    *word = f32::from_le_bytes(*bytes);
+                }
+                row
+            })
+            .collect()
+    }
+
+    /// The culling shader reads each source's range from the start of one texel of the ranges
+    /// texture. This gives three objects different ranges, records the frame's upload and reads
+    /// what the shader would see for each source.
+    #[test]
+    fn each_sources_range_reaches_its_own_texel_of_the_ranges_texture() {
+        let mut settings = scene_settings(&RendererConfig::default());
+        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let ranges = [(0.0f32, 10.0f32), (12.0, 30.0), (40.0, 50.0)];
+        let mut slots = Vec::new();
+        for &(start, end) in &ranges {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+            commands.push(Command::set_material(object, material));
+            commands.push(Command::set_draw_range(object, start, end));
+            slots.push(scene.resolve(object).unwrap() as usize);
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+
+        // Each object reads its own range from the texel of its source.
+        let texels = uploaded_ranges(&mut layout);
+        for ((start, end), slot) in ranges.iter().zip(slots) {
+            let texel = texels.get(slot).expect("the frame uploads every source");
+            assert_eq!(
+                [texel[0], texel[1]],
+                [*start, *end],
+                "source {slot} reads {texel:?}"
+            );
+        }
+    }
+
     /// The culling shader reads each source's range from the start of one texel of the ranges
     /// texture, so the data must give every source a whole texel: its start and end, then the
     /// words that nothing reads. Data of two floats per source lands every second source's range
