@@ -40,6 +40,13 @@ This guide covers the image test manifest, its references, and the review that m
 - Several Playwright runs one after another, as a helper's chain does, need their ports free between them. A run that is stopped, or that hangs in its own teardown, leaves its dev server and preview server listening. The next run then fails at once with "already used". Stop this worktree's listeners between the steps. A run prints its failure messages only with the report at its end. A run stopped before that report loses them, so run the failing tests alone to read them.
 6. Run the checks plan in Safari and Firefox on the Mac. Run it on the phone and the iPad too, when their GPUs may draw the test another way.
 
+- A sketch that must draw a level of detail at a distance gives the level an error that puts its
+  switch there, not a bias raised in setup. A bias is a command that the next structure change
+  applies, and a slow path can draw its held frame before the change lands. On 23 October 2026 the
+  skinned-level picture drew its level on the Mac's GPU and on SwiftShader's WebGL2, and drew the
+  base mesh on SwiftShader's WebGPU. The level's own error is part of the file, so every path picks
+  the same level at the same distance.
+
 A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
 A test that compares two of its own frames rather than a reference, as `showcase-hud.spec.ts` does for the HUD's switches, must read them while the canvas holds still: a scene whose camera flies, or whose look eases, changes every pixel between two reads, so a difference carries no meaning. Wait for two frames in a row to match, then compare. Two traps came with that reading on 15 October 2026. `page.locator(...).screenshot()` returns a PNG that Chromium writes as RGB, which `decodePng` refuses, so use `decodePngRgba` from `packages/cli/src/png.js`. And a screenshot taken a frame after a control moved can still show the scene mid-ease, so take the reading that a switch is judged against before the control is clicked, not after.

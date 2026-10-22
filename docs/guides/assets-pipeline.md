@@ -187,7 +187,7 @@ The levels go into the file with `MSFT_lod`. Each node with levels stores the er
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
-`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. Skinned meshes draw their full mesh for now. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
+`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. A skinned mesh draws its levels too, because the tool's levels name the mesh's own vertices and the skin moves them. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
 
 ### Cluster levels
 
