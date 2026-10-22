@@ -16,8 +16,8 @@ env:
 
 jobs:
   newest-nightly:
-    # The tests run as CI's rust-tests jobs run them: the two tests that build every shader each in
-    # a job of its own beside every other test, and every failure reported.
+    # The tests run as CI's rust-tests jobs run them: the test that builds every shader in a job of
+    # its own beside every other test, and every failure reported.
     name: newest-nightly (${{ matrix.part }})
     runs-on: ubuntu-latest
     # Every CI job should take at most 15 minutes. These stop where CI's rust-tests parts stop.
@@ -34,10 +34,6 @@ jobs:
             id: whole-shader-build
             tests: -p null3d-shaders --test build --profile whole-shader-build
             limit: 135
-          - part: the shader module exports
-            id: shader-module-exports
-            tests: -p null3d-shaders-wasm --profile shader-module-exports
-            limit: 90
     env:
       HUSKY: "0"
       RUSTUP_TOOLCHAIN: nightly
