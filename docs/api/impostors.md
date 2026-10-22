@@ -14,7 +14,7 @@ The demo "Impostors" in `examples/impostors` draws a pine forest three ways by d
 
 ```mermaid
 flowchart LR
-    views["A bake draws the object<br/>from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colours, and the grid<br/>of normals and depths"]
+    views["A bake draws the object<br/>from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colors, and the grid<br/>of normals and depths"]
     atlas --> cards["createImpostors:<br/>one instance batch of cards<br/>that face the screen"]
     eye["The frame's camera"] --> blend["The card's material blends<br/>the three nearest views<br/>and lights them"]
     blend --> cards
