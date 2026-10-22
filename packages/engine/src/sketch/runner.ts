@@ -1120,6 +1120,9 @@ export class SketchRunner {
 				if (first === 0 && (before || step === steps)) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
+					// A grading table bakes in a job worker: the held frame waits for the newest
+					// one, so the picture shows the grade that the sketch set.
+					await this.post.gradingSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
