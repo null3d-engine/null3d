@@ -52,7 +52,7 @@ How the data was produced: `gh api repos/{owner}/{repo}/actions/runs/<run>/jobs`
 - The two tests keep their own copies of the list and of the module kinds' file names. A shared copy in the shader library changes the compiler's stamp, which keys the per-entry shader cache. Every shader then compiles again, on the Mac and in CI's first run, for no change to any shader: on 22 October 2026 that rebuild ran for hours on the loaded Mac and held the lock that every commit's type check waits on.
 - The four whole shader build parts go. `rust-tests` keeps the determinism part. The build test now reports the compiler's differences beside the native build's rule failures, so neither hides the other.
 - The packing test's compiler pool takes every core.
-- The build job builds its three WebAssembly outputs at the same time, and uploads its artifact at the fastest compression level.
+- The build job builds its three WebAssembly outputs at the same time. It uploaded its artifact at the fastest compression level until 23 October 2026: the artifact then grew from 453 MB to 593 MB, and in run 39813598275 its 25 downloads took 34 s at the median against 9 s, for an upload 30 s shorter. It went back to the default level. An artifact that many jobs download keeps the default level, and one that a few jobs download after a long upload on the critical path, such as `load-pages`, takes the fastest.
 - Larger runners: 8 and 16 cores cost about $0.022 and $0.042 a minute on GitHub's Enterprise Server price list. A 16-core runner would shorten the `shader-compiler` shards by about 3 minutes against 12 shards, for about $1.20 a cold run. The run would not end sooner, because `packages` then takes as long. CI uses the free 4-core runners.
 
 ## Consequences

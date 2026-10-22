@@ -382,6 +382,15 @@ export function acquireLock(path: string): () => void {
 }
 
 /**
+ * Takes the machine's lock of production page builds, which lets one run at a time: two at once
+ * leave the bundler blocked in its own callback, gaining a tenth of a second of processor time a
+ * minute, and neither finishes. Returns the function that releases it.
+ */
+export function acquirePageBuildLock(): () => void {
+	return acquireLock(join(cacheRoot(), 'page-build.lock'));
+}
+
+/**
  * How many bytes a cache under the root may keep before its least recently used entries go. The
  * figure bounds runaway growth rather than a working set, so a tighter limit evicts sets and entries
  * that the next build would then rebuild.

@@ -390,6 +390,33 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+  browser-caches:
+    # Fills the caches of Playwright's browser and of the sample content when they miss, once, so
+    # that the jobs that read them, which start minutes later after the build job, find them, and do
+    # not each download the same files from the package mirror at once. When a cache holds the
+    # current version, its step only looks the key up. The mirror sometimes stalls for minutes, so
+    # no job waits for this one, and a fill that fails leaves each job to install for itself.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+        continue-on-error: true
+        with:
+          cache-only: "true"
+      - uses: ./.github/actions/samples
+        continue-on-error: true
+        with:
+          cache-only: "true"
+
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
     # the shader compiler that the dev server runs on the WGSL in the test sketches, the asset
@@ -434,13 +461,12 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
-      # The artifact's paths start at the repository's root, their closest shared folder. It holds
-      # hundreds of megabytes of shader modules, and every later job waits for its upload, so it
-      # compresses at the fastest level.
+      # The artifact's paths start at the repository's root, their closest shared folder. It keeps
+      # the default compression level: every later job downloads it, and at the fastest level it grew
+      # by about a third, which those downloads paid for many times over the upload's saving.
       - uses: actions/upload-artifact@v4
         with:
           name: page-wasm
-          compression-level: 1
           path: |
             packages/engine/dist/
             packages/vite-plugin/dist/
@@ -910,14 +936,30 @@ jobs:
   browser-production:
     # The production build projects' tests, which serve the production build of the test pages: the
     # engine and its errors after bundling, the start under a strict Content-Security-Policy and from
-    # another origin, and the KTX2, glTF and stats files that the build ships. The build takes
-    # minutes, so this job builds the pages once, and every other browser job leaves them out. The
-    # tests that run alone run after the others, one at a time, on the same build.
-    name: browser (the production build)
+    # another origin, and the KTX2, glTF and stats files that the build ships. Each page's build
+    # takes about half a minute and 10 GB of memory, so the pages build one at a time, and only in
+    # this job: every other browser job leaves them out. The job runs in two parts, each of which
+    # builds only the pages that its test files load, so no page builds twice. The first holds the
+    # test files of the engine test page, which hold most of the test time. The tests that run alone
+    # run after the others, one at a time, on the same build; the second part has none. The test files
+    # come before --project, which takes every name that follows it.
+    name: browser (the production build, ${{ matrix.part }})
     needs: [build, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: engine
+            part: the engine, KTX2 and glTF pages
+            pages: engine ktx2-files texture-cache gltf-files
+            tests: engine.spec.ts content-security-policy.spec.ts cdn.spec.ts ktx2.spec.ts gltf.spec.ts
+          - id: others
+            part: the errors, sketch shaders and stats pages
+            pages: errors sketch-shaders stats
+            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -932,21 +974,21 @@ jobs:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
-      - name: The production build of the test pages
-        run: bun run build:test-pages
-      - name: The production build's tests, on SwiftShader, WebGPU and WebGL2
+      - name: The production build of the part's test pages
+        run: bun run build:test-pages ${{ matrix.pages }}
+      - name: The part's production build tests, on SwiftShader, WebGPU and WebGL2
         env:
           NULL3D_PRODUCTION_PAGES: prebuilt
-        run: bun run test:browser --project "production build"
-      - name: The production build's tests that run alone
+        run: bun run test:browser ${{ matrix.tests }} --project "production build"
+      - name: The part's production build tests that run alone
         if: "!cancelled()"
         env:
           NULL3D_PRODUCTION_PAGES: prebuilt
-        run: bun run test:browser --project "production build, alone" --workers=1
+        run: bun run test:browser ${{ matrix.tests }} --project "production build, alone" --workers=1 --pass-with-no-tests
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results-production
+          name: browser-test-results-production-${{ matrix.id }}
           path: test-results/
           if-no-files-found: ignore
 
@@ -1105,7 +1147,7 @@ jobs:
     # figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
-    needs: [build, city, changes]
+    needs: [build, city, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     # The shards run close to their measured times, and a slow software-renderer runner stretches
@@ -1127,6 +1169,8 @@ jobs:
             tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # The load pages job built the benchmark pages that these pages serve.
+      NULL3D_LOAD_PAGES: prebuilt
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
       # The parity tests, by the title of each scene's group in bench/tests/parity.spec.ts.
@@ -1140,6 +1184,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: load-pages
+          path: target
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
@@ -1167,7 +1215,7 @@ jobs:
     # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
     # minutes.
     name: allocation (${{ matrix.gpu }})
-    needs: [build, city, changes]
+    needs: [build, city, load-pages, changes]
     if: needs.changes.outputs.allocation == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1175,6 +1223,43 @@ jobs:
       fail-fast: false
       matrix:
         gpu: [webgpu, webgl2]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # The load pages job built the benchmark pages that these pages serve.
+      NULL3D_LOAD_PAGES: prebuilt
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: load-pages
+          path: target
+      - uses: ./.github/actions/playwright-chromium
+      # The benchmark pages' build holds S6's pages, which load the city's files.
+      - uses: ./.github/actions/samples
+      - uses: ./.github/actions/city
+        with:
+          mode: download
+      - name: Per-frame allocation in S1 on SwiftShader
+        run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+
+  load-pages:
+    # The production builds that the real-browser shards load: the benchmark pages and the startup
+    # pages. Each bundles the whole shader set, and each shard built both before its first page, for
+    # up to 11 minutes on a macOS machine in run 39554447893. This job builds them once, and every
+    # shard downloads them and builds none (NULL3D_LOAD_PAGES).
+    name: load pages
+    needs: [build, city, changes]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -1187,14 +1272,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-      - uses: ./.github/actions/playwright-chromium
-      # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
         with:
           mode: download
-      - name: Per-frame allocation in S1 on SwiftShader
-        run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+      - name: The benchmark pages and the startup pages, built for production
+        run: bun tests/lib/load-server.ts
+      # Gigabytes of scripts, which compress well, so the upload takes the fastest level.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: load-pages
+          path: |
+            target/bench-pages/
+            target/startup-pages/
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 1
 
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
@@ -1209,7 +1302,7 @@ jobs:
     # count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: [build, city, changes]
+    needs: [build, city, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
@@ -1233,6 +1326,8 @@ jobs:
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
+      # The load pages job built the pages that the shards load.
+      NULL3D_LOAD_PAGES: prebuilt
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -1242,6 +1337,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: load-pages
+          path: target
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
@@ -1307,6 +1406,7 @@ jobs:
       - shader-entries
       - docs-and-tools
       - heavy-checks
+      - browser-caches
       - rust-lint
       - rust-tests
       - build
@@ -1317,6 +1417,7 @@ jobs:
       - shader-compiler-plugin
       - packages
       - city
+      - load-pages
       - browser
       - browser-alone
       - browser-production
@@ -1358,8 +1459,8 @@ jobs:
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "size-parts": "code",
               "wasm-checks": "code",
               "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
-              "heavy-checks": "code",
-              "city": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
+              "heavy-checks": "code", "browser-caches": "code",
+              "city": "full", "load-pages": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"

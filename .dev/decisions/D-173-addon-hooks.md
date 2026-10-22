@@ -331,3 +331,12 @@ The contract, which the docs page and the TSDoc give:
 **Tests.** `packages/engine/src/shared/tasks.test.ts` checks the shared buffer, the failure stages and the per-task module key. The browser test `tests/image/addon-tasks.spec.ts` runs the hook in every thread mode, through the minimal add-on in `tests/pages/addons/task-probe/`. It checks four things. The task ran in a job worker or the task worker. Each answer landed in a frame after the frame that queued it. The rounds reached the frames in order. The last answer is the one that the drawn frame shows.
 
 **What shows it.** The hook's visible user is the splats add-on, which brings its demo. No demo shows a job-worker task on its own, so this change adds no demo (M3-F2 owns that one).
+## Addendum, 23 October 2026: the texture-unit allocator of M3-D7
+
+WebGL2 gives each shader stage 16 texture units. The lit shader reads most of them, so an add-on's material that adds textures of its own could pass a stage's share, and the device would then fail to link the program: the draw would show nothing and report no reason. M3-D7 refuses it first.
+
+`prepareProgram` in `packages/engine/src/gpu/webgl2/programs.ts` counts the distinct texture slots that each stage declares, before it numbers them, and calls `checkStageUnits`. A stage past 16 throws E1209 with the count and the limit. The count reads the composed GLSL's declared textures rather than the linked program's, since a driver removes a texture that the shader never reads and the declared list is the bound that a device without the removal rule would see.
+
+The refusal comes at the first draw of a material, when its program is prepared, and not at `materials.shader()`. An add-on's shader can arrive as a first-use loader, so the material's variants may be empty when it is created, while the program always has its composed source. WebGPU needs no such check: the engine's own layouts already stay within its 16 sampled textures, and a device refusal there names E1305.
+
+The test add-on is a stage of 17 declared textures in `programs.test.ts`, beside the existing test that every build of the engine's own shaders stays within the units.

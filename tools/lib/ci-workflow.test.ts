@@ -8,11 +8,13 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 
 interface Step {
 	name?: string;
 	run?: string;
 	uses?: string;
+	'continue-on-error'?: boolean;
 	with?: Record<string, unknown>;
 	env?: Record<string, string>;
 }
@@ -278,7 +280,9 @@ describe("CI's workflow", () => {
 
 	it('builds the production pages in one job, and every other browser job leaves them out', () => {
 		const builders = Object.entries(jobs).filter(([, job]) =>
-			commandsOf(job).some(({ text }) => text.includes('vite build')),
+			commandsOf(job).some(
+				({ text }) => text.includes('vite build') || text.includes('tools/build-test-pages.ts'),
+			),
 		);
 		expect(builders.map(([name]) => name)).toEqual(['browser-production']);
 		for (const [name, job] of Object.entries(jobs)) {
@@ -294,6 +298,60 @@ describe("CI's workflow", () => {
 			if (production)
 				for (const { env } of browserRuns)
 					expect(env.NULL3D_PRODUCTION_PAGES, name).toBe('prebuilt');
+		}
+	});
+
+	it('runs each production build test file in one part, which builds every page that it loads', () => {
+		const words = (text: unknown) => String(text).split(/\s+/).filter(Boolean);
+		const parts = combinations(jobNamed('browser-production'));
+		const files = parts.flatMap(({ tests }) => words(tests));
+		expect(files.toSorted()).toEqual([...PRODUCTION_BUILD_TESTS].sort());
+		for (const { pages, tests } of parts) {
+			const built = words(pages);
+			for (const page of built) expect(PRODUCTION_BUILD_PAGES as readonly string[]).toContain(page);
+			for (const file of words(tests)) {
+				const text = readFileSync(join(ROOT, 'tests/image', file), 'utf8');
+				for (const page of PRODUCTION_BUILD_PAGES.filter((p) => text.includes(`${p}.html`)))
+					expect(built, `${file} loads ${page}.html`).toContain(page);
+			}
+		}
+	});
+
+	it('fills the browser and sample caches in a job that no other job waits for', () => {
+		const filler = jobNamed('browser-caches');
+		expect(needsOf(filler)).toEqual(['changes']);
+		for (const action of ['./.github/actions/playwright-chromium', './.github/actions/samples']) {
+			const fill = (filler.steps ?? []).find(({ uses }) => uses === action);
+			expect(fill?.with?.['cache-only'], action).toBe('true');
+			// A stalled mirror must not fail the run: each job then installs for itself.
+			expect(fill?.['continue-on-error'], action).toBe(true);
+		}
+		for (const [name, job] of Object.entries(jobs))
+			if (name !== 'ci-passed') expect(needsOf(job), name).not.toContain('browser-caches');
+		// The browser's key is Playwright's version: the package files change far more often.
+		const browser = readFileSync(
+			join(ROOT, '.github/actions/playwright-chromium/action.yml'),
+			'utf8',
+		);
+		expect(browser).not.toContain('package.json');
+	});
+
+	it('makes the load builds in one job, which every job that serves them waits for', () => {
+		const builders = Object.entries(jobs).filter(([, job]) =>
+			commandsOf(job).some(({ text }) => text.includes('tests/lib/load-server.ts')),
+		);
+		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
+		const servers = Object.entries(jobs).filter(
+			([, job]) => job.env?.NULL3D_LOAD_PAGES === 'prebuilt',
+		);
+		expect(servers.length).toBeGreaterThan(0);
+		for (const [name, job] of servers) {
+			expect(needsOf(job), name).toContain('load-pages');
+			const downloads = (job.steps ?? []).some(
+				({ uses, with: given }) =>
+					uses?.startsWith('actions/download-artifact@') === true && given?.name === 'load-pages',
+			);
+			expect(downloads, name).toBe(true);
 		}
 	});
 
