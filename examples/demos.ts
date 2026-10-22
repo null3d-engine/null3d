@@ -227,6 +227,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 120,
 	},
 	{
+		name: 'iridescence-and-anisotropy',
+		group: 'Light, materials and effects',
+		sketch: new URL('./iridescence-and-anisotropy/sketch.ts', import.meta.url),
+		code: 'iridescence-and-anisotropy/',
+		title: 'Iridescence and anisotropy',
+		scene: "Jeweller's bench at night",
+		summary:
+			'A jewel beetle turns on a plinth of brushed metal: its shell is a thin film whose colors run in rings over the wing cases, and the plinth stretches each highlight across its grain. Soap bubbles drift above it, each with a film of its own, over an oil slick that swirls a slower spectrum.',
+		hold: 2,
+		timeoutSeconds: 120,
+	},
+	{
 		name: 'property-animation',
 		group: 'Light, materials and effects',
 		sketch: new URL('./property-animation/sketch.ts', import.meta.url),
@@ -448,7 +460,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Post effects',
 		scene: 'Neon alley',
 		summary:
-			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette, a light sharpening and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette, a light sharpening and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grade changes: none, warm, then cool, set from the grading controls of white balance, lift, gamma, gain, saturation and split toning.',
 		hold: 4,
 	},
 	{

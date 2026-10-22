@@ -88,6 +88,9 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `clearcoatNormal` | `vec3f` | The coat's unit normal in world space. It starts as the input's normal, before any normal map bends the surface under it |
 | `sheenColor` | `vec3f` | The linear color of the sheen of cloth and velvet. Black gives none |
 | `sheenRoughness` | `f32` | The sheen's perceptual roughness, from 0 to 1 |
+| `iridescence` | `f32` | How much a thin film above the point tints its reflection, from 0 to 1 ([Iridescence and anisotropy](../api/materials.md#iridescence-and-anisotropy)) |
+| `iridescenceIor` | `f32` | The film's index of refraction, 1 or more |
+| `iridescenceThickness` | `f32` | The film's thickness in nanometers |
 
 `defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
 
@@ -343,7 +346,8 @@ fn surface(input: SurfaceInput) -> Surface {
 const stone = materials.shader({ wgsl: wet, color: '#8d8a84', roughness: 0.85 });
 ```
 
-- Only WGSL that sets or reads one of the five fields builds the shaders that light the layers. Such a material always has them, and its layer options give `defaultSurface` their values. A layer option on a material whose WGSL never names the fields throws E1217.
+- Only WGSL that sets or reads one of the fields builds the shaders that light the layers. Such a material always has them, and its layer options give `defaultSurface` their values. A layer option on a material whose WGSL never names the fields throws E1217.
+- The three iridescence fields work as the coat's and the sheen's do. Anisotropy needs the standard material's tangent frame, which a surface function does not have, so a custom material cannot set it yet.
 - Ripples on the water of a wet surface only need `clearcoatNormal`: the coat then shows them while the stone under it stays still.
 
 ## Vertex offsets

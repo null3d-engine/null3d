@@ -792,6 +792,12 @@ pub mod layout {
     /// [`EFFECT`] with a multisampled scene depth, whose sample 0 the effect reads. Only WebGPU has
     /// it: WebGL2 reads a copy of one sample that the backend keeps.
     pub const EFFECT_DEPTH_MS: u32 = 22;
+    /// [`EFFECT`] with a level of bloom's chain at binding 4, which the effect samples with its
+    /// linear sampler. An effect that reads a level draws in a pass of its own.
+    pub const EFFECT_BLOOM: u32 = 50;
+    /// [`EFFECT_BLOOM`] with a multisampled scene depth, whose sample 0 the effect reads. Only
+    /// WebGPU has it.
+    pub const EFFECT_BLOOM_DEPTH_MS: u32 = 51;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -1678,11 +1684,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: fifteen `vec4f`s. The row holds the base
-    /// values, the transmission's values, the attenuation's, the clear coat's, the sheen's, the
-    /// diffuse transmission's and the subsurface scatter's. On WebGL2 each row is a row of fifteen
-    /// `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 240;
+    /// Bytes of one material's row in the material table: seventeen `vec4f`s. The row holds the
+    /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's and the
+    /// anisotropy's. On WebGL2 each row is a row of seventeen `RGBA32_FLOAT` texels of a data
+    /// texture.
+    pub const MATERIAL_BYTES: u32 = 272;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -2560,6 +2567,8 @@ pub fn typescript_constants() -> String {
                 ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
                 ("EFFECT", layout::EFFECT),
                 ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
+                ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
+                ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),

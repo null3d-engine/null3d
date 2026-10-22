@@ -71,6 +71,9 @@ struct Surface {
   clearcoatNormal: vec3f,  // (0.2) the coat's normal, world space; starts as the mesh's normal
   sheenColor: vec3f,       // (0.2) cloth and velvet glow, linear RGB; black gives none
   sheenRoughness: f32,     // (0.2) how wide the sheen spreads
+  iridescence: f32,        // (0.3) how much a thin film tints the reflection, 0 to 1; the film's fields count as a layer field
+  iridescenceIor: f32,     // (0.3) the film's index of refraction, 1 or more
+  iridescenceThickness: f32,  // (0.3) the film's thickness in nanometers
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```

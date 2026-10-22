@@ -4,6 +4,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
 	MAP_SLOT_COAT,
@@ -13,6 +14,8 @@ import {
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
 	MAP_SLOT_EMISSIVE,
+	MAP_SLOT_IRIDESCENCE,
+	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
@@ -25,11 +28,13 @@ import {
 	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
@@ -47,6 +52,8 @@ import {
 	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_ANISOTROPY,
+	MATERIAL_PARAM_ANISOTROPY_ROTATION,
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
 	MATERIAL_PARAM_CLEARCOAT,
@@ -62,6 +69,10 @@ import {
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
 	MATERIAL_PARAM_IOR,
+	MATERIAL_PARAM_IRIDESCENCE,
+	MATERIAL_PARAM_IRIDESCENCE_IOR,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -1213,6 +1224,38 @@ export interface StandardValues extends MaterialOptions {
 	sheenColor?: ColorInput;
 	/** How rough the sheen is, from 0 to 1, as three.js's `sheenRoughness`: rougher sheens spread wider. The default is 1. */
 	sheenRoughness?: number;
+	/**
+	 * How much a thin film above the surface tints its reflection, from 0 to 1, as three.js's
+	 * `iridescence`: soap bubbles, oil and beetle shells show the colors of the film's thickness.
+	 * Give it, or another option of iridescence, when you create the material, to change it later.
+	 * The default is 0.
+	 */
+	iridescence?: number;
+	/**
+	 * The thin film's index of refraction, 1 or more, as three.js's `iridescenceIOR`: 1 makes the
+	 * film reflect as the surface does, and a value near 2 shows its colors most strongly. The
+	 * default is 1.3.
+	 */
+	iridescenceIor?: number;
+	/**
+	 * The thinnest and thickest parts of the film, in nanometers, as three.js's
+	 * `iridescenceThicknessRange`: the map's green channel mixes between them. The default is
+	 * `[100, 400]`.
+	 */
+	iridescenceThicknessRange?: readonly [number, number];
+	/**
+	 * How far the specular reflection stretches along one direction of the surface, from 0 (round)
+	 * to 1, as three.js's `anisotropy`: brushed metal shows a highlight across its grooves rather
+	 * than around. A material with it needs a map, whose coordinates give the surface's tangent
+	 * frame. Give it, or `anisotropyRotation`, when you create the material, to change it later.
+	 * The default is 0.
+	 */
+	anisotropy?: number;
+	/**
+	 * The direction along which the reflection stretches, in radians from the surface's tangent,
+	 * as three.js's `anisotropyRotation`. The default is 0.
+	 */
+	anisotropyRotation?: number;
 }
 
 /**
@@ -1313,6 +1356,23 @@ export interface StandardMaps {
 	 * the same texture, as glTF packs them: an sRGB texture keeps its alpha linear.
 	 */
 	sheenRoughnessMap?: Texture;
+	/**
+	 * How much of the thin film's reflection shows, in red, in linear color, which multiplies
+	 * `iridescence`. A material with iridescence or anisotropy takes no light map and no specular
+	 * maps, since its maps take their places.
+	 */
+	iridescenceMap?: Texture;
+	/**
+	 * The film's thickness in green, in linear color, which mixes `iridescenceThicknessRange`. A
+	 * material with both iridescence maps takes no light map and no specular maps.
+	 */
+	iridescenceThicknessMap?: Texture;
+	/**
+	 * The anisotropy's direction in red and green and its strength in blue, in linear color: red
+	 * and green are a direction in the tangent plane, and blue multiplies `anisotropy`. A material
+	 * with it takes no light map, no specular maps and no clear coat or sheen map.
+	 */
+	anisotropyMap?: Texture;
 }
 
 /**
@@ -1656,6 +1716,8 @@ type Ranged =
 	| 'clearcoat'
 	| 'clearcoatRoughness'
 	| 'sheenRoughness'
+	| 'iridescence'
+	| 'anisotropy'
 	| 'edgeFade';
 
 /** Each value that is a number, and the most it takes, or none above 0. */
@@ -1676,6 +1738,8 @@ const RANGED: readonly (readonly [Ranged, number])[] = [
 	['clearcoat', 1],
 	['clearcoatRoughness', 1],
 	['sheenRoughness', 1],
+	['iridescence', 1],
+	['anisotropy', 1],
 	['edgeFade', 1],
 ];
 
@@ -1700,6 +1764,8 @@ const RANGED_NAMES: readonly string[] = [
 	'clearcoat',
 	'clearcoatRoughness',
 	'sheenRoughness',
+	'iridescence',
+	'anisotropy',
 	'edgeFade',
 ];
 
@@ -1720,6 +1786,9 @@ const MAP_OPTIONS: readonly (readonly [Exclude<keyof StandardMaps, 'parallax'>, 
 	['clearcoatNormalMap', MAP_SLOT_COAT_NORMAL],
 	['sheenColorMap', MAP_SLOT_SHEEN_COLOR],
 	['sheenRoughnessMap', MAP_SLOT_SHEEN_ROUGHNESS],
+	['iridescenceMap', MAP_SLOT_IRIDESCENCE],
+	['iridescenceThicknessMap', MAP_SLOT_IRIDESCENCE_THICKNESS],
+	['anisotropyMap', MAP_SLOT_ANISOTROPY],
 ];
 
 /** The maps that share their slots with the diffuse transmission maps. */
@@ -1743,13 +1812,18 @@ function skipsMap(key: keyof StandardMaps, features: number): boolean {
 	return translucent ? SPECULAR_MAPS.has(key) : TRANSLUCENCY_MAPS.has(key);
 }
 
-/** The values of a clear coat and a sheen, any of which gives a material its layers. */
+/** The values of a clear coat, a sheen, iridescence or anisotropy, any of which gives a material its layers. */
 const LAYER_VALUES = [
 	'clearcoat',
 	'clearcoatRoughness',
 	'clearcoatNormalScale',
 	'sheenColor',
 	'sheenRoughness',
+	'iridescence',
+	'iridescenceIor',
+	'iridescenceThicknessRange',
+	'anisotropy',
+	'anisotropyRotation',
 ] as const;
 
 /** The maps of a clear coat and a sheen. */
@@ -1759,13 +1833,57 @@ const LAYER_MAPS = [
 	'clearcoatNormalMap',
 	'sheenColorMap',
 	'sheenRoughnessMap',
+	'iridescenceMap',
+	'iridescenceThicknessMap',
+	'anisotropyMap',
 ] as const;
+
+/** The layer maps that hold a clear coat or a sheen. */
+const COAT_SHEEN_MAPS: readonly (keyof StandardMaps)[] = [
+	'clearcoatMap',
+	'clearcoatRoughnessMap',
+	'clearcoatNormalMap',
+	'sheenColorMap',
+	'sheenRoughnessMap',
+];
+
+/** The layer maps that hold iridescence. */
+const IRIDESCENCE_MAPS: readonly (keyof StandardMaps)[] = [
+	'iridescenceMap',
+	'iridescenceThicknessMap',
+];
+
+/** True when `options` give any map of `keys`. */
+function takesAnyMap(options: StandardOptions, keys: readonly (keyof StandardMaps)[]): boolean {
+	return keys.some((key) => options[key] !== undefined);
+}
+
+/** True when `options` give the material a thin film above its surface. */
+function takesIridescence(options: StandardOptions): boolean {
+	return (
+		options.iridescence !== undefined ||
+		options.iridescenceIor !== undefined ||
+		options.iridescenceThicknessRange !== undefined ||
+		options.iridescenceMap !== undefined ||
+		options.iridescenceThicknessMap !== undefined
+	);
+}
+
+/** True when `options` give the material a stretched specular lobe. */
+function takesAnisotropy(options: StandardOptions): boolean {
+	return (
+		options.anisotropy !== undefined ||
+		options.anisotropyRotation !== undefined ||
+		options.anisotropyMap !== undefined
+	);
+}
 
 /**
  * True for a map that a layered material leaves out, which development builds refuse with E1217:
- * a map whose slot the layers' maps take, and the second map of a pair that is not the texture of
- * the first. Production builds skip the check, so the material draws without the map rather than
- * read it as a layer's.
+ * a map whose slot another layer's maps take, and the second map of a pair that is not the texture
+ * of the first. A material takes its layer maps from one family: the coat's and the sheen's, or
+ * iridescence's and the anisotropy's. Production builds skip the check, so the material draws
+ * without the map rather than read it as another layer's.
  */
 function skipsLayerMap(options: StandardOptions, key: keyof StandardMaps): boolean {
 	if (key === 'lightMap' || SPECULAR_MAPS.has(key) || TRANSLUCENCY_MAPS.has(key)) return true;
@@ -1773,10 +1891,12 @@ function skipsLayerMap(options: StandardOptions, key: keyof StandardMaps): boole
 		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
 	if (key === 'sheenRoughnessMap')
 		return !!options.sheenColorMap && options.sheenColorMap !== options.sheenRoughnessMap;
+	if (takesAnyMap(options, COAT_SHEEN_MAPS))
+		return IRIDESCENCE_MAPS.includes(key) || key === 'anisotropyMap';
 	return false;
 }
 
-/** True when `options` give the material a clear coat or a sheen. */
+/** True when `options` give the material layers above its base. */
 function hasLayers(options: StandardOptions): boolean {
 	return (
 		LAYER_VALUES.some((key) => options[key] !== undefined) ||
@@ -1815,6 +1935,37 @@ function checkNumbers(values: AnyValues, call: string): void {
 function checkValues(values: AnyValues, call: string): void {
 	checkNumbers(values, call);
 	const { ior, attenuationDistance: distance, angleFade } = values;
+	const { iridescenceIor, iridescenceThicknessRange, anisotropyRotation } = values as {
+		iridescenceIor?: number;
+		iridescenceThicknessRange?: readonly [number, number];
+		anisotropyRotation?: number;
+	};
+	if (
+		iridescenceIor !== undefined &&
+		!(iridescenceIor >= 1 && iridescenceIor < Number.POSITIVE_INFINITY)
+	)
+		throw new EngineError(
+			'E1108',
+			`${call}() got the iridescenceIor ${iridescenceIor}; it takes a finite 1 or more.`,
+		);
+	if (
+		iridescenceThicknessRange !== undefined &&
+		!(
+			iridescenceThicknessRange.length === 2 &&
+			iridescenceThicknessRange[0] >= 0 &&
+			iridescenceThicknessRange[0] <= iridescenceThicknessRange[1] &&
+			Number.isFinite(iridescenceThicknessRange[1])
+		)
+	)
+		throw new EngineError(
+			'E1108',
+			`${call}() got the iridescenceThicknessRange ${JSON.stringify(iridescenceThicknessRange)}; it takes two thicknesses in nanometers, the first no larger than the second.`,
+		);
+	if (anisotropyRotation !== undefined && !Number.isFinite(anisotropyRotation))
+		throw new EngineError(
+			'E1108',
+			`${call}() got the anisotropyRotation ${anisotropyRotation}; it takes a finite number of radians.`,
+		);
 	if (
 		angleFade !== undefined &&
 		!(
@@ -1993,6 +2144,43 @@ function writeValues(
 			sendValue(core, id, MATERIAL_PARAM_SHEEN_ROUGHNESS, call);
 		}
 	}
+	if ('iridescence' in values) {
+		const value = values.iridescence;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE, call);
+		}
+	}
+	if ('iridescenceIor' in values) {
+		const value = values.iridescenceIor;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE_IOR, call);
+		}
+	}
+	if ('anisotropy' in values) {
+		const value = values.anisotropy;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ANISOTROPY, call);
+		}
+	}
+	if ('anisotropyRotation' in values) {
+		const value = values.anisotropyRotation;
+		if (value !== undefined) {
+			numbers[0] = value;
+			sendValue(core, id, MATERIAL_PARAM_ANISOTROPY_ROTATION, call);
+		}
+	}
+	// The film's thickness at each end of its map's green channel.
+	const thickness = (values as { iridescenceThicknessRange?: readonly [number, number] })
+		.iridescenceThicknessRange;
+	if (thickness) {
+		numbers[0] = thickness[0];
+		sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN, call);
+		numbers[0] = thickness[1];
+		sendValue(core, id, MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, call);
+	}
 	if ('edgeFade' in values) {
 		const value = values.edgeFade;
 		if (value !== undefined) {
@@ -2085,6 +2273,10 @@ const ONE_VALUE_PARAMS: ReadonlyMap<string, number> = new Map<string, number>([
 	['clearcoat', MATERIAL_PARAM_CLEARCOAT],
 	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS],
 	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS],
+	['iridescence', MATERIAL_PARAM_IRIDESCENCE],
+	['iridescenceIor', MATERIAL_PARAM_IRIDESCENCE_IOR],
+	['anisotropy', MATERIAL_PARAM_ANISOTROPY],
+	['anisotropyRotation', MATERIAL_PARAM_ANISOTROPY_ROTATION],
 	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE],
 ]);
 
@@ -2274,6 +2466,11 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			`${call}() got diffuseTransmission with the 'weighted' blending; a material of the weighted blending lets no light through to its other side. Give it the 'normal' blending.`,
 		);
 	if (hasLayers(options)) checkLayerMaps(options, call);
+	if (options.anisotropy !== undefined && !MAP_OPTIONS.some(([key]) => options[key] !== undefined))
+		throw new EngineError(
+			'E1217',
+			`${call}() got anisotropy with no map. The direction that the reflection stretches along comes from the surface's texture coordinates, so give the material a map.`,
+		);
 	if (options.parallax && !options.displacementMap)
 		throw new EngineError(
 			'E1217',
@@ -2332,7 +2529,7 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 	if (displaced)
 		throw new EngineError(
 			'E1217',
-			`${call}() got ${displaced} with a clear coat or a sheen, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
+			`${call}() got ${displaced} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
 		);
 	for (const [first, second, packed] of [
 		['clearcoatMap', 'clearcoatRoughnessMap', 'the roughness in the green of the clear coat map'],
@@ -2344,6 +2541,20 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 			throw new EngineError(
 				'E1217',
 				`${call}() got a ${first} and a ${second} that are two textures. Give one texture for both, with ${packed}, as glTF packs them.`,
+			);
+	}
+	// A material's maps come from one family of layers, since the maps of each take the same slots.
+	// The layers' values may mix freely: the row says which family's maps the slots hold.
+	if (takesAnyMap(options, COAT_SHEEN_MAPS)) {
+		const clash =
+			(options.iridescenceMap !== undefined && 'iridescenceMap') ||
+			(options.iridescenceThicknessMap !== undefined && 'iridescenceThicknessMap') ||
+			(options.anisotropyMap !== undefined && 'anisotropyMap') ||
+			'';
+		if (clash)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${clash} with the maps of a clear coat or a sheen, which take the same slots. Give a material either the coat's and the sheen's maps, or iridescence's and the anisotropy's, and keep the other layers' values alone.`,
 			);
 	}
 }
@@ -2373,6 +2584,8 @@ function featureBits(options: StandardOptions): number {
 		(options.diffuseTransmission !== undefined ? MATERIAL_FEATURE_TRANSLUCENCY : 0) |
 		(options.subsurfaceRadius !== undefined ? MATERIAL_FEATURE_SUBSURFACE : 0) |
 		(hasLayers(options) ? MATERIAL_FEATURE_COAT_SHEEN : 0) |
+		(takesIridescence(options) ? MATERIAL_FEATURE_IRIDESCENCE : 0) |
+		(takesAnisotropy(options) ? MATERIAL_FEATURE_ANISOTROPY : 0) |
 		(options.wireframe ? MATERIAL_FEATURE_WIREFRAME : 0) |
 		(options.parallax ? MATERIAL_FEATURE_PARALLAX : 0)
 	);
@@ -3058,7 +3271,7 @@ export class Materials {
 		if (DEV && !layered && hasLayers(options))
 			throw new EngineError(
 				'E1217',
-				`${call}() got a clear coat or a sheen, but its WGSL never names the surface's layers, so it has no builds that light them. Set them in fn surface, such as s.clearcoat = 1.0 or s.sheenColor = vec3f(1.0).`,
+				`${call}() got a clear coat, a sheen or iridescence, but its WGSL never names the surface's layers, so it has no builds that light them. Set them in fn surface, such as s.clearcoat = 1.0 or s.sheenColor = vec3f(1.0).`,
 			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())

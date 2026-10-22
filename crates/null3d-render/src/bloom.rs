@@ -160,7 +160,7 @@ impl Bloom {
 
     /// The levels that a chain whose base is reference level `offset` draws, of the `available`
     /// ones: those up to the last level with a weight above 0, and at least the base.
-    fn drawn_levels(&self, offset: usize, available: usize) -> usize {
+    pub(crate) fn drawn_levels(&self, offset: usize, available: usize) -> usize {
         let last = self
             .weights
             .iter()
@@ -205,6 +205,43 @@ impl Bloom {
 pub fn declared_levels(size: u32) -> usize {
     let size = size.clamp(MIN_SIZE, MAX_SIZE);
     LEVELS - (MAX_SIZE / size).ilog2() as usize
+}
+
+/// Where the image's place lands in the texture of level `level` of a chain for a frame of
+/// `canvas` pixels at render scale `scale`, with a base of `size` texels halved `halvings` times:
+/// the scale and the offset that turn a place on the image, from 0 to 1 with its top row at 0,
+/// into that level's texture coordinates. A texture that counts its rows from the bottom holds its
+/// image turned, so the map's row scale is negative and its offset starts at the top.
+pub(crate) fn level_map(
+    level: usize,
+    canvas: (u32, u32),
+    scale: RenderScale,
+    size: u32,
+    halvings: u32,
+    rows_from_bottom: bool,
+) -> [f32; 4] {
+    let layout = Layout {
+        canvas,
+        scale,
+        size,
+        halvings,
+    };
+    let area = layout.level(level);
+    let map = CornerMap::new(
+        area,
+        Area {
+            extent: (1, 1),
+            corner: (1, 1),
+        },
+        rows_from_bottom,
+    );
+    let [x, y, _, offset] = map.map;
+    if rows_from_bottom {
+        // The corner sits at the top of the texture, so the image's top row is at v = 1.
+        [x, -y, 0.0, 1.0]
+    } else {
+        [x, y, 0.0, offset]
+    }
 }
 
 /// The size of level `level` of a chain whose base has `size` texels on the short side.
@@ -548,6 +585,11 @@ impl BloomPass {
 
     /// Bytes a frame may copy into its arena: the whole uniform buffer.
     pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
+
+    /// True on WebGL2, which counts a texture's rows from the bottom.
+    pub(crate) fn rows_from_bottom(&self) -> bool {
+        self.rows_from_bottom
+    }
 
     /// The levels declared.
     pub(crate) fn levels(&self) -> usize {

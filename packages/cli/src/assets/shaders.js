@@ -7,7 +7,9 @@
 // and HALF) and bits that the scene decides during play (RECEIVE_SHADOWS, PREPASS, FXAA, BLOOM
 // and the rest) are not part of a file's list.
 import {
+	KHRMaterialsAnisotropy,
 	KHRMaterialsClearcoat,
+	KHRMaterialsIridescence,
 	KHRMaterialsSheen,
 	KHRMaterialsTransmission,
 } from '@gltf-transform/extensions';
@@ -115,7 +117,43 @@ function transmits(material) {
 function layered(material) {
 	const coat = material?.getExtension(KHRMaterialsClearcoat.EXTENSION_NAME) ?? null;
 	const sheen = material?.getExtension(KHRMaterialsSheen.EXTENSION_NAME) ?? null;
-	return coat !== null || sheen !== null;
+	const film = material?.getExtension(KHRMaterialsIridescence.EXTENSION_NAME) ?? null;
+	const stretch = material?.getExtension(KHRMaterialsAnisotropy.EXTENSION_NAME) ?? null;
+	return coat !== null || sheen !== null || film !== null || stretch !== null;
+}
+
+/**
+ * True when the material's layers above the base have a map. Those maps take the light map's and
+ * the specular maps' places, which the engine's map slots include, so a material with one draws
+ * with the standard material's maps template.
+ *
+ * @param {import('@gltf-transform/core').Material | null} material
+ */
+function hasLayerMap(material) {
+	if (material === null) return false;
+	/**
+	 * @param {string} name
+	 * @param {string[]} getters
+	 */
+	const any = (name, getters) => {
+		const extension = /** @type {Record<string, () => unknown> | null} */ (
+			material.getExtension(name)
+		);
+		return extension !== null && getters.some((getter) => extension[getter]?.() != null);
+	};
+	return (
+		any(KHRMaterialsClearcoat.EXTENSION_NAME, [
+			'getClearcoatTexture',
+			'getClearcoatRoughnessTexture',
+			'getClearcoatNormalTexture',
+		]) ||
+		any(KHRMaterialsSheen.EXTENSION_NAME, ['getSheenColorTexture', 'getSheenRoughnessTexture']) ||
+		any(KHRMaterialsIridescence.EXTENSION_NAME, [
+			'getIridescenceTexture',
+			'getIridescenceThicknessTexture',
+		]) ||
+		any(KHRMaterialsAnisotropy.EXTENSION_NAME, ['getAnisotropyTexture'])
+	);
 }
 
 /**
@@ -154,7 +192,9 @@ function templateOf(prim, material) {
 	const uvs = prim.getAttribute('TEXCOORD_0') !== null;
 	if (unlit) return uvs && hasMap(material, 'getBaseColorTexture') ? 'unlit_map' : 'unlit';
 	if (!uvs) return 'lit';
-	return MAP_SLOTS.some((slot) => hasMap(material, slot)) ? 'standard_maps' : 'lit';
+	return MAP_SLOTS.some((slot) => hasMap(material, slot)) || hasLayerMap(material)
+		? 'standard_maps'
+		: 'lit';
 }
 
 /**

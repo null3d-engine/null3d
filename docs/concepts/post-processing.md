@@ -212,6 +212,7 @@ post.addEffect({ wgsl: warm });
 - Effects run after the scene passes and before depth of field and bloom, on linear HDR color after the exposure. Light that an effect adds can glow, and the tone curve maps it with the rest.
 - Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
 - Effects run from the lowest `order` to the highest, at most 8 at once.
+- An effect that calls `effectBloom(input.uv)` reads a level of bloom's chain, and `bloomLevel` names which level, from 0 for the narrowest glow. The chain then draws before the effects, from the scene color rather than from their output, and the final pass still blends its glow into the picture after them. A streak, a glare or a halo reads the level that suits its width instead of blurring the picture again. Such an effect draws in a pass of its own, as an effect with textures does, and a level that the chain does not draw reads black.
 - Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
 - A full-screen pass reads and writes 8 bytes per pixel. The engine joins an effect that reads only its own pixel into the pass of the effect before it, while the render scale cannot drop below the whole canvas. With bloom and FXAA off, the last of these passes folds into the final pass then too. While the scale can drop, each effect draws a pass of its own, at every scale ([below the whole canvas's render scale](#below-the-whole-canvass-render-scale)). [Custom passes](../guides/custom-passes.md#cost) gives the rules.
 
@@ -338,7 +339,8 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 - The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
-- The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
+- Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
+- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes costs no frame. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
 - The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
 
 ## Sharpening

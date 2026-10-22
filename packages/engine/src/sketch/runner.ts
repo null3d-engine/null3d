@@ -42,6 +42,7 @@ import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
 import { GltfExtensions } from '../scene/gltf-extensions';
+import { GradeTable } from '../scene/grade-table';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Render } from '../scene/render';
@@ -569,6 +570,7 @@ export class SketchRunner {
 			materials.shaders,
 			templates,
 			device.joinEffects,
+			new GradeTable(textures),
 		);
 		this.render = new Render(this.core, scene, materials.shaders, templates, textures.maxSize);
 		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
@@ -1118,6 +1120,9 @@ export class SketchRunner {
 				if (first === 0 && (before || step === steps)) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
+					// A grading table bakes in a job worker: the held frame waits for the newest
+					// one, so the picture shows the grade that the sketch set.
+					await this.post.gradingSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the

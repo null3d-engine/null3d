@@ -104,6 +104,7 @@ describe('the declarations of effects and tone curves', () => {
 				{ name: 'tint', type: 'vec3f', offset: 4 },
 			],
 			depth: false,
+			bloom: false,
 			joins: false,
 			textures: [{ name: 'glow', offset: 31 }],
 			variants: {},

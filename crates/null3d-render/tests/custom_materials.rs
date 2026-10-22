@@ -224,6 +224,7 @@ fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
         let effect = Effect {
             template,
             depth: false,
+            bloom: None,
             values: [0.0; EFFECT_FLOATS],
             maps: EffectMaps::default(),
         };
