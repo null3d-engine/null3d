@@ -153,6 +153,8 @@ pub enum MeshError {
     Morph(MorphError),
     /// The engine's memory could not grow by `bytes` for the mesh. The storage holds no part of it.
     OutOfMemory { bytes: u64 },
+    /// A mesh that a new mesh would take its vertices from is not live.
+    UnknownMesh,
 }
 
 /// Room for `more` values in `v`, or the bytes they need when memory cannot grow.
@@ -595,6 +597,101 @@ impl MeshStorage {
             }
             None => {
                 self.meshes.push(slot);
+                self.live.push(true);
+                self.meshes.len() as u32 - 1
+            }
+        })
+    }
+
+    /// Adds a mesh that draws the vertices of the live mesh `base` with the triangles `indices`,
+    /// which name the base mesh's vertices in its own order. Each triangle joins the part of
+    /// `base` that holds its vertices, and that part's page takes the triangles' indices after the
+    /// part's own, so the level shares the base's vertices and costs the GPU indices alone. The
+    /// level holds the base's radius and format. Returns the engine id of the level.
+    pub fn add_level(&mut self, base: u32, indices: &[u32]) -> Result<u32, MeshError> {
+        if !indices.len().is_multiple_of(3) {
+            return Err(MeshError::NotTriangles);
+        }
+        let slot = *self
+            .meshes
+            .get(base as usize)
+            .filter(|_| self.live.get(base as usize) == Some(&true))
+            .ok_or(MeshError::UnknownMesh)?;
+        let first = slot.first_part as usize;
+        let base_parts = self.parts[first..first + slot.part_count as usize].to_vec();
+        let vertices: u32 = base_parts.iter().map(|part| part.vertex_count).sum();
+        if let Some(&index) = indices.iter().find(|&&index| index >= vertices) {
+            return Err(MeshError::IndexOutOfRange { index, vertices });
+        }
+        // The base mesh's vertices, as each part counts them: a split mesh's parts each hold their
+        // own vertices, in order.
+        let mut begins = Vec::with_capacity(base_parts.len());
+        let mut at = 0;
+        for part in &base_parts {
+            begins.push(at);
+            at += part.vertex_count;
+        }
+        let part_of = |vertex: u32| begins.partition_point(|&begin| begin <= vertex) - 1;
+        // Each part takes the triangles whose vertices it holds, in the order that they come.
+        let mut per_part: Vec<Vec<u32>> = vec![Vec::new(); base_parts.len()];
+        for triangle in indices.as_chunks::<3>().0 {
+            let part = part_of(triangle[0]);
+            per_part[part].extend_from_slice(triangle);
+        }
+        let mut made = Vec::new();
+        for (k, triangles) in per_part.iter().enumerate() {
+            if triangles.is_empty() {
+                continue;
+            }
+            let part = base_parts[k];
+            let page = &mut self.pages[part.page as usize];
+            reserve(&mut page.indices, triangles.len())?;
+            let first_index = page.indices.len() as u32;
+            let begin = begins[k];
+            page.indices.extend(
+                triangles
+                    .iter()
+                    .map(|&vertex| (part.first_vertex + (vertex - begin)) as u16),
+            );
+            made.push(MeshPart {
+                page: part.page,
+                first_index,
+                index_count: triangles.len() as u32,
+                base_vertex: part.base_vertex,
+                vertex_count: part.vertex_count,
+                first_vertex: part.first_vertex,
+            });
+        }
+        let first_part = self.parts.len() as u32;
+        reserve(&mut self.parts, made.len())?;
+        self.parts.extend(made);
+        reserve(&mut self.meshes, 1)?;
+        reserve(&mut self.live, 1)?;
+        let level = MeshSlot {
+            format: slot.format,
+            first_part,
+            part_count: self.parts.len() as u32 - first_part,
+            vertex_count: slot.vertex_count,
+            radius: slot.radius,
+            joints: 0,
+            first_sphere: 0,
+            targets: 0,
+            first_reach: 0,
+            first_texel: 0,
+            texels: 0,
+            first_source: 0,
+            sources: 0,
+            updates: 0,
+        };
+        let lowest = (0..self.free.len()).min_by_key(|&k| self.free[k]);
+        Ok(match lowest.map(|k| self.free.swap_remove(k)) {
+            Some(id) => {
+                self.meshes[id as usize] = level;
+                self.live[id as usize] = true;
+                id
+            }
+            None => {
+                self.meshes.push(level);
                 self.live.push(true);
                 self.meshes.len() as u32 - 1
             }
@@ -1139,6 +1236,45 @@ mod tests {
                 })
             })
             .collect()
+    }
+
+    #[test]
+    fn a_level_draws_the_same_vertices_from_its_own_indices() {
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let base = storage
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap();
+        let slot = *storage.mesh(base).unwrap();
+        let parts = storage.parts(&slot, false).to_vec();
+        let count = parts.iter().map(|part| part.index_count).sum::<u32>();
+        assert!(count >= 12);
+        // The level keeps the first two triangles of the base, which reach its first six indices.
+        let page = &storage.pages()[parts[0].page as usize];
+        let first = parts[0].first_index as usize;
+        let kept = page.indices[first..first + 6].to_vec();
+        let indices: Vec<u32> = kept
+            .iter()
+            .map(|&index| index as u32 - parts[0].base_vertex)
+            .collect();
+        let level = storage.add_level(base, &indices).unwrap();
+        let level_slot = *storage.mesh(level).unwrap();
+        let level_parts = storage.parts(&level_slot, false).to_vec();
+        // The level shares the base's page and takes the indices after the base's.
+        assert_eq!(level_parts.len(), 1);
+        assert_eq!(level_parts[0].page, parts[0].page);
+        assert_eq!(
+            level_parts[0].first_index,
+            parts[0].first_index + parts[0].index_count
+        );
+        assert_eq!(level_parts[0].index_count, 6);
+        assert_eq!(level_parts[0].first_vertex, parts[0].first_vertex);
+        assert_eq!(level_slot.radius, slot.radius);
+        assert_eq!(level_slot.format, slot.format);
+        // The two triangles draw the base's own vertices.
+        assert_eq!(
+            resolved_vertices(&storage, level),
+            original_vertices(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())[..6].to_vec()
+        );
     }
 
     fn original_vertices(g: &Geometry) -> Vec<Vec<u8>> {
