@@ -198,7 +198,7 @@ The command splits each mesh part into patches and builds the tree above them wi
 
 The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The engine reads the tree, and draws the whole mesh until it draws patches.
 
-A mesh gets no tree in four cases. It has fewer than 20,000 triangles, a skin or a morph target bends it, its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
+A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters
