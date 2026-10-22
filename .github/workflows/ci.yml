@@ -1056,10 +1056,12 @@ jobs:
   showcase:
     # The showcase HUD tests build the night town in the page, wait for its first frame on the
     # software GPU, then read the canvas many times between switches. As one test that took 16.4
-    # minutes on a passing run, and a slower machine ran past 18. The file holds three tests, each on
-    # a fresh page: the toasts, the sky and the fog, and the environment light. Each runs on a
-    # machine of its own, with room under the limit for a machine that runs it slowly, above the
-    # tests' own budget, so a page that stops drawing fails by the test's name.
+    # minutes on a passing run, and a slower machine ran past 18. The file holds four tests, each on
+    # a fresh page: the toasts, the sky, the fog and the environment light. Each runs on a machine
+    # of its own, with room under the limit for a machine that runs it slowly, above the tests' own
+    # budget, so a page that stops drawing fails by the test's name. In run 39854225392 the sky and
+    # the fog were one test of 20.9 minutes: its page held still after 204 s, the sky took 492 s
+    # more and the fog 535 s, so they became two tests.
     name: browser (the showcase HUD, ${{ matrix.part }})
     needs: [build, changes]
     if: needs.changes.outputs.full == 'true'
@@ -1070,7 +1072,8 @@ jobs:
       matrix:
         include:
           - { part: toasts, id: toasts, grep: the showcase HUD shows its toasts }
-          - { part: sky and fog, id: sky-fog, grep: the showcase HUD keeps the sky and the fog }
+          - { part: sky, id: sky, grep: the showcase HUD keeps the sky off }
+          - { part: fog, id: fog, grep: the showcase HUD keeps the fog off }
           - { part: environment, id: environment, grep: the showcase HUD keeps the environment light }
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
