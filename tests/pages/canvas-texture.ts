@@ -21,8 +21,19 @@ interface ScreenStats {
 	marker: number;
 }
 
-/** Seconds that the page measures while the screen refreshes. */
+/** Seconds that one measured window covers. */
 const MEASURE_SECONDS = 2;
+/** The fewest frames a window must hold, so a slow GPU still gives the screen several refreshes. */
+const LEAST_FRAMES = 8;
+/** The most seconds the page measures for: a loaded software GPU may take seconds over a frame. */
+const MEASURE_CAP_SECONDS = 30;
+/** True when two frames hold the same pixels. */
+function samePixels(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	for (let at = 0; at < a.length; at++) if (a[at] !== b[at]) return false;
+	return true;
+}
+
 /** The most bytes one frame may upload for the refresh to count as part of the rectangle. */
 const PART_BYTES = 512 * 1024;
 
@@ -52,18 +63,38 @@ run('canvas-texture', async () => {
 	progress('every upload of the setup is on the GPU');
 	engine.postToSketch('start');
 	progress('start sent');
-	const metrics = await engine.measure(MEASURE_SECONDS);
+	// A window that holds a frame or two measures the refresh by chance: a software GPU can take
+	// seconds over one frame, and the rectangle path then never comes round. The window doubles
+	// until it holds enough frames, the last, longest window standing for the screen, and the rate
+	// check counts every second that the page measured.
+	let metrics = await engine.measure(MEASURE_SECONDS);
+	let seconds = MEASURE_SECONDS;
+	for (
+		let window = MEASURE_SECONDS * 2;
+		metrics.frames < LEAST_FRAMES && seconds < MEASURE_CAP_SECONDS;
+		window *= 2
+	) {
+		metrics = await engine.measure(window);
+		seconds += window;
+	}
 	progress('measured');
 	engine.postToSketch('stop');
 	const stats = await done;
 	progress('last upload on the GPU');
-	const capture = await engine.captureFrame();
+	// A slow GPU may draw the last rows of the canvas a frame or two after the sketch sees them
+	// land. Every thread mode must draw the same picture, so the capture waits until two frames
+	// agree rather than reading whichever frame comes first.
+	let capture = await engine.captureFrame();
+	for (let tryAgain = 0; tryAgain < 4; tryAgain++) {
+		const next = await engine.captureFrame();
+		if (samePixels(next.pixels, capture.pixels)) break;
+		capture = next;
+	}
 	progress('frame captured');
 	await engine.destroy();
 	progress('engine destroyed');
 	stopWatch();
 	const uploads = metrics.uploadBytes;
-	const seconds = MEASURE_SECONDS;
 	// The refresh rate is a ceiling: no more markers than the rate allows read the canvas. A slow
 	// device refreshes less often, which keeps it within the budget too.
 	const rateKept = stats.refreshes <= Math.ceil(seconds * 30) + 2;
