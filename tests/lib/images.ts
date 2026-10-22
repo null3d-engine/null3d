@@ -9,7 +9,14 @@
 // test-results/images/, with its diff. Only the review step (tests/review-images.ts) turns a
 // candidate into a reference.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -458,6 +465,28 @@ function makeCommand(run: ImageRun, place: Place): string {
 /** Each reference that a run needs, with the place that drew it. */
 function* neededReferences(run: ImageRun): Generator<{ place: Place; file: string }> {
 	for (const place of placesNeeding(run)) yield { place, file: referenceOf(run, place).file };
+}
+
+/**
+ * What is wrong with the references on disk, without a browser: the missing and the unused files
+ * and the pictures that two tests of one scene share, with the count of files that it read. The
+ * unit check (`bun run check`) and the report of every fixed limit (`bun run limits`) both call it,
+ * so the two can never disagree about the reference set.
+ */
+export function referenceProblemsOnDisk(runs: readonly ImageRun[]): {
+	files: number;
+	problems: string[];
+} {
+	const files = readdirSync(HARNESS_DIRS.references, { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isFile())
+		.map((entry) => relative(HARNESS_DIRS.references, `${entry.parentPath}/${entry.name}`));
+	return {
+		files: files.length,
+		problems: [
+			...referenceFileProblems(runs, files),
+			...sharedReferenceProblems(runs, referenceDigest),
+		],
+	};
 }
 
 /**

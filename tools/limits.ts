@@ -8,15 +8,9 @@
 // From the repository root:
 //   bun run limits
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { relative } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { IMAGE_RUNS } from '../tests/image/manifest.ts';
-import {
-	HARNESS_DIRS,
-	referenceDigest,
-	referenceFileProblems,
-	sharedReferenceProblems,
-} from '../tests/lib/images.ts';
+import { referenceProblemsOnDisk } from '../tests/lib/images.ts';
 import { budgetProblems, downloadSizes, type SizeEntry, START_BUDGET } from './lib/size-report.ts';
 
 /** How a limit stands: within it, past it, or not measurable without a build or a run. */
@@ -46,20 +40,14 @@ function baseRef(): string {
 
 /** The picture references, which a test without both sets of files fails without a browser. */
 function referenceRow(): Row {
-	const files = readdirSync(HARNESS_DIRS.references, { recursive: true, withFileTypes: true })
-		.filter((entry) => entry.isFile())
-		.map((entry) => relative(HARNESS_DIRS.references, `${entry.parentPath}/${entry.name}`));
-	const problems = [
-		...referenceFileProblems(IMAGE_RUNS, files),
-		...sharedReferenceProblems(IMAGE_RUNS, referenceDigest),
-	];
+	const { files, problems } = referenceProblemsOnDisk(IMAGE_RUNS);
 	return {
 		limit: 'picture references',
 		owner: 'tests/image/manifest.ts',
 		state: problems.length === 0 ? 'within' : 'past',
 		detail:
 			problems.length === 0
-				? `${files.length} files, one for each test in each place`
+				? `${files} files, one for each test in each place`
 				: `${problems.length} problems, the first is: ${problems[0]}`,
 	};
 }
