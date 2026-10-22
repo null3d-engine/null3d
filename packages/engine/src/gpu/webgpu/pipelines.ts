@@ -1418,6 +1418,8 @@ export class Pipelines {
 		// A material that reads the scene's depth binds the copy after its maps, or after the
 		// frame's group when it has none.
 		const scene = shader.sceneDepth === true ? [LAYOUT_MATERIAL_SCENE] : [];
+		// A draw shader makes every vertex itself, so its pipelines read no vertex buffer and have
+		// no prepass: its object has no mesh and no depth to write before the shading.
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
@@ -1426,9 +1428,13 @@ export class Pipelines {
 				...(shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME]),
 				...scene,
 			],
-			meshLocations: shader.locations,
-			vertexBuffers: INSTANCE_BUFFERS,
-			ownPrepass: true,
+			...(shader.meshless === true
+				? { vertexBuffers: [] }
+				: {
+						meshLocations: shader.locations,
+						vertexBuffers: INSTANCE_BUFFERS,
+						ownPrepass: true,
+					}),
 		});
 	}
 

@@ -766,3 +766,33 @@ sit above 160 KB, because of the shader file that this section measured.
 That build also held an experiment that moved the sky's write out of the start, which measured
 about 860 bytes and is not part of the change: without it, the figure above for each start that
 loads the sketch worker rises by about that much.
+
+### The files that the first-use loader added, measured, 22 October 2026
+
+The build of the milestone branch names ten files that grew past the limit of the size check. Six
+are new files, and four are files that grew. None of the six new files loads at a page's start.
+These are their sizes after Brotli:
+
+| File | Base | This build |
+| --- | ---: | ---: |
+| `js/page-assets.js` | new | 3,865 |
+| `js/page-assets-core.js` | new | 302 |
+| `js/page-assets-check.js` | new | 188 |
+| `js/page-shader-features.js` | new | 960 |
+| `js/sketch-worker-assets.js` | new | 3,717 |
+| `js/sketch-worker-worker-start.js` | new | 1,033 |
+| `js/sketch-worker.js` | 57,489 | 60,220 |
+| `js/page-control.js` | 508 | 721 |
+| `single/null3d.js` | 17,267 | 18,008 |
+| `threaded/null3d.js` | 17,439 | 18,178 |
+
+The loader's file names two shared modules, the core tables and the quality check. Each one needs a
+copy of its own there, because the start keeps its own. The report follows that chain, so each copy
+holds a part in the list.
+
+The worker's start grew by 2,731 bytes after Brotli, which is the cost of the deferral. The starts
+table above shows the other side of it: every start that the loader left fell by between 3,341 and
+5,714 bytes. A page that reads no file still downloads the worker's start, so the cost stands.
+
+The WebAssembly bindings grew by about 800 bytes in each mode, from this milestone's new exports.
+The control table gained the 3D label's entries.

@@ -105,6 +105,11 @@ export interface CustomShader {
 	 */
 	readonly variants: ShaderVariants;
 	readonly locations: readonly number[];
+	/**
+	 * True for a draw shader, whose vertex stage makes every vertex and every copy from its
+	 * indices: its pipelines declare no vertex buffer, and a draw gives only its two counts.
+	 */
+	readonly meshless?: boolean;
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
 	readonly textures: number;
 	/**

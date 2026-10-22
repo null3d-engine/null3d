@@ -38,7 +38,9 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
-use crate::levels::{BucketKey, KeyLinks, expand_level_keys, is_fade_key, links_of};
+use crate::levels::{
+    BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
+};
 use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
@@ -382,9 +384,6 @@ pub(super) struct Layout {
     pub(super) marks: Vec<u8>,
     /// The buckets that `marks` marks, in bucket order.
     pub(super) level_buckets: Vec<u32>,
-    /// Each bucket's base as the GPU holds its record, so a frame uploads the records of the
-    /// buckets whose slice moved.
-    pub(super) placed: Vec<u32>,
     /// The copies that one view places in each bucket, and the largest count over the views that
     /// draw the layout: working space of [`Layout::fit_copies`](super::copies).
     pub(super) copy_counts: Vec<u32>,
@@ -422,6 +421,10 @@ pub(super) struct Layout {
     /// The cell culling build that the order follows, and whether the GPU holds it.
     order_build: Option<u32>,
     order_uploaded: bool,
+    /// The buckets whose records this frame changed, from the first to the last plus one: every
+    /// bucket of a rebuilt table, the buckets whose slice moved, and a skinned bucket whose bounds
+    /// moved. The frame uploads them in one write, so no two writes to the table share a frame.
+    records_dirty: Option<Range<u32>>,
 }
 
 impl Layout {
@@ -601,12 +604,12 @@ impl Layout {
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
+        self.records_dirty = None;
         self.depthless = false;
         self.occluders = 0;
         self.buckets.clear();
         self.marks.clear();
         self.level_buckets.clear();
-        self.placed.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.skinned.clear();
@@ -902,8 +905,35 @@ impl Layout {
                 })
         };
         let levels = settings.levels();
+        // A level may name a material of its own, so its bucket key comes from the level's mesh and
+        // material, while it keeps the fields of the bucket that names it: its bounds, and the
+        // object's receive-shadows bit, which the base key's pipeline holds.
+        let level_bucket = |key: &BucketKey, level: usize| {
+            let (base, _) = key_level(key.3);
+            let set = levels.of(base)?;
+            let mesh = set.mesh(level);
+            let material = match set.material(level) {
+                0 => key.4,
+                own => own,
+            };
+            let object = if key.0.permutation & permutation::RECEIVE_SHADOWS != 0 {
+                flags::RECEIVE_SHADOWS
+            } else {
+                0
+            };
+            let mut bucket = key_of(
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
+                key.5,
+                object,
+                None,
+            )?;
+            bucket.3 = level_key(base, level);
+            Some(bucket)
+        };
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
-        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        expand_level_keys(key_counts, levels, fades, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -943,7 +973,7 @@ impl Layout {
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
-            let links = links_of(key, &*key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
             let mesh = levels
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");
@@ -1157,10 +1187,6 @@ impl Layout {
         self.level_buckets.extend(
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
         );
-        // The bases that the GPU holds, before any frame sizes the slices: every bucket's record
-        // goes up at the first frame that sizes them again.
-        self.placed.clear();
-        self.placed.resize(self.buckets.len(), u32::MAX);
         let fades = self.level_links.iter().any(LevelLink::has_next);
         self.cull_rows = if fades {
             self.sources.saturating_mul(4)
@@ -1201,6 +1227,7 @@ impl Layout {
                 bucket.bias.to_bits(),
             ]);
         }
+        self.records_dirty = Some(0..self.buckets.len() as u32);
         self.built = true;
         Ok(())
     }
@@ -1240,14 +1267,9 @@ impl Layout {
         }
     }
 
-    /// Uploads the bounds of the skinned objects' buckets, which the animation step moved: one
-    /// write of the records from the first such bucket to the last.
-    pub(super) fn update_skinned(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-        scene: &SceneStorage,
-    ) -> Result<(), RecordError> {
+    /// Moves the bounds of the skinned objects' buckets, which the animation step moved, and marks
+    /// the records from the first such bucket to the last for the frame's one table upload.
+    pub(super) fn update_skinned(&mut self, scene: &SceneStorage) -> Result<(), RecordError> {
         let (Some(&(first, _)), Some(&(last, _))) = (self.skinned.first(), self.skinned.last())
         else {
             return Ok(());
@@ -1260,11 +1282,7 @@ impl Layout {
             record[2] = radius.to_bits();
             record[5..8].copy_from_slice(&center.map(f32::to_bits));
         }
-        let words = &self.bucket_records
-            [(first * BUCKET_WORDS) as usize..((last + 1) * BUCKET_WORDS) as usize];
-        let (at, bytes) = arena.push(words_as_bytes(words))?;
-        let (_, records) = self.table_ids();
-        list.push(Op::WriteBuffer, &[records, first * BUCKET_BYTES, at, bytes])?;
+        self.mark_records(first..last + 1);
         Ok(())
     }
 
@@ -1317,14 +1335,44 @@ impl Layout {
                 everything,
             )?;
         }
-        if !self.buckets.is_empty() {
-            let (at, bytes) = arena.push(words_as_bytes(&self.bucket_records))?;
-            list.push(Op::WriteBuffer, &[records, 0, at, bytes])?;
-        }
         if self.owns_sources() {
             recreated |= self.upload_skin_firsts(list, arena)?;
         }
         Ok(recreated)
+    }
+
+    /// Marks the records of buckets `range` to upload again this frame.
+    pub(super) fn mark_records(&mut self, range: Range<u32>) {
+        self.records_dirty = Some(match self.records_dirty.take() {
+            Some(dirty) => dirty.start.min(range.start)..dirty.end.max(range.end),
+            None => range,
+        });
+    }
+
+    /// Uploads the bucket records that changed this frame, in one write, or nothing when none did.
+    /// A rebuild marks every bucket, so the table goes up whole, and a frame's other changes ride
+    /// in the same write: two writes to the table in one frame would leave whichever the device
+    /// routed last, and a direct write lands before a staged copy whatever their order in the list.
+    pub(super) fn upload_records(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(range) = self.records_dirty.take() else {
+            return Ok(());
+        };
+        if range.is_empty() || self.bucket_records.is_empty() {
+            return Ok(());
+        }
+        let words = &self.bucket_records[range.start as usize * BUCKET_WORDS as usize
+            ..range.end as usize * BUCKET_WORDS as usize];
+        let (at, bytes) = arena.push(words_as_bytes(words))?;
+        let (_, records) = self.table_ids();
+        list.push(
+            Op::WriteBuffer,
+            &[records, range.start * BUCKET_BYTES, at, bytes],
+        )?;
+        Ok(())
     }
 
     /// Makes the skin firsts texture big enough for the first joints, with room to grow, and at
