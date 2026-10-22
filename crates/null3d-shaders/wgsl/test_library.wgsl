@@ -328,6 +328,20 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #ifdef LIGHTING
         case 109u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
         case 110u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
+        case 111u: {
+            return scalar(null3d::lighting::v_ggx_smith_correlated_anisotropic(
+                f[0].x, f[0].y, f[0].z, f[0].w, f[1].x, f[1].y, f[1].z, f[1].w));
+        }
+        case 112u: {
+            return scalar(null3d::lighting::d_ggx_anisotropic(f[0].x, f[0].y, f[0].z, f[0].w, f[1].x));
+        }
+        case 113u: {
+            // The first two texels make a material, and the rest of the second holds the specular
+            // tint's reflectance and intensity. The next four texels hold the normal, the view,
+            // the tint's color and the light.
+            let m = null3d::lighting::with_specular(material(f), f[1].z, f[4].xyz, f[1].w);
+            return triple(null3d::lighting::brdf_ggx_physical(m, f[2].xyz, f[3].xyz, f[5].xyz));
+        }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.
