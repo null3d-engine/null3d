@@ -490,11 +490,13 @@ and a hero car with two screens.
   each heading. Its place along the lane comes from the row's start offset, its speed and the frame
   clock. The shaders guide holds that contract ([Surface functions](../docs/shaders/surface-functions.md)).
   A preset draws fewer cars by lowering the active row count. The rows were shuffled once, so a
-  thinner preset thins every lane alike.
-- **A moved row needs a larger bounding sphere.** The engine culls each row by the mesh's bounding
-  sphere. A vertex offset carries a car up to the lane's length from its row's origin. The hull
-  therefore holds a zero-area sliver along the lane. The sliver stretches the sphere to cover every
-  place that a car can reach, and costs a few vertices and no pixels.
+  thinner preset thins every lane alike. The traffic-lanes example add-on owns this
+  (`examples/addons/traffic-lanes/`), and Skyway uses it.
+- **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
+  sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
+  therefore gives its rows a radius that covers the lane, with `batch.setBoundingRadius(span)`
+  (documented in [Instances](../docs/concepts/instances.md#culling)). Before that call existed, the
+  hull carried a zero-area sliver to stretch the sphere.
 - **The windows are a world-space grid.** One window is the same size on every tower and on every
   face. It never stretches with a building's scale. A lit window shows a small room in parallax:
   a lamp panel, a floor, a ceiling and a block of furniture. Where a window covers less than a

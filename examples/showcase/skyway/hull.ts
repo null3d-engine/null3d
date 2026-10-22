@@ -2,18 +2,12 @@
 // sections, with a low canopy. It is built in code once, and every car of the traffic draws it.
 import type { MeshGeometry, SketchContext } from '@null3d/engine';
 
-/** The far end of a car's lane in the hull's own space, when a lane may move it that far. */
-export interface HullOptions {
-	/** How far a vertex offset may carry a car, in meters: the mesh's bound must cover it. */
-	reach?: number;
-}
-
 /**
  * A hover car's hull. Its nose points along local +Z, its belly sits just above y = 0, and its
  * canopy rises to about y = 1.1. A shader that paints only the lights can tell the parts apart by
  * their place in this space.
  */
-export function carHull(ctx: SketchContext, options: HullOptions = {}): MeshGeometry {
+export function carHull(ctx: SketchContext): MeshGeometry {
 	const { geometry } = ctx;
 	const positions: number[] = [];
 	const indices: number[] = [];
@@ -60,12 +54,6 @@ export function carHull(ctx: SketchContext, options: HullOptions = {}): MeshGeom
 	quad([-0.34, 1.1, 0.1], [0.34, 1.1, 0.1], [0.36, 1.05, -0.9], [-0.36, 1.05, -0.9]);
 	quad([-0.42, 0.84, 1.0], [-0.34, 1.1, 0.1], [-0.36, 1.05, -0.9], [-0.44, 0.8, -1.0]);
 	quad([0.42, 0.84, 1.0], [0.44, 0.8, -1.0], [0.36, 1.05, -0.9], [0.34, 1.1, 0.1]);
-	if (options.reach !== undefined) {
-		// A vertex offset carries each traffic car far along its lane. The engine culls a row by
-		// the mesh's bounding sphere, so this thin sliver stretches the sphere to cover the lane.
-		const reach = options.reach;
-		quad([0, 0, 0], [0, 0.001, 0], [0, 0, reach], [0, 0.001, reach]);
-	}
 	// A material with a surface function draws only a mesh that has texture coordinates, whatever
 	// the function reads, so the hull carries a simple pair along its side and its height.
 	const uvs = new Float32Array((positions.length / 3) * 2);
