@@ -2212,12 +2212,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A distance band hides a copy outside it and fades it at each edge. Two rows of copies stand
 	// around the band's start and its end: one outside, one inside the fade band, and one past it.
+	// The fade dither's phase follows each copy's number in its draw, which each GPU path numbers
+	// its own way, so every path keeps a picture of its own, as the level fade's test does.
 	{
 		name: 'lod-range',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?range',
 		hold: 0,
 		size: [480, 270],
-		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
