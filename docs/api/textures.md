@@ -143,7 +143,7 @@ return {
 - Ask for the 2D context with `willReadFrequently: true`, so the browser keeps the pixels where the engine reads them cheaply.
 - The rectangle must lie inside the canvas. A rectangle outside it throws E1208.
 - The `refreshHz` option caps how often the engine reads the canvas. A call that comes sooner reads nothing and returns false, and the next read covers its rectangle too.
-- A refresh that comes before the first upload reaches the GPU sends the whole canvas, because a rectangle cannot fill the rest.
+- A call that comes while the rectangle read before it still uploads returns false as well. The next read covers both rectangles. The whole canvas goes only before the first upload reaches the GPU, when a rectangle cannot fill the rest.
 - `texture.update` works on a canvas texture too. An update with another size gives the texture that size, and the next refresh sends the whole canvas.
 - The upload budget counts the rectangle. A 256 x 256 rectangle is 256 KiB, so a 1024 x 1024 screen that refreshes at 30 Hz sends 7.5 MiB a second. The preset's `uploadBytesPerFrame` sets the budget.
 - A refresh makes one `ImageData` for the rectangle, which the browser returns.

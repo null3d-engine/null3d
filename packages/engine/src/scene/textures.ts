@@ -414,9 +414,9 @@ export class Texture {
 	 * upload budget, and the rest of the texture keeps its texels. The last row of the canvas is
 	 * the texture's first, so the canvas stands upright on a plane as on a page. A refresh that
 	 * comes within the texture's `refreshHz` reads nothing: the next one covers its rectangle too.
-	 * Returns true when it read the canvas, and false when the refresh rate skipped it.
-	 * Throws E1208 for a rectangle outside the canvas, and for a texture that does not follow a
-	 * canvas. Throws E1101 after `destroy`.
+	 * Returns true when it read the canvas, and false when the refresh rate skipped it or a read
+	 * before it still waits to upload. Throws E1208 for a rectangle outside the canvas, and for a
+	 * texture that does not follow a canvas. Throws E1101 after `destroy`.
 	 */
 	refresh(rect?: CanvasRect): boolean {
 		if (this.destroyed)
@@ -673,6 +673,9 @@ export class Textures {
 		const now = this.time.now;
 		if (source.refreshHz > 0 && now - source.lastRefresh < 1 / source.refreshHz) return false;
 		if (source.sent && !this.uploading(texture)) source.sent = false;
+		// True while the texture still waits for a rectangle that a read before this one sent.
+		// Another rectangle cannot join it, so this read waits and the next one covers both.
+		const pending = source.sent;
 		// The read covers every change since the last read, and a read still waiting to upload
 		// keeps its rectangle in the next read.
 		left = source.dirtyLeft;
@@ -701,6 +704,21 @@ export class Textures {
 			source.sentTop = top;
 			source.sentRight = right;
 			source.sentBottom = bottom;
+		} else if (pending) {
+			// The texture still waits for the rectangle read before this one, so it cannot take
+			// another yet. Both rectangles stay for the next read, rather than the whole canvas
+			// going in place of a rectangle that is already on its way.
+			source.dirty = true;
+			source.dirtyLeft = left;
+			source.dirtyTop = top;
+			source.dirtyRight = right;
+			source.dirtyBottom = bottom;
+			source.sent = true;
+			source.sentLeft = left;
+			source.sentTop = top;
+			source.sentRight = right;
+			source.sentBottom = bottom;
+			return false;
 		} else {
 			// The rectangle cannot fill the rest of the texture, so the whole canvas does.
 			this.setData(
