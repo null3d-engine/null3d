@@ -422,7 +422,8 @@ takes the base's radius, format and vertex count. It goes when the base goes. Ta
 frees its indices alone, never the base's vertices.
 
 Two kinds of level still copy their vertices. One names its own positions, as the tool's cards do.
-The other has a base that the engine split into parts, or that joints or morph targets pose.
+The other has a base that the engine split into parts, or that morph targets pose. A skinned base
+shares its vertices, because the skin moves the same vertices whichever level names them.
 
 The test scene's ball shows the saving. Its base has 1,225 vertices of 16 bytes, and four levels.
 Held as copies, the levels took 91,600 bytes of GPU memory. Held over the base's vertices, they
