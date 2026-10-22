@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
-import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
+import { HTTP_PORT, PREVIEW_PORT, PRODUCTION_PAGES_SWITCH, REPO_ROOT } from './lib/server.ts';
 
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
 // files before it starts the web servers.
@@ -22,6 +22,14 @@ const HIGH_DENSITY_RATIO = 2;
 const MAIN_PROJECT = {
 	testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts', 'cdn.spec.ts'],
 };
+/**
+ * How this run treats the production build ([`PRODUCTION_PAGES_SWITCH`]). The build takes minutes,
+ * and only the production build projects read it, so a CI job whose tests include none of them
+ * skips it, and one job builds the pages once for both runs of those projects.
+ */
+const productionPagesMode = process.env[PRODUCTION_PAGES_SWITCH];
+const productionPages = productionPagesMode !== 'skip';
+
 /** The production build project's tests, and the server that serves its pages. */
 const PRODUCTION_BUILD = {
 	testMatch: [
@@ -48,6 +56,24 @@ export const DEV_SERVER = {
 	reuseExistingServer: !ci,
 };
 
+/** The production build of the test pages, and the preview that serves it. */
+const PRODUCTION_SERVER = {
+	// A fresh production build every run, so the tests never serve stale files, unless the run says
+	// that the pages are built. `bun run build:test-pages` builds the CDN build, for the test that
+	// loads the engine from another origin with no bundler, and then each page. The errors, sketch
+	// shaders, KTX2, texture cache and stats pages build on their own, so the engine test page stays
+	// as the startup benchmark loads it.
+	command: `${productionPagesMode === 'prebuilt' ? '' : 'bun run build:test-pages && '}bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
+	cwd: REPO_ROOT,
+	url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
+	reuseExistingServer: false,
+	// The chain builds seven pages before the preview serves them, and on a slow runner the default
+	// minute runs out partway through: the run then fails as if the server never started, with every
+	// build it finished in the log. A busy CI machine took the chain past five minutes on 19 October
+	// 2026 while each build was still finishing.
+	timeout: 900_000,
+};
+
 export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
@@ -67,25 +93,7 @@ export default defineConfig({
 		headless: true,
 		launchOptions,
 	},
-	webServer: [
-		DEV_SERVER,
-		{
-			// A fresh production build every run, so the tests never serve stale files. The errors,
-			// sketch shaders, KTX2, texture cache and stats pages build on their own, so the engine
-			// test page stays as the startup benchmark loads it.
-			// The CDN build comes first, for the test that loads the engine from another origin with no
-			// bundler. Its stamp makes a second run in the same checkout write nothing.
-			command: `bun tools/build-cdn.ts && bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && NULL3D_BUILD_PAGE=sketch-shaders bunx vite build && NULL3D_BUILD_PAGE=ktx2-files bunx vite build && NULL3D_BUILD_PAGE=texture-cache bunx vite build && NULL3D_BUILD_PAGE=gltf-files bunx vite build && NULL3D_BUILD_PAGE=stats bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
-			cwd: REPO_ROOT,
-			url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
-			reuseExistingServer: false,
-			// The chain builds seven pages before the preview serves them, and on a slow runner the
-			// default minute runs out partway through: the run then fails as if the server never
-			// started, with every build it finished in the log. A busy CI machine took the chain
-			// past five minutes on 19 October 2026 while each build was still finishing.
-			timeout: 900_000,
-		},
-	],
+	webServer: [DEV_SERVER, ...(productionPages ? [PRODUCTION_SERVER] : [])],
 	projects: [
 		{ name: environment, ...MAIN_PROJECT, grepInvert: RUNS_ALONE },
 		// The engine and errors tests again, on the production build. The sketch module and the engine
@@ -96,7 +104,9 @@ export default defineConfig({
 		// files of their own. The start under a strict Content-Security-Policy runs only here, since
 		// only a bundler turns small files into the inline addresses that such a policy blocks. So does
 		// the start with the engine's files on another origin, as from a CDN, which needs built files.
-		{ name: 'production build', ...PRODUCTION_BUILD, grepInvert: RUNS_ALONE },
+		...(productionPages
+			? [{ name: 'production build', ...PRODUCTION_BUILD, grepInvert: RUNS_ALONE }]
+			: []),
 		// The resize tests, on a high-density screen. Playwright's emulated pixel ratio does not reach
 		// the size in device pixels that the browser reports for an element (Playwright issue 18591),
 		// so the browser itself also starts at that ratio.
@@ -123,11 +133,15 @@ export default defineConfig({
 			grep: RUNS_ALONE,
 			workers: 1,
 		},
-		{
-			name: `production build${ALONE_PROJECT_SUFFIX}`,
-			...PRODUCTION_BUILD,
-			grep: RUNS_ALONE,
-			workers: 1,
-		},
+		...(productionPages
+			? [
+					{
+						name: `production build${ALONE_PROJECT_SUFFIX}`,
+						...PRODUCTION_BUILD,
+						grep: RUNS_ALONE,
+						workers: 1,
+					},
+				]
+			: []),
 	],
 });
