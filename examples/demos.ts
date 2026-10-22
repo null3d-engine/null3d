@@ -113,6 +113,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
+		name: 'skyway',
+		group: 'Showcase',
+		sketch: new URL('./showcase/skyway/sketch.ts', import.meta.url),
+		code: 'showcase/skyway/',
+		title: 'Skyway',
+		scene: 'A rainy megacity from a hover car',
+		summary:
+			'Fly a hover car through a rainy night city: tens of thousands of hover cars streaming along the sky lanes, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car that leads the camera under the rain.',
+		hold: 1,
+		timeoutSeconds: 300,
+	},
+	{
 		name: 'generators',
 		group: 'Building scenes',
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
