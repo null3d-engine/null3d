@@ -1105,7 +1105,7 @@ jobs:
     # figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
-    needs: [build, city, changes]
+    needs: [build, city, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     # The shards run close to their measured times, and a slow software-renderer runner stretches
@@ -1127,6 +1127,8 @@ jobs:
             tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # The load pages job built the benchmark pages that these pages serve.
+      NULL3D_LOAD_PAGES: prebuilt
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
       # The parity tests, by the title of each scene's group in bench/tests/parity.spec.ts.
@@ -1140,6 +1142,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: load-pages
+          path: target
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
@@ -1167,7 +1173,7 @@ jobs:
     # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
     # minutes.
     name: allocation (${{ matrix.gpu }})
-    needs: [build, city, changes]
+    needs: [build, city, load-pages, changes]
     if: needs.changes.outputs.allocation == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1175,6 +1181,43 @@ jobs:
       fail-fast: false
       matrix:
         gpu: [webgpu, webgl2]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      # The load pages job built the benchmark pages that these pages serve.
+      NULL3D_LOAD_PAGES: prebuilt
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: load-pages
+          path: target
+      - uses: ./.github/actions/playwright-chromium
+      # The benchmark pages' build holds S6's pages, which load the city's files.
+      - uses: ./.github/actions/samples
+      - uses: ./.github/actions/city
+        with:
+          mode: download
+      - name: Per-frame allocation in S1 on SwiftShader
+        run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+
+  load-pages:
+    # The production builds that the real-browser shards load: the benchmark pages and the startup
+    # pages. Each bundles the whole shader set, and each shard built both before its first page, for
+    # up to 11 minutes on a macOS machine in run 39554447893. This job builds them once, and every
+    # shard downloads them and builds none (NULL3D_LOAD_PAGES).
+    name: load pages
+    needs: [build, city, changes]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -1187,14 +1230,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-      - uses: ./.github/actions/playwright-chromium
-      # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
         with:
           mode: download
-      - name: Per-frame allocation in S1 on SwiftShader
-        run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+      - name: The benchmark pages and the startup pages, built for production
+        run: bun tests/lib/load-server.ts
+      # Gigabytes of scripts, which compress well, so the upload takes the fastest level.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: load-pages
+          path: |
+            target/bench-pages/
+            target/startup-pages/
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 1
 
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
@@ -1209,7 +1260,7 @@ jobs:
     # count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: [build, city, changes]
+    needs: [build, city, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
@@ -1233,6 +1284,8 @@ jobs:
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
+      # The load pages job built the pages that the shards load.
+      NULL3D_LOAD_PAGES: prebuilt
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -1242,6 +1295,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: load-pages
+          path: target
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
@@ -1317,6 +1374,7 @@ jobs:
       - shader-compiler-plugin
       - packages
       - city
+      - load-pages
       - browser
       - browser-alone
       - browser-production
@@ -1359,7 +1417,7 @@ jobs:
               "wasm-checks": "code",
               "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
               "heavy-checks": "code",
-              "city": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
+              "city": "full", "load-pages": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"
