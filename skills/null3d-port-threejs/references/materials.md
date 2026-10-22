@@ -59,7 +59,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` takes the index of refraction, specular, transmission, clear coat and sheen options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+`materials.standard` takes the index of refraction, specular, transmission, clear coat, sheen, iridescence and anisotropy options of `MeshPhysicalMaterial` (0.2 for the first five and 0.3 for the last two) with the same names and formulas:
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -70,15 +70,15 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color |
 | `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale`, `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap` | Same names | Give a clear coat option at creation, even as 0, to change it later. `clearcoatMap` and `clearcoatRoughnessMap` must be one texture (coat in red, roughness in green) |
 | `sheen`, `sheenColor`, `sheenRoughness`, `sheenColorMap`, `sheenRoughnessMap` | `sheenColor` times `sheen`, and the same other names | No `sheen` option: multiply it into `sheenColor`. three.js's `sheen` defaults to 0, so a material without it has no sheen: leave the sheen options out. The two maps must be one texture (roughness in alpha) |
+| `iridescence`, `iridescenceIOR`, `iridescenceThicknessRange`, `iridescenceMap`, `iridescenceThicknessMap` | `iridescence`, `iridescenceIor`, `iridescenceThicknessRange` and the same map names (0.3) | Same thin-film formulas. Give an iridescence option at creation to change it later. Its maps and the anisotropy's take the coat's slots, so a material takes one family's maps |
+| `anisotropy`, `anisotropyRotation`, `anisotropyMap` | Same names (0.3) | Same lobe. A material with `anisotropy` needs a map, whose coordinates give the tangent frame that three.js builds from them too. Rectangle and tube lights shade it without the stretch, as three.js's do |
 
 A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap`, `specularColorMap` or `diffuseTransmission`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. Iridescence, anisotropy and the transmission and thickness maps come in 0.3. Until then, these workarounds apply:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_materials_iridescence` and `KHR_materials_anisotropy` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. The transmission and thickness maps come in 0.3. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
-| `iridescence` | Surface function tinting by view angle | Approximate |
-| `anisotropy` | Not available | Brushed-metal streaks are lost |
 | `dispersion` | Not available | |
 
 Tell the user which of these a scene relies on before porting it. Glass and car-paint showcases depend on them heavily.

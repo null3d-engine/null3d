@@ -433,6 +433,26 @@ fn material_coat_sheen(id: u32) -> MaterialCoatSheen {
     return MaterialCoatSheen(materials[id].coat, materials[id].sheen);
 #endif
 }
+
+/// The thin film's values of material `id`: how much of its specular reflection the film tints,
+/// the film's index of refraction, and its thickness where its map is 0 and where it is 1.
+fn material_iridescence(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(15u, id), 0);
+#else
+    return materials[id].iridescence;
+#endif
+}
+
+/// The anisotropy's values of material `id`: the strength of the stretched lobe, and its rotation
+/// from the tangent in radians.
+fn material_anisotropy(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(16u, id), 0);
+#else
+    return materials[id].anisotropy;
+#endif
+}
 #endif
 
 #ifdef DECAL

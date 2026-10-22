@@ -339,6 +339,8 @@ const paint = materials.standard({
   subsurfaceRadius: 0, subsurfaceColor: '#ffffff',  // (0.2) skin 0.012 and [1, 0.4, 0.25], wax, jade: light spreads under the surface; give it at creation; blurs on High and Ultra only
   clearcoat: 0, clearcoatRoughness: 0,        // (0.2) car paint, varnish: give a layer option at creation to have the layers
   sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps and no diffuseTransmission with layers
+  iridescence: 0, iridescenceIor: 1.3, iridescenceThicknessRange: [100, 400],  // (0.3) soap bubbles, beetles, oil: a thin film tints the reflection; no light or specular maps and no coat or sheen maps
+  anisotropy: 0, anisotropyRotation: 0,       // (0.3) brushed metal: the highlight stretches along the tangent; needs a map, whose coordinates give the tangent frame
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   contactShadows: true,                        // (0.2) fixed at creation; false on grass, leaf cards and other thin surfaces that crowd or sway, where contact shadows darken and flicker
@@ -583,7 +585,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `grading`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
@@ -596,11 +598,14 @@ post.set({
   ssr: { maxDistance: 50, thickness: 0.5 },  // (0.2) smooth opaque surfaces reflect the screen in place of the environment; intensity, maxRoughness (0.5) too; false turns it off
   dof: { aperture: 1.8, focusPoint: [0, 1, 0] },  // (0.2) a camera lens: f-number, focusDistance or a world point, focalLength ('camera'), maxBlur, blades; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut or lutFromData, or false; LUTPass's meanings
+  grading: { whiteBalance: { temperature: 5000 }, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1.04, 1.0, 0.94],
+             saturation: 0.9, splitToning: { shadows: '#3a4a7a', highlights: '#f0c088', balance: 0, strength: 0.25 } },  // (0.3) a colorist's controls baked into a table by a job worker; false turns it off
   vignette: { intensity: 1, size: 1 },   // (0.2) darkens HDR color before the tone curve; falloff (2) and roundness (0) too; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
 post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
 const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; per-pixel effects join into one pass, at most 8
+post.addEffect({ wgsl: streakWgsl, bloomLevel: 2 });  // (0.3) WGSL that calls effectBloom(input.uv) reads that level of bloom's chain: a streak or a glare without its own blur; draws in a pass of its own
 post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
 post.removeEffect(fx);                  // (0.2)
 ```

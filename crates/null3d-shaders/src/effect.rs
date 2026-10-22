@@ -57,6 +57,11 @@ const DEPTH_FUNCTIONS: [&str; 3] = ["effectDepth", "effectViewPosition", "effect
 /// effect's own. An effect that calls one does not join the effect before it.
 const NEIGHBOR_FUNCTIONS: [&str; 2] = ["effectPixel", "effectColor"];
 
+/// The functions of the effect template that read a level of bloom's chain. An effect that calls
+/// one binds that level, and draws in a pass of its own: a group of effects binds one color and
+/// one level for all of them.
+const BLOOM_FUNCTIONS: [&str; 1] = ["effectBloom"];
+
 /// The render pipeline of the hosts that pieces join.
 const HOST_PIPELINE: &str = "main";
 
@@ -132,6 +137,8 @@ pub struct EffectOutput {
     pub uniforms: Vec<Uniform>,
     /// True when the effect reads the scene's depth.
     pub depth: bool,
+    /// True when the effect reads a level of bloom's chain.
+    pub bloom: bool,
     /// True when the effect joins the effect before it: it reads its input image at its own pixel
     /// alone and declares no textures. Always false for a tone curve.
     pub joins: bool,
@@ -322,7 +329,9 @@ impl Compiler {
                 .any(|pair| names.contains(&pair[0].text) && pair[1].text == "(")
         };
         let depth = function == EFFECT && calls_any(&DEPTH_FUNCTIONS);
-        let joins = function == EFFECT && !calls_any(&NEIGHBOR_FUNCTIONS) && texture_count == 0;
+        let bloom = function == EFFECT && calls_any(&BLOOM_FUNCTIONS);
+        let joins =
+            function == EFFECT && !calls_any(&NEIGHBOR_FUNCTIONS) && texture_count == 0 && !bloom;
         let variants: BTreeMap<String, Variant> = template
             .variants()
             .iter()
@@ -341,6 +350,9 @@ impl Compiler {
                     }
                     if texture_count > 0 {
                         defs.push("EFFECT_TEXTURES".to_owned());
+                    }
+                    if bloom {
+                        defs.push("EFFECT_BLOOM".to_owned());
                     }
                     if depth {
                         defs.push("EFFECT_DEPTH".to_owned());
@@ -382,7 +394,7 @@ impl Compiler {
         );
         template.place_problems(&mut errors, path, &effect.source, note);
         errors.or(())?;
-        let pieces = if texture_count > 0 {
+        let pieces = if texture_count > 0 || bloom {
             EffectPieces::default()
         } else {
             self.effect_pieces(
@@ -397,6 +409,7 @@ impl Compiler {
             function: function.to_owned(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             depth,
+            bloom,
             joins,
             textures: found.map_or_else(Vec::new, |found| found.fields),
             variants: built,

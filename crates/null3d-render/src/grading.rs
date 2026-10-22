@@ -93,11 +93,15 @@ impl Vignette {
 }
 
 /// What the final pass grades a frame with: the table, once its texels are on the GPU, the
-/// vignette, and the sharpening.
+/// vignette, the built-in grading table that the sketch's grading values were baked into, and the
+/// sharpening.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Grading {
     /// The table's GPU texture id, with its scale and offset (see [`Lut::placement`]).
     pub(crate) lut: Option<(u32, [f32; 4], [f32; 4])>,
+    /// The GPU texture id of the built-in grading table, which maps a display color to its graded
+    /// color, or `None` while the sketch grades with none.
+    pub(crate) grade: Option<u32>,
     pub(crate) vignette: Option<Vignette>,
     /// The sharpening's strength, from 0 for off to 1 for the most, at the whole canvas's render
     /// scale only. The second step of the two-step pass applies it.
