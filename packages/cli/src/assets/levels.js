@@ -349,9 +349,10 @@ function vertexKey(streams, sizes, v) {
  * @param {Primitive} prim
  * @param {Float32Array} positions
  * @param {boolean} posed
+ * @param {number} side The mesh's longest side, which a texture coordinate's unit weighs.
  * @returns {PlanningList}
  */
-function weld(prim, positions, posed) {
+function weld(prim, positions, posed, side) {
 	const count = positions.length / 3;
 	const stream = (/** @type {string} */ semantic) => {
 		const accessor = prim.getAttribute(semantic);
@@ -414,9 +415,16 @@ function weld(prim, positions, posed) {
 		const length = Math.hypot(x, y, z) || 1;
 		welded.set([x / length, y / length, z / length], v * 3);
 	}
+	/**
+	 * The values that the simplifier keeps near the base mesh's, and their weights in the units of
+	 * its positions. A texture coordinate covers the texture across a UV unit, so it weighs a
+	 * sixty-fourth of the mesh's longest side: a slide of a large share of a texture counts like a
+	 * small distance, while a slide of a few texels stays under the geometry's own error.
+	 */
 	/** @type {{ values: Float32Array, size: number, take: number, weight: number }[]} */
 	const parts = [
 		...(normal ? [{ values: welded, size: 3, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
+		...texcoords.map((uv) => ({ .../** @type {typeof uv} */ (uv), take: 2, weight: side / 64 })),
 		...(color ? [{ ...color, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
 	];
 	const channels = parts.reduce((sum, part) => sum + part.take, 0);
@@ -469,14 +477,18 @@ const skinOf = (mesh) =>
 function planningLists(mesh, prims) {
 	const skin = skinOf(mesh);
 	let side = 0;
-	const lists = prims.map((prim) => {
+	const placed = prims.map((prim) => {
 		const own = floats(/** @type {Accessor} */ (prim.getAttribute('POSITION')));
 		const posed =
 			skin && prim.getAttribute('JOINTS_0') && prim.getAttribute('WEIGHTS_0')
 				? restPose(prim, own, skin)
 				: own;
 		side = Math.max(side, longestSide(posed));
-		return weld(prim, posed, posed !== own);
+		return { own, posed };
+	});
+	const lists = prims.map((prim, p) => {
+		const { own, posed } = /** @type {{ own: Float32Array, posed: Float32Array }} */ (placed[p]);
+		return weld(prim, posed, posed !== own, side);
 	});
 	return { lists, side };
 }

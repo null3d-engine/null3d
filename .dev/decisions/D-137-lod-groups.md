@@ -353,10 +353,25 @@ Blender without levels still gets them (follow-up 5).
 - Each kept card grows about its middle by the square root of two for that step, so the cards
   keep the surface that the dropped ones covered. The file stores the level's own positions,
   because the growth moves vertices. This is the one level kind that copies vertices.
-- The level's error is the size of the largest card that it drops, as the follow-up said. On
-  Creek's cards, 0.8 m wide, a level switches at about a kilometre on a 1,080-pixel screen. That
-  is conservative: it thins a crown only long after the geometry detail has gone. A hand-authored
+- The level's error is the size of the largest card that it drops, as the follow-up said. Creek's
+  cards are 0.8 m wide. On a 1,080-pixel screen, a level switches at about a kilometer. That is
+  conservative: it thins a crown only long after the geometry detail has gone. A hand-authored
   level, as Creek's Blender script makes, switches nearer. The tool's rule stays geometric and
-  predictable; an author who wants earlier thinning gives the level its own error.
+  predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions
   are in the scene's units and the level's stored positions are in the mesh's.
+
+## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
+
+The simplifier weighed normals and vertex colors in its error, so a texture could slide between
+two vertices of a level with no error shown. The planner now adds each texture coordinate set to
+the attributes that the simplifier keeps, with a weight of a sixty-fourth of the mesh's longest
+side. A texture coordinate's unit covers the texture across the mesh, so a slide of a large share
+of a texture counts like a small distance, while a slide of a few texels stays under the geometry's
+own error. Texture seams still lock, and welding still keeps two copies of a vertex apart where
+their coordinates differ.
+
+The weight is deliberately modest. The error that the simplifier reports includes the attributes,
+and the engine reads a level's error as a distance, so a heavy weight would make every textured
+mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
+where the same scene without texture coordinates in the error has six.
