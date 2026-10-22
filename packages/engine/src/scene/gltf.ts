@@ -437,14 +437,17 @@ const COVERAGE_HEIGHT = 1080;
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
  * `NULL3D_lod_error`, or from `MSFT_screencoverage`: a level switches in where the mesh's sphere
  * covers less of the screen's height than the level before allows, on a screen 1,080 pixels
- * high. Levels whose meshes have other primitives, or no errors, are left out, and so are levels
- * that a mesh cannot take, with a note.
+ * high. A level that names another material than the node's primitive draws with it. Levels whose
+ * meshes have other primitives, or no errors, are left out, and so are levels that a mesh cannot
+ * take, with a note.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
 	levels: NodeLevels,
 	data: GltfData,
 	meshOf: (k: number) => MeshGeometry[],
+	materials: FileMaterials,
+	primitives: readonly PrimitiveData[],
 ): void {
 	const count = base.length;
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
@@ -454,9 +457,20 @@ function setFileLevels(
 			levels.errors ??
 			levels.coverage?.map((coverage) => (2 * mesh.radius) / (coverage * COVERAGE_HEIGHT));
 		if (!errors) return;
+		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
-				lower.map((meshes, j) => ({ mesh: meshes[p] as MeshGeometry, error: errors[j] })),
+				lower.map((meshes, j) => {
+					const level = (data.meshes[levels.meshes[j] as number] as MeshData).primitives[
+						p
+					] as PrimitiveData;
+					const material = own && level.material !== own.material ? materials.of(level) : undefined;
+					return {
+						mesh: meshes[p] as MeshGeometry,
+						error: errors[j],
+						...(material && { material }),
+					};
+				}),
 			);
 		} catch (error) {
 			data.notes.push(`the levels of detail of a mesh (${(error as Error).message})`);
@@ -528,7 +542,8 @@ async function buildPrefab(
 		const visible = n.visible !== false;
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
-		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
+		if (n.levels && !n.skinned)
+			setFileLevels(made, n.levels, data, meshOf, materials, mesh?.primitives ?? []);
 		const parts = [
 			...(mesh?.primitives ?? []).map((p, k) => ({
 				mesh: made[k] as MeshGeometry,

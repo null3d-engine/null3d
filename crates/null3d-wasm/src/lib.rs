@@ -1560,18 +1560,21 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     })
 }
 
-/// Gives every row of a batch a bounding sphere of `radius` meters around its own origin, in place
-/// of the mesh's own radius. A vertex shader that carries rows away from their origins, such as
-/// traffic along a lane, needs this, or culling drops rows that are still on the screen. Every row
-/// is marked for update, so the next frame writes its new sphere.
+/// Gives every row of a batch a bounding sphere of the first call value's meters around its own
+/// origin, in place of the mesh's own radius. A vertex shader that carries rows away from their
+/// origins, such as traffic along a lane, needs this, or culling drops rows that are still on the
+/// screen. Every row is marked for update, so the next frame writes its new sphere.
 #[wasm_bindgen(js_name = setBatchBounds)]
-pub fn set_batch_bounds(batch: u32, radius: f32) -> u32 {
-    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
-        Ok(batch) => {
-            batch.set_local_radius(radius);
-            0
+pub fn set_batch_bounds(batch: u32) -> u32 {
+    with_engine(|e| {
+        let [radius] = e.call_values();
+        match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => {
+                batch.set_local_radius(radius);
+                0
+            }
+            Err(error) => core_failure(error),
         }
-        Err(error) => core_failure(error),
     })
 }
 
@@ -3429,21 +3432,23 @@ pub fn has_levels() -> u32 {
 }
 
 /// Gives mesh `base`, by its id that counts from 1, the `count` lower levels of detail whose mesh
-/// ids, then whose errors as the bits of 32-bit floats, the staging words hold, from the most
-/// detailed down. With `count` 0 the mesh loses its levels. `fades` lets two levels hand over in a
-/// fading band. The next frame rebuilds the draw tables. Fails with the problem for levels that the
-/// mesh cannot take.
+/// ids, then whose errors as the bits of 32-bit floats, then whose material ids, the staging words
+/// hold, from the most detailed down. A material of 0 draws the level with the level before's.
+/// With `count` 0 the mesh loses its levels. `fades` lets two levels hand over in a fading band.
+/// The next frame rebuilds the draw tables. Fails with the problem for levels that the mesh cannot
+/// take.
 #[wasm_bindgen(js_name = setMeshLevels)]
 pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
     with_engine(|e| {
         let count = count as usize;
-        if e.staging.len() < 2 * count {
+        if e.staging.len() < 3 * count {
             return render_failure(
                 render_detail::BAD_LEVELS,
                 constants::level_problem::TOO_MANY,
             );
         }
-        let (meshes, errors) = e.staging[..2 * count].split_at(count);
+        let (meshes, rest) = e.staging[..3 * count].split_at(count);
+        let (errors, materials) = rest.split_at(count);
         let mut floats = [0.0f32; null3d_render::levels::MAX_LEVELS];
         let Some(floats) = floats.get_mut(..count) else {
             return render_failure(
@@ -3457,7 +3462,7 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
         let set = e
             .renderer
             .settings_mut()
-            .set_mesh_levels(base, meshes, floats, fades);
+            .set_mesh_levels(base, meshes, floats, materials, fades);
         match set {
             Ok(()) => {
                 e.structure_changed = true;
@@ -4954,6 +4959,9 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
         out[query::HIT_ROW as usize] = -1.0;
         out[query::HIT_TRIANGLE as usize] = -1.0;
         out[query::HIT_DISTANCE as usize] = -1.0;
+        let uv = query::HIT_UV as usize;
+        out[uv] = f64::NAN;
+        out[uv + 1] = f64::NAN;
         return;
     };
     let (slot, batch, row) = match hit.source {
@@ -4974,6 +4982,11 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
     let normal = query::HIT_NORMAL as usize;
     for k in 0..3 {
         out[normal + k] = f64::from(hit.normal[k]);
+    }
+    let uv = query::HIT_UV as usize;
+    out[query::HIT_HAS_UV as usize] = f64::from(hit.uv.is_some());
+    for k in 0..2 {
+        out[uv + k] = hit.uv.map_or(f64::NAN, |pair| f64::from(pair[k]));
     }
 }
 

@@ -1284,6 +1284,8 @@ pub mod vertex {
     pub const POSITION: usize = 0;
     /// The location of the normal.
     pub const NORMAL: usize = 1;
+    /// The location of the first texture coordinates.
+    pub const UV0_LOCATION: usize = 2;
 
     /// How an attribute's values sit in a vertex. The codes are the TypeScript constants'.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
