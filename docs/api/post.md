@@ -3,7 +3,7 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables, the vignette and sharpening; custom effects with post.addEffect, custom tone curves, and still views."
+summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables and controls, the vignette and sharpening; custom effects with post.addEffect, custom tone curves, and still views."
 ---
 
 # Post-processing API
@@ -326,6 +326,47 @@ export default defineSketch(async ({ assets, post }) => {
 - The table grades the picture from the first frame after its texels reach the GPU, usually the next one.
 - `lutIntensity` keeps its value while the table is off, and `post.set` allocates nothing, so a sketch can fade a grade in every frame.
 
+### Grading controls
+
+The grading controls set a look from a few numbers, without a table file. A job worker bakes them
+into a table of its own, and the final pass applies it after the tone mapping, before a `lut`.
+Changing a value costs the frames nothing: the picture shows the new grade once the worker's bake
+reaches the GPU, usually within a few frames.
+
+```ts
+post.set({
+  grading: {
+    whiteBalance: { temperature: 5000 },
+    lift: [0.01, 0.01, 0.02],
+    gamma: [1, 1, 0.95],
+    gain: [1.04, 1.01, 0.94],
+    saturation: 0.9,
+    splitToning: { shadows: '#3a4a7a', highlights: '#f0c088', balance: 0.2, strength: 0.25 },
+  },
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `grading` | Its settings to turn it on, or `false` to turn it off. A setting that a call leaves out keeps its value. | Off |
+| `grading.whiteBalance.temperature` | The color temperature of the light that whites are corrected for, from 1667 to 25000 kelvin. A low value, such as 3200 for a tungsten lamp, makes the picture cooler. | 6500 |
+| `grading.whiteBalance.tint` | The green to magenta shift, from -1 to 1. Each step of 1 halves or doubles the green channel. | 0 |
+| `grading.lift` | Three values, one per channel, from -1 to 1, added before the curve: positive values lift the blacks. | `[0, 0, 0]` |
+| `grading.gamma` | Three powers, one per channel, above 0. Values below 1 brighten the shadows. | `[1, 1, 1]` |
+| `grading.gain` | Three factors, one per channel, from 0 up: higher values brighten the highlights. | `[1, 1, 1]` |
+| `grading.saturation` | How much color the picture keeps: 0 is gray, 1 leaves it as it is, and higher values add color. | 1 |
+| `grading.splitToning.shadows` | The hue that tints the dark parts, as a color. Its brightness does not matter. | Gray, so no tint |
+| `grading.splitToning.highlights` | The hue that tints the bright parts, as a color. | Gray, so no tint |
+| `grading.splitToning.balance` | Where the split falls, from -1 to 1: higher values tint more of the picture with the shadows' hue. | 0 |
+| `grading.splitToning.strength` | How much of the tints reaches the picture, from 0 to 1. | 0 |
+
+- The controls apply in this order: white balance, then saturation around the luma, then lift and gamma and gain on each channel, then split toning.
+- White balance corrects the light of the given temperature to the neutral white of daylight at 6500 kelvin. It keeps the picture's brightness.
+- The table holds 32 texels along each side. The final pass takes the square root of the color before it reads the table. Its texels therefore lie closer together toward black. A grade's curve is steepest there.
+- The final pass applies the built-in table first and a `lut` after it, so a look from a file can sit over a grade from the controls.
+- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
+- The values are designed for the null3D grading controls. To match a grade that a colorist made in another tool, load its `.cube` file instead.
+
 ## Vignette
 
 The vignette darkens the picture toward its edges:
@@ -347,7 +388,7 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 - A port of three.js's `VignetteShader` sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. Each table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
 
 The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 
@@ -395,6 +436,7 @@ post.removeEffect(effect);
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
 | `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: a texture from a file or data, or a render pass's texture from `textures.fromPass` | None: white |
 | `order` | A number. Effects run from the lowest order to the highest. | 0 |
+| `bloomLevel` | The level of bloom's chain that the WGSL reads with `effectBloom`, a whole number from 0 for the narrowest glow to 9 for the widest | None: the WGSL reads no bloom |
 
 A custom tone curve takes the place of the built-in curves:
 
@@ -409,6 +451,7 @@ post.set({ toneMapping: reinhard });
 ```
 
 - Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes, while the render scale cannot drop below the whole canvas. While it can, each effect draws in a pass of its own, at every scale ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
+- `effectBloom(input.uv)` returns the glow of the level that `bloomLevel` names, as linear HDR color after the exposure: an anamorphic streak, a glare or a halo can read bloom's chain instead of blurring the picture again. Bloom's chain holds light that passed its threshold, blurred wider at each level, with level 0 the narrowest. The level is drawn while `post.bloom` is on, and a level that the chain does not draw reads black. An effect that calls `effectBloom` draws in a pass of its own.
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place.
 - An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
@@ -422,7 +465,7 @@ A view that holds still blends its frames into a sharper picture, then stops dra
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline, vignette or sharpening value other than settings, a number or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, a sharpening strength outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline, vignette or sharpening value other than settings, a number or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, a `grading` value out of its range, such as a white balance outside 1667 to 25000 kelvin, a lift channel outside -1 to 1, a gamma channel of 0 or below, a negative gain or saturation, or a split toning balance outside -1 to 1 or strength outside 0 to 1, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, a sharpening strength outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -435,7 +478,7 @@ A view that holds still blends its frames into a sharper picture, then stops dra
 - [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines, custom effects and still views work, and what they cost.
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader`, `SharpenNode` and `ShaderPass`.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader`, `SharpenNode` and `ShaderPass`. three.js has no grading controls; a null3D grade has no three.js twin.
 - [Quality presets](../concepts/quality-presets.md): `aoScale`, `dofSamples` and `exposureMeter` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.

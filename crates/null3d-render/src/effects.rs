@@ -110,6 +110,9 @@ pub struct Effect {
     pub template: u32,
     /// True when the effect reads the scene's depth.
     pub depth: bool,
+    /// The level of bloom's chain that the effect reads, from 0 for the narrowest, or `None` for
+    /// none. An effect that reads a level draws in a pass of its own.
+    pub bloom: Option<u32>,
     /// The effect's uniforms, where the shader build placed each, and its textures' layers in the
     /// last floats.
     pub values: [f32; EFFECT_FLOATS],
@@ -128,6 +131,8 @@ pub(crate) struct Block {
     /// The output's size and its texture's height, and 1 for a full-screen pass of the render
     /// graph, or zeros for an effect, whose output has the input image's sizes.
     pub(crate) drawn: [f32; 4],
+    /// The scale and the offset that place the image's place in the bloom level's texture.
+    pub(crate) bloom: [f32; 4],
 }
 
 pub(crate) const BLOCK_BYTES: usize = std::mem::size_of::<Block>();
@@ -193,13 +198,26 @@ pub(crate) struct EffectIds {
     pub(crate) first_group: u32,
     /// The texture of one texel that effects which read no depth bind in its place.
     pub(crate) blank_depth: u32,
+    /// The texture of one texel that effects which read a level of bloom that the frame does not
+    /// draw bind in its place.
+    pub(crate) blank_bloom: u32,
 }
 
-/// What an effect reads: its color's texture, and the depth texture or the blank one.
+/// What an effect reads: its color's texture, the depth texture or the blank one, and the bloom
+/// level's texture or the blank one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Sources {
     pub(crate) color: u32,
     pub(crate) depth: u32,
+    pub(crate) bloom: u32,
+}
+
+/// What an effect reads of bloom's chain: the level's texture, or 0 while the frame does not draw
+/// that level, and the scale and offset that place the image's place in it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct EffectBloom {
+    pub(crate) texture: u32,
+    pub(crate) map: [f32; 4],
 }
 
 /// The pipeline of an effect: one triangle into its target.
@@ -344,6 +362,7 @@ impl EffectPass {
         arena: &mut UploadArena,
         effects: &[Effect],
         (units, colors, depth): (&[Unit], &[u32], u32),
+        blooms: &[EffectBloom],
         (canvas, scale): ((u32, u32), RenderScale),
         clock: [f32; 2],
         inverse_projection: Option<Mat4>,
@@ -367,6 +386,7 @@ impl EffectPass {
                 inverse_projection: inverse_projection.unwrap_or(IDENTITY),
                 values: effect.values,
                 drawn: [0.0; 4],
+                bloom: blooms.get(index).map_or([0.0; 4], |level| level.map),
             };
             if self.uploaded[index] != Some(block) {
                 let (at, bytes) = arena.push(bytes_of(&block))?;
@@ -377,6 +397,7 @@ impl EffectPass {
         }
         for (&unit, &color) in units.iter().zip(colors) {
             let members = &effects[unit.places()];
+            let reads_bloom = members.iter().any(|effect| effect.bloom.is_some());
             let sources = Sources {
                 color,
                 depth: if members.iter().any(|effect| effect.depth) {
@@ -384,11 +405,25 @@ impl EffectPass {
                 } else {
                     ids.blank_depth
                 },
+                bloom: if reads_bloom {
+                    blooms
+                        .get(usize::from(unit.first))
+                        .map_or(ids.blank_bloom, |level| {
+                            if level.texture == 0 {
+                                ids.blank_bloom
+                            } else {
+                                level.texture
+                            }
+                        })
+                } else {
+                    ids.blank_bloom
+                },
             };
-            let layout = if self.reads_multisampled(members) {
-                bind_layout::EFFECT_DEPTH_MS
-            } else {
-                bind_layout::EFFECT
+            let layout = match (reads_bloom, self.reads_multisampled(members)) {
+                (true, true) => bind_layout::EFFECT_BLOOM_DEPTH_MS,
+                (true, false) => bind_layout::EFFECT_BLOOM,
+                (false, true) => bind_layout::EFFECT_DEPTH_MS,
+                (false, false) => bind_layout::EFFECT,
             };
             let slot = Self::bind_slot(unit);
             if !textures_made && self.bound[slot] == Some((sources, layout)) {
@@ -406,6 +441,7 @@ impl EffectPass {
                 (ids.first_group + slot as u32, layout),
                 (ids.buffer, offset, size),
                 (sources.color, ids.sampler, sources.depth),
+                sources.bloom,
             )?;
             self.bound[slot] = Some((sources, layout));
         }
@@ -501,7 +537,8 @@ pub(crate) fn plan_units(
 /// the blank depth texture of one texel.
 fn create_objects(list: &mut DrawList, ids: EffectIds) -> Result<(), RecordError> {
     create_shared_objects(list, (ids.buffer, BUFFER_BYTES), ids.sampler)?;
-    create_texel(list, ids.blank_depth, format::R32_FLOAT)
+    create_texel(list, ids.blank_depth, format::R32_FLOAT)?;
+    create_texel(list, ids.blank_bloom, format::RGBA16_FLOAT)
 }
 
 /// Records the creation of a uniform buffer of `bytes` under `buffer`, and of the linear sampler,
@@ -559,35 +596,35 @@ pub(crate) fn create_effect_group(
     (group, layout): (u32, u32),
     (buffer, offset, size): (u32, u32, u32),
     (color, sampler, depth): (u32, u32, u32),
+    bloom: u32,
 ) -> Result<(), RecordError> {
-    list.push(
-        Op::CreateBindGroup,
-        &[
-            group,
-            layout,
-            4,
-            0,
-            resource_kind::BUFFER,
-            buffer,
-            offset,
-            size,
-            1,
-            resource_kind::TEXTURE,
-            color,
-            0,
-            0,
-            2,
-            resource_kind::SAMPLER,
-            sampler,
-            0,
-            0,
-            3,
-            resource_kind::TEXTURE,
-            depth,
-            0,
-            0,
-        ],
-    )?;
+    let reads_bloom = matches!(
+        layout,
+        bind_layout::EFFECT_BLOOM | bind_layout::EFFECT_BLOOM_DEPTH_MS
+    );
+    let count = if reads_bloom { 5 } else { 4 };
+    let mut words = [0u32; 3 + 5 * 5];
+    words[..13].copy_from_slice(&[
+        group,
+        layout,
+        count,
+        0,
+        resource_kind::BUFFER,
+        buffer,
+        offset,
+        size,
+        1,
+        resource_kind::TEXTURE,
+        color,
+        0,
+        0,
+    ]);
+    words[13..18].copy_from_slice(&[2, resource_kind::SAMPLER, sampler, 0, 0]);
+    words[18..23].copy_from_slice(&[3, resource_kind::TEXTURE, depth, 0, 0]);
+    if reads_bloom {
+        words[23..28].copy_from_slice(&[4, resource_kind::TEXTURE, bloom, 0, 0]);
+    }
+    list.push(Op::CreateBindGroup, &words[..3 + 5 * count as usize])?;
     Ok(())
 }
 
@@ -601,6 +638,7 @@ mod tests {
         sampler: 2,
         first_group: 10,
         blank_depth: 3,
+        blank_bloom: 4,
     };
 
     fn effect(template: u32, depth: bool, first: f32) -> Effect {
@@ -609,6 +647,7 @@ mod tests {
         Effect {
             template,
             depth,
+            bloom: None,
             values,
             maps: EffectMaps::NONE,
         }
@@ -630,6 +669,18 @@ mod tests {
         units: &[Unit],
         made: bool,
     ) -> DrawList {
+        prepare_blooms(pass, effects, units, &[], made)
+    }
+
+    /// Prepares `units` of `effects`, each reading the bloom level that `blooms` gives at its
+    /// place, if any.
+    fn prepare_blooms(
+        pass: &mut EffectPass,
+        effects: &[Effect],
+        units: &[Unit],
+        blooms: &[EffectBloom],
+        made: bool,
+    ) -> DrawList {
         let mut list = DrawList::with_capacity(512);
         let mut arena = UploadArena::default();
         arena.reset(EffectPass::UPLOAD_BYTES);
@@ -639,6 +690,7 @@ mod tests {
             &mut arena,
             effects,
             (units, &colors, 41),
+            blooms,
             ((640, 360), RenderScale::FULL),
             [1.5, 0.016],
             None,
@@ -682,6 +734,65 @@ mod tests {
         let changed = [effect(CUSTOM, false, 0.75), effects[1]];
         let list = prepare(&mut pass, &changed, false);
         assert_eq!(operands(&list, Op::WriteBuffer).len(), 1);
+    }
+
+    #[test]
+    fn an_effect_that_reads_bloom_binds_its_level_and_uploads_the_place_in_it() {
+        let mut pass = EffectPass::new(IDS, false);
+        let mut effects = [effect(CUSTOM, false, 0.0)];
+        effects[0].bloom = Some(2);
+        let map = [0.5, 0.5, 0.125, 0.25];
+        let level = EffectBloom { texture: 77, map };
+        let list = prepare_blooms(
+            &mut pass,
+            &effects,
+            &alone(1),
+            std::slice::from_ref(&level),
+            true,
+        );
+        let groups = operands(&list, Op::CreateBindGroup);
+        assert_eq!(
+            (groups[0][0], groups[0][1]),
+            (10, bind_layout::EFFECT_BLOOM)
+        );
+        assert_eq!(groups[0][2], 5, "the group binds five resources");
+        // The level is the fifth entry, at binding 4.
+        assert_eq!(
+            &groups[0][3 + 5 * 4..3 + 5 * 4 + 3],
+            &[4, resource_kind::TEXTURE, 77]
+        );
+        assert_eq!(
+            pass.uploaded[0]
+                .expect("the frame uploads the effect's block")
+                .bloom,
+            map
+        );
+
+        // A level that the frame does not draw binds the blank texel.
+        let missing = EffectBloom { texture: 0, map };
+        let list = prepare_blooms(
+            &mut pass,
+            &effects,
+            &alone(1),
+            std::slice::from_ref(&missing),
+            true,
+        );
+        let groups = operands(&list, Op::CreateBindGroup);
+        assert_eq!(groups[0][3 + 5 * 4 + 2], IDS.blank_bloom);
+
+        // An effect that reads both depth and bloom takes the layout of the two.
+        let mut both = [effect(CUSTOM, true, 0.0)];
+        both[0].bloom = Some(2);
+        let mut multisampled = EffectPass::new(IDS, true);
+        let list = prepare_blooms(
+            &mut multisampled,
+            &both,
+            &alone(1),
+            std::slice::from_ref(&level),
+            true,
+        );
+        let groups = operands(&list, Op::CreateBindGroup);
+        assert_eq!(groups[0][1], bind_layout::EFFECT_BLOOM_DEPTH_MS);
     }
 
     #[test]
@@ -799,7 +910,7 @@ mod tests {
 
     #[test]
     fn the_block_matches_the_shaders_layout() {
-        assert_eq!(BLOCK_BYTES, 240);
+        assert_eq!(BLOCK_BYTES, 256);
         // The hosts of joined effects pad each block to the distance between blocks, so their
         // array of every block matches the buffer. Their first spare vector lies where a lone
         // effect's template keeps the output's size, which joined effects never read.
@@ -818,6 +929,7 @@ mod tests {
             "inverse_projection: mat4x4f",
             "u7: vec4f",
             "drawn: vec4f",
+            "bloom: vec4f",
         ] {
             assert!(shader.contains(field), "effect.wgsl lacks {field}");
         }

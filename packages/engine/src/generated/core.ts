@@ -306,6 +306,7 @@ export const EFFECT_MAX = 8;
 export const EFFECT_FLOATS = 32;
 export const EFFECT_TEXTURES = 6;
 export const EFFECT_DEPTH = 1;
+export const EFFECT_BLOOM_SHIFT = 8;
 
 export const PASS_KIND_SCENE = 0;
 export const PASS_KIND_REFLECTION = 1;

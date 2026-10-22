@@ -307,12 +307,21 @@ export async function compileWgsl(
 		const builds = ['webgpu', 'webgl2'];
 		if (!result.ok) return { ok: false, problems: result.problems, builds };
 		const { warnings } = result;
-		const { function: kind, uniforms, depth, joins, textures, variants, pieces } = result.effect;
+		const {
+			function: kind,
+			uniforms,
+			depth,
+			bloom,
+			joins,
+			textures,
+			variants,
+			pieces,
+		} = result.effect;
 		if (kind === 'toneCurve')
 			return { ok: true, shader: { kind, variants, pieces }, warnings, builds };
 		return {
 			ok: true,
-			shader: { kind, uniforms, depth, joins, textures, variants, pieces },
+			shader: { kind, uniforms, depth, bloom, joins, textures, variants, pieces },
 			warnings,
 			builds,
 		};

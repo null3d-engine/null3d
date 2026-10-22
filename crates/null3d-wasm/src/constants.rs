@@ -174,6 +174,9 @@ pub mod probe_flag {
 pub mod effect_flag {
     /// The effect or the pass reads the scene's depth.
     pub const DEPTH: u32 = 1;
+    /// The flags' lowest bit of the bloom level that an effect reads, which the call holds plus
+    /// one: 0 reads no bloom. The level itself is 0 to 9.
+    pub const BLOOM_SHIFT: u32 = 8;
 }
 
 /// The kinds of pass that `addPass` adds.
@@ -1174,6 +1177,7 @@ pub fn typescript() -> String {
                 ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
                 ("TEXTURES", null3d_render::effects::MAX_TEXTURES as u32),
                 ("DEPTH", effect_flag::DEPTH),
+                ("BLOOM_SHIFT", effect_flag::BLOOM_SHIFT),
             ],
         ),
         // The kinds of pass that `addPass` adds, and the input images of a full-screen pass.

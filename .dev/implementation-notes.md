@@ -378,6 +378,29 @@ When a page loads the engine's files from another origin, such as a CDN, each wo
 - `compileWasm` tells a blocked download of another origin by the policy's violation report (E1422 with `connect-src`), and calls any other failed download E1423. The report can arrive after the failed fetch, so it waits up to 100 ms for it.
 - The CDN test (`tests/image/cdn.spec.ts`) serves the production build's HTML and its files from its own server, under two host names. Chrome treats a response that Playwright fulfills as coming from a public address. Such a page may not reach a loopback server, and the browser applies no real CORS rules to fulfilled responses either.
 
+## Custom effects that read bloom
+
+An effect's WGSL that calls `effectBloom` reads a level of bloom's chain, and the API names which
+level with `bloomLevel`.
+
+- The chain normally runs after the effects, from their output. While an effect reads it, the chain
+  runs before the effects, from the scene color that the first effect reads, and the final pass
+  still mixes the glow into the effects' output. The render graph orders the passes from that edge:
+  the effect's pass reads the level's target, so the step that writes it runs first.
+- Each effect binds one level, at binding 4 of its group, because the levels are separate textures
+  and an effect names the level it wants. A group of joined effects binds one color and one level,
+  so the compiler refuses to join an effect that reads bloom: it draws in a pass of its own, as an
+  effect with textures does. The shader build detects the call and sets `EFFECT_BLOOM`, which
+  declares the binding.
+- The effect's block holds the scale and the offset from the image's place to that level's texture.
+  A level whose chain is smaller than its target, as the governor's halving makes it, occupies a
+  corner, and WebGL2 counts the rows from the bottom, so the map turns the row scale negative. The
+  engine computes it from the same corner map that bloom's steps use.
+- A level that the frame's chain does not draw, because the weights end before it, binds a one-texel
+  texture instead, so the effect reads black rather than a stale level.
+- The level is drawn only while bloom is on. A sketch that reads a level with bloom off reads black,
+  which keeps the cost of the chain with the sketches that ask for it.
+
 ## The shader compiler
 
 The shader compiler is the shader crate built as a WebAssembly module. Build tools such as the Vite plugin load it in Node or Bun, so pages never download a shader translator. The crate `null3d-shaders-wasm` builds it, and the wrapper in `packages/vite-plugin/src/shader-compiler.ts` loads it and gives its API.

@@ -335,6 +335,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
+	{ name: 'task-worker-grade.js', module: 'scene/grade-task.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-environment.js',
