@@ -490,11 +490,13 @@ and a hero car with two screens.
   each heading. Its place along the lane comes from the row's start offset, its speed and the frame
   clock. The shaders guide holds that contract ([Surface functions](../docs/shaders/surface-functions.md)).
   A preset draws fewer cars by lowering the active row count. The rows were shuffled once, so a
-  thinner preset thins every lane alike.
-- **A moved row needs a larger bounding sphere.** The engine culls each row by the mesh's bounding
-  sphere. A vertex offset carries a car up to the lane's length from its row's origin. The hull
-  therefore holds a zero-area sliver along the lane. The sliver stretches the sphere to cover every
-  place that a car can reach, and costs a few vertices and no pixels.
+  thinner preset thins every lane alike. The traffic-lanes example add-on owns this
+  (`examples/addons/traffic-lanes/`), and Skyway uses it.
+- **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
+  sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
+  therefore gives its rows a radius that covers the lane, with `batch.setBoundingRadius(span)`
+  (documented in [Instances](../docs/concepts/instances.md#culling)). Before that call existed, the
+  hull carried a zero-area sliver to stretch the sphere.
 - **The windows are a world-space grid.** One window is the same size on every tower and on every
   face. It never stretches with a building's scale. A lit window shows a small room in parallax:
   a lamp panel, a floor, a ceiling and a block of furniture. Where a window covers less than a
@@ -520,21 +522,21 @@ and a hero car with two screens.
   of its lights. The owner has not reviewed the look yet.
 - **No Time of day group.** The scene is one night, and its sky, fog and exposure are set once. The
   HUD keeps Camera, Atmosphere (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
-- **Figures.** A first run in Chrome on the Mac measured these. The Mac has an Apple M5 Max and a
-  120 Hz display. The frame-budget governor was on, and the window was parked past the screen's
-  edge. The machine carried a shared build load of 83 at the time. The CPU figures are therefore
-  high, and the frame rates are a floor:
+- **Figures.** A run in Chrome on the Mac measured these, with the traffic-lanes add-on and its six
+  real lights in the scene. The Mac has an Apple M5 Max and a 120 Hz display. The frame-budget
+  governor was on, and the window was parked past the screen's edge. The machine carried a shared
+  build load of 40 to 60 at the time, so the frame rates are a floor:
 
   | Preset | WebGPU | WebGL2 |
   | --- | --- | --- |
-  | Low, 30,000 cars | 120 fps, GPU 4.3 ms | 120 fps, GPU 5.7 ms |
-  | Medium, 50,000 cars | 119 fps, GPU 5.1 ms | 116 fps, GPU 12.4 ms |
-  | High, 75,000 cars | 117 fps, GPU 5.8 ms | WebGL2 runs at most Medium |
-  | Ultra, 100,000 cars | 72 fps, GPU 5.9 ms, sketch 8.6 ms | WebGL2 runs at most Medium |
+  | Low, 30,000 cars | 120 fps, GPU 4.2 ms | 120 fps, GPU 5.7 ms |
+  | Medium, 50,000 cars | 120 fps, GPU 4.5 ms | 120 fps, GPU 11.0 ms |
+  | High, 75,000 cars | 117 fps, GPU 5.4 ms | WebGL2 runs at most Medium |
+  | Ultra, 100,000 cars | 114 fps, GPU 5.7 ms | WebGL2 runs at most Medium |
 
   The GPU time barely rises from Low to Ultra. The same pixels shade the same towers, and the count
-  changes the vertices alone. Ultra's 72 frames a second came from the sketch thread under the load,
-  not from the GPU. A quiet run is still to be made.
+  changes the vertices alone. A quiet run is still to be made. The scene's updates threw no error
+  at any preset.
 - **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
   phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
   quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
