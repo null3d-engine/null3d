@@ -2606,6 +2606,27 @@ export class InstanceBatch implements ViewHolder {
 	}
 
 	/**
+	 * Gives every row's bounding sphere the radius `radius`, in meters, in place of the mesh's own
+	 * radius, which culling tests. The spheres stay centered on their rows. A vertex shader that
+	 * carries rows away from their origins, such as traffic along a lane, needs this: the engine
+	 * culls a row moved beyond the mesh's own radius while it is still on the screen. A later change
+	 * of the mesh's radius, which a displaced material makes, replaces it. Every row is marked for
+	 * update. Throws E1203 for a value that is not a finite number, and E1108 for 0 or below.
+	 */
+	setBoundingRadius(radius: number): void {
+		if (DEV) {
+			checkNumber('setBoundingRadius', 'radius', radius, this);
+			if (radius <= 0)
+				throw new EngineError(
+					'E1108',
+					`setBoundingRadius() got the radius ${radius} on ${this.describe()}, not a number above 0.`,
+				);
+		}
+		const { core } = this.scene;
+		core.check(core.glue.setBatchBounds(this.id, radius), 'setBoundingRadius', undefined, true);
+	}
+
+	/**
 	 * Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A
 	 * new mask needs no rebuild.
 	 */
