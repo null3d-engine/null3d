@@ -804,3 +804,4 @@ The look came from five rounds of screenshots on the Mac, and these points decid
 - One leaf texture serves three slots: its color as the base color map, its alpha as the diffuse transmission map, which lets less light through the veins, and so the veins show dark against the sun.
 - The lantern's lamp has an intensity of 0.4. Inside a sphere of 0.2 m, a brighter lamp turned the paper white.
 - The tulips' petals lean out at most 0.6 radians, so they open as cups. With the leaves' lean, up to 1.05 radians, they lay flat like umbrellas.
+- The picking demo's wall plan reads the hit's own texture coordinates on 22 October 2026 (M3-A1). A click's event now carries `uv` and `hasUv`, so the plan marks the square from the hit itself instead of inverting the plane's world matrix and dividing by its size. The held frame draws no mark, so its pictures do not move.
