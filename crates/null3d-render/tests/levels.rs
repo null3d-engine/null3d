@@ -229,7 +229,7 @@ fn a_biased_ball_draws_the_level_that_half_its_distance_switch_picks() {
             .unwrap();
     };
     let mut before = cpu_world();
-    let levels = give_levels_of(&mut before, &[0.05, 0.1, 0.2], false);
+    let levels = give_levels_of(&mut before, &[0.05, 0.1, 0.2], 0);
     place(&mut before, 0.95 * 7.795);
     before.record(true);
     let drawn = draws(&before);
@@ -240,7 +240,7 @@ fn a_biased_ball_draws_the_level_that_half_its_distance_switch_picks() {
         "a biased ball at 95% of its switch draws its base level {levels:?}: {drawn:?}"
     );
     let mut after = cpu_world();
-    let levels = give_levels_of(&mut after, &[0.05, 0.1, 0.2], false);
+    let levels = give_levels_of(&mut after, &[0.05, 0.1, 0.2], 0);
     place(&mut after, 1.03 * 7.795);
     after.record(true);
     let drawn = draws(&after);
@@ -596,20 +596,23 @@ fn the_direct_path_draws_a_level_whose_material_settings_match_the_base() {
 }
 #[test]
 fn a_bias_divides_the_switch_of_one_object() {
-    use null3d_core::levels::{LevelLink, LevelRule, NO_LINK, Picked};
+    use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Picked};
     let links = [
         LevelLink {
-            error: 0.0,
+            value: 0.0,
+            switch: Switch::Error,
             next: 1,
             fade: NO_LINK,
         },
         LevelLink {
-            error: 0.01,
+            value: 0.01,
+            switch: Switch::Error,
             next: 2,
             fade: NO_LINK,
         },
         LevelLink {
-            error: 0.05,
+            value: 0.05,
+            switch: Switch::Error,
             next: NO_LINK,
             fade: NO_LINK,
         },
@@ -619,18 +622,18 @@ fn a_bias_divides_the_switch_of_one_object() {
     // Level 1 switches at 0.01 times the factor, halved by a bias of 2: 1.56 m.
     println!(
         "no bias at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0)
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE)
     );
     println!(
         "bias 2 at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0)
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE)
     );
     println!(
         "bias 2 at 1.481: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.481, 2.0)
+        rule.pick(&links, 0, 1.0, 0.5, 1.481, 2.0, DrawRange::NONE)
     );
     assert!(matches!(
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0),
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE),
         Picked::One(1)
     ));
 }
