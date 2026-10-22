@@ -53,6 +53,7 @@ import type {
 	MeshData,
 	NodeData,
 	NodeLevels,
+	PatchesData,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -433,15 +434,17 @@ function nodeOf(node: NodeData): GltfExtensionData['node'] {
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
  * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
  * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
- * so the level switches at once; a coverage given by hand keeps a fading band. Levels whose meshes
- * have other primitives, or no errors, are left out, and so are levels that a mesh cannot take,
- * with a note.
+ * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
+ * another material than the node's primitive draws with it. Levels whose meshes have other
+ * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
 	levels: NodeLevels,
 	data: GltfData,
 	meshOf: (k: number) => MeshGeometry[],
+	materials: FileMaterials,
+	primitives: readonly PrimitiveData[],
 ): void {
 	const count = base.length;
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
@@ -451,14 +454,22 @@ function setFileLevels(
 		const errors = levels.errors;
 		const coverage = levels.coverage;
 		if (!measured && !coverage) return;
+		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
-				lower.map((meshes, j) => ({
-					mesh: meshes[p] as MeshGeometry,
-					...(measured
-						? { error: (errors as number[])[j] as number, fade: false }
-						: { coverage: (coverage as number[])[j] as number }),
-				})),
+				lower.map((meshes, j) => {
+					const level = (data.meshes[levels.meshes[j] as number] as MeshData).primitives[
+						p
+					] as PrimitiveData;
+					const material = own && level.material !== own.material ? materials.of(level) : undefined;
+					return {
+						mesh: meshes[p] as MeshGeometry,
+						...(measured
+							? { error: (errors as number[])[j] as number, fade: false }
+							: { coverage: (coverage as number[])[j] as number }),
+						...(material && { material }),
+					};
+				}),
 			);
 		} catch (error) {
 			data.notes.push(`the levels of detail of a mesh (${(error as Error).message})`);
@@ -530,7 +541,8 @@ async function buildPrefab(
 		const visible = n.visible !== false;
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
-		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
+		if (n.levels && !n.skinned)
+			setFileLevels(made, n.levels, data, meshOf, materials, mesh?.primitives ?? []);
 		const parts = [
 			...(mesh?.primitives ?? []).map((p, k) => ({
 				mesh: made[k] as MeshGeometry,
@@ -833,6 +845,10 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
+		if (p.patches && !storePatches(context.core, made.id, p.patches, call) && DEV)
+			console.warn(
+				`${call}() found a tree of patches in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so the mesh draws whole. Optimize the file again.`,
+			);
 		return made;
 	});
 }
@@ -855,6 +871,21 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
 	core.f32(at, positions.length).set(positions);
 	core.u32(at + positions.byteLength, indices.length).set(indices);
 	core.glue.setMeshBlocker(mesh, positions.length / 3, indices.length);
+}
+
+/**
+ * Gives a mesh the tree of cluster patches that the file stores: the patches' spheres and records,
+ * then their indices, at the address that the staging words give.
+ */
+function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call: string): boolean {
+	const { bounds, words, indices, root } = patches;
+	const records = words.length / 4;
+	const at = core.checkGrowth(core.glue.meshArrays(records * 8 + indices.length), call);
+	const floats = core.f32(at, records * 4);
+	for (let k = 0; k < records; k++) floats.set(bounds.subarray(k * 4, k * 4 + 4), k * 4);
+	core.u32(at + records * 16, words.length).set(words);
+	core.u32(at + records * 16 + words.byteLength, indices.length).set(indices);
+	return core.glue.setMeshPatches(mesh, records, indices.length, root) === 1;
 }
 
 /**

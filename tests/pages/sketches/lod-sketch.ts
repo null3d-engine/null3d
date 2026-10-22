@@ -5,10 +5,11 @@
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` switches the levels at once, as a measured error does, `?mask` draws with a mask smoothed
-// by alpha to coverage, as foliage does, which passes every pixel, `?shadows` draws one large copy
-// in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide` raises the
-// threshold and places copies around the hide distance, and `?range` gives every copy a distance
-// band, with rows of copies around its start and its end.
+// by alpha to coverage, as foliage does, which passes every pixel, `?material` gives each level a
+// material of its own in the level's color, which must draw the same image, `?shadows` draws one
+// large copy in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide`
+// raises the threshold and places copies around the hide distance, and `?range` gives every copy a
+// distance band, with rows of copies around its start and its end.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -93,9 +94,15 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	);
 	if (!base) return;
 	// A hand-set error's switch shows, so its levels fade over a band; `?crisp` switches them at
-	// once, as the asset tool's measured errors do.
+	// once, as the asset tool's measured errors do. A level's own material may draw without the
+	// mesh's vertex colors, in the level's color.
+	const levelMaterial = (color: Vec3) => materials.standard({ color, roughness: 0.5 });
 	base.setLevels(
-		lower.map((mesh, k) => ({ mesh, error: ERRORS[k] as number })),
+		lower.map((mesh, k) => ({
+			mesh,
+			error: ERRORS[k] as number,
+			...(params.has('material') && { material: levelMaterial(LEVELS[k + 1]?.[1] as Vec3) }),
+		})),
 		{ fade: !crisp },
 	);
 	const material = materials.standard({

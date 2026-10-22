@@ -125,6 +125,11 @@ export interface CompiledMaterial<
 > {
 	/** Marks the WGSL of a custom material. */
 	readonly kind: 'material';
+	/**
+	 * True for a draw shader: its `@vertex` entry point takes the vertex and instance indices and
+	 * no mesh attribute, and the material draws with a vertex count instead of a mesh.
+	 */
+	readonly meshless?: boolean;
 	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
 	readonly functions: readonly string[];
 	/** The fields of the WGSL's `struct Uniforms`, in order. */

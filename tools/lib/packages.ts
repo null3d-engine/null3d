@@ -402,6 +402,20 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 }
 
 /**
+ * Builds a package's JavaScript and declarations into its `lib/`, and the shader modules that its
+ * source imports. It writes nothing else that a tarball holds, such as the docs copy, so a tool
+ * that only needs files a browser runs, such as the CDN build, calls this.
+ */
+export function buildPackageLibrary(root: string, name: string): void {
+	const build = packageBuild(name);
+	for (const needed of [...build.needs, name]) {
+		if (packageBuild(needed).shaders) ensureShaderModules(root);
+		if (packageBuild(needed).compile)
+			compile(root, join(root, 'packages', needed), packageBuild(needed));
+	}
+}
+
+/**
  * Makes everything that a package's tarball holds besides the files git keeps and the WebAssembly
  * builds: the license copies, the built JavaScript and declarations, and the engine's shader
  * modules and docs with their generated pages and sections. Each package's `prepack` script runs
@@ -411,11 +425,7 @@ export function buildPackage(root: string, name: string): void {
 	const build = packageBuild(name);
 	const dir = join(root, 'packages', name);
 	for (const file of LICENSES) copyFileSync(join(root, file), join(dir, file));
-	for (const needed of [...build.needs, name]) {
-		if (packageBuild(needed).shaders) ensureShaderModules(root);
-		if (packageBuild(needed).compile)
-			compile(root, join(root, 'packages', needed), packageBuild(needed));
-	}
+	buildPackageLibrary(root, name);
 	if (build.docs) {
 		// Git keeps no generated docs, so the pack writes them first, after the shader modules that
 		// the engine's API reference reads.

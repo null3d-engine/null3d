@@ -481,7 +481,14 @@ fn compile_jobs(
 #[cfg(not(target_arch = "wasm32"))]
 fn threads(jobs: usize) -> usize {
     let cores = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
-    cores.min(jobs).max(1)
+    // A machine that several checkouts build on at once stays usable when one build leaves cores
+    // for the others: NULL3D_SHADER_THREADS caps it, and an unset or zero value keeps every core.
+    let cap = std::env::var("NULL3D_SHADER_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|count| *count > 0)
+        .unwrap_or(cores);
+    cores.min(cap).min(jobs).max(1)
 }
 
 /// WebAssembly has no threads in a page or a bundler, so its builds compile on one.

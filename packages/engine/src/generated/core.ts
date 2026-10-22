@@ -177,6 +177,10 @@ export const PARTICLE_FRAME_FLOATS = 4;
 export const PARTICLE_MAX_SYSTEMS = 256;
 export const PARTICLE_MAX_RECORDS = 4194304;
 
+export const VERTEX_DRAW_MAX_DRAWS = 256;
+export const VERTEX_DRAW_MAX_VERTICES = 1048576;
+export const VERTEX_DRAW_MAX_INSTANCES = 16777216;
+
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;

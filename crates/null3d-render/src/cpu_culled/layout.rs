@@ -33,7 +33,7 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
     collect_bucket_keys, put_u32,
 };
-use crate::levels::{BucketKey, expand_level_keys, is_fade_key, links_of};
+use crate::levels::{BucketKey, expand_level_keys, is_fade_key, key_level, level_key, links_of};
 use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
@@ -466,6 +466,33 @@ impl Layout {
         let eligible =
             |key: &BucketKey| key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0;
         let levels = settings.levels();
+        // A level may name a material of its own, so its bucket key comes from the level's mesh and
+        // material, while it keeps the fields of the bucket that names it: its group, and the
+        // object's receive-shadows bit, which the base key's pipeline holds.
+        let level_bucket = |key: &BucketKey, level: usize| {
+            let (base, _) = key_level(key.3);
+            let set = levels.of(base)?;
+            let mesh = set.mesh(level);
+            let material = match set.material(level) {
+                0 => key.4,
+                own => own,
+            };
+            let object = if key.0.permutation & permutation::RECEIVE_SHADOWS != 0 {
+                flags::RECEIVE_SHADOWS
+            } else {
+                0
+            };
+            let mut bucket = key_of(
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
+                key.5,
+                object,
+                None,
+            )?;
+            bucket.3 = level_key(base, level);
+            Some(bucket)
+        };
         let fades = drawn == Drawn::Scene && settings.levels_fade();
         // The keys whose sources draw in a distance band, which need a fade bucket beside each of
         // their levels only while the quality settings fade those bands.
@@ -481,7 +508,7 @@ impl Layout {
                 }
             }
             for (_, batch) in batches.iter() {
-                if batch.has_range() {
+                if !batch_ranges(batches, batch).is_none() {
                     ranged_keys.extend(batch_key(batch));
                 }
             }
@@ -489,7 +516,7 @@ impl Layout {
             ranged_keys.dedup();
         }
         let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
-        expand_level_keys(key_counts, levels, meshes, fades, ranged, eligible);
+        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -555,7 +582,7 @@ impl Layout {
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
-            let links = links_of(key, &*key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
             self.level_links.push(LevelLink {
                 value: links.value,
                 switch: links.switch,

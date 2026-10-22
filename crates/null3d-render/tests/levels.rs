@@ -10,6 +10,16 @@ use null3d_gpu::drawlist::{Op, permutation, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, LevelQuality};
 use null3d_render::levels::LevelError;
+use null3d_render::materials::{Shading, feature};
+
+/// The masked pipelines that a frame of `world` created.
+fn masked_pipelines(world: &World) -> usize {
+    world
+        .commands()
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[2] & permutation::ALPHA_MASK != 0)
+        .count()
+}
 
 /// The world's ball mesh, by engine id, which its third and fourth objects draw: the third 20 m
 /// from the camera, the fourth hidden.
@@ -24,7 +34,14 @@ fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u8) -> [u32; 2] {
     let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
         .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
     settings
-        .set_mesh_levels(BALL, &meshes, &[0.01, 0.05], &[Switch::Error; 2], fades)
+        .set_mesh_levels(
+            BALL,
+            &meshes,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, 0],
+            fades,
+        )
         .unwrap();
     meshes
 }
@@ -46,11 +63,11 @@ fn levels_take_live_meshes_with_the_base_format_and_errors_that_grow() {
         + 1;
     let mapped = settings.meshes_mut().add(&common::grid(2, 2)).unwrap() + 1;
     assert_eq!(
-        settings.set_mesh_levels(BALL, &[99], &[0.1], &[Switch::Error], 0b10),
+        settings.set_mesh_levels(BALL, &[99], &[0.1], &[Switch::Error], &[0], 0b10),
         Err(LevelError::Mesh)
     );
     assert_eq!(
-        settings.set_mesh_levels(BALL, &[mapped], &[0.1], &[Switch::Error], 0b10),
+        settings.set_mesh_levels(BALL, &[mapped], &[0.1], &[Switch::Error], &[0], 0b10),
         Err(LevelError::Format)
     );
     assert_eq!(
@@ -59,17 +76,50 @@ fn levels_take_live_meshes_with_the_base_format_and_errors_that_grow() {
             &[level, level],
             &[0.1, 0.05],
             &[Switch::Error; 2],
+            &[0, 0],
             0b110
         ),
         Err(LevelError::Errors)
     );
     settings
-        .set_mesh_levels(BALL, &[level], &[0.1], &[Switch::Error], 0b10)
+        .set_mesh_levels(BALL, &[level], &[0.1], &[Switch::Error], &[0], 0b10)
         .unwrap();
     assert!(settings.levels().any());
     // A removed level takes the levels away from its base mesh.
     world.renderer.remove_meshes(&[level - 1]);
     assert!(!world.renderer.settings().levels().any());
+}
+
+#[test]
+fn a_level_that_names_a_material_draws_with_that_material() {
+    // The world's materials are neither masked. A level whose material masks draws with the masked
+    // builds, and one that inherits the base material's draws with none.
+    let mut plain = World::new();
+    give_levels(&mut plain, 0b110);
+    plain.record(true);
+    assert_eq!(masked_pipelines(&plain), 0);
+
+    let mut world = World::new();
+    let settings = world.renderer.settings_mut();
+    let masked = settings
+        .materials_mut()
+        .create(Shading::Lit, feature::ALPHA_MASK, [1.0; 4])
+        .unwrap()
+        + 1;
+    let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            BALL,
+            &meshes,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, masked],
+            0b110,
+        )
+        .unwrap();
+    world.record(true);
+    assert!(masked_pipelines(&world) > 0);
 }
 
 /// The indexed indirect draws that a frame of `world` records in its bundles.
@@ -230,6 +280,7 @@ fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: 
             &meshes,
             errors,
             &vec![Switch::Error; errors.len()],
+            &vec![0; errors.len()],
             fades,
         )
         .unwrap();
@@ -258,6 +309,7 @@ fn give_distance_levels<B: FrameBuilder>(world: &mut World<B>, distances: &[f32]
             &meshes,
             distances,
             &vec![Switch::Distance; distances.len()],
+            &vec![0; distances.len()],
             0,
         )
         .unwrap();
@@ -461,6 +513,45 @@ fn a_draw_range_hides_an_object_outside_it_and_fades_it_at_its_edge() {
     let drawn = draws(&world);
     assert!(
         !drawn.contains(&(indices_of(&world, coarse), 1)),
+        "{drawn:?}"
+    );
+}
+
+#[test]
+fn the_direct_path_draws_a_level_whose_material_settings_match_the_base() {
+    use null3d_render::gpu_driven::RendererConfig;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    });
+    let settings = world.renderer.settings_mut();
+    let twin = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [0.0, 1.0, 0.0, 1.0])
+        .unwrap()
+        + 1;
+    let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            BALL,
+            &meshes,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[twin, twin],
+            0,
+        )
+        .unwrap();
+    ball_at(&mut world, 20.0);
+    world.record(true);
+    let drawn: Vec<(u32, u32)> = world
+        .commands()
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexed)
+        .map(|(_, o)| (o[0], o[1]))
+        .collect();
+    assert!(
+        drawn.contains(&(indices_of(&world, meshes[1]), 1)),
         "{drawn:?}"
     );
 }
