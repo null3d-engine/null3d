@@ -841,3 +841,14 @@ land, so the task's target stays unreached.
 What would reach it: the start needs code removed, not moved. The scene API's own modules are about
 24 KB of the sketch worker, and the feature modules behind them about 37 KB. A trim that pays has to
 take a whole feature out of the engine's start, with its shaders, or the shader file has to shrink.
+
+## The core WebAssembly's growth, 23 October 2026
+
+The milestone branch's build grew each core WebAssembly file after Brotli against main's build. The
+threaded file went from 485,521 to 500,408 bytes, or 3.1 percent, and the single-threaded file from
+484,906 to 499,117 bytes, or 2.9 percent. Both stay inside the 600 KB budget that a core file has.
+
+The growth is the level system: the level table with its switch measures, the distance bands, the
+ranges texture that culling reads, and the per-level materials. The commit gate asks for a
+`Size-Growth:` line while a file grows by more than 2 percent against main, so the landing carries
+one for each core file.
