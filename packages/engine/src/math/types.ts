@@ -3,6 +3,14 @@
 // caller's own type.
 
 /**
+ * A point or a direction (u, v), such as a texture coordinate, in an array: a tuple such as
+ * `[0, 0]`, a plain array or a typed array. A helper that reads it reads its first two elements.
+ *
+ * @category api/math
+ */
+export type Vec2Like = { [index: number]: number };
+
+/**
  * A vector (x, y, z) in an array: a tuple such as `[0, 1, 0]`, a plain array or a typed array. The
  * math helpers read and write its first three elements.
  *

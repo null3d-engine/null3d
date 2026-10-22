@@ -92,6 +92,12 @@ A hit has these fields:
 | `normal` | The unit normal of the hit triangle in world space, on the side that faces the ray's origin |
 | `distance` | The distance from the origin to the point, in meters |
 | `triangle` | The index of the hit triangle in its mesh, as three.js's `faceIndex`. -1 for a sprite, a point or a line |
+| `uv` | Where on the surface the ray hit, in the mesh's first texture coordinates, as three.js's `intersection.uv`. Give an array of two numbers, as you give `point`, and every raycast fills it. Read `hasUv` first |
+| `hasUv` | True when the hit triangle's mesh has a first texture coordinate set, so `uv` gives where on the surface the ray hit. False for a hit on a sprite, a point or a line, and for a mesh with no such coordinates |
+
+`uv` holds where the ray crossed the surface. It blends the three corners' texture coordinates,
+weighted by how much of each corner the point lies under. A decal uses it to place itself, and an
+in-world screen turns a click into a pixel of its image.
 
 `raycast` sets `hit.object` to `null` after a miss, and leaves the other fields as they were. `raycastAll` fills the first entries of `hits` and returns how many it filled. When the array is too short, it adds hit objects to it. It leaves the entries after the hits as they were, so read only the first ones.
 
@@ -261,6 +267,7 @@ The trees give the same hits as testing every triangle of every object in turn. 
 | `raycaster.camera`, for sprites and `Line2` | The active camera, or the camera of the frame on screen at a pointer event |
 | `intersection.instanceId` | `hit.instance` |
 | `intersection.faceIndex` | `hit.triangle` |
+| `intersection.uv` | `hit.uv`, which `hit.hasUv` says whether to read |
 | `three-mesh-bvh` | Built in: delete its setup |
 | three.js has no pixel pick: its `Raycaster` tests triangles | `scene.pick(x, y)` tests the pixel that the image shows, through the GPU, and returns a promise |
 
