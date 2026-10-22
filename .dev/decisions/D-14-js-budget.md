@@ -796,3 +796,48 @@ table above shows the other side of it: every start that the loader left fell by
 
 The WebAssembly bindings grew by about 800 bytes in each mode, from this milestone's new exports.
 The control table gained the 3D label's entries.
+
+### The fog, picks and pointer-event move, measured and dropped, 22 October 2026
+
+M3-T1 asked for the start to fall to 155 KB. The sections above show why the shader file cannot give
+those bytes back, so the task turned to moving features onto their first use. The three moves were
+the fog's write, the picks and the objects' pointer events. The move was built and measured, and it
+cost the start more than it saved. It was dropped, and the table is here so that nobody repeats it.
+
+The two builds' size records, read with one report implementation, in bytes after Brotli:
+
+| Start | Before | With the move | Difference |
+| --- | --- | --- | --- |
+| pipelined, WebGL2 | 182,116 | 183,569 | +1,453 |
+| pipelined, WebGPU | 166,159 | 167,612 | +1,453 |
+| low latency, WebGL2 | 178,803 | 180,171 | +1,368 |
+| low latency, WebGPU | 162,854 | 164,208 | +1,354 |
+| drawing on the main thread, WebGL2 | 180,088 | 181,521 | +1,433 |
+| drawing on the main thread, WebGPU | 164,326 | 165,794 | +1,468 |
+| single-threaded, WebGL2 | 168,992 | 169,558 | +566 |
+| single-threaded, WebGPU | 153,230 | 153,831 | +601 |
+| sketch on the main thread, WebGL2 | 172,716 | 173,302 | +586 |
+| sketch on the main thread, WebGPU | 156,759 | 157,345 | +586 |
+
+The parts say why. The moves themselves did what they should: `page-fog.js` 266 bytes,
+`sketch-worker-fog.js` 256, `page-picks.js` 841 and `sketch-worker-picks.js` 811, with
+`page-sketch-runner.js` down 298, `sketch-worker.js` down 34 and `sketch-worker-renderer.js` down
+133. That is about 1.1 KB out of each threaded start.
+
+Then the deferral made the error class a file of its own: `page-engine-error.js` 789 bytes and
+`sketch-worker-engine-error.js` 603. A module that several files share moves into a file of its own
+when one of them loads on demand, and each start imports that file. A 1.6 KB file compresses far
+worse alone than the same code inside a 90 KB chunk, so the class costs about 1.4 KB more than it
+did. Those two parts nearly cancel. The rest of the measured 1,453 bytes is the churn that the new
+files put through the page's and the worker's starts.
+
+The pointers' dispatcher was to be the largest saving, about 1.6 KB, but it never split. `queries.ts`
+read its hit-field constants, which kept the whole module in the start. Moving those constants into
+a module of their own, `scene/pointer-fields.ts`, makes the split possible. That work is written but
+not landed. It would save between nothing and about 700 bytes on the threaded starts, since a split
+module compresses worse than the same code in a chunk. That is not room for the work still to
+land, so the task's target stays unreached.
+
+What would reach it: the start needs code removed, not moved. The scene API's own modules are about
+24 KB of the sketch worker, and the feature modules behind them about 37 KB. A trim that pays has to
+take a whole feature out of the engine's start, with its shaders, or the shader file has to shrink.
