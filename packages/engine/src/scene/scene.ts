@@ -478,6 +478,11 @@ export interface InstanceOptions {
 	 * coverage or the alpha hash.
 	 */
 	values?: boolean;
+	/**
+	 * Adds a start and an end distance per row in `batch.ranges`, so each row draws in a band of
+	 * its own. Leave it out for a range that every row shares, which costs no memory.
+	 */
+	ranges?: boolean;
 	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
 	/**
@@ -1460,6 +1465,8 @@ export class Mesh extends Object3D {
 	renderOrder = 0;
 	/** @internal The bias of the threshold that picks the levels, as `setLevelBias` gave it. */
 	levelBias = 1;
+	/** @internal The distances between which the mesh draws, as `setDrawRange` gave them. */
+	drawRange: readonly [number, number] = [0, Number.POSITIVE_INFINITY];
 	/** @internal The mesh's block of morph weights in the engine core, plus one, or 0 for none. */
 	morphBlock = 0;
 	/** @internal The place of the block's first weight in the core's table of morph weights. */
@@ -1488,6 +1495,7 @@ export class Mesh extends Object3D {
 		twin.material = this.material;
 		twin.renderOrder = this.renderOrder;
 		twin.levelBias = this.levelBias;
+		twin.drawRange = this.drawRange;
 		twin.morphJoint = this.morphJoint;
 		return twin;
 	}
@@ -1670,6 +1678,35 @@ export class Mesh extends Object3D {
 		const bits = this.scene.floatBits(bias);
 		this.scene.command(C.COMMAND_SET_LEVEL_BIAS, this.handle, bits, 0, 'setLevelBias');
 		this.levelBias = bias;
+	}
+
+	/**
+	 * Sets the distances between which the mesh draws, as Godot's visibility range and Bevy's
+	 * `VisibilityRange` do: nothing nearer than `start`, which is 0 for none, and nothing past
+	 * `end`, which is `Infinity` for none. Each edge fades over a short band, so a mesh that fades
+	 * in or out does not pop. A mesh whose bounds leave the range costs no draw at all. The
+	 * default draws at every distance. The `lodFade` quality setting turns the bands off on Low.
+	 * Throws E1108 for a range that is not two numbers with 0 <= start < end.
+	 */
+	setDrawRange(start: number, end: number): void {
+		if (DEV) {
+			checkLive('setDrawRange', this);
+			checkNumber('setDrawRange', 'start', start, this);
+			checkNumber('setDrawRange', 'end', end, this);
+			if (!(start >= 0 && start < end))
+				throw new EngineError(
+					'E1108',
+					`setDrawRange() got ${start} and ${end} on ${this.describe()}, not a start at or above 0 and below the end.`,
+				);
+		}
+		this.scene.command(
+			C.COMMAND_SET_DRAW_RANGE,
+			this.handle,
+			this.scene.floatBits(start),
+			this.scene.floatBits(end),
+			'setDrawRange',
+		);
+		this.drawRange = [start, end];
 	}
 
 	/**
@@ -2492,6 +2529,7 @@ export class InstanceBatch implements ViewHolder {
 		scales: Float32Array;
 		colors: Float32Array | undefined;
 		values: Float32Array | undefined;
+		ranges: Float32Array | undefined;
 	};
 	/** @internal */
 	destroyedFrame = -1;
@@ -2553,6 +2591,8 @@ export class InstanceBatch implements ViewHolder {
 
 	private makeViews(): void {
 		const { core } = this.scene;
+		if (this.own.ranges)
+			core.check(core.glue.reserveBatchRanges(this.id), 'instance arrays', 'an instance batch');
 		const address = (field: number) =>
 			core.check(core.glue.batchArrays(this.id, field), 'instance arrays', 'an instance batch');
 		this.rows = {
@@ -2561,6 +2601,7 @@ export class InstanceBatch implements ViewHolder {
 			scales: core.f32(address(C.BATCH_FIELD_SCALES), this.count * 3),
 			colors: this.own.colors ? core.f32(address(C.BATCH_FIELD_COLORS), this.count * 4) : undefined,
 			values: this.own.values ? core.f32(address(C.BATCH_FIELD_VALUES), this.count * 4) : undefined,
+			ranges: this.own.ranges ? core.f32(address(C.BATCH_FIELD_RANGES), this.count * 2) : undefined,
 		};
 		this.generation = core.generation;
 	}
@@ -2594,6 +2635,42 @@ export class InstanceBatch implements ViewHolder {
 	 */
 	get values(): Float32Array | undefined {
 		return this.views().values;
+	}
+
+	/**
+	 * The rows' distance ranges, two floats per row: the start distance at `2i` and the end
+	 * distance at `2i + 1`, when the batch was created with `ranges`. A row draws between them,
+	 * with a fade at each edge. `setDrawRange` sets every row's, and a later write to this array
+	 * changes one row. Write it at setup: the engine reads it when it next rebuilds its draw
+	 * tables, which `setDrawRange` and a new object or batch make.
+	 */
+	get ranges(): Float32Array | undefined {
+		return this.views().ranges;
+	}
+
+	/**
+	 * Sets the distances between which every row draws, as `Mesh.setDrawRange` does for one mesh:
+	 * nothing nearer than `start`, which is 0 for none, and nothing past `end`, which is
+	 * `Infinity` for none. The rows take a fade at each edge. A batch created with `ranges` gets
+	 * the same range in its own array. Throws E1108 for a range that is not two numbers with
+	 * 0 <= start < end.
+	 */
+	setDrawRange(start: number, end: number): void {
+		if (DEV) {
+			checkNumber('setDrawRange', 'start', start, this);
+			checkNumber('setDrawRange', 'end', end, this);
+			if (!(start >= 0 && start < end))
+				throw new EngineError(
+					'E1108',
+					`setDrawRange() got ${start} and ${end} on ${this.describe()}, not a start at or above 0 and below the end.`,
+				);
+		}
+		const { core } = this.scene;
+		const values = core.callValues();
+		values[0] = start;
+		values[1] = end;
+		core.check(core.glue.setBatchDrawRange(this.id), 'setDrawRange', undefined, true);
+		for (const part of this.parts) core.glue.setBatchDrawRange(part);
 	}
 
 	/** Draws only the first `count` rows. */
@@ -2716,16 +2793,18 @@ export class InstanceBatch implements ViewHolder {
 export interface RowValueArrays {
 	readonly colors: boolean;
 	readonly values: boolean;
+	readonly ranges: boolean;
 }
 
 /** @internal An instance batch with neither colors nor values. */
-export const NO_ROW_VALUES: RowValueArrays = { colors: false, values: false };
+export const NO_ROW_VALUES: RowValueArrays = { colors: false, values: false, ranges: false };
 
 /** The row arrays that an instance batch's options ask for. */
 function rowValueArrays(options: Partial<InstanceOptions>): RowValueArrays {
 	const colors = options.colors ?? false;
 	const values = options.values ?? false;
-	return colors || values ? { colors, values } : NO_ROW_VALUES;
+	const ranges = options.ranges ?? false;
+	return colors || values || ranges ? { colors, values, ranges } : NO_ROW_VALUES;
 }
 
 /** @internal The meshes and materials that an instance batch draws, which their destroy checks. */
@@ -2746,6 +2825,7 @@ const NO_ROWS = {
 	scales: NO_FLOATS,
 	colors: undefined,
 	values: undefined,
+	ranges: undefined,
 };
 
 /** The row fields of an instance batch, which the check of unmarked row writes hashes. */

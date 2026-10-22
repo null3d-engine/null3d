@@ -1623,10 +1623,11 @@ pub mod sizes {
     /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
     /// local sphere's radius, its first draw and draw count, the sphere's centre, the first joint
     /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
-    /// instead of copies of the matrices, for a mesh with levels of detail the level's error, the
-    /// bucket of the next coarser level plus one and the level's fade bucket plus one, and the
-    /// threshold bias that picks the levels, 1 for none.
-    pub const BUCKET_WORDS: u32 = 14;
+    /// instead of copies of the matrices, for a mesh with levels of detail the level's switch
+    /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
+    /// threshold bias that picks the levels, 1 for none, and the measure that the switch value
+    /// names.
+    pub const BUCKET_WORDS: u32 = 15;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -1646,6 +1647,11 @@ pub mod sizes {
     pub const ROW_VALUE_TEXELS: u32 = 2;
     /// Row values per row of their data texture, which is 2,048 texels wide.
     pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
+    /// Texels of an `RGBA32_FLOAT` data texture per source's distance range: its start distance
+    /// and its end distance.
+    pub const RANGE_TEXELS: u32 = 1;
+    /// Distance ranges per row of their data texture, which is 2,048 texels wide.
+    pub const RANGES_PER_TEXTURE_ROW: u32 = 2048;
     /// Bytes of the table of object ranges, a uniform block that the vertex shaders of custom
     /// materials which read an instance's index or an object's id search: the largest uniform
     /// block that every WebGL2 device and WebGPU's compatibility mode allow.

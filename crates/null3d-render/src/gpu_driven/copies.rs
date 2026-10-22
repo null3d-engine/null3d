@@ -20,10 +20,10 @@
 //! table is one for all of them.
 
 use null3d_core::cells::CellPosition;
-use null3d_core::culling::{NO_BUCKET, row_center};
+use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges, row_center};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::levels::{LevelRule, NO_LINK, Picked};
+use null3d_core::levels::{DrawRange, LevelRule, NO_LINK, Picked};
 use null3d_core::scene::SceneStorage;
 use null3d_core::world::UNBOUNDED_RADIUS;
 use null3d_gpu::drawlist::{DrawList, Op};
@@ -115,6 +115,7 @@ impl Layout {
         let slots = scene.cells();
         let radii = scene.local_radii();
         let biases = scene.level_biases();
+        let ranges = scene.draw_ranges();
         for source in 0..self.scene_rows as usize {
             let home = self.cull_buckets[source];
             if home == NO_BUCKET || self.marks[home as usize] == 0 {
@@ -123,7 +124,17 @@ impl Layout {
             let center = row_center(&spheres, slots[source], cells, source);
             let radius = spheres.radii[source];
             let bias = biases[source];
-            self.count_source(counts, rule, home, center, radius, radii[source], bias);
+            let range = RowRanges::Rows(ranges).range(source);
+            self.count_source(
+                counts,
+                rule,
+                home,
+                center,
+                radius,
+                radii[source],
+                bias,
+                range,
+            );
         }
         for &(id, first) in &self.batch_bases {
             let Ok(batch) = batches.get(Handle::from_raw(id)) else {
@@ -140,7 +151,17 @@ impl Layout {
                     continue;
                 }
                 let center = row_center(&spheres, batch_cells[row], cells, row);
-                self.count_source(counts, rule, home, center, spheres.radii[row], local, 1.0);
+                let range = batch_ranges(batches, batch).range(row);
+                self.count_source(
+                    counts,
+                    rule,
+                    home,
+                    center,
+                    spheres.radii[row],
+                    local,
+                    1.0,
+                    range,
+                );
             }
         }
     }
@@ -158,6 +179,7 @@ impl Layout {
         radius: f32,
         local: f32,
         bias: f32,
+        range: DrawRange,
     ) {
         // A sphere that covers all of space, and an object whose local radius is 0, have no scale
         // to read here. Its buckets hold the room for every level that it may pick.
@@ -182,12 +204,13 @@ impl Layout {
                     len += 1;
                 }
             };
-            match rule.pick(&self.level_links, home, scale, radius, near, bias) {
+            match rule.pick(&self.level_links, home, scale, radius, near, bias, range) {
                 Picked::One(bucket) => keep(bucket),
                 Picked::Fade { new, old, .. } => {
                     keep(new);
                     keep(old);
                 }
+                Picked::FadeIn { bucket, .. } => keep(bucket),
                 Picked::FadeOut { old, .. } => keep(old),
                 Picked::Hidden => {}
             }

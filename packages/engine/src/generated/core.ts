@@ -14,6 +14,7 @@ export const COMMAND_SET_RENDER_ORDER = 10;
 export const COMMAND_SET_SKIN = 11;
 export const COMMAND_SET_MORPH = 12;
 export const COMMAND_SET_LEVEL_BIAS = 13;
+export const COMMAND_SET_DRAW_RANGE = 14;
 export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 
@@ -75,6 +76,7 @@ export const BATCH_FIELD_SIZES = 4;
 export const BATCH_FIELD_FRAMES = 5;
 export const BATCH_FIELD_DIRTY_WORDS = 6;
 export const BATCH_FIELD_VALUES = 7;
+export const BATCH_FIELD_RANGES = 8;
 
 export const SPRITE_MAX_ATLAS_SIDE = 2048;
 

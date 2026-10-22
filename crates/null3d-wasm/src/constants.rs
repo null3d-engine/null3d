@@ -51,6 +51,8 @@ pub mod batch_field {
     pub const DIRTY_WORDS: u32 = 6;
     /// An instance batch's own values, 4 floats a row, which shaders read.
     pub const VALUES: u32 = 7;
+    /// An instance batch's own distance ranges, 2 floats a row.
+    pub const RANGES: u32 = 8;
 }
 
 /// Fields of `debugLineArrays`.
@@ -738,6 +740,7 @@ pub fn typescript() -> String {
                 ("SET_SKIN", op::SET_SKIN),
                 ("SET_MORPH", op::SET_MORPH),
                 ("SET_LEVEL_BIAS", op::SET_LEVEL_BIAS),
+                ("SET_DRAW_RANGE", op::SET_DRAW_RANGE),
                 ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],
@@ -817,6 +820,7 @@ pub fn typescript() -> String {
                 ("FRAMES", batch_field::FRAMES),
                 ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
                 ("VALUES", batch_field::VALUES),
+                ("RANGES", batch_field::RANGES),
             ],
         ),
         (

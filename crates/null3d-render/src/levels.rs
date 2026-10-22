@@ -3,13 +3,16 @@
 //! level; this module holds the meshes with levels, and the bucket keys and links that the frame
 //! builders give each level.
 //!
-//! A mesh with levels names its lower levels, from the most detailed down, and each level's error,
-//! in the units of the base mesh's positions. Every object and every instance batch that draws the
-//! base mesh picks one level per frame and per view. The frame builders keep a bucket for each
-//! level of each such mesh, and with fading bands a fade bucket beside each. A level's bucket key
+//! A mesh with levels names its lower levels, from the most detailed down, and each level's switch
+//! measure: an error in the units of the base mesh's positions, a distance, or a screen coverage.
+//! Every object and every instance batch that draws the base mesh picks one level per frame and
+//! per view. The frame builders keep a bucket for each level of each such mesh, and a fade bucket
+//! beside each level that hands over in a fading band, and beside each level of a bucket whose
+//! sources draw in a distance band. A level's bucket key
 //! names it by a level key ([`level_key`]), so a level's bucket never merges with the bucket of an
 //! object that draws the same simple mesh as a mesh of its own.
 
+use null3d_core::levels::Switch;
 use null3d_gpu::drawlist::{permutation, template};
 
 use crate::meshes::MeshStorage;
@@ -52,14 +55,17 @@ pub fn key_level(key: u32) -> (u32, usize) {
     }
 }
 
-/// One mesh's levels: the engine mesh id of each, the base mesh first, and each one's error.
+/// One mesh's levels: the engine mesh id of each, the base mesh first, each one's switch measure,
+/// and which levels hand over in a fading band.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LevelSet {
     meshes: [u32; MAX_LEVELS],
-    errors: [f32; MAX_LEVELS],
+    values: [f32; MAX_LEVELS],
+    switches: [Switch; MAX_LEVELS],
     count: u8,
-    /// True when the levels hand over in a fading band, false when they switch at once.
-    fades: bool,
+    /// The levels that hand over in a fading band, from the bits at their number: a level fades
+    /// only where its switch would show, which a measured error does not.
+    fades: u8,
 }
 
 impl LevelSet {
@@ -78,14 +84,19 @@ impl LevelSet {
         self.meshes[level]
     }
 
-    /// The error of level `level`, 0 for the base mesh.
-    pub fn error(&self, level: usize) -> f32 {
-        self.errors[level]
+    /// The switch value of level `level`, 0 for the base mesh.
+    pub fn value(&self, level: usize) -> f32 {
+        self.values[level]
     }
 
-    /// True when the levels hand over in a fading band.
-    pub fn fades(&self) -> bool {
-        self.fades
+    /// What the switch distance of level `level` is measured by.
+    pub fn switch(&self, level: usize) -> Switch {
+        self.switches[level]
+    }
+
+    /// True when level `level` hands over in a fading band.
+    pub fn fades(&self, level: usize) -> bool {
+        self.fades & (1 << level.min(7)) != 0
     }
 }
 
@@ -94,7 +105,7 @@ impl LevelSet {
 pub enum LevelError {
     /// More levels than [`MAX_LEVELS`], the base mesh included.
     TooMany,
-    /// An error that is not finite, not above the level before's, or not above 0.
+    /// A switch value that is not finite, not above the level before's, or not above 0.
     Errors,
     /// A level that names no mesh, or the base mesh.
     Mesh,
@@ -112,28 +123,46 @@ pub struct Levels {
 }
 
 impl Levels {
-    /// Gives the mesh with engine id `base` the lower levels `meshes`, with their `errors`, or with
-    /// none takes its levels away. `fades` makes the levels hand over in a fading band. The caller
-    /// checks that every mesh id names a live mesh.
+    /// Gives the mesh with engine id `base` the lower levels `meshes`, with their switch `values`
+    /// and the `switches` that measure them, or with none takes its levels away. The bits of
+    /// `fades` mark the levels that hand over in a fading band. The caller checks that every mesh
+    /// id names a live mesh, and that the switch distances grow from level to level.
     pub fn set(
         &mut self,
         base: u32,
         meshes: &[u32],
-        errors: &[f32],
-        fades: bool,
+        values: &[f32],
+        switches: &[Switch],
+        fades: u8,
     ) -> Result<(), LevelError> {
-        if meshes.len() + 1 > MAX_LEVELS || meshes.len() != errors.len() {
+        if meshes.len() + 1 > MAX_LEVELS
+            || meshes.len() != values.len()
+            || meshes.len() != switches.len()
+        {
             return Err(LevelError::TooMany);
         }
         if base == 0 || meshes.iter().any(|&mesh| mesh == 0 || mesh == base) {
             return Err(LevelError::Mesh);
         }
-        let mut before = 0.0;
-        for &error in errors {
-            if !error.is_finite() || error <= before {
+        // A level's switch must lie farther than the level before it. Values of different
+        // measures compare at the reference view, which only the caller knows, so each measure
+        // keeps its own order here: an error or a distance grows, and a coverage shrinks, as the
+        // bounds cover less of the screen farther out.
+        let mut before: [Option<f32>; 3] = [None; 3];
+        for (&value, &switch) in values.iter().zip(switches) {
+            if !(value.is_finite() && value > 0.0) {
                 return Err(LevelError::Errors);
             }
-            before = error;
+            let last = before[switch as usize];
+            let ordered = match (last, switch) {
+                (None, _) => true,
+                (Some(last), Switch::Coverage) => value < last,
+                (Some(last), _) => value > last,
+            };
+            if !ordered {
+                return Err(LevelError::Errors);
+            }
+            before[switch as usize] = Some(value);
         }
         let index = base as usize;
         if meshes.is_empty() {
@@ -157,7 +186,8 @@ impl Levels {
         };
         set.meshes[0] = base;
         set.meshes[1..=meshes.len()].copy_from_slice(meshes);
-        set.errors[1..=errors.len()].copy_from_slice(errors);
+        set.values[1..=values.len()].copy_from_slice(values);
+        set.switches[1..=switches.len()].copy_from_slice(switches);
         Ok(())
     }
 
@@ -255,37 +285,46 @@ fn level_bucket_key(
 }
 
 /// Adds the keys of the level buckets of every key in `keys` whose mesh has levels and that
-/// `eligible` lets pick them: one key for each lower level, and with `fade` one fade bucket for
-/// each level, where the set fades and the pipeline has fading builds. Each takes the count of the
-/// key it comes from, since any of its sources may draw any level. The keys are sorted again,
-/// and equal keys merge as [`crate::frame::collect_bucket_keys`] merges them. Allocates nothing
-/// once `keys` has room.
+/// `eligible` lets pick them: one key for each lower level, and one fade bucket for each level
+/// alike, where the level or the one after it fades, or where `ranged` says its sources draw in a
+/// distance band and `distance_fades` turns those bands on. Each takes the count of the key it
+/// comes from, since any of its sources may draw any level. A key without levels gets a fade bucket
+/// when its sources draw in a distance band. The keys are sorted again, and equal keys merge as
+/// [`crate::frame::collect_bucket_keys`] merges them. Allocates nothing once `keys` has room.
 pub(crate) fn expand_level_keys(
     keys: &mut Vec<(BucketKey, u32)>,
     levels: &Levels,
     meshes: &MeshStorage,
-    fade: bool,
+    distance_fades: bool,
+    ranged: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
 ) {
-    if !levels.any() {
-        return;
-    }
     let original = keys.len();
     for k in 0..original {
         let (key, count) = keys[k];
+        let fades = fades_its_way(key.0);
+        let range = fades && distance_fades && ranged(&key);
         let Some(set) = levels.of(key.3).filter(|_| eligible(&key)) else {
+            if range {
+                keys.push((fade_key(key), count));
+            }
             continue;
         };
-        let fades = fade && set.fades() && fades_its_way(key.0);
-        if fades {
-            keys.push((fade_key(key), count));
-        }
-        for level in 1..set.len() {
-            if let Some(level_key) = level_bucket_key(key, set, level, meshes) {
-                keys.push((level_key, count));
-                if fades {
-                    keys.push((fade_key(level_key), count));
-                }
+        for level in 0..set.len() {
+            let band = fades
+                && (range || set.fades(level) || (level + 1 < set.len() && set.fades(level + 1)));
+            let bucket = match level {
+                0 => Some(key),
+                _ => level_bucket_key(key, set, level, meshes),
+            };
+            let Some(bucket) = bucket else {
+                continue;
+            };
+            if level > 0 {
+                keys.push((bucket, count));
+            }
+            if band {
+                keys.push((fade_key(bucket), count));
             }
         }
     }
@@ -302,18 +341,20 @@ pub(crate) fn expand_level_keys(
     });
 }
 
-/// What a bucket key says of its level of detail: the level's error, and the places in the sorted
-/// keys of the next coarser level's key and of the level's fade key.
+/// What a bucket key says of its level of detail: the level's switch value and measure, and the
+/// places in the sorted keys of the next coarser level's key and of the level's fade key.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct KeyLinks {
-    pub error: f32,
+    pub value: f32,
+    pub switch: Switch,
     pub next: Option<u32>,
     pub fade: Option<u32>,
 }
 
 /// The links of the bucket key `key`, in the sorted `keys` that
-/// [`expand_level_keys`] made. A bucket of a mesh without levels, a fade bucket, and a base
-/// level's bucket that `eligible` keeps from picking have none.
+/// [`expand_level_keys`] made. A fade bucket has none. A bucket of a mesh without levels, and a
+/// base level's bucket that `eligible` keeps from picking, have no level links, but each keeps its
+/// fade key, which a distance band draws through.
 pub(crate) fn links_of(
     key: BucketKey,
     keys: &[(BucketKey, u32)],
@@ -322,13 +363,20 @@ pub(crate) fn links_of(
     eligible: impl Fn(&BucketKey) -> bool,
 ) -> KeyLinks {
     let (base, level) = key_level(key.3);
-    let set = levels.of(base).filter(|_| level > 0 || eligible(&key));
-    let (Some(set), false) = (set, is_fade_key(&key)) else {
+    if is_fade_key(&key) {
         return KeyLinks::default();
-    };
+    }
     let find = |key: Option<BucketKey>| {
         key.and_then(|key| keys.binary_search_by_key(&key, |&(k, _)| k).ok())
             .map(|place| place as u32)
+    };
+    let fade = find(Some(fade_key(key)));
+    let set = levels.of(base).filter(|_| level > 0 || eligible(&key));
+    let Some(set) = set else {
+        return KeyLinks {
+            fade,
+            ..KeyLinks::default()
+        };
     };
     // Every level's key holds its base key's fields, and the base key's page.
     let base_key = level_bucket_key(key, set, 0, meshes);
@@ -336,9 +384,10 @@ pub(crate) fn links_of(
         .then(|| base_key.and_then(|base| level_bucket_key(base, set, level + 1, meshes)))
         .flatten();
     KeyLinks {
-        error: set.error(level),
+        value: set.value(level),
+        switch: set.switch(level),
         next: find(next),
-        fade: find(Some(fade_key(key))),
+        fade,
     }
 }
 
@@ -388,24 +437,37 @@ mod tests {
     #[test]
     fn sets_refuse_bad_levels_and_forget_removed_meshes() {
         let mut levels = Levels::default();
+        let error = [Switch::Error; 2];
         assert_eq!(
-            levels.set(1, &[2, 3], &[0.1, 0.1], true),
+            levels.set(1, &[2, 3], &[0.1, 0.1], &error, 0b10),
             Err(LevelError::Errors)
         );
-        assert_eq!(levels.set(1, &[2], &[0.0], true), Err(LevelError::Errors));
-        assert_eq!(levels.set(1, &[1], &[0.1], true), Err(LevelError::Mesh));
         assert_eq!(
-            levels.set(1, &[2; 8], &[0.1; 8], true),
+            levels.set(1, &[2], &[0.0], &[Switch::Error], 0),
+            Err(LevelError::Errors)
+        );
+        assert_eq!(
+            levels.set(1, &[1], &[0.1], &[Switch::Error], 0),
+            Err(LevelError::Mesh)
+        );
+        assert_eq!(
+            levels.set(1, &[2; 8], &[0.1; 8], &[Switch::Error; 8], 0),
             Err(LevelError::TooMany)
         );
-        levels.set(1, &[2, 3], &[0.1, 0.2], false).unwrap();
-        levels.set(4, &[5], &[0.1], true).unwrap();
+        levels.set(1, &[2, 3], &[0.1, 0.2], &error, 0b10).unwrap();
+        levels.set(4, &[5], &[0.1], &[Switch::Error], 0b01).unwrap();
         assert!(levels.any());
         assert_eq!(levels.mesh_of_key(level_key(1, 2)), Some(3));
         assert_eq!(levels.mesh_of_key(level_key(1, 3)), None);
+        let set = levels.of(1).expect("mesh 1 has levels");
+        assert_eq!(set.switch(1), Switch::Error);
+        assert_eq!(
+            (set.value(1), set.fades(1), set.fades(2)),
+            (0.1, true, false)
+        );
         levels.forget_removed(|mesh| mesh != 3);
         assert!(levels.of(1).is_none() && levels.of(4).is_some());
-        levels.set(4, &[], &[], true).unwrap();
+        levels.set(4, &[], &[], &[], 0).unwrap();
         assert!(!levels.any());
     }
 }
