@@ -119,6 +119,19 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD * BIAS);
 	const aspect = () => engine.viewport.width / engine.viewport.height;
 
+	// A copy whose nearest point lies at `distance` from the camera, with its centre offset from the
+	// view's axis by `across` and `up`, both shares of its depth. A copy off the axis lies farther
+	// from the camera than its depth, so this places it along the same ray at the distance that the
+	// rule measures: its nearest point sits exactly where the test means it to.
+	const onRay = (distance: number, across: number, up: number): Vec3 => {
+		const center = distance + RADIUS;
+		const x = across * center * tan * aspect();
+		const y = up * center * tan;
+		const reach = Math.hypot(x, y, center);
+		const scale = center / reach;
+		return [x * scale, y * scale, -center * scale];
+	};
+
 	if (shadows) {
 		// One copy whose nearest point lies at half its first switch distance, in front of a wall
 		// that takes its shadow.
@@ -143,26 +156,19 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	if (params.has('range')) {
 		// Two rows of copies around the band's start and its end: one outside the band, one inside
 		// it, and one past it, where the copy draws fully.
-		const spots: Vec3[] = [];
 		const edges: [number, number][] = [
 			[BAND[0], -1],
 			[BAND[1], 1],
 		];
-		for (const [row, [edge, sign]] of edges.entries()) {
-			for (const [k, side] of BAND_SIDES.entries()) {
-				const distance = sign < 0 ? (side as number) * edge : edge / (side as number);
-				const center = distance + RADIUS;
-				const across = ((k as number) - 1) * 0.7;
-				spots.push([
-					across * center * tan * aspect(),
-					(row === 0 ? 0.3 : -0.3) * center * tan,
-					-center,
-				]);
-			}
-		}
+		const spots = edges.flatMap(([edge, sign], row) =>
+			BAND_SIDES.map((side, k) =>
+				onRay(sign < 0 ? side * edge : edge / side, (k - 1) * 0.7, row === 0 ? 0.3 : -0.3),
+			),
+		);
 		if (params.has('batch')) {
 			const batch = scene.createInstances(base, spots.length, { material });
 			batch.positions.set(spots.flat());
+			batch.markDirty();
 			batch.setDrawRange(BAND[0], BAND[1]);
 			return;
 		}
@@ -186,16 +192,9 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 			const side = k % sides.length;
 			const base = hide ? 2 : (ERRORS[row] as number);
 			const distance = (sides[side] as number) * base * f;
-			const center = distance + RADIUS;
 			const across = hide ? (side - 1) * 0.6 : side === 0 ? -0.35 : 0.35;
-			const y = hide ? 0 : (ROWS[row] as number) * center * tan;
-			// A copy off the view's axis lies farther from the camera than its depth: place it along
-			// the same ray at the distance that the rule measures, so its nearest point sits at the
-			// share of the switch that the test means.
-			const x = across * center * tan * aspect();
-			const reach = Math.hypot(x, y, center);
-			const scale = (distance + RADIUS) / reach;
-			out[k] = [x * scale, y * scale, -center * scale];
+			const up = hide ? 0 : (ROWS[row] as number);
+			out[k] = onRay(distance, across, up);
 		}
 		return out;
 	};
