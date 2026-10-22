@@ -7,7 +7,13 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BENCH_PAGES_DIR, buildBenchPages } from '../../tests/lib/load-server.ts';
+import {
+	BENCH_PAGES_DIR,
+	buildBenchPages,
+	LOAD_BUILDS,
+	LOAD_PAGES_SWITCH,
+	makeLoadBuild,
+} from '../../tests/lib/load-server.ts';
 import {
 	type DevServer,
 	PREVIEW_PORT,
@@ -135,7 +141,10 @@ export async function serveBenchPages({
 	reuse = false,
 }: ServeOptions = {}): Promise<BenchPages> {
 	if (dev) return port === undefined ? startServer() : startServerAt(root, port);
-	if (reuse) ensureBenchPages(root, outDir);
+	// A build that an earlier step made serves as it is when the switch says so, as in CI.
+	const load = LOAD_BUILDS.find((build) => build.dir === outDir);
+	if (load && process.env[LOAD_PAGES_SWITCH] === 'prebuilt') makeLoadBuild(load);
+	else if (reuse) ensureBenchPages(root, outDir);
 	else buildBenchPages(root, outDir);
 	return serveBuiltPages(outDir, port ?? PREVIEW_PORT, root);
 }
