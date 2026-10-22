@@ -35,7 +35,7 @@ export * as math from './math/math';
  * @category api/math
  */
 export * as quat from './math/quat';
-export type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from './math/types';
+export type { EulerOrder, Mat4Like, QuatLike, Vec2Like, Vec3Like } from './math/types';
 /**
  * Vectors (x, y, z) in plain arrays, in the style of gl-matrix: `vec3.add(out, a, b)` writes the sum
  * into `out` and returns `out`, so per-frame code allocates nothing.
