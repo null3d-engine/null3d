@@ -239,6 +239,13 @@ export interface EnginePart {
 	 * neither call downloads neither part.
 	 */
 	onFirstCall?: boolean;
+	/**
+	 * True for a part whose module the start's own files also hold, which the bundler keeps inline:
+	 * it writes a file of its own only for the thread that loads the module on demand. Every page
+	 * downloads the module's code at its start in the start's files, so no first-use check watches
+	 * it, and its own file carries the threads that load it on demand only.
+	 */
+	alsoInStart?: boolean;
 }
 
 /**
@@ -413,9 +420,12 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
 	// The worker bootstrap, which the first feature of a worker that starts one of its own loads.
 	{
+		// The page's start imports this module too, so every page downloads its code in the start's
+		// own files; the worker's copy loads on demand in the thread that starts a worker of its own.
 		name: 'sketch-worker-worker-start.js',
 		module: 'shared/worker-start.ts',
 		loadedBy: 'sketch-worker-tasks.js',
+		alsoInStart: true,
 	},
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
