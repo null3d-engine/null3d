@@ -312,6 +312,13 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'errors/message.ts',
 		loadedBy: 'page.js',
 	},
+	{
+		// The engine's error type, which the page's start, its loader and its checks all raise, so the
+		// bundler keeps it in a file of its own that every page loads.
+		name: 'engine-error.js',
+		module: 'errors/engine-error.ts',
+		loadedBy: 'page.js',
+	},
 	{ name: 'page-gpu.js', module: 'generated/gpu.ts', loadedBy: 'page.js' },
 	{ name: 'page-control.js', module: 'shared/control.ts', loadedBy: 'page.js' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
@@ -691,6 +698,7 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 			...parts,
 			// Small modules that many files share, which the bundler puts in files of their own that
 			// every page loads.
+			'engine-error.js',
 			'page-message.js',
 			'page-gpu.js',
 			'page-control.js',
