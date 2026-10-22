@@ -387,6 +387,7 @@ Before you add or change a job or a step, answer these questions:
 6. Does it use every core? Does its split follow measured cost, and does the costliest unit split?
 7. Does it need to run on every push? Gate it on the `changes` job, or let it reuse its pass, when its inputs seldom change.
 8. Does the change touch a file that a cache's key covers, without changing what the cache holds? Keep test-only code in the tests, outside the key. A list that two shader tests shared from the shader library changed the compiler's stamp, and every shader had to compile again, on the Mac and in CI ([D-218](decisions/D-218-efficient-ci-jobs.md)).
+9. When it hands files to other jobs, does the artifact's compression suit them? An artifact that many jobs download keeps the default level. The fastest level suits one large upload that the critical path waits for and that a few jobs download, such as `load-pages` ([D-218](decisions/D-218-efficient-ci-jobs.md)).
 
 How to review a run:
 
