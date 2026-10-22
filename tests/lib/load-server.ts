@@ -18,7 +18,7 @@ import {
 	ISOLATION_HEADERS,
 	immutableAssetsMiddleware,
 } from '../../packages/vite-plugin/src/index.ts';
-import { secondsSince } from '../../tools/lib/build-cache.ts';
+import { acquirePageBuildLock, secondsSince } from '../../tools/lib/build-cache.ts';
 import {
 	type DownloadedFile,
 	type Downloads,
@@ -39,8 +39,9 @@ export const BENCH_PAGES_DIR = join(REPO_ROOT, 'target/bench-pages');
 /** The Vite config of the benchmark pages' build, from a copy of the repository's root. */
 const BENCH_CONFIG = 'bench/vite.pages.config.ts';
 
-/** Runs `vite build` in the repository copy at `root`, with `env` added. */
+/** Runs `vite build` in the repository copy at `root`, with `env` added, under the page build lock. */
 function viteBuild(root: string, args: readonly string[], env: Record<string, string> = {}): void {
+	const release = acquirePageBuildLock();
 	const build = spawnSync('bunx', ['vite', 'build', ...args], {
 		cwd: root,
 		encoding: 'utf8',
@@ -49,6 +50,7 @@ function viteBuild(root: string, args: readonly string[], env: Record<string, st
 		maxBuffer: 256 << 20,
 		env: { ...process.env, ...env },
 	});
+	release();
 	if (build.status !== 0)
 		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
 }
