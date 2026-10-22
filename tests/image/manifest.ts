@@ -2142,6 +2142,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold,
 		size: [480, 270] as const,
 	})),
+	// Cluster levels: a heightfield of 32,768 triangles that the asset tool cut into a tree of
+	// patches. The camera looks along the ground, so the near edge draws fine patches and the far
+	// edge coarse ones, in one draw for the whole mesh. The second test stands farther back, where
+	// every patch that draws is coarser.
+	{
+		name: 'cluster',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
+		hold: 0,
+		size: [480, 270] as const,
+	},
+	{
+		name: 'cluster-far',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?d=70',
+		hold: 0,
+		size: [480, 270] as const,
+	},
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
 	// each of three switch distances. Every GPU path must draw the first path's image, so each
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
