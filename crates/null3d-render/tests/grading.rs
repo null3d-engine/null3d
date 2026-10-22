@@ -223,3 +223,64 @@ fn a_3d_texture_refuses_images_and_sizes_past_the_webgl2_limit() {
     assert!(textures.set_image(table, 4, 4, 0).is_err());
     assert_eq!(textures.ready_volume(table), None);
 }
+
+/// The binding of the built-in grading table in the final pass's group.
+const GRADE_BINDING: u32 = 13;
+
+/// The texture that the final pass's group binds as its built-in grading table in a frame, when
+/// the frame makes the group.
+fn bound_grade(commands: &[(Op, Vec<u32>)]) -> Option<u32> {
+    let group = operands(commands, Op::CreateBindGroup)
+        .into_iter()
+        .find(|o| o[1] == layout::FINAL)?;
+    let entry = group[3..].chunks(5).find(|e| e[0] == GRADE_BINDING)?;
+    Some(entry[2])
+}
+
+fn check_grade<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = device();
+    let first = world.step(&mut mock, true);
+    let blank = bound_grade(&first).expect("the first frame binds a blank grading table");
+    // The blank color grading table serves both tables while the sketch sets none.
+    assert_eq!(
+        blank,
+        bound_table(&first).expect("the blank table serves both bindings")
+    );
+
+    // A baked table grades from the frame after its texels reach the GPU, and it binds in place of
+    // the blank one.
+    let textures = world.renderer.settings_mut().textures_mut();
+    let table = textures
+        .create_volume(32, 32, 32, format::RGBA16_FLOAT)
+        .unwrap();
+    textures.set_data(table, 32, 32).unwrap().0.fill(0);
+    world.renderer.settings_mut().set_grade(Some(table));
+    world.step(&mut mock, false);
+    let graded = bound_grade(&world.step(&mut mock, false)).expect("the frame makes the group");
+    assert_ne!(graded, blank);
+
+    // New texels that wait to upload leave the pass reading the table that is already on the GPU.
+    let textures = world.renderer.settings_mut().textures_mut();
+    textures.set_data(table, 32, 32).unwrap().0.fill(0);
+    assert_eq!(
+        textures.ready_volume(table),
+        None,
+        "the new texels queue for upload"
+    );
+    assert!(
+        textures.held_volume(table).is_some(),
+        "the texels on the GPU still serve the pass"
+    );
+
+    // A table that the sketch turns off binds the blank one again.
+    world.renderer.settings_mut().set_grade(None);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(bound_grade(&commands), Some(blank));
+}
+
+#[test]
+fn a_built_in_grading_table_binds_once_its_texels_reach_the_gpu() {
+    let (webgpu, webgl2) = worlds(format::RGBA16_FLOAT);
+    check_grade(webgpu);
+    check_grade(webgl2);
+}

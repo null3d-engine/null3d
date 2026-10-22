@@ -303,6 +303,9 @@ struct TextureSlot {
     owner: Handle,
     /// The last frame that a view saw an object that maps the texture, from the budget's estimate.
     seen: u32,
+    /// The array's generation in which the texture's texels last reached the GPU, or `None` before
+    /// the first upload. A new generation replaces the GPU texture, so the texels must arrive again.
+    shown: Option<u32>,
     /// The largest levels that no view needs, from the budget's estimate: up to
     /// [`budget::MAX_DROPPED_LEVELS`].
     unneeded: u32,
@@ -329,6 +332,7 @@ impl TextureSlot {
             incoming: Handle::NONE,
             owner: Handle::NONE,
             seen: 0,
+            shown: None,
             unneeded: 0,
             pixels: 0.0,
         }
@@ -338,6 +342,13 @@ impl TextureSlot {
     fn full_levels(&self) -> u32 {
         self.levels + self.dropped
     }
+    /// True for a texture whose texels reached the GPU in the array's current generation, so its
+    /// GPU texture holds them even while newer texels wait to upload: a grading table that a later
+    /// bake replaces keeps the picture graded until the new texels land.
+    fn shown_now(&self, generation: u32) -> bool {
+        self.shown == Some(generation)
+    }
+
     /// The mip levels of the texture at `width` x `height`: a whole chain that the GPU makes, or
     /// the levels that the texels bring, at most the chain of that size.
     fn mips(&self, width: u32, height: u32) -> u32 {
@@ -1558,6 +1569,16 @@ impl TextureStore {
         })
     }
 
+    /// The GPU id of a 3D texture whose texels reached the GPU in its array's current generation,
+    /// even while newer texels wait to upload. A picture that reads a table this way keeps the old
+    /// table until the new one lands, instead of losing the table for a frame or two.
+    pub fn held_volume(&self, texture: Handle) -> Option<u32> {
+        let slot = self.slot(texture).ok()?;
+        let array = &self.arrays[slot.array as usize];
+        (array.key.kind == Kind::Volume && slot.shown_now(array.generation))
+            .then(|| self.array_id(slot.array))
+    }
+
     /// The GPU id of a cube texture and its mip levels, once its texels are on the GPU.
     pub fn ready_cube(&self, texture: Handle) -> Option<(u32, u32)> {
         let slot = self.slot(texture).ok()?;
@@ -2173,6 +2194,8 @@ impl TextureStore {
                     });
                 }
                 self.layers_changed = true;
+                self.textures[index as usize].shown =
+                    Some(self.arrays[slot.array as usize].generation);
                 State::Uploaded {
                     source,
                     released_in: 0,

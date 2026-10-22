@@ -967,6 +967,9 @@ pub struct SceneSettings {
     fog_halvings: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
+    /// The built-in grading table's texture while the sketch sets grading values. A job worker
+    /// baked the values into it.
+    grade: Option<Handle>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
     /// The sharpening's strength while the sketch turns it on, from 0 for off to 1 for the most.
@@ -1130,6 +1133,7 @@ impl SceneSettings {
             fog_slices: fog_volume::SLICE_COUNTS[1],
             fog_halvings: 0,
             lut: None,
+            grade: None,
             vignette: None,
             sharpen: None,
             environment: None,
@@ -1812,6 +1816,14 @@ impl SceneSettings {
         self.lut = lut;
     }
 
+    /// Grades the canvas color with the built-in grading table in 3D texture `texture`, or with
+    /// none with `None`, from the next recorded frame on. A job worker bakes the sketch's grading
+    /// values into the table's texels. The pass keeps the table's last texels on the GPU while a
+    /// later bake uploads, so changing the values leaves no frame ungraded.
+    pub fn set_grade(&mut self, texture: Option<Handle>) {
+        self.grade = texture;
+    }
+
     /// Turns the vignette on with its settings, or off with `None`, from the next recorded frame
     /// on.
     pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
@@ -1994,8 +2006,12 @@ impl SceneSettings {
             let (scale, offset) = lut.placement(size);
             Some((texture, scale, offset))
         });
+        let grade = self
+            .grade
+            .and_then(|texture| self.textures.held_volume(texture));
         Grading {
             lut,
+            grade,
             vignette: self.final_vignette(),
             sharpen: self.sharpen(),
         }

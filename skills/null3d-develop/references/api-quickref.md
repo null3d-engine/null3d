@@ -578,7 +578,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `grading`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
@@ -591,6 +591,8 @@ post.set({
   ssr: { maxDistance: 50, thickness: 0.5 },  // (0.2) smooth opaque surfaces reflect the screen in place of the environment; intensity, maxRoughness (0.5) too; false turns it off
   dof: { aperture: 1.8, focusPoint: [0, 1, 0] },  // (0.2) a camera lens: f-number, focusDistance or a world point, focalLength ('camera'), maxBlur, blades; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut or lutFromData, or false; LUTPass's meanings
+  grading: { whiteBalance: { temperature: 5000 }, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1.04, 1.0, 0.94],
+             saturation: 0.9, splitToning: { shadows: '#3a4a7a', highlights: '#f0c088', balance: 0, strength: 0.25 } },  // (0.3) a colorist's controls baked into a table by a job worker; false turns it off
   vignette: { intensity: 1, size: 1 },   // (0.2) darkens HDR color before the tone curve; falloff (2) and roundness (0) too; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
