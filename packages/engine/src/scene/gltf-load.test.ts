@@ -86,17 +86,24 @@ test('a level copies its vertices when any attribute names another accessor', ()
 	expect(sharesVertices(primitive(ACCESSORS, draco), primitive(ACCESSORS, draco))).toBe(false);
 });
 
-test('a level copies its vertices when its base morphs, skins or has no indices', () => {
+test('a level of a skinned mesh shares the vertices that the skin moves', () => {
+	// Both primitives name the same joints and weights, so the skin moves one set of vertices.
+	const skinned = { ...ACCESSORS, JOINTS_0: 7, WEIGHTS_0: 8 };
+	const base = primitive(skinned, {
+		joints: { array: new Uint8Array(16), normalized: false },
+		weights: { array: new Float32Array(16), normalized: false },
+	});
+	const level = primitive(skinned, {
+		joints: { array: new Uint8Array(16), normalized: false },
+		weights: { array: new Float32Array(16), normalized: false },
+	});
+	expect(sharesVertices(level, base)).toBe(true);
+});
+
+test('a level copies its vertices when its base morphs or has no indices', () => {
 	const base = primitive();
 	expect(
 		sharesVertices(primitive(), { ...base, morph: { positions: [new Float32Array(12)] } }),
-	).toBe(false);
-	expect(
-		sharesVertices(primitive(), {
-			...base,
-			joints: { array: new Uint8Array(16), normalized: false },
-			weights: { array: new Float32Array(16), normalized: false },
-		}),
 	).toBe(false);
 	// No normals on either: the engine computes normals per mesh, which differ.
 	expect(

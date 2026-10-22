@@ -2107,7 +2107,14 @@ impl SceneSettings {
                 Some(_) => {}
             }
         }
-        self.levels.set(base, meshes, errors, materials, fades)
+        // A level that draws the base mesh's vertices may also draw a skinned object: the skin
+        // moves those vertices whichever level names them.
+        let shares = |mesh: u32| {
+            mesh.checked_sub(1)
+                .is_some_and(|level| self.meshes.shares_vertices_with(level, base - 1))
+        };
+        let shared = !meshes.is_empty() && meshes.iter().all(|&mesh| shares(mesh));
+        self.levels.set(base, meshes, errors, materials, fades, shared)
     }
 
     /// Takes the levels away from the meshes that are no longer live, and from the meshes whose

@@ -461,10 +461,9 @@ export function sharesVertices(
 	const one = level.accessors;
 	const other = base.accessors;
 	if (one === undefined || other === undefined) return false;
-	// The engine draws no level of a morphed or skinned mesh yet, and a level that shared posed
-	// vertices would need the base's poses.
-	if (base.morph !== undefined || base.joints !== undefined || base.normals === undefined)
-		return false;
+	// A level carries no morph targets, so a morphed base keeps copies. A skinned base shares them:
+	// its skin moves the same vertices whichever level names them.
+	if (base.morph !== undefined || base.normals === undefined) return false;
 	return ATTRIBUTE_NAMES.every((name) => one[name] === other[name]);
 }
 
@@ -596,7 +595,7 @@ async function buildPrefab(
 		const visible = n.visible !== false;
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
-		if (n.levels && !n.skinned)
+		if (n.levels)
 			setFileLevels(
 				made,
 				n.levels,

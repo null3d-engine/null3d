@@ -317,6 +317,12 @@ impl MeshStorage {
         &self.pages
     }
 
+    /// True when the live mesh `level` draws the vertices of the live mesh `base` from indices of
+    /// its own: a level that [`MeshStorage::add_level`] added over that base.
+    pub fn shares_vertices_with(&self, level: u32, base: u32) -> bool {
+        self.mesh(level).is_some_and(|slot| slot.base == Some(base))
+    }
+
     /// The live mesh with id `id`.
     pub fn mesh(&self, id: u32) -> Option<&MeshSlot> {
         self.meshes
@@ -643,7 +649,7 @@ impl MeshStorage {
             .get(base as usize)
             .filter(|_| self.live.get(base as usize) == Some(&true))
             .ok_or(MeshError::UnknownMesh)?;
-        if slot.part_count != 1 || slot.sources != 0 || slot.joints != 0 || slot.targets != 0 {
+        if slot.part_count != 1 || slot.sources != 0 || slot.targets != 0 {
             return Err(MeshError::SharedUnavailable);
         }
         let part = self.parts[slot.first_part as usize];
@@ -688,8 +694,10 @@ impl MeshStorage {
             part_count: 1,
             vertex_count: slot.vertex_count,
             radius: slot.radius,
-            joints: 0,
-            first_sphere: 0,
+            // The level draws the base's vertices, so it reads the base's joint spheres too: a
+            // skinned object's level follows the pose that the base's skin gives those vertices.
+            joints: slot.joints,
+            first_sphere: slot.first_sphere,
             targets: 0,
             first_reach: 0,
             first_texel: 0,
@@ -739,7 +747,10 @@ impl MeshStorage {
             }
             let mesh = self.meshes[id as usize];
             Gaps::add(&mut parts, mesh.first_part, mesh.part_count);
-            Gaps::add(&mut spheres, mesh.first_sphere, mesh.joints);
+            // A level's joint spheres are its base's, which stay while the base lives.
+            if mesh.base.is_none() {
+                Gaps::add(&mut spheres, mesh.first_sphere, mesh.joints);
+            }
             Gaps::add(&mut reaches, mesh.first_reach, mesh.targets);
             Gaps::add(&mut texels, mesh.first_texel, mesh.texels);
             sources.add(mesh.first_source, mesh.sources);
@@ -1320,6 +1331,52 @@ mod tests {
             storage.add_level(base, &grid.indices[..6]),
             Err(MeshError::SharedUnavailable)
         );
+    }
+
+    /// A skinned column of `rings` rings, its vertices naming the joint of their ring.
+    fn skinned_column(rings: usize) -> Geometry {
+        let format = vertex::JOINTS | vertex::WEIGHTS;
+        let mut g = Geometry {
+            format,
+            ..Geometry::default()
+        };
+        for ring in 0..rings {
+            for [x, z] in [[0.5, 0.0], [-0.5, 0.0], [0.0, 0.5], [0.0, -0.5]] {
+                for v in [x, ring as f32, z, 0.0, 1.0, 0.0] {
+                    g.vertices.extend_from_slice(&f32::to_le_bytes(v));
+                }
+                g.vertices.extend_from_slice(&[ring as u8, 0, 0, 0]);
+                for w in [1.0f32, 0.0, 0.0, 0.0] {
+                    g.vertices.extend_from_slice(&w.to_le_bytes());
+                }
+            }
+        }
+        g.indices = vec![0, 1, 2];
+        g
+    }
+
+    #[test]
+    fn a_level_of_a_skinned_base_keeps_its_joint_spheres_and_they_stay_while_it_lives() {
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let geometry = skinned_column(3);
+        let base = storage.add(&geometry).unwrap();
+        let base_slot = *storage.mesh(base).unwrap();
+        assert_eq!(base_slot.joints, 3);
+        let level = storage.add_level(base, &geometry.indices).unwrap();
+        let level_slot = *storage.mesh(level).unwrap();
+        assert!(storage.shares_vertices_with(level, base));
+        assert!(!storage.shares_vertices_with(base, level));
+        // The level reads the base's spheres, so a skinned draw poses its vertices.
+        assert_eq!(level_slot.joints, base_slot.joints);
+        assert_eq!(level_slot.first_sphere, base_slot.first_sphere);
+        assert_eq!(
+            storage.joint_spheres(&level_slot).len(),
+            storage.joint_spheres(&base_slot).len()
+        );
+        // Taking the level out frees no sphere of the base's.
+        storage.remove(&[level]);
+        let live_base = storage.mesh(base).unwrap();
+        assert_eq!(storage.joint_spheres(live_base).len(), 3);
     }
 
     #[test]

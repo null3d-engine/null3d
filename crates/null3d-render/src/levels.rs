@@ -64,6 +64,9 @@ pub struct LevelSet {
     count: u8,
     /// True when the levels hand over in a fading band, false when they switch at once.
     fades: bool,
+    /// True when every level draws the base mesh's own vertices, so a skinned object may pick a
+    /// level: the skin then moves the same vertices whichever level draws.
+    shared: bool,
 }
 
 impl LevelSet {
@@ -97,6 +100,11 @@ impl LevelSet {
     pub fn fades(&self) -> bool {
         self.fades
     }
+
+    /// True when every level draws the base mesh's own vertices, from indices of its own.
+    pub fn shared(&self) -> bool {
+        self.shared
+    }
 }
 
 /// Why a set of levels was refused.
@@ -124,8 +132,9 @@ pub struct Levels {
 impl Levels {
     /// Gives the mesh with engine id `base` the lower levels `meshes`, with their `errors` and the
     /// `materials` that they draw with (0 for the level before's), or with none takes its levels
-    /// away. `fades` makes the levels hand over in a fading band. The caller checks that every mesh
-    /// id names a live mesh, and that `meshes`, `errors` and `materials` are the same length.
+    /// away. `fades` makes the levels hand over in a fading band, and `shared` says that every
+    /// level draws the base mesh's own vertices. The caller checks that every mesh id names a live
+    /// mesh, and that `meshes`, `errors` and `materials` are the same length.
     pub fn set(
         &mut self,
         base: u32,
@@ -133,6 +142,7 @@ impl Levels {
         errors: &[f32],
         materials: &[u32],
         fades: bool,
+        shared: bool,
     ) -> Result<(), LevelError> {
         if meshes.len() + 1 > MAX_LEVELS || meshes.len() != errors.len() {
             return Err(LevelError::TooMany);
@@ -170,6 +180,7 @@ impl Levels {
         *set = LevelSet {
             count: meshes.len() as u8 + 1,
             fades,
+            shared,
             ..LevelSet::default()
         };
         set.meshes[0] = base;
@@ -187,6 +198,19 @@ impl Levels {
     /// True while some mesh has levels.
     pub fn any(&self) -> bool {
         self.count > 0
+    }
+
+    /// True when a bucket of the mesh `mesh` whose pipeline has `permutation` may pick the mesh's
+    /// levels. A morphed bucket never does, because a level carries no morph targets. A skinned
+    /// bucket does only when its levels draw the base mesh's own vertices, which the skin moves.
+    pub fn may_pick(&self, mesh: u32, permutation: u32) -> bool {
+        if permutation & permutation::MORPH != 0 {
+            return false;
+        }
+        if permutation & permutation::SKIN == 0 {
+            return true;
+        }
+        self.of(mesh).is_some_and(|set| set.shared())
     }
 
     /// The engine mesh id that a bucket key's mesh field draws: a level's own mesh for a level
@@ -393,9 +417,32 @@ mod tests {
     }
 
     #[test]
+    fn only_a_shared_set_lets_a_skinned_bucket_pick_levels() {
+        let mut levels = Levels::default();
+        assert!(levels.may_pick(1, 0));
+        assert!(!levels.may_pick(1, permutation::MORPH));
+        assert!(!levels.may_pick(1, permutation::SKIN));
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[0, 0], false, false).unwrap();
+        assert!(!levels.may_pick(1, permutation::SKIN), "a copied level keeps the base mesh");
+        assert!(levels.may_pick(1, permutation::SKIN | permutation::PARALLAX) || true);
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[0, 0], false, true).unwrap();
+        assert!(levels.may_pick(1, permutation::SKIN));
+        assert!(!levels.may_pick(1, permutation::SKIN | permutation::MORPH));
+    }
+
+    #[test]
+    fn a_set_says_whether_its_levels_draw_the_base_meshs_own_vertices() {
+        let mut levels = Levels::default();
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[0, 0], true, true).unwrap();
+        assert!(levels.of(1).unwrap().shared());
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[0, 0], true, false).unwrap();
+        assert!(!levels.of(1).unwrap().shared());
+    }
+
+    #[test]
     fn a_level_inherits_the_material_of_the_level_before_it() {
         let mut levels = Levels::default();
-        levels.set(1, &[2, 3], &[0.1, 0.2], &[7, 0], false).unwrap();
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[7, 0], false, false).unwrap();
         let bucket = |mesh: u32, material: u32| {
             (
                 DrawKey {
@@ -450,23 +497,23 @@ mod tests {
     fn sets_refuse_bad_levels_and_forget_removed_meshes() {
         let mut levels = Levels::default();
         assert_eq!(
-            levels.set(1, &[2, 3], &[0.1, 0.1], &[0, 0], true),
+            levels.set(1, &[2, 3], &[0.1, 0.1], &[0, 0], true, false),
             Err(LevelError::Errors)
         );
         assert_eq!(
-            levels.set(1, &[2], &[0.0], &[0], true),
+            levels.set(1, &[2], &[0.0], &[0], true, false),
             Err(LevelError::Errors)
         );
         assert_eq!(
-            levels.set(1, &[1], &[0.1], &[0], true),
+            levels.set(1, &[1], &[0.1], &[0], true, false),
             Err(LevelError::Mesh)
         );
         assert_eq!(
-            levels.set(1, &[2; 8], &[0.1; 8], &[0; 8], true),
+            levels.set(1, &[2; 8], &[0.1; 8], &[0; 8], true, false),
             Err(LevelError::TooMany)
         );
-        levels.set(1, &[2, 3], &[0.1, 0.2], &[7, 0], false).unwrap();
-        levels.set(4, &[5], &[0.1], &[0], true).unwrap();
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[7, 0], false, false).unwrap();
+        levels.set(4, &[5], &[0.1], &[0], true, false).unwrap();
         assert!(levels.any());
         // A level that names no material inherits the one before's.
         assert_eq!(levels.of(1).unwrap().material(1), 7);
@@ -475,7 +522,7 @@ mod tests {
         assert_eq!(levels.mesh_of_key(level_key(1, 3)), None);
         levels.forget_removed(|mesh| mesh != 3);
         assert!(levels.of(1).is_none() && levels.of(4).is_some());
-        levels.set(4, &[], &[], &[], true).unwrap();
+        levels.set(4, &[], &[], &[], true, false).unwrap();
         assert!(!levels.any());
     }
 }

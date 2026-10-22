@@ -461,11 +461,11 @@ impl Layout {
         collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
             batch_key(batch)
         });
-        // A skinned or morphed object draws its base level: it skins and morphs in the vertex
-        // shader, from vertices that the levels do not have.
-        let eligible =
-            |key: &BucketKey| key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0;
+        // A morphed object draws its base level: a level carries no morph targets. A skinned
+        // object may pick one when every level of its set draws the base mesh's own vertices, which
+        // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
+        let eligible = |key: &BucketKey| levels.may_pick(key.3, key.0.permutation);
         // A level may name a material of its own, so its bucket key comes from the level's mesh and
         // material, while it keeps the fields of the bucket that names it: its group, and the
         // object's receive-shadows bit, which the base key's pipeline holds.
@@ -490,6 +490,10 @@ impl Layout {
                 object,
                 None,
             )?;
+            // The level draws the vertices that its base key's skin moves, so it keeps the
+            // skin and morph bits that the scene gave that key.
+            bucket.0.permutation |=
+                key.0.permutation & (permutation::SKIN | permutation::MORPH);
             bucket.3 = level_key(base, level);
             Some(bucket)
         };
