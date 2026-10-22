@@ -134,6 +134,7 @@ import {
 	Material,
 	type MeshGeometry,
 	materialValueComponents,
+	type ShaderOptions,
 } from './resources';
 import { quaternionLookAt } from './rotation';
 import type {
@@ -147,6 +148,7 @@ import type {
 } from './sprites';
 import { Texture } from './textures';
 import { type RowField, UnmarkedRows, UnmarkedWrites } from './unmarked-writes';
+import { VertexDraw, type VertexDrawOptions } from './vertex-draws';
 
 /**
  * A vector (x, y, z).
@@ -2604,6 +2606,27 @@ export class InstanceBatch implements ViewHolder {
 	}
 
 	/**
+	 * Gives every row's bounding sphere the radius `radius`, in meters, in place of the mesh's own
+	 * radius, which culling tests. The spheres stay centered on their rows. A vertex shader that
+	 * carries rows away from their origins, such as traffic along a lane, needs this: the engine
+	 * culls a row moved beyond the mesh's own radius while it is still on the screen. A later change
+	 * of the mesh's radius, which a displaced material makes, replaces it. Every row is marked for
+	 * update. Throws E1203 for a value that is not a finite number, and E1108 for 0 or below.
+	 */
+	setBoundingRadius(radius: number): void {
+		if (DEV) {
+			checkNumber('setBoundingRadius', 'radius', radius, this);
+			if (radius <= 0)
+				throw new EngineError(
+					'E1108',
+					`setBoundingRadius() got the radius ${radius} on ${this.describe()}, not a number above 0.`,
+				);
+		}
+		const { core } = this.scene;
+		core.check(core.glue.setBatchBounds(this.id, radius), 'setBoundingRadius', undefined, true);
+	}
+
+	/**
 	 * Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A
 	 * new mask needs no rebuild.
 	 */
@@ -3291,8 +3314,12 @@ export class Scene implements ViewHolder {
 	private readonly spriteQuads = new Map<string, MeshGeometry>();
 	/** @internal The particle buffers in the scene. */
 	particleBuffers = 0;
+	/** @internal The draws that make their own vertices. */
+	vertexDraws = 0;
 	/** The one triangle that particle buffers' objects draw with, made with the first buffer. */
 	private particleMesh: MeshGeometry | undefined;
+	/** The one triangle that such draws' objects hold, made with the first draw. */
+	private vertexDrawMesh: MeshGeometry | undefined;
 	/** The segment mesh of line batches, which every line batch shares, made with the first. */
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
@@ -4452,6 +4479,111 @@ export class Scene implements ViewHolder {
 		instances.face = batch;
 		if (layers !== undefined) batch.setLayers(layers);
 		return [sprites, batch, instances];
+	}
+
+	/**
+	 * A draw that has a custom material and a vertex count but no mesh data: its shader makes every
+	 * vertex of every copy from `@builtin(vertex_index)` and `@builtin(instance_index)`, so a draw
+	 * of 50,000 rain streaks uploads nothing in a frame. The draw's object gives its place, its
+	 * layers and the sphere that culls it, and the material's values move its shapes.
+	 *
+	 * The draw blends, so it draws in the transparent pass. The options take every option of
+	 * `materials.shader` but the maps: a draw's WGSL declares no texture. The draw's culling sphere
+	 * holds every shape, or a shape that leaves it stops drawing. A draw that uses the camera's
+	 * position, such as rain around the camera, reads it in its WGSL, and `null3d::wrap` wraps a
+	 * position relative to the camera into a box.
+	 *
+	 * Throws E1108 for a count or a sphere that the draw cannot take, or when the scene holds the
+	 * most draws already, E1215 for WGSL that the plugin did not compile as a draw shader, and
+	 * E1217 for a texture or an alpha mode that a draw does not take.
+	 */
+	createVertexDraw<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
+		options: VertexDrawOptions<Wgsl>,
+	): VertexDraw<Wgsl> {
+		const call = 'createVertexDraw';
+		const { makers, core } = this;
+		const {
+			shader,
+			vertices,
+			instances,
+			bounds,
+			position,
+			rotation,
+			scale,
+			layers,
+			alphaMode,
+			...materialOptions
+		} = options as VertexDrawOptions<Wgsl> & { alphaMode?: AlphaMode };
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		// A draw computes its vertices, so its WGSL has the draw shader's entry points, which the
+		// plugin compiles as a custom material that reads no vertex buffer.
+		if (typeof shader !== 'object' || shader.kind !== 'material' || shader.meshless !== true)
+			throw new EngineError(
+				'E1215',
+				`${call}() got WGSL that is not a draw shader. Give it one @vertex entry point that takes the vertex and instance indices, as @builtin(vertex_index) and @builtin(instance_index), and one @fragment entry point.`,
+			);
+		if (alphaMode !== undefined && alphaMode !== 'blend')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the alpha mode '${alphaMode}'. A draw blends, so its material draws in the transparent pass, where its sphere culls it.`,
+			);
+		if (materialOptions.blending === 'weighted')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the weighted blending. A draw blends in the transparent pass, so it takes 'normal', 'additive' or 'multiply'.`,
+			);
+		const mostVertices = C.VERTEX_DRAW_MAX_VERTICES;
+		const mostInstances = C.VERTEX_DRAW_MAX_INSTANCES;
+		if (!Number.isInteger(vertices) || vertices < 1 || vertices > mostVertices)
+			throw new EngineError(
+				'E1108',
+				`${call}() got ${vertices} vertices. A draw makes from 1 to ${mostVertices} vertices for each copy.`,
+			);
+		if (!Number.isInteger(instances) || instances < 1 || instances > mostInstances)
+			throw new EngineError(
+				'E1108',
+				`${call}() got ${instances} copies. A draw makes from 1 to ${mostInstances} copies of its shape.`,
+			);
+		if (bounds === undefined || !(bounds.radius > 0) || !Number.isFinite(bounds.radius))
+			throw new EngineError(
+				'E1108',
+				`${call}() got the sphere radius ${bounds?.radius}. Give the bounds, with the radius that holds every shape of the draw, above 0.`,
+			);
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if (this.vertexDraws >= C.VERTEX_DRAW_MAX_DRAWS)
+			throw new EngineError(
+				'E1108',
+				`${call}() found ${C.VERTEX_DRAW_MAX_DRAWS} draws in the scene, the most it holds. Destroy one first.`,
+			);
+		const material = makers.materials.shader({
+			...(materialOptions as Omit<ShaderOptions<Wgsl>, 'wgsl'>),
+			// The check above narrowed the value to an object; the option keeps the caller's type.
+			wgsl: shader as Wgsl,
+			alphaMode: 'blend',
+		});
+		this.vertexDrawMesh ??= makers.geometry.fromArrays({
+			positions: new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]),
+			normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+			indices: [0, 1, 2],
+		});
+		const object = this.createMesh({
+			mesh: this.vertexDrawMesh,
+			material,
+			position,
+			rotation,
+			scale,
+			layers,
+		});
+		let id: number;
+		try {
+			id = core.checkGrowth(core.glue.createVertexDraw(object.slot, vertices, instances), call);
+		} catch (error) {
+			object.destroy();
+			throw error;
+		}
+		this.vertexDraws++;
+		const draw = new VertexDraw(core, id, object, material, call, vertices, instances);
+		return draw.setBounds(bounds.center ?? [0, 0, 0], bounds.radius);
 	}
 
 	/**

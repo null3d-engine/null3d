@@ -1560,6 +1560,21 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     })
 }
 
+/// Gives every row of a batch a bounding sphere of `radius` meters around its own origin, in place
+/// of the mesh's own radius. A vertex shader that carries rows away from their origins, such as
+/// traffic along a lane, needs this, or culling drops rows that are still on the screen. Every row
+/// is marked for update, so the next frame writes its new sphere.
+#[wasm_bindgen(js_name = setBatchBounds)]
+pub fn set_batch_bounds(batch: u32, radius: f32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_local_radius(radius);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
 /// Sets whether every row of a batch casts shadows and receives them, from the cast and receive
 /// bits of an object's flags. Sprite and line batches take neither. The renderer's tables depend on
 /// the bits, so a change rebuilds them, as an object's new flags do.
@@ -3414,21 +3429,23 @@ pub fn has_levels() -> u32 {
 }
 
 /// Gives mesh `base`, by its id that counts from 1, the `count` lower levels of detail whose mesh
-/// ids, then whose errors as the bits of 32-bit floats, the staging words hold, from the most
-/// detailed down. With `count` 0 the mesh loses its levels. `fades` lets two levels hand over in a
-/// fading band. The next frame rebuilds the draw tables. Fails with the problem for levels that the
-/// mesh cannot take.
+/// ids, then whose errors as the bits of 32-bit floats, then whose material ids, the staging words
+/// hold, from the most detailed down. A material of 0 draws the level with the level before's.
+/// With `count` 0 the mesh loses its levels. `fades` lets two levels hand over in a fading band.
+/// The next frame rebuilds the draw tables. Fails with the problem for levels that the mesh cannot
+/// take.
 #[wasm_bindgen(js_name = setMeshLevels)]
 pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
     with_engine(|e| {
         let count = count as usize;
-        if e.staging.len() < 2 * count {
+        if e.staging.len() < 3 * count {
             return render_failure(
                 render_detail::BAD_LEVELS,
                 constants::level_problem::TOO_MANY,
             );
         }
-        let (meshes, errors) = e.staging[..2 * count].split_at(count);
+        let (meshes, rest) = e.staging[..3 * count].split_at(count);
+        let (errors, materials) = rest.split_at(count);
         let mut floats = [0.0f32; null3d_render::levels::MAX_LEVELS];
         let Some(floats) = floats.get_mut(..count) else {
             return render_failure(
@@ -3442,7 +3459,7 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
         let set = e
             .renderer
             .settings_mut()
-            .set_mesh_levels(base, meshes, floats, fades);
+            .set_mesh_levels(base, meshes, floats, materials, fades);
         match set {
             Ok(()) => {
                 e.structure_changed = true;
@@ -3585,6 +3602,44 @@ pub fn mark_particle_records(id: u32, start: u32, count: u32) -> u32 {
 pub fn mark_particle_values(id: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().particles_mut().mark_values(id);
+        0
+    })
+}
+
+/// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
+/// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
+/// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
+/// data and no per-instance data reach the GPU.
+#[wasm_bindgen(js_name = createVertexDraw)]
+pub fn create_vertex_draw(slot: u32, vertices: u32, instances: u32) -> u32 {
+    value_with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .vertex_draws_mut()
+            .create(slot, vertices, instances)
+            .map_err(|_| out_of_memory(0))
+    })
+}
+
+/// Forgets a draw that makes its vertices from a vertex count. Its object draws nothing from then
+/// on.
+#[wasm_bindgen(js_name = destroyVertexDraw)]
+pub fn destroy_vertex_draw(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().vertex_draws_mut().destroy(id);
+        0
+    })
+}
+
+/// Sets the vertices of one shape and the number of its copies for a draw that makes its own
+/// vertices. A frame reads them, so the change uploads nothing.
+#[wasm_bindgen(js_name = setVertexDrawCounts)]
+pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .vertex_draws_mut()
+            .set_counts(id, vertices, instances);
         0
     })
 }

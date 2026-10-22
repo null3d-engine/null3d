@@ -365,13 +365,13 @@ describe('the GPU check of a pull request', () => {
 		expect(gpuCheckProblem([{ ...change, message: `${change.message}\n\n${check}` }])).toBeNull();
 	});
 
-	it('fails without a trailer, or with one only on an earlier commit', () => {
+	it('fails without a trailer, and takes one from any commit of the pull request', () => {
 		const change = commit('b2', 'fix(engine): sample each map directly', [shader]);
 		expect(gpuCheckProblem([change])).toContain(
 			'b2 fix(engine): sample each map directly changes how the GPU draws (crates/null3d-shaders/wgsl/lit.wgsl)',
 		);
 		const earlier = commit('a1', `perf(engine): a first try\n\n${check}`, [shader]);
-		expect(gpuCheckProblem([change, earlier])).toContain('neither it nor a later commit');
+		expect(gpuCheckProblem([change, earlier])).toBeNull();
 	});
 
 	it('fails a trailer that records no check', () => {

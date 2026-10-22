@@ -258,6 +258,21 @@ impl Transparent {
                 }
                 continue;
             }
+            // A vertex draw makes its vertices and its copies from its two counts, so it sets no
+            // vertex buffer and no index buffer. The next mesh draw binds its own.
+            if let Some(id) = bucket.vertex_draw() {
+                let (count, instances) = settings.vertex_draws().counts(id);
+                if count > 0 && instances > 0 {
+                    if pipeline != Some(bucket.pipeline) {
+                        list.push(Op::SetPipeline, &[bucket.pipeline])?;
+                        pipeline = Some(bucket.pipeline);
+                    }
+                    list.push(Op::Draw, &[count, instances, 0, 0])?;
+                    vertices = None;
+                    indices = None;
+                }
+                continue;
+            }
             let skinned = bucket.skinned_slot();
             let skins = skinned.is_some_and(|slot| skinning.skins_in_vertex_shader(slot));
             // A bucket whose material reads the scene's depth binds the group that its pass chose:
