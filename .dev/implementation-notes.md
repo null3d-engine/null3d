@@ -1228,6 +1228,28 @@ close it. The test suite compiles every variant of every generated module, so al
 are needed. And `shaders.ts` names every device module by URL, so a bundler copies all of them into
 every page's build whatever the page draws. Grouping those copies only defers the download.
 
+### A page build's memory follows its largest worker build
+
+Measured on 23 October 2026. The engine test page's production build peaked at 15.9 GB of resident
+memory. The page's own build of the shader graph costs 6.3 GB. One worker build of the same graph
+costs 15.0 GB when it runs in a process of its own, and the page build's peak is about that figure.
+Two worker builds do not add up, because Vite frees a worker's bundle when it ends. The set held
+5,962 files and 2.8 GB at that commit, and writing it adds nothing to the peak.
+
+Vite's worker plugin copies a worker's 5,566 device assets into the bundle of the build that
+triggered the worker. In the page build the page already holds those assets, so the duplicate check
+skips them. In a build of the worker alone the copy is made, which is why a child process does not
+lower the peak. The plugin therefore builds workers in the page build's process, as Vite does.
+
+The plugin's transform skips the device modules when it looks for sketch scripts. It treated
+`new URL('./shaders-<name>.js', import.meta.url)` inside a generated module as a possible sketch
+address and read each file in full to look for `defineSketch(`. That was a pass over 5,566 files and
+2.8 GB in every page build. A generated shader file is never a sketch, so the plugin now skips the
+address without reading the file.
+
+The set's own size lowers every copy at once, so the savings in the sections above also lower this
+peak.
+
 ## One core and one checkout
 
 - A page stops with E1402 when its engine core was built from other Rust sources than the checkout holds. The generated shader modules and the cores have separate caches. After a commit that changes Rust, run `bun run build` before any page test. The error names the missing function or the stamp.
