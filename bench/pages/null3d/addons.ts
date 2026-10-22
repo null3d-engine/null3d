@@ -3,7 +3,7 @@
 // cards, which pick the view each one shows from the camera in every frame. Each step takes the
 // camera's position in a typed array, as a game passes its camera's position.
 import type { SketchContext } from '@null3d/engine';
-import { createImpostors, octahedralAtlas } from '@null3d/impostors';
+import { createImpostors, encodeImpostorSurface, octahedralAtlas } from '@null3d/impostors';
 import { createTerrain, terrainTextures } from '@null3d/terrain';
 import { S1_BOB_HEIGHT, S1_EXTENT, S1_ORBIT } from '../../scenes/spec';
 
@@ -49,14 +49,16 @@ const IMPOSTOR_ROWS = 48;
 const CARD_SIZE = 6;
 
 /**
- * Adds a field of impostor cards on the ground around the swarm, from an atlas made in code whose
- * views each have a shade of their own, and returns the step that picks every card's view from the
- * camera's position in each frame.
+ * Adds a field of impostor cards on the ground around the swarm, from atlases made in code whose
+ * views each have a shade of their own. The cards blend the three nearest views and take their
+ * light from the surface atlas, so nothing runs in a frame.
  */
 export async function createImpostorField({
 	scene,
 	textures,
-}: SketchContext): Promise<(eye: Float64Array) => void> {
+	materials,
+	geometry,
+}: SketchContext): Promise<void> {
 	const atlas = octahedralAtlas(IMPOSTOR_VIEWS);
 	const width = atlas.columns * CELL_TEXELS;
 	const height = atlas.rows * CELL_TEXELS;
@@ -71,7 +73,20 @@ export async function createImpostorField({
 			const shade = 60 + ((view * 37) % 160);
 			data.set([shade * 0.4, shade, shade * 0.5, inside ? 255 : 0], (y * width + x) * 4);
 		}
+	// The surface of the same cells: every view faces the viewer, with no depth, and the cards cut
+	// the same outline out of it.
+	const surfaceData = new Uint8Array(width * height * 4);
+	const normal: [number, number, number] = [0, 0, 1];
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const across = Math.abs((x % CELL_TEXELS) + 0.5 - CELL_TEXELS / 2) / (CELL_TEXELS / 2);
+			const up = 1 - ((y % CELL_TEXELS) + 0.5) / CELL_TEXELS;
+			const inside = across < 1 - up;
+			const texel = encodeImpostorSurface(normal, 0, inside ? 1 : 0);
+			surfaceData.set(texel, (y * width + x) * 4);
+		}
 	const texture = textures.fromData({ width, height, data, colorSpace: 'srgb' });
+	const surface = textures.fromData({ width, height, data: surfaceData, colorSpace: 'linear' });
 	const count = IMPOSTOR_ROWS * IMPOSTOR_ROWS;
 	const positions = new Float32Array(count * 3);
 	const spacing = (2 * S1_ORBIT.radius) / IMPOSTOR_ROWS;
@@ -80,12 +95,15 @@ export async function createImpostorField({
 		positions[k * 3 + 1] = GROUND_TOP;
 		positions[k * 3 + 2] = (Math.floor(k / IMPOSTOR_ROWS) + 0.5) * spacing - S1_ORBIT.radius;
 	}
-	const field = await createImpostors(scene, {
-		texture,
-		atlas,
-		positions,
-		size: CARD_SIZE,
-		alphaMode: 'mask',
-	});
-	return (eye) => field.update(eye);
+	createImpostors(
+		{ scene, materials, geometry },
+		{
+			color: texture,
+			surface,
+			atlas,
+			positions,
+			size: CARD_SIZE,
+			alphaMode: 'mask',
+		},
+	);
 }
