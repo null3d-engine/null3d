@@ -248,6 +248,16 @@ export interface CoreGlue extends CoreErrors {
 	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/**
+	 * Sets the distances between which every row of a batch draws, from the first two call values:
+	 * its start distance and its end distance.
+	 */
+	setBatchDrawRange(batch: number): number;
+	/**
+	 * Makes a batch's array of row distance ranges, two floats per row, if it has none, and
+	 * returns its address. The rows start with the batch's range.
+	 */
+	reserveBatchRanges(batch: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
@@ -356,11 +366,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	destroyMeshes(count: number): number;
 	/**
-	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose errors as 32-bit
-	 * floats, `meshArrays`'s words hold, from the most detailed down. `fades` lets two levels hand
-	 * over in a fading band. With `count` 0 the mesh loses its levels. 0 for success.
+	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose switch values as
+	 * 32-bit floats, then whose switch measures, `meshArrays`'s words hold, from the most detailed
+	 * down. The bits of `fades`, from the base level, mark the levels that hand over in a fading
+	 * band. With `count` 0 the mesh loses its levels. 0 for success.
 	 */
-	setMeshLevels(base: number, count: number, fades: boolean): number;
+	setMeshLevels(base: number, count: number, fades: number): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -1054,6 +1065,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchDrawRange',
+	'reserveBatchRanges',
 	'setBatchLayers',
 	'setBatchShadows',
 	'markBatchDirty',

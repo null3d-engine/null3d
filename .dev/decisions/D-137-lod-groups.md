@@ -312,3 +312,11 @@ The core keeps one float for each object, which raises an object's row from 263 
 job workers read it beside each row's sphere. `cull.wgsl` reads it from the bucket record, which
 takes 14 words in place of 13. A record that holds 0 keeps the quality settings' threshold, so a
 test needs no bias.
+
+## Addendum: the fade rule and the distance bands (22 October 2026)
+
+D-211 builds the fade rule, the three switch measures and the distance bands that this record's
+addendum of 19 October 2026 asked for. It supersedes two statements above: the fade is no longer
+a setting for every band, and a distance or a coverage no longer becomes an error at a reference
+screen. A bucket record now holds 15 words, the measure joined the switch value, and the culling
+shader reads a source's distance range from a data texture.

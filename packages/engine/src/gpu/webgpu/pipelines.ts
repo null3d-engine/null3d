@@ -739,9 +739,9 @@ export class Pipelines {
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
-		// occluders, the cell offsets, and the first joint of each skinned source. Their history
-		// shares the buffer of the indirect draws, as eight storage buffers is all that every device
-		// allows a shader stage.
+		// occluders, the cell offsets, the first joint of each skinned source, and the distances
+		// between which each source draws. Their history shares the buffer of the indirect draws, as
+		// eight storage buffers is all that every device allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
@@ -754,6 +754,7 @@ export class Pipelines {
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 10, visibility: compute, texture: { sampleType: 'uint' } },
+			{ binding: 11, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.

@@ -476,8 +476,11 @@ mod ids {
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
     pub const SKIN_FIRSTS: u32 = BLANK_PASS_DEPTH + 1;
+    /// The start distance and the end distance of every source's distance range, which the
+    /// culling pass reads.
+    pub const INSTANCE_RANGES: u32 = SKIN_FIRSTS + 1;
     /// The two copies of the last frame's joint texture, one for each frame parity.
-    const LAST_JOINTS: u32 = SKIN_FIRSTS + 1;
+    const LAST_JOINTS: u32 = INSTANCE_RANGES + 1;
 
     pub const fn last_joints(copy: usize) -> u32 {
         LAST_JOINTS + copy as u32

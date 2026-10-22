@@ -4,10 +4,11 @@
 // nearest point, so the second copy lies inside the hand-over band at every preset.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
-// `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
-// `?mask` draws with a mask smoothed by alpha to coverage, as foliage does, which passes every
-// pixel, `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser level
-// than the copy itself, and `?hide` raises the threshold and places copies around the hide distance.
+// `?crisp` switches the levels at once, as a measured error does, `?mask` draws with a mask smoothed
+// by alpha to coverage, as foliage does, which passes every pixel, `?shadows` draws one large copy
+// in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide` raises the
+// threshold and places copies around the hide distance, and `?range` gives every copy a distance
+// band, with rows of copies around its start and its end.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -33,6 +34,11 @@ const HIDE_SIDES = [0.95, 1.03, 1.09];
 const ROWS = [0.55, -0.1, -0.6];
 /** The world radius of the base sphere, whose local radius is 1 at scale 1. */
 const RADIUS = 1;
+/** The start and the end of the distance band that `?range` gives every copy, in metres. */
+const BAND = [12, 30] as const;
+/** Each copy's nearest point as a share of the band's start and of its end. The first row holds a
+ * hidden copy, one inside the fade band and one past it; the second does the same at the end. */
+const BAND_SIDES = [0.9, 1.03, 1.12];
 
 /** A sphere of radius 1 in one color, with `segments` around and half as many from pole to pole. */
 function sphere(segments: number, color: Vec3): MeshArrays {
@@ -63,7 +69,8 @@ function sphere(segments: number, color: Vec3): MeshArrays {
 
 export default defineSketch(({ scene, geometry, materials, quality, engine }) => {
 	const shadows = params.has('shadows');
-	quality.set({ lodThreshold: THRESHOLD, lodFade: !params.has('crisp'), lodShadowFactor: 8 });
+	const crisp = params.has('crisp');
+	quality.set({ lodThreshold: THRESHOLD, lodShadowFactor: 8 });
 	scene.setBackground('#20242c');
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -85,7 +92,12 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		geometry.fromArrays(sphere(segments, color)),
 	);
 	if (!base) return;
-	base.setLevels(lower.map((mesh, k) => ({ mesh, error: ERRORS[k] as number })));
+	// A hand-set error's switch shows, so its levels fade over a band; `?crisp` switches them at
+	// once, as the asset tool's measured errors do.
+	base.setLevels(
+		lower.map((mesh, k) => ({ mesh, error: ERRORS[k] as number })),
+		{ fade: !crisp },
+	);
 	const material = materials.standard({
 		color: '#ffffff',
 		roughness: 0.5,
@@ -118,6 +130,38 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 			position: [0, 0, -center - 2.5],
 			receiveShadows: true,
 		});
+		return;
+	}
+
+	if (params.has('range')) {
+		// Two rows of copies around the band's start and its end: one outside the band, one inside
+		// it, and one past it, where the copy draws fully.
+		const spots: Vec3[] = [];
+		const edges: [number, number][] = [
+			[BAND[0], -1],
+			[BAND[1], 1],
+		];
+		for (const [row, [edge, sign]] of edges.entries()) {
+			for (const [k, side] of BAND_SIDES.entries()) {
+				const distance = sign < 0 ? (side as number) * edge : edge / (side as number);
+				const center = distance + RADIUS;
+				const across = ((k as number) - 1) * 0.7;
+				spots.push([
+					across * center * tan * aspect(),
+					(row === 0 ? 0.3 : -0.3) * center * tan,
+					-center,
+				]);
+			}
+		}
+		if (params.has('batch')) {
+			const batch = scene.createInstances(base, spots.length, { material });
+			batch.positions.set(spots.flat());
+			batch.setDrawRange(BAND[0], BAND[1]);
+			return;
+		}
+		for (const position of spots) {
+			scene.createMesh({ mesh: base, material, position }).setDrawRange(BAND[0], BAND[1]);
+		}
 		return;
 	}
 

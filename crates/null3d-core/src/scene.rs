@@ -105,6 +105,7 @@
 //! | [`op::SET_FLAGS`] | the [`flags::SETTABLE`] bits to change | their new values |
 //! | [`op::SET_RENDER_ORDER`] | the order's 32-bit float bits | unused |
 //! | [`op::SET_LEVEL_BIAS`] | the bias's 32-bit float bits | unused |
+//! | [`op::SET_DRAW_RANGE`] | the start distance's 32-bit float bits | the end distance's |
 //! | [`op::SET_SKIN`] | the animated instance's id plus one, or 0 | unused |
 //! | [`op::SET_MORPH`] | the morph weight block's id plus one, or 0 | unused |
 //!
@@ -219,6 +220,10 @@ pub mod op {
     /// one draws coarser levels, and a smaller one draws finer levels. A change rebuilds the draw
     /// tables, as the bias is part of the object's bucket.
     pub const SET_LEVEL_BIAS: u32 = 13;
+    /// Sets the distances between which the object draws. `a`: the start distance's bits as a
+    /// 32-bit float, 0 for none, and `b`: the end distance's, infinite for none. A change rebuilds
+    /// the draw tables, as the range decides the object's fade buckets.
+    pub const SET_DRAW_RANGE: u32 = 14;
     /// The `b` of [`SET_PARENT`] that keeps the object's place in the world.
     pub const KEEP_WORLD: u32 = 1;
 }
@@ -231,7 +236,7 @@ pub const PARALLEL_LEVEL_THRESHOLD: u32 = 256;
 pub const LEVEL_CHUNK: u32 = 128;
 /// The bytes of engine memory that each object's row takes across the storage's arrays, the slot
 /// allocator and both world buffers, outside large-world mode, which adds 12.
-pub const ROW_BYTES: u32 = 267;
+pub const ROW_BYTES: u32 = 275;
 /// Slots at or past this count build the changed bitset as a parallel loop.
 const PARALLEL_BITS_THRESHOLD: u32 = 1 << 16;
 
@@ -391,6 +396,16 @@ impl Command {
             handle: handle.raw(),
             a: order.to_bits(),
             b: 0,
+        }
+    }
+
+    /// Sets the distances between which `handle` draws, with a fade at each edge.
+    pub const fn set_draw_range(handle: Handle, start: f32, end: f32) -> Command {
+        Command {
+            op: op::SET_DRAW_RANGE,
+            handle: handle.raw(),
+            a: start.to_bits(),
+            b: end.to_bits(),
         }
     }
 
@@ -556,6 +571,9 @@ pub struct SceneStorage {
     render_orders: Vec<f32>,
     /// The threshold bias that picks each object's levels of detail, 1 for none.
     level_biases: Vec<f32>,
+    /// The distances at which each object draws: its start distance and its end distance, two
+    /// floats per slot, 0 and infinity for none.
+    draw_ranges: Vec<f32>,
     parents: Vec<u32>,
     flags: Vec<u32>,
     meshes: Vec<u32>,
@@ -634,6 +652,13 @@ impl SceneStorage {
             local_centers: vec![0.0; rows * 3],
             render_orders: vec![0.0; rows],
             level_biases: vec![1.0; rows],
+            draw_ranges: {
+                let mut ranges = vec![0.0; rows * 2];
+                for end in ranges.iter_mut().skip(1).step_by(2) {
+                    *end = f32::INFINITY;
+                }
+                ranges
+            },
             parents: vec![NO_PARENT; rows],
             flags: vec![0; rows],
             meshes: vec![0; rows],
@@ -753,6 +778,11 @@ impl SceneStorage {
         self.local_centers.resize(rows * 3, 0.0);
         self.render_orders.resize(rows, 0.0);
         self.level_biases.resize(rows, 1.0);
+        let old_ranges = self.draw_ranges.len();
+        self.draw_ranges.resize(rows * 2, 0.0);
+        for end in self.draw_ranges[old_ranges + 1..].iter_mut().step_by(2) {
+            *end = f32::INFINITY;
+        }
         self.parents.resize(rows, NO_PARENT);
         for zeros in [
             &mut self.flags,
@@ -805,6 +835,7 @@ impl SceneStorage {
             (&mut self.local_centers, 3),
             (&mut self.render_orders, 1),
             (&mut self.level_biases, 1),
+            (&mut self.draw_ranges, 2),
         ] {
             reserve_len(floats, rows * per_row)?;
         }
@@ -948,6 +979,12 @@ impl SceneStorage {
     /// [`op::SET_LEVEL_BIAS`] set one.
     pub fn level_biases(&self) -> &[f32] {
         &self.level_biases
+    }
+
+    /// The distance range of each object, two floats per slot: the start distance and the end
+    /// distance, 0 and infinity unless [`op::SET_DRAW_RANGE`] set them.
+    pub fn draw_ranges(&self) -> &[f32] {
+        &self.draw_ranges
     }
 
     /// Parent slots, [`NO_PARENT`] for roots.
@@ -1353,6 +1390,8 @@ impl SceneStorage {
                 self.local_centers[s * 3..s * 3 + 3].fill(0.0);
                 self.render_orders[s] = 0.0;
                 self.level_biases[s] = 1.0;
+                self.draw_ranges[s * 2] = 0.0;
+                self.draw_ranges[s * 2 + 1] = f32::INFINITY;
                 self.parents[s] = NO_PARENT;
                 self.flags[s] = 0;
                 self.meshes[s] = 0;
@@ -1442,6 +1481,12 @@ impl SceneStorage {
             op::SET_LEVEL_BIAS => {
                 let slot = self.created_slot(command.handle)?;
                 self.level_biases[slot as usize] = f32::from_bits(command.a);
+            }
+            op::SET_DRAW_RANGE => {
+                let slot = self.created_slot(command.handle)?;
+                let at = slot as usize * 2;
+                self.draw_ranges[at] = f32::from_bits(command.a);
+                self.draw_ranges[at + 1] = f32::from_bits(command.b);
             }
             op::SET_RENDER_ORDER => {
                 let slot = self.created_slot(command.handle)?;
@@ -2221,6 +2266,7 @@ mod tests {
                 &scene.local_centers,
                 &scene.render_orders,
                 &scene.level_biases,
+                &scene.draw_ranges,
             ]
             .map(|v| v.len() * 4);
             let words = [

@@ -138,10 +138,11 @@ export interface ResourceUsers {
 }
 
 /**
- * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place where the
- * level's error covers less than the `lodThreshold` quality setting's pixels on the screen. Give
- * the level's `error`, or the `distance` at which it switches in, as three.js's `LOD.addLevel`
- * takes it.
+ * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
+ * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
+ * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
+ * at its switch and switches at once. A level given by a distance, by a coverage or by a hand-set
+ * error fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
  */
@@ -156,11 +157,24 @@ export interface MeshLevel {
 	error?: number;
 	/**
 	 * The distance from the camera to the nearest point of the object's bounds at which the level
-	 * switches in, for an object of scale 1. It holds on a screen 1,080 pixels high, at the field
-	 * of view of `fov` in the options. The engine turns it into an error, so on a taller screen, or
-	 * at a higher render scale, the level switches in farther away.
+	 * switches in, for an object of scale 1. The switch stays there on every screen height and at
+	 * every render scale.
 	 */
 	distance?: number;
+	/**
+	 * The share of the render's height that the object's bounds cover where the level switches in,
+	 * from 0 to 1: it draws while they cover less. This is `MSFT_screencoverage` in a glTF file.
+	 * It stays the same on every screen height.
+	 */
+	coverage?: number;
+	/**
+	 * True to hand over between two levels in a short band past each switch distance, where a
+	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
+	 * once. The default is `fade` in the options. A level with a measured error changes the picture
+	 * by under a pixel at its switch, so its band only costs; the glTF reader switches those at
+	 * once.
+	 */
+	fade?: boolean;
 }
 
 /**
@@ -172,20 +186,25 @@ export interface MeshLevelOptions {
 	/**
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
-	 * once. The default is true. The `lodFade` quality setting turns the bands off on Low.
+	 * once. The default is true. A level's own `fade` overrides it.
 	 */
 	fade?: boolean;
 	/**
-	 * The vertical field of view, in degrees, at which a level given by `distance` switches in at
-	 * that distance. The default is 50, three.js's default for a perspective camera.
+	 * The vertical field of view, in degrees, at which a level given by its error covers the
+	 * threshold's pixels, and a level given by its coverage covers that share of the screen. The
+	 * default is 50, three.js's default for a perspective camera.
 	 */
 	fov?: number;
 }
 
-/** The screen height in pixels at which a level given by its distance switches in there. */
+/** The screen height in pixels at which the engine compares a level's error and coverage. */
 const LEVEL_REFERENCE_HEIGHT = 1080;
-/** The field of view in degrees at which a level given by its distance switches in there. */
+/** The field of view in degrees at which the engine compares a level's error and coverage. */
 const LEVEL_REFERENCE_FOV = 50;
+/** The level's switch measures, as the engine core names them: error, distance and coverage. */
+const LEVEL_SWITCH_ERROR = 0;
+const LEVEL_SWITCH_DISTANCE = 1;
+const LEVEL_SWITCH_COVERAGE = 2;
 /** The most lower levels a mesh takes. */
 const MAX_LOWER_LEVELS = 7;
 
@@ -198,8 +217,8 @@ const MAX_LOWER_LEVELS = 7;
 export class MeshGeometry {
 	/** The engine core's id, or 0 once the mesh is destroyed. */
 	private liveId: number;
-	/** The mesh's lower levels of detail, with their errors. */
-	private lowerLevels: readonly Required<Pick<MeshLevel, 'mesh' | 'error'>>[] = [];
+	/** The mesh's lower levels of detail, as `setLevels` gave them. */
+	private lowerLevels: readonly MeshLevel[] = [];
 	/** The vertex count and format, read from the engine core at the first update. */
 	private layout: VertexLayout | undefined;
 
@@ -288,10 +307,10 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * The mesh's lower levels of detail, from the most detailed down, each with its error. A
+	 * The mesh's lower levels of detail, from the most detailed down, as `setLevels` gave them. A
 	 * destroyed level takes every level away, as the engine does.
 	 */
-	get levels(): readonly Required<Pick<MeshLevel, 'mesh' | 'error'>>[] {
+	get levels(): readonly MeshLevel[] {
 		if (!this.lowerLevels.every((level) => level.mesh.live)) this.lowerLevels = [];
 		return this.lowerLevels;
 	}
@@ -317,46 +336,66 @@ export class MeshGeometry {
 			);
 		if (!(fov > 0 && fov < 180))
 			throw new EngineError('E1221', `${call}() got a fov of ${fov}, not between 0 and 180.`);
-		// A distance becomes the error that covers one pixel at that distance, at the reference.
-		const perDistance = (2 * Math.tan((fov * Math.PI) / 360)) / LEVEL_REFERENCE_HEIGHT;
-		const errors = levels.map((level, k) => {
-			const { error, distance } = level;
-			if ((error === undefined) === (distance === undefined))
+		// The reference view turns every measure into the distance at which its level switches, so
+		// that the levels of one set compare with each other.
+		const p11 = 1 / Math.tan((fov * Math.PI) / 360);
+		const radius = this.radius;
+		const defaultFade = options.fade ?? true;
+		let fades = 0;
+		let before = 0;
+		const values: number[] = [];
+		const switches: number[] = [];
+		for (const [k, level] of levels.entries()) {
+			const { error, distance, coverage } = level;
+			const given = [error, distance, coverage].filter((value) => value !== undefined);
+			if (given.length !== 1)
 				throw new EngineError(
 					'E1221',
-					`${call}() got level ${k + 1} with ${error === undefined ? 'neither an error nor' : 'both an error and'} a distance. Give one of them.`,
-				);
-			const value = error ?? (distance as number) * perDistance;
-			if (!(Number.isFinite(value) && value > 0))
-				throw new EngineError(
-					'E1221',
-					`${call}() got ${error === undefined ? `a distance of ${distance}` : `an error of ${error}`} for level ${k + 1}, not a number above 0.`,
+					`${call}() got level ${k + 1} with ${given.length === 0 ? 'none of an error, a distance and a coverage' : 'more than one of an error, a distance and a coverage'}. Give one of them.`,
 				);
 			if (level.mesh.core !== this.core || level.mesh === this)
 				throw new EngineError(
 					'E1221',
 					`${call}() got level ${k + 1} with ${level.mesh === this ? 'the base mesh itself' : 'a mesh from another engine'}.`,
 				);
-			return value;
-		});
-		for (let k = 1; k < errors.length; k++)
-			if ((errors[k] as number) <= (errors[k - 1] as number))
+			const value = given[0] as number;
+			if (!(Number.isFinite(value) && value > 0))
 				throw new EngineError(
 					'E1221',
-					`${call}() got level ${k + 1} with an error of ${errors[k]}, not above the ${errors[k - 1]} of level ${k}. Errors grow from level to level.`,
+					`${call}() got ${error !== undefined ? `an error of ${error}` : distance !== undefined ? `a distance of ${distance}` : `a coverage of ${coverage}`} for level ${k + 1}, not a number above 0.`,
 				);
+			const switchValue =
+				error !== undefined
+					? LEVEL_SWITCH_ERROR
+					: distance !== undefined
+						? LEVEL_SWITCH_DISTANCE
+						: LEVEL_SWITCH_COVERAGE;
+			// The distance at which the level switches on the reference view, which grows from
+			// level to level.
+			const at =
+				switchValue === LEVEL_SWITCH_ERROR
+					? (value * LEVEL_REFERENCE_HEIGHT * p11) / 2
+					: switchValue === LEVEL_SWITCH_DISTANCE
+						? value
+						: (radius * p11) / value;
+			if (k > 0 && at <= before)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with a switch at ${at.toFixed(3)} m, not past the ${before.toFixed(3)} m of level ${k}. The switch distances grow from level to level.`,
+				);
+			before = at;
+			values.push(value);
+			switches.push(switchValue);
+			if (level.fade ?? defaultFade) fades |= 1 << (k + 1);
+		}
 		const count = levels.length;
 		const ids = levels.map((level) => level.mesh.id);
-		const at = this.core.checkGrowth(this.core.glue.meshArrays(2 * count), call);
+		const at = this.core.checkGrowth(this.core.glue.meshArrays(3 * count), call);
 		this.core.u32(at, count).set(ids);
-		this.core.f32(at + 4 * count, count).set(errors);
-		this.core.check(
-			this.core.glue.setMeshLevels(id, count, options.fade ?? true),
-			call,
-			'a mesh',
-			true,
-		);
-		this.lowerLevels = levels.map((level, k) => ({ mesh: level.mesh, error: errors[k] as number }));
+		this.core.f32(at + 4 * count, count).set(values);
+		this.core.u32(at + 8 * count, count).set(switches);
+		this.core.check(this.core.glue.setMeshLevels(id, count, fades), call, 'a mesh', true);
+		this.lowerLevels = levels.map((level) => ({ ...level }));
 	}
 }
 
@@ -1107,7 +1146,7 @@ export interface StandardValues extends MaterialOptions {
 	diffuseTransmissionColor?: ColorInput;
 	/**
 	 * How far light spreads under the surface before it leaves it, in world units taken as
-	 * metres, 0 or more, as in skin, wax or marble. The subsurface blur spreads the surface's
+	 * meters, 0 or more, as in skin, wax or marble. The subsurface blur spreads the surface's
 	 * diffuse light over this distance, so the edges of its shadows and the detail of its maps
 	 * soften, and its highlights stay sharp. Skin takes about 0.01. Give it when you create the
 	 * material, even as 0, to change it later. A material created without it draws no blur. The
