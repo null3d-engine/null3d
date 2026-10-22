@@ -226,3 +226,64 @@ describe('levels of detail for leaf cards', () => {
 		expect(plans.has(mesh)).toBe(false);
 	});
 });
+
+/**
+ * A flat grid of `n` by `n` quads across one metre, with each vertex's texture coordinate from
+ * `uv`, or no texture coordinates when `uv` is null.
+ */
+function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]) | null) {
+	const doc = new Document();
+	const buffer = doc.createBuffer();
+	const mesh = doc.createMesh('grid');
+	const positions: number[] = [];
+	const uvs: number[] = [];
+	const indices: number[] = [];
+	for (let r = 0; r <= n; r++)
+		for (let c = 0; c <= n; c++) {
+			const [x, z] = [c / n, r / n];
+			positions.push(x, 0, z);
+			if (uv) uvs.push(...uv(x, z));
+		}
+	for (let r = 0; r < n; r++)
+		for (let c = 0; c < n; c++) {
+			const at = r * (n + 1) + c;
+			indices.push(at, at + n + 1, at + 1, at + 1, at + n + 1, at + n + 2);
+		}
+	const positionsAccessor = doc
+		.createAccessor()
+		.setType('VEC3')
+		.setArray(new Float32Array(positions))
+		.setBuffer(buffer);
+	const primitive = doc
+		.createPrimitive()
+		.setMaterial(doc.createMaterial('grid'))
+		.setAttribute('POSITION', positionsAccessor)
+		.setIndices(
+			doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(indices)).setBuffer(buffer),
+		);
+	if (uv)
+		primitive.setAttribute(
+			'TEXCOORD_0',
+			doc.createAccessor().setType('VEC2').setArray(new Float32Array(uvs)).setBuffer(buffer),
+		);
+	mesh.addPrimitive(primitive);
+	doc.createScene().addChild(doc.createNode('grid').setMesh(mesh));
+	return { doc, mesh };
+}
+
+describe('texture coordinates in the levels error', () => {
+	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {
+		// A flat grid simplifies to a few triangles with no geometric error. Texture coordinates
+		// that repeat across it keep the simplifier from sliding them, so a level's error grows.
+		const flat = gridDocument(32, () => [0, 0]);
+		const bent = gridDocument(32, (x, z) => [(x * 8) % 1, (z * 8) % 1]);
+		const worst = async ({ doc, mesh }: ReturnType<typeof gridDocument>) => {
+			const plan = (await planLevels(doc)).get(mesh);
+			return Math.max(...(plan?.levels ?? []).map((level) => level.error));
+		};
+		const flatError = await worst(flat);
+		const bentError = await worst(bent);
+		expect(flatError).toBeGreaterThan(0);
+		expect(bentError).toBeGreaterThan(flatError * 2);
+	});
+});
