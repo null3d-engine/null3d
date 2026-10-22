@@ -2623,7 +2623,8 @@ export class InstanceBatch implements ViewHolder {
 				);
 		}
 		const { core } = this.scene;
-		core.check(core.glue.setBatchBounds(this.id, radius), 'setBoundingRadius', undefined, true);
+		core.callValues()[0] = radius;
+		core.check(core.glue.setBatchBounds(this.id), 'setBoundingRadius', undefined, true);
 	}
 
 	/**
