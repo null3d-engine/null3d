@@ -3066,6 +3066,10 @@ impl GpuDrivenRenderer {
     /// settings.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
+        // The cluster tables upload again whenever the layout changes, and every view uploads its
+        // three blocks of dispatch parameters.
+        let clusters = clusters::Clusters::upload_bytes(&self.layout)
+            + clusters::Clusters::upload_bytes(&self.casters);
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
             + dfg::BYTES
             + ao::BLANK_BYTES;
@@ -3114,6 +3118,7 @@ impl GpuDrivenRenderer {
         meshes
             + skinning
             + materials
+            + clusters
             + tables
             + lights
             + views

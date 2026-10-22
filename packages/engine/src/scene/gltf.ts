@@ -846,7 +846,7 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
-		if (p.patches && !storePatches(context.core, made.id, p.patches, call) && DEV)
+		if (p.patches && storePatches(context.core, made.id, p.patches, call) !== 1 && DEV)
 			console.warn(
 				`${call}() found a tree of patches in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so the mesh draws whole. Optimize the file again.`,
 			);
@@ -876,17 +876,22 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
 
 /**
  * Gives a mesh the tree of cluster patches that the file stores: the patches' spheres and records,
- * then their indices, at the address that the staging words give.
+ * then their indices, at the address that the staging words give. Returns 1 when the mesh takes
+ * the tree, and 0 or the code of the rule that refused it otherwise (see `setMeshPatches`).
  */
-function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call: string): boolean {
+function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call: string): number {
 	const { bounds, words, indices, root } = patches;
 	const records = words.length / 4;
 	const at = core.checkGrowth(core.glue.meshArrays(records * 8 + indices.length), call);
-	const floats = core.f32(at, records * 4);
-	for (let k = 0; k < records; k++) floats.set(bounds.subarray(k * 4, k * 4 + 4), k * 4);
-	core.u32(at + records * 16, words.length).set(words);
-	core.u32(at + records * 16 + words.byteLength, indices.length).set(indices);
-	return core.glue.setMeshPatches(mesh, records, indices.length, root) === 1;
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	const staging = core.u32(at, records * 8);
+	const floats = new Float32Array(staging.buffer, staging.byteOffset, records * 8);
+	for (let k = 0; k < records; k++) {
+		floats.set(bounds.subarray(k * 4, k * 4 + 4), k * 8);
+		staging.set(words.subarray(k * 4, k * 4 + 4), k * 8 + 4);
+	}
+	core.u32(at + records * 32, indices.length).set(indices);
+	return core.glue.setMeshPatches(mesh, records, indices.length, root);
 }
 
 /**
