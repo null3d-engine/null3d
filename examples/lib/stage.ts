@@ -188,6 +188,26 @@ export interface StageOptions {
 	cloudCoverage: number;
 	/** A factor of the fog's density in some moods, such as a haze at golden hour. */
 	haze?: Partial<Record<FixedMood, number>>;
+	/**
+	 * Lit fog, for a scene that wants the sun and its lamps to show through the air. The stage
+	 * passes it to the scene with every fog it writes, so a mood never drops it.
+	 */
+	volumetric?: { intensity: number; anisotropy: number; distance: number };
+	/**
+	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
+	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
+	 */
+	exposureScale?: number;
+	/**
+	 * A factor on the light that the sky gives the scene, for a scene whose own lights carry it.
+	 * The default is 1. The studio keeps its own light.
+	 */
+	environmentScale?: number;
+	/**
+	 * A factor on the brightness of the sky itself, for a scene whose lights read against a brighter
+	 * sky than the hour gives. The default is 1.
+	 */
+	skyScale?: number;
 	/** The minutes a whole day takes in Auto. The default is 4/3, a day in 80 seconds. */
 	minutesPerDay?: number;
 	/** The plain background color, in linear RGB, that shows while the sky is off. */
@@ -243,7 +263,16 @@ export function createMoods(
 	options: StageOptions,
 ): Stage {
 	const { scene, post, time } = ctx;
-	const { heading, fogDensity, cloudCoverage, backdrop, haze = {} } = options;
+	const {
+		heading,
+		fogDensity,
+		cloudCoverage,
+		backdrop,
+		haze = {},
+		exposureScale = 1,
+		environmentScale = 1,
+		skyScale = 1,
+	} = options;
 	const perDay = options.minutesPerDay ?? MINUTES_PER_DAY;
 	/** The values in use, which ease toward the target's. */
 	const current = {
@@ -304,10 +333,15 @@ export function createMoods(
 				time: 0,
 			},
 		},
-		backgroundOptions: { intensity: 1 },
+		backgroundOptions: { intensity: skyScale },
 		roomOptions: { blur: 0.7, intensity: 0.18 },
 		environment: { intensity: 1 },
-		fog: { color: [0, 0, 0] as Vec3, density: fogDensity, sunGlow: 0 },
+		fog: {
+			color: [0, 0, 0] as Vec3,
+			density: fogDensity,
+			sunGlow: 0,
+			...(options.volumetric === undefined ? {} : { volumetric: options.volumetric }),
+		},
 		post: { exposure: 1 },
 	};
 	/** False while any value still eases toward its target, so the frame writes the look again. */
@@ -344,7 +378,8 @@ export function createMoods(
 		const sunHeight = day.atmosphere.sunPosition[1] as number;
 		const lowSun = smoothstep(0.45, 0.08, sunHeight) * smoothstep(-0.08, 0.02, sunHeight);
 		const daylight = noonExposure * (1 + LOW_SUN_OPEN * lowSun);
-		target.exposure = blend(daylight, day.exposure, smoothstep(-0.05, -0.35, sunHeight));
+		target.exposure =
+			blend(daylight, day.exposure, smoothstep(-0.05, -0.35, sunHeight)) * exposureScale;
 		target.sunLight = day.atmosphere.sunIntensity;
 		target.moonLight = day.atmosphere.moonIntensity;
 		target.stars = day.atmosphere.stars;
@@ -444,7 +479,7 @@ export function createMoods(
 		needsLook = false;
 		if (!full) return;
 		if (lit()) {
-			look.environment.intensity = current.skyIntensity;
+			look.environment.intensity = current.skyIntensity * environmentScale;
 			scene.setEnvironment(sky, look.environment);
 		}
 		sun.setDirection(current.dir[0] as number, current.dir[1] as number, current.dir[2] as number);

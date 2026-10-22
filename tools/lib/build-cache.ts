@@ -13,8 +13,8 @@
 // The Rust build folder is not a cache under the root: each checkout keeps its own, because Cargo
 // judges the engine's crates fresh by file times, and sccache, when installed, shares the compiled
 // dependency crates instead (see cargoEnv). Every cargo run of the repository goes through
-// `runCargo`, so that rule holds at each of them.
-import { type StdioOptions, spawnSync } from 'node:child_process';
+// `runCargo` or `runCargoAsync`, which share one setup, so that rule holds at each of them.
+import { type StdioOptions, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	accessSync,
@@ -109,25 +109,111 @@ export interface CargoRun {
 	error?: Error;
 }
 
+/** Takes each whole line of a command's output as it arrives; `stderr` is true for the error output. */
+export type LineSink = (line: string, stderr: boolean) => void;
+
+/** What one cargo call adds to the shared setup: its own variables, and its own build folder. */
+interface CargoOptions {
+	env?: Record<string, string>;
+	targetDir?: string;
+}
+
 /**
- * Runs cargo with `args` in `checkout`, through one helper so that every cargo call of the
- * repository sets its build folder the same way: `targetDir`, when given, names the folder of this
- * call, and cargoEnv's own folder applies without it. `env` adds what one call needs, such as a
- * build's flags, and `stdio` picks where its output goes. The caller reports its own failure.
+ * The arguments and environment of a cargo run in `checkout`, which both cargo runners use, so that
+ * every cargo call of the repository sets its build folder the same way: `targetDir`, when given,
+ * names the folder of this call, and cargoEnv's own folder applies without it. `env` adds what one
+ * call needs, such as a build's flags.
+ */
+function cargoCall(
+	checkout: string,
+	args: readonly string[],
+	{ env = {}, targetDir }: CargoOptions,
+) {
+	return {
+		args: targetDir ? [...args, '--target-dir', targetDir] : [...args],
+		env: { ...process.env, ...cargoEnv(checkout), ...env },
+	};
+}
+
+/**
+ * Runs cargo with `args` in `checkout` and waits for it, with the setup of cargoCall. `stdio` picks
+ * where its output goes. The caller reports its own failure.
  */
 export function runCargo(
 	checkout: string,
 	args: readonly string[],
-	options: { env?: Record<string, string>; targetDir?: string; stdio?: StdioOptions } = {},
+	options: CargoOptions & { stdio?: StdioOptions } = {},
 ): CargoRun {
-	const { env = {}, targetDir, stdio = 'inherit' } = options;
-	const full = targetDir ? [...args, '--target-dir', targetDir] : [...args];
-	const result = spawnSync('cargo', full, {
+	const call = cargoCall(checkout, args, options);
+	const result = spawnSync('cargo', call.args, {
 		cwd: checkout,
-		stdio,
-		env: { ...process.env, ...cargoEnv(checkout), ...env },
+		stdio: options.stdio ?? 'inherit',
+		env: call.env,
 	});
 	return { status: result.status, error: result.error ?? undefined };
+}
+
+/**
+ * Runs cargo as runCargo does, without blocking, and hands each whole line of its output to
+ * `onLine`, so that builds which run at the same time can each print theirs as it comes. The caller
+ * reports its own failure.
+ */
+export function runCargoAsync(
+	checkout: string,
+	args: readonly string[],
+	options: CargoOptions & { onLine: LineSink },
+): Promise<CargoRun> {
+	const call = cargoCall(checkout, args, options);
+	return runByLine('cargo', call.args, { cwd: checkout, env: call.env, onLine: options.onLine });
+}
+
+/**
+ * Splits one stream's text into whole lines for `take`. A chunk can end inside a line, so the last
+ * part waits for its newline, or for the end of the stream.
+ */
+function wholeLines(take: (line: string) => void) {
+	let partial = '';
+	return {
+		add(text: string) {
+			const parts = (partial + text).split('\n');
+			partial = parts.pop() ?? '';
+			for (const part of parts) take(part);
+		},
+		end() {
+			if (partial) take(partial);
+			partial = '';
+		},
+	};
+}
+
+/**
+ * Runs a command without blocking and hands each whole line that it writes to its output or its
+ * error output to `onLine`, as the line arrives. It never rejects: a command that cannot start ends
+ * with its error.
+ */
+export function runByLine(
+	command: string,
+	args: readonly string[],
+	options: { cwd: string; env?: NodeJS.ProcessEnv; onLine: LineSink },
+): Promise<CargoRun> {
+	return new Promise((resolve) => {
+		const child = spawn(command, args, {
+			cwd: options.cwd,
+			env: options.env ?? process.env,
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+		const out = wholeLines((line) => options.onLine(line, false));
+		const err = wholeLines((line) => options.onLine(line, true));
+		child.stdout.setEncoding('utf8').on('data', out.add);
+		child.stderr.setEncoding('utf8').on('data', err.add);
+		// A command that cannot start reports an error, and may close after it: the first ends the run.
+		child.once('error', (error) => resolve({ status: null, error }));
+		child.once('close', (status) => {
+			out.end();
+			err.end();
+			resolve({ status });
+		});
+	});
 }
 
 /** A SHA-256 of the given values, in order, for a cache key. */

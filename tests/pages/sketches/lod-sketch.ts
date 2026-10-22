@@ -4,11 +4,12 @@
 // nearest point, so the second copy lies inside the hand-over band at every preset.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
-// `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
-// `?mask` draws with a mask smoothed by alpha to coverage, as foliage does, which passes every
-// pixel, `?material` gives each level a material of its own in the level's color, which must draw
-// the same image, `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser
-// level than the copy itself, and `?hide` raises the threshold and places copies around the hide distance.
+// `?crisp` switches the levels at once, as a measured error does, `?mask` draws with a mask smoothed
+// by alpha to coverage, as foliage does, which passes every pixel, `?material` gives each level a
+// material of its own in the level's color, which must draw the same image, `?shadows` draws one
+// large copy in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide`
+// raises the threshold and places copies around the hide distance, and `?range` gives every copy a
+// distance band, with rows of copies around its start and its end.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -34,6 +35,11 @@ const HIDE_SIDES = [0.95, 1.03, 1.09];
 const ROWS = [0.55, -0.1, -0.6];
 /** The world radius of the base sphere, whose local radius is 1 at scale 1. */
 const RADIUS = 1;
+/** The start and the end of the distance band that `?range` gives every copy, in metres. */
+const BAND = [12, 30] as const;
+/** Each copy's nearest point as a share of the band's start and of its end. The first row holds a
+ * hidden copy, one inside the fade band and one past it; the second does the same at the end. */
+const BAND_SIDES = [0.9, 1.03, 1.12];
 
 /** A sphere of radius 1 in one color, with `segments` around and half as many from pole to pole. */
 function sphere(segments: number, color: Vec3): MeshArrays {
@@ -64,7 +70,8 @@ function sphere(segments: number, color: Vec3): MeshArrays {
 
 export default defineSketch(({ scene, geometry, materials, quality, engine }) => {
 	const shadows = params.has('shadows');
-	quality.set({ lodThreshold: THRESHOLD, lodFade: !params.has('crisp'), lodShadowFactor: 8 });
+	const crisp = params.has('crisp');
+	quality.set({ lodThreshold: THRESHOLD, lodShadowFactor: 8 });
 	scene.setBackground('#20242c');
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -86,7 +93,9 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		geometry.fromArrays(sphere(segments, color)),
 	);
 	if (!base) return;
-	// A level's own material may draw without the mesh's vertex colors, in the level's color.
+	// A hand-set error's switch shows, so its levels fade over a band; `?crisp` switches them at
+	// once, as the asset tool's measured errors do. A level's own material may draw without the
+	// mesh's vertex colors, in the level's color.
 	const levelMaterial = (color: Vec3) => materials.standard({ color, roughness: 0.5 });
 	base.setLevels(
 		lower.map((mesh, k) => ({
@@ -94,6 +103,7 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 			error: ERRORS[k] as number,
 			...(params.has('material') && { material: levelMaterial(LEVELS[k + 1]?.[1] as Vec3) }),
 		})),
+		{ fade: !crisp },
 	);
 	const material = materials.standard({
 		color: '#ffffff',
@@ -108,6 +118,19 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	const factor = () =>
 		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD * BIAS);
 	const aspect = () => engine.viewport.width / engine.viewport.height;
+
+	// A copy whose nearest point lies at `distance` from the camera, with its centre offset from the
+	// view's axis by `across` and `up`, both shares of its depth. A copy off the axis lies farther
+	// from the camera than its depth, so this places it along the same ray at the distance that the
+	// rule measures: its nearest point sits exactly where the test means it to.
+	const onRay = (distance: number, across: number, up: number): Vec3 => {
+		const center = distance + RADIUS;
+		const x = across * center * tan * aspect();
+		const y = up * center * tan;
+		const reach = Math.hypot(x, y, center);
+		const scale = center / reach;
+		return [x * scale, y * scale, -center * scale];
+	};
 
 	if (shadows) {
 		// One copy whose nearest point lies at half its first switch distance, in front of a wall
@@ -130,6 +153,31 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		return;
 	}
 
+	if (params.has('range')) {
+		// Two rows of copies around the band's start and its end: one outside the band, one inside
+		// it, and one past it, where the copy draws fully.
+		const edges: [number, number][] = [
+			[BAND[0], -1],
+			[BAND[1], 1],
+		];
+		const spots = edges.flatMap(([edge, sign], row) =>
+			BAND_SIDES.map((side, k) =>
+				onRay(sign < 0 ? side * edge : edge / side, (k - 1) * 0.7, row === 0 ? 0.3 : -0.3),
+			),
+		);
+		if (params.has('batch')) {
+			const batch = scene.createInstances(base, spots.length, { material });
+			batch.positions.set(spots.flat());
+			batch.markDirty();
+			batch.setDrawRange(BAND[0], BAND[1]);
+			return;
+		}
+		for (const position of spots) {
+			scene.createMesh({ mesh: base, material, position }).setDrawRange(BAND[0], BAND[1]);
+		}
+		return;
+	}
+
 	// Where each copy stands: its row's switch distance, or the distance where its bound covers
 	// fewer pixels than the threshold, times the side's share, with the bound's nearest point at
 	// that distance. The hide copies stand in one row: the first draws the last level, the second
@@ -144,10 +192,9 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 			const side = k % sides.length;
 			const base = hide ? 2 : (ERRORS[row] as number);
 			const distance = (sides[side] as number) * base * f;
-			const center = distance + RADIUS;
 			const across = hide ? (side - 1) * 0.6 : side === 0 ? -0.35 : 0.35;
-			const y = hide ? 0 : (ROWS[row] as number) * center * tan;
-			out[k] = [across * center * tan * aspect(), y, -center];
+			const up = hide ? 0 : (ROWS[row] as number);
+			out[k] = onRay(distance, across, up);
 		}
 		return out;
 	};

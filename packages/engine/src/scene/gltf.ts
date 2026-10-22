@@ -429,17 +429,14 @@ function nodeOf(node: NodeData): GltfExtensionData['node'] {
 	};
 }
 
-/** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
-const COVERAGE_HEIGHT = 1080;
-
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
- * `NULL3D_lod_error`, or from `MSFT_screencoverage`: a level switches in where the mesh's sphere
- * covers less of the screen's height than the level before allows, on a screen 1,080 pixels
- * high. A level that names another material than the node's primitive draws with it. Levels whose
- * meshes have other primitives, or no errors, are left out, and so are levels that a mesh cannot
- * take, with a note.
+ * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
+ * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
+ * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
+ * another material than the node's primitive draws with it. Levels whose meshes have other
+ * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
@@ -453,10 +450,10 @@ function setFileLevels(
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
 	const lower = levels.meshes.map(meshOf);
 	for (const [p, mesh] of base.entries()) {
-		const errors =
-			levels.errors ??
-			levels.coverage?.map((coverage) => (2 * mesh.radius) / (coverage * COVERAGE_HEIGHT));
-		if (!errors) return;
+		const measured = levels.errors !== undefined;
+		const errors = levels.errors;
+		const coverage = levels.coverage;
+		if (!measured && !coverage) return;
 		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
@@ -467,7 +464,9 @@ function setFileLevels(
 					const material = own && level.material !== own.material ? materials.of(level) : undefined;
 					return {
 						mesh: meshes[p] as MeshGeometry,
-						error: errors[j],
+						...(measured
+							? { error: (errors as number[])[j] as number, fade: false }
+							: { coverage: (coverage as number[])[j] as number }),
 						...(material && { material }),
 					};
 				}),

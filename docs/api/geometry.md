@@ -220,17 +220,19 @@ Meshes of one vertex format share GPU buffers, so the engine draws them with few
 
 ## Levels of detail
 
-`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each has its error: the largest distance between its surface and the mesh's, in the units of the mesh's positions. Every object and instance batch that draws the mesh then picks one level per frame. It draws the coarsest level whose error covers fewer pixels on the screen than the `lodThreshold` quality setting:
+`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each level gives the distance at which it switches in. That is an `error` in the units of the mesh's positions, a `distance` in meters for an object of scale 1, or a screen `coverage` from 0 to 1. Every object and instance batch that draws the mesh then picks one level per frame:
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(2000));
 rock.setLevels([
 	{ mesh: geometry.fromArrays(rockArrays(500)), error: 0.01 },
-	{ mesh: geometry.fromArrays(rockArrays(120)), error: 0.05 },
+	{ mesh: geometry.fromArrays(rockArrays(120)), distance: 90 },
 ]);
 ```
 
-Each level must have the mesh's vertex attributes, as it draws with the same pipelines. A level may name a `material` of its own, so a far level shades more cheaply. A level without one draws with the material of the level before it. The base level draws with the object's or the instance batch's material. A level can give the `distance` at which it switches in, as three.js's `LOD.addLevel` does, in place of its error. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them, each with its error. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the rule, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
+An `error` level draws while it covers fewer pixels than the `lodThreshold` quality setting. A `distance` level draws while the camera lies nearer than that distance. A `coverage` level draws while the bounds cover less than that share of the render's height. A level given by a distance, by a coverage or by a hand-set error fades over a short band. A level with a measured error switches at once. `setLevels(levels, { fade: false })` switches every level at once.
+
+Each level must have the mesh's vertex attributes, as it draws with the same pipelines. A level may name a `material` of its own, so a far level shades more cheaply. A level without one draws with the material of the level before it. The base level draws with the object's or the instance batch's material. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them as you gave them. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
 
 ## Destroying a mesh
 

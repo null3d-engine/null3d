@@ -539,8 +539,8 @@ fn a_short_output_panics() {
 /// are the levels, 3 to 5 their fade buckets. The rule measures to each sphere's nearest point, 1 m
 /// nearer the camera. Returns each bucket's words.
 fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
-    use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii};
-    use null3d_core::levels::{LevelLink, LevelRule, NO_LINK};
+    use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii, RowRanges};
+    use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Switch};
     let n = distances.len();
     let (xs, ys) = (vec![0.0; n], vec![0.0; n]);
     let zs: Vec<f32> = distances.iter().map(|d| -d).collect();
@@ -554,7 +554,12 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
         occlusion: None,
     };
     // Level 1 switches in past 5 m and level 2 past 20 m, with a factor of 100.
-    let link = |error: f32, next: u32, fade: u32| LevelLink { error, next, fade };
+    let link = |value: f32, next: u32, fade: u32| LevelLink {
+        value,
+        switch: Switch::Error,
+        next,
+        fade,
+    };
     let links = [
         link(0.0, 1, 3),
         link(0.05, 2, 4),
@@ -568,10 +573,12 @@ fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
         cells: RowCells::One(0),
         radii: RowRadii::One(1.0),
         biases: RowBiases::One(1.0),
+        ranges: RowRanges::One(DrawRange::NONE),
     };
     let choice = LevelChoice {
         rule: LevelRule {
             factor: 100.0,
+            p11: 1.0,
             orthographic: false,
             band,
         },
