@@ -808,6 +808,13 @@ file = "cull.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
+# Cluster levels: one compute pipeline, whose three dispatches count, scan and copy the patches of
+# a view into the view's index list. WebGPU only.
+[shaders.cluster_cull]
+file = "cluster_cull.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
 # The two phases of two-phase occlusion culling, from the same file: compute entry points `early`
 # and `late`. WebGPU only.
 [shaders.cull_occlusion]

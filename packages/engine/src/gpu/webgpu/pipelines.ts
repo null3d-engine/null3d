@@ -12,6 +12,7 @@ import {
 	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
+	LAYOUT_CLUSTER_CULL,
 	LAYOUT_CULL,
 	LAYOUT_DECAL_DEPTH,
 	LAYOUT_DECAL_DEPTH_MS,
@@ -90,6 +91,7 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_CLUSTER,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
@@ -556,6 +558,13 @@ export class Pipelines {
 	private readonly cullMotion: ShaderVariants;
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
+	/**
+	 * The cluster pass's shader, which the device's module holds once the manifest lists it. It is
+	 * read by name so that a build whose generated modules are older than the manifest still
+	 * type checks, and the pipeline reports the shader as missing instead.
+	 */
+	private readonly cluster: ShaderVariants | undefined;
+	private readonly clusterLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
@@ -757,6 +766,20 @@ export class Pipelines {
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
+		// The cluster levels' pass: one dispatch's parameters at a dynamic offset, the scene's
+		// patches and indices, the view's compacted instances and indirect draws, then the view's
+		// runs, offsets, index list and draws.
+		this.defineLayout(LAYOUT_CLUSTER_CULL, 'cluster cull', [
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
+			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 5, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 6, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 7, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
+		]);
 		this.defineLayout(LAYOUT_DEPTH_PYRAMID, 'depth pyramid', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
 			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
@@ -1311,6 +1334,10 @@ export class Pipelines {
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
 		});
+		this.cluster = (shaders as unknown as Record<string, ShaderVariants | undefined>).cluster_cull;
+		this.clusterLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_CLUSTER_CULL)],
+		});
 		this.lightLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
@@ -1703,6 +1730,15 @@ export class Pipelines {
 				label: `occlusion ${phase}`,
 				layout: this.cullLayout,
 				compute: { module: this.module('occlusion', shader), entryPoint: phase },
+			};
+		}
+		if (template === TEMPLATE_CLUSTER) {
+			const shader = this.cluster ? variantFor(this.cluster, 0, 'wgsl')?.wgsl : undefined;
+			if (!shader) throw new Error("the device's shader modules have no cluster shader");
+			return {
+				label: 'cluster cull',
+				layout: this.clusterLayout,
+				compute: { module: this.module('cluster cull', shader), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_DEPTH_PYRAMID) {
