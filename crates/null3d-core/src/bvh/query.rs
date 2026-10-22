@@ -95,6 +95,10 @@ pub struct QueryHit {
     pub point: [f64; 3],
     /// The unit normal of the triangle in the world, on the side that faces the ray's origin.
     pub normal: [f32; 3],
+    /// The first texture coordinates at the hit, blended across the hit triangle's three corners,
+    /// or `None` for a hit on a mesh with no first texture coordinate set, and for a hit on a
+    /// sprite, a point or a line.
+    pub uv: Option<[f32; 2]>,
 }
 
 impl QueryHit {
@@ -106,6 +110,7 @@ impl QueryHit {
             triangle: 0,
             point: [0.0; 3],
             normal: [0.0; 3],
+            uv: None,
         }
     }
 }
@@ -137,6 +142,10 @@ struct RawHit {
     id: u32,
     t: f32,
     triangle: u32,
+    /// The barycentric weights of the hit triangle's second and third corners, or `None` for a
+    /// hit on a row of a sprite, point or line batch, which has no triangle. A matrix keeps them,
+    /// so the weights of a hit in a mesh's own space weigh the vertices' texture coordinates.
+    barycentric: Option<[f32; 2]>,
 }
 
 /// The scene's trees, each mesh's tree, and the reused lists that queries fill. See the module
@@ -292,6 +301,16 @@ fn world_normal(m: &Affine, v: &[[f32; 3]; 3], direction: [f32; 3]) -> [f32; 3] 
     } else {
         [0.0; 3]
     }
+}
+
+/// The first texture coordinates at a hit: the triangle's three corners' coordinates, which
+/// `corners` gives in the order of [`Triangles::triangle`], blended by `weights`, the barycentric
+/// weights of its second and third corners.
+#[inline(always)]
+fn blend_uv(corners: [[f32; 2]; 3], weights: [f32; 2]) -> [f32; 2] {
+    let [u, v] = weights;
+    let first = 1.0 - u - v;
+    std::array::from_fn(|k| first * corners[0][k] + u * corners[1][k] + v * corners[2][k])
 }
 
 impl SceneQueries {
@@ -563,20 +582,25 @@ impl SceneQueries {
         Some((self.mesh_bvh(mesh)?, meshes.mesh(mesh)?))
     }
 
-    /// The ray's closest hit on an item, within the ray's limits: its distance and triangle.
+    /// The ray's closest hit on an item, within the ray's limits: its distance, its triangle and
+    /// the barycentric weights of that triangle at the hit.
     fn item_raycast<M: QueryMeshes>(
         &self,
         view: &QueryScene<'_, M>,
         id: u32,
         ray: &Ray,
         layers: u32,
-    ) -> Option<(f32, u32)> {
+    ) -> Option<RawHit> {
         match self.item(view, id, layers)? {
             Target::Mesh(item) => {
                 let (tree, mesh) = self.mesh_of(view.meshes, item.mesh)?;
                 let local = ray.to_local(item.matrix)?;
-                tree.raycast(&mesh, &local, item.side)
-                    .map(|hit| (hit.t, hit.triangle))
+                tree.raycast(&mesh, &local, item.side).map(|hit| RawHit {
+                    id,
+                    t: hit.t,
+                    triangle: hit.triangle,
+                    barycentric: Some([hit.u, hit.v]),
+                })
             }
             Target::Row {
                 matrix,
@@ -584,27 +608,40 @@ impl SceneQueries {
                 centre,
             } => {
                 let eye = Self::eye_in(&view.rows, centre);
-                row_raycast(&shape, matrix, ray, &view.rows, eye).map(|t| (t, NO_TRIANGLE))
+                row_raycast(&shape, matrix, ray, &view.rows, eye).map(|t| RawHit {
+                    id,
+                    t,
+                    triangle: NO_TRIANGLE,
+                    barycentric: None,
+                })
             }
         }
     }
 
-    /// A hit with its point and normal in the world.
+    /// A hit with its point, normal and texture coordinates in the world.
     fn finish<M: QueryMeshes>(
         &self,
         view: &QueryScene<'_, M>,
         ray: &WorldRay,
         hit: RawHit,
     ) -> QueryHit {
-        let normal = match self.item(view, hit.id, u32::MAX) {
-            Some(Target::Mesh(item)) => view.meshes.mesh(item.mesh).map_or([0.0; 3], |mesh| {
-                world_normal(item.matrix, &mesh.triangle(hit.triangle), ray.direction)
-            }),
-            Some(Target::Row { shape, .. }) => {
-                shape.normal(ray.direction, view.rows.camera.as_ref())
+        let mut normal = [0.0; 3];
+        let mut uv = None;
+        match self.item(view, hit.id, u32::MAX) {
+            Some(Target::Mesh(item)) => {
+                if let Some(mesh) = view.meshes.mesh(item.mesh) {
+                    normal = world_normal(item.matrix, &mesh.triangle(hit.triangle), ray.direction);
+                    uv = hit
+                        .barycentric
+                        .zip(mesh.triangle_uv(hit.triangle))
+                        .map(|(weights, corners)| blend_uv(corners, weights));
+                }
             }
-            None => [0.0; 3],
-        };
+            Some(Target::Row { shape, .. }) => {
+                normal = shape.normal(ray.direction, view.rows.camera.as_ref());
+            }
+            None => {}
+        }
         let t = f64::from(hit.t);
         QueryHit {
             source: self.bvh.source(hit.id),
@@ -612,6 +649,7 @@ impl SceneQueries {
             triangle: hit.triangle,
             point: std::array::from_fn(|k| ray.origin[k] + t * f64::from(ray.direction[k])),
             normal,
+            uv,
         }
     }
 
@@ -636,13 +674,18 @@ impl SceneQueries {
         layers: u32,
         reach: &Reach,
     ) -> Option<QueryHit> {
-        let mut triangle = 0;
-        let (id, t) = self.bvh.raycast(ray, reach, |id, ray| {
-            let (t, tri) = self.item_raycast(view, id, ray, layers)?;
-            triangle = tri;
-            Some(t)
+        let mut hit = None;
+        self.bvh.raycast(ray, reach, |id, ray| {
+            // The walk narrows the ray to the closest hit so far, so the last hit it reports is the
+            // closest. An item whose box it meets but whose triangles the ray misses reports none
+            // and leaves that hit alone.
+            let found = self.item_raycast(view, id, ray, layers);
+            if found.is_some() {
+                hit = found;
+            }
+            found.map(|found| found.t)
         })?;
-        Some(self.finish(view, ray, RawHit { id, t, triangle }))
+        Some(self.finish(view, ray, hit?))
     }
 
     /// True when the ray hits any item on `layers`. It stops at the first hit it finds.
@@ -698,6 +741,7 @@ impl SceneQueries {
                                 id,
                                 t: hit.t,
                                 triangle: hit.triangle,
+                                barycentric: Some([hit.u, hit.v]),
                             });
                         });
                     }
@@ -713,6 +757,7 @@ impl SceneQueries {
                             id,
                             t,
                             triangle: NO_TRIANGLE,
+                            barycentric: None,
                         });
                     }
                 }

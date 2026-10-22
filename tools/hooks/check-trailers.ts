@@ -9,13 +9,14 @@ import { execFileSync } from 'node:child_process';
 import { checkSubject } from '../lib/docs-style';
 import { DOCS_ACK_RULE } from './check-docs-ack';
 import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
+import { LIMITS_ACK_RULE } from './check-limits-ack';
 import { macReferencesProblem } from './check-mac-references';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
 import { knownTaskIds, taskProblem } from './check-task';
 import { checkAck } from './commit-ack';
 
-const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE];
+const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE, LIMITS_ACK_RULE];
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' });
 
