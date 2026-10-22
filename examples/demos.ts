@@ -113,6 +113,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
+		name: 'skyway',
+		group: 'Showcase',
+		sketch: new URL('./showcase/skyway/sketch.ts', import.meta.url),
+		code: 'showcase/skyway/',
+		title: 'Skyway',
+		scene: 'A rainy megacity from a hover car',
+		summary:
+			'Fly a hover car through a rainy night city: tens of thousands of hover cars streaming along the sky lanes, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car that leads the camera under the rain.',
+		hold: 1,
+		timeoutSeconds: 300,
+	},
+	{
 		name: 'generators',
 		group: 'Building scenes',
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
@@ -449,6 +461,17 @@ export const DEMOS: readonly Demo[] = [
 			'A fountain of 2,000 glowing sparks in one sprite batch at nightfall, a neon helix of wide lines in world units, and dashes that run around the rim of a pool that reflects them all.',
 		hold: 2,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'rain',
+		group: 'Light, materials and effects',
+		sketch: new URL('./rain/sketch.ts', import.meta.url),
+		title: 'Rain from a vertex count',
+		scene: 'A night street in the rain',
+		summary:
+			'Fifty thousand rain streaks from one draw with a vertex count and no mesh data: the shader makes every streak from its instance index and the time, wraps the field in a box around the camera, and the frame uploads nothing.',
+		hold: 1.5,
+		timeoutSeconds: 90,
 	},
 	{
 		name: 'particles',

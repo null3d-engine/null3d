@@ -180,6 +180,9 @@ async function finish(
 			for (const p of mesh.primitives) {
 				if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);
 				if (p.bvh) transfer.add(p.bvh.buffer as ArrayBuffer);
+				if (p.patches)
+					for (const array of [p.patches.indices, p.patches.bounds, p.patches.words])
+						transfer.add(array.buffer as ArrayBuffer);
 				if (typeof p.occluder === 'object')
 					for (const array of [p.occluder.positions, p.occluder.indices])
 						transfer.add(array.buffer as ArrayBuffer);

@@ -59,6 +59,8 @@ A worker follows the policy of its own script's response, not the page's. A host
 
 ## The engine's files on a CDN
 
+A page can also load the engine from a CDN with no build step of its own. [Try null3D from a CDN](cdn.md) gives that page, and the build folder it imports.
+
 The production build's files, `dist/assets/`, may come from another origin than the HTML page, such as a CDN. Point Vite's `base` option at the CDN, and serve the HTML page from your own origin:
 
 ```ts

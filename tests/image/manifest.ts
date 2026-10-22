@@ -2174,6 +2174,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
+		// Each level draws with a material of its own, in the level's color, instead of the base
+		// mesh's material with its vertex colors: the image must match the first test's.
+		name: 'lod-material',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&material',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
 		name: 'lod-fade',
 		sketch: 'tests/pages/sketches/lod-sketch.ts',
 		hold: 0,

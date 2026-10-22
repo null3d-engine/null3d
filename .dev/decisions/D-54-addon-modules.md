@@ -176,3 +176,62 @@ Two runs each. The differences are within the Mac's run-to-run spread.
 - **Publishing.** Each foundation add-on is its own npm package, never a sub-path of the engine package. It keeps this record's rule: its version stays in step with the engine's, through an exact pin. It also checks the engine's version at run time.
 - **WGSL compiled when packed.** An add-on's package ships its shaders compiled, because a browser cannot import a `.wgsl` file from a CDN, which this record promises. The fresh-project test installs terrain and particles, and the CDN test loads one add-on.
 - **Versions for other developers.** Their add-ons get a plugin interface version and a listing check in M4, before the API freezes at 1.0.
+
+## Addendum, 22 October 2026: the CDN build for a page with no bundler
+
+M3-O1 builds a page that draws a scene with one HTML file and no bundler, from a CDN, as three.js
+allows. The record above settled how a page's engine files may come from another origin. This
+addendum settles what such a page loads and how it is made.
+
+### The gap
+
+The engine's npm package carries no built shader JavaScript, because a project's Vite build takes
+it from the release asset (above). A page that has no build step has no plugin to resolve those
+imports, so its copy of `lib/` alone fails: the engine's import of `../generated/shaders.js`
+answers no file. Every other address the engine loads is relative to its own module, and the
+`blob:` bootstrap already starts each worker from another origin.
+
+### The build
+
+`bun run build:cdn` writes `target/cdn`, or the folder that `--out` names:
+
+- the engine's built JavaScript and declarations, from the engine package's build
+- the generated shader modules that this machine's shader build writes, in `lib/generated`
+- both WebAssembly builds
+- the vendor files: the KTX2 transcoder, the meshopt and Draco decoders, and the area lights' table
+
+A page imports `lib/index.js` from that folder with a plain `<script type="module">`, or through
+an import map that gives `@null3d/engine` that address. `docs/getting-started/cdn.md` gives the
+page and the policy. The folder keeps the package's layout, so every relative address in the
+engine's files resolves on the CDN.
+
+The build stamps the folder with a hash of the engine's source files and of the files it copies, so
+a second run in the same checkout writes nothing. On 22 October 2026 the first build in a checkout
+wrote 6,656 files and 2.52 GB. Most of that is the device modules of each GPU path, each family of
+features and each value of the bits a device fixes; a page downloads only its own device's files,
+each on its first use.
+
+### The one engine change
+
+`scene/panorama.ts` started its worker with `new Worker` directly. A page whose engine files come
+from another origin cannot start a worker that way, because the worker's script must have the
+page's origin. It now goes through `spawnWorker`, as every other worker does, so an HDR
+environment loads on such a page and its failures name the policy item or header that is missing.
+
+### Options rejected
+
+- **Put the shader modules in the npm package.** They are hundreds of megabytes, and a project
+  with a build step never reads them from there.
+- **Fetch the release asset's tar in the page and make modules of it.** That adds a second loader,
+  a policy item for the archive's origin and a slow start, for files that a CDN can serve as they
+  are.
+- **One UMD file with a global, as three.js ships.** The engine's workers, WebAssembly and
+  first-use shader files stay files of their own by design (D-56 and the rule above). A single
+  file would inline every device's shader builds, or would still load files beside it and gain
+  nothing.
+
+### Limits
+
+A page with no build step draws with the engine's own materials, geometry and shaders. Custom
+shader WGSL needs the plugin's compile, a TypeScript sketch needs a bundler, and the add-on
+packages are separate. The docs page states all three.

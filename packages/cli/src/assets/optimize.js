@@ -16,6 +16,7 @@ import { TEXTURE_FOLDER } from './textures.js';
 
 const OPTIONS = /** @type {const} */ ({
 	lod: { type: 'boolean', default: false },
+	clusters: { type: 'boolean', default: false },
 	simplify: { type: 'string', default: String(DEFAULT_OPTIONS.simplify) },
 	'simplify-error': { type: 'string', default: String(DEFAULT_OPTIONS.simplifyError) },
 	'max-texture-size': { type: 'string', default: String(MAX_TEXTURE_SIDE) },
@@ -53,6 +54,9 @@ Options:
   --lod                        Add levels of detail to meshes of 64 triangles or more, each
                                with about half the triangles of the level above, and store each
                                level's error for the engine to pick by (MSFT_lod)
+  --clusters                   Add a tree of cluster patches to each large static mesh of 20,000
+                               triangles or more, whose patches draw near the camera at fine
+                               detail and far from it at coarse detail (NULL3D_clusters)
   --simplify <share>           Keep this share of each mesh's triangles, from 0 to 1, as far as
                                --simplify-error allows (1)
   --simplify-error <share>     The most that --simplify may move the surface, as a share of each
@@ -130,6 +134,7 @@ export function parseOptimizeArgs(args) {
 		output: resolve(/** @type {string} */ (positionals[1])),
 		options: {
 			lod: values.lod,
+			clusters: values.clusters,
 			simplify,
 			simplifyError,
 			maxTextureSize: side,
