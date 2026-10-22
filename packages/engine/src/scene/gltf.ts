@@ -53,6 +53,7 @@ import type {
 	MeshData,
 	NodeData,
 	NodeLevels,
+	PatchesData,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -830,6 +831,10 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
+		if (p.patches && !storePatches(context.core, made.id, p.patches, call) && DEV)
+			console.warn(
+				`${call}() found a tree of patches in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so the mesh draws whole. Optimize the file again.`,
+			);
 		return made;
 	});
 }
@@ -852,6 +857,21 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
 	core.f32(at, positions.length).set(positions);
 	core.u32(at + positions.byteLength, indices.length).set(indices);
 	core.glue.setMeshBlocker(mesh, positions.length / 3, indices.length);
+}
+
+/**
+ * Gives a mesh the tree of cluster patches that the file stores: the patches' spheres and records,
+ * then their indices, at the address that the staging words give.
+ */
+function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call: string): boolean {
+	const { bounds, words, indices, root } = patches;
+	const records = words.length / 4;
+	const at = core.checkGrowth(core.glue.meshArrays(records * 8 + indices.length), call);
+	const floats = core.f32(at, records * 4);
+	for (let k = 0; k < records; k++) floats.set(bounds.subarray(k * 4, k * 4 + 4), k * 4);
+	core.u32(at + records * 16, words.length).set(words);
+	core.u32(at + records * 16 + words.byteLength, indices.length).set(indices);
+	return core.glue.setMeshPatches(mesh, records, indices.length, root) === 1;
 }
 
 /**
