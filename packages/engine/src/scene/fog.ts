@@ -4,15 +4,10 @@
 // volumetric fog lights the same fog with the sun and the point and spot lights, through their
 // shadows, in a grid that follows the camera's view (D-133).
 
-import { checkNumber, DEV, type Described } from '../errors/checks';
-import { EngineError } from '../errors/engine-error';
-import {
-	FOG_CURVE_EXP2,
-	FOG_CURVE_EXPONENTIAL,
-	FOG_CURVE_LINEAR,
-	FOG_CURVE_NONE,
-} from '../generated/core';
+import { DEV } from '../errors/checks';
+import { FOG_CURVE_NONE } from '../generated/core';
 import { type ColorInput, writeLinearColor } from './color';
+import { CALL, CURVES, checkFog, checkVolume, FIRST, fogNumbers } from './fog-check';
 import type { CoreMemory } from './memory';
 
 /**
@@ -104,120 +99,6 @@ export interface FogVolumeOptions {
 	distance?: number;
 }
 
-const DEFAULT_DENSITY = 0.01;
-/** three.js's defaults for `Fog`. */
-const DEFAULT_NEAR = 1;
-const DEFAULT_FAR = 1000;
-const DEFAULT_SUN_GLOW_EXPONENT = 8;
-const DEFAULT_VOLUME_INTENSITY = 1;
-const DEFAULT_ANISOTROPY = 0.6;
-const DEFAULT_VOLUME_DISTANCE = 100;
-/** The strongest anisotropy, which keeps the phase function finite. */
-const MAX_ANISOTROPY = 0.95;
-
-const CURVES: Readonly<Record<FogCurve, number>> = {
-	exponential: FOG_CURVE_EXPONENTIAL,
-	exp2: FOG_CURVE_EXP2,
-	linear: FOG_CURVE_LINEAR,
-};
-
-/** The place of the fog's first number in the core's call values, after the color. */
-const FIRST = 3;
-/** The option that gives each of the fog's numbers, in the order that the core takes them. */
-const VALUE_NAMES = [
-	'density',
-	'near',
-	'far',
-	'height',
-	'heightFalloff',
-	'sunGlow',
-	'sunGlowExponent',
-] as const;
-
-const CALL = 'setFog';
-const FOG: Described = { describe: () => 'the fog' };
-
-/** Throws E1108 unless `value` is 0 or more. */
-function checkNotNegative(name: string, value: number): void {
-	if (!(value >= 0))
-		throw new EngineError('E1108', `${CALL}() got the ${name} ${value}; it takes 0 or more.`);
-}
-
-/**
- * Throws E1108 for an option that three.js's fog or an older call shape uses, an unknown curve, a
- * far distance that is not beyond the near one, or a value below its range, and E1203 for a value
- * that is not finite. Call it inside `if (DEV)`.
- */
-function checkFog(fog: FogOptions, values: Float64Array): void {
-	if ('type' in fog)
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got a type option. Name the fog's shape with curve: 'exponential', 'exp2' or 'linear'.`,
-		);
-	if (fog.curve !== undefined && !(fog.curve in CURVES))
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got the curve ${JSON.stringify(fog.curve)}. It takes 'exponential', 'exp2' or 'linear'.`,
-		);
-	const value = (k: number) => values[FIRST + k] as number;
-	for (const [k, name] of VALUE_NAMES.entries()) checkNumber(CALL, name, value(k), FOG);
-	const density = value(0);
-	const near = value(1);
-	const far = value(2);
-	const heightFalloff = value(4);
-	const sunGlow = value(5);
-	const sunGlowExponent = value(6);
-	if (!(far > near))
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got the near distance ${near} and the far distance ${far}. The far distance must be above the near one.`,
-		);
-	checkNotNegative('density', density);
-	checkNotNegative('height falloff', heightFalloff);
-	checkNotNegative('sun glow', sunGlow);
-	if (!(sunGlowExponent > 0))
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got the sun glow exponent ${sunGlowExponent}; it takes a number above 0.`,
-		);
-}
-
-/**
- * Throws E1108 for a volumetric fog option out of its range, and E1203 for a value that is not
- * finite. Call it inside `if (DEV)`.
- */
-function checkVolume(
-	volume: FogVolumeOptions | undefined,
-	intensity: number,
-	anisotropy: number,
-	distance: number,
-): void {
-	checkNumber(CALL, 'volumetric.intensity', intensity, FOG);
-	checkNumber(CALL, 'volumetric.anisotropy', anisotropy, FOG);
-	checkNumber(CALL, 'volumetric.distance', distance, FOG);
-	checkNotNegative('volumetric intensity', intensity);
-	if (!(Math.abs(anisotropy) <= MAX_ANISOTROPY))
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got the volumetric anisotropy ${anisotropy}; it takes a number from -0.95 to 0.95.`,
-		);
-	if (!(distance > 0))
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got the volumetric distance ${distance}; it takes a number above 0.`,
-		);
-	if (volume && 'density' in volume)
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got a density in volumetric. The volumetric fog takes the fog's own density: set density beside color.`,
-		);
-}
-
-/**
- * Gives the scene `fog`, or no fog for null, and its volumetric fog. Returns true while the
- * volumetric fog is on. The linear color and the numbers go to the core through its call values,
- * so the call allocates nothing.
- */
 export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	if (fog === null) {
 		core.glue.setFog(FOG_CURVE_NONE);
@@ -230,28 +111,11 @@ export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 		return false;
 	}
 	const values = core.callValues();
-	values[FIRST] = fog.density ?? DEFAULT_DENSITY;
-	values[FIRST + 1] = fog.near ?? DEFAULT_NEAR;
-	values[FIRST + 2] = fog.far ?? DEFAULT_FAR;
-	values[FIRST + 3] = fog.height ?? 0;
-	values[FIRST + 4] = fog.heightFalloff ?? 0;
-	values[FIRST + 5] = fog.sunGlow ?? 0;
-	values[FIRST + 6] = fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT;
-	// `volumetric: true` takes every default. Each number of the sketch's own options goes into a
-	// local, read only where the object holds it: a read that can give `undefined` boxes a fraction.
-	const { volumetric } = fog;
-	const volume = volumetric && typeof volumetric === 'object' ? volumetric : undefined;
-	const on = volumetric === true || volume !== undefined;
-	let intensity = DEFAULT_VOLUME_INTENSITY;
-	let anisotropy = DEFAULT_ANISOTROPY;
-	let distance = DEFAULT_VOLUME_DISTANCE;
-	if (volume !== undefined) {
-		if ('intensity' in volume) intensity = volume.intensity ?? intensity;
-		if ('anisotropy' in volume) anisotropy = volume.anisotropy ?? anisotropy;
-		if ('distance' in volume) distance = volume.distance ?? distance;
-	}
+	const { on, intensity, anisotropy, distance } = fogNumbers(fog, values);
 	if (DEV) {
 		checkFog(fog, values);
+		const volume =
+			fog.volumetric && typeof fog.volumetric === 'object' ? fog.volumetric : undefined;
 		if (on) checkVolume(volume, intensity, anisotropy, distance);
 	}
 	writeLinearColor(values, fog.color, CALL);
