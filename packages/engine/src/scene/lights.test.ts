@@ -41,6 +41,7 @@ function fakeCore() {
 			handle: number;
 			colors: number[][];
 			values: (number | undefined)[];
+			hero: number;
 			live: boolean;
 		}
 	>();
@@ -52,7 +53,7 @@ function fakeCore() {
 		commandRing: (field: number) => [AT.records, RING, AT.write, AT.read][field] as number,
 		reserveObject: () => ++slot,
 		createLight: (handle: number, kind: number) => {
-			rows.set(++row, { kind, handle, colors: [], values: [], live: true });
+			rows.set(++row, { kind, handle, colors: [], values: [], hero: 0, live: true });
 			return row;
 		},
 		destroyLight: (light: number) => {
@@ -65,6 +66,12 @@ function fakeCore() {
 		},
 		setLightValue: (light: number, which: number, value: number) => {
 			(rows.get(light) as { values: (number | undefined)[] }).values[which] = value;
+			return 0;
+		},
+		setLightHero: (light: number, object: number) => {
+			const row = rows.get(light);
+			if (!row) return 1;
+			row.hero = object;
 			return 0;
 		},
 		lightImage: (light: number) => {
@@ -285,6 +292,39 @@ describe('creating lights', () => {
 		// Settings left out keep the core's defaults.
 		const plain = scene.createDirectionalLight({ shadow: {} });
 		expect(tableRow(plain).values).toEqual([]);
+	});
+
+	test("a directional light's hero object reaches the core, through its options and its setter", () => {
+		const { scene, tableRow } = fakeCore();
+		const hero = scene.createGroup();
+		const sun = scene.createDirectionalLight({
+			castShadows: true,
+			shadow: { hero },
+		});
+		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
+		// Leaving the option out keeps the hero that the light names.
+		sun.setShadow({ cascades: 2 });
+		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
+		// null takes it away; setHeroShadow gives it back.
+		sun.setShadow({ hero: null });
+		expect(tableRow(sun).hero).toBe(0);
+		sun.setHeroShadow(hero);
+		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
+		sun.setHeroShadow(null);
+		expect(tableRow(sun).hero).toBe(0);
+	});
+
+	test('a hero that is not an object throws, and a destroyed one too', () => {
+		const { scene } = fakeCore();
+		const hero = scene.createGroup();
+		const sun = scene.createDirectionalLight({ castShadows: true });
+		const error = thrown(() => sun.setHeroShadow({} as never));
+		expect(error.code).toBe('E1213');
+		expect(error.message).toContain('not an object');
+		sun.setHeroShadow(hero);
+		hero.destroy();
+		const destroyed = thrown(() => sun.setHeroShadow(hero));
+		expect(destroyed.message).toContain('destroyed');
 	});
 
 	test("a spot light's shadow biases land in the light table, and setShadow changes only those it names", () => {

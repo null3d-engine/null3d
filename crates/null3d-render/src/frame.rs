@@ -68,8 +68,8 @@ use crate::probe_shading::ProbeShading;
 use crate::probes::{ProbeError, ProbeList, ProbeSettings, Probes};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
-    fit_cascades,
+    CascadeDepth, CascadeSchedule, HeroShadow, MovingCasters, ShadowFrame, ShadowQuality,
+    ShadowSettings, fit_cascades,
 };
 use crate::sky_maps::{MapSky, SkyMaps};
 use crate::ssr::{self, Ssr, TraceFrame};
@@ -3097,6 +3097,17 @@ impl SceneSettings {
             drawn,
             depth: self.cascade_depth,
             clock: self.clock,
+            hero: shadow.hero.and_then(|row| {
+                HeroShadow::of(
+                    scene,
+                    parity,
+                    row,
+                    [x, y, z],
+                    shadow.layers,
+                    shadow.bias,
+                    shadow.normal_bias,
+                )
+            }),
         })
     }
 

@@ -633,6 +633,14 @@ export interface DirectionalShadowOptions {
 	 * `contactShadowSteps` decides whether they draw. The default is 0.3.
 	 */
 	contactDistance?: number;
+	/**
+	 * An object whose shadow the light draws into a tile of its own, at a much finer scale than the
+	 * cascades, or `null` for none. The tile fits the object's bounds along the light, and surfaces
+	 * near the object read it in place of the coarser cascades, so a car, a character or a product
+	 * keeps a sharp shadow. The object must cast shadows. The tile takes a layer of the shadow
+	 * atlas, which the point and spot lights share. The default is none.
+	 */
+	hero?: Object3D | null;
 }
 
 /**
@@ -2251,11 +2259,41 @@ export class DirectionalLight extends Light {
 	}
 
 	/**
+	 * Gives `hero` its own shadow map, or takes it away with `null`. The map is a tile of the
+	 * shadow atlas, fitted tightly to the object along the light, so its shadow keeps far finer
+	 * texels than the cascades give it. Surfaces near the object read that tile in place of the
+	 * cascades. The object casts shadows; its light is this light.
+	 */
+	setHeroShadow(hero: Object3D | null): void {
+		if (DEV) {
+			checkLive('setHeroShadow', this);
+			if (hero !== null) {
+				if (!(hero instanceof Object3D))
+					throw new EngineError(
+						'E1213',
+						`setHeroShadow() got ${String(hero)}, which is not an object. Give an object that casts shadows, or null.`,
+					);
+				checkLive('setHeroShadow', hero, true);
+			}
+		}
+		const { core } = this.scene;
+		const object = hero === null ? 0 : hero.handle >>> 0;
+		core.check(core.glue.setLightHero(this.id, object), 'setHeroShadow', this.label);
+	}
+
+	/**
 	 * Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. A
 	 * new cascade count or map size makes the shadow map again, so set them at setup.
 	 */
 	setShadow(shadow: DirectionalShadowOptions): void {
 		this.shadow('setShadow', shadow);
+	}
+
+	/** @internal Sets each of the shadow settings that `shadow` gives, the hero among them. */
+	override shadow(call: string, shadow: DirectionalShadowOptions | LightShadowOptions): void {
+		super.shadow(call, shadow);
+		const hero = (shadow as DirectionalShadowOptions).hero;
+		if (hero !== undefined) this.setHeroShadow(hero);
 	}
 }
 

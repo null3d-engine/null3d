@@ -231,7 +231,18 @@ Point lights cast them where the quality preset's `pointLightShadows` is on, as 
 
 The directional light also draws contact shadows: short shadows from the camera's depth where small objects touch the ground. `contactDistance` sets how far they reach in meters, 0.3 by default, and 0 turns them off. They draw where the quality setting `contactShadowSteps` is above 0. That is on High and Ultra, and on Medium on WebGL2.
 
-[Shadows](../concepts/shadows.md) explains cascades, contact shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
+One object can get a shadow map of its own, fitted tightly to it, at several times the cascades' texel density. Name it with the `hero` option or `setHeroShadow`:
+
+```ts
+const car = scene.createMesh({ mesh: carMesh, castShadows: true, receiveShadows: true });
+sun.setShadow({ hero: car });
+// Back to the cascades alone.
+sun.setHeroShadow(null);
+```
+
+The object must cast shadows. Its tile comes from the same atlas as the spot and point lights' shadows, and takes its last layer. Surfaces within the object's box along the light read the tile, and the cascades shadow everything else. See [A hero shadow](../concepts/shadows.md#a-hero-shadow).
+
+[Shadows](../concepts/shadows.md) explains cascades, contact shadows, hero shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 
 ## Coming from three.js
 
@@ -249,6 +260,7 @@ The directional light also draws contact shadows: short shadows from the camera'
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
 | `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
+| A second shadowed light fitted to one object, or a hand-fitted `DirectionalLight` shadow camera, for a sharper close-up shadow | `sun.setShadow({ hero: object })`: the light gives the object a fitted shadow map of its own, and follows it |
 | `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in meters. The quality preset sets the tile size. |
 | `spotLight.map = texture` | `map: { width, height, data }` at create, or `setMap({ width, height, data })`: sRGB pixels that the engine resamples and projects, rather than a texture handle. `setMap(null)` goes back to one color |
 
