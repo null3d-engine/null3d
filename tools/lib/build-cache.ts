@@ -296,11 +296,16 @@ export function acquireLock(path: string): () => void {
 
 /**
  * How many bytes a cache under the root may keep before its least recently used entries go. The
- * figure bounds runaway growth rather than a working set: one shader module set is about 850 MB and
- * the entry cache of one compiler stamp was about 18 GB on 15 October 2026, so a tighter limit would
- * evict sets and entries that the next build would then rebuild.
+ * figure bounds runaway growth rather than a working set, so a tighter limit evicts sets and entries
+ * that the next build would then rebuild.
+ *
+ * It was 24 GB until 22 October 2026. That day the module cache held four sets in 23 GB, so one set
+ * is about 5.8 GB rather than the 850 MB this note claimed: the shader set grew with every feature
+ * that added a family. A worktree that merged the milestone branch found its set evicted and rebuilt
+ * the whole thing, which takes a minute on an idle machine and over an hour through the queue. The
+ * disk held 1.6 TB free, so the limit now holds about eleven sets.
  */
-export const CACHE_LIMIT_BYTES = 24 * 1024 * 1024 * 1024;
+export const CACHE_LIMIT_BYTES = 64 * 1024 * 1024 * 1024;
 
 /** An entry used within this long stays, because a build of another checkout may still read it. */
 const IN_USE_MS = 2 * 60 * 60 * 1000;

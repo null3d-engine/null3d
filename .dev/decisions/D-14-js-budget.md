@@ -770,8 +770,8 @@ loads the sketch worker rises by about that much.
 ### The files that the first-use loader added, measured, 22 October 2026
 
 The build of the milestone branch names ten files that grew past the limit of the size check. Six
-of them are new, and four are the loader's files on the page and in the worker. None of the six
-loads at a page's start. These are their sizes after Brotli:
+are new files, and four are files that grew. None of the six new files loads at a page's start.
+These are their sizes after Brotli:
 
 | File | Base | This build |
 | --- | ---: | ---: |

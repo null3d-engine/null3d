@@ -10,7 +10,7 @@
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
-import type { Vec3Like } from '../math/types';
+import type { Vec2Like, Vec3Like } from '../math/types';
 import {
 	EVENT_POINTER_DOWN,
 	EVENT_POINTER_LEAVE,
@@ -80,6 +80,19 @@ export interface ObjectPointerEvent {
 	 * point or a line.
 	 */
 	readonly triangle: number;
+	/**
+	 * Where on the surface the ray hit, as the first texture coordinates of the hit triangle
+	 * blended across its three corners, as three.js's `intersection.uv`. Read `hasUv` first: the
+	 * numbers mean nothing when it is false. An in-world screen turns a click into a texel of its
+	 * image with these, without working out where the surface lies in space.
+	 */
+	readonly uv: Vec2Like;
+	/**
+	 * True when the hit triangle's mesh has a first texture coordinate set, so `uv` holds where on
+	 * the surface the ray hit. False for a hit on a sprite, a point or a line, and for a mesh with
+	 * no such coordinates.
+	 */
+	readonly hasUv: boolean;
 	/** The ray from the camera through the pointer, from the frame that was on screen at the event. */
 	readonly ray: Ray;
 	/** The pointer's distance from the canvas's left edge in CSS pixels. */
@@ -154,7 +167,9 @@ export const EVENT_TRIANGLE = 3;
 export const EVENT_ROW = 4;
 export const EVENT_POINT = 5;
 export const EVENT_NORMAL = 8;
-const EVENT_NUMBERS = 11;
+export const EVENT_UV = 11;
+export const EVENT_HAS_UV = 13;
+const EVENT_NUMBERS = 14;
 
 /**
  * How far a pointer may move between its press and its release, in CSS pixels, for the release to
@@ -248,6 +263,7 @@ class PointerEventState implements ObjectPointerEvent {
 	readonly numbers = new Float64Array(EVENT_NUMBERS);
 	readonly point = this.numbers.subarray(EVENT_POINT, EVENT_POINT + 3);
 	readonly normal = this.numbers.subarray(EVENT_NORMAL, EVENT_NORMAL + 3);
+	readonly uv = this.numbers.subarray(EVENT_UV, EVENT_UV + 2);
 	readonly ray: Ray = { origin: new Float64Array(3), direction: new Float64Array(3) };
 
 	get distance(): number {
@@ -256,6 +272,10 @@ class PointerEventState implements ObjectPointerEvent {
 
 	get triangle(): number {
 		return this.numbers[EVENT_TRIANGLE] as number;
+	}
+
+	get hasUv(): boolean {
+		return (this.numbers[EVENT_HAS_UV] as number) !== 0;
 	}
 
 	get x(): number {
