@@ -2147,6 +2147,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
 	// the levels switching at once and in their fading bands, opaque and as a mask smoothed by alpha
 	// to coverage, and one copy casts a coarser level's shadow onto a wall.
+	//
+	// The sketch places each copy along its own ray at the distance the rule measures, so a copy
+	// sits at the share of its switch that the test means: at 95 percent of a 9.27 m switch it
+	// draws the base level with one copy, and at 103 percent the first lower level. The bias test
+	// halves that switch once: 4.63 m, and the same shares of it draw the same levels.
 	{
 		name: 'lod',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
@@ -2164,13 +2169,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
-		// Each object takes a bias of 2 and stands at half the distance, so its levels switch where
-		// the copies without a bias do: the image must match the first test's.
+		// Each object takes a bias of 2, which halves its switch once, so each copy is placed at half
+		// the distance of the first test's and draws the same level there. The copies are then
+		// twice the size on screen, so this test keeps a picture of its own rather than the first
+		// test's: a bias moves the switches, not the sizes.
 		name: 'lod-bias',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&bias',
 		hold: 0,
 		size: [480, 270],
-		reference: 'lod',
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	{
