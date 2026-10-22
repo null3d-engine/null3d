@@ -1,6 +1,6 @@
 # D-217: Draws from a vertex count alone
 
-Status: decided on 22 October 2026, in the branch that builds M3-A5, from the Neon Harbor follow-ups that D-172 lists. Task: M3-A5.
+Status: decided on 22 October 2026, in the branch that builds M3-A5, from the Neon Harbour follow-ups that D-172 lists. Task: M3-A5.
 
 Summary: A draw that has a custom material and two whole numbers, its vertices per shape and its copies, draws in the transparent pass with one `Draw` call, no vertex buffer and no index buffer: the shader makes every vertex from `@builtin(vertex_index)` and `@builtin(instance_index)`. The counts live in engine memory, so a frame of 50,000 rain streaks uploads nothing and costs one call. The draw culls by one sphere that the sketch gives, and `null3d::wrap` wraps positions into a box that moves with the camera. A draw blends, takes no texture and casts no shadow.
 

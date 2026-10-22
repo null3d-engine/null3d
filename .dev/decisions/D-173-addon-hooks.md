@@ -190,7 +190,7 @@ The 13:35 answers matched the proposal's five questions. A draft of rulings from
 2. **Volumetric clouds are left to other developers,** as an add-on behind the core's cloud settings. They are not on the engine team's plan. This is a choice of scope, not a deferral.
 3. **Particles are not an exception.** The add-on uses a public engine method (F3). The method gets a written docs page.
 4. **The foundation add-ons** are physics, Gaussian splats, MSDF text, particles, terrain, water, controls, geometry, impostors and `three-compat`. The engine's team builds them. A later add-on is a foundation when other add-ons or many kinds of project build on it. So is one that implements a standard or wraps a large third-party library.
-5. **M3's six content add-ons are example add-ons,** not npm packages: the lens kit, facades, screens, weather, car paint and traffic lanes. Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licences. It uses only the public API and has image tests through the examples. This changes [D-172](D-172-neon-harbor-follow-ups.md). The lens kit uses the core's sharpening, grading and vignette, and weather says which feature makes rain (F11).
+5. **M3's six content add-ons are example add-ons,** not npm packages: the lens kit, facades, screens, weather, car paint and traffic lanes. Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licences. It uses only the public API and has image tests through the examples. This changes [D-172](D-172-neon-harbour-follow-ups.md). The lens kit uses the core's sharpening, grading and vignette, and weather says which feature makes rain (F11).
 6. **Publishing.** Each foundation add-on is its own npm package. It pins the exact engine version and checks the engine's version at run time. Its WGSL is compiled when the package is packed (F8). The engine package holds no bundle of add-ons in the style of `three/addons`.
 7. **Rule 11 reads:** "an add-on extends or replaces a core feature only through that feature's own settings" (F2).
 8. **Each hook is built with its first user, all before 1.0.** That covers H1 to H9, the preset and stats links, the texture-unit allocator and the namespaces. The coordinator moved H1, H2 and H8 from 1.x to before 1.0 at the owner's word, about 5 helper-weeks. H4 waits for the clear coat check, still before 1.0. The table below gives each hook's first user.
@@ -236,7 +236,7 @@ Done in this change:
 
 - **AGENTS.md:** the rules for add-on modules gain rules 11 to 13. They are one place per feature, public API only with its check, and the foundations with their publishing. The two pairs of rules that repeated numbers 8 and 9 became one rule each.
 - **The check:** `tools/check-addon-imports.ts`, run by `bun run check`. It reads the shipped code of every package beside the engine, less the build tools `cli` and `vite-plugin`, and every file of `examples/`. It refuses an import of any engine entry point other than `@null3d/engine` and `@null3d/engine/stats`, and an import of the engine's source. Tests are not checked. `tools/lib/addon-imports.test.ts` tests it.
-- **Records:** [D-54](D-54-addon-modules.md) and [D-172](D-172-neon-harbor-follow-ups.md) gain addenda that point here. [D-179](D-179-technique-rulings-2026-10-15.md) holds the same day's rulings on techniques and on every item that was set for after 1.0.
+- **Records:** [D-54](D-54-addon-modules.md) and [D-172](D-172-neon-harbour-follow-ups.md) gain addenda that point here. [D-179](D-179-technique-rulings-2026-10-15.md) holds the same day's rulings on techniques and on every item that was set for after 1.0.
 
 Tasks, each with its first user:
 
@@ -268,7 +268,7 @@ The rule of one place per feature holds. Clouds stay in the core, and no cloud a
 The owner ruled on 21 October 2026 that the add-ons wait until the architecture and the core engine
 work are done. The order inside M3 is therefore:
 
-1. The core's work: level of detail, the Neon Harbor follow-ups, the glTF and API features, the script
+1. The core's work: level of detail, the Neon Harbour follow-ups, the glTF and API features, the script
    tag and the study's tasks. M3-R1, one feature description for every hook, is architecture and
    belongs here.
 2. The add-on platform: the pack, version, namespace, texture-unit, listing and interface-version
