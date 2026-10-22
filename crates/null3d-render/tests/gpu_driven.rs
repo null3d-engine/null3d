@@ -137,10 +137,11 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // textures that stand in for ambient occlusion and for the copy that surfaces which let light
     // through sample, the views' cell offsets, the white texel that the side view's texture shows
     // until it draws, the row values texture of instance batches, one texel row while no batch has
-    // row values, and the first joints of skinned objects, one texel row while nothing is skinned.
+    // row values, the first joints of skinned objects, one texel row while nothing is skinned, and
+    // the distance ranges of every source.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 18);
+    assert_eq!(count(&commands, Op::CreateTexture), 19);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -265,9 +266,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // materials' custom values, the environment's blank cube, the blank textures that stand in for
     // ambient occlusion and for the copy that surfaces which let light through sample, the views'
     // cell offsets, the row values texture of instance batches, the first joints of skinned
-    // objects, and the blank 3D texture that the frame groups bind while the scene has no light
-    // probe grid.
-    assert_eq!(count(&commands, Op::CreateTexture), 15);
+    // objects, the distance ranges of every source, and the blank 3D texture that the frame groups
+    // bind while the scene has no light probe grid.
+    assert_eq!(count(&commands, Op::CreateTexture), 16);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -328,6 +329,24 @@ fn after_a_gpu_reset_the_next_frame_replays_on_a_new_device() {
             .collect::<std::collections::BTreeSet<u32>>()
     };
     assert_eq!(writes(&again), writes(&first));
+    // A new device lacks every texture the frame writes, so the frame must make each of them
+    // again. The replay above already refuses a write into a texture that it does not hold.
+    let textures = |commands: &[(Op, Vec<u32>)]| {
+        commands
+            .iter()
+            .filter(|(op, _)| *op == Op::WriteTexture)
+            .map(|(_, o)| o[0])
+            .collect::<std::collections::BTreeSet<u32>>()
+    };
+    assert_eq!(textures(&again), textures(&first));
+    for texture in textures(&again) {
+        assert!(
+            again
+                .iter()
+                .any(|(op, o)| *op == Op::CreateTexture && o[0] == texture),
+            "the frame writes texture {texture} without making it again"
+        );
+    }
 }
 
 #[test]
@@ -1229,12 +1248,12 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
                 })
                 .collect()
         };
-        // Each view's culling group binds the same nine buffers, the cell offsets texture and the
-        // skin firsts texture with the switch or without: the indices share the compacted
-        // instance buffer.
+        // Each view's culling group binds the same nine buffers, the cell offsets texture, the
+        // skin firsts texture and the distance ranges texture with the switch or without: the
+        // indices share the compacted instance buffer.
         let culling = groups_of(layout::CULL);
         assert_eq!(culling.len(), 3, "the camera and two cascades: {culling:?}");
-        assert!(culling.iter().all(|group| group.len() == 1 + 11));
+        assert!(culling.iter().all(|group| group.len() == 1 + 12));
         // With the switch, each view's index group binds its culling parameters, the matrices, the
         // bucket tables of the layout it draws and the cell offsets texture, as its culling group
         // does.
