@@ -199,7 +199,7 @@ import {
 import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
-import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
+import { buildsForLoads, makeLoadBuild, prepareLoads } from './lib/load-server.ts';
 import { objectGrowthSummary } from './lib/object-growth.ts';
 import { occlusionS6Summary } from './lib/occlusion-s6.ts';
 import {
@@ -1855,7 +1855,7 @@ async function main(): Promise<void> {
 		(item) => item.path,
 	);
 	const builds = buildsForLoads(paths);
-	for (const { build } of builds) build();
+	for (const load of builds) makeLoadBuild(load);
 	const local = await startServer();
 	const lan =
 		options.lan.length > 0 || options.cloud.length > 0 ? await startServer(true) : undefined;

@@ -297,6 +297,25 @@ describe("CI's workflow", () => {
 		}
 	});
 
+	it('makes the load builds in one job, which every job that serves them waits for', () => {
+		const builders = Object.entries(jobs).filter(([, job]) =>
+			commandsOf(job).some(({ text }) => text.includes('tests/lib/load-server.ts')),
+		);
+		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
+		const servers = Object.entries(jobs).filter(
+			([, job]) => job.env?.NULL3D_LOAD_PAGES === 'prebuilt',
+		);
+		expect(servers.length).toBeGreaterThan(0);
+		for (const [name, job] of servers) {
+			expect(needsOf(job), name).toContain('load-pages');
+			const downloads = (job.steps ?? []).some(
+				({ uses, with: given }) =>
+					uses?.startsWith('actions/download-artifact@') === true && given?.name === 'load-pages',
+			);
+			expect(downloads, name).toBe(true);
+		}
+	});
+
 	it('names in each pass key every script that its part starts, with their imports', () => {
 		const keyed = Object.entries(jobs).filter(([, job]) =>
 			(job.steps ?? []).some(({ name }) => /^The key of this \w+'s inputs$/.test(name ?? '')),
