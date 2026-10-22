@@ -85,6 +85,10 @@ const config: UserConfig = {
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	server: {
+		// The phone reaches the plain server through a USB forwarding rule to the IPv4 loopback, so
+		// that server binds 127.0.0.1 rather than the name that resolves to IPv6 first. The secure
+		// server answers the local network, so it binds every interface.
+		host: https ? true : '127.0.0.1',
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,
 		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },
