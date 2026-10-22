@@ -299,6 +299,21 @@ function isSketchModule(path: string): boolean {
 	return existsSync(path) && readFileSync(path, 'utf8').includes('defineSketch(');
 }
 
+/**
+ * True when `address`, named by a module at `importer`, is one of the engine's generated shader
+ * device modules. The shader build writes those beside `shaders.ts` and its combination modules, and
+ * they hold shader text rather than a sketch. A build that read each one to look for `defineSketch`
+ * spent a pass over the whole set. Both files may sit in the installed package or in the cache that
+ * a project shares, so the names decide and the folder does not.
+ */
+function isGeneratedShaderFile(importer: string, address: string): boolean {
+	const name = importer.slice(importer.lastIndexOf('/') + 1);
+	return (
+		/^shaders(?:-[a-z0-9-]+)?\.[cm]?[jt]s$/.test(name) &&
+		/^\.\/shaders-[a-z0-9-]+\.js$/.test(address)
+	);
+}
+
 /** A WGSL file that a module imports, without a query such as `?raw`. */
 const WGSL_FILE = /\.wgsl$/;
 
@@ -643,7 +658,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					for (const match of code.matchAll(SCRIPT_URL)) {
 						const start = match.index;
 						if (WORKER_BEFORE.test(code.slice(Math.max(0, start - 40), start))) continue;
-						const script = await this.resolve(match[2] ?? '', id);
+						const address = match[2] ?? '';
+						if (isGeneratedShaderFile(id, address)) continue;
+						const script = await this.resolve(address, id);
 						if (!script || !isSketchModule(script.id)) continue;
 						// The sketch worker imports the compiled module by this address.
 						const ref = this.emitFile({
