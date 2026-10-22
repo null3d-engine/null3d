@@ -21,6 +21,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
+import { refuseStaleCore } from './core-sources.ts';
 import { walkFiles } from './files.ts';
 import { buildPackageLibrary } from './packages.ts';
 
@@ -119,6 +120,7 @@ function filesUnder(dir: string, relative = ''): CdnFile[] {
  * lacks a file that a page loads, with the step that writes it.
  */
 export function buildCdn(root: string, out: string): CdnBuild {
+	refuseStaleCore(root);
 	const sources = cdnSourcesHash(root);
 	if (stampOf(out) === sources && existsSync(join(out, CDN_ENTRY))) {
 		const files = filesUnder(out);
