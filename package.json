@@ -36,7 +36,7 @@
 		"test": "bun tools/shaders.ts && bun tests/unit.ts",
 		"test:heavy": "bun tools/shaders.ts && bun tests/heavy-checks.ts",
 		"prepare": "bun tools/hooks/install-hooks.ts && bun tools/generate.ts",
-		"build:test-pages": "bun tools/build-cdn.ts && bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && NULL3D_BUILD_PAGE=sketch-shaders bunx vite build && NULL3D_BUILD_PAGE=ktx2-files bunx vite build && NULL3D_BUILD_PAGE=texture-cache bunx vite build && NULL3D_BUILD_PAGE=gltf-files bunx vite build && NULL3D_BUILD_PAGE=stats bunx vite build",
+		"build:test-pages": "bun tools/build-test-pages.ts",
 		"test:browser": "bun run --cwd tests test",
 		"test:images": "bun run --cwd tests test images.spec.ts",
 		"test:browser-weights": "bun tools/shard-weights.ts",
