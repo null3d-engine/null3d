@@ -375,7 +375,9 @@ pub(super) struct Layout {
     /// The distance range of every source, as the texel of the ranges texture that holds it: its
     /// start distance, then its end distance, then two words that nothing reads.
     source_ranges: Vec<f32>,
-    /// The texel rows of the distance ranges texture, 0 before it exists.
+    /// The texel rows of the distance ranges texture, 0 before it exists. The texture's growth
+    /// raises it, and only a GPU reset lowers it, so the first frame on a new device makes the
+    /// texture again before it writes it.
     ranges_rows: u32,
     /// True when any source of the scene draws in a distance band, which every layout of that
     /// scene culls by, its own sources or another layout's.

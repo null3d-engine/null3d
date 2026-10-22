@@ -329,22 +329,41 @@ fn after_a_gpu_reset_the_next_frame_replays_on_a_new_device() {
             .collect::<std::collections::BTreeSet<u32>>()
     };
     assert_eq!(writes(&again), writes(&first));
-    // A new device lacks every texture the frame writes, so the frame must make each of them
-    // again. The replay above already refuses a write into a texture that it does not hold.
-    let textures = |commands: &[(Op, Vec<u32>)]| {
-        commands
-            .iter()
-            .filter(|(op, _)| *op == Op::WriteTexture)
-            .map(|(_, o)| o[0])
-            .collect::<std::collections::BTreeSet<u32>>()
-    };
-    assert_eq!(textures(&again), textures(&first));
-    for texture in textures(&again) {
+}
+
+/// A new device holds none of the old one's textures, so the frame after a reset must make each
+/// texture that it writes again. A resource whose creation the reset forgets fails here, as the
+/// distance ranges texture did while the layout kept its row count across the reset.
+#[test]
+fn a_gpu_reset_makes_every_texture_the_frame_writes_again() {
+    let mut world = World::new();
+    let mut lost = MockBackend::default();
+    world.record(true);
+    lost.replay(world.renderer.list(1).words()).unwrap();
+    let first = world.commands();
+    assert!(
+        count(&first, Op::CreateTexture) > 0,
+        "the first frame makes the textures that it writes"
+    );
+
+    world.renderer.reset_gpu();
+    world.frame = 2;
+    world.record(false);
+    let fresh = world.renderer.list(2).words();
+    MockBackend::default().replay(fresh).unwrap();
+    let commands = world.commands();
+    let written: std::collections::BTreeSet<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::WriteTexture)
+        .map(|(_, o)| o[0])
+        .collect();
+    assert!(!written.is_empty(), "the frame writes its textures");
+    for texture in written {
         assert!(
-            again
+            commands
                 .iter()
                 .any(|(op, o)| *op == Op::CreateTexture && o[0] == texture),
-            "the frame writes texture {texture} without making it again"
+            "the frame writes texture {texture} without making it again after the reset"
         );
     }
 }
