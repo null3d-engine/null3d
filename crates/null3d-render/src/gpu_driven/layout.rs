@@ -372,8 +372,8 @@ pub(super) struct Layout {
     occluders: u32,
     /// The layer mask of every source.
     source_layers: Vec<u32>,
-    /// The distance range of every source: its start distance, then its end distance, two floats
-    /// per source.
+    /// The distance range of every source, as the texel of the ranges texture that holds it: its
+    /// start distance, then its end distance, then two words that nothing reads.
     source_ranges: Vec<f32>,
     /// The texel rows of the distance ranges texture, 0 before it exists.
     ranges_rows: u32,
@@ -637,6 +637,7 @@ impl Layout {
         self.built = false;
         self.buffer_sizes = [0; 5];
         self.skin_firsts_rows = 0;
+        self.ranges_rows = 0;
         self.order_uploaded = false;
     }
 
