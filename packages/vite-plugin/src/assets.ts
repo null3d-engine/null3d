@@ -21,6 +21,11 @@ export interface AssetOptions {
 	/** Add levels of detail to meshes of 64 triangles or more. The default is false. */
 	lod?: boolean;
 	/**
+	 * Add a tree of cluster patches to each large static mesh of 20,000 triangles or more. The
+	 * default is false.
+	 */
+	clusters?: boolean;
+	/**
 	 * Keep this share of each mesh's triangles, above 0 and up to 1, as far as `simplifyError`
 	 * allows. The default, 1, keeps them all.
 	 */
