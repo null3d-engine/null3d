@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 
 interface Step {
 	name?: string;
@@ -278,7 +279,9 @@ describe("CI's workflow", () => {
 
 	it('builds the production pages in one job, and every other browser job leaves them out', () => {
 		const builders = Object.entries(jobs).filter(([, job]) =>
-			commandsOf(job).some(({ text }) => text.includes('vite build')),
+			commandsOf(job).some(
+				({ text }) => text.includes('vite build') || text.includes('tools/build-test-pages.ts'),
+			),
 		);
 		expect(builders.map(([name]) => name)).toEqual(['browser-production']);
 		for (const [name, job] of Object.entries(jobs)) {
@@ -294,6 +297,22 @@ describe("CI's workflow", () => {
 			if (production)
 				for (const { env } of browserRuns)
 					expect(env.NULL3D_PRODUCTION_PAGES, name).toBe('prebuilt');
+		}
+	});
+
+	it('runs each production build test file in one part, which builds every page that it loads', () => {
+		const words = (text: unknown) => String(text).split(/\s+/).filter(Boolean);
+		const parts = combinations(jobNamed('browser-production'));
+		const files = parts.flatMap(({ tests }) => words(tests));
+		expect(files.toSorted()).toEqual([...PRODUCTION_BUILD_TESTS].sort());
+		for (const { pages, tests } of parts) {
+			const built = words(pages);
+			for (const page of built) expect(PRODUCTION_BUILD_PAGES as readonly string[]).toContain(page);
+			for (const file of words(tests)) {
+				const text = readFileSync(join(ROOT, 'tests/image', file), 'utf8');
+				for (const page of PRODUCTION_BUILD_PAGES.filter((p) => text.includes(`${p}.html`)))
+					expect(built, `${file} loads ${page}.html`).toContain(page);
+			}
 		}
 	});
 

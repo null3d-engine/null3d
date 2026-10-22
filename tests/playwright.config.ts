@@ -3,7 +3,13 @@ import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
-import { HTTP_PORT, PREVIEW_PORT, PRODUCTION_PAGES_SWITCH, REPO_ROOT } from './lib/server.ts';
+import {
+	HTTP_PORT,
+	PREVIEW_PORT,
+	PRODUCTION_BUILD_TESTS,
+	PRODUCTION_PAGES_SWITCH,
+	REPO_ROOT,
+} from './lib/server.ts';
 
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
 // files before it starts the web servers.
@@ -32,16 +38,7 @@ const productionPages = productionPagesMode !== 'skip';
 
 /** The production build project's tests, and the server that serves its pages. */
 const PRODUCTION_BUILD = {
-	testMatch: [
-		'content-security-policy.spec.ts',
-		'cdn.spec.ts',
-		'engine.spec.ts',
-		'errors.spec.ts',
-		'sketch-shaders.spec.ts',
-		'ktx2.spec.ts',
-		'gltf.spec.ts',
-		'stats.spec.ts',
-	],
+	testMatch: [...PRODUCTION_BUILD_TESTS],
 	use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
 };
 
@@ -59,13 +56,12 @@ export const DEV_SERVER = {
 /** The production build of the test pages, and the preview that serves it. */
 const PRODUCTION_SERVER = {
 	// A fresh production build every run, so the tests never serve stale files, unless the run says
-	// that the pages are built. `bun run build:test-pages` builds the CDN build, for the test that
-	// loads the engine from another origin with no bundler, and then each page. The errors, sketch
-	// shaders, KTX2, texture cache and stats pages build on their own, so the engine test page stays
-	// as the startup benchmark loads it.
+	// that the pages are built. `bun run build:test-pages` builds each page on its own, so the engine
+	// test page stays as the startup benchmark loads it.
 	command: `${productionPagesMode === 'prebuilt' ? '' : 'bun run build:test-pages && '}bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
 	cwd: REPO_ROOT,
-	url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
+	// The port, not a page: a CI part builds only the pages that its tests load.
+	port: PREVIEW_PORT,
 	reuseExistingServer: false,
 	// The chain builds seven pages before the preview serves them, and on a slow runner the default
 	// minute runs out partway through: the run then fails as if the server never started, with every
