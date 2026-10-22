@@ -13,6 +13,8 @@ const [REACH, HEIGHT] = [62, 58];
 const LENGTH = 0.62;
 
 const falling = /* wgsl */ `
+struct Uniforms { strength: f32 }
+
 fn vertexOffset(input: VertexInput) -> vec3f {
     let span = 58.0; // the box's height, as HEIGHT above
     let base = input.position.y - input.uv.y * 0.62; // the streak's length, as LENGTH above
@@ -27,8 +29,8 @@ fn surface(input: SurfaceInput) -> Surface {
     s.baseColor = vec3f(0.0);
     s.roughness = 0.2;
     s.metalness = 0.0;
-    s.emissive = vec3f(0.34, 0.42, 0.55) * (0.5 + 0.7 * input.uv.x);
-    s.alpha = sin(input.uv.y * 3.14159) * (0.16 + 0.28 * input.uv.x);
+    s.emissive = vec3f(0.34, 0.42, 0.55) * (0.5 + 0.7 * input.uv.x) * material.strength;
+    s.alpha = min(1.0, sin(input.uv.y * 3.14159) * (0.16 + 0.28 * input.uv.x)) * material.strength;
     return s;
 }
 `;
@@ -39,6 +41,8 @@ export interface Rain {
 	follow(camera: PerspectiveCamera): void;
 	/** Turns the rain on or off. */
 	setVisible(on: boolean): void;
+	/** Makes the rain denser or fainter, from 1 for the ordinary fall. */
+	setStrength(value: number): void;
 }
 
 /** Builds the rain. */
@@ -72,6 +76,17 @@ export function createRain(ctx: SketchContext): Rain {
 			indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
 		}
 	}
+	const material = materials.shader({
+		wgsl: falling,
+		uniforms: { strength: 1 },
+		doubleSided: true,
+		alphaMode: 'blend',
+		blending: 'additive',
+		depthWrite: false,
+		forceSinglePass: true,
+		fog: false,
+		contactShadows: false,
+	});
 	const mesh = scene.createMesh({
 		mesh: geometry.fromArrays({
 			positions: new Float32Array(positions),
@@ -79,16 +94,7 @@ export function createRain(ctx: SketchContext): Rain {
 			indices: new Uint32Array(indices),
 			computeNormals: true,
 		}),
-		material: materials.shader({
-			wgsl: falling,
-			doubleSided: true,
-			alphaMode: 'blend',
-			blending: 'additive',
-			depthWrite: false,
-			forceSinglePass: true,
-			fog: false,
-			contactShadows: false,
-		}),
+		material,
 		layers: EFFECT_LAYER,
 	});
 	// The rain fills the air, so it casts no shadows and the camera's clearance guard ignores it.
@@ -101,6 +107,9 @@ export function createRain(ctx: SketchContext): Rain {
 		},
 		setVisible(on) {
 			mesh.setVisible(on);
+		},
+		setStrength(value) {
+			material.set({ strength: value });
 		},
 	};
 }
