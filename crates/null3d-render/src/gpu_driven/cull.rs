@@ -86,10 +86,10 @@ const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES)
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// The buffers of the culling pass's bind group, one per binding, the last the depth pyramid, then
-/// the cell offsets texture and the skin firsts texture. Eight storage buffers is what every device
-/// allows a shader stage, so the history shares the indirect draws' buffer, and the cell offsets
-/// and the first joints sit in textures.
-const CULL_BINDINGS: usize = 11;
+/// the cell offsets texture, the skin firsts texture and the distance ranges texture. Eight storage
+/// buffers is what every device allows a shader stage, so the history shares the indirect draws'
+/// buffer, and the cell offsets, the first joints and the ranges sit in textures.
+const CULL_BINDINGS: usize = 12;
 /// Words of the culling pass's bind group entries, the largest group that binds the cell offsets
 /// texture: three for the group, five per entry.
 const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
@@ -339,7 +339,7 @@ impl Culling {
                 ids::cull_group(view),
                 bind_layout::CULL,
                 &buffers,
-                &[ids::SKIN_FIRSTS],
+                &[ids::SKIN_FIRSTS, ids::INSTANCE_RANGES],
             )?;
             if self.index_instances {
                 push_offsets_group(
@@ -377,7 +377,7 @@ impl Culling {
                     motion_group(parity),
                     bind_layout::CULL,
                     &buffers,
-                    &[ids::SKIN_FIRSTS],
+                    &[ids::SKIN_FIRSTS, ids::INSTANCE_RANGES],
                 )?;
             }
         }

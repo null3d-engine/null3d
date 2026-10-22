@@ -19,7 +19,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
-use null3d_core::levels::{FADE_BAND, LevelRule};
+use null3d_core::levels::{FADE_BAND, LevelRule, Switch};
 use null3d_core::lights::{
     AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
     farthest_receiver_distance, ladder_distance,
@@ -1077,8 +1077,9 @@ pub struct LevelQuality {
     /// What the threshold is multiplied by in the shadow maps' views, so that casters draw a
     /// coarser level.
     pub shadow_factor: f32,
-    /// True when two levels hand over in a fading band, where the meshes' levels allow it.
-    pub fades: bool,
+    /// True when a source's distance band fades at each edge. A level's own hand-over fades
+    /// where the level says so, whatever this setting.
+    pub distance_bands: bool,
 }
 
 impl Default for LevelQuality {
@@ -1086,7 +1087,7 @@ impl Default for LevelQuality {
         Self {
             threshold: 1.0,
             shadow_factor: 2.0,
-            fades: true,
+            distance_bands: true,
         }
     }
 }
@@ -2084,17 +2085,19 @@ impl SceneSettings {
     }
 
     /// Gives the mesh with engine id `base` the lower levels `meshes`, from the most detailed
-    /// down, with their errors in the base mesh's units, and the `materials` that they draw with (0
-    /// for the level before's), or with none takes its levels away. `fades` lets two levels hand
-    /// over in a fading band. Every mesh must be live, with the base mesh's vertex attributes. The
-    /// frame builders take the change when the scene's structure changes next.
+    /// down, with their switch `values` and the `switches` that measure them, and the `materials`
+    /// that they draw with (0 for the level before's), or with none takes its levels away. The bits
+    /// of `fades` mark the levels that hand over in a fading band. Every mesh must be live, with
+    /// the base mesh's vertex attributes. The frame builders take the change when the scene's
+    /// structure changes next.
     pub fn set_mesh_levels(
         &mut self,
         base: u32,
         meshes: &[u32],
-        errors: &[f32],
+        values: &[f32],
+        switches: &[Switch],
         materials: &[u32],
-        fades: bool,
+        fades: u8,
     ) -> Result<(), LevelError> {
         let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
         let Some(own) = format(base) else {
@@ -2107,7 +2110,8 @@ impl SceneSettings {
                 Some(_) => {}
             }
         }
-        self.levels.set(base, meshes, errors, materials, fades)
+        self.levels
+            .set(base, meshes, values, switches, materials, fades)
     }
 
     /// Takes the levels away from the meshes that are no longer live, and from the meshes whose
@@ -2130,10 +2134,10 @@ impl SceneSettings {
         self.level_quality
     }
 
-    /// Sets how the levels of detail are picked. Returns true when the fading bands turned on or
+    /// Sets how the levels of detail are picked. Returns true when the distance bands turned on or
     /// off, which changes the buckets, so the scene's structure must count as changed.
     pub fn set_level_quality(&mut self, quality: LevelQuality) -> bool {
-        let rebuild = quality.fades != self.level_quality.fades && self.levels.any();
+        let rebuild = quality.distance_bands != self.level_quality.distance_bands;
         self.level_quality = quality;
         rebuild
     }
@@ -2165,10 +2169,10 @@ impl SceneSettings {
         self.still_enabled
     }
 
-    /// True when the buckets of meshes with levels get fade buckets: some mesh has levels, and the
-    /// quality settings let levels fade.
+    /// True when the buckets of sources that draw in a distance band get fade buckets, which the
+    /// quality settings turn on.
     pub(crate) fn levels_fade(&self) -> bool {
-        self.levels.any() && self.level_quality.fades
+        self.level_quality.distance_bands
     }
 
     /// The level inputs of `view`, for a canvas of `canvas` pixels drawn at the frame's render scale.
@@ -2177,7 +2181,7 @@ impl SceneSettings {
     /// main camera. Off while no mesh has levels, or without a camera.
     pub(crate) fn level_view(&self, view: ViewId, canvas: (u32, u32)) -> LevelRule {
         let quality = self.level_quality;
-        let band = if quality.fades { FADE_BAND } else { 0.0 };
+        let band = FADE_BAND;
         let own = self
             .views
             .get(view.index())
@@ -2203,7 +2207,8 @@ impl SceneSettings {
         band: f32,
     ) -> LevelRule {
         let lens = view.and_then(|view| Some((view, view.camera()?.1)));
-        let (Some((view, lens)), true) = (lens, self.levels.any()) else {
+        // A source's distance band reads the rule even when no mesh has levels.
+        let Some((view, lens)) = lens else {
             return LevelRule::default();
         };
         let (width, height) = view.draw_size(canvas, self.level_scale);

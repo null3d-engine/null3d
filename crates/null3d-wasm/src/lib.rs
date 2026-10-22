@@ -30,6 +30,7 @@ use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
+use null3d_core::levels::Switch;
 use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
@@ -1527,6 +1528,7 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             batch_field::SCALES => address(batch.scales()),
             batch_field::COLORS if batch.has_row_values() => address(batch.colors()),
             batch_field::VALUES if batch.has_row_values() => address(batch.values()),
+            batch_field::RANGES => address(batch.row_ranges()),
             _ => 0,
         })
     })
@@ -1549,6 +1551,44 @@ pub fn set_batch_active_count(batch: u32, count: u32) -> u32 {
 
 /// Sets the layer mask of every row of a batch. Like a new active count, a new mask needs no
 /// rebuild of the renderer's tables.
+/// Sets the distances between which every row of a batch draws, from the call values: the start
+/// distance, which is 0 for none, and the end distance, which is infinite for none. A row with an
+/// entry of its own in the batch's row ranges keeps it. The renderer's tables depend on the range,
+/// so a change rebuilds them.
+#[wasm_bindgen(js_name = setBatchDrawRange)]
+pub fn set_batch_draw_range(batch: u32) -> u32 {
+    with_engine(|e| {
+        let [start, end, ..] = e.call_values;
+        match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => {
+                batch.set_draw_range(start as f32, end as f32);
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => core_failure(error),
+        }
+    })
+}
+
+/// Makes the rows' own distance ranges of a batch, two floats a row, if they do not exist, and
+/// returns their address. The first call fills every row with the batch's range. Fails with the
+/// core's error when memory cannot grow.
+#[wasm_bindgen(js_name = reserveBatchRanges)]
+pub fn reserve_batch_ranges(batch: u32) -> u32 {
+    value_with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => match batch.try_row_ranges_mut() {
+            Ok(ranges) => {
+                e.structure_changed = true;
+                Ok(address(ranges))
+            }
+            Err(_) => Err(core_failure(CoreError::OutOfMemory {
+                bytes: batch.capacity().saturating_mul(8),
+            })),
+        },
+        Err(error) => Err(core_failure(error)),
+    })
+}
+
 #[wasm_bindgen(js_name = setBatchLayers)]
 pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
@@ -3432,37 +3472,52 @@ pub fn has_levels() -> u32 {
 }
 
 /// Gives mesh `base`, by its id that counts from 1, the `count` lower levels of detail whose mesh
-/// ids, then whose errors as the bits of 32-bit floats, then whose material ids, the staging words
-/// hold, from the most detailed down. A material of 0 draws the level with the level before's.
-/// With `count` 0 the mesh loses its levels. `fades` lets two levels hand over in a fading band.
-/// The next frame rebuilds the draw tables. Fails with the problem for levels that the mesh cannot
-/// take.
+/// ids, then whose switch values as the bits of 32-bit floats, then whose switch measures, then
+/// whose material ids, the staging words hold, from the most detailed down. A material of 0 draws
+/// the level with the level before's. With `count` 0 the mesh loses its levels. The bits of
+/// `fades`, counted from the base level, mark the levels that hand over in a fading band. The next
+/// frame rebuilds the draw tables. Fails with the problem for levels that the mesh cannot take.
 #[wasm_bindgen(js_name = setMeshLevels)]
-pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
+pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
     with_engine(|e| {
         let count = count as usize;
-        if e.staging.len() < 3 * count {
+        if e.staging.len() < 4 * count {
             return render_failure(
                 render_detail::BAD_LEVELS,
                 constants::level_problem::TOO_MANY,
             );
         }
-        let (meshes, rest) = e.staging[..3 * count].split_at(count);
-        let (errors, materials) = rest.split_at(count);
+        let (meshes, rest) = e.staging[..4 * count].split_at(count);
+        let (values, rest) = rest.split_at(count);
+        let (switches, materials) = rest.split_at(count);
         let mut floats = [0.0f32; null3d_render::levels::MAX_LEVELS];
-        let Some(floats) = floats.get_mut(..count) else {
+        let mut measures = [Switch::Error; null3d_render::levels::MAX_LEVELS];
+        let mut material_ids = [0u32; null3d_render::levels::MAX_LEVELS];
+        let (Some(floats), Some(measures), Some(material_ids)) = (
+            floats.get_mut(..count),
+            measures.get_mut(..count),
+            material_ids.get_mut(..count),
+        ) else {
             return render_failure(
                 render_detail::BAD_LEVELS,
                 constants::level_problem::TOO_MANY,
             );
         };
-        for (float, &bits) in floats.iter_mut().zip(errors) {
+        for (float, &bits) in floats.iter_mut().zip(values) {
             *float = f32::from_bits(bits);
         }
-        let set = e
-            .renderer
-            .settings_mut()
-            .set_mesh_levels(base, meshes, floats, materials, fades);
+        for (measure, &bits) in measures.iter_mut().zip(switches) {
+            *measure = Switch::from_bits(bits);
+        }
+        material_ids.copy_from_slice(materials);
+        let set = e.renderer.settings_mut().set_mesh_levels(
+            base,
+            meshes,
+            floats,
+            measures,
+            material_ids,
+            fades as u8,
+        );
         match set {
             Ok(()) => {
                 e.structure_changed = true;
@@ -3478,16 +3533,16 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
 
 /// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
 /// values give the error in pixels under which a coarser level draws, 0 for none, and what shadow
-/// views multiply it by. `fades` says whether two levels hand over in a fading band. Turning the
-/// bands on or off rebuilds the draw tables.
+/// views multiply it by. `bands` says whether a source's distance band fades at each edge.
+/// Turning the bands on or off rebuilds the draw tables.
 #[wasm_bindgen(js_name = setLevelQuality)]
-pub fn set_level_quality(fades: bool) -> u32 {
+pub fn set_level_quality(bands: bool) -> u32 {
     with_engine(|e| {
         let [threshold, shadow_factor] = e.call_values();
         let quality = LevelQuality {
             threshold,
             shadow_factor,
-            fades,
+            distance_bands: bands,
         };
         if e.renderer.settings_mut().set_level_quality(quality) {
             e.structure_changed = true;

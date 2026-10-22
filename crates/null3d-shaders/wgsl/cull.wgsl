@@ -37,11 +37,11 @@
 // the culling group within the eight storage buffers that every device allows a shader stage.
 //
 // A bucket of a mesh with levels of detail links to the bucket of its next coarser level, and each
-// level's bucket holds the level's error, in the units of the base mesh. An instance's entry names
-// its base level's bucket. The thread walks the links while the next level's error, times the
-// instance's largest axis scale and the view's level factor, stays under its distance from the
-// main camera to the nearest point of its bounding sphere, and appends the instance to the last
-// level that passes. Every view places its instances relative to the main camera, shadow views
+// level's bucket holds the level's switch measure: its error in the units of the base mesh, a
+// distance in meters at scale 1, or a share of the render's height that the bounds cover. An
+// instance's entry names its base level's bucket. The thread walks the links while the next
+// level's switch distance stays under its distance from the main camera to the nearest point of
+// its bounding sphere, and appends the instance to the last level that passes. Every view places its instances relative to the main camera, shadow views
 // too, so they all pick by its distance. Past each switch distance lies a band in which the level
 // before still draws: there, the instance goes to both levels' fade buckets, whose pipelines dither
 // each pixel to one of them, and the copy's fourth id holds the fade value, positive for the new
@@ -53,6 +53,10 @@
 // it covers, so it hides while that product stays under its distance, the same comparison that
 // picks the levels. Past the hide distance a band thins the coarsest level out with the same
 // dither, where a fading build exists, so the instance does not pop away.
+//
+// An instance also draws only inside its distance range, which the ranges texture holds for each
+// source as a start distance and an end distance. Both edges lie inside the range and fade over
+// the same band, through the fading build of the level that the instance would draw.
 //
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
@@ -102,7 +106,7 @@ const MAX_RANGES: u32 = 257u;
 const WORKGROUP_SIZE: u32 = 128u;
 /// Levels of the depth pyramid at most.
 const MAX_LEVELS: u32 = 16u;
-/// The smallest distance that the level rule compares, in metres. A camera inside an instance's
+/// The smallest distance that the level rule compares, in meters. A camera inside an instance's
 /// bounds measures this distance, so the instance keeps its base level.
 const LEAST_DISTANCE: f32 = 1.0e-3;
 
@@ -158,8 +162,9 @@ struct Bucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
-    /// The error of the bucket's level of detail, 0 for a base level.
-    error: f32,
+    /// The switch value of the bucket's level of detail: its error, its distance or its screen
+    /// coverage, as `level_switch` says. 0 for a base level.
+    value: f32,
     /// The bucket of the next coarser level plus one, or 0 for none.
     next: u32,
     /// The fade bucket of the bucket's level plus one, or 0 for none.
@@ -168,6 +173,9 @@ struct Bucket {
     /// above 1 for a coarser level, and below 1 for a finer one. A record that holds no level
     /// keeps 0, which counts as 1.
     bias: f32,
+    /// What the switch value measures: the level's error, a distance, or a share of the screen's
+    /// height.
+    level_switch: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -192,6 +200,16 @@ struct Bucket {
 /// The offset from each view's camera to the center of each grid cell: texel x of row y holds
 /// cell x's offset for the view whose row is y.
 @group(0) @binding(9) var cell_offsets: texture_2d<f32>;
+
+/// The distances between which each source draws: texel x of row y holds source y * a row's width
+/// plus x's start distance and end distance. A source without a range holds 0 and infinity.
+@group(0) @binding(11) var instance_ranges: texture_2d<f32>;
+
+/// What a level's switch value measures: its error in the mesh's units, a distance in meters for a
+/// source of scale 1, or the share of the render's height that the source's bounds cover.
+const SWITCH_ERROR: u32 = 0u;
+const SWITCH_DISTANCE: u32 = 1u;
+const SWITCH_COVERAGE: u32 = 2u;
 
 /// The first joint of each source that a bucket of skinned objects shares: texel x of row y holds
 /// source y << INDEX_ROW_SHIFT | x's.
@@ -286,46 +304,72 @@ fn survivor(i: u32) -> Survivor {
     return out;
 }
 
+/// The distance at which a level with `bucket` switches in, for an instance of largest axis scale
+/// `scale` and world radius `radius`, at the view's factor `factor` and threshold `bias`.
+fn switch_distance(bucket: Bucket, scale: f32, radius: f32, factor: f32, bias: f32) -> f32 {
+    if bucket.level_switch == SWITCH_DISTANCE {
+        return bucket.value * scale / bias;
+    }
+    if bucket.level_switch == SWITCH_COVERAGE {
+        // The bounds cover a share of the render's height while radius × P[1][1] / coverage
+        // exceeds the distance from the camera.
+        let p11 = params.levels.w;
+        if bucket.value <= 0.0 || p11 <= 0.0 {
+            return 1e38;
+        }
+        return radius * p11 / (bucket.value * bias);
+    }
+    return bucket.value * scale * factor;
+}
+
 /// The level of detail that an instance in view draws: its bucket, the bucket of the level before
 /// it, how far past the level's switch distance the instance lies, as a share of that distance,
-/// how far past the hide distance it lies, as a share of the hide distance, and whether its bounds
-/// cover fewer pixels than the threshold, where nothing draws.
+/// how far past the hide distance it lies, as a share of the hide distance, whether its bounds
+/// cover fewer pixels than the threshold or lie outside its distance range, where nothing draws,
+/// and the distances the range reads.
 struct Level {
     bucket: u32,
     before: u32,
     past: f32,
     hide_past: f32,
     hidden: bool,
+    distance: f32,
+    start: f32,
+    end: f32,
+}
+
+/// The start and end distance that the texture holds for the source `index`.
+fn range_of(index: u32) -> vec2f {
+    let row = (1u << 11u) - 1u;
+    return textureLoad(instance_ranges, vec2u(index & row, index >> 11u), 0).xy;
 }
 
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
-    var out = Level(s.bucket, s.bucket, 0.0, 0.0, false);
+    let range = range_of(s.index);
+    var out = Level(s.bucket, s.bucket, 0.0, 0.0, false, 0.0, range.x, range.y);
     let whole = params.levels.x;
-    var next = buckets[s.bucket].next;
-    if next == 0u || whole <= 0.0 {
-        return out;
-    }
-    // A bucket's bias raises or lowers the bucket's own threshold, for its level choice and for
-    // the hide distance alike. A record without levels holds zeros, so 0 counts as no bias.
     let bias = select(1.0, buckets[s.bucket].bias, buckets[s.bucket].bias > 0.0);
     let factor = whole / bias;
-    let reach = s.scale * factor;
     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
     let distance = select(nearest, 1.0, params.levels.y > 0.5);
-    while next != 0u && buckets[next - 1u].error * reach < distance {
-        out.before = out.bucket;
-        out.bucket = next - 1u;
-        next = buckets[out.bucket].next;
-    }
-    if out.bucket != s.bucket {
-        out.past = distance / (buckets[out.bucket].error * reach) - 1.0;
+    out.distance = distance;
+    var next = buckets[s.bucket].next;
+    if next != 0u && whole > 0.0 {
+        while next != 0u && switch_distance(buckets[next - 1u], s.scale, s.radius, factor, bias) < distance {
+            out.before = out.bucket;
+            out.bucket = next - 1u;
+            next = buckets[out.bucket].next;
+        }
+        if out.bucket != s.bucket {
+            out.past = distance / switch_distance(buckets[out.bucket], s.scale, s.radius, factor, bias) - 1.0;
+        }
     }
     // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
     // geometry. The view's level factor also carries the render height, the render scale and the
     // threshold, so all of them move the hide distance.
     let hide = 2.0 * s.radius * factor;
-    out.hidden = hide > 0.0 && hide < distance;
+    out.hidden = (hide > 0.0 && hide < distance) || distance < out.start || distance > out.end;
     if out.hidden {
         out.hide_past = distance / hide - 1.0;
     }
@@ -340,6 +384,25 @@ fn append(s: Survivor, level: Level, draws_before: u32) {
     let band = params.levels.z;
     let new_fade = buckets[level.bucket].fade;
     let old_fade = buckets[level.before].fade;
+    // A source outside its distance range draws nothing.
+    if level.distance < level.start || level.distance > level.end {
+        return;
+    }
+    // Inside each edge of it, the share of the pixels that the dither keeps grows to one, or falls
+    // to none, through the fading build of the level that the source would draw.
+    if band > 0.0 && new_fade != 0u {
+        if level.start > 0.0 && level.distance < level.start * (1.0 + band) {
+            let t = (level.distance / level.start - 1.0) / band;
+            append_to(s, new_fade - 1u, draws_before, max(t, 1e-6));
+            return;
+        }
+        if level.distance > level.end / (1.0 + band) {
+            let inner = level.end / (1.0 + band);
+            let t = (level.distance - inner) / (level.end - inner);
+            append_to(s, new_fade - 1u, draws_before, -max(t, 0.0));
+            return;
+        }
+    }
     if level.bucket != s.bucket && band > 0.0 && new_fade != 0u && old_fade != 0u {
         let t = level.past / band;
         if t < 1.0 {
