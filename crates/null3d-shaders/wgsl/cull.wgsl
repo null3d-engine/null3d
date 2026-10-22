@@ -48,11 +48,12 @@
 // level and negative for the old. A link of 0 means none, so a bucket record without levels holds
 // zeros there, and a view whose level factor is 0 draws every instance's base level.
 //
-// An instance whose bounding sphere covers fewer pixels than the threshold draws nothing: the last
-// level holds no geometry. The sphere's world diameter times the level factor measures the pixels
-// it covers, so it hides while that product stays under its distance, the same comparison that
-// picks the levels. Past the hide distance a band thins the coarsest level out with the same
-// dither, where a fading build exists, so the instance does not pop away.
+// An instance of a mesh with levels whose bounding sphere covers fewer pixels than the threshold
+// draws nothing: the last level holds no geometry. The sphere's world diameter times the level
+// factor measures the pixels it covers, so it hides while that product stays under its distance,
+// the same comparison that picks the levels. A mesh without levels has no such last level, so it
+// draws at every distance. Past the hide distance a band thins the coarsest level out with the
+// same dither, where a fading build exists, so the instance does not pop away.
 //
 // An instance also draws only inside its distance range, which the ranges texture holds for each
 // source as a start distance and an end distance. Both edges lie inside the range and fade over
@@ -366,11 +367,13 @@ fn level_of(s: Survivor) -> Level {
         }
     }
     // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
-    // geometry. The view's level factor also carries the render height, the render scale and the
-    // threshold, so all of them move the hide distance.
+    // geometry. Only a mesh with levels has that last level, so a bucket with no coarser level
+    // keeps drawing at every distance. The view's level factor also carries the render height,
+    // the render scale and the threshold, so all of them move the hide distance.
     let hide = 2.0 * s.radius * factor;
-    out.hidden = (hide > 0.0 && hide < distance) || distance < out.start || distance > out.end;
-    if out.hidden {
+    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < distance;
+    out.hidden = small || distance < out.start || distance > out.end;
+    if small {
         out.hide_past = distance / hide - 1.0;
     }
     return out;
