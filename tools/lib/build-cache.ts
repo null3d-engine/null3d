@@ -216,6 +216,10 @@ export function runByLine(
 	});
 }
 
+/** Whole seconds since `started`, a reading of `performance.now()`, for a step's report. */
+export const secondsSince = (started: number): number =>
+	Math.round((performance.now() - started) / 1000);
+
 /** A SHA-256 of the given values, in order, for a cache key. */
 export function hashOf(...inputs: readonly (string | Buffer)[]): string {
 	const hash = createHash('sha256');
@@ -370,10 +374,7 @@ export function acquireLock(path: string): () => void {
 		}
 		sleep(LOCK_POLL_MS);
 	}
-	if (said)
-		console.log(
-			`took the lock at ${path} after ${Math.round((performance.now() - started) / 1000)} s`,
-		);
+	if (said) console.log(`took the lock at ${path} after ${secondsSince(started)} s`);
 	return () => {
 		// Only the holder removes the lock: a lock that another process broke and took must stay.
 		if (lockHolder(path) === process.pid) rmSync(path, { recursive: true, force: true });
