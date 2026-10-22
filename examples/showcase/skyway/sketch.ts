@@ -7,7 +7,7 @@
 // showcase scenes do: `c` switches between Auto, which flies the route, and Manual, which hands the
 // camera to the user. The HUD's Traffic buttons change how many cars fly, and the Quality buttons
 // change the preset. The stats overlay is on from the first frame.
-import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
+import { defineSketch, type QualityPreset, timeOfDay, vec3 } from '@null3d/engine';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import {
 	ATMOSPHERE,
@@ -147,6 +147,8 @@ export default defineSketch(async (ctx) => {
 	page.post('loading', 'Streaming the lanes');
 	const traffic = createTraffic(ctx);
 	const rain = createRain(ctx);
+	/** The camera's place, which the real lights follow. */
+	const eye = vec3.create();
 	const hero = createHero(ctx, camera, {
 		position: (SHOTS[0] as Shot).position,
 		target: TARGET,
@@ -270,6 +272,8 @@ export default defineSketch(async (ctx) => {
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');
 			rain.follow(camera);
+			camera.getWorldPosition(eye);
+			traffic.update(eye, t);
 			if (on.dof) post.set(lensSettings);
 		},
 	};

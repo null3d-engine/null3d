@@ -219,6 +219,7 @@ rocks.values;      // (0.2) Float32Array, 4 floats per row, when values: true
 rocks.shaderId;    // (0.2) every row's object.id in custom WGSL; input.instance is the row
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
+rocks.setBoundingRadius(2400);  // (0.2) every row's sphere, for vertices a shader moves
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
 rocks.setCastShadows(true);  rocks.setReceiveShadows(true);  // (0.2) every row; a change rebuilds the draw tables
 rocks.markDirty(start, count);  // static batches: upload these rows
