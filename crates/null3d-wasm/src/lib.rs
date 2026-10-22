@@ -72,6 +72,7 @@ use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
+use null3d_render::patches::PatchTree;
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::probe_grid::ProbeGrid;
@@ -1885,6 +1886,68 @@ pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
     })
 }
 
+/// Gives mesh `mesh` the tree of cluster patches that a model file stores: `patches` records of
+/// eight words each, four floats of its bounding sphere and then four integers of its run, its
+/// parent and its error, followed by `indices` indices, in the staging words. Returns 1 when the
+/// mesh takes the tree, and 0 when the tree does not cover the mesh's vertices.
+#[wasm_bindgen(js_name = setMeshPatches)]
+pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let vertices = e
+            .renderer
+            .settings()
+            .meshes()
+            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
+            .map_or(0, |slot| slot.vertex_count);
+        let records = patches as usize;
+        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
+        let tree = if enough {
+            let bounds: Vec<[f32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8;
+                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
+                })
+                .collect();
+            let runs: Vec<[u32; 4]> = (0..records)
+                .map(|k| {
+                    let at = k * 8 + 4;
+                    [
+                        staging[at],
+                        staging[at + 1],
+                        staging[at + 2],
+                        staging[at + 3],
+                    ]
+                })
+                .collect();
+            let first = records * 8;
+            PatchTree::new(
+                staging[first..first + indices as usize].to_vec(),
+                bounds,
+                runs,
+                root,
+                vertices,
+            )
+            .ok()
+        } else {
+            None
+        };
+        drop(staging);
+        match tree {
+            Some(tree) => {
+                let stored = e.renderer.set_mesh_patches(mesh, Some(tree));
+                e.structure_changed = true;
+                stored.map(|()| 1).map_err(|_| {
+                    core_failure(CoreError::OutOfMemory {
+                        bytes: ((records * 8 + indices as usize) * 4) as u32,
+                    })
+                })
+            }
+            None => Ok(0),
+        }
+    })
+}
+
 /// The bytes of 32-bit words, little-endian as WebAssembly keeps them.
 fn bytemuck_bytes(words: &[u32]) -> &[u8] {
     // SAFETY: a u32 slice is a valid u8 slice four times as long, with the same lifetime.
@@ -3524,6 +3587,44 @@ pub fn mark_particle_records(id: u32, start: u32, count: u32) -> u32 {
 pub fn mark_particle_values(id: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().particles_mut().mark_values(id);
+        0
+    })
+}
+
+/// Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene slot
+/// `slot`, whose material is a full shader of the sketch's that makes its vertices from the vertex
+/// and instance indices, and returns its id: 0 when the scene holds the most draws already. No mesh
+/// data and no per-instance data reach the GPU.
+#[wasm_bindgen(js_name = createVertexDraw)]
+pub fn create_vertex_draw(slot: u32, vertices: u32, instances: u32) -> u32 {
+    value_with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .vertex_draws_mut()
+            .create(slot, vertices, instances)
+            .map_err(|_| out_of_memory(0))
+    })
+}
+
+/// Forgets a draw that makes its vertices from a vertex count. Its object draws nothing from then
+/// on.
+#[wasm_bindgen(js_name = destroyVertexDraw)]
+pub fn destroy_vertex_draw(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().vertex_draws_mut().destroy(id);
+        0
+    })
+}
+
+/// Sets the vertices of one shape and the number of its copies for a draw that makes its own
+/// vertices. A frame reads them, so the change uploads nothing.
+#[wasm_bindgen(js_name = setVertexDrawCounts)]
+pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .vertex_draws_mut()
+            .set_counts(id, vertices, instances);
         0
     })
 }

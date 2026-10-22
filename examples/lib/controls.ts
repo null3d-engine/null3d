@@ -163,6 +163,7 @@ export const ATMOSPHERE: readonly HudOption[] = [
 	{ id: 'fog', label: 'Fog', tip: 'Haze that thickens with distance, for depth.' },
 	{ id: 'shafts', label: 'Light shafts', tip: 'Visible shafts of light through the haze.' },
 	{ id: 'snow', label: 'Snow', tip: 'Snow that falls through the scene.' },
+	{ id: 'rain', label: 'Rain', tip: 'Rain that falls through the scene.' },
 	{ id: 'fireflies', label: 'Fireflies', tip: 'Drifting firefly lights over the banks.' },
 ];
 

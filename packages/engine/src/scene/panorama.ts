@@ -13,6 +13,7 @@
 
 import type { EngineError } from '../errors/engine-error';
 import { onEngineStop } from '../shared/helper-workers';
+import { spawnWorker } from '../shared/worker-start';
 import type { PanoramaAnswer, PanoramaRequest } from '../workers/panorama-worker';
 import type { PanoramaFile } from './panorama-files';
 
@@ -30,7 +31,10 @@ export const PANORAMA_MAP = { size: 256, levels: 6 } as const;
 const MAX_SIDE = 8 * PANORAMA_MAP.size;
 
 /** Makes one of the engine's coded errors: the caller's `EngineError`. */
-export type PanoramaError = (code: 'E1406' | 'E1412' | 'E1420', message: string) => EngineError;
+export type PanoramaError = (
+	code: 'E1405' | 'E1406' | 'E1412' | 'E1418' | 'E1420' | 'E1422' | 'E1423',
+	message: string,
+) => EngineError;
 
 /** A request that waits for the worker. */
 interface Waiting {
@@ -54,10 +58,14 @@ class Reader {
 		private readonly error: PanoramaError,
 		private readonly stopped: () => void,
 	) {
-		this.worker = new Worker(new URL('../workers/panorama-worker.ts', import.meta.url), {
-			type: 'module',
-			name: 'null3d-panorama',
-		});
+		this.worker = spawnWorker(
+			() =>
+				new Worker(new URL('../workers/panorama-worker.ts', import.meta.url), {
+					type: 'module',
+					name: 'null3d-panorama',
+				}),
+			error,
+		);
 		this.worker.onmessage = (event: MessageEvent<PanoramaAnswer>) => this.answer(event.data);
 		this.worker.onerror = (event) => {
 			event.preventDefault();

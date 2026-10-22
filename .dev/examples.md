@@ -477,7 +477,68 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The shadow range follows the camera:** the night town's sun once reached a fixed 70 m, and its shadows faded over the last 7 m. The Manual camera could dolly out with no limit. Past about 70 m every house lay beyond the range. A quick zoom then carried the whole town across the fade in a fifth of a second, so the shadows appeared at once (owner's recording, 20 October 2026). Even the opening view put the back houses at 75 to 82 m. Each scene now passes `shadowReach` to `createShowcaseEffects`: the range it asks for close up, and the sphere of its core. The core is the night town's houses and tower, and Creek's stream and banks. Each frame, the range is the shortest step of a ladder of 1.25 times that reaches the core's far side. It rises at once, and falls only once the need is a whole step lower. Close-up shadows stay as sharp as before, and the core never leaves the range. The engine's automatic distance ([D-168](decisions/D-168-auto-shadow-distance.md)) does not fit here. It follows the farthest visible receiver, which in these scenes is the ground out to the mountains. It would hold the range at 150 m or more and blur the near shadows.
 - **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. A whole day takes 80 seconds in Auto (owner, 21 October 2026; it took 4 minutes before). `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. Creek once took the look of the nearest fixed mood. At 02:36, halfway between Night and Dawn, the dawn's warm caustics then came on at once, and the stream changed color in the middle of the night (owner's recording, 20 October 2026). The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
-- **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
+- **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the moon, and a city from the air.
+
+### Skyway (M3-C1, 22 October 2026)
+
+Skyway is the third showcase scene. It flies a hover car through a rainy night city. The scene
+shows the engine at scale. It draws 30,000 to 100,000 hover cars on the sky lanes, on one instanced
+batch of towers whose windows light one by one. It adds 180 street lamps, three searchlights, rain,
+and a hero car with two screens.
+
+- **The lanes cost nothing per frame.** Each car is a row of one of four instance batches, one for
+  each heading. Its place along the lane comes from the row's start offset, its speed and the frame
+  clock. The shaders guide holds that contract ([Surface functions](../docs/shaders/surface-functions.md)).
+  A preset draws fewer cars by lowering the active row count. The rows were shuffled once, so a
+  thinner preset thins every lane alike.
+- **A moved row needs a larger bounding sphere.** The engine culls each row by the mesh's bounding
+  sphere. A vertex offset carries a car up to the lane's length from its row's origin. The hull
+  therefore holds a zero-area sliver along the lane. The sliver stretches the sphere to cover every
+  place that a car can reach, and costs a few vertices and no pixels.
+- **The windows are a world-space grid.** One window is the same size on every tower and on every
+  face. It never stretches with a building's scale. A lit window shows a small room in parallax:
+  a lamp panel, a floor, a ceiling and a block of furniture. Where a window covers less than a
+  pixel, the face fades to its average light. The grid then never shimmers.
+- **The power-on wave** lights the city from the middle out over the first second, from the frame
+  clock. A held frame therefore always shows the same city.
+- **The lights.** The city holds 180 point lights and three spot lights. Its windows, signs and the
+  cars' lights are emissive surfaces. The engine lists at most 1,024 lights in a frame. The plan's
+  1,000 to 4,000 real lights through the fog therefore waits for the many-lights work (M3-F3). The
+  volumetric fog is on, so the searchlights draw their shafts through the rain.
+- **The effect layer.** The traffic, the rain, the signs and the hero car sit on `EFFECT_LAYER`
+  (`examples/lib/layers.ts`). The Auto route's clearance guard never treats a moving car as a wall.
+  Its ray tests the towers and the ground alone.
+- **The camera.** The route is a circuit of four street canyons. It climbs from the south entrance
+  to the tower tops, and dives back down. It follows the street center lines of the plan, so it
+  never enters a block. `route.test.ts` samples the whole loop through the player's own
+  interpolation. It fails on a sample inside a building.
+- **No ring of mountains.** The fog's reach is about 240 m, and the ground plane reaches 2.1 km.
+  The view therefore never sees the ground's edge or the plain background. A ring would stand in
+  the fog and add nothing.
+- **Post starts on.** Bloom, the vignette and ambient occlusion start on, where the other showcase
+  scenes start them off (D-171). A night city of neon and lit windows reads flat without the glow
+  of its lights. The owner has not reviewed the look yet.
+- **No Time of day group.** The scene is one night, and its sky, fog and exposure are set once. The
+  HUD keeps Camera, Atmosphere (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
+- **Figures.** A first run in Chrome on the Mac measured these. The Mac has an Apple M5 Max and a
+  120 Hz display. The frame-budget governor was on, and the window was parked past the screen's
+  edge. The machine carried a shared build load of 83 at the time. The CPU figures are therefore
+  high, and the frame rates are a floor:
+
+  | Preset | WebGPU | WebGL2 |
+  | --- | --- | --- |
+  | Low, 30,000 cars | 120 fps, GPU 4.3 ms | 120 fps, GPU 5.7 ms |
+  | Medium, 50,000 cars | 119 fps, GPU 5.1 ms | 116 fps, GPU 12.4 ms |
+  | High, 75,000 cars | 117 fps, GPU 5.8 ms | WebGL2 runs at most Medium |
+  | Ultra, 100,000 cars | 72 fps, GPU 5.9 ms, sketch 8.6 ms | WebGL2 runs at most Medium |
+
+  The GPU time barely rises from Low to Ultra. The same pixels shade the same towers, and the count
+  changes the vertices alone. Ultra's 72 frames a second came from the sketch thread under the load,
+  not from the GPU. A quiet run is still to be made.
+- **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
+  phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
+  quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
+  phone may therefore fall under 60. No phone has run it yet.
 
 ### Engine features for the showcase
 

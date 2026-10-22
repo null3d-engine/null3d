@@ -349,10 +349,11 @@ function vertexKey(streams, sizes, v) {
  * @param {Primitive} prim
  * @param {Float32Array} positions
  * @param {boolean} posed
- * @param {number} side The mesh's longest side, which a texture coordinate's unit weighs.
+ * @param {number} [side] The mesh's longest side, which a texture coordinate's unit weighs; 0
+ *   leaves the texture coordinates out of the error, for a caller that reads only the triangles.
  * @returns {PlanningList}
  */
-function weld(prim, positions, posed, side) {
+export function weld(prim, positions, posed = false, side = 0) {
 	const count = positions.length / 3;
 	const stream = (/** @type {string} */ semantic) => {
 		const accessor = prim.getAttribute(semantic);

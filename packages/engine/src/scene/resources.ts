@@ -1460,6 +1460,12 @@ export interface CompiledWgsl {
 	 * `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader.
 	 */
 	readonly kind: 'material' | 'effect' | 'toneCurve' | 'shader';
+	/**
+	 * True for a draw shader: a custom material's `@vertex` entry point takes the vertex and
+	 * instance indices and no mesh attribute, and `scene.createVertexDraw` draws it from a vertex
+	 * count.
+	 */
+	readonly meshless?: boolean;
 }
 
 /**
@@ -1573,6 +1579,7 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		variants: compiled.variants,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
+		...(compiled.meshless === true && { meshless: true }),
 		...(compiled.sceneDepth === true && { sceneDepth: true }),
 		...(compiled.builds && { builds: true }),
 	};

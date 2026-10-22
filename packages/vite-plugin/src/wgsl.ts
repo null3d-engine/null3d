@@ -146,6 +146,26 @@ function blankComments(source: string): string {
 const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface', 'vertexOffset']);
 
 /**
+ * True when WGSL is a draw shader: its `@vertex` entry point takes the vertex and instance indices
+ * and no mesh attribute, so the shader makes every vertex of every copy. Such a shader draws as a
+ * custom material of a draw that has no mesh data. A vertex entry point that reads a mesh attribute
+ * or an `InstanceIn` is not one, and a pass's own vertex shader reads the vertex index alone.
+ */
+function isDrawShader(source: string): boolean {
+	const text = blankComments(source);
+	for (const match of text.matchAll(FUNCTION)) {
+		if (!/@\s*vertex\b/.test(match[1] ?? '')) continue;
+		const open = text.indexOf('(', match.index + match[0].length);
+		const close = open < 0 ? -1 : text.indexOf('{', open);
+		if (close <= open) return false;
+		const args = text.slice(open, close);
+		if (/\bInstanceIn\b/.test(args) || /@\s*location\b/.test(args)) return false;
+		return /@\s*builtin\s*\(\s*instance_index\s*\)/.test(args);
+	}
+	return false;
+}
+
+/**
  * True when WGSL is a mesh shader of its own: its `@vertex` entry point takes an `InstanceIn`, as
  * `null3d::mesh` finds each instance of a mesh with. Such a shader draws as a custom material.
  */
@@ -298,12 +318,17 @@ export async function compileWgsl(
 		};
 	}
 	const material = noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS);
-	if (material || isMeshShader(source)) {
+	const draw = isDrawShader(source);
+	if (material || draw || isMeshShader(source)) {
 		const result = await compiler.material({ path, source });
 		// Custom materials build for both GPU paths.
 		const builds = ['webgpu', 'webgl2'];
 		if (!result.ok) return { ok: false, problems: result.problems, builds };
-		const shader = { kind: 'material', ...result.material } as const;
+		const shader = {
+			kind: 'material',
+			...result.material,
+			...(draw && { meshless: true }),
+		} as const;
 		return { ok: true, shader, warnings: result.warnings, builds };
 	}
 	const shape = pipelinesOf(path, source, hint);

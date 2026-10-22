@@ -246,6 +246,7 @@ function texturesReport(
 		unbaked,
 		files: new Map(),
 		levels: [],
+		clusters: { meshes: 0, patches: 0, leaves: 0, triangles: 0, base: 0, bytes: 0 },
 		merged: { textures: 0, materials: 0, accessors: 0, meshes: 0 },
 		spatial: {
 			blockers: 0,

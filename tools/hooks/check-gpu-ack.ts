@@ -43,9 +43,13 @@ export function gpuCheckProblem(commits: readonly CommitWithFiles[]): string | n
 	const last = commits.findIndex((commit) => gpuBearingFiles(commit.files).length > 0);
 	const changing = commits[last];
 	if (!changing) return null;
-	const values = commits
-		.slice(0, last + 1)
-		.flatMap((commit) => findAckValues(effectiveMessage(commit.message), GPU_CHECK_TRAILER));
+	// The line may sit on any commit of the pull request, not only on the newest one that touches
+	// the GPU's code. A branch that lands a dozen features a night would otherwise go red on every
+	// landing, which says nothing about whether a check was taken. The measurement covers the whole
+	// branch's build, so one line answers for all of it; a later drawing change re-takes it.
+	const values = commits.flatMap((commit) =>
+		findAckValues(effectiveMessage(commit.message), GPU_CHECK_TRAILER),
+	);
 	if (values.some((value) => !isBareAck(value))) return null;
 	const commit = `${changing.sha.slice(0, 8)} ${changing.message.split('\n')[0]}`;
 	return values.length > 0
