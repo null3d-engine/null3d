@@ -6,8 +6,9 @@
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
 // `?mask` draws with a mask smoothed by alpha to coverage, as foliage does, which passes every
-// pixel, `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser level
-// than the copy itself, and `?hide` raises the threshold and places copies around the hide distance.
+// pixel, `?material` gives each level a material of its own in the level's color, which must draw
+// the same image, `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser
+// level than the copy itself, and `?hide` raises the threshold and places copies around the hide distance.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -85,7 +86,15 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		geometry.fromArrays(sphere(segments, color)),
 	);
 	if (!base) return;
-	base.setLevels(lower.map((mesh, k) => ({ mesh, error: ERRORS[k] as number })));
+	// A level's own material may draw without the mesh's vertex colors, in the level's color.
+	const levelMaterial = (color: Vec3) => materials.standard({ color, roughness: 0.5 });
+	base.setLevels(
+		lower.map((mesh, k) => ({
+			mesh,
+			error: ERRORS[k] as number,
+			...(params.has('material') && { material: levelMaterial(LEVELS[k + 1]?.[1] as Vec3) }),
+		})),
+	);
 	const material = materials.standard({
 		color: '#ffffff',
 		roughness: 0.5,
@@ -138,7 +147,13 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 			const center = distance + RADIUS;
 			const across = hide ? (side - 1) * 0.6 : side === 0 ? -0.35 : 0.35;
 			const y = hide ? 0 : (ROWS[row] as number) * center * tan;
-			out[k] = [across * center * tan * aspect(), y, -center];
+			// A copy off the view's axis lies farther from the camera than its depth: place it along
+			// the same ray at the distance that the rule measures, so its nearest point sits at the
+			// share of the switch that the test means.
+			const x = across * center * tan * aspect();
+			const reach = Math.hypot(x, y, center);
+			const scale = (distance + RADIUS) / reach;
+			out[k] = [x * scale, y * scale, -center * scale];
 		}
 		return out;
 	};

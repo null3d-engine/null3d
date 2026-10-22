@@ -68,6 +68,11 @@ const SKINNED_GROUP: u32 = 1 << 31;
 /// The bit of a sorted bucket's group that marks a particle system's bucket of its own, whose id
 /// the bits below hold.
 const PARTICLE_GROUP: u32 = 1 << 30;
+/// The bit of a sorted bucket's group that marks a vertex draw's bucket, whose id the bits below
+/// hold: an object that makes its vertices from a vertex count alone (see [`crate::vertex_draws`]).
+const VERTEX_DRAW_GROUP: u32 = 1 << 29;
+/// The bits of a group that mark a bucket of its own, which the bits below them give its id.
+const OWN_BUCKET_BITS: u32 = SKINNED_GROUP | PARTICLE_GROUP | VERTEX_DRAW_GROUP;
 
 /// One sorted bucket.
 #[derive(Clone, Copy, Debug)]
@@ -104,8 +109,12 @@ impl SortedBucket {
 
     /// The id of the particle system whose bucket this is, or `None` for a bucket of meshes.
     pub(crate) fn particle_system(&self) -> Option<u32> {
-        (self.group & (SKINNED_GROUP | PARTICLE_GROUP) == PARTICLE_GROUP)
-            .then_some(self.group & !PARTICLE_GROUP)
+        (self.group & OWN_BUCKET_BITS == PARTICLE_GROUP).then_some(self.group & !OWN_BUCKET_BITS)
+    }
+
+    /// The id of the vertex draw whose bucket this is, or `None` for another bucket.
+    pub(crate) fn vertex_draw(&self) -> Option<u32> {
+        (self.group & OWN_BUCKET_BITS == VERTEX_DRAW_GROUP).then_some(self.group & !OWN_BUCKET_BITS)
     }
 }
 
@@ -443,8 +452,14 @@ impl SortedLayout {
         // A particle system's object draws from a bucket of its own, with its system's records,
         // and an object with the particle shading but no system draws nothing.
         let particles = settings.particles();
+        // A vertex draw makes its vertices itself, so its bucket draws one call of its counts, with
+        // no mesh data.
+        let vertex_draws = settings.vertex_draws();
         let scene_key = |slot: usize| {
             let key = pair_key(slot)?;
+            if let Some(id) = vertex_draws.draw_of(slot as u32) {
+                return Some((key.0, key.1, key.2, key.3, key.4, VERTEX_DRAW_GROUP | id));
+            }
             if matches!(key.0.template, template::PARTICLE | template::PARTICLE_MAP) {
                 let id = particles.system_of(slot as u32)?;
                 return Some((key.0, key.1, key.2, key.3, key.4, PARTICLE_GROUP | id));

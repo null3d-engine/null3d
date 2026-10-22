@@ -15,8 +15,10 @@ export interface HeavyCheck {
 export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// The whole generated set beside the text the tests read their counts from.
 	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 7168 },
-	// The engine's programs and pipelines, read for every build the build wrote.
-	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 6144 },
+	// The engine's programs and pipelines, read for every build the build wrote. It reads the whole
+	// generated set as the WebGPU pipelines check does, so it holds the same ceiling: the two draw
+	// kinds and the level bands added builds, and its measured peak passed six thousand.
+	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 7168 },
 	// The WebGPU pipeline layouts, read for every build the build wrote.
 	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7168 },
 	// One bundle of the engine for each tree-shaking check, each in a process of its own, with an

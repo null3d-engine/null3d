@@ -26,10 +26,9 @@ use null3d_core::instances::BatchTable;
 use null3d_core::levels::{LevelRule, NO_LINK, Picked};
 use null3d_core::scene::SceneStorage;
 use null3d_core::world::UNBOUNDED_RADIUS;
-use null3d_gpu::drawlist::{DrawList, Op};
 
 use super::layout::{BUCKET_WORDS, INDEX_ENTRIES_PER_COPY, Layout};
-use crate::frame::{CellOffsets, RecordError, UploadArena, words_as_bytes};
+use crate::frame::{CellOffsets, RecordError};
 
 /// How far from a switch distance a source counts toward both levels that it may pick, as a share
 /// of the distance. It dwarfs the difference that a CPU and a GPU can make of the same distance,
@@ -54,14 +53,12 @@ impl Layout {
 
     /// Counts the copies that `views` place in each bucket, and gives each bucket a slice of that
     /// size in every view's compacted instance buffer, with the buckets of one level set packed
-    /// together. Uploads the records of the buckets whose slices moved. A layout whose buckets
-    /// take no level, and one that no view draws, keeps its slices. Allocates nothing once the
-    /// working lists have their room.
+    /// together. Marks the records of the buckets whose slices moved for the frame's one table
+    /// upload. A layout whose buckets take no level, and one that no view draws, keeps its slices.
+    /// Allocates nothing once the working lists have their room.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn fit_copies(
         &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
         scene: &SceneStorage,
         batches: &BatchTable,
         views: &[CopyView],
@@ -95,7 +92,7 @@ impl Layout {
                 *fit = (*fit).max(count);
             }
         }
-        self.place_slices(list, arena, &fits)?;
+        self.place_slices(&fits);
         self.copy_counts = counts;
         self.copy_fits = fits;
         Ok(())
@@ -216,13 +213,9 @@ impl Layout {
 
     /// Places each bucket's slice of a view's copies: the buckets without levels first, in their
     /// order, then the buckets of the level sets, so a count that moves resizes the slices of
-    /// those sets alone. Uploads the records of the buckets whose slice moved.
-    fn place_slices(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-        fits: &[u32],
-    ) -> Result<(), RecordError> {
+    /// those sets alone. Marks the records of the buckets whose slice moved for the frame's one
+    /// table upload.
+    fn place_slices(&mut self, fits: &[u32]) {
         let Layout { buckets, marks, .. } = self;
         let (mut copied, mut indexed) = (0u32, 0u32);
         for level in [false, true] {
@@ -246,29 +239,14 @@ impl Layout {
         // A view's index entries follow its copies, so their bases count entries from the
         // buffer's start.
         let copied = self.copied;
-        let mut changed: Option<std::ops::Range<usize>> = None;
         for (index, bucket) in self.buckets.iter_mut().enumerate() {
             if bucket.indexed {
                 bucket.base += copied * INDEX_ENTRIES_PER_COPY;
             }
-            if self.placed[index] == bucket.base {
-                continue;
-            }
-            self.placed[index] = bucket.base;
             self.bucket_records[index * BUCKET_WORDS as usize] = bucket.base;
-            changed = Some(match changed {
-                Some(range) => range.start.min(index)..range.end.max(index + 1),
-                None => index..index + 1,
-            });
         }
-        if let Some(range) = changed {
-            let words = &self.bucket_records
-                [range.start * BUCKET_WORDS as usize..range.end * BUCKET_WORDS as usize];
-            let (at, bytes) = arena.push(words_as_bytes(words))?;
-            let offset = range.start as u32 * BUCKET_WORDS * 4;
-            let (_, records) = self.table_ids();
-            list.push(Op::WriteBuffer, &[records, offset, at, bytes])?;
-        }
-        Ok(())
+        // The table goes up whole: every bucket's slice is this frame's, and the culling shader
+        // reads the table before it places a copy.
+        self.mark_records(0..self.buckets.len() as u32);
     }
 }

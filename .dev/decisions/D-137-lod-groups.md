@@ -179,7 +179,7 @@ now 8%, so less of the tree dithers at once while the hand-over stays smooth. Th
 
 ## Addendum: M3's level-of-detail work (owner, 19 October 2026)
 
-A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-rive-city-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
+A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-neon-harbour-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
 
 The review found five weak points in what this record describes:
 
@@ -312,3 +312,92 @@ The core keeps one float for each object, which raises an object's row from 263 
 job workers read it beside each row's sphere. `cull.wgsl` reads it from the bucket record, which
 takes 14 words in place of 13. A record that holds 0 keeps the quality settings' threshold, so a
 test needs no bias.
+
+## Addendum: a level may shade with its own material (22 October 2026, M3-L2)
+
+A far level now draws with a material of its own where the author gives one, so it shades more
+cheaply than the near level: without a normal map, or with an opaque mask in place of an
+alpha-tested one. The engine's part is small because buckets are already per material.
+
+- `mesh.setLevels` takes a `material` on any level. A level without one draws with the material of
+  the level before it, so a set names the cheaper material once. The base level draws with the
+  object's or the instance batch's material.
+- The rule is a chain rather than an absolute material on every level, so `links_of` can find a
+  coarser level's bucket from any level's key without carrying the base material. A level key
+  holds its own effective material, and the next level takes its own or that one.
+- A level's bucket key is built from the level's mesh and material, through the same steps as a
+  source's key: the pipeline, the map group, the page, the level key and the material. The
+  receive-shadows bit comes from the base key's pipeline, since the level belongs to the same
+  object. A level whose material cannot draw with the mesh's vertex format is left out, like any
+  pair that draws nowhere.
+- Fading builds follow each level's own pipeline. A cheaper level material that masks fades; one
+  that does not mask has no fading build and switches at once.
+- A glTF file gives a level a material when the level node's primitive names another material than
+  the node's primitive. The asset tool keeps one material per mesh, so its levels inherit.
+
+The lod image test's new `lod-material` case draws each level with a material of its own in the
+level's color, a different pipeline from the base's vertex-colored one, and must draw the same
+image as `lod`. E1221 now names a level material that is destroyed or from another engine.
+
+## Addendum: the tool thins leaf cards (22 October 2026, M3-L2)
+
+The asset tool now writes levels for meshes whose parts are separate cards, so a tree that leaves
+Blender without levels still gets them (follow-up 5).
+
+- The tool calls a part a card list when every separate piece of it, after welding, is a quad of
+  four vertices and two triangles, or a card folded along its middle of six vertices and four
+  triangles, as Creek makes its leaves. A flat-shaded surface splits into pieces of three vertices,
+  so it never matches, and it keeps the simplifier's path.
+- Each level keeps every second card of the level above, in an order along a space-filling curve
+  of the cards' middles, so a level thins the crown evenly rather than one side first.
+- Each kept card grows about its middle by the square root of two for that step, so the cards
+  keep the surface that the dropped ones covered. The file stores the level's own positions,
+  because the growth moves vertices. This is the one level kind that copies vertices.
+- The level's error is the size of the largest card that it drops, as the follow-up said. Creek's
+  cards are 0.8 m wide. On a 1,080-pixel screen, a level switches at about a kilometer. That is
+  conservative: it thins a crown only long after the geometry detail has gone. A hand-authored
+  level, as Creek's Blender script makes, switches nearer. The tool's rule stays geometric and
+  predictable. An author who wants earlier thinning gives the level its own error.
+- The card step runs only for a mesh that a skin does not pose, because a posed list's positions
+  are in the scene's units and the level's stored positions are in the mesh's.
+
+## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
+
+The simplifier weighed normals and vertex colors in its error, so a texture could slide between
+two vertices of a level with no error shown. The planner now adds each texture coordinate set to
+the attributes that the simplifier keeps, with a weight of a sixty-fourth of the mesh's longest
+side. A texture coordinate's unit covers the texture across the mesh, so a slide of a large share
+of a texture counts like a small distance, while a slide of a few texels stays under the geometry's
+own error. Texture seams still lock, and welding still keeps two copies of a vertex apart where
+their coordinates differ.
+
+The weight is deliberately modest. The error that the simplifier reports includes the attributes,
+and the engine reads a level's error as a distance, so a heavy weight would make every textured
+mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
+where the same scene without texture coordinates in the error has six.
+
+## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
+
+The level image tests placed each copy at a depth equal to the share of its switch, and then moved
+it off the camera's axis to spread the copies across the picture. A copy off the axis lies farther
+from the camera than its depth, by 2 to 4 percent of the distance, so every copy sat a little
+nearer its next switch than the test meant.
+
+The five percent either side of a switch hid that in the pictures where the levels switch at once.
+The bias test did not hide it. Its objects take a bias of 2, which halves the switch and the copies'
+distance with it, while the sideways offset keeps its size. The nearest copy, at 95 percent of its
+switch, then crossed that switch and drew level one.
+
+Each copy now stands along its own ray at the exact distance the rule measures. The measured
+figures, from a native test on the job workers and from the picture on all three paths:
+
+| Object | Switch | Copy at 95 percent | Copy at 103 percent |
+| --- | --- | --- | --- |
+| No bias | 15.59 m | base level, one copy | level 1 |
+| Bias of 2 | 7.795 m | base level, one copy | level 1 |
+
+The biased switch is exactly half the unbiased one. The pictures moved by 0.5 to 0.9 percent for
+the tests that switch levels at once, and by 2.7 to 3.2 percent for the fading bands, whose dither
+depends on how far past a switch a copy lies. The new `lod-bias` picture has its own references in
+both environments: a bias of 2 puts the same levels at half the distance, so the copies are twice
+the size on screen and cannot share the plain picture.

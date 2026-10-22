@@ -76,6 +76,7 @@ use crate::ssr::{self, Ssr, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
+use crate::vertex_draws::VertexDrawTable;
 use crate::view::{CanvasRect, MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -1049,6 +1050,8 @@ pub struct SceneSettings {
     decal_layers: u32,
     /// The particle systems of the particles add-on.
     particles: ParticleTable,
+    /// The draws that make their vertices from a vertex count alone.
+    vertex_draws: VertexDrawTable,
     /// The meshes with levels of detail.
     levels: Levels,
     /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
@@ -1180,6 +1183,7 @@ impl SceneSettings {
             area_shading: AreaShading::default(),
             area_wanted: false,
             particles: ParticleTable::default(),
+            vertex_draws: VertexDrawTable::default(),
             levels: Levels::default(),
             patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
@@ -2096,15 +2100,16 @@ impl SceneSettings {
     }
 
     /// Gives the mesh with engine id `base` the lower levels `meshes`, from the most detailed
-    /// down, with their errors in the base mesh's units, or with none takes its levels away.
-    /// `fades` lets two levels hand over in a fading band. Every mesh must be live, with the base
-    /// mesh's vertex attributes. The frame builders take the change when the scene's structure
-    /// changes next.
+    /// down, with their errors in the base mesh's units, and the `materials` that they draw with (0
+    /// for the level before's), or with none takes its levels away. `fades` lets two levels hand
+    /// over in a fading band. Every mesh must be live, with the base mesh's vertex attributes. The
+    /// frame builders take the change when the scene's structure changes next.
     pub fn set_mesh_levels(
         &mut self,
         base: u32,
         meshes: &[u32],
         errors: &[f32],
+        materials: &[u32],
         fades: bool,
     ) -> Result<(), LevelError> {
         let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
@@ -2118,7 +2123,7 @@ impl SceneSettings {
                 Some(_) => {}
             }
         }
-        self.levels.set(base, meshes, errors, fades)
+        self.levels.set(base, meshes, errors, materials, fades)
     }
 
     /// Takes the levels away from the meshes that are no longer live, and from the meshes whose
@@ -2665,6 +2670,16 @@ impl SceneSettings {
     /// The particle systems, to make, change and destroy them.
     pub fn particles_mut(&mut self) -> &mut ParticleTable {
         &mut self.particles
+    }
+
+    /// The draws that make their vertices from a vertex count alone.
+    pub fn vertex_draws(&self) -> &VertexDrawTable {
+        &self.vertex_draws
+    }
+
+    /// Those draws, to make, change and destroy them.
+    pub fn vertex_draws_mut(&mut self) -> &mut VertexDrawTable {
+        &mut self.vertex_draws
     }
 
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it

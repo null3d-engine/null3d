@@ -1,8 +1,8 @@
 // A screen on the gallery wall, beside the plinth: a plan drawn into a texture from code, with a
-// square for each click. The sketch turns a click's world point into the plane's own coordinates, so
-// the square lands where the pointer points. The texture changes only when a click adds a mark, so a
-// held frame draws the same plan on every run.
-import { mat4, type SketchContext, vec3 } from '@null3d/engine';
+// square for each click. The hit carries the plane's own texture coordinates, so the square lands
+// where the pointer points without the sketch working out where the plane lies in space. The
+// texture changes only when a click adds a mark, so a held frame draws the same plan on every run.
+import type { SketchContext } from '@null3d/engine';
 
 /** The texture's size, at the 2:1 shape of the screen. */
 const WIDTH = 128;
@@ -51,13 +51,10 @@ export function createScreen(ctx: SketchContext) {
 		material: materials.standard({ color: '#0e1014', roughness: 0.5 }),
 		position: [0, 1.1, -4.27],
 	});
-	const world = mat4.create();
-	const local = vec3.create();
 	screen.on('click', (event) => {
-		screen.getWorldMatrix(world);
-		mat4.invert(world, world);
-		vec3.transformMat4(local, event.point, world);
-		marks.push([local[0] / W + 0.5, local[1] / H + 0.5]);
+		// A plane has texture coordinates; a hit that found none has nothing to mark.
+		if (!event.hasUv) return;
+		marks.push([event.uv[0], event.uv[1]]);
 		if (marks.length > KEPT) marks.shift();
 		draw();
 		map.update(data);

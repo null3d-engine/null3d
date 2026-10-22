@@ -65,6 +65,8 @@ export function contractOf(shader: CompiledWgsl): string | null {
 		casts,
 		objectIds,
 		sceneDepth,
+		// A draw shader's pipelines declare no vertex buffer, so a change to or from one reloads.
+		meshless: shader.meshless === true,
 	});
 }
 
