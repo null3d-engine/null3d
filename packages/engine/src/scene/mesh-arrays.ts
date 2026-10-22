@@ -16,6 +16,7 @@ import {
 	ARRAY_UVS1,
 	ARRAY_WEIGHTS,
 	ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE,
+	ARRAYS_PROBLEM_LEVEL_BASE,
 	ARRAYS_PROBLEM_MORPH_LENGTH,
 	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
 	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
@@ -511,6 +512,29 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 			`${call}() got ${valuesOf(given).array[at]} at ${spec.name}[${at}].`,
 		);
 	return new EngineError('E1206', `${call}() got arrays that do not make whole vertices.`);
+}
+
+/**
+ * Builds a level that draws the live mesh `base`'s vertices with the triangles `indices`, and
+ * returns its id: the level pays for its indices alone. Returns undefined when the base cannot
+ * share its vertices, because the engine split it into parts or pose moves its vertices, so the
+ * caller gives the level its own arrays instead. Other failures throw.
+ */
+export function meshFromLevel(
+	core: CoreMemory,
+	base: number,
+	indices: Uint16Array | Uint32Array | readonly number[],
+	call: string,
+): number | undefined {
+	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	core.u32(address, indices.length).set(indices);
+	const id = core.glue.createLevelMesh(base, indices.length);
+	if (id !== 0) return id;
+	const { glue } = core;
+	const refused =
+		glue.lastErrorCode() === BAD_ARRAYS && glue.lastErrorDetail(0) === ARRAYS_PROBLEM_LEVEL_BASE;
+	if (!refused) throw coreFailure(glue, call);
+	return undefined;
 }
 
 /** The last vertex shader location whose attribute takes updates: the colors. */
