@@ -35,6 +35,8 @@ const RADIUS = 650;
 const BUSHES = 30_000;
 const BUSH_NEAR = 12_000;
 const BUSH_RADIUS = 360;
+/** How far out the understory draws, in meters, where the trees hide the ground beyond it. */
+const UNDERSTORY_EDGE = 300;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
@@ -112,6 +114,9 @@ export default defineSketch(async (ctx) => {
 		colors: true,
 	});
 	fillRows(undergrowth, bushRows(BUSHES, BUSH_RADIUS), 0);
+	// The understory's far rows cost nothing past the distance where the trunks hide the ground,
+	// and the dither fades the last bushes out instead of popping them away.
+	undergrowth.setDrawRange(0, UNDERSTORY_EDGE);
 	// One hero fir stands beside the flight: a bias keeps its finer levels where the trees around
 	// it turn coarse, and B gives it the threshold of the rest.
 	const hero = addHero(scene, kinds[0], bark, ground);

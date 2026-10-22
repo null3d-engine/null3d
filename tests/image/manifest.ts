@@ -2210,6 +2210,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// A distance band hides a copy outside it and fades it at each edge. Two rows of copies stand
+	// around the band's start and its end: one outside, one inside the fade band, and one past it.
+	// The fade dither's phase follows each copy's number in its draw, which each GPU path numbers
+	// its own way, so every path keeps a picture of its own, as the level fade's test does.
+	{
+		name: 'lod-range',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-range-batch',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-range',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
 	// geometry. Three copies stand at 95%, 103% and 109% of that distance, the second inside the
 	// band that thins the last level out with the dither. Every GPU path must draw the first's

@@ -313,12 +313,14 @@ mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lis
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
-mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, error: 0.1, material: farShading }]);  // (0.2) levels of detail, most detailed first
-// every object and batch of `mesh` draws the coarsest level whose error covers under lodThreshold pixels,
-// and draws nothing where its bound covers fewer pixels than that; the hide fades out with the same band;
-// { mesh, distance } in place of error maps three.js's LOD.addLevel; errors grow; E1221 for bad levels;
+mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels of detail, most detailed first
+// every object and batch of `mesh` draws the coarsest level whose switch the distance passes:
+// error (in the mesh's units), distance (meters at scale 1) or coverage (a share of the screen height);
+// a level given by distance or a hand-set error fades over a band, a measured error switches at once;
+// setLevels(levels, { fade: false }) or { fade } on one level switches it at once; switches grow; E1221 for bad levels;
 // a level's `material` shades its own way, and a level without one draws with the level before's
 object.setLevelBias(0.5);   // (0.2) this object's own threshold: below 1 keeps detail, above 1 turns coarse sooner
+object.setDrawRange(8, 120);   // (0.2) draw only between 8 m and 120 m, fading at each edge; batch.setDrawRange too
 ```
 
 (0.2) Each attribute also takes the 8-bit and 16-bit integer arrays that glTF's `KHR_mesh_quantization` allows. The GPU keeps them as integers, at half or a quarter of the floats' size. Plain integers read as whole numbers; `{ array, normalized: true }` reads them as fractions, as three.js's `BufferAttribute` does. Normals and tangents take `Int8Array` or `Int16Array`, colors and weights `Uint8Array` or `Uint16Array`, and joints `Uint8Array`, `Uint16Array` or whole numbers. Integer positions keep their units, so scale the object to meters, as a glTF node does. A mesh keeps the attributes it gets in their types. Meshes whose attributes have the same types share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206, and a generator option that is not a finite number throws E1203. `api/geometry` covers vertex formats and meshes over 65,535 vertices. `updateVertices` (0.2) takes `positions`, `normals`, `uvs`, `uvs1`, `colors` and `tangents`. Update the normals with the positions, because the engine does not compute them again. The mesh keeps the bounding sphere it was made with, so give objects whose vertices move outside it bounds with `setBounds`. A mesh with joints or morph targets takes no updates. The first update rebuilds the draw tables once, so make it in the setup.
@@ -660,7 +662,7 @@ quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
-quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, dithered bands
+quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, distance band fades
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
