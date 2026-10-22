@@ -126,12 +126,13 @@ describe('mesh.setLevels', () => {
 		const { base, a, b, sets } = meshes();
 		base.setLevels([
 			{ mesh: a, distance: 50 },
-			{ mesh: b, coverage: 0.1 },
+			{ mesh: b, coverage: 0.03125 },
 		]);
-		expect(sets[0]?.values).toEqual([50, 0.1]);
+		expect(sets[0]?.values).toEqual([50, 0.03125]);
 		expect(sets[0]?.switches).toEqual([1, 2]);
-		// A coverage of a tenth of the screen is farther than a distance of 50 m for this sphere of
-		// radius 1: 1 × 2.1445 / 0.1.
+		// A coverage of a thirty-second of the screen is farther than a distance of 50 m for this
+		// sphere of radius 1: 1 × 2.1445 / 0.03125 is 68.6 m. The value is a binary fraction, so
+		// the level's stored measure reads back unchanged.
 		expect(sets[0]?.fades).toBe(0b110);
 	});
 
