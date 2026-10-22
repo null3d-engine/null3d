@@ -1117,7 +1117,6 @@ export class SketchRunner {
 				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
 				if (first === 0 && (before || step === steps)) {
 					await this.context.scene.imagesSettled();
-					await this.context.scene.firstUseSettled();
 					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
